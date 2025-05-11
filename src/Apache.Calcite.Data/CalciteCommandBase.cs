@@ -62,7 +62,7 @@ namespace Apache.Calcite.Data
         public override string CommandText
         {
             get => _commandText ?? "";
-            set => throw new NotImplementedException();
+            set => _commandText = value;
         }
 
         /// <summary>

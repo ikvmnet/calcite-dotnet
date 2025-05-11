@@ -73,7 +73,7 @@ namespace Apache.Calcite.Data
         /// <returns></returns>
         public override bool Contains(object parameter)
         {
-            return parameter is not CalciteParameter p ? false : _self.Contains(p);
+            return parameter is CalciteParameter p && _self.Contains(p);
         }
 
         /// <summary>
@@ -104,7 +104,7 @@ namespace Apache.Calcite.Data
         /// <returns></returns>
         public override int IndexOf(object parameter)
         {
-            return parameter is not CalciteParameter p ? -1 : _self.IndexOf(p);
+            return parameter is CalciteParameter p ? _self.IndexOf(p) : -1;
         }
 
         /// <summary>
@@ -144,7 +144,7 @@ namespace Apache.Calcite.Data
             if (parameter is null)
                 throw new ArgumentNullException(nameof(parameter));
 
-            return parameter is not CalciteParameter p ? false : _self.Remove(p);
+            return parameter is CalciteParameter p && _self.Remove(p);
         }
 
         /// <summary>

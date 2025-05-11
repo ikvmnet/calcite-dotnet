@@ -7,6 +7,8 @@ namespace Apache.Calcite.Data
     public class CalciteDataAdapter : DbDataAdapter
     {
 
+
+
     }
 
 }

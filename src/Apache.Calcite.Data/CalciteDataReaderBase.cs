@@ -354,7 +354,7 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Gets the value of the specified column as a <see cref="Nullable{decimal}"/>.
+        /// Gets the value of the specified column as a <see cref="Nullable{Decimal}"/>.
         /// </summary>
         /// <param name="ordinal"></param>
         /// <returns></returns>
@@ -376,7 +376,7 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Gets the value of the specified column as a <see cref="Nullable{double}"/>.
+        /// Gets the value of the specified column as a <see cref="Nullable{Double}"/>.
         /// </summary>
         /// <param name="ordinal"></param>
         /// <returns></returns>
@@ -397,7 +397,7 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Gets the value of the specified column as a <see cref="Nullable{float}"/>.
+        /// Gets the value of the specified column as a <see cref="Nullable{Single}"/>.
         /// </summary>
         /// <param name="ordinal"></param>
         /// <returns></returns>
@@ -427,7 +427,7 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Gets the value of the specified column as a <see cref="Nullable{short}"/>.
+        /// Gets the value of the specified column as a <see cref="Nullable{Int16}"/>.
         /// </summary>
         /// <param name="ordinal"></param>
         /// <returns></returns>
@@ -448,7 +448,7 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Gets the value of the specified column as a <see cref="Nullable{int}"/>.
+        /// Gets the value of the specified column as a <see cref="Nullable{Int32}"/>.
         /// </summary>
         /// <param name="ordinal"></param>
         /// <returns></returns>
@@ -469,7 +469,7 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Gets the value of the specified column as a <see cref="Nullable{long}"/>.
+        /// Gets the value of the specified column as a <see cref="Nullable{Int64}"/>.
         /// </summary>
         /// <param name="ordinal"></param>
         /// <returns></returns>
