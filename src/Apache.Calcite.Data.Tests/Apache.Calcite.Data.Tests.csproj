@@ -1,0 +1,10 @@
+﻿<Project Sdk="MSTest.Sdk/3.6.4">
+
+    <PropertyGroup>
+        <TargetFrameworks>net6.0;net8.0;net472</TargetFrameworks>
+        <LangVersion>latest</LangVersion>
+        <Nullable>enable</Nullable>
+        <TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
+    </PropertyGroup>
+
+</Project>

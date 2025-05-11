@@ -7,7 +7,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageProjectReference Include="..\Apache.Calcite.EntityFrameworkCore\Apache.Calcite.EntityFrameworkCore.csproj">
+        <PackageProjectReference Include="..\Apache.Calcite.Data\Apache.Calcite.Data.csproj">
             <PackageTargetPath>.</PackageTargetPath>
         </PackageProjectReference>
     </ItemGroup>

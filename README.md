@@ -1,3 +1,3 @@
-# Apache.Calcite.EntityFrameworkCore
+# Apache.Calcite.Data
 
-The goal of this project is to produce an EFCore backend for Apache Calcite through IKVM.
+The goal of this project is to produce an ADO.NET Connection for Apache Calcite.

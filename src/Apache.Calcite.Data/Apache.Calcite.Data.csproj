@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFrameworks>net6.0;net8.0;net472</TargetFrameworks>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="IKVM" Version="8.11.2" />
+        <PackageReference Include="IKVM.Maven.Sdk" Version="1.9.3" />
+        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.38.0" />
+    </ItemGroup>
+
+</Project>

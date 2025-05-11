@@ -8,8 +8,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		.gitattributes = .gitattributes
 		.gitignore = .gitignore
 		.gitmodules = .gitmodules
-		Apache.Calcite.EntityFrameworkCore.dist.msbuildproj = Apache.Calcite.EntityFrameworkCore.dist.msbuildproj
-		.github\workflows\Apache.Calcite.EntityFrameworkCore.yml = .github\workflows\Apache.Calcite.EntityFrameworkCore.yml
+		Apache.Calcite.Data.dist.msbuildproj = Apache.Calcite.Data.dist.msbuildproj
+		.github\workflows\Apache.Calcite.Data.yml = .github\workflows\Apache.Calcite.Data.yml
 		Directory.Build.props = Directory.Build.props
 		Directory.Build.targets = Directory.Build.targets
 		GitVersion.yml = GitVersion.yml
@@ -19,10 +19,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		README.md = README.md
 	EndProjectSection
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Apache.Calcite.EntityFrameworkCore", "src\Apache.Calcite.EntityFrameworkCore\Apache.Calcite.EntityFrameworkCore.csproj", "{A530E839-619D-4F2D-9C70-540305CB2142}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.EntityFrameworkCore.Tests", "src\Apache.Calcite.EntityFrameworkCore.Tests\Apache.Calcite.EntityFrameworkCore.Tests.csproj", "{FF657FD5-7AD6-8169-08D8-4E9FE551BDAC}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "dist-tests", "src\dist-tests\dist-tests.csproj", "{7C6C49A0-4163-9D76-65CA-78087A255429}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "dist-nuget", "src\dist-nuget\dist-nuget.csproj", "{52D4FE86-2EB0-A77A-A7E9-A6F41ACB229F}"
@@ -31,20 +27,16 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{02EA681E-C7D
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dist", "dist", "{3523028E-CB46-4932-9E3A-D87BA69E2139}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Data", "src\Apache.Calcite.Data\Apache.Calcite.Data.csproj", "{9C8D9B7F-0C1A-41D7-8DE1-8CEFF387DE40}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Data.Tests", "src\Apache.Calcite.Data.Tests\Apache.Calcite.Data.Tests.csproj", "{724E3F13-A5D6-46B6-A424-06CF36626C93}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{A530E839-619D-4F2D-9C70-540305CB2142}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A530E839-619D-4F2D-9C70-540305CB2142}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{A530E839-619D-4F2D-9C70-540305CB2142}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{A530E839-619D-4F2D-9C70-540305CB2142}.Release|Any CPU.Build.0 = Release|Any CPU
-		{FF657FD5-7AD6-8169-08D8-4E9FE551BDAC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{FF657FD5-7AD6-8169-08D8-4E9FE551BDAC}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{FF657FD5-7AD6-8169-08D8-4E9FE551BDAC}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{FF657FD5-7AD6-8169-08D8-4E9FE551BDAC}.Release|Any CPU.Build.0 = Release|Any CPU
 		{7C6C49A0-4163-9D76-65CA-78087A255429}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{7C6C49A0-4163-9D76-65CA-78087A255429}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7C6C49A0-4163-9D76-65CA-78087A255429}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -53,16 +45,24 @@ Global
 		{52D4FE86-2EB0-A77A-A7E9-A6F41ACB229F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{52D4FE86-2EB0-A77A-A7E9-A6F41ACB229F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{52D4FE86-2EB0-A77A-A7E9-A6F41ACB229F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9C8D9B7F-0C1A-41D7-8DE1-8CEFF387DE40}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9C8D9B7F-0C1A-41D7-8DE1-8CEFF387DE40}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9C8D9B7F-0C1A-41D7-8DE1-8CEFF387DE40}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9C8D9B7F-0C1A-41D7-8DE1-8CEFF387DE40}.Release|Any CPU.Build.0 = Release|Any CPU
+		{724E3F13-A5D6-46B6-A424-06CF36626C93}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{724E3F13-A5D6-46B6-A424-06CF36626C93}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{724E3F13-A5D6-46B6-A424-06CF36626C93}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{724E3F13-A5D6-46B6-A424-06CF36626C93}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{A530E839-619D-4F2D-9C70-540305CB2142} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
-		{FF657FD5-7AD6-8169-08D8-4E9FE551BDAC} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{7C6C49A0-4163-9D76-65CA-78087A255429} = {3523028E-CB46-4932-9E3A-D87BA69E2139}
 		{52D4FE86-2EB0-A77A-A7E9-A6F41ACB229F} = {3523028E-CB46-4932-9E3A-D87BA69E2139}
 		{3523028E-CB46-4932-9E3A-D87BA69E2139} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{9C8D9B7F-0C1A-41D7-8DE1-8CEFF387DE40} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{724E3F13-A5D6-46B6-A424-06CF36626C93} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A03ACB78-6C3F-4E09-BAF1-16E41D5A3945}
