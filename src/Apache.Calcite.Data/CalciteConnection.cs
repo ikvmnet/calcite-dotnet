@@ -3,6 +3,10 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 
+using org.apache.calcite.adapter.java;
+using org.apache.calcite.config;
+using org.apache.calcite.schema;
+
 namespace Apache.Calcite.Data
 {
 
@@ -13,6 +17,7 @@ namespace Apache.Calcite.Data
     {
 
         internal CalciteConnectionStringBuilder? _connectionStringBuilder;
+        CalciteConnectionConfig _config;
 
         /// <summary>
         /// Initializes a new instance.
@@ -63,6 +68,16 @@ namespace Apache.Calcite.Data
             _connectionStringBuilder = new CalciteConnectionStringBuilder(value);
             throw new NotImplementedException();
         }
+
+        /// <summary>
+        /// Returns the root schema.
+        /// </summary>
+        public SchemaPlus RootSchema => throw new NotImplementedException();
+
+        /// <summary>
+        /// Returns the type factory.
+        /// </summary>
+        public JavaTypeFactory TypeFactory => throw new NotImplementedException();
 
         /// <summary>
         /// Gets the state of the connection.

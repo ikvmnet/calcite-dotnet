@@ -7,4 +7,12 @@
         <TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
     </PropertyGroup>
 
+    <ItemGroup>
+      <PackageReference Include="FluentAssertions" Version="8.2.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Apache.Calcite.Data\Apache.Calcite.Data.csproj" />
+    </ItemGroup>
+
 </Project>
