@@ -43,7 +43,7 @@ jobs:
         GITHUB_REPOS: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: NuGet Restore
-      run: dotnet restore Apache.Calcite.EntityFrameworkCore.sln
+      run: dotnet restore Apache.Calcite.Data.sln
     - name: Build
       run: |
         dotnet msbuild /m /bl \
@@ -60,7 +60,7 @@ jobs:
           /p:PackageProjectUrl="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
           /p:BuildInParallel=true \
           /p:ContinuousIntegrationBuild=true \
-          Apache.Calcite.EntityFrameworkCore.dist.msbuildproj
+          Apache.Calcite.Data.dist.msbuildproj
     - name: Upload MSBuild Log
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -84,7 +84,7 @@ jobs:
     strategy:
       matrix:
         run:
-        - Apache.Calcite.EntityFrameworkCore.Tests
+        - Apache.Calcite.Data.Tests
         sys:
         - win-x64
         - linux-x64
@@ -92,7 +92,9 @@ jobs:
         - osx-x64
         - osx-arm64
         tfm:
-        - net9.0
+        - net6.0
+        - net8.0
+        - net472
         exclude:
         - tfm: net472
           sys: linux-x64
