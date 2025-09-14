@@ -16,13 +16,14 @@ namespace Apache.Calcite.Data
     public class CalciteConnection : DbConnection
     {
 
-        internal CalciteConnectionStringBuilder? _connectionStringBuilder;
+        CalciteConnectionStringBuilder _connectionStringBuilder;
         CalciteConnectionConfig _config;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        public CalciteConnection()
+        public CalciteConnection() :
+            this(new CalciteConnectionStringBuilder())
         {
 
         }
@@ -32,15 +33,19 @@ namespace Apache.Calcite.Data
         /// </summary>
         /// <param name="connectionString"></param>
         public CalciteConnection(string connectionString) :
-            this()
+            this(new CalciteConnectionStringBuilder(connectionString))
         {
-            _connectionStringBuilder = new CalciteConnectionStringBuilder(connectionString);
+
         }
 
         /// <summary>
-        /// Gets the connection string.
+        /// Initializes a new instance.
         /// </summary>
-        internal CalciteConnectionStringBuilder? ConnectionStringBuilder => _connectionStringBuilder;
+        /// <param name="connectionStringBuilder"></param>
+        public CalciteConnection(CalciteConnectionStringBuilder connectionStringBuilder)
+        {
+            SetConnectionString(connectionStringBuilder.ConnectionString);
+        }
 
         /// <summary>
         /// Gets or sets the connection string.
@@ -50,7 +55,7 @@ namespace Apache.Calcite.Data
 #endif
         public override string ConnectionString
         {
-            get => ConnectionStringBuilder?.ConnectionString ?? "";
+            get => _connectionStringBuilder.ConnectionString ?? "";
             set => SetConnectionString(value ?? "");
         }
 
@@ -59,6 +64,10 @@ namespace Apache.Calcite.Data
         /// </summary>
         /// <param name="value"></param>
         /// <exception cref="CalciteDbException"></exception>
+#if NET
+        [MemberNotNull(nameof(_connectionStringBuilder))]
+        [MemberNotNull(nameof(_config))]
+#endif
         void SetConnectionString(string value)
         {
             if (State != ConnectionState.Closed)
@@ -66,7 +75,7 @@ namespace Apache.Calcite.Data
 
             // reset connection string
             _connectionStringBuilder = new CalciteConnectionStringBuilder(value);
-            throw new NotImplementedException();
+            _config = _connectionStringBuilder.ToConfig();
         }
 
         /// <summary>
@@ -108,7 +117,7 @@ namespace Apache.Calcite.Data
             if (State != ConnectionState.Open)
                 throw new CalciteDbException("Connection must be open to change databases.");
 
-            throw new NotImplementedException();
+            throw new NotSupportedException();
         }
 
         /// <summary>
