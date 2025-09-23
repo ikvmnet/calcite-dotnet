@@ -1,8 +1,5 @@
 ﻿using System;
 
-using java.lang;
-
-using org.apache.calcite.adapter.jdbc;
 using org.apache.calcite.linq4j.tree;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel.rules;
@@ -13,17 +10,38 @@ namespace Apache.Calcite.Adapter.AdoNet
 
     /// <summary>
     /// Calling convention for relational operations that occur in an ADO database.
+    /// 
+    /// <p>The convention is a slight misnomer. The operations occur in whatever
+    /// data-flow architecture the database uses internally. Nevertheless, the result
+    /// pops out in ADO.NET.</p>
+    /// 
+    /// <p>This is the only convention, thus far, that is not a singleton. Each
+    /// instance contains a ADO.NET schema (and therefore a data source). If Calcite is
+    /// working with two different databases, it would even make sense to convert
+    /// from "JDBC#A" convention to "JDBC#B", even though we don't do it currently.
+    /// (That would involve asking database B to open a database link to database
+    /// A.)</p>
+    /// 
+    /// <p>As a result, converter rules from and to this convention need to be
+    /// instantiated, at the start of planning, for each ADO database in play.</p>
     /// </summary>
     public class AdoConvention : Convention.Impl
     {
 
-        public static AdoConvention Of(SqlDialect dialect, Expression expression, string name)
+        /// <summary>
+        /// Creates a new ADO convention.
+        /// </summary>
+        /// <param name="dialect"></param>
+        /// <param name="expression"></param>
+        /// <param name="name"></param>
+        /// <returns></returns>
+        public static AdoConvention Create(SqlDialect dialect, Expression expression, string name)
         {
             return new AdoConvention(dialect, expression, name);
         }
 
-        readonly SqlDialect dialect;
-        readonly Expression expression;
+        readonly SqlDialect _dialect;
+        readonly Expression _expression;
 
         /// <summary>
         /// Initializes a new instance.
@@ -37,9 +55,19 @@ namespace Apache.Calcite.Adapter.AdoNet
             if (string.IsNullOrEmpty(name))
                 throw new ArgumentException($"'{nameof(name)}' cannot be null or empty.", nameof(name));
 
-            this.dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
-            this.expression = expression ?? throw new ArgumentNullException(nameof(expression));
+            _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
+            _expression = expression ?? throw new ArgumentNullException(nameof(expression));
         }
+
+        /// <summary>
+        /// Gets the dialect of the convention.
+        /// </summary>
+        public SqlDialect Dialect => _dialect;
+
+        /// <summary>
+        /// Gets the expression of the convention.
+        /// </summary>
+        public Expression Expression => _expression;
 
         /// <inheritdoc />
         public override void register(RelOptPlanner planner)

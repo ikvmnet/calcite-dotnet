@@ -1,12 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Data;
 using System.Data.Common;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-using com.sun.org.apache.xml.@internal.utils;
 
 using java.lang;
 using java.sql;
@@ -14,6 +7,9 @@ using java.sql;
 namespace Apache.Calcite.Adapter.AdoNet
 {
 
+    /// <summary>
+    /// Implements the <see cref="DatabaseMetaData"/> interface against a <see cref="DbConnection"/>.
+    /// </summary>
     class AdoDatabaseMetaDataAdaptor : DatabaseMetaData
     {
 
@@ -358,7 +354,7 @@ namespace Apache.Calcite.Adapter.AdoNet
             throw new NotImplementedException();
         }
 
-        public ResultSet getSchemas(string catalog, string schemaPattern)
+        public ResultSet getSchemas(string? catalog, string schemaPattern)
         {
             throw new NotImplementedException();
         }

@@ -13,10 +13,13 @@ using org.apache.calcite.sql.parser;
 namespace Apache.Calcite.Adapter.AdoNet
 {
 
+    /// <summary>
+    /// State for generating a SQL statement.
+    /// </summary>
     public class AdoImplementor : RelToSqlConverter
     {
 
-        class Builder : IAdoCorrelationDataContextBuilder
+        class _Builder : IAdoCorrelationDataContextBuilder
         {
 
             int counter = 1;
@@ -28,6 +31,42 @@ namespace Apache.Calcite.Adapter.AdoNet
 
         }
 
+        /// <summary>
+        /// We need to provide a context which also includes the correlation variables as dynamic parameters.
+        /// </summary>
+        class _Context : Context
+        {
+
+            readonly AdoImplementor _implementor;
+            readonly RexCorrelVariable _variable;
+            readonly List _fieldList;
+
+            /// <summary>
+            /// Initializes a new instance.
+            /// </summary>
+            /// <param name="implementor"></param>
+            /// <param name="variable"></param>
+            /// <param name="fieldList"></param>
+            public _Context(AdoImplementor implementor, RexCorrelVariable variable, List fieldList) :
+                base(implementor.dialect, fieldList.size())
+            {
+                _implementor = implementor;
+                _variable = variable;
+                _fieldList = fieldList;
+            }
+
+            public override SqlImplementor implementor()
+            {
+                return _implementor;
+            }
+
+            public override SqlNode field(int ordinal)
+            {
+                var field = (RelDataTypeField)_fieldList.get(ordinal);
+                return new SqlDynamicParam(_implementor._dataContextBuilder.Add(_variable.id, ordinal, _implementor._typeFactory.getJavaClass(field.getType())), SqlParserPos.ZERO);
+            }
+
+        }
 
         readonly JavaTypeFactory _typeFactory;
         readonly IAdoCorrelationDataContextBuilder _dataContextBuilder;
@@ -51,7 +90,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="dialect"></param>
         /// <param name="typeFactory"></param>
         public AdoImplementor(SqlDialect dialect, JavaTypeFactory typeFactory) :
-            this(dialect, typeFactory, new Builder())
+            this(dialect, typeFactory, new _Builder())
         {
 
         }
@@ -61,48 +100,15 @@ namespace Apache.Calcite.Adapter.AdoNet
             return dispatch(node);
         }
 
-        protected Context getAliasContext(RexCorrelVariable variable)
+        /// <inheritdoc />
+        protected override Context getAliasContext(RexCorrelVariable variable)
         {
             var context = (Context)correlTableMap.get(variable.id);
             if (context != null)
                 return context;
 
             var fieldList = variable.getType().getFieldList();
-            return new DefaultContext(this, variable, fieldList);
-        }
-
-        class DefaultContext : Context
-        {
-
-            readonly AdoImplementor _implementor;
-            readonly RexCorrelVariable _variable;
-            readonly List _fieldList;
-
-            /// <summary>
-            /// Initializes a new instance.
-            /// </summary>
-            /// <param name="implementor"></param>
-            /// <param name="variable"></param>
-            /// <param name="fieldList"></param>
-            public DefaultContext(AdoImplementor implementor, RexCorrelVariable variable, List fieldList) :
-                base(implementor.dialect, fieldList.size())
-            {
-                _implementor = implementor;
-                _variable = variable;
-                _fieldList = fieldList;
-            }
-
-            public override SqlImplementor implementor()
-            {
-                return _implementor;
-            }
-
-            public override SqlNode field(int ordinal)
-            {
-                var field = (RelDataTypeField)_fieldList.get(ordinal);
-                return new SqlDynamicParam(_implementor._dataContextBuilder.Add(_variable.id, ordinal, _implementor._typeFactory.getJavaClass(field.getType())), SqlParserPos.ZERO);
-            }
-
+            return new _Context(this, variable, fieldList);
         }
 
     }

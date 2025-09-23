@@ -1,7 +1,5 @@
 ﻿using com.google.common.collect;
 
-using java.lang.reflect;
-
 using org.apache.calcite;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.linq4j.tree;
@@ -10,15 +8,18 @@ using org.apache.calcite.rel.core;
 namespace Apache.Calcite.Adapter.AdoNet
 {
 
+    /// <summary>
+    /// An implementation of <see cref="IAdoCorrelationDataContextBuilder"/>.
+    /// </summary>
     public class AdoCorrelationDataContextBuilderImpl : IAdoCorrelationDataContextBuilder
     {
 
-        static readonly Constructor NEW = Types.lookupConstructor((java.lang.reflect.Type)typeof(AdoCorrelationDataContext), typeof(DataContext), typeof(object[]));
+        static readonly java.lang.reflect.Constructor NEW = Types.lookupConstructor((java.lang.reflect.Type)typeof(AdoCorrelationDataContext), typeof(DataContext), typeof(object[]));
 
-        readonly ImmutableList.Builder parameters = ImmutableList.builder();
-        readonly EnumerableRelImplementor implementor;
-        readonly BlockBuilder builder;
-        readonly Expression dataContext;
+        readonly ImmutableList.Builder _parameters = ImmutableList.builder();
+        readonly EnumerableRelImplementor _implementor;
+        readonly BlockBuilder _builder;
+        readonly Expression _dataContext;
 
         int offset = AdoCorrelationDataContext.OFFSET;
 
@@ -30,20 +31,22 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="dataContext"></param>
         public AdoCorrelationDataContextBuilderImpl(EnumerableRelImplementor implementor, BlockBuilder builder, Expression dataContext)
         {
-            this.implementor = implementor;
-            this.builder = builder;
-            this.dataContext = dataContext;
+            _implementor = implementor;
+            _builder = builder;
+            _dataContext = dataContext;
         }
 
+        /// <inheritdoc />
         public int Add(CorrelationId id, int ordinal, java.lang.reflect.Type type)
         {
-            parameters.add(implementor.getCorrelVariableGetter(id.getName()).field(builder, ordinal, type));
+            _parameters.add(_implementor.getCorrelVariableGetter(id.getName()).field(_builder, ordinal, type));
             return offset++;
         }
 
+        /// <inheritdoc />
         public Expression Build()
         {
-            return Expressions.new_(NEW, dataContext, Expressions.newArrayInit((java.lang.reflect.Type)typeof(object), 1, parameters.build()));
+            return Expressions.new_(NEW, _dataContext, Expressions.newArrayInit((java.lang.reflect.Type)typeof(object), 1, _parameters.build()));
         }
 
     }

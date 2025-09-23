@@ -1,0 +1,17 @@
+   {
+     "version": "1.0",
+     "defaultSchema": "FOODMART_CLONE",
+     "schemas": [
+       {
+         "name": "FOODMART_CLONE",
+         "type": "custom",
+         "factory": "org.apache.calcite.adapter.jdbc.JdbcSchema$Factory",
+        "operand": {
+            "providerName": "Microsoft.SqlServer.Sql",
+            "connectionString": "Server=localhost;Integrated Security=SSPI",
+            "database": "test",
+            "schema": "dbo"
+        }
+       }
+     ]
+   }
