@@ -16,7 +16,8 @@ namespace Apache.Calcite.Adapter.AdoNet
         readonly DbConnection _connection;
         readonly DbCommand _command;
         readonly DbDataReader _reader;
-        readonly Function1 _rowBuilder;
+        readonly Function1 _rowBuilderFactory;
+        readonly Function0 _rowBuilder;
 
         /// <summary>
         /// Initializes a new instance.
@@ -24,13 +25,14 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="connection"></param>
         /// <param name="command"></param>
         /// <param name="reader"></param>
-        /// <param name="rowBuilder"></param>
-        public AdoReaderEnumerator(DbConnection connection, DbCommand command, DbDataReader reader, Function1 rowBuilder)
+        /// <param name="rowBuilderFactory"></param>
+        public AdoReaderEnumerator(DbConnection connection, DbCommand command, DbDataReader reader, Function1 rowBuilderFactory)
         {
             _connection = connection ?? throw new ArgumentNullException(nameof(connection));
             _command = command ?? throw new ArgumentNullException(nameof(command));
             _reader = reader ?? throw new ArgumentNullException(nameof(reader));
-            _rowBuilder = rowBuilder ?? throw new ArgumentNullException(nameof(rowBuilder));
+            _rowBuilderFactory = rowBuilderFactory ?? throw new ArgumentNullException(nameof(rowBuilderFactory));
+            _rowBuilder = (Function0)_rowBuilderFactory.apply(_reader);
         }
 
         /// <summary>
@@ -48,7 +50,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <returns></returns>
         public object current()
         {
-            return _rowBuilder.apply(_reader);
+            return _rowBuilder.apply();
         }
 
         /// <summary>

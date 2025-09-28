@@ -1,15 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
-using com.google.common.collect;
+using Apache.Calcite.Adapter.AdoNet.Rel.Convert;
+using Apache.Calcite.Adapter.AdoNet.Rel.RelFactories;
 
-using java.util.function;
-
-using org.apache.calcite.adapter.jdbc;
 using org.apache.calcite.plan;
-using org.apache.calcite.rel;
-using org.apache.calcite.rel.convert;
-using org.apache.calcite.rel.core;
+using org.apache.calcite.tools;
+
+using static org.apache.calcite.rel.core.RelFactories;
 
 namespace Apache.Calcite.Adapter.AdoNet
 {
@@ -17,135 +14,75 @@ namespace Apache.Calcite.Adapter.AdoNet
     /// <summary>
     /// Rules and relational operators for the <see cref="AdoConvention"/> calling convention.
     /// </summary>
-    class AdoRules
+    static class AdoRules
     {
-        
+
+        static readonly ProjectFactory PROJECT_FACTORY = new AdoProjectFactory();
+        static readonly FilterFactory FILTER_FACTORY = new AdoFilterFactory();
+        static readonly JoinFactory JOIN_FACTORY = new AdoJoinFactory();
+        static readonly SortFactory SORT_FACTORY = new AdoSortFactory();
+        static readonly ExchangeFactory EXCHANGE_FACTORY = new AdoExchangeFactory();
+        static readonly SortExchangeFactory SORT_EXCHANGE_FACTORY = new AdoSortExchangeFactory();
+        static readonly AggregateFactory AGGREGATE_FACTORY = new AdoAggregateFactory();
+        static readonly MatchFactory MATCH_FACTORY = new AdoMatchFactory();
+        static readonly SetOpFactory SET_OP_FACTORY = new AdoSetOpFactory();
+        static readonly ValuesFactory VALUES_FACTORY = new AdoValuesFactory();
+        static readonly TableScanFactory TABLE_SCAN_FACTORY = new AdoTableScanFactory();
+        static readonly SnapshotFactory SNAPSHOT_FACTORY = new AdoSnapshotFactory();
+
         /// <summary>
-        /// <see cref="Function"/> implementation that simply calls the default constructor of the given type.
+        /// A <see cref="RelBuilderFactory"/> that creates a <see cref="RelBuilder"/> that will crate ADO relational expressions for everything.
         /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <typeparam name="TResult"></typeparam>
-        class DelegateFunction<T, TResult> : Function
-        {
-
-            readonly Func<T, TResult> _delegate;
-
-            /// <summary>
-            /// Initializes a new instance.
-            /// </summary>
-            /// <param name="delegate"></param>
-            /// <exception cref="ArgumentNullException"></exception>
-            public DelegateFunction(Func<T, TResult> @delegate)
-            {
-                _delegate = @delegate ?? throw new ArgumentNullException(nameof(@delegate));
-            }
-
-            public object? apply(object? t)
-            {
-                return _delegate((T?)t ?? throw new InvalidOperationException());
-            }
-
-            public Function compose(Function before)
-            {
-                return Function.__DefaultMethods.compose(this, before);
-            }
-
-            public Function andThen(Function after)
-            {
-                return Function.__DefaultMethods.andThen(this, after);
-            }
-
-        }
+        public static readonly RelBuilderFactory Builder = RelBuilder.proto(Contexts.of(
+            PROJECT_FACTORY,
+            FILTER_FACTORY,
+            JOIN_FACTORY,
+            SORT_FACTORY,
+            EXCHANGE_FACTORY,
+            SORT_EXCHANGE_FACTORY,
+            AGGREGATE_FACTORY,
+            MATCH_FACTORY,
+            SET_OP_FACTORY,
+            VALUES_FACTORY,
+            TABLE_SCAN_FACTORY,
+            SNAPSHOT_FACTORY));
 
         /// <summary>
-        /// Abstract base class for rule that converts to ADO.
-        /// </summary>
-        abstract class AdoConverterRule : ConverterRule
-        {
-
-            /// <summary>
-            /// Initializes a new instance.
-            /// </summary>
-            /// <param name="config"></param>
-            protected internal AdoConverterRule(Config config) :
-                base(config)
-            {
-
-            }
-
-        }
-
-        /// <summary>
-        /// Rule that converts a join to ADO.
-        /// </summary>
-        class AdoJoinRule : AdoConverterRule
-        {
-
-            /// <summary>
-            /// Creates a <see cref="AdoJoinRule"/>.
-            /// </summary>
-            /// <param name="convention"></param>
-            /// <returns></returns>
-            public static AdoJoinRule Create(JdbcConvention convention)
-            {
-                return (AdoJoinRule)Config.INSTANCE
-                    .withConversion(typeof(Join), Convention.NONE, convention, nameof(AdoJoinRule))
-                    .withRuleFactory(new DelegateFunction<Config, AdoJoinRule>(c => new AdoJoinRule(c)))
-                    .toRule(typeof(AdoJoinRule));
-            }
-
-            /// <summary>
-            /// Initializes a new instance.
-            /// </summary>
-            /// <param name="config"></param>
-            public AdoJoinRule(Config config) :
-                base(config)
-            {
-
-            }
-
-            public override RelNode? convert(RelNode rel)
-            {
-                var join = (Join)rel;
-                switch ((JoinRelType.__Enum)join.getJoinType().ordinal())
-                {
-                    case JoinRelType.__Enum.SEMI:
-                    case JoinRelType.__Enum.ANTI:
-                        // It's not possible to convert semi-joins or anti-joins. They have fewer columns
-                        // than regular joins.
-                        return null;
-                    default:
-                        return convert(join, true);
-                }
-            }
-
-            /// <summary>
-            /// Converts a <see cref="Join"/> into a <see cref="AdoJoin"/>.
-            /// </summary>
-            /// <param name="join"></param>
-            /// <param name="convertInputTraits"></param>
-            /// <returns></returns>
-            public RelNode? convert(Join join, bool convertInputTraits)
-            {
-
-            }
-
-        }
-
-        /// <summary>
-        /// Creates a list of rules with the given JDBC convention instance.
+        /// Creates a list of rules with the given ADO convention instance.
         /// </summary>
         /// <param name="convention"></param>
         /// <returns></returns>
-        /// <exception cref="NotImplementedException"></exception>
-        public static IEnumerable<RelOptRule> Rules(AdoConvention convention)
+        public static IEnumerable<RelOptRule> GetRules(AdoConvention convention)
         {
-            var b = ImmutableList.builder();
+            //yield return AdoToEnumerableConverterRule.Create(convention);
+            yield return AdoJoinRule.Create(convention);
+            yield return AdoProjectRule.Create(convention);
+            yield return AdoFilterRule.Create(convention);
+            yield return AdoAggregateRule.Create(convention);
+            yield return AdoSortRule.Create(convention);
+            yield return AdoUnionRule.Create(convention);
+            yield return AdoIntersectRule.Create(convention);
+            yield return AdoMinusRule.Create(convention);
+            yield return AdoValuesRule.Create(convention);
         }
-
-        static IEnumerable<RelRule> GetRules(AdoConvention convention)
+        /// <summary>
+        /// Creates a list of rules with the given ADO convention instance.
+        /// </summary>
+        /// <param name="convention"></param>
+        /// <param name="relBuilderFactory"></param>
+        /// <returns></returns>
+        public static IEnumerable<RelOptRule> GetRules(AdoConvention convention, RelBuilderFactory relBuilderFactory)
         {
-            yield return AdoToEnumerableConverterRule.Create(convention);
+            //yield return AdoToEnumerableConverterRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
+            yield return AdoJoinRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
+            yield return AdoProjectRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
+            yield return AdoFilterRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
+            yield return AdoAggregateRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
+            yield return AdoSortRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
+            yield return AdoUnionRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
+            yield return AdoIntersectRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
+            yield return AdoMinusRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
+            yield return AdoValuesRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
         }
 
     }

@@ -1,6 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Data.Common;
+﻿using System.Collections.Generic;
 
 using org.apache.calcite.sql;
 
@@ -10,25 +8,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
     /// <summary>
     /// Abstract class for providing metadata regarding ADO.NET data sources.
     /// </summary>
-    public abstract class AdoMetadataProvider
+    public abstract class AdoDatabaseMetadata
     {
-
-        readonly DbDataSource _dataSource;
-
-        /// <summary>
-        /// Initializes a new instance.
-        /// </summary>
-        /// <param name="dataSource"></param>
-        /// <exception cref="ArgumentNullException"></exception>
-        protected AdoMetadataProvider(DbDataSource dataSource)
-        {
-            _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-        }
-
-        /// <summary>
-        /// Gets the associated data source.
-        /// </summary>
-        public DbDataSource DataSource => _dataSource;
 
         /// <summary>
         /// Gets the current database name.
@@ -53,7 +34,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// </summary>
         /// <param name="databaseName"></param>
         /// <returns></returns>
-        public abstract IReadOnlyList<AdoSchemaMetadata> GetSchemas(string databaseName);
+        public abstract IReadOnlySet<AdoSchemaMetadata> GetSchemas(string? databaseName);
 
         /// <summary>
         /// Gets the set of tables available within the schema.
@@ -61,7 +42,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// <param name="databaseName"></param>
         /// <param name="schemaName"></param>
         /// <returns></returns>
-        public abstract IReadOnlyList<AdoTableMetadata> GetTables(string databaseName, string schemaName);
+        public abstract IReadOnlySet<AdoTableMetadata> GetTables(string? databaseName, string? schemaName);
 
         /// <summary>
         /// Gets the set of fields available within the table.
@@ -70,7 +51,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// <param name="schemaName"></param>
         /// <param name="tableName"></param>
         /// <returns></returns>
-        public abstract IReadOnlyList<AdoFieldMetadata> GetFields(string databaseName, string schemaName, string tableName);
+        public abstract IReadOnlySet<AdoFieldMetadata> GetFields(string? databaseName, string? schemaName, string tableName);
 
     }
 

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Data;
 using System.Linq;
 using System.Threading;
@@ -21,6 +22,7 @@ using org.apache.calcite.schema;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.parser;
 using org.apache.calcite.sql.pretty;
+using org.apache.calcite.sql.type;
 using org.apache.calcite.sql.util;
 using org.apache.calcite.util;
 
@@ -30,13 +32,13 @@ namespace Apache.Calcite.Adapter.AdoNet
     /// <summary>
     /// Queryable table that gets its data from a table within a ADO connection.
     /// </summary>
-    public class AdoTable : AbstractQueryableTable, TranslatableTable, ScannableTable
+    public class AdoTable : AbstractQueryableTable, ScannableTable
     {
 
         readonly Supplier protoRowTypeSupplier;
 
         readonly AdoSchema _adoSchema;
-        readonly string? _catalogName;
+        readonly string? _databaseName;
         readonly string? _schemaName;
         readonly string _tableName;
         readonly Schema.TableType _tableType;
@@ -47,27 +49,21 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// Initializes a new instance.
         /// </summary>
         /// <param name="schema"></param>
-        /// <param name="catalogName"></param>
+        /// <param name="databaseName"></param>
         /// <param name="schemaName"></param>
         /// <param name="tableName"></param>
         /// <param name="tableType"></param>
         /// <exception cref="ArgumentNullException"></exception>
-        internal AdoTable(AdoSchema schema, string? catalogName, string? schemaName, string tableName, Schema.TableType tableType)
+        internal AdoTable(AdoSchema schema, string? databaseName, string? schemaName, string tableName, Schema.TableType tableType)
             : base((java.lang.Class)typeof(object[]))
         {
-            protoRowTypeSupplier = Suppliers.memoize(new FuncSupplier<RelProtoDataType>(SupplyProto));
+            protoRowTypeSupplier = Suppliers.memoize(new FuncSupplier<RelProtoDataType>(GetRowProtoDataType));
 
             _adoSchema = schema ?? throw new ArgumentNullException(nameof(schema));
+            _databaseName = databaseName;
+            _schemaName = schemaName;
             _tableName = tableName ?? throw new ArgumentNullException(nameof(tableName));
             _tableType = tableType ?? throw new ArgumentNullException(nameof(tableType));
-            _catalogName = catalogName;
-            _schemaName = schemaName;
-        }
-
-        /// <inheritdoc />
-        public override string toString()
-        {
-            return $"AdoTable {_tableName}";
         }
 
         /// <summary>
@@ -86,8 +82,8 @@ namespace Apache.Calcite.Adapter.AdoNet
         {
             if (aClass.isInstance(_adoSchema.DataSource))
                 return aClass.cast(_adoSchema.DataSource);
-            else if (aClass.isInstance(_adoSchema.Dialect))
-                return aClass.cast(_adoSchema.Dialect);
+            else if (aClass.isInstance(_adoSchema.Convention.Dialect))
+                return aClass.cast(_adoSchema.Convention.Dialect);
             else
                 return base.unwrap(aClass);
         }
@@ -98,11 +94,16 @@ namespace Apache.Calcite.Adapter.AdoNet
             return (RelDataType)((RelProtoDataType)protoRowTypeSupplier.get()).apply(typeFactory);
         }
 
-        RelProtoDataType SupplyProto()
+        /// <summary>
+        /// Gets the <see cref="RelProtoDataType"/> for the row type of this table.
+        /// </summary>
+        /// <returns></returns>
+        /// <exception cref="AdoSchemaException"></exception>
+        RelProtoDataType GetRowProtoDataType()
         {
             try
             {
-                return _adoSchema.GetRelDataType(_catalogName, _schemaName, _tableName);
+                return _adoSchema.GetRowProtoDataType(_databaseName, _schemaName, _tableName);
             }
             catch (System.Exception e)
             {
@@ -111,18 +112,47 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Derives the type information for the fields of the table.
+        /// For each field of the table returns the <see cref="ColumnMetaData.Rep"/> and <see cref="DbType"/>.
         /// </summary>
         /// <param name="typeFactory"></param>
         /// <returns></returns>
-        internal IEnumerable<(ColumnMetaData.Rep, DbType)> GetFieldTypes(JavaTypeFactory typeFactory)
+        internal ImmutableArray<(ColumnMetaData.Rep, DbType)> GetFieldRepAndDbTypes(JavaTypeFactory typeFactory)
         {
-            return getRowType(typeFactory).getFieldList().AsEnumerable<RelDataTypeField>().Select(field =>
-            {
-                var type = field.getType();
-                var rep = (ColumnMetaData.Rep)Util.first(ColumnMetaData.Rep.of(typeFactory.getJavaClass(type)), ColumnMetaData.Rep.OBJECT);
-                return (rep, type.getSqlTypeName().ToDbType());
-            });
+            return getRowType(typeFactory)
+                .getFieldList()
+                .AsEnumerable<RelDataTypeField>()
+                .Select(field =>
+                {
+                    var dataType = field.getType();
+                    var sqlTypeName = dataType.getSqlTypeName();
+                    var dbType = sqlTypeName.ToDbType();
+                    var rep = GetTypeRep(typeFactory, dataType, sqlTypeName, dbType);
+                    return (rep, dbType);
+                })
+                .ToImmutableArray();
+        }
+
+        /// <summary>
+        /// Returns the appropriate Avatica Rep value for the iven <see cref="RelDataType"/>.
+        /// </summary>
+        /// <param name="typeFactory"></param>
+        /// <param name="dataType"></param>
+        /// <param name="sqlTypeName"></param>
+        /// <param name="dbType"></param>
+        /// <returns></returns>
+        internal ColumnMetaData.Rep GetTypeRep(JavaTypeFactory typeFactory, RelDataType dataType, SqlTypeName sqlTypeName, DbType dbType)
+        {
+            // GUID cannot be mapped to JDBC using UUID, so we map as String
+            if (dbType == DbType.Guid)
+                return ColumnMetaData.Rep.STRING;
+
+            // check with JavaTypeFactory for built in type
+            var clazz = typeFactory.getJavaClass(dataType);
+            if (clazz is not null)
+                return ColumnMetaData.Rep.of(clazz);
+
+            // fall back to non translated object
+            return ColumnMetaData.Rep.OBJECT;
         }
 
         /// <summary>
@@ -132,7 +162,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         internal SqlString GenerateSqlString()
         {
             var node = new SqlSelect(SqlParserPos.ZERO, SqlNodeList.EMPTY, SqlNodeList.SINGLETON_STAR, FullyQualifiedTableName, null, null, null, null, null, null, null, null, null);
-            var config = SqlPrettyWriter.config().withAlwaysUseParentheses(true).withDialect(_adoSchema.Dialect);
+            var config = SqlPrettyWriter.config().withAlwaysUseParentheses(true).withDialect(_adoSchema.Convention.Dialect);
             var writer = new SqlPrettyWriter(config);
             node.unparse(writer, 0, 0);
             return writer.toSqlString();
@@ -153,8 +183,13 @@ namespace Apache.Calcite.Adapter.AdoNet
             if (_fullyQualifiedTableName is null)
             {
                 var names = new java.util.ArrayList(3);
-                names.add(_adoSchema.DatabaseName);
-                names.add(_adoSchema.SchemaName);
+
+                if (_adoSchema.DatabaseName is not null)
+                    names.add(_adoSchema.DatabaseName);
+
+                if (_adoSchema.SchemaName is not null)
+                    names.add(_adoSchema.SchemaName);
+
                 names.add(_tableName);
                 Interlocked.CompareExchange(ref _fullyQualifiedTableName, new SqlIdentifier(names, SqlParserPos.ZERO), null);
             }
@@ -179,7 +214,13 @@ namespace Apache.Calcite.Adapter.AdoNet
         {
             var typeFactory = root.getTypeFactory();
             var sql = GenerateSqlString();
-            return AdoEnumerable.CreateReader(_adoSchema.DataSource, sql.getSql(), AdoUtils.RowBuilderFactory2(GetFieldTypes(typeFactory)));
+            return AdoEnumerable.CreateReader(_adoSchema.DataSource, sql.getSql(), AdoUtils.RowBuilderFactory2(GetFieldRepAndDbTypes(typeFactory)));
+        }
+
+        /// <inheritdoc />
+        public override string toString()
+        {
+            return $"AdoTable {_tableName}";
         }
 
     }

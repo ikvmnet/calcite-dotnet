@@ -1,4 +1,6 @@
-﻿using com.google.common.collect;
+﻿using System;
+
+using com.google.common.collect;
 
 using org.apache.calcite;
 using org.apache.calcite.adapter.enumerable;
@@ -31,9 +33,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="dataContext"></param>
         public AdoCorrelationDataContextBuilderImpl(EnumerableRelImplementor implementor, BlockBuilder builder, Expression dataContext)
         {
-            _implementor = implementor;
-            _builder = builder;
-            _dataContext = dataContext;
+            _implementor = implementor ?? throw new ArgumentNullException(nameof(implementor));
+            _builder = builder ?? throw new ArgumentNullException(nameof(builder));
+            _dataContext = dataContext ?? throw new ArgumentNullException(nameof(dataContext));
         }
 
         /// <inheritdoc />

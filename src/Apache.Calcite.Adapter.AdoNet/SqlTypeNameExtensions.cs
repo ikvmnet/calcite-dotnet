@@ -45,11 +45,11 @@ namespace Apache.Calcite.Adapter.AdoNet
                 case SqlTypeName.__Enum.TIME_TZ:
                     break;
                 case SqlTypeName.__Enum.TIMESTAMP:
-                    break;
+                    return DbType.DateTime2;
                 case SqlTypeName.__Enum.TIMESTAMP_WITH_LOCAL_TIME_ZONE:
-                    break;
+                    return DbType.DateTimeOffset;
                 case SqlTypeName.__Enum.TIMESTAMP_TZ:
-                    break;
+                    return DbType.DateTimeOffset;
                 case SqlTypeName.__Enum.INTERVAL_YEAR:
                     break;
                 case SqlTypeName.__Enum.INTERVAL_YEAR_MONTH:
@@ -121,7 +121,7 @@ namespace Apache.Calcite.Adapter.AdoNet
                 case SqlTypeName.__Enum.SARG:
                     break;
                 case SqlTypeName.__Enum.UUID:
-                    break;
+                    return DbType.Guid;
                 case SqlTypeName.__Enum.VARIANT:
                     break;
             }

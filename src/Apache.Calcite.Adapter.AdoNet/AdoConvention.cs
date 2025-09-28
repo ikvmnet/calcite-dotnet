@@ -1,5 +1,7 @@
 ﻿using System;
 
+using Apache.Calcite.Adapter.AdoNet.Rel;
+
 using org.apache.calcite.linq4j.tree;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel.rules;
@@ -27,6 +29,11 @@ namespace Apache.Calcite.Adapter.AdoNet
     /// </summary>
     public class AdoConvention : Convention.Impl
     {
+
+        /// <summary>
+        /// Cost of a ADO node veruss implementing an equivalent node in a "typical" calling convention.
+        /// </summary>
+        public const double CostMultiplier = .8d;
 
         /// <summary>
         /// Creates a new ADO convention.
@@ -72,7 +79,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <inheritdoc />
         public override void register(RelOptPlanner planner)
         {
-            foreach (var rule in AdoRules.Rules(this))
+            foreach (var rule in AdoRules.GetRules(this))
                 planner.addRule(rule);
 
             planner.addRule(CoreRules.FILTER_SET_OP_TRANSPOSE);

@@ -20,7 +20,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="dataSource"></param>
         /// <param name="sql"></param>
         /// <param name="rowBuilderFactory"></param>
-        internal AdoUpdateEnumerable(DbDataSource dataSource, string sql, Function1 rowBuilderFactory) :
+        internal AdoUpdateEnumerable(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory) :
             base(dataSource, sql, rowBuilderFactory)
         {
 
@@ -33,7 +33,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="sql"></param>
         /// <param name="rowBuilderFactory"></param>
         /// <param name="dbCommandEnricher"></param>
-        internal AdoUpdateEnumerable(DbDataSource dataSource, string sql, Function1 rowBuilderFactory, Action<DbCommand> dbCommandEnricher) :
+        internal AdoUpdateEnumerable(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory, DbCommandEnricher dbCommandEnricher) :
             base(dataSource, sql, rowBuilderFactory, dbCommandEnricher)
         {
 

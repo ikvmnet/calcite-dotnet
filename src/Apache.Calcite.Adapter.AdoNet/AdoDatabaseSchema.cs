@@ -1,13 +1,11 @@
 ﻿using System;
 using System.Data;
-using System.Data.Common;
 
 using com.google.common.collect;
 
 using java.util;
 
 using org.apache.calcite.schema.lookup;
-using org.apache.calcite.sql;
 
 namespace Apache.Calcite.Adapter.AdoNet
 {
@@ -29,8 +27,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         class SchemasLookup : IgnoreCaseLookup
         {
 
-            readonly DbDataSource _dataSource;
-            readonly SqlDialect _dialect;
+            readonly AdoDataSource _dataSource;
             readonly AdoConvention _convention;
             readonly string? _databaseName;
 
@@ -38,13 +35,11 @@ namespace Apache.Calcite.Adapter.AdoNet
             /// Initializes a new instance.
             /// </summary>
             /// <param name="dataSource"></param>
-            /// <param name="dialect"></param>
             /// <param name="convention"></param>
             /// <param name="databaseName"></param>
-            public SchemasLookup(DbDataSource dataSource, SqlDialect dialect, AdoConvention convention, string? databaseName)
+            public SchemasLookup(AdoDataSource dataSource, AdoConvention convention, string? databaseName)
             {
                 _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-                _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
                 _convention = convention ?? throw new ArgumentNullException(nameof(convention));
                 _databaseName = databaseName;
             }
@@ -56,11 +51,8 @@ namespace Apache.Calcite.Adapter.AdoNet
 
                 try
                 {
-                    using var connection = _dataSource.OpenConnection();
-                    var metadata = new AdoDatabaseMetaDataAdaptor(connection);
-                    var resultSet = metadata.getSchemas(_databaseName, pattern.pattern);
-                    while (resultSet.next())
-                        builder.add(resultSet.getString(1) ?? throw new AdoSchemaException("Got null SchemaName from database."));
+                    foreach (var schema in _dataSource.Metadata.GetSchemas(_databaseName))
+                        builder.add(schema);
                 }
                 catch (DataException e)
                 {
@@ -75,11 +67,9 @@ namespace Apache.Calcite.Adapter.AdoNet
             {
                 try
                 {
-                    using var connection = _dataSource.OpenConnection();
-                    var metadata = new AdoDatabaseMetaDataAdaptor(connection);
-                    var resultSet = metadata.getSchemas(_databaseName, name);
-                    while (resultSet.next())
-                        return new AdoSchema(_dataSource, _dialect, _convention, _databaseName, resultSet.getString(1) ?? throw new AdoSchemaException("Got null SchemaName from database."));
+                    foreach (var schema in _dataSource.Metadata.GetSchemas(_databaseName))
+                        if (schema.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                            return new AdoSchema(_dataSource, _convention, _databaseName, schema.Name);
                 }
                 catch (DataException e)
                 {
@@ -91,8 +81,7 @@ namespace Apache.Calcite.Adapter.AdoNet
 
         }
 
-        readonly DbDataSource _dataSource;
-        readonly SqlDialect _dialect;
+        readonly AdoDataSource _dataSource;
         readonly AdoConvention _convention;
         readonly string? _databaseName;
         readonly LoadingCacheLookup _subSchemas;
@@ -101,16 +90,14 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// Initializes a new instance.
         /// </summary>
         /// <param name="dataSource"></param>
-        /// <param name="dialect"></param>
         /// <param name="convention"></param>
         /// <param name="databaseName"></param>
-        public AdoDatabaseSchema(DbDataSource dataSource, SqlDialect dialect, AdoConvention convention, string? databaseName)
+        public AdoDatabaseSchema(AdoDataSource dataSource, AdoConvention convention, string? databaseName)
         {
             _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-            _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
             _convention = convention ?? throw new ArgumentNullException(nameof(convention));
             _databaseName = databaseName;
-            _subSchemas = new LoadingCacheLookup(new SchemasLookup(_dataSource, _dialect, _convention, _databaseName));
+            _subSchemas = new LoadingCacheLookup(new SchemasLookup(_dataSource, _convention, _databaseName));
         }
 
         /// <inheritdoc />

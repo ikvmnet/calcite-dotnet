@@ -16,7 +16,7 @@ namespace Apache.Calcite.Adapter.AdoNet
     /// <summary>
     /// State for generating a SQL statement.
     /// </summary>
-    public class AdoImplementor : RelToSqlConverter
+    class AdoImplementor : RelToSqlConverter
     {
 
         class _Builder : IAdoCorrelationDataContextBuilder
@@ -77,7 +77,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="dialect"></param>
         /// <param name="typeFactory"></param>
         /// <param name="dataContextBuilder"></param>
-        AdoImplementor(SqlDialect dialect, JavaTypeFactory typeFactory, IAdoCorrelationDataContextBuilder dataContextBuilder) :
+        public AdoImplementor(SqlDialect dialect, JavaTypeFactory typeFactory, IAdoCorrelationDataContextBuilder dataContextBuilder) :
             base(dialect)
         {
             _typeFactory = typeFactory;

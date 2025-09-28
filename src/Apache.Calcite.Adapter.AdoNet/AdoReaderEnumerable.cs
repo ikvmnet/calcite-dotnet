@@ -17,11 +17,11 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cp"></param>
+        /// <param name="dataSource"></param>
         /// <param name="sql"></param>
         /// <param name="rowBuilderFactory"></param>
-        internal AdoReaderEnumerable(DbDataSource cp, string sql, Function1 rowBuilderFactory) :
-            base(cp, sql, rowBuilderFactory)
+        internal AdoReaderEnumerable(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory) :
+            base(dataSource, sql, rowBuilderFactory)
         {
 
         }
@@ -29,12 +29,12 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cp"></param>
+        /// <param name="dataSource"></param>
         /// <param name="sql"></param>
         /// <param name="rowBuilderFactory"></param>
         /// <param name="dbCommandEnricher"></param>
-        internal AdoReaderEnumerable(DbDataSource cp, string sql, Function1 rowBuilderFactory, Action<DbCommand> dbCommandEnricher) :
-            base(cp, sql, rowBuilderFactory, dbCommandEnricher)
+        internal AdoReaderEnumerable(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory, DbCommandEnricher dbCommandEnricher) :
+            base(dataSource, sql, rowBuilderFactory, dbCommandEnricher)
         {
 
         }

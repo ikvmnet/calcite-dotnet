@@ -12,7 +12,10 @@ using org.apache.calcite.linq4j.tree;
 namespace Apache.Calcite.Adapter.AdoNet
 {
 
-    public abstract class AdoEnumerable : AbstractEnumerable
+    /// <summary>
+    /// Enumerable implementation.
+    /// </summary>
+    public abstract partial class AdoEnumerable : AbstractEnumerable
     {
 
         static readonly Function1 AutoRowBuilderFactory = new FuncFunction1<DbDataReader, Function0>(AutoRowBuilderFactoryFunc);
@@ -109,7 +112,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="dataSource"></param>
         /// <param name="sql"></param>
         /// <returns></returns>
-        public static AdoEnumerable CreateReader(DbDataSource dataSource, string sql)
+        public static AdoEnumerable CreateReader(AdoDataSource dataSource, string sql)
         {
             return CreateReader(dataSource, sql, AutoRowBuilderFactory);
         }
@@ -120,7 +123,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="sql"></param>
         /// <param name="primitives"></param>
         /// <returns></returns>
-        public static AdoEnumerable CreateReader(DbDataSource dataSource, string sql, Primitive[] primitives)
+        public static AdoEnumerable CreateReader(AdoDataSource dataSource, string sql, Primitive[] primitives)
         {
             return CreateReader(dataSource, sql, PrimitiveRowBuilderFactory(primitives));
         }
@@ -132,7 +135,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="sql"></param>
         /// <param name="rowBuilderFactory"></param>
         /// <returns></returns>
-        public static AdoEnumerable CreateReader(DbDataSource dataSource, string sql, Function1 rowBuilderFactory)
+        public static AdoEnumerable CreateReader(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory)
         {
             return new AdoReaderEnumerable(dataSource, sql, rowBuilderFactory);
         }
@@ -145,7 +148,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="rowBuilderFactory"></param>
         /// <param name="dbCommandEnricher"></param>
         /// <returns></returns>
-        public static AdoEnumerable CreateReader(DbDataSource dataSource, string sql, Function1 rowBuilderFactory, Action<DbCommand> dbCommandEnricher)
+        public static AdoEnumerable CreateReader(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory, DbCommandEnricher dbCommandEnricher)
         {
             return new AdoReaderEnumerable(dataSource, sql, rowBuilderFactory, dbCommandEnricher);
         }
@@ -156,7 +159,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="dataSource"></param>
         /// <param name="sql"></param>
         /// <returns></returns>
-        public static AdoEnumerable CreateUpdate(DbDataSource dataSource, string sql)
+        public static AdoEnumerable CreateUpdate(AdoDataSource dataSource, string sql)
         {
             return CreateUpdate(dataSource, sql, AutoRowBuilderFactory);
         }
@@ -167,7 +170,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="sql"></param>
         /// <param name="primitives"></param>
         /// <returns></returns>
-        public static AdoEnumerable CreateUpdate(DbDataSource dataSource, string sql, Primitive[] primitives)
+        public static AdoEnumerable CreateUpdate(AdoDataSource dataSource, string sql, Primitive[] primitives)
         {
             return CreateUpdate(dataSource, sql, PrimitiveRowBuilderFactory(primitives));
         }
@@ -179,7 +182,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="sql"></param>
         /// <param name="rowBuilderFactory"></param>
         /// <returns></returns>
-        public static AdoEnumerable CreateUpdate(DbDataSource dataSource, string sql, Function1 rowBuilderFactory)
+        public static AdoEnumerable CreateUpdate(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory)
         {
             return new AdoUpdateEnumerable(dataSource, sql, rowBuilderFactory);
         }
@@ -192,7 +195,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="rowBuilderFactory"></param>
         /// <param name="dbCommandEnricher"></param>
         /// <returns></returns>
-        public static AdoEnumerable CreateUpdate(DbDataSource dataSource, string sql, Function1 rowBuilderFactory, Action<DbCommand> dbCommandEnricher)
+        public static AdoEnumerable CreateUpdate(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory, DbCommandEnricher dbCommandEnricher)
         {
             return new AdoUpdateEnumerable(dataSource, sql, rowBuilderFactory, dbCommandEnricher);
         }
@@ -229,10 +232,10 @@ namespace Apache.Calcite.Adapter.AdoNet
             command.Parameters.Insert(i, parameter);
         }
 
-        readonly DbDataSource _dataSource;
+        readonly AdoDataSource _dataSource;
         readonly string _sql;
         readonly Function1 _rowBuilderFactory;
-        readonly Action<DbCommand>? _dbCommandEnricher;
+        readonly DbCommandEnricher? _dbCommandEnricher;
 
         int _timeout;
 
@@ -242,7 +245,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="dataSource"></param>
         /// <param name="sql"></param>
         /// <param name="rowBuilderFactory"></param>
-        protected AdoEnumerable(DbDataSource dataSource, string sql, Function1 rowBuilderFactory)
+        protected AdoEnumerable(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory)
         {
             _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
             _sql = sql ?? throw new ArgumentNullException(nameof(sql));
@@ -256,7 +259,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="sql"></param>
         /// <param name="rowBuilderFactory"></param>
         /// <param name="dbCommandEnricher"></param>
-        protected AdoEnumerable(DbDataSource dataSource, string sql, Function1 rowBuilderFactory, Action<DbCommand> dbCommandEnricher) :
+        protected AdoEnumerable(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory, DbCommandEnricher dbCommandEnricher) :
             this(dataSource, sql, rowBuilderFactory)
         {
             _dbCommandEnricher = dbCommandEnricher ?? throw new ArgumentNullException(nameof(dbCommandEnricher));
@@ -266,20 +269,6 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// 
         /// </summary>
         protected Function1 RowBuilderFactory => _rowBuilderFactory;
-
-        /// <summary>
-        /// Sets the command timeout from the context.
-        /// </summary>
-        /// <param name="context"></param>
-        public void SetTimeout(DataContext context)
-        {
-            _timeout = context.get(DataContext.Variable.TIMEOUT.camelName) switch
-            {
-                java.lang.Long @long => (int)@long.longValue(),
-                java.lang.Integer @int => @int.intValue(),
-                _ => 0,
-            };
-        }
 
         /// <summary>
         /// Returns an enumerator for the result set.
@@ -293,7 +282,7 @@ namespace Apache.Calcite.Adapter.AdoNet
                 var cmd = cnn.CreateCommand();
                 cmd.CommandText = _sql;
                 cmd.CommandTimeout = _timeout;
-                _dbCommandEnricher?.Invoke(cmd);
+                _dbCommandEnricher?.Enrich(cmd);
                 return CreateEnumerator(cnn, cmd);
             }
             catch (DataException e)

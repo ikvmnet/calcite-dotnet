@@ -42,6 +42,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Utils
             }
         }
 
+        /// <inheritdoc />
         public object apply()
         {
             try
@@ -58,7 +59,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Utils
             }
         }
 
-        protected abstract object Value(int i);
+        /// <summary>
+        /// Override this method to implement value retrieval.
+        /// </summary>
+        /// <param name="i"></param>
+        /// <returns></returns>
+        protected abstract object? Value(int i);
 
     }
 
