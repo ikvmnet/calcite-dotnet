@@ -2,18 +2,10 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
-using System.Drawing;
 using System.Text.RegularExpressions;
 
-using com.fasterxml.jackson.databind.type;
-
-using java.lang;
-
-using org.apache.calcite.avatica.util;
-using org.apache.calcite.config;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.dialect;
-using org.apache.commons.math3.util;
 
 namespace Apache.Calcite.Adapter.Ado.Metadata
 {
@@ -21,12 +13,17 @@ namespace Apache.Calcite.Adapter.Ado.Metadata
     /// <summary>
     /// Implements the <see cref="AdoDatabaseMetadata"/> for the Microsoft Sqlite driver.
     /// </summary>
-    class SqliteDatabaseMetadata : AdoDatabaseMetadata
+    partial class SqliteDatabaseMetadata : AdoDatabaseMetadata
     {
 
-        static readonly Regex TYPE_INTEGER = new Regex(".*(INT|BOOL).*", RegexOptions.Compiled);
-        static readonly Regex TYPE_VARCHAR = new Regex(".*(CHAR|CLOB|TEXT|BLOB).*", RegexOptions.Compiled);
-        static readonly Regex TYPE_FLOAT = new Regex(".*(REAL|FLOA|DOUB|DEC|NUM).*", RegexOptions.Compiled);
+        [GeneratedRegex(".*(INT|BOOL).*", RegexOptions.Compiled)]
+        private static partial Regex GetIntegerRegex();
+
+        [GeneratedRegex(".*(CHAR|CLOB|TEXT|BLOB).*", RegexOptions.Compiled)]
+        private static partial Regex GetVarcharRegex();
+
+        [GeneratedRegex(".*(REAL|FLOA|DOUB|DEC|NUM).*", RegexOptions.Compiled)]
+        private static partial Regex GetFloatRegex();
 
         /// <summary>
         /// Parses the 'table_xinfo' output for a field into an <see cref="AdoFieldMetadata"/>.
@@ -54,17 +51,17 @@ namespace Apache.Calcite.Adapter.Ado.Metadata
             DbType dbType;
 
             // rule #1 + boolean
-            if (TYPE_INTEGER.IsMatch(dataType))
+            if (GetIntegerRegex().IsMatch(dataType))
             {
                 dbType = DbType.Int64;
                 prec = 0;
             }
-            else if (TYPE_VARCHAR.IsMatch(dataType))
+            else if (GetVarcharRegex().IsMatch(dataType))
             {
                 dbType = DbType.String;
                 prec = 0;
             }
-            else if (TYPE_FLOAT.IsMatch(dataType))
+            else if (GetFloatRegex().IsMatch(dataType))
             {
                 dbType = DbType.Single;
             }

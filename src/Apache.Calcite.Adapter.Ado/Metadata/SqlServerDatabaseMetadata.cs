@@ -27,7 +27,7 @@ namespace Apache.Calcite.Adapter.Ado.Metadata
         }
 
         /// <inheritdoc />
-        public override string GetDefaultDatabase()
+        public override string? GetDefaultDatabase()
         {
             // use the generic datastring builder to parse
             var connectionString = new DbConnectionStringBuilder();
