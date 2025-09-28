@@ -1,0 +1,32 @@
+﻿<Project Sdk="MSTest.Sdk/3.10.4">
+
+    <PropertyGroup>
+        <TargetFrameworks>net8.0</TargetFrameworks>
+        <LangVersion>latest</LangVersion>
+        <Nullable>enable</Nullable>
+        <TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
+        <MavenAdditionalRepositories>jboss=https://repository.jboss.org/nexus/content/groups/public</MavenAdditionalRepositories>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="IKVM" Version="8.13.4" />
+        <PackageReference Include="IKVM.Java.Extensions" Version="8.13.4" />
+        <PackageReference Include="IKVM.Maven.Sdk" Version="1.9.4" />
+        <PackageReference Include="FluentAssertions" Version="8.2.0" />
+        <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.9" />
+        <MavenReference Include="org.apache.calcite.avatica:avatica-core" Version="1.26.0" />
+        <MavenReference Include="org.apache.calcite:calcite-csv" Version="1.40.0" />
+        <MavenReference Include="javax.jms:jms" Version="1.1" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Apache.Calcite.Adapter.Ado\Apache.Calcite.Adapter.Ado.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Update="test.model">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+
+</Project>

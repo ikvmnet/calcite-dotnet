@@ -1,0 +1,15 @@
+{
+    "version": "1.0",
+    "defaultSchema": "testdb",
+    "schemas": [
+        {
+            "name": "testdb",
+            "type": "custom",
+            "factory": "cli.Apache.Calcite.Adapter.Ado.AdoSchemaFactory",
+            "operand": {
+                "adoProviderName": "Microsoft.Data.Sqlite",
+                "adoConnectionString": "Data Source=./test.db"
+            }
+        }
+    ]
+}
