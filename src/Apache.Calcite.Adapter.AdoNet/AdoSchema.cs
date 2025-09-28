@@ -363,7 +363,7 @@ namespace Apache.Calcite.Adapter.AdoNet
                 case DbType.Double:
                     return typeFactory.createSqlType(SqlTypeName.DOUBLE);
                 case DbType.Guid:
-                    return typeFactory.createSqlType(SqlTypeName.UUID);
+                    return typeFactory.createSqlType(SqlTypeName.CHAR, 36);
                 case DbType.Int16:
                     return typeFactory.createSqlType(SqlTypeName.SMALLINT);
                 case DbType.Int32:

@@ -93,10 +93,10 @@ namespace Apache.Calcite.Adapter.AdoNet
                     return reader.IsDBNull(i) ? null : reader.GetString(i);
                 case ColumnMetaData.Rep.__Enum.STRING when dbType == DbType.AnsiString:
                     return reader.IsDBNull(i) ? null : reader.GetString(i);
+                case ColumnMetaData.Rep.__Enum.STRING when dbType == DbType.AnsiStringFixedLength && reader.GetFieldType(i) == typeof(Guid):
+                    return reader.IsDBNull(i) ? null : reader.GetGuid(i).ToString("d").ToUpperInvariant();
                 case ColumnMetaData.Rep.__Enum.STRING when dbType == DbType.AnsiStringFixedLength:
                     return reader.IsDBNull(i) ? null : reader.GetString(i);
-                case ColumnMetaData.Rep.__Enum.STRING when dbType == DbType.Guid:
-                    return reader.IsDBNull(i) ? null : reader.GetGuid(i).ToString("D");
                 case ColumnMetaData.Rep.__Enum.NUMBER:
                 case ColumnMetaData.Rep.__Enum.ARRAY:
                 case ColumnMetaData.Rep.__Enum.MULTISET:

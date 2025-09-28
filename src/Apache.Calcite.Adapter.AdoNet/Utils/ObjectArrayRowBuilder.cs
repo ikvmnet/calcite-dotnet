@@ -47,9 +47,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Utils
         {
             try
             {
-                var values = new object[_columnCount];
+                var values = new object?[_columnCount];
                 for (int i = 0; i < _columnCount; i++)
-                    values[i] = Value(i);
+                    values[i] = GetValue(i);
 
                 return values;
             }
@@ -64,7 +64,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Utils
         /// </summary>
         /// <param name="i"></param>
         /// <returns></returns>
-        protected abstract object? Value(int i);
+        protected abstract object? GetValue(int i);
 
     }
 

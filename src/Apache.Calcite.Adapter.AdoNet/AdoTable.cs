@@ -142,10 +142,6 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <returns></returns>
         internal ColumnMetaData.Rep GetTypeRep(JavaTypeFactory typeFactory, RelDataType dataType, SqlTypeName sqlTypeName, DbType dbType)
         {
-            // GUID cannot be mapped to JDBC using UUID, so we map as String
-            if (dbType == DbType.Guid)
-                return ColumnMetaData.Rep.STRING;
-
             // check with JavaTypeFactory for built in type
             var clazz = typeFactory.getJavaClass(dataType);
             if (clazz is not null)

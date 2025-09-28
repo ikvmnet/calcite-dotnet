@@ -49,10 +49,25 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
             using var statement = calciteConnection.createStatement();
             using var resultSet = statement.executeQuery("SELECT * FROM trailmates1.\"User\" AS u INNER JOIN trailmates1.UserProfile as up ON u.Id = up.UserId");
+            var c = resultSet.getMetaData().getColumnCount();
+
+            for (int i = 0; i < c; i++)
+            {
+                Console.Write(resultSet.getMetaData().getColumnName(i + 1));
+                Console.Write(" ");
+            }
+            Console.WriteLine();
+
             while (resultSet.next())
             {
-                var id = resultSet.getString(1);
-                System.Console.WriteLine(id);
+                for (int i = 0; i < c; i++)
+                {
+                    var v = resultSet.getString(i + 1);
+                    System.Console.Write(v);
+                    Console.Write(" ");
+                }
+
+                Console.WriteLine();
             }
         }
 

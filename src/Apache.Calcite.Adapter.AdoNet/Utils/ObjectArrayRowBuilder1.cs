@@ -29,7 +29,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Utils
         /// </summary>
         /// <param name="i"></param>
         /// <returns></returns>
-        protected override object? Value(int i)
+        protected override object? GetValue(int i)
         {
             return AdoUtils.GetDbReaderValue(_reps[i], _types[i], _reader, i);
         }
