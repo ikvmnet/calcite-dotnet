@@ -9,7 +9,15 @@ namespace Apache.Calcite.Adapter.Ado.Rel
     interface AdoRel : RelNode
     {
 
-        org.apache.calcite.rel.rel2sql.SqlImplementor.Result implement(AdoImplementor implementor);
+        /// <summary>
+        /// Invoked by the <see cref="AdoImplementor"/>.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <returns></returns>
+        public org.apache.calcite.rel.rel2sql.SqlImplementor.Result implement(AdoImplementor implementor)
+        {
+            return implementor.implement(this);
+        }
 
     }
 

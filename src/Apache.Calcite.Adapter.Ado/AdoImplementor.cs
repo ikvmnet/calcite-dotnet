@@ -1,4 +1,7 @@
-﻿using java.lang.reflect;
+﻿using System;
+
+using Apache.Calcite.Adapter.Ado.Rel;
+
 using java.util;
 
 using org.apache.calcite.adapter.java;
@@ -24,7 +27,7 @@ namespace Apache.Calcite.Adapter.Ado
 
             int counter = 1;
 
-            public int Add(CorrelationId id, int ordinal, Type type)
+            public int Add(CorrelationId id, int ordinal, java.lang.reflect.Type type)
             {
                 return counter++;
             }
@@ -80,8 +83,8 @@ namespace Apache.Calcite.Adapter.Ado
         public AdoImplementor(SqlDialect dialect, JavaTypeFactory typeFactory, IAdoCorrelationDataContextBuilder dataContextBuilder) :
             base(dialect)
         {
-            _typeFactory = typeFactory;
-            _dataContextBuilder = dataContextBuilder;
+            _typeFactory = typeFactory ?? throw new ArgumentNullException(nameof(typeFactory));
+            _dataContextBuilder = dataContextBuilder ?? throw new ArgumentNullException(nameof(dataContextBuilder));
         }
 
         /// <summary>
@@ -95,9 +98,24 @@ namespace Apache.Calcite.Adapter.Ado
 
         }
 
-        public Result implement(RelNode node)
+        /// <summary>
+        /// Intercepts calls to visitInput and directs them to the <see cref="AdoRel"/> implementation.
+        /// </summary>
+        /// <param name="rel"></param>
+        /// <returns></returns>
+        protected override Result dispatch(RelNode rel)
         {
-            return dispatch(node);
+            return rel is AdoRel ado ? ado.implement(this) : base.dispatch(rel);
+        }
+
+        /// <summary>
+        /// Invoked by a <see cref="AdoRel"/> node to dispatch to the default implementation.
+        /// </summary>
+        /// <param name="rel"></param>
+        /// <returns></returns>
+        public Result implement(AdoRel rel)
+        {
+            return base.dispatch(rel);
         }
 
         /// <inheritdoc />

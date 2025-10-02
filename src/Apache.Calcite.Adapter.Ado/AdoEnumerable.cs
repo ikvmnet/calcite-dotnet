@@ -7,7 +7,6 @@ using Apache.Calcite.Adapter.Ado.Extensions;
 using org.apache.calcite;
 using org.apache.calcite.linq4j;
 using org.apache.calcite.linq4j.function;
-using org.apache.calcite.linq4j.tree;
 
 namespace Apache.Calcite.Adapter.Ado
 {
@@ -59,54 +58,6 @@ namespace Apache.Calcite.Adapter.Ado
         }
 
         /// <summary>
-        /// Creates a primitive row builder factory for the given set of primitives.
-        /// </summary>
-        /// <param name="primitives"></param>
-        /// <returns></returns>
-        static Function1 PrimitiveRowBuilderFactory(Primitive[] primitives)
-        {
-            return new FuncFunction1<DbDataReader, Function0>(reader =>
-            {
-                int fieldCount;
-
-                try
-                {
-                    fieldCount = reader.FieldCount;
-                }
-                catch (NotSupportedException e)
-                {
-                    throw new AdoSchemaException("The data reader does not support reading the number of columns.", e);
-                }
-
-                if (fieldCount != primitives.Length)
-                    throw new AdoSchemaException($"The number of primitives ({primitives.Length}) does not match the number of columns ({fieldCount}).");
-
-                if (fieldCount == 1)
-                    return new FuncFunction0<object>(() => reader.GetValue(0));
-                else
-                    return new FuncFunction0<object>(() => ConvertPrimitiveColumns(primitives, reader, fieldCount));
-            });
-        }
-
-        /// <summary>
-        /// Converts the columns of the current row of the <see cref="DbDataReader"/> to the appropriate ADO output type.
-        /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="primitives"></param>
-        /// <param name="fieldCount"></param>
-        /// <returns></returns>
-        static object[] ConvertPrimitiveColumns(Primitive[] primitives, DbDataReader reader, int fieldCount)
-        {
-            var list = new object[fieldCount];
-            reader.GetValues(list);
-
-            for (int i = 0; i < list.Length; i++)
-                list[i] = primitives[i].arrayItem(list, i);
-
-            return list;
-        }
-
-        /// <summary>
         /// Executes a SQL query and returns the results as an enumerator, using a row builder to retrieve columns as their automatic types.
         /// </summary>
         /// <param name="dataSource"></param>
@@ -115,17 +66,6 @@ namespace Apache.Calcite.Adapter.Ado
         public static AdoEnumerable CreateReader(AdoDataSource dataSource, string sql)
         {
             return CreateReader(dataSource, sql, AutoRowBuilderFactory);
-        }
-        /// <summary>
-        /// Executes a SQL query and returns the results as an enumerator, using a row builder to retrieve columns as specific Java types.
-        /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="sql"></param>
-        /// <param name="primitives"></param>
-        /// <returns></returns>
-        public static AdoEnumerable CreateReader(AdoDataSource dataSource, string sql, Primitive[] primitives)
-        {
-            return CreateReader(dataSource, sql, PrimitiveRowBuilderFactory(primitives));
         }
 
         /// <summary>
@@ -162,17 +102,6 @@ namespace Apache.Calcite.Adapter.Ado
         public static AdoEnumerable CreateUpdate(AdoDataSource dataSource, string sql)
         {
             return CreateUpdate(dataSource, sql, AutoRowBuilderFactory);
-        }
-        /// <summary>
-        /// Executes a SQL query and returns the results as an enumerator, using a row builder to retrieve columns as specific Java types.
-        /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="sql"></param>
-        /// <param name="primitives"></param>
-        /// <returns></returns>
-        public static AdoEnumerable CreateUpdate(AdoDataSource dataSource, string sql, Primitive[] primitives)
-        {
-            return CreateUpdate(dataSource, sql, PrimitiveRowBuilderFactory(primitives));
         }
 
         /// <summary>
@@ -237,8 +166,6 @@ namespace Apache.Calcite.Adapter.Ado
         readonly Function1 _rowBuilderFactory;
         readonly DbCommandEnricher? _dbCommandEnricher;
 
-        int _timeout;
-
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
@@ -281,11 +208,12 @@ namespace Apache.Calcite.Adapter.Ado
                 var cnn = _dataSource.OpenConnection();
                 var cmd = cnn.CreateCommand();
                 cmd.CommandText = _sql;
-                cmd.CommandTimeout = _timeout;
                 _dbCommandEnricher?.Enrich(cmd);
+                Console.WriteLine(cmd.CommandText);
+                Console.WriteLine();
                 return CreateEnumerator(cnn, cmd);
             }
-            catch (DataException e)
+            catch (DbException e)
             {
                 throw new AdoSchemaException("Exception while enumerating query.", e);
             }

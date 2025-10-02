@@ -33,12 +33,6 @@ namespace Apache.Calcite.Adapter.Ado.Rel
             return new AdoMinus(getCluster(), traitSet, inputs, all);
         }
 
-        /// <inheritdoc />
-        public SqlImplementor.Result implement(AdoImplementor implementor)
-        {
-            return implementor.implement(this);
-        }
-
     }
 
 }

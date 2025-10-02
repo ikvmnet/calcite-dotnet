@@ -1,6 +1,5 @@
 ﻿using System;
 
-using org.apache.calcite.jdbc;
 using org.apache.calcite.linq4j;
 using org.apache.calcite.schema;
 using org.apache.calcite.schema.impl;
@@ -29,20 +28,30 @@ namespace Apache.Calcite.Adapter.Ado
             _adoTable = adoTable ?? throw new ArgumentNullException(nameof(adoTable));
         }
 
+        /// <summary>
+        /// Gets the ADO table being queried.
+        /// </summary>
+        public AdoTable Table => _adoTable;
+
         /// <inheritdoc />
         public override Enumerator enumerator()
         {
-            return AdoEnumerable.CreateReader(
-                    _adoTable.Schema.DataSource, 
-                    _adoTable.GenerateSqlString().getSql(), 
-                    AdoUtils.RowBuilderFactory2(_adoTable.GetFieldRepAndDbTypes(((CalciteConnection)queryProvider).getTypeFactory())))
-                .enumerator();
+            return Table.Query().enumerator();
         }
 
         /// <inheritdoc />
         public override string toString()
         {
-            return $"JdbcTableQueryable {{table: {tableName}}}";
+            return $"AdoTableQueryable {{table: {tableName}}}";
+        }
+
+        /// <summary>
+        /// Called via code-generation.
+        /// </summary>
+        /// <returns></returns>
+        public Enumerable Query()
+        {
+            return _adoTable.Query();
         }
 
     }

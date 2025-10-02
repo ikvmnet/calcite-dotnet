@@ -6,11 +6,9 @@ using com.google.common.collect;
 
 using java.util;
 
-using org.apache.calcite.linq4j;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
-using org.apache.calcite.rel.rel2sql;
 
 namespace Apache.Calcite.Adapter.Ado
 {
@@ -30,9 +28,8 @@ namespace Apache.Calcite.Adapter.Ado
         /// <param name="hints"></param>
         /// <param name="table"></param>
         /// <param name="adoTable"></param>
-        /// <param name="adoConvention"></param>
-        internal AdoTableScan(RelOptCluster cluster, List hints, RelOptTable table, AdoTable adoTable, AdoConvention adoConvention) :
-            base(cluster, cluster.traitSetOf(adoConvention), hints, table)
+        internal AdoTableScan(RelOptCluster cluster, List hints, RelOptTable table, AdoTable adoTable) :
+            base(cluster, cluster.traitSetOf(adoTable.Schema.Convention), hints, table)
         {
             _adoTable = adoTable ?? throw new ArgumentNullException(nameof(adoTable));
         }
@@ -40,17 +37,17 @@ namespace Apache.Calcite.Adapter.Ado
         /// <inheritdoc />
         public override RelNode copy(RelTraitSet traitSet, List inputs)
         {
-            return new AdoTableScan(getCluster(), getHints(), table, _adoTable, (AdoConvention)Nullness.castNonNull(getConvention()));
+            return new AdoTableScan(getCluster(), getHints(), table, _adoTable);
         }
 
         /// <inheritdoc />
         public override RelNode withHints(List value)
         {
-            return new AdoTableScan(getCluster(), value, table, _adoTable, (AdoConvention)getConvention());
+            return new AdoTableScan(getCluster(), value, table, _adoTable);
         }
 
         /// <inheritdoc />
-        public SqlImplementor.Result implement(AdoImplementor implementor)
+        public AdoImplementor.Result implement(AdoImplementor implementor)
         {
             return implementor.result(_adoTable.FullyQualifiedTableName, ImmutableList.of(AdoImplementor.Clause.FROM), this, null);
         }

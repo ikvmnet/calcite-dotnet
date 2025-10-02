@@ -1,6 +1,10 @@
-﻿using java.util.function;
+﻿using System;
+
+using java.util.function;
 
 using org.apache.calcite.adapter.enumerable;
+using org.apache.calcite.adapter.jdbc;
+using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.convert;
 
@@ -10,7 +14,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel.Convert
     /// <summary>
     /// Rule to convert a relational expression from <see cref="AdoConvention"/> to <see cref="EnumerableConvention"/>.
     /// </summary>
-    class AdoToEnumerableConverterRule : ConverterRule
+    public class AdoToEnumerableConverterRule : ConverterRule
     {
 
         /// <summary>
@@ -39,7 +43,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel.Convert
         /// <inheritdoc />
         public override RelNode convert(RelNode rel)
         {
-            return new AdoToEnumerableConverter(rel.getCluster(), rel.getTraitSet().replace(getOutTrait()), rel);
+            return new AdoToEnumerableConverter(rel.getCluster(), rel.getTraitSet().replace(getOutConvention()), rel);
         }
 
     }

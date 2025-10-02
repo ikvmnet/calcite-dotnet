@@ -18,7 +18,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel.Convert
         public static AdoValuesRule Create(AdoConvention convention)
         {
             return (AdoValuesRule)Config.INSTANCE
-                .withConversion(typeof(Sort), Convention.NONE, convention, "AdoValuesRule")
+                .withConversion(typeof(Values), Convention.NONE, convention, "AdoValuesRule")
                 .withRuleFactory(new DelegateFunction<Config, AdoValuesRule>(c => new AdoValuesRule(c)))
                 .toRule(typeof(AdoValuesRule));
         }

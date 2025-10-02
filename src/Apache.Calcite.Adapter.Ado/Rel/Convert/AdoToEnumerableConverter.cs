@@ -1,4 +1,6 @@
-﻿using System;
+﻿using System.Data.Common;
+
+using com.sun.tools.javac.jvm;
 
 using java.lang;
 using java.lang.reflect;
@@ -8,28 +10,28 @@ using java.util.function;
 using org.apache.calcite;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.adapter.java;
-using org.apache.calcite.config;
+using org.apache.calcite.linq4j.function;
 using org.apache.calcite.linq4j.tree;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.convert;
-using org.apache.calcite.rel.metadata;
+using org.apache.calcite.rel.type;
 using org.apache.calcite.runtime;
 using org.apache.calcite.schema;
 using org.apache.calcite.sql;
+using org.apache.calcite.sql.type;
 using org.apache.calcite.sql.util;
+using org.apache.calcite.tools;
 using org.apache.calcite.util;
 
 namespace Apache.Calcite.Adapter.Ado.Rel.Convert
 {
 
     /// <summary>
-    /// Relational expression representing a scan of a table in an ADO data source.
+    /// Relational expression represeting a scan of a table in an ADO data source.
     /// </summary>
-    class AdoToEnumerableConverter : ConverterImpl, EnumerableRel
+    public class AdoToEnumerableConverter : ConverterImpl, EnumerableRel
     {
-
-        static readonly Method _enumerableCreateReader = ((Class)typeof(AdoEnumerable)).getDeclaredMethod(nameof(AdoEnumerable.CreateReader), [typeof(AdoDataSource), typeof(string)]);
 
         /// <summary>
         /// Initializes a new instance.
@@ -46,63 +48,130 @@ namespace Apache.Calcite.Adapter.Ado.Rel.Convert
         /// <inheritdoc />
         public override RelNode copy(RelTraitSet traitSet, List inputs)
         {
-            return new AdoToEnumerableConverter(getCluster(), getTraitSet(), (RelNode)sole(inputs));
+            return new AdoToEnumerableConverter(getCluster(), traitSet, (RelNode)sole(inputs));
         }
 
         /// <inheritdoc />
-        public override RelOptCost? computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq)
-        {
-            return base.computeSelfCost(planner, mq)?.multiplyBy(.1);
-        }
-
         public EnumerableRel.Result implement(EnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
         {
-            var builder = new BlockBuilder(false);
-            var child = (AdoRel)getInput();
-            var physType = PhysTypeImpl.of(implementor.getTypeFactory(), getRowType(), pref.prefer(JavaRowFormat.CUSTOM));
-            var convention = (AdoConvention)Objects.requireNonNull(child.getConvention(), new DelegateSupplier<string>(() => $"child.getConvention() is null for {child}"));
-            var dataContextBuilder = new AdoCorrelationDataContextBuilderImpl(implementor, builder, DataContext.ROOT);
-            var sqlString = GenerateSql(convention.Dialect, dataContextBuilder);
+            var list = new BlockBuilder();
+            var self = getInput() as AdoRel;
+            if (self is null)
+                throw new AdoSchemaException("Unsupported input type.");
+
+            var physType =
+                PhysTypeImpl.of(
+                    implementor.getTypeFactory(),
+                    getRowType(),
+                    pref.prefer(JavaRowFormat.ARRAY));
+
+            var convention = (AdoConvention)Objects.requireNonNull(
+                self.getConvention(),
+                new DelegateSupplier<string>(() => $"scan.getConvention() is null for {self}"));
+
+            var dataContextBuilder =
+                new AdoCorrelationDataContextBuilderImpl(implementor, list, DataContext.ROOT);
+
+            // generate the SQL for the query
+            var sqlString = GenerateSql(convention.Dialect, dataContextBuilder, self);
             var sql = sqlString.getSql();
-
-            // print out log if directed to
-            if (((java.lang.Boolean)CalciteSystemProperty.DEBUG.value()).booleanValue())
-                Console.WriteLine("[" + sql + "]");
-
-            // run query plan
             Hook.QUERY_PLAN.run(sql);
 
-            // we return an expression the calls CreateReader on AdoEnumerable.
-            builder.add(
-                Expressions.return_(
-                    null,
-                    Expressions.call(
-                        _enumerableCreateReader,
-                        Schemas.unwrap(convention.Expression, (Class)typeof(AdoDataSource)),
-                        Expressions.constant(sql))));
+            // declare SQL string as a variable
+            var sql_ = list
+                .append("sql",
+                    Expressions.constant(sql));
 
-            // final result
-            return implementor.result(physType, builder.toBlock());
+            var fields_ = list
+                .append("fields",
+                    Expressions.constant(getRowType().getFieldList()));
+
+            var rowBuilder = new BlockBuilder();
+
+            // parameter to lambda for the DbDataReader
+            var reader_ = Expressions.parameter(
+                Modifier.FINAL,
+                (Class)typeof(DbDataReader),
+                rowBuilder.newName("reader"));
+
+            // declare values array
+            var values_ = rowBuilder
+                .append("values",
+                    Expressions.newArrayBounds(
+                        (Class)typeof(object),
+                        1,
+                        Expressions.constant(getRowType().getFieldCount())));
+
+            // generate a call to GetDbReaderValue for each field
+            for (int i = 0; i < getRowType().getFieldCount(); i++)
+            {
+                var primitive = Primitive.ofBoxOr(physType.fieldClass(i));
+                var fieldType = ((RelDataTypeField)physType.getRowType().getFieldList().get(i)).getType();
+
+                // extract value from DbReader
+                var value_ = rowBuilder
+                    .append("value",
+                        Expressions.call(
+                            null,
+                            ((Class)typeof(AdoUtils)).getDeclaredMethod(nameof(AdoUtils.GetDbReaderValue), [typeof(SqlTypeName), typeof(int), typeof(DbDataReader)]),
+                            Expressions.constant(fieldType.getSqlTypeName()),
+                            Expressions.constant(i),
+                            reader_));
+
+                // assign value to array at specified field index
+                rowBuilder.add(
+                    Expressions.statement(
+                        Expressions.assign(
+                            Expressions.arrayIndex(values_, Expressions.constant(i)),
+                            value_)));
+            }
+
+            // return values array
+            rowBuilder.add(
+                Expressions.return_(null, values_));
+
+            // generate row builder factory lambda
+            var rowBuilderFactory_ = list
+                .append("rowBuilderFactory",
+                    Expressions.lambda(
+                        Expressions.block(
+                            Expressions.return_(
+                                null,
+                                Expressions.lambda(rowBuilder.toBlock()))),
+                        reader_));
+
+            // call AdoEnumerable.CreateReader
+            var enumerable_ = list
+                .append("enumerable",
+                    Expressions.call(
+                        null,
+                        ((Class)typeof(AdoEnumerable)).getDeclaredMethod(nameof(AdoEnumerable.CreateReader), [typeof(AdoDataSource), typeof(string), typeof(Function1)]),
+                        Schemas.unwrap(convention.Expression, typeof(AdoDataSource)),
+                        sql_,
+                        rowBuilderFactory_));
+
+            // return enumerable
+            list.add(Expressions.return_(null, enumerable_));
+
+            // return block
+            return implementor.result(physType, list.toBlock());
         }
 
         /// <summary>
-        /// Generates the SQL to pass to ADO.
+        /// Generates the SQL string to implement the enumerable.
         /// </summary>
         /// <param name="dialect"></param>
         /// <param name="dataContextBuilder"></param>
+        /// <param name="input"></param>
         /// <returns></returns>
-        SqlString GenerateSql(SqlDialect dialect, IAdoCorrelationDataContextBuilder dataContextBuilder)
+        SqlString GenerateSql(SqlDialect dialect, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input)
         {
             var implementor = new AdoImplementor(dialect, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder);
-            var result = implementor.visitRoot(getInput());
+            var result = implementor.visitRoot(input);
             return result.asStatement().toSqlString(dialect);
         }
 
-        /// <inheritdoc />
-        public Pair passThroughTraits(RelTraitSet required)
-        {
-            return EnumerableRel.__DefaultMethods.passThroughTraits(this, required);
-        }
+        #region EnumerableRel
 
         /// <inheritdoc />
         public Pair deriveTraits(RelTraitSet childTraits, int childId)
@@ -113,14 +182,18 @@ namespace Apache.Calcite.Adapter.Ado.Rel.Convert
         /// <inheritdoc />
         public DeriveMode getDeriveMode()
         {
-            return PhysicalNode.__DefaultMethods.getDeriveMode(this);
+            return EnumerableRel.__DefaultMethods.getDeriveMode(this);
         }
 
         /// <inheritdoc />
-        public RelNode passThrough(RelTraitSet required)
+        public Pair passThroughTraits(RelTraitSet required)
         {
-            return PhysicalNode.__DefaultMethods.passThrough(this, required);
+            return EnumerableRel.__DefaultMethods.passThroughTraits(this, required);
         }
+
+        #endregion
+
+        #region PhysicalNode
 
         /// <inheritdoc />
         public RelNode derive(RelTraitSet childTraits, int childId)
@@ -133,6 +206,14 @@ namespace Apache.Calcite.Adapter.Ado.Rel.Convert
         {
             return PhysicalNode.__DefaultMethods.derive(this, inputTraits);
         }
+
+        /// <inheritdoc />
+        public RelNode passThrough(RelTraitSet required)
+        {
+            return PhysicalNode.__DefaultMethods.passThrough(this, required);
+        }
+
+        #endregion
 
     }
 

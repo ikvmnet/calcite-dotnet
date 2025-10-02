@@ -1,4 +1,6 @@
 ﻿using System.Data.Common;
+using System.Data.Odbc;
+using System.Data.OleDb;
 
 namespace Apache.Calcite.Adapter.Ado.Metadata
 {
@@ -20,6 +22,14 @@ namespace Apache.Calcite.Adapter.Ado.Metadata
             // temporary connection object just to test type
             using var connection = dbDataSource.CreateConnection();
 
+            // Windows-only OLEDB connection
+            if (connection is OleDbConnection oledb)
+                return new OleDbDatabaseMetadata(dbDataSource);
+
+            // ODBC connection
+            if (connection is OdbcConnection odbc)
+                return new OdbcDatabaseMetadata(dbDataSource);
+
             // selection based on type name
             switch (connection.GetType().FullName)
             {
@@ -30,7 +40,7 @@ namespace Apache.Calcite.Adapter.Ado.Metadata
                     return new SqliteDatabaseMetadata(dbDataSource);
             }
 
-            throw new AdoSchemaException($"No metadata provider available for connection of type '{dbDataSource}'.");
+            throw new AdoSchemaException($"No metadata provider available for connection of type '{connection.GetType().FullName}'.");
         }
 
     }

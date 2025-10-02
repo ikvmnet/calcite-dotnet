@@ -9,9 +9,9 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="IKVM" Version="8.13.4" />
-        <PackageReference Include="IKVM.Java.Extensions" Version="8.13.4" />
-        <PackageReference Include="IKVM.Maven.Sdk" Version="1.9.4" />
+        <PackageReference Include="IKVM" Version="8.14.0" />
+        <PackageReference Include="IKVM.Java.Extensions" Version="8.14.0" />
+        <PackageReference Include="IKVM.Maven.Sdk" Version="1.10.0" />
         <PackageReference Include="FluentAssertions" Version="8.2.0" />
         <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.9" />
         <MavenReference Include="org.apache.calcite.avatica:avatica-core" Version="1.26.0" />

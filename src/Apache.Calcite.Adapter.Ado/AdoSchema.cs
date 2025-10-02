@@ -6,14 +6,11 @@ using System.Threading;
 using Apache.Calcite.Adapter.Ado.Metadata;
 
 using com.google.common.collect;
-using com.sun.tracing;
 
 using java.lang;
 using java.util;
 
-using org.apache.calcite.avatica;
 using org.apache.calcite.linq4j.tree;
-using org.apache.calcite.rel.metadata;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.schema;
 using org.apache.calcite.schema.lookup;
@@ -170,23 +167,44 @@ namespace Apache.Calcite.Adapter.Ado
             // check for explicitely specified metadata
             var adoDatabaseMetadataName = (string?)operand.get("adoDatabaseMetadata");
             if (string.IsNullOrWhiteSpace(adoDatabaseMetadataName) == false)
-                adoDatabaseMetadata = (AdoDatabaseMetadata)AvaticaUtils.instantiatePlugin(typeof(AdoDatabaseMetadata), adoDatabaseMetadataName);
-
-            if (adoDatabaseMetadata == null)
             {
-                // configure metadata factory
+                var adoDatabaseMetadataType = Type.GetType(adoDatabaseMetadataName);
+                if (adoDatabaseMetadataType is null)
+                    throw new AdoSchemaException($"Failed to instantiate AdoDatabaseMetadata type: {adoDatabaseMetadataName}.");
+
+                // factory just creates a single instance
+                adoDatabaseMetadataFactory = new AdoDatabaseMetadataTypeFactory(adoDatabaseMetadataType);
+            }
+
+            // check whether user has specified a factory
+            if (adoDatabaseMetadataFactory == null)
+            {
                 var adoDatabaseMetadataFactoryName = (string?)operand.get("adoDatabaseMetadataFactory");
                 if (string.IsNullOrWhiteSpace(adoDatabaseMetadataFactoryName) == false)
-                    adoDatabaseMetadataFactory = (AdoDatabaseMetadataFactory)AvaticaUtils.instantiatePlugin(typeof(AdoDatabaseMetadataFactory), adoDatabaseMetadataFactoryName);
+                {
+                    var adoDatabaseMetadataFactoryType = Type.GetType(adoDatabaseMetadataFactoryName);
+                    if (adoDatabaseMetadataFactoryType is null)
+                        throw new AdoSchemaException($"Failed to instantiate AdoDatabaseMetadataFactory type: {adoDatabaseMetadataFactoryName}.");
+
+                    adoDatabaseMetadataFactory = Activator.CreateInstance(adoDatabaseMetadataFactoryType) as AdoDatabaseMetadataFactory;
+                    if (adoDatabaseMetadataFactory is null)
+                        throw new AdoSchemaException($"Could not create instance of type '{adoDatabaseMetadataFactoryType.FullName}' as AdoDatabaseMetadataFactory.");
+                }
             }
+
+            if (adoDatabaseMetadataFactory == null)
+                throw new AdoSchemaException("Could not establish AdoDatabaseMetadataFactory.");
 
             // data source explicitly specified
             var adoDataSourceName = (string)operand.get("adoDataSource");
             if (adoDataSourceName != null)
             {
-                var dbDataSource = (DbDataSource)AvaticaUtils.instantiatePlugin(typeof(DbDataSource), adoDataSourceName);
-                if (dbDataSource is null)
-                    throw new AdoSchemaException("Failed to instantiate DbDataSource plugin.");
+                var dbDataSourceType = Type.GetType(adoDataSourceName);
+                if (dbDataSourceType is null)
+                    throw new AdoSchemaException($"Failed to instantiate DbDataSource type: {adoDataSourceName}.");
+
+                if (Activator.CreateInstance(dbDataSourceType) is not DbDataSource dbDataSource)
+                    throw new AdoSchemaException($"Failed to instantiate DbDataSource type: {dbDataSourceType.FullName}.");
 
                 // create new data source from data source and metadata
                 adoDataSource = new DbDataSourceAdoDataSource(dbDataSource, adoDatabaseMetadata ?? adoDatabaseMetadataFactory.Create(dbDataSource));

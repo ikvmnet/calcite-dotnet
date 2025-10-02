@@ -50,15 +50,9 @@ namespace Apache.Calcite.Adapter.Ado.Rel
         /// <inheritdoc />
         public override double estimateRowCount(RelMetadataQuery mq)
         {
-            var leftRowCount = mq.getRowCount(left)!;
-            var rightRowCount = mq.getRowCount(right)!;
-            return Math.Max(leftRowCount.doubleValue(), rightRowCount.doubleValue());
-        }
-
-        /// <inheritdoc />
-        public SqlImplementor.Result implement(AdoImplementor implementor)
-        {
-            return implementor.implement(this);
+            var lRowCount = mq.getRowCount(left)!;
+            var rRowCount = mq.getRowCount(right)!;
+            return Math.Max(lRowCount.doubleValue(), rRowCount.doubleValue());
         }
 
     }

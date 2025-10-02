@@ -41,12 +41,6 @@ namespace Apache.Calcite.Adapter.Ado.Rel
             return base.computeSelfCost(planner, mq)?.multiplyBy(.9);
         }
 
-        /// <inheritdoc />
-        public SqlImplementor.Result implement(AdoImplementor implementor)
-        {
-            return implementor.implement(this);
-        }
-
     }
 
 }

@@ -62,14 +62,8 @@ namespace Apache.Calcite.Adapter.Ado.Rel
             }
             catch (InvalidRelException e)
             {
-                throw new AssertionError(e);
+                throw new AdoSchemaException("Failed to implement ADO aggregate.", e);
             }
-        }
-
-        /// <inheritdoc />
-        public SqlImplementor.Result implement(AdoImplementor implementor)
-        {
-            return implementor.implement(this);
         }
 
     }

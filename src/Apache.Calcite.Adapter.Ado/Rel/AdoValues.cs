@@ -35,12 +35,6 @@ namespace Apache.Calcite.Adapter.Ado.Rel
             return new AdoValues(getCluster(), getRowType(), tuples, traitSet);
         }
 
-        /// <inheritdoc />
-        public SqlImplementor.Result implement(AdoImplementor implementor)
-        {
-            return implementor.implement(this);
-        }
-
     }
 
 }

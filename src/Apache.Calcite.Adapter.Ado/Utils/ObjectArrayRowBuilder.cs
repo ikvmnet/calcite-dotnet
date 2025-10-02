@@ -2,8 +2,10 @@
 using System.Data;
 using System.Data.Common;
 
-using org.apache.calcite.avatica;
+using java.util;
+
 using org.apache.calcite.linq4j.function;
+using org.apache.calcite.rel.type;
 
 namespace Apache.Calcite.Adapter.Ado.Utils
 {
@@ -11,35 +13,22 @@ namespace Apache.Calcite.Adapter.Ado.Utils
     /// <summary>
     /// Builds that calls <see cref="DbDataReader"/>
     /// </summary>
-    abstract class ObjectArrayRowBuilder : Function0
+    public class ObjectArrayRowBuilder : Function0
     {
 
-        protected readonly DbDataReader _reader;
-        protected readonly int _columnCount;
-        protected readonly ColumnMetaData.Rep[] _reps;
-        protected readonly DbType[] _types;
+        readonly DbDataReader _reader;
+        readonly List _fields;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
         /// <param name="reader"></param>
-        /// <param name="reps"></param>
-        /// <param name="types"></param>
+        /// <param name="fields"></param>
         /// <exception cref="AdoSchemaException"></exception>
-        public ObjectArrayRowBuilder(DbDataReader reader, ColumnMetaData.Rep[] reps, DbType[] types)
+        public ObjectArrayRowBuilder(DbDataReader reader, List fields)
         {
             _reader = reader ?? throw new ArgumentNullException(nameof(reader));
-            _reps = reps ?? throw new ArgumentNullException(nameof(reps));
-            _types = types ?? throw new ArgumentNullException(nameof(types));
-
-            try
-            {
-                _columnCount = _reader.FieldCount;
-            }
-            catch (NotSupportedException e)
-            {
-                throw new AdoSchemaException("The data reader does not support reading the number of columns.", e);
-            }
+            _fields = fields ?? throw new ArgumentNullException(nameof(fields));
         }
 
         /// <inheritdoc />
@@ -47,9 +36,9 @@ namespace Apache.Calcite.Adapter.Ado.Utils
         {
             try
             {
-                var values = new object?[_columnCount];
-                for (int i = 0; i < _columnCount; i++)
-                    values[i] = GetValue(i);
+                var values = new object?[_fields.size()];
+                for (int i = 0; i < _fields.size(); i++)
+                    values[i] = GetValue((RelDataTypeField)_fields.get(i));
 
                 return values;
             }
@@ -62,9 +51,12 @@ namespace Apache.Calcite.Adapter.Ado.Utils
         /// <summary>
         /// Override this method to implement value retrieval.
         /// </summary>
-        /// <param name="i"></param>
+        /// <param name="field"></param>
         /// <returns></returns>
-        protected abstract object? GetValue(int i);
+        object? GetValue(RelDataTypeField field)
+        {
+            return AdoUtils.GetDbReaderValue(field.getType(), field.getIndex(), _reader);
+        }
 
     }
 

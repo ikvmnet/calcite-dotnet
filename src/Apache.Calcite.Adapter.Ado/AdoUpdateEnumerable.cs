@@ -46,9 +46,9 @@ namespace Apache.Calcite.Adapter.Ado
             {
                 return Linq4j.singletonEnumerator(new java.lang.Integer(command.ExecuteNonQuery()));
             }
-            catch (DataException e)
+            catch (DbException e)
             {
-                throw new AdoSchemaException("Exception while performing query.", e);
+                throw new AdoSchemaException("Database exception while performing query.", e);
             }
             finally
             {

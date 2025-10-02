@@ -2,6 +2,8 @@
 using System.Data.Common;
 using System.IO;
 
+using com.fasterxml.jackson.annotation;
+
 using java.sql;
 using java.util;
 
@@ -25,6 +27,8 @@ namespace Apache.Calcite.Adapter.Ado.Tests
         {
             ikvm.runtime.Startup.addBootClassPathAssembly(typeof(AdoSchemaFactory).Assembly);
             DbProviderFactories.RegisterFactory("Microsoft.Data.Sqlite", SqliteFactory.Instance);
+            ikvm.runtime.Startup.addBootClassPathAssembly(typeof(org.apache.calcite.jdbc.CalciteJdbc41Factory).Assembly);
+            java.lang.Class.forName("org.apache.calcite.jdbc.CalciteJdbc41Factory");
             java.lang.Class.forName("org.apache.calcite.jdbc.Driver");
             ikvm.runtime.Startup.addBootClassPathAssembly(typeof(CsvSchemaFactory).Assembly);
             java.lang.Class.forName("org.apache.calcite.adapter.csv.CsvSchemaFactory");
@@ -71,7 +75,8 @@ namespace Apache.Calcite.Adapter.Ado.Tests
             var planner = Frameworks.getPlanner(config);
 
             Console.WriteLine("SqlNode:");
-            var sqlNode = planner.parse("SELECT * FROM \"testdb\".\"table1\"");
+            //var sqlNode = planner.parse(""" SELECT * FROM "testdb"."table1" T1 WHERE T1."Id" > 10 """);
+            var sqlNode = planner.parse(""" SELECT * FROM "adhoc"."people" P WHERE P."Id" > 10 """);
             sqlNode = planner.validate(sqlNode);
             Console.WriteLine(sqlNode.toString());
             Console.WriteLine();
@@ -86,8 +91,17 @@ namespace Apache.Calcite.Adapter.Ado.Tests
             Console.WriteLine(RelOptUtil.toString(relNode));
             Console.WriteLine();
 
+            Console.WriteLine("Plan:");
+            using var stmt = connection.createStatement();
+            //using var rs = stmt.executeQuery(""" EXPLAIN PLAN FOR SELECT * FROM "testdb"."table1" T1 WHERE T1."Id" > 10 """);
+            using var rs = stmt.executeQuery(""" EXPLAIN PLAN FOR SELECT * FROM "adhoc"."people" P WHERE P."Id" > 10 """);
+            while (rs.next())
+                for (int i = 1; i <= rs.getMetaData().getColumnCount(); i++)
+                    Console.WriteLine(rs.getString(i) + " ");
+
             using var statement = calciteConnection.createStatement();
-            using var resultSet = statement.executeQuery("SELECT * FROM \"testdb\".\"table1\"");
+            //using var resultSet = statement.executeQuery(""" SELECT * FROM "testdb"."table1" T1 WHERE T1."Id" > 10 """);
+            using var resultSet = statement.executeQuery(""" SELECT * FROM "adhoc"."people" P WHERE P."Id" > 10 """);
             var c = resultSet.getMetaData().getColumnCount();
 
             for (int i = 0; i < c; i++)

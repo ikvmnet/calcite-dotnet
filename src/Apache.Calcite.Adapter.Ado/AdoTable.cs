@@ -1,7 +1,4 @@
 ﻿using System;
-using System.Collections.Immutable;
-using System.Data;
-using System.Linq;
 using System.Threading;
 
 using Apache.Calcite.Adapter.Ado.Extensions;
@@ -10,9 +7,7 @@ using com.google.common.@base;
 
 using java.lang;
 
-using org.apache.calcite;
 using org.apache.calcite.adapter.java;
-using org.apache.calcite.avatica;
 using org.apache.calcite.linq4j;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -21,7 +16,6 @@ using org.apache.calcite.schema;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.parser;
 using org.apache.calcite.sql.pretty;
-using org.apache.calcite.sql.type;
 using org.apache.calcite.sql.util;
 
 namespace Apache.Calcite.Adapter.Ado
@@ -30,10 +24,10 @@ namespace Apache.Calcite.Adapter.Ado
     /// <summary>
     /// Queryable table that gets its data from a table within a ADO connection.
     /// </summary>
-    public class AdoTable : AbstractQueryableTable, ScannableTable
+    public class AdoTable : AbstractQueryableTable, TranslatableTable
     {
 
-        readonly Supplier protoRowTypeSupplier;
+        readonly java.util.function.Supplier protoRowTypeSupplier;
 
         readonly AdoSchema _adoSchema;
         readonly string? _databaseName;
@@ -52,8 +46,8 @@ namespace Apache.Calcite.Adapter.Ado
         /// <param name="tableName"></param>
         /// <param name="tableType"></param>
         /// <exception cref="ArgumentNullException"></exception>
-        internal AdoTable(AdoSchema schema, string? databaseName, string? schemaName, string tableName, Schema.TableType tableType)
-            : base((java.lang.Class)typeof(object[]))
+        internal AdoTable(AdoSchema schema, string? databaseName, string? schemaName, string tableName, Schema.TableType tableType) :
+            base((Class)typeof(object[]))
         {
             protoRowTypeSupplier = Suppliers.memoize(new FuncSupplier<RelProtoDataType>(GetRowProtoDataType));
 
@@ -70,21 +64,22 @@ namespace Apache.Calcite.Adapter.Ado
         public AdoSchema Schema => _adoSchema;
 
         /// <inheritdoc />
-        public override Schema.TableType getJdbcTableType()
-        {
-            return _tableType;
-        }
+        public override Schema.TableType getJdbcTableType() => _tableType;
 
-        /// <inheritdoc />
-        public override object unwrap(java.lang.Class aClass)
-        {
-            if (aClass.isInstance(_adoSchema.DataSource))
-                return aClass.cast(_adoSchema.DataSource);
-            else if (aClass.isInstance(_adoSchema.Convention.Dialect))
-                return aClass.cast(_adoSchema.Convention.Dialect);
-            else
-                return base.unwrap(aClass);
-        }
+        /// <summary>
+        /// Gets the name of the source database for this table.
+        /// </summary>
+        public string? DatabaseName => _databaseName;
+
+        /// <summary>
+        /// Gets the name of the source schema for this table.
+        /// </summary>
+        public string? SchemaName => _schemaName;
+
+        /// <summary>
+        /// Gets the name of this table.
+        /// </summary>
+        public string TableName => _tableName;
 
         /// <inheritdoc />
         public override RelDataType getRowType(RelDataTypeFactory typeFactory)
@@ -99,54 +94,7 @@ namespace Apache.Calcite.Adapter.Ado
         /// <exception cref="AdoSchemaException"></exception>
         RelProtoDataType GetRowProtoDataType()
         {
-            try
-            {
-                return _adoSchema.GetRowProtoDataType(_databaseName, _schemaName, _tableName);
-            }
-            catch (System.Exception e)
-            {
-                throw new AdoSchemaException($"Exception while reading definition of table '{_tableName}'.", e);
-            }
-        }
-
-        /// <summary>
-        /// For each field of the table returns the <see cref="ColumnMetaData.Rep"/> and <see cref="DbType"/>.
-        /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <returns></returns>
-        internal ImmutableArray<(ColumnMetaData.Rep, DbType)> GetFieldRepAndDbTypes(JavaTypeFactory typeFactory)
-        {
-            return getRowType(typeFactory)
-                .getFieldList()
-                .AsEnumerable<RelDataTypeField>()
-                .Select(field =>
-                {
-                    var dataType = field.getType();
-                    var sqlTypeName = dataType.getSqlTypeName();
-                    var dbType = sqlTypeName.ToDbType();
-                    var rep = GetTypeRep(typeFactory, dataType, sqlTypeName, dbType);
-                    return (rep, dbType);
-                })
-                .ToImmutableArray();
-        }
-
-        /// <summary>
-        /// Returns the appropriate Avatica Rep value for the iven <see cref="RelDataType"/>.
-        /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <param name="dataType"></param>
-        /// <param name="sqlTypeName"></param>
-        /// <param name="dbType"></param>
-        /// <returns></returns>
-        internal ColumnMetaData.Rep GetTypeRep(JavaTypeFactory typeFactory, RelDataType dataType, SqlTypeName sqlTypeName, DbType dbType)
-        {
-            // check with JavaTypeFactory for built in type
-            var clazz = typeFactory.getJavaClass(dataType);
-            if (clazz is not null)
-                return ColumnMetaData.Rep.of(clazz);
-
-            // fall back to non translated object
-            return ColumnMetaData.Rep.OBJECT;
+            return _adoSchema.GetRowProtoDataType(_databaseName, _schemaName, _tableName);
         }
 
         /// <summary>
@@ -192,23 +140,35 @@ namespace Apache.Calcite.Adapter.Ado
         }
 
         /// <inheritdoc />
-        public RelNode toRel(RelOptTable.ToRelContext context, RelOptTable relOptTable)
-        {
-            return new AdoTableScan(context.getCluster(), context.getTableHints(), relOptTable, this, _adoSchema.Convention);
-        }
-
-        /// <inheritdoc />
-        public override org.apache.calcite.linq4j.Queryable asQueryable(QueryProvider queryProvider, SchemaPlus schema, string tableName)
+        public override Queryable asQueryable(QueryProvider queryProvider, SchemaPlus schema, string tableName)
         {
             return new AdoTableQueryable(this, queryProvider, schema, tableName);
         }
 
         /// <inheritdoc />
-        public org.apache.calcite.linq4j.Enumerable scan(DataContext root)
+        public RelNode toRel(RelOptTable.ToRelContext context, RelOptTable relOptTable)
         {
-            var typeFactory = root.getTypeFactory();
-            var sql = GenerateSqlString();
-            return AdoEnumerable.CreateReader(_adoSchema.DataSource, sql.getSql(), AdoUtils.RowBuilderFactory2(GetFieldRepAndDbTypes(typeFactory)));
+            return new AdoTableScan(context.getCluster(), context.getTableHints(), relOptTable, this);
+        }
+
+        /// <summary>
+        /// Initiates a query against the table.
+        /// </summary>
+        /// <returns></returns>
+        public Enumerable Query()
+        {
+            throw new NotImplementedException();
+        }
+
+        /// <inheritdoc />
+        public override object unwrap(Class aClass)
+        {
+            if (aClass.isInstance(_adoSchema.DataSource))
+                return aClass.cast(_adoSchema.DataSource);
+            else if (aClass.isInstance(_adoSchema.Convention.Dialect))
+                return aClass.cast(_adoSchema.Convention.Dialect);
+            else
+                return base.unwrap(aClass);
         }
 
         /// <inheritdoc />

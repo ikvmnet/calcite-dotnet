@@ -19,6 +19,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel
         /// <param name="cluster"></param>
         /// <param name="traitSet"></param>
         /// <param name="input"></param>
+        /// <param name="condition"></param>
         public AdoFilter(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, RexNode condition) :
             base(cluster, traitSet, input, condition)
         {
@@ -29,12 +30,6 @@ namespace Apache.Calcite.Adapter.Ado.Rel
         public override Filter copy(RelTraitSet traitSet, RelNode input, RexNode condition)
         {
             return new AdoFilter(getCluster(), traitSet, input, condition);
-        }
-
-        /// <inheritdoc />
-        public SqlImplementor.Result implement(AdoImplementor implementor)
-        {
-            return implementor.implement(this);
         }
 
     }

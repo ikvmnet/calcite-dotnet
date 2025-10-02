@@ -39,15 +39,9 @@ namespace Apache.Calcite.Adapter.Ado.Rel
         }
 
         /// <inheritdoc />
-        public override RelOptCost computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq)
+        public override RelOptCost? computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq)
         {
             return base.computeSelfCost(planner, mq)?.multiplyBy(AdoConvention.CostMultiplier);
-        }
-
-        /// <inheritdoc />
-        public SqlImplementor.Result implement(AdoImplementor implementor)
-        {
-            return implementor.implement(this);
         }
 
     }
