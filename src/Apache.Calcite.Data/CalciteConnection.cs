@@ -4,6 +4,7 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 
+using java.lang;
 using java.sql;
 
 namespace Apache.Calcite.Data
@@ -158,7 +159,7 @@ namespace Apache.Calcite.Data
                 if (_leaveOpen == false)
                     _connection.close();
             }
-            catch (SQLException e)
+            catch (java.lang.Exception e)
             {
                 throw new CalciteDbException(e);
             }

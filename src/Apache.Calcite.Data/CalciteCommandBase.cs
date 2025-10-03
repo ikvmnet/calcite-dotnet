@@ -462,7 +462,7 @@ namespace Apache.Calcite.Data
 
                     throw new InvalidOperationException();
                 }
-                catch (SQLException e)
+                catch (java.lang.Exception e)
                 {
                     throw new CalciteDbException(e);
                 }

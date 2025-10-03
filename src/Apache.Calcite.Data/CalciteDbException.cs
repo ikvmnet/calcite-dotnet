@@ -45,6 +45,16 @@ namespace Apache.Calcite.Data
         /// Initializes a new instance.
         /// </summary>
         /// <param name="innerException"></param>
+        public CalciteDbException(java.lang.Exception innerException) :
+            this(innerException.getMessage(), innerException)
+        {
+
+        }
+
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        /// <param name="innerException"></param>
         public CalciteDbException(CalciteException innerException) :
             this(innerException.getMessage(), innerException)
         {

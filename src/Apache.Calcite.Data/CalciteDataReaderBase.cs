@@ -231,7 +231,7 @@ namespace Apache.Calcite.Data
                 var column = ordinal + 1;
                 return ResultSet.getMetaData().getColumnTypeName(column);
             }
-            catch (SQLException e)
+            catch (java.lang.Exception e)
             {
                 throw new CalciteDbException(e);
             }
