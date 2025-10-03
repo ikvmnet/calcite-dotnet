@@ -1,6 +1,8 @@
 ﻿using System.Collections.Generic;
 using System.Data;
 
+using java.sql;
+
 namespace Apache.Calcite.Data
 {
 
@@ -14,8 +16,9 @@ namespace Apache.Calcite.Data
         /// Initializes a new instance.
         /// </summary>
         /// <param name="command"></param>
-        internal CalciteDataReader(CalciteCommand command) :
-            base(command)
+        /// <param name="statement"></param>
+        internal CalciteDataReader(CalciteCommand command, object statement) :
+            base(command, statement)
         {
 
         }
@@ -26,7 +29,7 @@ namespace Apache.Calcite.Data
         /// <returns></returns>
         public new IEnumerator<IDataRecord> GetEnumerator()
         {
-            return (CalciteDbEnumerator)base.GetEnumerator();
+            return (CalciteEnumerator)base.GetEnumerator();
         }
 
     }

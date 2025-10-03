@@ -3,11 +3,8 @@
 namespace Apache.Calcite.Data
 {
 
-    /// <inheritdoc />
     public class CalciteDataAdapter : DbDataAdapter
     {
-
-
 
     }
 

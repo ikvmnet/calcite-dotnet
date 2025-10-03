@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Data.Common;
 
+using org.apache.calcite.runtime;
+
 namespace Apache.Calcite.Data
 {
 
@@ -42,9 +44,9 @@ namespace Apache.Calcite.Data
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="jdbcException"></param>
-        public CalciteDbException(java.sql.SQLException jdbcException) :
-            this(jdbcException.getMessage(), jdbcException)
+        /// <param name="innerException"></param>
+        public CalciteDbException(CalciteException innerException) :
+            this(innerException.getMessage(), innerException)
         {
 
         }

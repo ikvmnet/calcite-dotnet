@@ -3,6 +3,7 @@
     <PropertyGroup>
         <TargetFrameworks>net8.0</TargetFrameworks>
         <Nullable>enable</Nullable>
+        <Description>Apache Calcite Adapter for ADO.NET database connections.</Description>
     </PropertyGroup>
 
     <ItemGroup>

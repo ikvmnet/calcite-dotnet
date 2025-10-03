@@ -6,16 +6,16 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Supports a simple iteration over a collection by the Calcite data provider.
+    /// Supports a simple iteration over a collection by the JDBC data provider.
     /// </summary>
-    class CalciteDbEnumerator : DbEnumerator, IEnumerator<IDataRecord>
+    class CalciteEnumerator : DbEnumerator, IEnumerator<IDataRecord>
     {
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
         /// <param name="reader"></param>
-        public CalciteDbEnumerator(CalciteDataReaderBase reader) :
+        public CalciteEnumerator(CalciteDataReaderBase reader) :
             base(reader)
         {
 
@@ -26,7 +26,7 @@ namespace Apache.Calcite.Data
         /// </summary>
         /// <param name="reader"></param>
         /// <param name="closeReader"></param>
-        public CalciteDbEnumerator(CalciteDataReaderBase reader, bool closeReader) :
+        public CalciteEnumerator(CalciteDataReaderBase reader, bool closeReader) :
             base(reader, closeReader)
         {
 

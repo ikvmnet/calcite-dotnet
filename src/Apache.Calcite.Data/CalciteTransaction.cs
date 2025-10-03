@@ -2,6 +2,8 @@
 using System.Data;
 using System.Data.Common;
 
+using java.sql;
+
 namespace Apache.Calcite.Data
 {
 
@@ -22,7 +24,28 @@ namespace Apache.Calcite.Data
         {
             _connection = connection ?? throw new ArgumentNullException(nameof(connection));
 
-            throw new NotImplementedException();
+            if (_connection._connection is null)
+                throw new InvalidOperationException();
+
+            if (_connection._connection.getAutoCommit() == false)
+                throw new CalciteDbException("A JDBC transaction is already open.");
+            else
+            {
+                // set isolation level
+                _connection._connection.setTransactionIsolation(isolationLevel switch
+                {
+                    IsolationLevel.Unspecified => java.sql.Connection.TRANSACTION_NONE,
+                    IsolationLevel.Chaos => java.sql.Connection.TRANSACTION_NONE,
+                    IsolationLevel.ReadUncommitted => java.sql.Connection.TRANSACTION_READ_UNCOMMITTED,
+                    IsolationLevel.ReadCommitted => java.sql.Connection.TRANSACTION_READ_COMMITTED,
+                    IsolationLevel.RepeatableRead => java.sql.Connection.TRANSACTION_REPEATABLE_READ,
+                    IsolationLevel.Serializable => java.sql.Connection.TRANSACTION_SERIALIZABLE,
+                    _ => throw new CalciteDbException("Unsupported IsolationLevel for JDBC."),
+                });
+
+                // disable auto commit
+                _connection._connection.setAutoCommit(false);
+            }
         }
 
         /// <summary>
@@ -36,7 +59,16 @@ namespace Apache.Calcite.Data
         /// <summary>
         /// Gets the isolation level of the current transaction.
         /// </summary>
-        public override IsolationLevel IsolationLevel => throw new NotImplementedException();
+        public override IsolationLevel IsolationLevel => _connection._connection?.getTransactionIsolation() switch
+        {
+            java.sql.Connection.TRANSACTION_NONE => IsolationLevel.Unspecified,
+            java.sql.Connection.TRANSACTION_READ_COMMITTED => IsolationLevel.ReadCommitted,
+            java.sql.Connection.TRANSACTION_READ_UNCOMMITTED => IsolationLevel.ReadUncommitted,
+            java.sql.Connection.TRANSACTION_REPEATABLE_READ => IsolationLevel.RepeatableRead,
+            java.sql.Connection.TRANSACTION_SERIALIZABLE => IsolationLevel.Serializable,
+            null => throw new InvalidOperationException(),
+            _ => throw new CalciteDbException($"Unrecognized transaction value.")
+        };
 
         /// <summary>
         /// Commmits the current transaction.
@@ -47,7 +79,18 @@ namespace Apache.Calcite.Data
             if (_connection.State != ConnectionState.Open)
                 throw new CalciteDbException("Connection must be open commit a transaction.");
 
-            throw new NotImplementedException();
+            if (_connection._connection is null)
+                throw new InvalidOperationException();
+
+            try
+            {
+                _connection._connection.commit();
+                _connection._connection.setAutoCommit(true);
+            }
+            catch (SQLException e)
+            {
+                throw new CalciteDbException(e);
+            }
         }
 
         /// <summary>
@@ -59,44 +102,22 @@ namespace Apache.Calcite.Data
             if (_connection.State != ConnectionState.Open)
                 throw new CalciteDbException("Connection must be open commit a transaction.");
 
-            throw new NotImplementedException();
-        }
+            if (_connection._connection is null)
+                throw new InvalidOperationException();
 
-#if NET6_0_OR_GREATER
-        #region SavePoints
-
-        /// <inheritdoc />
-        public override bool SupportsSavepoints => throw new NotImplementedException();
-
-        /// <inheritdoc />
-        public override void Save(string savepointName)
-        {
-            if (_connection.State != ConnectionState.Open)
-                throw new CalciteDbException("Connection must be open commit a transaction.");
-
-            throw new NotImplementedException();
+            try
+            {
+                _connection._connection.rollback();
+                _connection._connection.setAutoCommit(true);
+            }
+            catch (SQLException e)
+            {
+                throw new CalciteDbException(e);
+            }
         }
 
         /// <inheritdoc />
-        public override void Rollback(string savepointName)
-        {
-            if (_connection.State != ConnectionState.Open)
-                throw new CalciteDbException("Connection must be open commit a transaction.");
-
-            throw new NotImplementedException();
-        }
-
-        /// <inheritdoc />
-        public override void Release(string savepointName)
-        {
-            if (_connection.State != ConnectionState.Open)
-                throw new CalciteDbException("Connection must be open commit a transaction.");
-
-            throw new NotImplementedException();
-        }
-
-        #endregion
-#endif
+        public override bool SupportsSavepoints => false;
 
     }
 

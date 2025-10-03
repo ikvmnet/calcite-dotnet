@@ -4,7 +4,7 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Provides a set of methods for creating instances of the JDBC database provider classes.
+    /// Provides a set of methods for creating instances of the Calcite database provider classes.
     /// </summary>
     public class CalciteProviderFactory : DbProviderFactory
     {
