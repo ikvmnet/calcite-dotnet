@@ -39,11 +39,11 @@ namespace Apache.Calcite.Adapter.Ado
                 case SqlTypeName.__Enum.NULL:
                     return null;
                 case SqlTypeName.__Enum.BOOLEAN:
-                    return reader.IsDBNull(index) ? null : java.lang.Boolean.valueOf(reader.GetBoolean(index));
+                    return GetBoolean(reader, index);
                 case SqlTypeName.__Enum.TINYINT:
-                    return reader.IsDBNull(index) ? null : java.lang.Byte.valueOf(reader.GetByte(index));
+                    return GetByte(reader, index);
                 case SqlTypeName.__Enum.CHAR:
-                    return reader.IsDBNull(index) ? null : java.lang.String.valueOf(reader.GetString(index));
+                    return GetString(reader, index);
                 case SqlTypeName.__Enum.SMALLINT:
                     return GetShort(reader, index);
                 case SqlTypeName.__Enum.INTEGER:
@@ -59,12 +59,34 @@ namespace Apache.Calcite.Adapter.Ado
                 case SqlTypeName.__Enum.DOUBLE:
                     return reader.IsDBNull(index) ? null : java.lang.Double.valueOf(reader.GetDouble(index));
                 case SqlTypeName.__Enum.VARCHAR:
-                    return reader.IsDBNull(index) ? null : reader.GetString(index);
+                    return GetString(reader, index);
                 default:
                     break;
             }
 
             throw new AdoCalciteException($"Unsupported SQL type mapping: {(SqlTypeName.__Enum)typeName.ordinal()}");
+        }
+
+        /// <summary>
+        /// Gets a <see cref="java.lang.Boolean"/>.
+        /// </summary>
+        /// <param name="reader"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        public static object? GetBoolean(DbDataReader reader, int index)
+        {
+            return reader.IsDBNull(index) ? null : java.lang.Boolean.valueOf(reader.GetBoolean(index));
+        }
+
+        /// <summary>
+        /// Gets a <see cref="java.lang.Byte"/>.
+        /// </summary>
+        /// <param name="reader"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        public static object? GetByte(DbDataReader reader, int index)
+        {
+            return reader.IsDBNull(index) ? null : java.lang.Byte.valueOf(reader.GetByte(index));
         }
 
         /// <summary>
@@ -98,6 +120,17 @@ namespace Apache.Calcite.Adapter.Ado
         public static object? GetLong(DbDataReader reader, int index)
         {
             return reader.IsDBNull(index) ? null : java.lang.Long.valueOf(reader.GetInt64(index));
+        }
+
+        /// <summary>
+        /// Gets a <see cref="string"/>.
+        /// </summary>
+        /// <param name="reader"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        public static object? GetString(DbDataReader reader, int index)
+        {
+            return reader.IsDBNull(index) ? null : reader.GetString(index);
         }
 
     }
