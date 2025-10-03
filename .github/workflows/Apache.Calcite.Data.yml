@@ -94,7 +94,7 @@ jobs:
     name: Test (${{ matrix.run }}:${{ matrix.tfm }}:${{ matrix.sys }})
     needs:
     - build
-    runs-on: ${{ fromJSON('{"win-x64":["windows-2022"],"linux-x64":["ubuntu-22.04"],"linux-arm64":["ubuntu-22.04-arm"],"osx-x64":["macos-13"],"osx-arm64":["macos-14"]}')[matrix.sys] }}
+    runs-on: ${{ fromJSON('{"win-x86":["windows-2022"],"win-x64":["windows-2022"],"linux-x64":["ubuntu-24.04"],"linux-arm64":["ubuntu-24.04-arm"],"osx-x64":["macos-13"],"osx-arm64":["macos-14"]}')[matrix.sys] }}
     steps:
     - name: Setup .NET 9.0
       uses: actions/setup-dotnet@v4
@@ -169,7 +169,7 @@ jobs:
     if: github.event_name != 'pull_request'
     needs:
     - test
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout Source
       uses: actions/checkout@v4
