@@ -110,7 +110,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel.Convert
                     .append("value",
                         Expressions.call(
                             null,
-                            ((Class)typeof(AdoUtils)).getDeclaredMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(SqlTypeName)]),
+                            ((Class)typeof(AdoReaderUtil)).getDeclaredMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(SqlTypeName)]),
                             reader_,
                             Expressions.constant(i),
                             Expressions.constant(fieldType.getSqlTypeName())));
