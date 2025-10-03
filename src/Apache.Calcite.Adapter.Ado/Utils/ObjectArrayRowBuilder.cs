@@ -55,7 +55,7 @@ namespace Apache.Calcite.Adapter.Ado.Utils
         /// <returns></returns>
         object? GetValue(RelDataTypeField field)
         {
-            return AdoUtils.GetDbReaderValue(field.getType(), field.getIndex(), _reader);
+            return AdoReaderUtil.GetDbReaderValue(_reader, field.getIndex(), field.getType());
         }
 
     }

@@ -110,10 +110,10 @@ namespace Apache.Calcite.Adapter.Ado.Rel.Convert
                     .append("value",
                         Expressions.call(
                             null,
-                            ((Class)typeof(AdoUtils)).getDeclaredMethod(nameof(AdoUtils.GetDbReaderValue), [typeof(SqlTypeName), typeof(int), typeof(DbDataReader)]),
-                            Expressions.constant(fieldType.getSqlTypeName()),
+                            ((Class)typeof(AdoUtils)).getDeclaredMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(SqlTypeName)]),
+                            reader_,
                             Expressions.constant(i),
-                            reader_));
+                            Expressions.constant(fieldType.getSqlTypeName())));
 
                 // assign value to array at specified field index
                 rowBuilder.add(
