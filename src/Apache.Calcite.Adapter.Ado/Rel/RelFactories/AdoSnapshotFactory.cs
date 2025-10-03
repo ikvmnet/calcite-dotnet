@@ -8,7 +8,7 @@ using static org.apache.calcite.rel.core.RelFactories;
 namespace Apache.Calcite.Adapter.Ado.Rel.RelFactories
 {
 
-    class AdoSnapshotFactory : SnapshotFactory
+    public class AdoSnapshotFactory : SnapshotFactory
     {
 
         public RelNode createSnapshot(RelNode input, RexNode period)

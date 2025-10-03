@@ -16,7 +16,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel
     /// <summary>
     /// Union operator implemented in ADO convention.
     /// </summary>
-    class AdoAggregate : Aggregate, AdoRel
+    public class AdoAggregate : Aggregate, AdoRel
     {
 
         /// <summary>
@@ -62,7 +62,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel
             }
             catch (InvalidRelException e)
             {
-                throw new AdoSchemaException("Failed to implement ADO aggregate.", e);
+                throw new AdoCalciteException("Failed to implement ADO aggregate.", e);
             }
         }
 

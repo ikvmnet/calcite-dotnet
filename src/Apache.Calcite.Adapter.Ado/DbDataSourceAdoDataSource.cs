@@ -9,7 +9,7 @@ namespace Apache.Calcite.Adapter.Ado
     /// <summary>
     /// Provides an implementation of <see cref="AdoDataSource"/> backed by a <see cref="DbDataSource"/> and explicit metadata provider.
     /// </summary>
-    class DbDataSourceAdoDataSource : AdoDataSource
+    public class DbDataSourceAdoDataSource : AdoDataSource
     {
 
         readonly DbDataSource _dataSource;

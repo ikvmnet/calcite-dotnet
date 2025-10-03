@@ -3,14 +3,17 @@
 namespace Apache.Calcite.Adapter.Ado.Rel.Convert
 {
 
-    abstract class AdoConverterRule : ConverterRule
+    /// <summary>
+    /// Base ADO rule.
+    /// </summary>
+    public abstract class AdoConverterRule : ConverterRule
     {
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
         /// <param name="config"></param>
-        protected internal AdoConverterRule(Config config) : 
+        protected AdoConverterRule(Config config) :
             base(config)
         {
 

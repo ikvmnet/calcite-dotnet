@@ -7,9 +7,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <TestTarget Include="Apache.Calcite.Data.Tests|net472" ProjectName="Apache.Calcite.Data.Tests" TargetFramework="net472" />
-        <TestTarget Include="Apache.Calcite.Data.Tests|net6.0" ProjectName="Apache.Calcite.Data.Tests" TargetFramework="net6.0" />
-        <TestTarget Include="Apache.Calcite.Data.Tests|net8.0" ProjectName="Apache.Calcite.Data.Tests" TargetFramework="net8.0" />
+        <TestTarget Include="Apache.Calcite.Adapter.Ado.Tests|net8.0" ProjectName="Apache.Calcite.Adapter.Ado.Tests" TargetFramework="net8.0" />
     </ItemGroup>
 
     <!-- Runs once per TFM/RID combination to generate individual output. -->

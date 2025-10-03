@@ -11,7 +11,7 @@ using static org.apache.calcite.rel.core.RelFactories;
 namespace Apache.Calcite.Adapter.Ado.Rel.RelFactories
 {
 
-    class AdoProjectFactory : ProjectFactory
+    public class AdoProjectFactory : ProjectFactory
     {
 
         public RelNode createProject(RelNode input, List hints, List projects, List fieldNames, Set variablesSet)

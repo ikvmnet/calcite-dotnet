@@ -15,7 +15,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel
     /// <summary>
     /// Join operator implemented in ADO convention.
     /// </summary>
-    class AdoJoin : Join, AdoRel
+    public class AdoJoin : Join, AdoRel
     {
 
         /// <summary>

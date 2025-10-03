@@ -7,6 +7,7 @@ using com.google.common.@base;
 
 using java.lang;
 
+using org.apache.calcite;
 using org.apache.calcite.adapter.java;
 using org.apache.calcite.linq4j;
 using org.apache.calcite.plan;
@@ -24,7 +25,7 @@ namespace Apache.Calcite.Adapter.Ado
     /// <summary>
     /// Queryable table that gets its data from a table within a ADO connection.
     /// </summary>
-    public class AdoTable : AbstractQueryableTable, TranslatableTable
+    public class AdoTable : AbstractQueryableTable, TranslatableTable, ScannableTable
     {
 
         readonly java.util.function.Supplier protoRowTypeSupplier;
@@ -91,7 +92,7 @@ namespace Apache.Calcite.Adapter.Ado
         /// Gets the <see cref="RelProtoDataType"/> for the row type of this table.
         /// </summary>
         /// <returns></returns>
-        /// <exception cref="AdoSchemaException"></exception>
+        /// <exception cref="AdoCalciteException"></exception>
         RelProtoDataType GetRowProtoDataType()
         {
             return _adoSchema.GetRowProtoDataType(_databaseName, _schemaName, _tableName);
@@ -151,13 +152,26 @@ namespace Apache.Calcite.Adapter.Ado
             return new AdoTableScan(context.getCluster(), context.getTableHints(), relOptTable, this);
         }
 
+        /// <inheritdoc />
+        public Enumerable scan(DataContext root)
+        {
+            var typeFactory = root.getTypeFactory();
+            var sql = GenerateSql();
+            return AdoEnumerable.CreateReader(_adoSchema.DataSource, sql.getSql(), AdoUtils.CreateObjectArrayRowBuilderFactory(getRowType(typeFactory).getFieldList()));
+        }
+
         /// <summary>
-        /// Initiates a query against the table.
+        /// Generates the SQL for the queryable.
         /// </summary>
         /// <returns></returns>
-        public Enumerable Query()
+        SqlString GenerateSql()
         {
-            throw new NotImplementedException();
+            var selectList = SqlNodeList.SINGLETON_STAR;
+            var node = new SqlSelect(SqlParserPos.ZERO, SqlNodeList.EMPTY, selectList, FullyQualifiedTableName, null, null, null, null, null, null, null, null, null);
+            var config = SqlPrettyWriter.config().withAlwaysUseParentheses(true).withDialect(Schema.Convention.Dialect);
+            var writer = new SqlPrettyWriter(config);
+            node.unparse(writer, 0, 0);
+            return writer.toSqlString();
         }
 
         /// <inheritdoc />

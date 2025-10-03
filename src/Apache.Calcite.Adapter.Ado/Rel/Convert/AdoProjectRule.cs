@@ -12,7 +12,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel.Convert
     /// <summary>
     /// Rule to convert a <see cref="Project"/> to an <see cref="AdoProject"/>.
     /// </summary>
-    class AdoProjectRule : AdoConverterRule
+    public class AdoProjectRule : AdoConverterRule
     {
 
         /// <summary>

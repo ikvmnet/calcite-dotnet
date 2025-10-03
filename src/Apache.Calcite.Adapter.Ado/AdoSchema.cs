@@ -170,7 +170,7 @@ namespace Apache.Calcite.Adapter.Ado
             {
                 var adoDatabaseMetadataType = Type.GetType(adoDatabaseMetadataName);
                 if (adoDatabaseMetadataType is null)
-                    throw new AdoSchemaException($"Failed to instantiate AdoDatabaseMetadata type: {adoDatabaseMetadataName}.");
+                    throw new AdoCalciteException($"Failed to instantiate AdoDatabaseMetadata type: {adoDatabaseMetadataName}.");
 
                 // factory just creates a single instance
                 adoDatabaseMetadataFactory = new AdoDatabaseMetadataTypeFactory(adoDatabaseMetadataType);
@@ -184,16 +184,16 @@ namespace Apache.Calcite.Adapter.Ado
                 {
                     var adoDatabaseMetadataFactoryType = Type.GetType(adoDatabaseMetadataFactoryName);
                     if (adoDatabaseMetadataFactoryType is null)
-                        throw new AdoSchemaException($"Failed to instantiate AdoDatabaseMetadataFactory type: {adoDatabaseMetadataFactoryName}.");
+                        throw new AdoCalciteException($"Failed to instantiate AdoDatabaseMetadataFactory type: {adoDatabaseMetadataFactoryName}.");
 
                     adoDatabaseMetadataFactory = Activator.CreateInstance(adoDatabaseMetadataFactoryType) as AdoDatabaseMetadataFactory;
                     if (adoDatabaseMetadataFactory is null)
-                        throw new AdoSchemaException($"Could not create instance of type '{adoDatabaseMetadataFactoryType.FullName}' as AdoDatabaseMetadataFactory.");
+                        throw new AdoCalciteException($"Could not create instance of type '{adoDatabaseMetadataFactoryType.FullName}' as AdoDatabaseMetadataFactory.");
                 }
             }
 
             if (adoDatabaseMetadataFactory == null)
-                throw new AdoSchemaException("Could not establish AdoDatabaseMetadataFactory.");
+                throw new AdoCalciteException("Could not establish AdoDatabaseMetadataFactory.");
 
             // data source explicitly specified
             var adoDataSourceName = (string)operand.get("adoDataSource");
@@ -201,10 +201,10 @@ namespace Apache.Calcite.Adapter.Ado
             {
                 var dbDataSourceType = Type.GetType(adoDataSourceName);
                 if (dbDataSourceType is null)
-                    throw new AdoSchemaException($"Failed to instantiate DbDataSource type: {adoDataSourceName}.");
+                    throw new AdoCalciteException($"Failed to instantiate DbDataSource type: {adoDataSourceName}.");
 
                 if (Activator.CreateInstance(dbDataSourceType) is not DbDataSource dbDataSource)
-                    throw new AdoSchemaException($"Failed to instantiate DbDataSource type: {dbDataSourceType.FullName}.");
+                    throw new AdoCalciteException($"Failed to instantiate DbDataSource type: {dbDataSourceType.FullName}.");
 
                 // create new data source from data source and metadata
                 adoDataSource = new DbDataSourceAdoDataSource(dbDataSource, adoDatabaseMetadata ?? adoDatabaseMetadataFactory.Create(dbDataSource));
@@ -215,17 +215,17 @@ namespace Apache.Calcite.Adapter.Ado
             {
                 var adoProviderName = (string?)operand.get("adoProviderName");
                 if (adoProviderName is null || string.IsNullOrWhiteSpace(adoProviderName))
-                    throw new AdoSchemaException("Required missing property 'adoProviderName'.");
+                    throw new AdoCalciteException("Required missing property 'adoProviderName'.");
 
                 var adoConnectionString = (string?)operand.get("adoConnectionString");
                 if (adoConnectionString is null || string.IsNullOrWhiteSpace(adoConnectionString))
-                    throw new AdoSchemaException("Required missing property 'adoConnectionString'.");
+                    throw new AdoCalciteException("Required missing property 'adoConnectionString'.");
 
                 var dbFactory = DbProviderFactories.GetFactory(adoProviderName);
                 var dbDataSource = dbFactory.CreateDataSource(adoConnectionString);
                 adoDataSource = new DbProviderAdoDataSource(dbFactory, adoConnectionString, adoDatabaseMetadata ?? adoDatabaseMetadataFactory.Create(dbDataSource));
                 if (adoDataSource is null)
-                    throw new AdoSchemaException("Failed to instantiate DbDataSource from adoProviderName and adoConnectionString.");
+                    throw new AdoCalciteException("Failed to instantiate DbDataSource from adoProviderName and adoConnectionString.");
             }
 
             return Create(
@@ -315,7 +315,7 @@ namespace Apache.Calcite.Adapter.Ado
             foreach (var field in _dataSource.Metadata.GetFields(databaseName, schemaName, tableName))
             {
                 if (field.Name is null)
-                    throw new AdoSchemaException("Null value encountered for field name.");
+                    throw new AdoCalciteException("Null value encountered for field name.");
 
                 types.add(field.Name, GetSqlType(typeFactory, field.DbType, field.Precision ?? -1, field.Scale ?? -1, field.Size ?? -1)).nullable(field.Nullable);
             }
@@ -332,7 +332,7 @@ namespace Apache.Calcite.Adapter.Ado
         /// <param name="scale"></param>
         /// <param name="size"></param>
         /// <returns></returns>
-        /// <exception cref="AdoSchemaException"></exception>
+        /// <exception cref="AdoCalciteException"></exception>
         internal RelDataType GetSqlType(RelDataTypeFactory typeFactory, DbType dbType, int precision, int scale, int size)
         {
             switch (dbType)
@@ -393,7 +393,7 @@ namespace Apache.Calcite.Adapter.Ado
                     return typeFactory.createSqlType(SqlTypeName.TIMESTAMP_TZ);
             }
 
-            throw new AdoSchemaException($"Unsupported database type: {dbType}.");
+            throw new AdoCalciteException($"Unsupported database type: {dbType}.");
         }
 
         /// <inheritdoc />

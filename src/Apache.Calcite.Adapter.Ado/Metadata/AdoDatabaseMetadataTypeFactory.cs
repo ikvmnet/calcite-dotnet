@@ -25,7 +25,7 @@ namespace Apache.Calcite.Adapter.Ado.Metadata
         /// <inheritdoc />
         public override AdoDatabaseMetadata Create(DbDataSource dbDataSource)
         {
-            return Activator.CreateInstance(_type, dbDataSource) as AdoDatabaseMetadata ?? throw new AdoSchemaException($"Could not create instance of type '{_type.FullName}' as AdoDatabaseMetadata.");
+            return Activator.CreateInstance(_type, dbDataSource) as AdoDatabaseMetadata ?? throw new AdoCalciteException($"Could not create instance of type '{_type.FullName}' as AdoDatabaseMetadata.");
         }
 
     }

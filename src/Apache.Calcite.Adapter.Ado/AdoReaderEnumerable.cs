@@ -47,7 +47,7 @@ namespace Apache.Calcite.Adapter.Ado
             }
             catch (DataException e)
             {
-                throw new AdoSchemaException("Exception while performing query.", e);
+                throw new AdoCalciteException("Exception while performing query.", e);
             }
         }
 

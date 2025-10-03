@@ -12,7 +12,7 @@ using static org.apache.calcite.rel.core.RelFactories;
 namespace Apache.Calcite.Adapter.Ado.Rel.RelFactories
 {
 
-    class AdoJoinFactory : JoinFactory
+    public class AdoJoinFactory : JoinFactory
     {
 
         public RelNode createJoin(RelNode left, RelNode right, List hints, RexNode condition, Set variablesSet, JoinRelType joinType, bool semiJoinDone)

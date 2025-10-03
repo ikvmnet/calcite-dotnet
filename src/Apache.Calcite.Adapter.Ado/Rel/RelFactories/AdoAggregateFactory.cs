@@ -11,7 +11,7 @@ using static org.apache.calcite.rel.core.RelFactories;
 namespace Apache.Calcite.Adapter.Ado.Rel.RelFactories
 {
 
-    class AdoAggregateFactory : AggregateFactory
+    public class AdoAggregateFactory : AggregateFactory
     {
 
         public RelNode createAggregate(RelNode input, List hints, ImmutableBitSet groupSet, ImmutableList groupSets, List aggCalls)

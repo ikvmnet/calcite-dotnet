@@ -13,6 +13,9 @@ using org.apache.calcite.sql.type;
 namespace Apache.Calcite.Adapter.Ado
 {
 
+    /// <summary>
+    /// Various utilities for working with the ADO Calcite adapter.
+    /// </summary>
     public static class AdoUtils
     {
 
@@ -39,7 +42,7 @@ namespace Apache.Calcite.Adapter.Ado
         }
 
         /// <summary>
-        /// Gets a value from the reader according to the specified representation and database type.
+        /// Gets a object value from the reader according to the specified representation and database type.
         /// </summary>
         /// <param name="typeName"></param>
         /// <param name="index"></param>
@@ -75,7 +78,7 @@ namespace Apache.Calcite.Adapter.Ado
                     break;
             }
 
-            throw new AdoSchemaException($"Unsupported SQL type mapping: {(SqlTypeName.__Enum)typeName.ordinal()}");
+            throw new AdoCalciteException($"Unsupported SQL type mapping: {(SqlTypeName.__Enum)typeName.ordinal()}");
         }
 
     }

@@ -1,8 +1,13 @@
 ﻿using System;
 
+using org.apache.calcite.jdbc;
 using org.apache.calcite.linq4j;
 using org.apache.calcite.schema;
 using org.apache.calcite.schema.impl;
+using org.apache.calcite.sql;
+using org.apache.calcite.sql.parser;
+using org.apache.calcite.sql.pretty;
+using org.apache.calcite.sql.util;
 
 namespace Apache.Calcite.Adapter.Ado
 {
@@ -36,22 +41,31 @@ namespace Apache.Calcite.Adapter.Ado
         /// <inheritdoc />
         public override Enumerator enumerator()
         {
-            return Table.Query().enumerator();
+            var typeFactory = ((CalciteConnection)queryProvider).getTypeFactory();
+            var fields = _adoTable.getRowType(typeFactory).getFieldList();
+            var sql = GenerateSql();
+            var enumerable = AdoEnumerable.CreateReader(_adoTable.Schema.DataSource, sql.getSql(), AdoUtils.CreateObjectArrayRowBuilderFactory(fields));
+            return enumerable.enumerator();
+        }
+
+        /// <summary>
+        /// Generates the SQL for the queryable.
+        /// </summary>
+        /// <returns></returns>
+        SqlString GenerateSql()
+        {
+            var selectList = SqlNodeList.SINGLETON_STAR;
+            var node = new SqlSelect(SqlParserPos.ZERO, SqlNodeList.EMPTY, selectList, _adoTable.FullyQualifiedTableName, null, null, null, null, null, null, null, null, null);
+            var config = SqlPrettyWriter.config().withAlwaysUseParentheses(true).withDialect(_adoTable.Schema.Convention.Dialect);
+            var writer = new SqlPrettyWriter(config);
+            node.unparse(writer, 0, 0);
+            return writer.toSqlString();
         }
 
         /// <inheritdoc />
         public override string toString()
         {
             return $"AdoTableQueryable {{table: {tableName}}}";
-        }
-
-        /// <summary>
-        /// Called via code-generation.
-        /// </summary>
-        /// <returns></returns>
-        public Enumerable Query()
-        {
-            return _adoTable.Query();
         }
 
     }

@@ -24,8 +24,8 @@
     </ItemGroup>
 
     <ItemGroup>
-        <None Update="test.model">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <None Update="csv\people.csv">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
     </ItemGroup>
 

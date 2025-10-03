@@ -14,7 +14,7 @@ namespace Apache.Calcite.Adapter.Ado
     /// <summary>
     /// Rules and relational operators for the <see cref="AdoConvention"/> calling convention.
     /// </summary>
-    static class AdoRules
+    public static class AdoRules
     {
 
         static readonly ProjectFactory PROJECT_FACTORY = new AdoProjectFactory();

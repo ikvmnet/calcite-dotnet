@@ -10,7 +10,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel
     /// <summary>
     /// Implementation of <see cref="Filter"/> in <see cref="AdoConvention"/> calling convention.
     /// </summary>
-    class AdoFilter : Filter, AdoRel
+    public class AdoFilter : Filter, AdoRel
     {
 
         /// <summary>

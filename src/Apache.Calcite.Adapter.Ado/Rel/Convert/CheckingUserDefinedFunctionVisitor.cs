@@ -7,7 +7,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel.Convert
     /// <summary>
     /// Visitor that checks whether part of a projection is a user-defined function (UDF).
     /// </summary>
-    class CheckingUserDefinedFunctionVisitor : RexVisitorImpl
+    public class CheckingUserDefinedFunctionVisitor : RexVisitorImpl
     {
 
         /// <summary>

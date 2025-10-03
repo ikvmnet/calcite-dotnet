@@ -4,7 +4,6 @@ using java.util;
 
 using org.apache.calcite.plan;
 using org.apache.calcite.rel.core;
-using org.apache.calcite.rel.rel2sql;
 using org.apache.calcite.rel.type;
 
 namespace Apache.Calcite.Adapter.Ado.Rel
@@ -13,7 +12,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel
     /// <summary>
     /// Values operator implemented in ADO convention.
     /// </summary>
-    class AdoValues : Values, AdoRel
+    public class AdoValues : Values, AdoRel
     {
 
         /// <summary>

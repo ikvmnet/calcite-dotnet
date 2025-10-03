@@ -13,7 +13,7 @@ using org.apache.calcite.sql;
 namespace Apache.Calcite.Adapter.Ado.Rel.Convert
 {
 
-    class AdoJoinRule : AdoConverterRule
+    public class AdoJoinRule : AdoConverterRule
     {
 
         /// <summary>

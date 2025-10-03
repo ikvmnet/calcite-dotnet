@@ -9,7 +9,7 @@ namespace Apache.Calcite.Adapter.Ado
     /// <summary>
     /// Provides an implementation of <see cref="AdoDataSource"/> backed by a <see cref="DbProviderFactory"/>.
     /// </summary>
-    class DbProviderAdoDataSource : AdoDataSource
+    public class DbProviderAdoDataSource : AdoDataSource
     {
 
         readonly DbProviderFactory _factory;
@@ -33,7 +33,7 @@ namespace Apache.Calcite.Adapter.Ado
         /// <inheritdoc />
         public override DbConnection OpenConnection()
         {
-            var cnn = _factory.CreateConnection() ?? throw new AdoSchemaException("Null result creating connection.");
+            var cnn = _factory.CreateConnection() ?? throw new AdoCalciteException("Null result creating connection.");
             cnn.ConnectionString = _connectionString;
             cnn.Open();
             return cnn;

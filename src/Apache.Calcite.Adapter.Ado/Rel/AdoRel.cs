@@ -6,7 +6,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel
     /// <summary>
     /// Relational expression that uses ADO.NET calling convention.
     /// </summary>
-    interface AdoRel : RelNode
+    public interface AdoRel : RelNode
     {
 
         /// <summary>

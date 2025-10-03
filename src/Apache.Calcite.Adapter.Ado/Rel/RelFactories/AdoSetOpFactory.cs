@@ -11,7 +11,7 @@ using static org.apache.calcite.rel.core.RelFactories;
 namespace Apache.Calcite.Adapter.Ado.Rel.RelFactories
 {
 
-    class AdoSetOpFactory : SetOpFactory
+    public class AdoSetOpFactory : SetOpFactory
     {
 
         public RelNode createSetOp(SqlKind kind, List inputs, bool all)

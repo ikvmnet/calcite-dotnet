@@ -9,10 +9,10 @@ namespace Apache.Calcite.Adapter.Ado
     /// <summary>
     /// A special <see cref="DataContext"/> which handles correlation variable for batch nested loop joins.
     /// </summary>
-    class AdoCorrelationDataContext : DataContext
+    public class AdoCorrelationDataContext : DataContext
     {
 
-        public const int OFFSET = int.MaxValue - 10000;
+        public const int Offset = int.MaxValue - 10000;
 
         readonly DataContext _delegate;
         readonly object[] _parameters;

@@ -56,7 +56,7 @@ namespace Apache.Calcite.Adapter.Ado
                 }
                 catch (DataException e)
                 {
-                    throw new AdoSchemaException("Exception listing schema names.", e);
+                    throw new AdoCalciteException("Exception listing schema names.", e);
                 }
 
                 return builder.build();
@@ -73,7 +73,7 @@ namespace Apache.Calcite.Adapter.Ado
                 }
                 catch (DataException e)
                 {
-                    throw new AdoSchemaException("Exception listing schema names.", e);
+                    throw new AdoCalciteException("Exception listing schema names.", e);
                 }
 
                 return null;

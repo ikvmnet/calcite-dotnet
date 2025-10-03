@@ -2,7 +2,7 @@
 using System.Data.Common;
 using System.IO;
 
-using com.fasterxml.jackson.annotation;
+using com.google.common.collect;
 
 using java.sql;
 using java.util;
@@ -14,6 +14,8 @@ using org.apache.calcite.adapter.csv;
 using org.apache.calcite.config;
 using org.apache.calcite.jdbc;
 using org.apache.calcite.plan;
+using org.apache.calcite.schema;
+using org.apache.calcite.schema.impl;
 using org.apache.calcite.tools;
 
 namespace Apache.Calcite.Adapter.Ado.Tests
@@ -60,23 +62,79 @@ namespace Apache.Calcite.Adapter.Ado.Tests
             }
         }
 
-        [TestMethod]
-        public void Test1()
+        /// <summary>
+        /// Creates a schema reading from the ADO Sqlite connection.
+        /// </summary>
+        /// <param name="rootSchema"></param>
+        void CreateSqliteSchema(SchemaPlus rootSchema)
         {
             SetupSqlite();
 
+            var properties = new HashMap();
+            properties.put("adoProviderName", "Microsoft.Data.Sqlite");
+            properties.put("adoConnectionString", "Data Source=./test.db");
+            properties.put("adoDatabaseMetadata", "Apache.Calcite.Adapter.Ado.Metadata.SqliteDatabaseMetadata");
+            properties.put("adoSchema", "");
+            var s = AdoSchemaFactory.Instance.create(rootSchema, "testdb", properties);
+            rootSchema.add("testdb", s);
+        }
+
+        /// <summary>
+        /// Creates a schema reading from the CSV files.
+        /// </summary>
+        /// <param name="rootSchema"></param>
+        void CreateCsvSchema(SchemaPlus rootSchema)
+        {
+            var properties = new HashMap();
+            properties.put("directory", System.IO.Path.Combine(System.IO.Path.GetDirectoryName(typeof(AdoSchemaTests).Assembly.Location), "csv"));
+            properties.put("flavor", "translatable");
+            var s = CsvSchemaFactory.INSTANCE.create(rootSchema, "csv", properties);
+            rootSchema.add("csv", s);
+        }
+
+        /// <summary>
+        /// Creates a new adhoc schema containing virtual tables.
+        /// </summary>
+        /// <param name="root"></param>
+        void CreateAdhocSchema(SchemaPlus root)
+        {
+            var people = """
+                SELECT      T."Id"                  AS "Id",
+                            T."Text" || '_'         AS "Name",
+                            P."Age"                 AS "Age"
+                FROM        "testdb"."table1"       T
+                INNER JOIN  "csv"."people"          P
+                    ON      P."Id" = T."Id"
+                """;
+
+            var s = new AbstractSchema();
+            var p = root.add("adhoc", s);
+            p.add("people", ViewTable.viewMacro(p, people, ImmutableList.of("adhoc"), ImmutableList.of("adhoc", "people"), null));
+        }
+
+        /// <summary>
+        /// Complex hand built example for testing.
+        /// </summary>
+        [TestMethod]
+        public void ComplexSample()
+        {
             var properties = new Properties();
             properties.setProperty(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), "false");
-            using var connection = DriverManager.getConnection("jdbc:calcite:model=test.model", properties);
+            using var connection = DriverManager.getConnection("jdbc:calcite:", properties);
             var calciteConnection = (CalciteConnection)connection.unwrap(typeof(CalciteConnection));
 
             var rootSchema = calciteConnection.getRootSchema();
+            CreateSqliteSchema(rootSchema);
+            CreateCsvSchema(rootSchema);
+            CreateAdhocSchema(rootSchema);
+
             var config = Frameworks.newConfigBuilder().defaultSchema(rootSchema).build();
             var planner = Frameworks.getPlanner(config);
 
+            var query = """ SELECT * FROM "adhoc"."people" P WHERE P."Id" > 10 AND P."Name" LIKE 'Per%' """;
+
             Console.WriteLine("SqlNode:");
-            //var sqlNode = planner.parse(""" SELECT * FROM "testdb"."table1" T1 WHERE T1."Id" > 10 """);
-            var sqlNode = planner.parse(""" SELECT * FROM "adhoc"."people" P WHERE P."Id" > 10 """);
+            var sqlNode = planner.parse(query);
             sqlNode = planner.validate(sqlNode);
             Console.WriteLine(sqlNode.toString());
             Console.WriteLine();
@@ -93,15 +151,13 @@ namespace Apache.Calcite.Adapter.Ado.Tests
 
             Console.WriteLine("Plan:");
             using var stmt = connection.createStatement();
-            //using var rs = stmt.executeQuery(""" EXPLAIN PLAN FOR SELECT * FROM "testdb"."table1" T1 WHERE T1."Id" > 10 """);
-            using var rs = stmt.executeQuery(""" EXPLAIN PLAN FOR SELECT * FROM "adhoc"."people" P WHERE P."Id" > 10 """);
+            using var rs = stmt.executeQuery($""" EXPLAIN PLAN FOR {query} """);
             while (rs.next())
                 for (int i = 1; i <= rs.getMetaData().getColumnCount(); i++)
                     Console.WriteLine(rs.getString(i) + " ");
 
             using var statement = calciteConnection.createStatement();
-            //using var resultSet = statement.executeQuery(""" SELECT * FROM "testdb"."table1" T1 WHERE T1."Id" > 10 """);
-            using var resultSet = statement.executeQuery(""" SELECT * FROM "adhoc"."people" P WHERE P."Id" > 10 """);
+            using var resultSet = statement.executeQuery(query);
             var c = resultSet.getMetaData().getColumnCount();
 
             for (int i = 0; i < c; i++)

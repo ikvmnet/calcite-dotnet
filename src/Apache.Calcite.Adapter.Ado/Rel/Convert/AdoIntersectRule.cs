@@ -7,7 +7,7 @@ using org.apache.calcite.rel.core;
 namespace Apache.Calcite.Adapter.Ado.Rel.Convert
 {
 
-    class AdoIntersectRule : AdoConverterRule
+    public class AdoIntersectRule : AdoConverterRule
     {
 
         /// <summary>

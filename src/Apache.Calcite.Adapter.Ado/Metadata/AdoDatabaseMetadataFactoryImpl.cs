@@ -40,7 +40,7 @@ namespace Apache.Calcite.Adapter.Ado.Metadata
                     return new SqliteDatabaseMetadata(dbDataSource);
             }
 
-            throw new AdoSchemaException($"No metadata provider available for connection of type '{connection.GetType().FullName}'.");
+            throw new AdoCalciteException($"No metadata provider available for connection of type '{connection.GetType().FullName}'.");
         }
 
     }

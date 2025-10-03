@@ -2,7 +2,6 @@
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.metadata;
-using org.apache.calcite.rel.rel2sql;
 using org.apache.calcite.rex;
 
 namespace Apache.Calcite.Adapter.Ado.Rel
@@ -11,7 +10,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel
     /// <summary>
     /// Union operator implemented in ADO convention.
     /// </summary>
-    class AdoSort : Sort, AdoRel
+    public class AdoSort : Sort, AdoRel
     {
 
         /// <summary>

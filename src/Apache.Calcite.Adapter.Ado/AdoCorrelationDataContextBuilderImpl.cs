@@ -23,7 +23,7 @@ namespace Apache.Calcite.Adapter.Ado
         readonly BlockBuilder _builder;
         readonly Expression _dataContext;
 
-        int offset = AdoCorrelationDataContext.OFFSET;
+        int offset = AdoCorrelationDataContext.Offset;
 
         /// <summary>
         /// Initializes a new instance.

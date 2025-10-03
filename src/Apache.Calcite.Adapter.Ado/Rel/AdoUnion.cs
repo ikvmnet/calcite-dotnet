@@ -3,7 +3,6 @@
 using org.apache.calcite.plan;
 using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.metadata;
-using org.apache.calcite.rel.rel2sql;
 
 namespace Apache.Calcite.Adapter.Ado.Rel
 {
@@ -11,7 +10,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel
     /// <summary>
     /// Union operator implemented in ADO convention.
     /// </summary>
-    class AdoUnion : Union, AdoRel
+    public class AdoUnion : Union, AdoRel
     {
 
         /// <summary>

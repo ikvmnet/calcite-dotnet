@@ -16,7 +16,7 @@ namespace Apache.Calcite.Adapter.Ado
     /// <summary>
     /// Relational expression representing a scan of a table in an ADO data source.
     /// </summary>
-    class AdoTableScan : TableScan, AdoRel
+    public class AdoTableScan : TableScan, AdoRel
     {
 
         readonly AdoTable _adoTable;

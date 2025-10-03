@@ -10,7 +10,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel.Convert
     /// <summary>
     /// Rule to convert a <see cref="Filter"/> to a <see cref="AdoFilter"/>.
     /// </summary>
-    class AdoFilterRule : AdoConverterRule
+    public class AdoFilterRule : AdoConverterRule
     {
 
         /// <summary>

@@ -10,7 +10,7 @@ using static org.apache.calcite.rel.core.RelFactories;
 namespace Apache.Calcite.Adapter.Ado.Rel.RelFactories
 {
 
-    class AdoFilterFactory : FilterFactory
+    public class AdoFilterFactory : FilterFactory
     {
 
         public RelNode createFilter(RelNode input, RexNode condition, Set variablesSet)

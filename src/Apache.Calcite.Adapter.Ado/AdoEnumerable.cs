@@ -24,7 +24,7 @@ namespace Apache.Calcite.Adapter.Ado
         /// </summary>
         /// <param name="reader"></param>
         /// <returns></returns>
-        /// <exception cref="AdoSchemaException"></exception>
+        /// <exception cref="AdoCalciteException"></exception>
         static Function0 AutoRowBuilderFactoryFunc(DbDataReader reader)
         {
             int fieldCount;
@@ -35,7 +35,7 @@ namespace Apache.Calcite.Adapter.Ado
             }
             catch (NotSupportedException e)
             {
-                throw new AdoSchemaException("The data reader does not support reading the number of columns.", e);
+                throw new AdoCalciteException("The data reader does not support reading the number of columns.", e);
             }
 
             if (fieldCount == 1)
@@ -215,7 +215,7 @@ namespace Apache.Calcite.Adapter.Ado
             }
             catch (DbException e)
             {
-                throw new AdoSchemaException("Exception while enumerating query.", e);
+                throw new AdoCalciteException("Exception while enumerating query.", e);
             }
         }
 

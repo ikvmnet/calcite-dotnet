@@ -24,7 +24,7 @@ namespace Apache.Calcite.Adapter.Ado.Utils
         /// </summary>
         /// <param name="reader"></param>
         /// <param name="fields"></param>
-        /// <exception cref="AdoSchemaException"></exception>
+        /// <exception cref="AdoCalciteException"></exception>
         public ObjectArrayRowBuilder(DbDataReader reader, List fields)
         {
             _reader = reader ?? throw new ArgumentNullException(nameof(reader));
@@ -44,7 +44,7 @@ namespace Apache.Calcite.Adapter.Ado.Utils
             }
             catch (DataException e)
             {
-                throw new AdoSchemaException("Exception while reading a row from the data reader.", e);
+                throw new AdoCalciteException("Exception while reading a row from the data reader.", e);
             }
         }
 

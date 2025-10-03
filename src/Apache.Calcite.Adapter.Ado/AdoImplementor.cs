@@ -19,7 +19,7 @@ namespace Apache.Calcite.Adapter.Ado
     /// <summary>
     /// State for generating a SQL statement.
     /// </summary>
-    class AdoImplementor : RelToSqlConverter
+    public class AdoImplementor : RelToSqlConverter
     {
 
         class _Builder : IAdoCorrelationDataContextBuilder

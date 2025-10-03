@@ -8,7 +8,7 @@ namespace Apache.Calcite.Adapter.Ado
     /// <summary>
     /// Describes an error thrown by the ADO schema.
     /// </summary>
-    public class AdoSchemaException : CalciteException
+    public class AdoCalciteException : CalciteException
     {
 
         /// <summary>
@@ -16,7 +16,7 @@ namespace Apache.Calcite.Adapter.Ado
         /// </summary>
         /// <param name="message"></param>
         /// <param name="cause"></param>
-        public AdoSchemaException(string message, Exception? cause) :
+        public AdoCalciteException(string message, Exception? cause) :
             base(message, cause)
         {
 
@@ -26,7 +26,7 @@ namespace Apache.Calcite.Adapter.Ado
         /// Initializes a new instance.
         /// </summary>
         /// <param name="message"></param>
-        public AdoSchemaException(string message) :
+        public AdoCalciteException(string message) :
             this(message, null)
         {
 

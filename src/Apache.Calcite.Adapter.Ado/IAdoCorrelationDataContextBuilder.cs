@@ -6,7 +6,7 @@ namespace Apache.Calcite.Adapter.Ado
     /// <summary>
     /// An interface to collect all correlation variables required to create a <see cref="AdoCorrelationDataContext"/>.
     /// </summary>
-    interface IAdoCorrelationDataContextBuilder
+    public interface IAdoCorrelationDataContextBuilder
     {
 
         /// <summary>

@@ -9,7 +9,7 @@ using static org.apache.calcite.rel.core.RelFactories;
 namespace Apache.Calcite.Adapter.Ado.Rel.RelFactories
 {
 
-    class AdoTableScanFactory : TableScanFactory
+    public class AdoTableScanFactory : TableScanFactory
     {
 
         public RelNode createScan(ToRelContext toRelContext, RelOptTable table)

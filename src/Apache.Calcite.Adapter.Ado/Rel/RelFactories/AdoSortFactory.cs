@@ -11,7 +11,7 @@ using static org.apache.calcite.rel.core.RelFactories;
 namespace Apache.Calcite.Adapter.Ado.Rel.RelFactories
 {
 
-    class AdoSortFactory : SortFactory
+    public class AdoSortFactory : SortFactory
     {
 
         public RelNode createSort(RelNode input, RelCollation collation, RexNode offset, RexNode fetch)

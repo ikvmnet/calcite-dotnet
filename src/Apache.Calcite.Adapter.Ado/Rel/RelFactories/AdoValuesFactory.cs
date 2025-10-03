@@ -10,7 +10,7 @@ using static org.apache.calcite.rel.core.RelFactories;
 namespace Apache.Calcite.Adapter.Ado.Rel.RelFactories
 {
 
-    class AdoValuesFactory : ValuesFactory
+    public class AdoValuesFactory : ValuesFactory
     {
 
         public RelNode createValues(RelOptCluster cluster, RelDataType rowType, List tuples)

@@ -10,7 +10,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel
     /// <summary>
     /// Intersect operator implemented in ADO convention.
     /// </summary>
-    class AdoIntersect : Intersect, AdoRel
+    public class AdoIntersect : Intersect, AdoRel
     {
 
         /// <summary>

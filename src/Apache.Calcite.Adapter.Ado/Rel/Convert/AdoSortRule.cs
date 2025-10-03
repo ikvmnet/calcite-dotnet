@@ -7,7 +7,7 @@ using org.apache.calcite.rel.core;
 namespace Apache.Calcite.Adapter.Ado.Rel.Convert
 {
 
-    class AdoSortRule : AdoConverterRule
+    public class AdoSortRule : AdoConverterRule
     {
 
         /// <summary>

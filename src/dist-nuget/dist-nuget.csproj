@@ -7,7 +7,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageProjectReference Include="..\Apache.Calcite.Data\Apache.Calcite.Data.csproj">
+        <PackageProjectReference Include="..\Apache.Calcite.Adapter.Ado\Apache.Calcite.Adapter.Ado.csproj">
             <PackageTargetPath>.</PackageTargetPath>
         </PackageProjectReference>
     </ItemGroup>

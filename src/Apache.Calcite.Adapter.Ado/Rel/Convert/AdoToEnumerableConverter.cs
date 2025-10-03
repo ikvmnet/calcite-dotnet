@@ -1,7 +1,5 @@
 ﻿using System.Data.Common;
 
-using com.sun.tools.javac.jvm;
-
 using java.lang;
 using java.lang.reflect;
 using java.util;
@@ -21,7 +19,6 @@ using org.apache.calcite.schema;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.type;
 using org.apache.calcite.sql.util;
-using org.apache.calcite.tools;
 using org.apache.calcite.util;
 
 namespace Apache.Calcite.Adapter.Ado.Rel.Convert
@@ -57,7 +54,7 @@ namespace Apache.Calcite.Adapter.Ado.Rel.Convert
             var list = new BlockBuilder();
             var self = getInput() as AdoRel;
             if (self is null)
-                throw new AdoSchemaException("Unsupported input type.");
+                throw new AdoCalciteException("Unsupported input type.");
 
             var physType =
                 PhysTypeImpl.of(
