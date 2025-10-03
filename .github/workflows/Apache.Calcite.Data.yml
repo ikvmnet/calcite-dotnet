@@ -82,7 +82,7 @@ jobs:
     strategy:
       matrix:
         run:
-        - Apache.Calcite.Data.Tests
+        - Apache.Calcite.Adapter.Ado.Tests
         sys:
         - win-x64
         - linux-x64
@@ -90,18 +90,7 @@ jobs:
         - osx-x64
         - osx-arm64
         tfm:
-        - net6.0
         - net8.0
-        - net472
-        exclude:
-        - tfm: net472
-          sys: linux-x64
-        - tfm: net472
-          sys: linux-arm64
-        - tfm: net472
-          sys: osx-x64
-        - tfm: net472
-          sys: osx-arm64
     name: Test (${{ matrix.run }}:${{ matrix.tfm }}:${{ matrix.sys }})
     needs:
     - build
