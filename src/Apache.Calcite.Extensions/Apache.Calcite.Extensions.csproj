@@ -1,17 +1,16 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFrameworks>net8.0</TargetFrameworks>
+        <TargetFramework>net8.0</TargetFramework>
         <Nullable>enable</Nullable>
-        <Description>ADO.NET database connection provider for Apache Calcite.</Description>
     </PropertyGroup>
 
     <ItemGroup>
         <PackageReference Include="IKVM" Version="8.14.0" />
         <PackageReference Include="IKVM.Java.Extensions" Version="8.14.0" />
         <PackageReference Include="IKVM.Maven.Sdk" Version="1.10.0">
-          <PrivateAssets>all</PrivateAssets>
-          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <MavenReference Include="org.apache.calcite:calcite-core" Version="1.40.0" />
     </ItemGroup>

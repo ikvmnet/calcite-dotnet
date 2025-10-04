@@ -7,6 +7,11 @@ using System.Diagnostics.CodeAnalysis;
 using java.lang;
 using java.sql;
 
+using org.apache.calcite.config;
+using org.apache.calcite.jdbc;
+using org.apache.calcite.schema;
+using org.apache.calcite.server;
+
 namespace Apache.Calcite.Data
 {
 
@@ -15,11 +20,9 @@ namespace Apache.Calcite.Data
     /// </summary>
     public class CalciteConnection : DbConnection
     {
-
-        internal CalciteConnectionStringBuilder? _connectionStringBuilder;
-        internal java.sql.Connection? _connection;
-        readonly bool _leaveOpen;
-        internal CalciteTransaction? _transaction;
+        
+        CalciteConnectionStringBuilder? _connectionStringBuilder;
+        CalciteConnectionImpl? _impl;
 
         /// <summary>
         /// Initializes a new instance.
@@ -34,8 +37,7 @@ namespace Apache.Calcite.Data
         /// </summary>
         /// <param name="url"></param>
         /// <param name="properties"></param>
-        public CalciteConnection(string url, IDictionary<string, string> properties) :
-            this()
+        public CalciteConnection(string url, IDictionary<string, string> properties)
         {
             if (url is null)
                 throw new ArgumentNullException(nameof(url));
@@ -57,21 +59,29 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Initializes a new instance wrapping an existing JDBC connection.
+        /// Gets the root schema.
         /// </summary>
-        /// <param name="connection"></param>
-        /// <param name="leaveOpen"></param>
-        public CalciteConnection(Connection connection, bool leaveOpen = false)
-        {
-            _connectionStringBuilder = new CalciteConnectionStringBuilder() { Url = connection.getMetaData().getURL() };
-            _connection = connection;
-            _leaveOpen = leaveOpen;
-        }
+        public SchemaPlus? RootSchema { get; }
+
+        /// <summary>
+        /// Gets the type factory.
+        /// </summary>
+        public JavaTypeFactoryImpl? TypeFactory { get; }
+
+        /// <summary>
+        /// Gets the properties of the connection.
+        /// </summary>
+        public IReadOnlyDictionary<string, string> Properties { get; } = new Dictionary<string, string>();
+
+        /// <summary>
+        /// Gets the configuration.
+        /// </summary>
+        public CalciteConnectionConfig? Config { get; }
 
         /// <summary>
         /// Gets the state of the connection.
         /// </summary>
-        public override ConnectionState State => _connection == null ? ConnectionState.Closed : _connection.isClosed() ? ConnectionState.Closed : ConnectionState.Open;
+        public override ConnectionState State => _impl == null ? ConnectionState.Closed : _impl.State;
 
         /// <summary>
         /// Gets or sets the connection string.
@@ -102,7 +112,7 @@ namespace Apache.Calcite.Data
 
             // reset connection string
             _connectionStringBuilder = new CalciteConnectionStringBuilder(value);
-            _connection = null;
+            _impl = null;
         }
 
         /// <summary>
