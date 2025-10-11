@@ -4,6 +4,8 @@ using System.IO;
 
 using com.google.common.collect;
 
+using IKVM.Jdbc.Data;
+
 using java.sql;
 using java.util;
 
@@ -120,8 +122,9 @@ namespace Apache.Calcite.Adapter.Ado.Tests
         {
             var properties = new Properties();
             properties.setProperty(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), "false");
-            using var connection = DriverManager.getConnection("jdbc:calcite:", properties);
-            var calciteConnection = (CalciteConnection)connection.unwrap(typeof(CalciteConnection));
+            var jdbcConnection = DriverManager.getConnection("jdbc:calcite:", properties);
+            var calciteConnection = (CalciteConnection)jdbcConnection.unwrap(typeof(CalciteConnection));
+            using var connection = new JdbcConnection(jdbcConnection);
 
             var rootSchema = calciteConnection.getRootSchema();
             CreateSqliteSchema(rootSchema);
@@ -150,34 +153,36 @@ namespace Apache.Calcite.Adapter.Ado.Tests
             Console.WriteLine();
 
             Console.WriteLine("Plan:");
-            using var stmt = connection.createStatement();
-            using var rs = stmt.executeQuery($""" EXPLAIN PLAN FOR {query} """);
-            while (rs.next())
-                for (int i = 1; i <= rs.getMetaData().getColumnCount(); i++)
-                    Console.WriteLine(rs.getString(i) + " ");
-
-            using var statement = calciteConnection.createStatement();
-            using var resultSet = statement.executeQuery(query);
-            var c = resultSet.getMetaData().getColumnCount();
-
-            for (int i = 0; i < c; i++)
+            using (var statement = connection.CreateCommand())
             {
-                Console.Write(resultSet.getMetaData().getColumnName(i + 1).PadLeft(20));
-                Console.Write(" ");
+                statement.CommandText = $""" EXPLAIN PLAN FOR {query} """;
+                Console.WriteLine((string?)statement.ExecuteScalar() + " ");
             }
 
-            Console.WriteLine();
-
-            while (resultSet.next())
+            using (var statement = connection.CreateCommand())
             {
-                for (int i = 0; i < c; i++)
+                statement.CommandText = query;
+                using var reader = statement.ExecuteReader();
+                
+                for (int i = 0; i < reader.FieldCount; i++)
                 {
-                    var v = resultSet.getString(i + 1);
-                    Console.Write(v.PadLeft(20));
+                    Console.Write(reader.GetName(i).PadLeft(20));
                     Console.Write(" ");
                 }
 
                 Console.WriteLine();
+
+                while (reader.Read())
+                {
+                    for (int i = 0; i < reader.FieldCount; i++)
+                    {
+                        var v = reader.GetValue(i);
+                        Console.Write(v.ToString().PadLeft(20));
+                        Console.Write(" ");
+                    }
+
+                    Console.WriteLine();
+                }
             }
         }
 

@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Data;
 using System.Data.Common;
 using System.Threading;
 
@@ -11,10 +10,8 @@ using java.lang;
 using java.util;
 
 using org.apache.calcite.linq4j.tree;
-using org.apache.calcite.rel.type;
 using org.apache.calcite.schema;
 using org.apache.calcite.schema.lookup;
-using org.apache.calcite.sql.type;
 
 namespace Apache.Calcite.Adapter.Ado
 {
@@ -73,7 +70,7 @@ namespace Apache.Calcite.Adapter.Ado
             {
                 foreach (var table in _schema.DataSource.Metadata.GetTables(_schema.DatabaseName, _schema.SchemaName))
                     if (table.Name == name)
-                        return new AdoTable(_schema, table.DatabaseName, table.SchemaName, table.Name, Schema.TableType.TABLE);
+                        return new AdoTable(_schema.DataSource, _schema.Convention, table.DatabaseName, table.SchemaName, table.Name, Schema.TableType.TABLE);
 
                 return null;
             }
@@ -297,103 +294,6 @@ namespace Apache.Calcite.Adapter.Ado
         public override Expression getExpression(SchemaPlus parentSchema, string name)
         {
             return Schemas.subSchemaExpression(parentSchema, name, typeof(AdoSchema));
-        }
-
-        /// <summary>
-        /// Gets the <see cref="RelProtoDataType"/> for a given table.
-        /// </summary>
-        /// <param name="databaseName"></param>
-        /// <param name="schemaName"></param>
-        /// <param name="tableName"></param>
-        /// <returns></returns>
-        internal RelProtoDataType GetRowProtoDataType(string? databaseName, string? schemaName, string tableName)
-        {
-            var typeFactory = new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
-            var types = typeFactory.builder();
-
-            // derive a type for each field
-            foreach (var field in _dataSource.Metadata.GetFields(databaseName, schemaName, tableName))
-            {
-                if (field.Name is null)
-                    throw new AdoCalciteException("Null value encountered for field name.");
-
-                types.add(field.Name, GetSqlType(typeFactory, field.DbType, field.Precision ?? -1, field.Scale ?? -1, field.Size ?? -1)).nullable(field.Nullable);
-            }
-
-            return RelDataTypeImpl.proto(types.build());
-        }
-
-        /// <summary>
-        /// Transforms a <see cref="DbType"/> and its various additional information into a <see cref="RelDataType"/>.
-        /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <param name="dbType"></param>
-        /// <param name="precision"></param>
-        /// <param name="scale"></param>
-        /// <param name="size"></param>
-        /// <returns></returns>
-        /// <exception cref="AdoCalciteException"></exception>
-        internal RelDataType GetSqlType(RelDataTypeFactory typeFactory, DbType dbType, int precision, int scale, int size)
-        {
-            switch (dbType)
-            {
-                case DbType.AnsiString:
-                    return typeFactory.createSqlType(SqlTypeName.VARCHAR, size);
-                case DbType.Binary:
-                    break;
-                case DbType.Byte:
-                    return typeFactory.createSqlType(SqlTypeName.TINYINT);
-                case DbType.Boolean:
-                    return typeFactory.createSqlType(SqlTypeName.BOOLEAN);
-                case DbType.Currency:
-                    break;
-                case DbType.Date:
-                    return typeFactory.createSqlType(SqlTypeName.DATE);
-                case DbType.DateTime:
-                    return typeFactory.createSqlType(SqlTypeName.TIMESTAMP);
-                case DbType.Decimal:
-                    return typeFactory.createSqlType(SqlTypeName.DECIMAL, precision, scale);
-                case DbType.Double:
-                    return typeFactory.createSqlType(SqlTypeName.DOUBLE);
-                case DbType.Guid:
-                    return typeFactory.createSqlType(SqlTypeName.CHAR, 36);
-                case DbType.Int16:
-                    return typeFactory.createSqlType(SqlTypeName.SMALLINT);
-                case DbType.Int32:
-                    return typeFactory.createSqlType(SqlTypeName.INTEGER);
-                case DbType.Int64:
-                    return typeFactory.createSqlType(SqlTypeName.BIGINT);
-                case DbType.Object:
-                    break;
-                case DbType.SByte:
-                    return typeFactory.createSqlType(SqlTypeName.TINYINT);
-                case DbType.Single:
-                    break;
-                case DbType.String:
-                    return typeFactory.createSqlType(SqlTypeName.VARCHAR, size);
-                case DbType.Time:
-                    return typeFactory.createSqlType(SqlTypeName.TIME);
-                case DbType.UInt16:
-                    return typeFactory.createSqlType(SqlTypeName.SMALLINT);
-                case DbType.UInt32:
-                    return typeFactory.createSqlType(SqlTypeName.INTEGER);
-                case DbType.UInt64:
-                    return typeFactory.createSqlType(SqlTypeName.BIGINT);
-                case DbType.VarNumeric:
-                    break;
-                case DbType.AnsiStringFixedLength:
-                    return typeFactory.createSqlType(SqlTypeName.CHAR, size);
-                case DbType.StringFixedLength:
-                    return typeFactory.createSqlType(SqlTypeName.CHAR, size);
-                case DbType.Xml:
-                    break;
-                case DbType.DateTime2:
-                    return typeFactory.createSqlType(SqlTypeName.TIMESTAMP);
-                case DbType.DateTimeOffset:
-                    return typeFactory.createSqlType(SqlTypeName.TIMESTAMP_TZ);
-            }
-
-            throw new AdoCalciteException($"Unsupported database type: {dbType}.");
         }
 
         /// <inheritdoc />

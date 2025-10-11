@@ -44,7 +44,7 @@ namespace Apache.Calcite.Adapter.Ado
             var typeFactory = ((CalciteConnection)queryProvider).getTypeFactory();
             var fields = _adoTable.getRowType(typeFactory).getFieldList();
             var sql = GenerateSql();
-            var enumerable = AdoEnumerable.CreateReader(_adoTable.Schema.DataSource, sql.getSql(), AdoUtils.CreateObjectArrayRowBuilderFactory(fields));
+            var enumerable = AdoEnumerable.CreateReader(_adoTable.DataSource, sql.getSql(), AdoUtils.CreateObjectArrayRowBuilderFactory(fields));
             return enumerable.enumerator();
         }
 
@@ -56,7 +56,7 @@ namespace Apache.Calcite.Adapter.Ado
         {
             var selectList = SqlNodeList.SINGLETON_STAR;
             var node = new SqlSelect(SqlParserPos.ZERO, SqlNodeList.EMPTY, selectList, _adoTable.FullyQualifiedTableName, null, null, null, null, null, null, null, null, null);
-            var config = SqlPrettyWriter.config().withAlwaysUseParentheses(true).withDialect(_adoTable.Schema.Convention.Dialect);
+            var config = SqlPrettyWriter.config().withAlwaysUseParentheses(true).withDialect(_adoTable.Dialect);
             var writer = new SqlPrettyWriter(config);
             node.unparse(writer, 0, 0);
             return writer.toSqlString();

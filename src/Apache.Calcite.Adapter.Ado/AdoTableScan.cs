@@ -29,7 +29,7 @@ namespace Apache.Calcite.Adapter.Ado
         /// <param name="table"></param>
         /// <param name="adoTable"></param>
         internal AdoTableScan(RelOptCluster cluster, List hints, RelOptTable table, AdoTable adoTable) :
-            base(cluster, cluster.traitSetOf(adoTable.Schema.Convention), hints, table)
+            base(cluster, cluster.traitSetOf(adoTable.Convention), hints, table)
         {
             _adoTable = adoTable ?? throw new ArgumentNullException(nameof(adoTable));
         }
