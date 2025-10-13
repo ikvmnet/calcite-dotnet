@@ -14,6 +14,8 @@ namespace Apache.Calcite.Data.Tests
         {
             var b = new CalciteConnectionStringBuilder("model=file://foo.model");
             b.Model.Should().Be("file://foo.model");
+
+            var z = new CalciteSchema();
         }
 
     }

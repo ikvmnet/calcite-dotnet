@@ -24,15 +24,15 @@ namespace Apache.Calcite.Data
         {
             _connection = connection ?? throw new ArgumentNullException(nameof(connection));
 
-            if (_connection._connection is null)
+            if (_connection._impl is null)
                 throw new InvalidOperationException();
 
-            if (_connection._connection.getAutoCommit() == false)
+            if (_connection._impl.getAutoCommit() == false)
                 throw new CalciteDbException("A JDBC transaction is already open.");
             else
             {
                 // set isolation level
-                _connection._connection.setTransactionIsolation(isolationLevel switch
+                _connection._impl.setTransactionIsolation(isolationLevel switch
                 {
                     IsolationLevel.Unspecified => java.sql.Connection.TRANSACTION_NONE,
                     IsolationLevel.Chaos => java.sql.Connection.TRANSACTION_NONE,
@@ -44,7 +44,7 @@ namespace Apache.Calcite.Data
                 });
 
                 // disable auto commit
-                _connection._connection.setAutoCommit(false);
+                _connection._impl.setAutoCommit(false);
             }
         }
 
@@ -59,7 +59,7 @@ namespace Apache.Calcite.Data
         /// <summary>
         /// Gets the isolation level of the current transaction.
         /// </summary>
-        public override IsolationLevel IsolationLevel => _connection._connection?.getTransactionIsolation() switch
+        public override IsolationLevel IsolationLevel => _connection._impl?.getTransactionIsolation() switch
         {
             java.sql.Connection.TRANSACTION_NONE => IsolationLevel.Unspecified,
             java.sql.Connection.TRANSACTION_READ_COMMITTED => IsolationLevel.ReadCommitted,
@@ -79,13 +79,13 @@ namespace Apache.Calcite.Data
             if (_connection.State != ConnectionState.Open)
                 throw new CalciteDbException("Connection must be open commit a transaction.");
 
-            if (_connection._connection is null)
+            if (_connection._impl is null)
                 throw new InvalidOperationException();
 
             try
             {
-                _connection._connection.commit();
-                _connection._connection.setAutoCommit(true);
+                _connection._impl.commit();
+                _connection._impl.setAutoCommit(true);
             }
             catch (SQLException e)
             {
@@ -102,13 +102,13 @@ namespace Apache.Calcite.Data
             if (_connection.State != ConnectionState.Open)
                 throw new CalciteDbException("Connection must be open commit a transaction.");
 
-            if (_connection._connection is null)
+            if (_connection._impl is null)
                 throw new InvalidOperationException();
 
             try
             {
-                _connection._connection.rollback();
-                _connection._connection.setAutoCommit(true);
+                _connection._impl.rollback();
+                _connection._impl.setAutoCommit(true);
             }
             catch (SQLException e)
             {

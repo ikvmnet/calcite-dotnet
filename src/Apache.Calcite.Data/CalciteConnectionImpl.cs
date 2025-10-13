@@ -1,8 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 using com.google.common.collect;
 
@@ -54,6 +51,7 @@ namespace Apache.Calcite.Data
 
         readonly CalciteConnection _owner;
         readonly Properties _properties;
+        readonly CalciteConnectionConfigImpl _config;
         readonly CalciteSchema _rootSchema;
         readonly JavaTypeFactory _typeFactory;
         internal CalciteTransaction? _transaction;
@@ -65,15 +63,11 @@ namespace Apache.Calcite.Data
         /// <param name="properties"></param>
         /// <param name="rootSchema"></param>
         /// <param name="typeFactory"></param>
-        public CalciteConnectionImpl(CalciteConnection owner, IReadOnlyDictionary<object, object> properties, CalciteSchema rootSchema, JavaTypeFactory typeFactory)
+        public CalciteConnectionImpl(CalciteConnection owner, Properties properties, CalciteSchema? rootSchema, JavaTypeFactory? typeFactory)
         {
             _owner = owner ?? throw new ArgumentNullException(nameof(owner));
-
-            var info = new Properties();
-            foreach (var kvp in properties)
-                info.put(kvp.Key, kvp.Value);
-
-            var cfg = new CalciteConnectionConfigImpl(info);
+            _properties = properties ?? throw new ArgumentNullException(nameof(properties));
+            _config = new CalciteConnectionConfigImpl(properties);
 
             if (typeFactory is not null)
             {
@@ -81,8 +75,8 @@ namespace Apache.Calcite.Data
             }
             else
             {
-                var typeSystem = (RelDataTypeSystem)cfg.typeSystem(typeof(RelDataTypeSystem), RelDataTypeSystem.DEFAULT);
-                if (cfg.conformance().shouldConvertRaggedUnionTypesToVarying())
+                var typeSystem = (RelDataTypeSystem)_config.typeSystem(typeof(RelDataTypeSystem), RelDataTypeSystem.DEFAULT);
+                if (_config.conformance().shouldConvertRaggedUnionTypesToVarying())
                     typeSystem = new _DelegatingTypeSystem(typeSystem);
 
                 _typeFactory = new JavaTypeFactoryImpl(typeSystem);
@@ -90,21 +84,14 @@ namespace Apache.Calcite.Data
 
             _rootSchema = rootSchema != null ? rootSchema : CalciteSchema.createRootSchema(true);
 
-            if (cfg.conformance().isSupportedDualTable())
+            if (_config.conformance().isSupportedDualTable())
             {
                 var schemaPlus = _rootSchema.plus();
                 schemaPlus.add("DUAL", ViewTable.viewMacro(schemaPlus, "VALUES ('X')", ImmutableList.of(), null, java.lang.Boolean.FALSE));
             }
 
-            if (_rootSchema.isRoot() == false)
+            if (_rootSchema.Root == false)
                 throw new ArgumentException("Must be root schema.", nameof(rootSchema));
-
-            // setup connection properties
-            _properties = new Properties();
-            _properties.put(InternalProperty.CASE_SENSITIVE, cfg.caseSensitive());
-            _properties.put(InternalProperty.UNQUOTED_CASING, cfg.unquotedCasing());
-            _properties.put(InternalProperty.QUOTED_CASING, cfg.quotedCasing());
-            _properties.put(InternalProperty.QUOTING, cfg.quoting());
         }
 
         /// <summary>
@@ -120,6 +107,11 @@ namespace Apache.Calcite.Data
                     service.defineTile(lattice, tile.bitSet(), tile.measures, e.schema, true, true);
             }
         }
+
+        /// <summary>
+        /// Gets the current configuration.
+        /// </summary>
+        public CalciteConnectionConfig Config => _config;
 
     }
 

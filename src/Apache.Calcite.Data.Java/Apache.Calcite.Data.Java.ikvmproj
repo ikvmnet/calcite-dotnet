@@ -1,14 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="IKVM.NET.Sdk">
     <PropertyGroup>
-        <TargetFramework>net8.0</TargetFramework>
-        <LangVersion>13</LangVersion>
-        <Nullable>enable</Nullable>
+        <TargetFrameworks>net8.0</TargetFrameworks>
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="IKVM" Version="8.14.0" />
-        <PackageReference Include="IKVM.Java.Extensions" Version="8.14.0" />
         <PackageReference Include="IKVM.Maven.Sdk" Version="1.10.0">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

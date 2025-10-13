@@ -194,7 +194,7 @@ namespace Apache.Calcite.Data
                 if (_prepared != null)
                     throw new CalciteDbException("Command is already prepared.");
 
-                if (_connection._connection is null)
+                if (_connection._impl is null)
                     throw new InvalidOperationException();
 
                 try
@@ -266,7 +266,7 @@ namespace Apache.Calcite.Data
                 if (_connection.State != ConnectionState.Open)
                     throw new CalciteDbException("Connection must be open.");
 
-                if (_connection._connection is null)
+                if (_connection._impl is null)
                     throw new InvalidOperationException();
 
                 try
@@ -312,7 +312,7 @@ namespace Apache.Calcite.Data
                     {
                         try
                         {
-                            _executing = _connection._connection.createStatement();
+                            _executing = _connection._impl.createStatement();
                             //_executing.setQueryTimeout(CommandTimeout);
                             throw new NotImplementedException();
 
@@ -383,7 +383,7 @@ namespace Apache.Calcite.Data
                 if (_connection.State != ConnectionState.Open)
                     throw new CalciteDbException("Connection must be open.");
 
-                if (_connection._connection is null)
+                if (_connection._impl is null)
                     throw new InvalidOperationException();
 
                 try

@@ -1,6 +1,8 @@
-﻿using System.Data.Common;
+﻿using System;
+using System.Collections;
+using System.Data.Common;
 
-using javax.xml.bind.annotation;
+using java.util;
 
 namespace Apache.Calcite.Data
 {
@@ -8,7 +10,7 @@ namespace Apache.Calcite.Data
     /// <summary>
     /// Strongly-typed JDBC connection string builder.
     /// </summary>
-    public class CalciteConnectionStringBuilder : DbConnectionStringBuilder
+    public partial class CalciteConnectionStringBuilder : DbConnectionStringBuilder
     {
 
         /// <summary>
@@ -24,43 +26,28 @@ namespace Apache.Calcite.Data
         /// </summary>
         public CalciteConnectionStringBuilder(string connectionString)
         {
+            ArgumentNullException.ThrowIfNull(connectionString);
             ConnectionString = connectionString;
         }
 
         /// <summary>
-        /// Gets or sets the user to use when opening the connection.
+        /// Writes the configured connection information to a <see cref="Properties"/>.
         /// </summary>
-        public string? User
+        /// <param name="properties"></param>
+        public void WriteTo(Properties properties)
         {
-            get => ContainsKey("User") ? this["User"] as string : null;
-            set => this["User"] = value;
+            ArgumentNullException.ThrowIfNull(properties);
+            foreach (DictionaryEntry kvp in this)
+                properties.put(kvp.Key, kvp.Value);
         }
 
         /// <summary>
         /// Gets or sets the user to use when opening the connection.
         /// </summary>
-        public string? Password
+        public string? Model
         {
-            get => ContainsKey("Password") ? this["v"] as string : null;
-            set => this["Password"] = value;
-        }
-
-        /// <summary>
-        /// Gets or sets the JDBC URL.
-        /// </summary>
-        public string? Url
-        {
-            get => ContainsKey("Url") ? this["Url"] as string : null;
-            set => this["Url"] = value;
-        }
-
-        /// <summary>
-        /// Gets or sets whether the driver processes dates or times that do not specify a timezone offset as local or UTC. The default value for this parameter is <c>true</c>.
-        /// </summary>
-        public bool AssumeLocalTimeZone
-        {
-            get => ContainsKey("AssumeLocalTimeZone") ? this["AssumeLocalTimeZone"] as bool? ?? true : true;
-            set => this["AssumeLocalTimeZone"] = value;
+            get => ContainsKey("model") ? this["model"] as string : null;
+            set => this["model"] = value;
         }
 
     }

@@ -37,6 +37,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Adapter.Ado.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Extensions", "src\Apache.Calcite.Extensions\Apache.Calcite.Extensions.csproj", "{D39E9D3E-A7B4-4B24-9E14-F47275BEC4B3}"
 EndProject
+Project("{DAEA77DE-8320-43BA-BA7C-EF5C12478AB5}") = "Apache.Calcite.Data.Java", "src\Apache.Calcite.Data.Java\Apache.Calcite.Data.Java.ikvmproj", "{BF10B42E-ED68-DF9B-E98E-72C59B89F7DA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -71,6 +73,10 @@ Global
 		{D39E9D3E-A7B4-4B24-9E14-F47275BEC4B3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D39E9D3E-A7B4-4B24-9E14-F47275BEC4B3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D39E9D3E-A7B4-4B24-9E14-F47275BEC4B3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BF10B42E-ED68-DF9B-E98E-72C59B89F7DA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BF10B42E-ED68-DF9B-E98E-72C59B89F7DA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BF10B42E-ED68-DF9B-E98E-72C59B89F7DA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BF10B42E-ED68-DF9B-E98E-72C59B89F7DA}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -84,6 +90,7 @@ Global
 		{73FD2966-FAB4-4D2A-0E87-F6578884B666} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{3D858857-C285-062B-FF40-6DE10286F8D1} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{D39E9D3E-A7B4-4B24-9E14-F47275BEC4B3} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{BF10B42E-ED68-DF9B-E98E-72C59B89F7DA} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A03ACB78-6C3F-4E09-BAF1-16E41D5A3945}
