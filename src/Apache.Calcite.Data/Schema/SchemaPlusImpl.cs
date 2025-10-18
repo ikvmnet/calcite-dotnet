@@ -1,5 +1,9 @@
 ﻿using System;
 
+using Apache.Calcite.Data.Java;
+using Apache.Calcite.Extensions;
+using Apache.Calcite.Extensions.ClrRef;
+
 using com.google.common.collect;
 
 using java.lang;
@@ -9,8 +13,6 @@ using org.apache.calcite.linq4j.tree;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.schema;
 using org.apache.calcite.schema.lookup;
-
-using Apache.Calcite.Data.Java;
 
 namespace Apache.Calcite.Data.Schema
 {
@@ -38,122 +40,120 @@ namespace Apache.Calcite.Data.Schema
         public CalciteSchema CalciteSchema => _owner;
 
         /// <inheritdoc />
-        public SchemaPlus? getParentSchema()
+        public override SchemaPlus? getParentSchema()
         {
             return _owner.Parent == null ? null : _owner.Parent.Plus();
         }
 
         /// <inheritdoc />
-        public string getName()
+        public override string getName()
         {
             return _owner.Name;
         }
 
         /// <inheritdoc />
-        public bool isMutable()
+        public override bool isMutable()
         {
             return _owner.Schema.IsMutable;
         }
 
         /// <inheritdoc />
-        public void setCacheEnabled(bool cache)
+        public override void setCacheEnabled(bool cache)
         {
             _owner.SetCache(cache);
         }
 
         /// <inheritdoc />
-        public bool isCacheEnabled()
+        public override bool isCacheEnabled()
         {
             return _owner.isCacheEnabled();
         }
 
         /// <inheritdoc />
-        public org.apache.calcite.schema.Schema snapshot(SchemaVersion version)
+        public override org.apache.calcite.schema.Schema snapshot(SchemaVersion version)
         {
             throw new UnsupportedOperationException();
         }
 
         /// <inheritdoc />
-        public Expression getExpression(SchemaPlus? parentSchema, string name)
+        public override Expression getExpression(SchemaPlus? parentSchema, string name)
         {
-            return _owner.Schema.getExpression(parentSchema, name);
+            return _owner.Schema.GetExpression(parentSchema, name);
         }
 
         /// <inheritdoc />
-        public Lookup tables()
+        public override Lookup tables()
         {
-            return _owner.Tables.map((table, name)->table.getTable());
+            return _owner.Tables.Map<org.apache.calcite.schema.Table, TableRef, RefBinder<org.apache.calcite.schema.Table, TableRef>>((table, name) => table.Table).Underlying!;
         }
 
         /// <inheritdoc />
-        public Lookup subSchemas()
+        public override Lookup subSchemas()
         {
-            return _owner.Subschemas.map((schema, name)->schema.plus());
-        }
-
-        /// <inheritdoc />
-        [Obsolete]
-        public Table? getTable(string name)
-        {
-            var entry = _owner.GetTable(name, true);
-            return entry == null ? null : entry.getTable();
+            return _owner.Subschemas.Map((schema, name) => schema.Plus()).Underlying!;
         }
 
         /// <inheritdoc />
         [Obsolete]
-        public Set getTableNames()
+        public override org.apache.calcite.schema.Table? getTable(string name)
         {
-            return _owner.GetTableNames(LikePattern.any());
-        }
-
-        /// <inheritdoc />
-        public RelProtoDataType? getType(string name)
-        {
-            var entry = _owner.GetType(name, true);
-            return entry == null ? null : entry.getType();
-        }
-
-        /// <inheritdoc />
-        public Set getTypeNames()
-        {
-            return _owner.GetTypeNames();
-        }
-
-        /// <inheritdoc />
-        public Collection getFunctions(string name)
-        {
-            return _owner.GetFunctions(name, true);
-        }
-
-        /// <inheritdoc />
-        public NavigableSet getFunctionNames()
-        {
-            return _owner.GetFunctionNames();
+            return _owner.GetTable(name, true)?.Table.Underlying;
         }
 
         /// <inheritdoc />
         [Obsolete]
-        public SchemaPlus? getSubSchema(string name)
+        public override Set getTableNames()
+        {
+            return _owner.GetTableNames(LikePattern.any()).AsClrRef() ?? throw new InvalidOperationException();
+        }
+
+        /// <inheritdoc />
+        public override RelProtoDataType? getType(string name)
+        {
+            return _owner.GetType(name, true)?.Type;
+        }
+
+        /// <inheritdoc />
+        public override Set getTypeNames()
+        {
+            return _owner.GetTypeNames().AsClrRef();
+        }
+
+        /// <inheritdoc />
+        public override Collection getFunctions(string name)
+        {
+            return _owner.GetFunctions(name, true).AsClrRef();
+        }
+
+        /// <inheritdoc />
+        public override NavigableSet getFunctionNames()
+        {
+            return _owner.GetFunctionNames().AsClrRef();
+        }
+
+        /// <inheritdoc />
+        [Obsolete]
+        public override SchemaPlus? getSubSchema(string name)
         {
             return subSchemas().get(name);
         }
 
         /// <inheritdoc />
         [Obsolete]
-        public Set getSubSchemaNames()
+        public override Set getSubSchemaNames()
         {
             return subSchemas().getNames(LikePattern.any());
         }
 
         /// <inheritdoc />
-        public SchemaPlus add(string name, org.apache.calcite.schema.Schema schema)
+        public override SchemaPlus add(string name, org.apache.calcite.schema.Schema schema)
         {
             var calciteSchema = _owner.Add(name, schema);
             return calciteSchema.plus();
         }
 
         /// <inheritdoc />
-        public object unwrap(Class clazz)
+        public override object unwrap(Class clazz)
         {
             if (clazz.isInstance(this))
                 return clazz.cast(this);
@@ -171,37 +171,37 @@ namespace Apache.Calcite.Data.Schema
         }
 
         /// <inheritdoc />
-        public void setPath(ImmutableList path)
+        public override void setPath(ImmutableList path)
         {
             _owner.path = path;
         }
 
         /// <inheritdoc />
-        public void add(string name, org.apache.calcite.schema.Table table)
+        public override void add(string name, org.apache.calcite.schema.Table table)
         {
-            _owner.Add(name, table);
+            _owner.Add(name, table.AsRef());
         }
 
         /// <inheritdoc />
-        public bool removeTable(string name)
+        public override bool removeTable(string name)
         {
             return _owner.RemoveTable(name);
         }
 
         /// <inheritdoc />
-        public void add(string name, Function function)
+        public override void add(string name, Function function)
         {
-            _owner.Add(name, function);
+            _owner.Add(name, function.AsRef());
         }
 
         /// <inheritdoc />
-        public void add(string name, RelProtoDataType type)
+        public override void add(string name, RelProtoDataType type)
         {
             _owner.Add(name, type);
         }
 
         /// <inheritdoc />
-        public void add(string name, org.apache.calcite.materialize.Lattice lattice)
+        public override void add(string name, org.apache.calcite.materialize.Lattice lattice)
         {
             _owner.Add(name, lattice);
         }

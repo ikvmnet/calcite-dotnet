@@ -1,6 +1,6 @@
 ﻿using org.apache.calcite.rel.type;
 
-namespace Apache.Calcite.Data.Impl
+namespace Apache.Calcite.Data.Schema
 {
 
     /// <summary>

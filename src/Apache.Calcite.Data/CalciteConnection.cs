@@ -2,27 +2,29 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
-using System.Data.Odbc;
 using System.Diagnostics.CodeAnalysis;
 
 using java.sql;
-
-using org.apache.calcite.adapter.jdbc;
-using org.apache.calcite.config;
-using org.apache.calcite.runtime;
 
 namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Connection for Apache Calcite.
+    /// ADO.NET wrapper for an underlying Calcite connection.
     /// </summary>
     public class CalciteConnection : DbConnection
     {
 
-        internal CalciteConnectionStringBuilder? _connectionStringBuilder;
-        internal CalciteConnectionImpl? _impl;
-        readonly bool _leaveOpen;
+        /// <summary>
+        /// Initializes the type.
+        /// </summary>
+        static CalciteConnection()
+        {
+            GC.KeepAlive(typeof(org.apache.calcite.jdbc.Driver));
+        }
+
+        internal CalciteConnectionStringBuilder _connectionStringBuilder;
+        internal java.sql.Connection? _connection;
         internal CalciteTransaction? _transaction;
 
         /// <summary>
@@ -30,24 +32,7 @@ namespace Apache.Calcite.Data
         /// </summary>
         public CalciteConnection()
         {
-
-        }
-
-        /// <summary>
-        /// Initializes a new instance.
-        /// </summary>
-        /// <param name="url"></param>
-        /// <param name="properties"></param>
-        public CalciteConnection(string url, IDictionary<string, string> properties) :
-            this()
-        {
-            if (url is null)
-                throw new ArgumentNullException(nameof(url));
-
-            _connectionStringBuilder = new CalciteConnectionStringBuilder() { Url = url };
-
-            foreach (var kvp in properties)
-                _connectionStringBuilder.Add(kvp.Key, kvp.Value);
+            _connectionStringBuilder = new CalciteConnectionStringBuilder();
         }
 
         /// <summary>
@@ -55,15 +40,25 @@ namespace Apache.Calcite.Data
         /// </summary>
         /// <param name="connectionString"></param>
         public CalciteConnection(string connectionString) :
-            this()
+            this(new CalciteConnectionStringBuilder(connectionString))
         {
-            _connectionStringBuilder = new CalciteConnectionStringBuilder(connectionString);
+
+        }
+
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        /// <param name="connectionStringBuilder"></param>
+        /// <exception cref="ArgumentNullException"></exception>
+        public CalciteConnection(CalciteConnectionStringBuilder connectionStringBuilder)
+        {
+            _connectionStringBuilder = connectionStringBuilder ?? throw new ArgumentNullException(nameof(connectionStringBuilder));
         }
 
         /// <summary>
         /// Gets the state of the connection.
         /// </summary>
-        public override ConnectionState State => _impl == null ? ConnectionState.Closed : _impl.IsClosed ? ConnectionState.Closed : ConnectionState.Open;
+        public override ConnectionState State => _connection == null ? ConnectionState.Closed : _connection.isClosed() ? ConnectionState.Closed : ConnectionState.Open;
 
         /// <summary>
         /// Gets or sets the connection string.
@@ -94,13 +89,13 @@ namespace Apache.Calcite.Data
 
             // reset connection string
             _connectionStringBuilder = new CalciteConnectionStringBuilder(value);
-            _impl = null;
+            _connection = null;
         }
 
         /// <summary>
         /// Gets the current database.
         /// </summary>
-        public override string Database => "";
+        public override string Database => _connection != null ? _connection.getCatalog() : throw new CalciteDbException("Connection is not open.");
 
         /// <summary>
         /// Gets the current datasource.
@@ -108,27 +103,9 @@ namespace Apache.Calcite.Data
         public override string DataSource => "";
 
         /// <summary>
-        /// Gets the version of Calcite.
+        /// Gets the version of the database server if available.
         /// </summary>
-        public override string ServerVersion => "1.40.0";
-
-        /// <summary>
-        /// Gets the current Calcite configuration.
-        /// </summary>
-        public CalciteConnectionConfig Config => GetConfig();
-
-        /// <summary>
-        /// Gets the value of Config.
-        /// </summary>
-        /// <returns></returns>
-        /// <exception cref="CalciteDbException"></exception>
-        CalciteConnectionConfig GetConfig()
-        {
-            if (_impl is null)
-                throw new CalciteDbException("Connection must be open to retrieve configuration.");
-
-            return _impl.Config;
-        }
+        public override string ServerVersion => _connection != null ? _connection.getMetaData().getDatabaseProductVersion() : throw new CalciteDbException("Connection is not open.");
 
         /// <summary>
         /// Attempts to change the database.
@@ -136,7 +113,20 @@ namespace Apache.Calcite.Data
         /// <param name="databaseName"></param>
         public override void ChangeDatabase(string databaseName)
         {
-            throw new NotSupportedException("Apache Calcite cannot change databases.");
+            if (State != ConnectionState.Open)
+                throw new CalciteDbException("Connection must be open to change databases.");
+
+            if (_connection is null)
+                throw new InvalidOperationException();
+
+            try
+            {
+                _connection.setCatalog(databaseName);
+            }
+            catch (SQLException e)
+            {
+                throw new CalciteDbException(e);
+            }
         }
 
         /// <summary>
@@ -148,18 +138,14 @@ namespace Apache.Calcite.Data
             if (State == ConnectionState.Closed)
                 return;
 
-            if (_impl is null)
+            if (_connection is null)
                 throw new InvalidOperationException();
 
             try
             {
-                if (_leaveOpen == false)
-                {
-                    _impl.Dispose();
-                    _impl = null;
-                }
+                _connection.close();
             }
-            catch (CalciteException e)
+            catch (SQLException e)
             {
                 throw new CalciteDbException(e);
             }
@@ -172,15 +158,15 @@ namespace Apache.Calcite.Data
         public override void Open()
         {
             // already open
-            if (_impl != null && State == ConnectionState.Open)
+            if (_connection != null && State == ConnectionState.Open)
                 return;
 
             // already open
-            if (_impl != null && State == ConnectionState.Connecting)
+            if (_connection != null && State == ConnectionState.Connecting)
                 return;
 
             // was open at one time
-            if (_impl != null)
+            if (_connection != null)
                 throw new CalciteDbException("Connection has already been opened.");
 
             // haven't configured the connection string
@@ -189,14 +175,13 @@ namespace Apache.Calcite.Data
 
             try
             {
-                // write connection properties
                 var props = new java.util.Properties();
-                _connectionStringBuilder.WriteTo(props);
+                foreach (KeyValuePair<string, object> entry in _connectionStringBuilder)
+                    props.setProperty(entry.Key, entry.Value.ToString());
 
-                //_impl = new CalciteConnectionImpl(this, props, )
-                throw new NotImplementedException();
+                _connection = DriverManager.getConnection("jdbc:calcite:", props);
             }
-            catch (CalciteException e)
+            catch (SQLException e)
             {
                 throw new CalciteDbException(e);
             }
@@ -209,27 +194,14 @@ namespace Apache.Calcite.Data
         public CalciteTransaction? Transaction => _transaction;
 
         /// <summary>
-        /// Starts a new JDBC transaction by disabling auto-commit.
+        /// Starts a new Calcite transaction by disabling auto-commit.
         /// </summary>
         /// <param name="isolationLevel"></param>
         /// <returns></returns>
         /// <exception cref="CalciteDbException"></exception>
         protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
         {
-            if (State != ConnectionState.Open)
-                throw new CalciteDbException("Connection is not opened.");
-
-            if (_transaction != null)
-                throw new CalciteDbException("Calcite only supports a single ambient transaction.");
-
-            try
-            {
-                return _transaction = new CalciteTransaction(this, isolationLevel);
-            }
-            catch (SQLException e)
-            {
-                throw new CalciteDbException(e);
-            }
+            throw new NotSupportedException();
         }
 
         /// <summary>

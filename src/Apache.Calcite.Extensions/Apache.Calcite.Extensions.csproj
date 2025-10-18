@@ -2,9 +2,13 @@
 
     <PropertyGroup>
         <TargetFramework>net8.0</TargetFramework>
-        <LangVersion>13</LangVersion>
+        <LangVersion>Preview</LangVersion>
         <Nullable>enable</Nullable>
     </PropertyGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Apache.Calcite.Data" />
+    </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="IKVM" Version="8.14.0" />

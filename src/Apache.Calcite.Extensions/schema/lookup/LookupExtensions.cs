@@ -9,15 +9,26 @@ public static class LookupExtensions
 {
 
     /// <summary>
-    /// Returns a <see cref="LookupRef{TValue, TTypedValue}"/> wrapping the specified <see cref="Lookup"/>.
+    /// Returns a <see cref="LookupRef{TValue, TValueRef, TValueInfo}"/> wrapping the specified <see cref="Lookup"/>.
+    /// </summary>
+    /// <typeparam name="TValue"></typeparam>
+    /// <param name="self"></param>
+    /// <returns></returns>
+    public static LookupRef<TValue, TValue, RefIdInfo<TValue>> AsRef<TValue>(this Lookup self)
+        where TValue : class
+        => LookupRef<TValue, TValue, RefIdInfo<TValue>>.Create(self);
+
+    /// <summary>
+    /// Returns a <see cref="LookupRef{TValue, TValueRef, TValueInfo}"/> wrapping the specified <see cref="Lookup"/>.
     /// </summary>
     /// <typeparam name="TValue"></typeparam>
     /// <typeparam name="TValueRef"></typeparam>
+    /// <typeparam name="TValueInfo"></typeparam>
     /// <param name="self"></param>
     /// <returns></returns>
-    public static LookupRef<TValue, TValueRef> AsRef<TValue, TValueRef>(this Lookup self)
+    public static LookupRef<TValue, TValueRef, TValueInfo> AsRef<TValue, TValueRef, TValueInfo>(this Lookup self)
         where TValue : class
-        where TValueRef : struct, IRef<TValue, TValueRef>
-        => new LookupRef<TValue, TValueRef>(self);
+        where TValueInfo : IRefInfo<TValue, TValueRef>
+        => LookupRef<TValue, TValueRef, TValueInfo>.Create(self);
 
 }

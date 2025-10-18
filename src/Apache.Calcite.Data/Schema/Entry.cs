@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace Apache.Calcite.Data.Impl
+namespace Apache.Calcite.Data.Schema
 {
 
     /// <summary>

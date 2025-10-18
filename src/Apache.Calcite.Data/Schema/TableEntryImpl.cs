@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Immutable;
 
-namespace Apache.Calcite.Data.Impl
+using org.apache.calcite.schema;
+
+namespace Apache.Calcite.Data.Schema
 {
 
     /// <summary>
@@ -10,7 +12,7 @@ namespace Apache.Calcite.Data.Impl
     class TableEntryImpl : TableEntry
     {
 
-        readonly org.apache.calcite.schema.Table _table;
+        readonly TableRef _table;
 
         /// <summary>
         /// Initializes a new instance.
@@ -19,14 +21,14 @@ namespace Apache.Calcite.Data.Impl
         /// <param name="name"></param>
         /// <param name="table"></param>
         /// <param name="sqls"></param>
-        public TableEntryImpl(CalciteSchema schema, string name, org.apache.calcite.schema.Table table, ImmutableList<string> sqls) :
+        public TableEntryImpl(CalciteSchema schema, string name, TableRef table, ImmutableList<string> sqls) :
             base(schema, name, sqls)
         {
-            _table = table ?? throw new ArgumentNullException(nameof(table));
+            _table = !table.IsNull ? table : throw new ArgumentNullException(nameof(table));
         }
 
         /// <inheritdoc />
-        public override org.apache.calcite.schema.Table Table => _table;
+        public override TableRef Table => _table;
 
     }
 

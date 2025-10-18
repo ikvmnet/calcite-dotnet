@@ -3,31 +3,33 @@ using System.Diagnostics.CodeAnalysis;
 
 using Apache.Calcite.Extensions;
 
-namespace org.apache.calcite.schema;
+using org.apache.calcite.schema;
+
+namespace org.apache.calcite.materialize;
 
 /// <summary>
-/// Wrapper for <see cref="Table"/> that preserves types.
+/// Wrapper for <see cref="Lattice"/> that preserves types.
 /// </summary>
-public readonly struct TableRef : IRef<Table, TableRef>
+public readonly struct LatticeRef : IRef<Lattice, LatticeRef>
 {
 
     /// <inheritdoc />
-    public static TableRef Create(Table? table) => new TableRef(table);
+    public static LatticeRef Create(Lattice? table) => new LatticeRef(table);
 
-    readonly Table? _self;
+    readonly Lattice? _self;
 
     /// <summary>
     /// Initializes a new instance.
     /// </summary>
     /// <param name="self"></param>
     /// <exception cref="ArgumentNullException"></exception>
-    public TableRef(Table? self)
+    public LatticeRef(Lattice? self)
     {
         _self = self;
     }
 
     /// <inheritdoc />
-    public readonly Table? Underlying => _self;
+    public readonly Lattice? Underlying => _self;
 
     /// <inheritdoc />
     [MemberNotNullWhen(false, nameof(_self))]
@@ -45,6 +47,13 @@ public readonly struct TableRef : IRef<Table, TableRef>
     }
 
     /// <inheritdoc/>
+    public readonly TableRef CreateStarTable()
+    {
+        ThrowOnNull();
+        return _self.createStarTable().AsRef();
+    }
+
+    /// <inheritdoc/>
     public override int GetHashCode()
     {
         ThrowOnNull();
@@ -55,7 +64,7 @@ public readonly struct TableRef : IRef<Table, TableRef>
     public override bool Equals([NotNullWhen(true)] object? obj)
     {
         ThrowOnNull();
-        return obj is TableRef o ? _self.Equals(o._self) : _self.Equals(obj);
+        return obj is LatticeRef o ? _self.Equals(o._self) : _self.Equals(obj);
     }
 
     /// <inheritdoc />

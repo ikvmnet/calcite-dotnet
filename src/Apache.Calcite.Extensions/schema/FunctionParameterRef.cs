@@ -6,28 +6,27 @@ using Apache.Calcite.Extensions;
 namespace org.apache.calcite.schema;
 
 /// <summary>
-/// Wrapper for <see cref="Table"/> that preserves types.
+/// Wrapper for <see cref="Function"/> that preserves types.
 /// </summary>
-public readonly struct TableRef : IRef<Table, TableRef>
+public readonly struct FunctionParameterRef : IRef<FunctionParameter, FunctionParameterRef>
 {
 
     /// <inheritdoc />
-    public static TableRef Create(Table? table) => new TableRef(table);
+    public static FunctionParameterRef Create(FunctionParameter? function) => new FunctionParameterRef(function);
 
-    readonly Table? _self;
+    readonly FunctionParameter? _self;
 
     /// <summary>
     /// Initializes a new instance.
     /// </summary>
     /// <param name="self"></param>
-    /// <exception cref="ArgumentNullException"></exception>
-    public TableRef(Table? self)
+    public FunctionParameterRef(FunctionParameter? self)
     {
         _self = self;
     }
 
     /// <inheritdoc />
-    public readonly Table? Underlying => _self;
+    public readonly FunctionParameter? Underlying => _self;
 
     /// <inheritdoc />
     [MemberNotNullWhen(false, nameof(_self))]
@@ -45,17 +44,17 @@ public readonly struct TableRef : IRef<Table, TableRef>
     }
 
     /// <inheritdoc/>
-    public override int GetHashCode()
+    public override readonly int GetHashCode()
     {
         ThrowOnNull();
         return _self.GetHashCode();
     }
 
     /// <inheritdoc/>
-    public override bool Equals([NotNullWhen(true)] object? obj)
+    public override readonly bool Equals([NotNullWhen(true)] object? obj)
     {
         ThrowOnNull();
-        return obj is TableRef o ? _self.Equals(o._self) : _self.Equals(obj);
+        return obj is FunctionParameterRef o ? _self.Equals(o._self) : _self.Equals(obj);
     }
 
     /// <inheritdoc />

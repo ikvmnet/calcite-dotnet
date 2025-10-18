@@ -6,28 +6,27 @@ using Apache.Calcite.Extensions;
 namespace org.apache.calcite.schema;
 
 /// <summary>
-/// Wrapper for <see cref="Table"/> that preserves types.
+/// Wrapper for <see cref="Function"/> that preserves types.
 /// </summary>
-public readonly struct TableRef : IRef<Table, TableRef>
+public readonly struct FunctionRef : IRef<Function, FunctionRef>
 {
 
     /// <inheritdoc />
-    public static TableRef Create(Table? table) => new TableRef(table);
+    public static FunctionRef Create(Function? function) => new FunctionRef(function);
 
-    readonly Table? _self;
+    readonly Function? _self;
 
     /// <summary>
     /// Initializes a new instance.
     /// </summary>
     /// <param name="self"></param>
-    /// <exception cref="ArgumentNullException"></exception>
-    public TableRef(Table? self)
+    public FunctionRef(Function? self)
     {
         _self = self;
     }
 
     /// <inheritdoc />
-    public readonly Table? Underlying => _self;
+    public readonly Function? Underlying => _self;
 
     /// <inheritdoc />
     [MemberNotNullWhen(false, nameof(_self))]
@@ -44,18 +43,30 @@ public readonly struct TableRef : IRef<Table, TableRef>
             throw new NullReferenceException();
     }
 
+    /// <summary>
+    /// Returns the parameters of this function.
+    /// </summary>
+    public readonly ListRef<FunctionParameter, FunctionParameterRef, RefBinder<FunctionParameter, FunctionParameterRef>> Parameters
+    {
+        get
+        {
+            ThrowOnNull();
+            return _self.getParameters().AsRef<FunctionParameter, FunctionParameterRef, RefBinder<FunctionParameter, FunctionParameterRef>>();
+        }
+    }
+
     /// <inheritdoc/>
-    public override int GetHashCode()
+    public override readonly int GetHashCode()
     {
         ThrowOnNull();
         return _self.GetHashCode();
     }
 
     /// <inheritdoc/>
-    public override bool Equals([NotNullWhen(true)] object? obj)
+    public override readonly bool Equals([NotNullWhen(true)] object? obj)
     {
         ThrowOnNull();
-        return obj is TableRef o ? _self.Equals(o._self) : _self.Equals(obj);
+        return obj is FunctionRef o ? _self.Equals(o._self) : _self.Equals(obj);
     }
 
     /// <inheritdoc />

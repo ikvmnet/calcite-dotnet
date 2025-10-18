@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Immutable;
 
-namespace Apache.Calcite.Data.Impl
+using org.apache.calcite.schema;
+
+namespace Apache.Calcite.Data.Schema
 {
 
     /// <summary>
@@ -27,7 +29,7 @@ namespace Apache.Calcite.Data.Impl
         /// <summary>
         /// Gets the underlying table.
         /// </summary>
-        public abstract org.apache.calcite.schema.Table Table { get; }
+        public abstract TableRef Table { get; }
 
         /// <summary>
         /// Gets the SQLs.

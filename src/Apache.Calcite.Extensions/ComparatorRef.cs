@@ -1,47 +1,40 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 
-using java.lang;
+using java.util;
 
 namespace Apache.Calcite.Extensions;
 
 /// <summary>
-/// Wrapper around a <see cref="IEnumerable{TValue}"/> that retypes the items.
+/// Reference to a <see cref="Comparator"/>.
 /// </summary>
 /// <typeparam name="TValue"></typeparam>
 /// <typeparam name="TValueRef"></typeparam>
 /// <typeparam name="TValueInfo"></typeparam>
-public readonly struct IterableRef<TValue, TValueRef, TValueInfo> :
-    IEnumerable<TValueRef>,
-    IRef<Iterable, IterableRef<TValue, TValueRef, TValueInfo>>
+public readonly struct ComparatorRef<TValue, TValueRef, TValueInfo> :
+    IComparer<TValueRef>
     where TValue : class
     where TValueInfo : IRefInfo<TValue, TValueRef>
 {
 
-    /// <inheritdoc/>
-    public static IterableRef<TValue, TValueRef, TValueInfo> Create(Iterable? value) => new IterableRef<TValue, TValueRef, TValueInfo>(value);
-
-    readonly Iterable? _self;
+    readonly Comparator? _self;
 
     /// <summary>
     /// Initializes a new instance.
     /// </summary>
     /// <param name="self"></param>
-    public IterableRef(Iterable? self)
+    public ComparatorRef(Comparator? self)
     {
         _self = self;
     }
 
-    /// <summary>
-    /// Gets the underlying Java object.
-    /// </summary>
-    public readonly Iterable? Underlying => _self;
-
     /// <inheritdoc />
     [MemberNotNullWhen(false, nameof(_self))]
     public readonly bool IsNull => _self == null;
+
+    /// <inheritdoc />
+    public readonly Comparator? Underlying => _self;
 
     /// <summary>
     /// Throws if the reference is null.
@@ -55,16 +48,10 @@ public readonly struct IterableRef<TValue, TValueRef, TValueInfo> :
     }
 
     /// <inheritdoc />
-    public IEnumerator<TValueRef> GetEnumerator()
+    public int Compare(TValueRef? x, TValueRef? y)
     {
         ThrowOnNull();
-        return new IteratorRef<TValue, TValueRef, TValueInfo>(_self.iterator());
-    }
-
-    /// <inheritdoc />
-    IEnumerator IEnumerable.GetEnumerator()
-    {
-        return GetEnumerator();
+        return _self.compare(TValueInfo.ToBind(x), TValueInfo.ToBind(y));
     }
 
 }

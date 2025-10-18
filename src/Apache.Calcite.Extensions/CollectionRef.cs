@@ -5,143 +5,138 @@ using System.Diagnostics.CodeAnalysis;
 
 using java.util;
 
-using org.apache.calcite.util;
+namespace Apache.Calcite.Extensions;
 
-namespace Apache.Calcite.Extensions
+/// <summary>
+/// Wraps a Java <see cref="Collection"/> type in a CLR compatible accessor.
+/// </summary>
+/// <typeparam name="T"></typeparam>
+/// <typeparam name="TRef"></typeparam>
+/// <typeparam name="TRefInfo"></typeparam>
+public readonly struct CollectionRef<T, TRef, TRefInfo> :
+    IEnumerable<TRef>,
+    ICollection<TRef>,
+    IReadOnlyCollection<TRef>,
+    IRef<Collection, CollectionRef<T, TRef, TRefInfo>>
+    where T : class
+    where TRefInfo : IRefInfo<T, TRef>
 {
 
+    /// <inheritdoc/>
+    public static CollectionRef<T, TRef, TRefInfo> Create(Collection? value) => new CollectionRef<T, TRef, TRefInfo>(value);
+
+    readonly Collection? _self;
+
     /// <summary>
-    /// Wrapper around a <see cref="ICollection{TValue}"/> that retypes the items.
+    /// Initializes a new instance.
     /// </summary>
-    /// <typeparam name="TValue"></typeparam>
-    /// <typeparam name="TValueRef"></typeparam>
-    /// <typeparam name="TValueInfo"></typeparam>
-    public readonly struct CollectionRef<TValue, TValueRef, TValueInfo> :
-        IEnumerable<TValueRef>,
-        ICollection<TValueRef>,
-        IReadOnlyCollection<TValueRef>,
-        IRef<Collection, CollectionRef<TValue, TValueRef, TValueInfo>>
-        where TValue : class
-        where TValueInfo : IRefInfo<TValue?, TValueRef>
+    /// <param name="collection"></param>
+    public CollectionRef(Collection? collection)
     {
+        _self = collection;
+    }
 
-        /// <inheritdoc/>
-        public static CollectionRef<TValue, TValueRef, TValueInfo> Create(Collection? value) => new CollectionRef<TValue, TValueRef, TValueInfo>(value);
+    /// <inheritdoc />
+    public readonly Collection? Underlying => _self;
 
-        readonly Collection? _self;
+    /// <inheritdoc />
+    [MemberNotNullWhen(false, nameof(_self))]
+    public readonly bool IsNull => _self == null;
 
-        /// <summary>
-        /// Initializes a new instance.
-        /// </summary>
-        /// <param name="collection"></param>
-        public CollectionRef(Collection? collection)
-        {
-            _self = collection;
-        }
+    /// <summary>
+    /// Throws if the reference is null.
+    /// </summary>
+    /// <exception cref="NullReferenceException"></exception>
+    [MemberNotNull(nameof(_self))]
+    readonly void ThrowOnNull()
+    {
+        if (IsNull)
+            throw new NullReferenceException();
+    }
 
-        /// <inheritdoc />
-        public readonly Collection? Underlying => _self;
-
-        /// <inheritdoc />
-        [MemberNotNullWhen(false, nameof(_self))]
-        public readonly bool IsNull => _self == null;
-
-        /// <summary>
-        /// Throws if the reference is null.
-        /// </summary>
-        /// <exception cref="NullReferenceException"></exception>
-        [MemberNotNull(nameof(_self))]
-        readonly void ThrowOnNull()
-        {
-            if (IsNull)
-                throw new NullReferenceException();
-        }
-
-        /// <inheritdoc />
-        public readonly int Count
-        {
-            get
-            {
-                ThrowOnNull();
-                return _self.size();
-            }
-        }
-
-        /// <inheritdoc />
-        public readonly bool IsReadOnly
-        {
-            get
-            {
-                ThrowOnNull();
-                return false;
-            }
-        }
-
-        /// <inheritdoc />
-        public readonly void Add(TValueRef item)
+    /// <inheritdoc />
+    public readonly int Count
+    {
+        get
         {
             ThrowOnNull();
-            _self.add(TValueInfo.ToBind(item));
+            return _self.size();
         }
+    }
 
-        /// <inheritdoc />
-        public readonly void Clear()
+    /// <inheritdoc />
+    public readonly bool IsReadOnly
+    {
+        get
         {
             ThrowOnNull();
-            _self.clear();
+            return false;
         }
+    }
 
-        /// <inheritdoc />
-        public readonly bool Contains(TValueRef item)
-        {
-            ThrowOnNull();
+    /// <inheritdoc />
+    public readonly void Add(TRef item)
+    {
+        ThrowOnNull();
+        _self.add(TRefInfo.ToBind(item));
+    }
 
-            if (TValueInfo.IsNull(item))
-                throw new ArgumentNullException(nameof(item));
+    /// <inheritdoc />
+    public readonly void Clear()
+    {
+        ThrowOnNull();
+        _self.clear();
+    }
 
-            return _self.contains(TValueInfo.ToBind(item));
-        }
+    /// <inheritdoc />
+    public readonly bool Contains(TRef item)
+    {
+        ThrowOnNull();
 
-        /// <inheritdoc />
-        public readonly void CopyTo(TValueRef[] array, int arrayIndex)
-        {
-            ThrowOnNull();
+        if (TRefInfo.IsNull(item))
+            throw new ArgumentNullException(nameof(item));
 
-            if (array == null)
-                throw new ArgumentNullException(nameof(array));
+        return _self.contains(TRefInfo.ToBind(item));
+    }
 
-            var i = _self.iterator();
-            var j = 0;
-            while (i.hasNext())
-                array[arrayIndex + j] = TValueInfo.ToCast((TValue?)i.next());
-        }
+    /// <inheritdoc />
+    public readonly void CopyTo(TRef?[] array, int arrayIndex)
+    {
+        ThrowOnNull();
 
-        /// <inheritdoc />
-        public readonly bool Remove(TValueRef item)
-        {
-            ThrowOnNull();
-            return _self.remove(TValueInfo.ToBind(item));
-        }
+        if (array == null)
+            throw new ArgumentNullException(nameof(array));
 
-        /// <inheritdoc />
-        public readonly IteratorRef<TValue, TValueRef> GetEnumerator()
-        {
-            ThrowOnNull();
-            return new IteratorRef<TValue, TValueRef, TValueInfo>(_self.iterator());
-        }
+        var i = _self.iterator();
+        var j = 0;
+        while (i.hasNext())
+            array[arrayIndex + j] = TRefInfo.ToCast((T?)i.next());
+    }
 
-        /// <inheritdoc />
-        readonly IEnumerator<TValueRef> IEnumerable<TValueRef>.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
+    /// <inheritdoc />
+    public readonly bool Remove(TRef item)
+    {
+        ThrowOnNull();
+        return _self.remove(TRefInfo.ToBind(item));
+    }
 
-        /// <inheritdoc />
-        readonly IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
+    /// <inheritdoc />
+    public readonly IteratorRef<T, TRef, TRefInfo> GetEnumerator()
+    {
+        ThrowOnNull();
+        return new IteratorRef<T, TRef, TRefInfo>(_self.iterator());
+    }
 
+    /// <inheritdoc />
+    readonly IEnumerator<TRef> IEnumerable<TRef>.GetEnumerator()
+    {
+        return GetEnumerator();
+    }
+
+    /// <inheritdoc />
+    readonly IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
     }
 
 }

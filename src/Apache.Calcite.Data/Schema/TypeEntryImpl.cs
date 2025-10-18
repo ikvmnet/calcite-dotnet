@@ -2,7 +2,7 @@
 
 using org.apache.calcite.rel.type;
 
-namespace Apache.Calcite.Data.Impl
+namespace Apache.Calcite.Data.Schema
 {
 
     /// <summary>
@@ -22,7 +22,7 @@ namespace Apache.Calcite.Data.Impl
         public TypeEntryImpl(CalciteSchema schema, string name, RelProtoDataType type) :
             base(schema, name)
         {
-            this._type = type ?? throw new ArgumentNullException(nameof(type));
+            _type = type ?? throw new ArgumentNullException(nameof(type));
         }
 
         /// <inheritdoc />

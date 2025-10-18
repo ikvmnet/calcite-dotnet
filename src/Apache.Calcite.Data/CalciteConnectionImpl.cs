@@ -24,37 +24,8 @@ namespace Apache.Calcite.Data
     class CalciteConnectionImpl
     {
 
-
-        /// <summary>
-        /// Local implementation.
-        /// </summary>
-        class _DelegatingTypeSystem : DelegatingTypeSystem
-        {
-
-            /// <summary>
-            /// Initializes a new instance.
-            /// </summary>
-            /// <param name="typeSystem"></param>
-            protected internal _DelegatingTypeSystem(RelDataTypeSystem typeSystem) :
-                base(typeSystem)
-            {
-
-            }
-
-            /// <inheritdoc />
-            public override bool shouldConvertRaggedUnionTypesToVarying()
-            {
-                return true;
-            }
-
-        }
-
         readonly CalciteConnection _owner;
         readonly Properties _properties;
-        readonly CalciteConnectionConfigImpl _config;
-        readonly CalciteSchema _rootSchema;
-        readonly JavaTypeFactory _typeFactory;
-        internal CalciteTransaction? _transaction;
 
         /// <summary>
         /// Initializes a new instance.

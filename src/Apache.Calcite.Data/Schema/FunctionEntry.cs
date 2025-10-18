@@ -1,6 +1,6 @@
 ﻿using org.apache.calcite.schema;
 
-namespace Apache.Calcite.Data.Impl
+namespace Apache.Calcite.Data.Schema
 {
 
     /// <summary>
@@ -23,7 +23,7 @@ namespace Apache.Calcite.Data.Impl
         /// <summary>
         /// Gets the underlying function.
         /// </summary>
-        public abstract Function Function { get; }
+        public abstract FunctionRef Function { get; }
 
         /// <summary>
         /// Gets whether this represents a materialized view.

@@ -1,36 +1,32 @@
-﻿
-using org.apache.calcite.materialize;
+﻿using org.apache.calcite.materialize;
 
-namespace Apache.Calcite.Data.Impl
+namespace Apache.Calcite.Data.Schema;
+
+/// <summary>
+/// Membership of a lattice in a schema.
+/// </summary>
+public abstract class LatticeEntry : Entry
 {
 
     /// <summary>
-    /// Membership of a lattice in a schema.
+    /// Initializes a new instance.
     /// </summary>
-    public abstract class LatticeEntry : Entry
+    /// <param name="schema"></param>
+    /// <param name="name"></param>
+    protected LatticeEntry(CalciteSchema schema, string name) :
+        base(schema, name)
     {
 
-        /// <summary>
-        /// Initializes a new instance.
-        /// </summary>
-        /// <param name="schema"></param>
-        /// <param name="name"></param>
-        protected LatticeEntry(CalciteSchema schema, string name) :
-            base(schema, name)
-        {
-
-        }
-
-        /// <summary>
-        /// Gets the underlying lattice.
-        /// </summary>
-        public abstract Lattice Lattice { get; }
-
-        /// <summary>
-        /// 
-        /// </summary>
-        public abstract TableEntry StarTable { get; }
-
     }
+
+    /// <summary>
+    /// Gets the underlying lattice.
+    /// </summary>
+    public abstract LatticeRef Lattice { get; }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    public abstract TableEntry StarTable { get; }
 
 }
