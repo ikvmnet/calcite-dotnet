@@ -6,8 +6,13 @@ using com.google.common.collect;
 
 using IKVM.Jdbc.Data;
 
+using java.awt.print;
+using java.lang;
 using java.sql;
 using java.util;
+
+using javax.xml.bind;
+using javax.xml.bind.annotation;
 
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -97,8 +102,8 @@ namespace Apache.Calcite.Adapter.Ado.Tests
         /// <summary>
         /// Creates a new adhoc schema containing virtual tables.
         /// </summary>
-        /// <param name="root"></param>
-        void CreateAdhocSchema(SchemaPlus root)
+        /// <param name="rootSchema"></param>
+        void CreateAdhocSchema(SchemaPlus rootSchema)
         {
             var people = """
                 SELECT      T."Id"                  AS "Id",
@@ -110,7 +115,7 @@ namespace Apache.Calcite.Adapter.Ado.Tests
                 """;
 
             var s = new AbstractSchema();
-            var p = root.add("adhoc", s);
+            var p = rootSchema.add("adhoc", s);
             p.add("people", ViewTable.viewMacro(p, people, ImmutableList.of("adhoc"), ImmutableList.of("adhoc", "people"), null));
         }
 
@@ -120,6 +125,19 @@ namespace Apache.Calcite.Adapter.Ado.Tests
         [TestMethod]
         public void ComplexSample()
         {
+            JAXBContext context = JAXBContext.newInstance(typeof(Book));
+            var book = (Book)context.createUnmarshaller().unmarshal(new java.io.FileReader("./book.xml"));
+
+
+
+
+
+
+
+
+
+
+
             var properties = new Properties();
             properties.setProperty(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), "false");
             var jdbcConnection = DriverManager.getConnection("jdbc:calcite:", properties);
@@ -163,7 +181,7 @@ namespace Apache.Calcite.Adapter.Ado.Tests
             {
                 statement.CommandText = query;
                 using var reader = statement.ExecuteReader();
-                
+
                 for (int i = 0; i < reader.FieldCount; i++)
                 {
                     Console.Write(reader.GetName(i).PadLeft(20));

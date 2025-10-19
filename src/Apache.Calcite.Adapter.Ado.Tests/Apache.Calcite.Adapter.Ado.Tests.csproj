@@ -9,6 +9,14 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <None Remove="jaxb.properties" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="jaxb.properties" />
+    </ItemGroup>
+
+    <ItemGroup>
         <PackageReference Include="IKVM" Version="8.14.0" />
         <PackageReference Include="IKVM.Java.Extensions" Version="8.14.0" />
         <PackageReference Include="IKVM.Jdbc.Data" Version="1.0.6" />
@@ -17,7 +25,9 @@
         <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.9" />
         <MavenReference Include="org.apache.calcite.avatica:avatica-core" Version="1.26.0" />
         <MavenReference Include="org.apache.calcite:calcite-csv" Version="1.40.0" />
-        <MavenReference Include="javax.jms:jms" Version="1.1" />
+        <MavenReference Include="org.eclipse.persistence:org.eclipse.persistence.moxy" Version="2.4.2" />
+        <MavenReference Include="org.glassfish.jaxb:jaxb-runtime" Version="2.2.10" />
+        <MavenReference Include="com.sun.xml.bind:jaxb-impl" Version="2.2.2" />
     </ItemGroup>
 
     <ItemGroup>

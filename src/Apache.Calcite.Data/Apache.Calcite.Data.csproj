@@ -17,9 +17,4 @@
         <MavenReference Include="org.apache.calcite:calcite-core" Version="1.40.0" />
     </ItemGroup>
 
-    <ItemGroup>
-      <ProjectReference Include="..\Apache.Calcite.Data.Java\Apache.Calcite.Data.Java.ikvmproj" />
-      <ProjectReference Include="..\Apache.Calcite.Extensions\Apache.Calcite.Extensions.csproj" />
-    </ItemGroup>
-
 </Project>

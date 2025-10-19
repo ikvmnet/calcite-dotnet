@@ -6,6 +6,8 @@ using System.Diagnostics.CodeAnalysis;
 
 using java.sql;
 
+using org.apache.calcite.config;
+
 namespace Apache.Calcite.Data
 {
 
@@ -24,7 +26,7 @@ namespace Apache.Calcite.Data
         }
 
         internal CalciteConnectionStringBuilder _connectionStringBuilder;
-        internal java.sql.Connection? _connection;
+        internal java.sql.Connection? _impl;
         internal CalciteTransaction? _transaction;
 
         /// <summary>
@@ -58,7 +60,7 @@ namespace Apache.Calcite.Data
         /// <summary>
         /// Gets the state of the connection.
         /// </summary>
-        public override ConnectionState State => _connection == null ? ConnectionState.Closed : _connection.isClosed() ? ConnectionState.Closed : ConnectionState.Open;
+        public override ConnectionState State => _impl == null ? ConnectionState.Closed : _impl.isClosed() ? ConnectionState.Closed : ConnectionState.Open;
 
         /// <summary>
         /// Gets or sets the connection string.
@@ -89,13 +91,13 @@ namespace Apache.Calcite.Data
 
             // reset connection string
             _connectionStringBuilder = new CalciteConnectionStringBuilder(value);
-            _connection = null;
+            _impl = null;
         }
 
         /// <summary>
         /// Gets the current database.
         /// </summary>
-        public override string Database => _connection != null ? _connection.getCatalog() : throw new CalciteDbException("Connection is not open.");
+        public override string Database => _impl != null ? _impl.getCatalog() : throw new CalciteDbException("Connection is not open.");
 
         /// <summary>
         /// Gets the current datasource.
@@ -105,7 +107,7 @@ namespace Apache.Calcite.Data
         /// <summary>
         /// Gets the version of the database server if available.
         /// </summary>
-        public override string ServerVersion => _connection != null ? _connection.getMetaData().getDatabaseProductVersion() : throw new CalciteDbException("Connection is not open.");
+        public override string ServerVersion => _impl != null ? _impl.getMetaData().getDatabaseProductVersion() : throw new CalciteDbException("Connection is not open.");
 
         /// <summary>
         /// Attempts to change the database.
@@ -116,12 +118,12 @@ namespace Apache.Calcite.Data
             if (State != ConnectionState.Open)
                 throw new CalciteDbException("Connection must be open to change databases.");
 
-            if (_connection is null)
+            if (_impl is null)
                 throw new InvalidOperationException();
 
             try
             {
-                _connection.setCatalog(databaseName);
+                _impl.setCatalog(databaseName);
             }
             catch (SQLException e)
             {
@@ -138,12 +140,12 @@ namespace Apache.Calcite.Data
             if (State == ConnectionState.Closed)
                 return;
 
-            if (_connection is null)
+            if (_impl is null)
                 throw new InvalidOperationException();
 
             try
             {
-                _connection.close();
+                _impl.close();
             }
             catch (SQLException e)
             {
@@ -158,15 +160,15 @@ namespace Apache.Calcite.Data
         public override void Open()
         {
             // already open
-            if (_connection != null && State == ConnectionState.Open)
+            if (_impl != null && State == ConnectionState.Open)
                 return;
 
             // already open
-            if (_connection != null && State == ConnectionState.Connecting)
+            if (_impl != null && State == ConnectionState.Connecting)
                 return;
 
             // was open at one time
-            if (_connection != null)
+            if (_impl != null)
                 throw new CalciteDbException("Connection has already been opened.");
 
             // haven't configured the connection string
@@ -179,7 +181,7 @@ namespace Apache.Calcite.Data
                 foreach (KeyValuePair<string, object> entry in _connectionStringBuilder)
                     props.setProperty(entry.Key, entry.Value.ToString());
 
-                _connection = DriverManager.getConnection("jdbc:calcite:", props);
+                _impl = DriverManager.getConnection("jdbc:calcite:", props);
             }
             catch (SQLException e)
             {
