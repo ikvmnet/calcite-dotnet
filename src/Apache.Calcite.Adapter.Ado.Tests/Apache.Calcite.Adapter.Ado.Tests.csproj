@@ -31,7 +31,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Apache.Calcite.Adapter.Ado\Apache.Calcite.Adapter.Ado.csproj" />
+        <ProjectReference Include="..\Apache.Calcite.Adapter.Ado\Apache.Calcite.Adapter.AdoNet.csproj" />
     </ItemGroup>
 
     <ItemGroup>

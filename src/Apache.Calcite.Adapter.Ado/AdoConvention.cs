@@ -13,19 +13,19 @@ namespace Apache.Calcite.Adapter.Ado
     /// <summary>
     /// Calling convention for relational operations that occur in an ADO database.
     /// 
-    /// <p>The convention is a slight misnomer. The operations occur in whatever
+    /// The convention is a slight misnomer. The operations occur in whatever
     /// data-flow architecture the database uses internally. Nevertheless, the result
-    /// pops out in ADO.NET.</p>
+    /// pops out in ADO.NET.
     /// 
-    /// <p>This is the only convention, thus far, that is not a singleton. Each
-    /// instance contains a ADO.NET schema (and therefore a data source). If Calcite is
+    /// This is the only convention, thus far, that is not a singleton. Each
+    /// instance contains an ADO.NET schema (and therefore a data source). If Calcite is
     /// working with two different databases, it would even make sense to convert
-    /// from "JDBC#A" convention to "JDBC#B", even though we don't do it currently.
+    /// from "ADO#A" convention to "ADO#B", even though we don't do it currently.
     /// (That would involve asking database B to open a database link to database
-    /// A.)</p>
+    /// A.)
     /// 
-    /// <p>As a result, converter rules from and to this convention need to be
-    /// instantiated, at the start of planning, for each ADO database in play.</p>
+    /// As a result, converter rules from and to this convention need to be
+    /// instantiated, at the start of planning, for each ADO database in play.
     /// </summary>
     public class AdoConvention : Convention.Impl
     {

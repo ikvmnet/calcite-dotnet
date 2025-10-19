@@ -6,7 +6,9 @@ namespace Apache.Calcite.Adapter.Ado
 {
 
     /// <summary>
-    /// Provides open ADO connections.
+    /// Provides open ADO connections and corresponding metadata to Calcite upon demand. This exists to allow down-level
+    /// .NET Framework support, as well as because ADO.NET does not provide a DatabaseMetadats infrastructure similar
+    /// to JDBC.
     /// </summary>
     public abstract class AdoDataSource
     {

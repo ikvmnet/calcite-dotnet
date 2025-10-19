@@ -28,21 +28,25 @@ namespace Apache.Calcite.Adapter.Ado
             _parameters = parameters;
         }
 
+        /// <inheritdoc />
         public SchemaPlus getRootSchema()
         {
             return _delegate.getRootSchema();
         }
 
+        /// <inheritdoc />
         public JavaTypeFactory getTypeFactory()
         {
             return _delegate.getTypeFactory();
         }
 
+        /// <inheritdoc />
         public QueryProvider getQueryProvider()
         {
             return _delegate.getQueryProvider();
         }
 
+        /// <inheritdoc />
         public object? get(string name)
         {
             return _delegate.get(name);
