@@ -3,6 +3,7 @@ using System.Data;
 using System.Data.Common;
 
 using Apache.Calcite.Adapter.Ado.Extensions;
+using Apache.Calcite.Adapter.Ado.Metadata;
 
 using org.apache.calcite;
 using org.apache.calcite.linq4j;
@@ -132,17 +133,18 @@ namespace Apache.Calcite.Adapter.Ado
         /// <summary>
         /// Creates an encricher that sets parameters from the context.
         /// </summary>
+        /// <param name="metadata"></param>
         /// <param name="indexes"></param>
         /// <param name="context"></param>
         /// <returns></returns>
-        public static Action<DbCommand> CreateEnricher(int[] indexes, DataContext context)
+        public static Action<DbCommand> CreateEnricher(AdoDatabaseMetadata metadata, int[] indexes, DataContext context)
         {
             return command =>
             {
                 for (int i = 0; i < indexes.Length; i++)
                 {
                     var index = indexes[i];
-                    SetParameter(command, i, context.get("?" + index));
+                    SetParameter(metadata, command, i, context.get("?" + index));
                 }
             };
         }
@@ -150,13 +152,14 @@ namespace Apache.Calcite.Adapter.Ado
         /// <summary>
         /// Sets the given parameter to the given value.
         /// </summary>
+        /// <param name="metadata"></param>
         /// <param name="command"></param>
         /// <param name="i"></param>
         /// <param name="value"></param>
-        static void SetParameter(DbCommand command, int i, object? value)
+        static void SetParameter(AdoDatabaseMetadata metadata, DbCommand command, int i, object? value)
         {
             var parameter = command.CreateParameter();
-            parameter.ParameterName = "@p" + i;
+            parameter.ParameterName = metadata.GetParameterName(i);
             parameter.Value = value ?? DBNull.Value;
             command.Parameters.Insert(i, parameter);
         }

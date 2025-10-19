@@ -53,6 +53,13 @@ namespace Apache.Calcite.Adapter.Ado.Metadata
         /// <returns></returns>
         public abstract IReadOnlySet<AdoFieldMetadata> GetFields(string? databaseName, string? schemaName, string tableName);
 
+        /// <summary>
+        /// Gets the parameter name to use for the parameter at index i.
+        /// </summary>
+        /// <param name="index"></param>
+        /// <returns></returns> 
+        public abstract string GetParameterName(int index);
+
     }
 
 }
