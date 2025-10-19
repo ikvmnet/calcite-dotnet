@@ -31,7 +31,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Data", "src\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Data.Tests", "src\Apache.Calcite.Data.Tests\Apache.Calcite.Data.Tests.csproj", "{724E3F13-A5D6-46B6-A424-06CF36626C93}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Adapter.AdoNet", "src\Apache.Calcite.Adapter.Ado\Apache.Calcite.Adapter.AdoNet.csproj", "{73FD2966-FAB4-4D2A-0E87-F6578884B666}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Adapter.Ado", "src\Apache.Calcite.Adapter.Ado\Apache.Calcite.Adapter.Ado.csproj", "{73FD2966-FAB4-4D2A-0E87-F6578884B666}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Adapter.Ado.Tests", "src\Apache.Calcite.Adapter.Ado.Tests\Apache.Calcite.Adapter.Ado.Tests.csproj", "{3D858857-C285-062B-FF40-6DE10286F8D1}"
 EndProject
