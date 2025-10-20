@@ -86,7 +86,7 @@ jobs:
     strategy:
       matrix:
         run:
-        - Apache.Calcite.Adapter.Ado.Tests
+        - Apache.Calcite.Adapter.AdoNet.Tests
         sys:
         - win-x64
         - linux-x64
