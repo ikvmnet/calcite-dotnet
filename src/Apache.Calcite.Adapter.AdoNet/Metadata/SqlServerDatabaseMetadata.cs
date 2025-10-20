@@ -4,6 +4,7 @@ using System.Data.Common;
 
 using org.apache.calcite.avatica.util;
 using org.apache.calcite.config;
+using org.apache.calcite.rex;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.dialect;
 
@@ -115,6 +116,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
                 "datetime2" => DbType.DateTime2,
                 _ => throw new NotImplementedException($"Unsupported field type: {typeName}"),
             };
+        }
+
+        /// <inheritdoc />
+        public override string GetParameterName(int index)
+        {
+            return $"@P{index}";
         }
 
     }

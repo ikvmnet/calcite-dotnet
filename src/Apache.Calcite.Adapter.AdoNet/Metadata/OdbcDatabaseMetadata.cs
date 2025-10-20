@@ -38,6 +38,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             throw new System.NotImplementedException();
         }
 
+        /// <inheritdoc />
+        public override string GetParameterName(int index)
+        {
+            return $"@P{index}";
+        }
+
     }
 
 }

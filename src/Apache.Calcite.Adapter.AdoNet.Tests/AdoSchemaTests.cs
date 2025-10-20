@@ -80,7 +80,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             var properties = new HashMap();
             properties.put("adoProviderName", "Microsoft.Data.Sqlite");
             properties.put("adoConnectionString", "Data Source=./test.db");
-            properties.put("adoDatabaseMetadata", "Apache.Calcite.Adapter.Ado.Metadata.SqliteDatabaseMetadata");
+            properties.put("adoDatabaseMetadata", "Apache.Calcite.Adapter.AdoNet.Metadata.SqliteDatabaseMetadata");
             properties.put("adoSchema", "");
             var s = AdoSchemaFactory.Instance.create(rootSchema, "testdb", properties);
             rootSchema.add("testdb", s);
@@ -125,19 +125,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [TestMethod]
         public void ComplexSample()
         {
-            JAXBContext context = JAXBContext.newInstance(typeof(Book));
-            var book = (Book)context.createUnmarshaller().unmarshal(new java.io.FileReader("./book.xml"));
-
-
-
-
-
-
-
-
-
-
-
             var properties = new Properties();
             properties.setProperty(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), "false");
             var jdbcConnection = DriverManager.getConnection("jdbc:calcite:", properties);

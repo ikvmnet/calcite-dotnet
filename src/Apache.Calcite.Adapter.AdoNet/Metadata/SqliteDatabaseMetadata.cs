@@ -208,6 +208,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             return list;
         }
 
+        /// <inheritdoc />
+        public override string GetParameterName(int index)
+        {
+            return $"$P{index}";
+        }
+
     }
 
 }

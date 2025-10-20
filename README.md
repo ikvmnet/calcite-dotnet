@@ -1,4 +1,4 @@
-# Apache.Calcite.Adapter.Ado
+# Apache.Calcite.Adapter.AdoNet
 
 This project implements a Calcite Adapter for ADO.NET. This should allow mapping `AdoSchema`s through Calcite, and pushing down operations. This is very early work.
 
