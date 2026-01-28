@@ -9,23 +9,29 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="IKVM" Version="8.14.0" />
-        <PackageReference Include="IKVM.Java.Extensions" Version="8.14.0" />
+        <PackageReference Include="IKVM" Version="8.15.0" />
+        <PackageReference Include="IKVM.Java.Extensions" Version="8.15.0" />
         <PackageReference Include="IKVM.Jdbc.Data" Version="1.0.6" />
-        <PackageReference Include="IKVM.Maven.Sdk" Version="1.10.0" />
-        <PackageReference Include="FluentAssertions" Version="8.2.0" />
+        <PackageReference Include="IKVM.Maven.Sdk" Version="1.11.0">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="FluentAssertions" Version="8.8.0" />
         <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.9" />
+    </ItemGroup>
+
+    <ItemGroup>
         <MavenReference Include="org.apache.calcite.avatica:avatica-core" Version="1.26.0" />
         <MavenReference Include="org.apache.calcite:calcite-csv" Version="1.40.0" />
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\Apache.Calcite.Adapter.AdoNet\Apache.Calcite.Adapter.AdoNet.csproj" />
+        <ProjectReference Include="..\Apache.Calcite.Adapter.AdoNet\Apache.Calcite.Adapter.AdoNet.csproj" />
     </ItemGroup>
 
     <ItemGroup>
         <None Update="csv\people.csv">
-          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
     </ItemGroup>
 
