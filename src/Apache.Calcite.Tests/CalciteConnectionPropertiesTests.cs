@@ -68,6 +68,16 @@ namespace Apache.Calcite.Data.Tests
             Assert.AreEqual(null, c.QuotedCasing);
         }
 
+        [TestMethod]
+        public void CanSetSchemaProperty()
+        {
+            var p = new Properties();
+            var c = new CalciteConnectionProperties(p);
+            c.SchemaProperties["host"] = "localhost";
+            Assert.AreEqual("localhost", c.SchemaProperties["host"]);
+            Assert.AreEqual("localhost", p.getProperty("schema.host"));
+        }
+
     }
 
 }

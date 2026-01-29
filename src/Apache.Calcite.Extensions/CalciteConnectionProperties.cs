@@ -1,4 +1,6 @@
-﻿using java.util;
+﻿using Apache.Calcite.Extensions;
+
+using java.util;
 
 using org.apache.calcite.avatica.util;
 using org.apache.calcite.config;
@@ -10,10 +12,11 @@ namespace Apache.Calcite.Data
     /// <summary>
     /// Provides typed access to <see cref="CalciteConnectionProperty"/> instances stored in a <see cref="Properties"/>.
     /// </summary>
-    public readonly struct CalciteConnectionProperties
+    public class CalciteConnectionProperties
     {
 
         readonly Properties _properties;
+        readonly CalciteConnectionPropertiesSchemaMap _schemaMap;
 
         /// <summary>
         /// Initializes a new instance.
@@ -22,6 +25,7 @@ namespace Apache.Calcite.Data
         public CalciteConnectionProperties(Properties properties)
         {
             _properties = properties;
+            _schemaMap = new CalciteConnectionPropertiesSchemaMap(_properties);
         }
 
         /// <summary>
@@ -30,6 +34,7 @@ namespace Apache.Calcite.Data
         public CalciteConnectionProperties()
         {
             _properties = new Properties();
+            _schemaMap = new CalciteConnectionPropertiesSchemaMap(_properties);
         }
 
         /// <summary>
@@ -322,6 +327,11 @@ namespace Apache.Calcite.Data
             get => GetString(CalciteConnectionProperty.SCHEMA);
             set => SetString(CalciteConnectionProperty.SCHEMA, value);
         }
+
+        /// <summary>
+        /// Gets the set of properties prefixed with 'schema.'.
+        /// </summary>
+        public CalciteConnectionPropertiesSchemaMap SchemaProperties => _schemaMap;
 
         /// <summary>
         /// Schema factory.
