@@ -10,6 +10,9 @@
         <PackageProjectReference Include="..\Apache.Calcite.Adapter.AdoNet\Apache.Calcite.Adapter.AdoNet.csproj">
             <PackageTargetPath>.</PackageTargetPath>
         </PackageProjectReference>
+        <PackageProjectReference Include="..\Apache.Calcite.Extensions\Apache.Calcite.Extensions.csproj">
+            <PackageTargetPath>.</PackageTargetPath>
+        </PackageProjectReference>
     </ItemGroup>
 
 </Project>
