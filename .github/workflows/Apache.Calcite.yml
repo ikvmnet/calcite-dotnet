@@ -45,7 +45,7 @@ jobs:
         GITHUB_REPOS: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: NuGet Restore
-      run: dotnet restore Apache.Calcite.Data.sln
+      run: dotnet restore Apache.Calcite.sln
     - name: Build
       run: |
         dotnet msbuild /m /bl \
@@ -62,7 +62,7 @@ jobs:
           /p:PackageProjectUrl="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
           /p:BuildInParallel=true \
           /p:ContinuousIntegrationBuild=true \
-          Apache.Calcite.Data.dist.msbuildproj
+          Apache.Calcite.dist.msbuildproj
     - name: Upload MSBuild Log
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -86,6 +86,7 @@ jobs:
     strategy:
       matrix:
         run:
+        - Apache.Calcite.Tests
         - Apache.Calcite.Adapter.AdoNet.Tests
         sys:
         - win-x64

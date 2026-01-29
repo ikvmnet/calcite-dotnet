@@ -8,9 +8,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		.gitattributes = .gitattributes
 		.gitignore = .gitignore
 		.gitmodules = .gitmodules
-		Apache.Calcite.Data.dist.msbuildproj = Apache.Calcite.Data.dist.msbuildproj
-		.github\workflows\Apache.Calcite.Data.yml = .github\workflows\Apache.Calcite.Data.yml
 		Directory.Build.props = Directory.Build.props
+		Apache.Calcite.dist.msbuildproj = Apache.Calcite.dist.msbuildproj
+		.github\workflows\Apache.Calcite.yml = .github\workflows\Apache.Calcite.yml
 		Directory.Build.targets = Directory.Build.targets
 		GitVersion.yml = GitVersion.yml
 		global.json = global.json
@@ -29,15 +29,13 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dist", "dist", "{3523028E-C
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Data", "src\Apache.Calcite.Data\Apache.Calcite.Data.csproj", "{9C8D9B7F-0C1A-41D7-8DE1-8CEFF387DE40}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Data.Tests", "src\Apache.Calcite.Data.Tests\Apache.Calcite.Data.Tests.csproj", "{724E3F13-A5D6-46B6-A424-06CF36626C93}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Extensions", "src\Apache.Calcite.Extensions\Apache.Calcite.Extensions.csproj", "{D39E9D3E-A7B4-4B24-9E14-F47275BEC4B3}"
-EndProject
-Project("{DAEA77DE-8320-43BA-BA7C-EF5C12478AB5}") = "Apache.Calcite.Data.Java", "src\Apache.Calcite.Data.Java\Apache.Calcite.Data.Java.ikvmproj", "{BF10B42E-ED68-DF9B-E98E-72C59B89F7DA}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Adapter.AdoNet", "src\Apache.Calcite.Adapter.AdoNet\Apache.Calcite.Adapter.AdoNet.csproj", "{21A83DF5-1CD9-0E0F-70C2-60CAA3569F2F}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Adapter.AdoNet.Tests", "src\Apache.Calcite.Adapter.AdoNet.Tests\Apache.Calcite.Adapter.AdoNet.Tests.csproj", "{DADB6BA5-71DF-31AF-64E8-A3BA125044D3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Tests", "src\Apache.Calcite.Tests\Apache.Calcite.Tests.csproj", "{2D684421-5A73-841A-541C-FD5846D69B76}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -57,18 +55,10 @@ Global
 		{9C8D9B7F-0C1A-41D7-8DE1-8CEFF387DE40}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9C8D9B7F-0C1A-41D7-8DE1-8CEFF387DE40}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9C8D9B7F-0C1A-41D7-8DE1-8CEFF387DE40}.Release|Any CPU.Build.0 = Release|Any CPU
-		{724E3F13-A5D6-46B6-A424-06CF36626C93}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{724E3F13-A5D6-46B6-A424-06CF36626C93}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{724E3F13-A5D6-46B6-A424-06CF36626C93}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{724E3F13-A5D6-46B6-A424-06CF36626C93}.Release|Any CPU.Build.0 = Release|Any CPU
 		{D39E9D3E-A7B4-4B24-9E14-F47275BEC4B3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{D39E9D3E-A7B4-4B24-9E14-F47275BEC4B3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D39E9D3E-A7B4-4B24-9E14-F47275BEC4B3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D39E9D3E-A7B4-4B24-9E14-F47275BEC4B3}.Release|Any CPU.Build.0 = Release|Any CPU
-		{BF10B42E-ED68-DF9B-E98E-72C59B89F7DA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{BF10B42E-ED68-DF9B-E98E-72C59B89F7DA}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{BF10B42E-ED68-DF9B-E98E-72C59B89F7DA}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{BF10B42E-ED68-DF9B-E98E-72C59B89F7DA}.Release|Any CPU.Build.0 = Release|Any CPU
 		{21A83DF5-1CD9-0E0F-70C2-60CAA3569F2F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{21A83DF5-1CD9-0E0F-70C2-60CAA3569F2F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{21A83DF5-1CD9-0E0F-70C2-60CAA3569F2F}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -77,6 +67,10 @@ Global
 		{DADB6BA5-71DF-31AF-64E8-A3BA125044D3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DADB6BA5-71DF-31AF-64E8-A3BA125044D3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DADB6BA5-71DF-31AF-64E8-A3BA125044D3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2D684421-5A73-841A-541C-FD5846D69B76}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2D684421-5A73-841A-541C-FD5846D69B76}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2D684421-5A73-841A-541C-FD5846D69B76}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2D684421-5A73-841A-541C-FD5846D69B76}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -86,11 +80,10 @@ Global
 		{52D4FE86-2EB0-A77A-A7E9-A6F41ACB229F} = {3523028E-CB46-4932-9E3A-D87BA69E2139}
 		{3523028E-CB46-4932-9E3A-D87BA69E2139} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{9C8D9B7F-0C1A-41D7-8DE1-8CEFF387DE40} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
-		{724E3F13-A5D6-46B6-A424-06CF36626C93} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{D39E9D3E-A7B4-4B24-9E14-F47275BEC4B3} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
-		{BF10B42E-ED68-DF9B-E98E-72C59B89F7DA} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{21A83DF5-1CD9-0E0F-70C2-60CAA3569F2F} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{DADB6BA5-71DF-31AF-64E8-A3BA125044D3} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{2D684421-5A73-841A-541C-FD5846D69B76} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A03ACB78-6C3F-4E09-BAF1-16E41D5A3945}

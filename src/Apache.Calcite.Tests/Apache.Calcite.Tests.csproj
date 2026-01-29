@@ -1,16 +1,14 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="MSTest.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net8.0</TargetFramework>
-        <LangVersion>Preview</LangVersion>
+        <TargetFrameworks>net8.0</TargetFrameworks>
+        <LangVersion>latest</LangVersion>
         <Nullable>enable</Nullable>
+        <TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
     </PropertyGroup>
 
     <ItemGroup>
-        <InternalsVisibleTo Include="Apache.Calcite.Data" />
-    </ItemGroup>
-
-    <ItemGroup>
+        <PackageReference Include="FluentAssertions" Version="8.8.0" />
         <PackageReference Include="IKVM" Version="8.15.0" />
         <PackageReference Include="IKVM.Java.Extensions" Version="8.15.0" />
         <PackageReference Include="IKVM.Jdbc.Data" Version="1.0.6" />
@@ -22,6 +20,10 @@
 
     <ItemGroup>
         <MavenReference Include="org.apache.calcite:calcite-core" Version="1.40.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Apache.Calcite.Extensions\Apache.Calcite.Extensions.csproj" />
     </ItemGroup>
 
 </Project>

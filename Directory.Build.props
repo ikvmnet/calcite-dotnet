@@ -11,7 +11,7 @@
     </ItemGroup>
 
     <PropertyGroup Label="Copyright Info">
-        <ProductName>Apache.Calcite.Data</ProductName>
+        <ProductName>Apache.Calcite</ProductName>
         <Authors>@(Authors, ',')</Authors>
         <CurrentYear Condition=" '$(CurrentYear)' == '' ">$([System.DateTime]::UtcNow.Year.ToString())</CurrentYear>
         <Copyright>Copyright © $(CurrentYear) @(Authors, ', ')</Copyright>
