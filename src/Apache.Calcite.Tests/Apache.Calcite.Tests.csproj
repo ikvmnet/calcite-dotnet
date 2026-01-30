@@ -11,7 +11,7 @@
         <PackageReference Include="FluentAssertions" Version="8.8.0" />
         <PackageReference Include="IKVM" Version="8.15.0" />
         <PackageReference Include="IKVM.Java.Extensions" Version="8.15.0" />
-        <PackageReference Include="IKVM.Jdbc.Data" Version="1.0.6" />
+        <PackageReference Include="IKVM.Jdbc.Data" Version="1.0.7" />
         <PackageReference Include="IKVM.Maven.Sdk" Version="1.11.0">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
