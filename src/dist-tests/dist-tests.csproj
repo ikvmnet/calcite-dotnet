@@ -7,6 +7,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <TestTarget Include="Apache.Calcite.Tests|net8.0" ProjectName="Apache.Calcite.Tests" TargetFramework="net8.0" />
         <TestTarget Include="Apache.Calcite.Adapter.AdoNet.Tests|net8.0" ProjectName="Apache.Calcite.Adapter.AdoNet.Tests" TargetFramework="net8.0" />
     </ItemGroup>
 

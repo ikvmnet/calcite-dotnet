@@ -6,13 +6,8 @@ using com.google.common.collect;
 
 using IKVM.Jdbc.Data;
 
-using java.awt.print;
-using java.lang;
 using java.sql;
 using java.util;
-
-using javax.xml.bind;
-using javax.xml.bind.annotation;
 
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;

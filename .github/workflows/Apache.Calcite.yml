@@ -45,7 +45,7 @@ jobs:
         GITHUB_REPOS: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: NuGet Restore
-      run: dotnet restore Apache.Calcite.Data.sln
+      run: dotnet restore Apache.Calcite.sln
     - name: Build
       run: |
         dotnet msbuild /m /bl \
@@ -62,7 +62,7 @@ jobs:
           /p:PackageProjectUrl="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
           /p:BuildInParallel=true \
           /p:ContinuousIntegrationBuild=true \
-          Apache.Calcite.Data.dist.msbuildproj
+          Apache.Calcite.dist.msbuildproj
     - name: Upload MSBuild Log
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -86,6 +86,7 @@ jobs:
     strategy:
       matrix:
         run:
+        - Apache.Calcite.Tests
         - Apache.Calcite.Adapter.AdoNet.Tests
         sys:
         - win-x64
@@ -98,7 +99,7 @@ jobs:
     name: Test (${{ matrix.run }}:${{ matrix.tfm }}:${{ matrix.sys }})
     needs:
     - build
-    runs-on: ${{ fromJSON('{"win-x86":["windows-2022"],"win-x64":["windows-2022"],"linux-x64":["ubuntu-24.04"],"linux-arm64":["ubuntu-24.04-arm"],"osx-x64":["macos-13"],"osx-arm64":["macos-14"]}')[matrix.sys] }}
+    runs-on: ${{ fromJSON('{"win-x86":["windows-2022"],"win-x64":["windows-2022"],"linux-x64":["ubuntu-24.04"],"linux-arm64":["ubuntu-24.04-arm"],"osx-x64":["macos-15-intel"],"osx-arm64":["macos-15"]}')[matrix.sys] }}
     steps:
     - name: Setup .NET 9.0
       uses: actions/setup-dotnet@v4

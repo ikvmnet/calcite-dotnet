@@ -11,12 +11,16 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="IKVM" Version="8.14.0" />
-        <PackageReference Include="IKVM.Java.Extensions" Version="8.14.0" />
-        <PackageReference Include="IKVM.Maven.Sdk" Version="1.10.0">
+        <PackageReference Include="IKVM" Version="8.15.0" />
+        <PackageReference Include="IKVM.Java.Extensions" Version="8.15.0" />
+        <PackageReference Include="IKVM.Jdbc.Data" Version="1.0.7" />
+        <PackageReference Include="IKVM.Maven.Sdk" Version="1.11.0">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
+    </ItemGroup>
+
+    <ItemGroup>
         <MavenReference Include="org.apache.calcite:calcite-core" Version="1.40.0" />
     </ItemGroup>
 

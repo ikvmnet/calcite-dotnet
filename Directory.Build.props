@@ -11,7 +11,7 @@
     </ItemGroup>
 
     <PropertyGroup Label="Copyright Info">
-        <ProductName>Apache.Calcite.Data</ProductName>
+        <ProductName>Apache.Calcite</ProductName>
         <Authors>@(Authors, ',')</Authors>
         <CurrentYear Condition=" '$(CurrentYear)' == '' ">$([System.DateTime]::UtcNow.Year.ToString())</CurrentYear>
         <Copyright>Copyright © $(CurrentYear) @(Authors, ', ')</Copyright>
@@ -39,7 +39,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="IKVM.Core.MSBuild" Version="0.1.107">
+        <PackageReference Include="IKVM.Core.MSBuild" Version="0.1.108">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
