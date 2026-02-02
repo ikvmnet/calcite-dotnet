@@ -16,7 +16,7 @@
         <PackageReference Include="FluentAssertions" Version="8.2.0" />
         <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.9" />
         <MavenReference Include="org.apache.calcite.avatica:avatica-core" Version="1.26.0" />
-        <MavenReference Include="org.apache.calcite:calcite-csv" Version="1.40.0" />
+        <MavenReference Include="org.apache.calcite:calcite-csv" Version="1.41.0" />
     </ItemGroup>
 
     <ItemGroup>

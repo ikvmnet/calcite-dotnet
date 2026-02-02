@@ -12,7 +12,7 @@
         <PackageReference Include="IKVM.Maven.Sdk" Version="1.10.0" />
         <PackageReference Include="System.Data.Odbc" Version="9.0.9" />
         <PackageReference Include="System.Data.OleDb" Version="9.0.9" />
-        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.40.0" />
+        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.41.0" />
     </ItemGroup>
 
 </Project>
