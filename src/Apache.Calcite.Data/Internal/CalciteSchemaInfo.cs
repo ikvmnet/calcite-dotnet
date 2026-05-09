@@ -29,6 +29,16 @@ namespace Apache.Calcite.Data.Internal
         public const string Tables = "Tables";
         public const string Columns = "Columns";
         public const string Views = "Views";
+        public const string ViewColumns = "ViewColumns";
+        public const string Indexes = "Indexes";
+        public const string IndexColumns = "IndexColumns";
+        public const string PrimaryKeys = "PrimaryKeys";
+        public const string ForeignKeys = "ForeignKeys";
+        public const string Procedures = "Procedures";
+        public const string ProcedureParameters = "ProcedureParameters";
+        public const string Functions = "Functions";
+        public const string FunctionParameters = "FunctionParameters";
+        public const string UserDefinedTypes = "UserDefinedTypes";
 
         /// <summary>
         /// Returns the names and shapes of every metadata collection supported by the provider.
@@ -49,6 +59,16 @@ namespace Apache.Calcite.Data.Internal
             t.Rows.Add(Tables, 3, 3);
             t.Rows.Add(Columns, 4, 4);
             t.Rows.Add(Views, 3, 3);
+            t.Rows.Add(ViewColumns, 4, 4);
+            t.Rows.Add(Indexes, 4, 4);
+            t.Rows.Add(IndexColumns, 5, 5);
+            t.Rows.Add(PrimaryKeys, 4, 4);
+            t.Rows.Add(ForeignKeys, 4, 4);
+            t.Rows.Add(Procedures, 4, 4);
+            t.Rows.Add(ProcedureParameters, 5, 5);
+            t.Rows.Add(Functions, 4, 4);
+            t.Rows.Add(FunctionParameters, 5, 5);
+            t.Rows.Add(UserDefinedTypes, 2, 2);
 
             return t;
         }
@@ -78,6 +98,57 @@ namespace Apache.Calcite.Data.Internal
             t.Rows.Add(Views, "Catalog", null, 1);
             t.Rows.Add(Views, "Schema", null, 2);
             t.Rows.Add(Views, "View", null, 3);
+
+            t.Rows.Add(ViewColumns, "Catalog", null, 1);
+            t.Rows.Add(ViewColumns, "Schema", null, 2);
+            t.Rows.Add(ViewColumns, "View", null, 3);
+            t.Rows.Add(ViewColumns, "Column", null, 4);
+
+            t.Rows.Add(Indexes, "Catalog", null, 1);
+            t.Rows.Add(Indexes, "Schema", null, 2);
+            t.Rows.Add(Indexes, "Table", null, 3);
+            t.Rows.Add(Indexes, "Index", null, 4);
+
+            t.Rows.Add(IndexColumns, "Catalog", null, 1);
+            t.Rows.Add(IndexColumns, "Schema", null, 2);
+            t.Rows.Add(IndexColumns, "Table", null, 3);
+            t.Rows.Add(IndexColumns, "Index", null, 4);
+            t.Rows.Add(IndexColumns, "Column", null, 5);
+
+            t.Rows.Add(PrimaryKeys, "Catalog", null, 1);
+            t.Rows.Add(PrimaryKeys, "Schema", null, 2);
+            t.Rows.Add(PrimaryKeys, "Table", null, 3);
+            t.Rows.Add(PrimaryKeys, "Constraint", null, 4);
+
+            t.Rows.Add(ForeignKeys, "Catalog", null, 1);
+            t.Rows.Add(ForeignKeys, "Schema", null, 2);
+            t.Rows.Add(ForeignKeys, "Table", null, 3);
+            t.Rows.Add(ForeignKeys, "Constraint", null, 4);
+
+            t.Rows.Add(Procedures, "Catalog", null, 1);
+            t.Rows.Add(Procedures, "Schema", null, 2);
+            t.Rows.Add(Procedures, "Procedure", null, 3);
+            t.Rows.Add(Procedures, "ProcedureType", null, 4);
+
+            t.Rows.Add(ProcedureParameters, "Catalog", null, 1);
+            t.Rows.Add(ProcedureParameters, "Schema", null, 2);
+            t.Rows.Add(ProcedureParameters, "Procedure", null, 3);
+            t.Rows.Add(ProcedureParameters, "ProcedureType", null, 4);
+            t.Rows.Add(ProcedureParameters, "Parameter", null, 5);
+
+            t.Rows.Add(Functions, "Catalog", null, 1);
+            t.Rows.Add(Functions, "Schema", null, 2);
+            t.Rows.Add(Functions, "Function", null, 3);
+            t.Rows.Add(Functions, "FunctionType", null, 4);
+
+            t.Rows.Add(FunctionParameters, "Catalog", null, 1);
+            t.Rows.Add(FunctionParameters, "Schema", null, 2);
+            t.Rows.Add(FunctionParameters, "Function", null, 3);
+            t.Rows.Add(FunctionParameters, "FunctionType", null, 4);
+            t.Rows.Add(FunctionParameters, "Parameter", null, 5);
+
+            t.Rows.Add(UserDefinedTypes, "Catalog", null, 1);
+            t.Rows.Add(UserDefinedTypes, "Type", null, 2);
 
             return t;
         }
@@ -414,6 +485,156 @@ namespace Apache.Calcite.Data.Internal
                 }
             }
 
+            return t;
+        }
+
+        /// <summary>
+        /// Returns an empty <see cref="DataTable"/> for the <c>ViewColumns</c> collection.
+        /// Calcite's metamodel does not expose dedicated view-column metadata, so the table is shaped but unpopulated.
+        /// </summary>
+        public static DataTable BuildViewColumns(CalciteConnection connection, string? catalog, string? schema, string? view, string? column)
+        {
+            var t = new DataTable(ViewColumns);
+            t.Columns.Add("ViewCatalog", typeof(string));
+            t.Columns.Add("ViewSchema", typeof(string));
+            t.Columns.Add("ViewName", typeof(string));
+            t.Columns.Add("ColumnName", typeof(string));
+            t.Columns.Add("OrdinalPosition", typeof(int));
+            return t;
+        }
+
+        /// <summary>
+        /// Returns an empty <see cref="DataTable"/> for the <c>Indexes</c> collection.
+        /// Calcite has no native index concept, so the table is shaped but unpopulated.
+        /// </summary>
+        public static DataTable BuildIndexes(CalciteConnection connection, string? catalog, string? schema, string? table, string? index)
+        {
+            var t = new DataTable(Indexes);
+            t.Columns.Add("TableCatalog", typeof(string));
+            t.Columns.Add("TableSchema", typeof(string));
+            t.Columns.Add("TableName", typeof(string));
+            t.Columns.Add("IndexName", typeof(string));
+            t.Columns.Add("IsUnique", typeof(bool));
+            t.Columns.Add("IsPrimary", typeof(bool));
+            return t;
+        }
+
+        /// <summary>
+        /// Returns an empty <see cref="DataTable"/> for the <c>IndexColumns</c> collection.
+        /// </summary>
+        public static DataTable BuildIndexColumns(CalciteConnection connection, string? catalog, string? schema, string? table, string? index, string? column)
+        {
+            var t = new DataTable(IndexColumns);
+            t.Columns.Add("TableCatalog", typeof(string));
+            t.Columns.Add("TableSchema", typeof(string));
+            t.Columns.Add("TableName", typeof(string));
+            t.Columns.Add("IndexName", typeof(string));
+            t.Columns.Add("ColumnName", typeof(string));
+            t.Columns.Add("OrdinalPosition", typeof(int));
+            return t;
+        }
+
+        /// <summary>
+        /// Returns an empty <see cref="DataTable"/> for the <c>PrimaryKeys</c> collection.
+        /// Calcite does not surface key constraints through its catalog; the table is shaped but unpopulated.
+        /// </summary>
+        public static DataTable BuildPrimaryKeys(CalciteConnection connection, string? catalog, string? schema, string? table, string? constraint)
+        {
+            var t = new DataTable(PrimaryKeys);
+            t.Columns.Add("TableCatalog", typeof(string));
+            t.Columns.Add("TableSchema", typeof(string));
+            t.Columns.Add("TableName", typeof(string));
+            t.Columns.Add("ConstraintName", typeof(string));
+            t.Columns.Add("ColumnName", typeof(string));
+            t.Columns.Add("OrdinalPosition", typeof(int));
+            return t;
+        }
+
+        /// <summary>
+        /// Returns an empty <see cref="DataTable"/> for the <c>ForeignKeys</c> collection.
+        /// </summary>
+        public static DataTable BuildForeignKeys(CalciteConnection connection, string? catalog, string? schema, string? table, string? constraint)
+        {
+            var t = new DataTable(ForeignKeys);
+            t.Columns.Add("TableCatalog", typeof(string));
+            t.Columns.Add("TableSchema", typeof(string));
+            t.Columns.Add("TableName", typeof(string));
+            t.Columns.Add("ConstraintName", typeof(string));
+            t.Columns.Add("ReferencedTableCatalog", typeof(string));
+            t.Columns.Add("ReferencedTableSchema", typeof(string));
+            t.Columns.Add("ReferencedTableName", typeof(string));
+            return t;
+        }
+
+        /// <summary>
+        /// Returns an empty <see cref="DataTable"/> for the <c>Procedures</c> collection.
+        /// Calcite does not have stored procedures; the table is shaped but unpopulated.
+        /// </summary>
+        public static DataTable BuildProcedures(CalciteConnection connection, string? catalog, string? schema, string? procedure, string? procedureType)
+        {
+            var t = new DataTable(Procedures);
+            t.Columns.Add("ProcedureCatalog", typeof(string));
+            t.Columns.Add("ProcedureSchema", typeof(string));
+            t.Columns.Add("ProcedureName", typeof(string));
+            t.Columns.Add("ProcedureType", typeof(string));
+            return t;
+        }
+
+        /// <summary>
+        /// Returns an empty <see cref="DataTable"/> for the <c>ProcedureParameters</c> collection.
+        /// </summary>
+        public static DataTable BuildProcedureParameters(CalciteConnection connection, string? catalog, string? schema, string? procedure, string? procedureType, string? parameter)
+        {
+            var t = new DataTable(ProcedureParameters);
+            t.Columns.Add("ProcedureCatalog", typeof(string));
+            t.Columns.Add("ProcedureSchema", typeof(string));
+            t.Columns.Add("ProcedureName", typeof(string));
+            t.Columns.Add("ParameterName", typeof(string));
+            t.Columns.Add("OrdinalPosition", typeof(int));
+            t.Columns.Add("ParameterMode", typeof(string));
+            t.Columns.Add("DataType", typeof(string));
+            return t;
+        }
+
+        /// <summary>
+        /// Returns an empty <see cref="DataTable"/> for the <c>Functions</c> collection.
+        /// Per-schema function enumeration is not exposed; the table is shaped but unpopulated.
+        /// </summary>
+        public static DataTable BuildFunctions(CalciteConnection connection, string? catalog, string? schema, string? function, string? functionType)
+        {
+            var t = new DataTable(Functions);
+            t.Columns.Add("FunctionCatalog", typeof(string));
+            t.Columns.Add("FunctionSchema", typeof(string));
+            t.Columns.Add("FunctionName", typeof(string));
+            t.Columns.Add("FunctionType", typeof(string));
+            return t;
+        }
+
+        /// <summary>
+        /// Returns an empty <see cref="DataTable"/> for the <c>FunctionParameters</c> collection.
+        /// </summary>
+        public static DataTable BuildFunctionParameters(CalciteConnection connection, string? catalog, string? schema, string? function, string? functionType, string? parameter)
+        {
+            var t = new DataTable(FunctionParameters);
+            t.Columns.Add("FunctionCatalog", typeof(string));
+            t.Columns.Add("FunctionSchema", typeof(string));
+            t.Columns.Add("FunctionName", typeof(string));
+            t.Columns.Add("ParameterName", typeof(string));
+            t.Columns.Add("OrdinalPosition", typeof(int));
+            t.Columns.Add("ParameterMode", typeof(string));
+            t.Columns.Add("DataType", typeof(string));
+            return t;
+        }
+
+        /// <summary>
+        /// Returns an empty <see cref="DataTable"/> for the <c>UserDefinedTypes</c> collection.
+        /// </summary>
+        public static DataTable BuildUserDefinedTypes(CalciteConnection connection, string? catalog, string? type)
+        {
+            var t = new DataTable(UserDefinedTypes);
+            t.Columns.Add("Catalog", typeof(string));
+            t.Columns.Add("TypeName", typeof(string));
+            t.Columns.Add("DataType", typeof(string));
             return t;
         }
 

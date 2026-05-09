@@ -74,6 +74,9 @@ namespace Apache.Calcite.Data
         public override ConnectionState State => _state;
 
         /// <inheritdoc />
+        protected override DbProviderFactory DbProviderFactory => CalciteProviderFactory.Instance;
+
+        /// <inheritdoc />
         public override void ChangeDatabase(string databaseName)
         {
             _options.Schema = databaseName;
@@ -85,16 +88,16 @@ namespace Apache.Calcite.Data
             if (_state != ConnectionState.Closed)
                 throw new InvalidOperationException("Connection is already open or in a transitional state.");
 
-            _state = ConnectionState.Connecting;
+            SetState(ConnectionState.Connecting);
             try
             {
                 var client = CalciteClientFactory.Create(_options);
                 _session = new CalciteSession(_options, client);
-                _state = ConnectionState.Open;
+                SetState(ConnectionState.Open);
             }
             catch
             {
-                _state = ConnectionState.Closed;
+                SetState(ConnectionState.Closed);
                 throw;
             }
         }
@@ -107,7 +110,17 @@ namespace Apache.Calcite.Data
 
             _session?.Dispose();
             _session = null;
-            _state = ConnectionState.Closed;
+            SetState(ConnectionState.Closed);
+        }
+
+        void SetState(ConnectionState newState)
+        {
+            var oldState = _state;
+            if (oldState == newState)
+                return;
+
+            _state = newState;
+            OnStateChange(new StateChangeEventArgs(oldState, newState));
         }
 
         /// <inheritdoc />
@@ -183,6 +196,77 @@ namespace Apache.Calcite.Data
                     GetRestriction(restrictionValues, 0),
                     GetRestriction(restrictionValues, 1),
                     GetRestriction(restrictionValues, 2));
+
+            if (string.Equals(collectionName, SchemaInfo.ViewColumns, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildViewColumns(this,
+                    GetRestriction(restrictionValues, 0),
+                    GetRestriction(restrictionValues, 1),
+                    GetRestriction(restrictionValues, 2),
+                    GetRestriction(restrictionValues, 3));
+
+            if (string.Equals(collectionName, SchemaInfo.Indexes, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildIndexes(this,
+                    GetRestriction(restrictionValues, 0),
+                    GetRestriction(restrictionValues, 1),
+                    GetRestriction(restrictionValues, 2),
+                    GetRestriction(restrictionValues, 3));
+
+            if (string.Equals(collectionName, SchemaInfo.IndexColumns, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildIndexColumns(this,
+                    GetRestriction(restrictionValues, 0),
+                    GetRestriction(restrictionValues, 1),
+                    GetRestriction(restrictionValues, 2),
+                    GetRestriction(restrictionValues, 3),
+                    GetRestriction(restrictionValues, 4));
+
+            if (string.Equals(collectionName, SchemaInfo.PrimaryKeys, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildPrimaryKeys(this,
+                    GetRestriction(restrictionValues, 0),
+                    GetRestriction(restrictionValues, 1),
+                    GetRestriction(restrictionValues, 2),
+                    GetRestriction(restrictionValues, 3));
+
+            if (string.Equals(collectionName, SchemaInfo.ForeignKeys, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildForeignKeys(this,
+                    GetRestriction(restrictionValues, 0),
+                    GetRestriction(restrictionValues, 1),
+                    GetRestriction(restrictionValues, 2),
+                    GetRestriction(restrictionValues, 3));
+
+            if (string.Equals(collectionName, SchemaInfo.Procedures, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildProcedures(this,
+                    GetRestriction(restrictionValues, 0),
+                    GetRestriction(restrictionValues, 1),
+                    GetRestriction(restrictionValues, 2),
+                    GetRestriction(restrictionValues, 3));
+
+            if (string.Equals(collectionName, SchemaInfo.ProcedureParameters, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildProcedureParameters(this,
+                    GetRestriction(restrictionValues, 0),
+                    GetRestriction(restrictionValues, 1),
+                    GetRestriction(restrictionValues, 2),
+                    GetRestriction(restrictionValues, 3),
+                    GetRestriction(restrictionValues, 4));
+
+            if (string.Equals(collectionName, SchemaInfo.Functions, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildFunctions(this,
+                    GetRestriction(restrictionValues, 0),
+                    GetRestriction(restrictionValues, 1),
+                    GetRestriction(restrictionValues, 2),
+                    GetRestriction(restrictionValues, 3));
+
+            if (string.Equals(collectionName, SchemaInfo.FunctionParameters, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildFunctionParameters(this,
+                    GetRestriction(restrictionValues, 0),
+                    GetRestriction(restrictionValues, 1),
+                    GetRestriction(restrictionValues, 2),
+                    GetRestriction(restrictionValues, 3),
+                    GetRestriction(restrictionValues, 4));
+
+            if (string.Equals(collectionName, SchemaInfo.UserDefinedTypes, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildUserDefinedTypes(this,
+                    GetRestriction(restrictionValues, 0),
+                    GetRestriction(restrictionValues, 1));
 
             throw new ArgumentException($"The metadata collection '{collectionName}' is not supported by this provider.", nameof(collectionName));
         }
