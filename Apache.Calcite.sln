@@ -35,6 +35,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Adapter.AdoN
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Tests", "src\Apache.Calcite.Tests\Apache.Calcite.Tests.csproj", "{2D684421-5A73-841A-541C-FD5846D69B76}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.AdoNet", "src\Apache.Calcite.AdoNet\Apache.Calcite.AdoNet.csproj", "{DE85163C-E53F-4297-8079-9D43F232682F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.AdoNet.Tests", "src\Apache.Calcite.AdoNet.Tests\Apache.Calcite.AdoNet.Tests.csproj", "{036D30A1-6D38-4577-9FFB-E27AE4FF83EB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -65,6 +69,14 @@ Global
 		{2D684421-5A73-841A-541C-FD5846D69B76}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2D684421-5A73-841A-541C-FD5846D69B76}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2D684421-5A73-841A-541C-FD5846D69B76}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DE85163C-E53F-4297-8079-9D43F232682F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DE85163C-E53F-4297-8079-9D43F232682F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DE85163C-E53F-4297-8079-9D43F232682F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DE85163C-E53F-4297-8079-9D43F232682F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{036D30A1-6D38-4577-9FFB-E27AE4FF83EB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{036D30A1-6D38-4577-9FFB-E27AE4FF83EB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{036D30A1-6D38-4577-9FFB-E27AE4FF83EB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{036D30A1-6D38-4577-9FFB-E27AE4FF83EB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -77,6 +89,8 @@ Global
 		{21A83DF5-1CD9-0E0F-70C2-60CAA3569F2F} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{DADB6BA5-71DF-31AF-64E8-A3BA125044D3} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{2D684421-5A73-841A-541C-FD5846D69B76} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{DE85163C-E53F-4297-8079-9D43F232682F} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{036D30A1-6D38-4577-9FFB-E27AE4FF83EB} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A03ACB78-6C3F-4E09-BAF1-16E41D5A3945}
