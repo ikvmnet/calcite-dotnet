@@ -65,6 +65,7 @@ namespace Apache.Calcite.Adapter.AdoNet
             yield return AdoMinusRule.Create(convention);
             yield return AdoValuesRule.Create(convention);
         }
+
         /// <summary>
         /// Creates a list of rules with the given ADO convention instance.
         /// </summary>

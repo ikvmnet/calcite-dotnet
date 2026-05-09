@@ -134,7 +134,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             var config = Frameworks.newConfigBuilder().defaultSchema(rootSchema).build();
             var planner = Frameworks.getPlanner(config);
 
-            var query = """ SELECT * FROM "adhoc"."people" P WHERE P."Id" > 10 AND P."Name" LIKE 'Per%' """;
+            var query = """ SELECT * FROM "testdb"."people" P WHERE P."Id" > 10 AND P."Name" LIKE 'Per%' """;
 
             Console.WriteLine("SqlNode:");
             var sqlNode = planner.parse(query);
