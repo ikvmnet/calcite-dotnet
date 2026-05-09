@@ -4,13 +4,19 @@ using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Apache.Calcite.Data.Internal;
 
 namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Represents a SQL statement to execute against a <see cref="CalciteConnection"/>.
+    /// Represents a SQL statement to execute against an Apache Calcite engine. This class cannot be inherited.
     /// </summary>
+    /// <remarks>
+    /// Only <see cref="CommandType.Text"/> is supported. Parameter placeholders are positional
+    /// <c>?</c> markers, bound by ordinal in the order they were added to <see cref="Parameters"/>;
+    /// the value of <see cref="DbParameter.ParameterName"/> is informational.
+    /// </remarks>
     public sealed class CalciteCommand : DbCommand
     {
 
@@ -31,19 +37,19 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="CalciteCommand"/> class.
+        /// Initializes a new instance of the <see cref="CalciteCommand"/> class with the text of the query.
         /// </summary>
-        /// <param name="commandText"></param>
+        /// <param name="commandText">The SQL text to execute against the Calcite engine. May be <see langword="null"/>, in which case the command text is set to an empty string.</param>
         public CalciteCommand(string commandText)
         {
             _commandText = commandText ?? string.Empty;
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="CalciteCommand"/> class.
+        /// Initializes a new instance of the <see cref="CalciteCommand"/> class with the text of the query and a <see cref="CalciteConnection"/>.
         /// </summary>
-        /// <param name="commandText"></param>
-        /// <param name="connection"></param>
+        /// <param name="commandText">The SQL text to execute against the Calcite engine.</param>
+        /// <param name="connection">The <see cref="CalciteConnection"/> against which the command will execute.</param>
         public CalciteCommand(string commandText, CalciteConnection connection) :
             this(commandText)
         {
@@ -109,12 +115,12 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Gets the strongly typed parameter collection associated with this command.
+        /// Gets the strongly typed <see cref="CalciteParameterCollection"/> associated with this command.
         /// </summary>
         public new CalciteParameterCollection Parameters => _parameters;
 
         /// <summary>
-        /// Gets or sets the connection associated with this command.
+        /// Gets or sets the <see cref="CalciteConnection"/> used by this command.
         /// </summary>
         public new CalciteConnection? Connection
         {

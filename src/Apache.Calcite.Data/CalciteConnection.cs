@@ -2,6 +2,8 @@ using System;
 using System.Data;
 using System.Data.Common;
 
+using Apache.Calcite.Data.Internal;
+
 using org.apache.calcite.adapter.java;
 using org.apache.calcite.config;
 using org.apache.calcite.schema;
@@ -11,8 +13,15 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Represents a connection to an Apache Calcite engine.
+    /// Represents an open connection to an Apache Calcite engine. This class cannot be inherited.
     /// </summary>
+    /// <remarks>
+    /// A <see cref="CalciteConnection"/> hosts a Calcite planner and runtime in-process via IKVM.
+    /// The connection string follows the keys exposed by <see cref="CalciteConnectionStringBuilder"/>
+    /// (for example <c>Model</c> and <c>Schema</c>) and mirrors the Calcite JDBC driver's properties
+    /// where practical. Calcite-native objects associated with the open session are exposed through
+    /// the <see cref="RootSchema"/>, <see cref="TypeFactory"/>, and <see cref="Config"/> properties.
+    /// </remarks>
     public sealed class CalciteConnection : DbConnection
     {
 
@@ -29,9 +38,9 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="CalciteConnection"/> class.
+        /// Initializes a new instance of the <see cref="CalciteConnection"/> class with the specified connection string.
         /// </summary>
-        /// <param name="connectionString"></param>
+        /// <param name="connectionString">The connection string used to open the Calcite engine session, or <see langword="null"/> for an empty connection string. Recognized keys are described on <see cref="CalciteConnectionStringBuilder"/>.</param>
         public CalciteConnection(string? connectionString)
         {
             ConnectionString = connectionString ?? string.Empty;
@@ -103,9 +112,9 @@ namespace Apache.Calcite.Data
         protected override DbCommand CreateDbCommand() => new CalciteCommand { Connection = this };
 
         /// <summary>
-        /// Creates a new <see cref="CalciteCommand"/> associated with this connection.
+        /// Creates and returns a new <see cref="CalciteCommand"/> object associated with this connection.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>A new <see cref="CalciteCommand"/> whose <see cref="CalciteCommand.Connection"/> is set to this instance.</returns>
         public new CalciteCommand CreateCommand() => new() { Connection = this };
 
         /// <inheritdoc />
@@ -144,7 +153,8 @@ namespace Apache.Calcite.Data
         /// <summary>
         /// Returns the active session, throwing if the connection is not open.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The current <see cref="CalciteSession"/> for this connection.</returns>
+        /// <exception cref="InvalidOperationException">The connection is not open.</exception>
         internal CalciteSession RequireSession()
         {
             if (_state != ConnectionState.Open || _session is null)

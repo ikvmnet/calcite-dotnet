@@ -6,7 +6,7 @@ using org.apache.calcite.adapter.java;
 using org.apache.calcite.config;
 using org.apache.calcite.schema;
 
-namespace Apache.Calcite.Data
+namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>

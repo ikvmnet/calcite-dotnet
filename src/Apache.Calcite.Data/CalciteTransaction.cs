@@ -6,11 +6,12 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Represents a transaction associated with a <see cref="CalciteConnection"/>.
+    /// Represents a transaction to be made against an Apache Calcite engine. This class cannot be inherited.
     /// </summary>
     /// <remarks>
     /// Transactional semantics depend on the underlying engine configuration. For engines that do not
-    /// support transactions, all operations on this type are no-ops apart from disposing the instance.
+    /// support transactions, <see cref="Commit"/> and <see cref="Rollback"/> simply mark the transaction
+    /// as completed without affecting the engine state.
     /// </remarks>
     public sealed class CalciteTransaction : DbTransaction
     {

@@ -1,30 +1,13 @@
 using System;
 using System.Data;
-using System.Reflection;
 
 using Xunit;
 
-namespace Apache.Calcite.Data.Tests
+namespace Apache.Calcite.Data.Internal.Tests
 {
 
     public class CalciteTypeMapTests
     {
-
-        // The mapping helper is internal; access it via reflection so the tests do not require InternalsVisibleTo.
-        static readonly Type _mapType = typeof(Apache.Calcite.Data.CalciteConnection).Assembly
-            .GetType("Apache.Calcite.Data.CalciteTypeMap", throwOnError: true)!;
-
-        static DbType ToDbType(Type clrType)
-        {
-            var m = _mapType.GetMethod("ToDbType", BindingFlags.Public | BindingFlags.Static)!;
-            return (DbType)m.Invoke(null, new object[] { clrType })!;
-        }
-
-        static Type ToClrType(DbType dbType)
-        {
-            var m = _mapType.GetMethod("ToClrType", BindingFlags.Public | BindingFlags.Static)!;
-            return (Type)m.Invoke(null, new object[] { dbType })!;
-        }
 
         [Theory]
         [InlineData(typeof(bool), DbType.Boolean)]
@@ -43,19 +26,19 @@ namespace Apache.Calcite.Data.Tests
         [InlineData(typeof(byte[]), DbType.Binary)]
         public void ToDbType_should_map_known_types(Type clr, DbType expected)
         {
-            Assert.Equal(expected, ToDbType(clr));
+            Assert.Equal(expected, CalciteTypeMap.ToDbType(clr));
         }
 
         [Fact]
         public void ToDbType_should_resolve_nullable_underlying()
         {
-            Assert.Equal(DbType.Int32, ToDbType(typeof(int?)));
+            Assert.Equal(DbType.Int32, CalciteTypeMap.ToDbType(typeof(int?)));
         }
 
         [Fact]
         public void ToDbType_unknown_should_default_to_object()
         {
-            Assert.Equal(DbType.Object, ToDbType(typeof(System.Text.StringBuilder)));
+            Assert.Equal(DbType.Object, CalciteTypeMap.ToDbType(typeof(System.Text.StringBuilder)));
         }
 
         [Theory]
@@ -68,13 +51,13 @@ namespace Apache.Calcite.Data.Tests
         [InlineData(DbType.Guid, typeof(Guid))]
         public void ToClrType_should_map_known_dbtypes(DbType db, Type expected)
         {
-            Assert.Equal(expected, ToClrType(db));
+            Assert.Equal(expected, CalciteTypeMap.ToClrType(db));
         }
 
         [Fact]
         public void ToDbType_null_should_throw()
         {
-            Assert.Throws<TargetInvocationException>(() => ToDbType(null!));
+            Assert.Throws<ArgumentNullException>(() => CalciteTypeMap.ToDbType(null!));
         }
 
     }

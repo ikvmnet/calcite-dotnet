@@ -5,7 +5,7 @@ using org.apache.calcite.avatica;
 using org.apache.calcite.jdbc;
 
 
-namespace Apache.Calcite.Data
+namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
@@ -26,12 +26,34 @@ namespace Apache.Calcite.Data
                 var c = (ColumnMetaData)src.get(i);
                 list.Add(new CalciteColumn(
                     c.columnName,
-                    MapClrType(c.type.rep),
+                    MapClrType(c.type),
                     c.type.name,
                     c.nullable != 0 /* java.sql.ResultSetMetaData.columnNoNulls */));
             }
 
             return list;
+        }
+
+        public static Type MapClrType(ColumnMetaData.AvaticaType type)
+        {
+            // The SQL type name takes precedence for date/time/binary because Calcite's runtime
+            // representation (rep) is the internal storage form (int days, long ms, ByteString),
+            // not the public CLR type expected by ADO.NET consumers.
+            switch (type.name)
+            {
+                case "DATE":
+                case "TIMESTAMP":
+                case "TIMESTAMP WITH LOCAL TIME ZONE":
+                    return typeof(DateTime);
+                case "TIME":
+                case "TIME WITH LOCAL TIME ZONE":
+                    return typeof(TimeSpan);
+                case "BINARY":
+                case "VARBINARY":
+                    return typeof(byte[]);
+            }
+
+            return MapClrType(type.rep);
         }
 
         public static Type MapClrType(ColumnMetaData.Rep rep)

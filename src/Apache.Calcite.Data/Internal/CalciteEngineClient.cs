@@ -12,7 +12,7 @@ using org.apache.calcite.linq4j;
 using org.apache.calcite.schema;
 
 
-namespace Apache.Calcite.Data
+namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
@@ -72,7 +72,8 @@ namespace Apache.Calcite.Data
             try
             {
                 var cancelFlag = new AtomicBoolean(false);
-                var dataContext = new StatementDataContext(_rootSchema.plus(), _typeFactory, cancelFlag, request.CommandTimeoutSeconds * 1000L);
+                var boundParameters = ParameterBinder.Bind(request.Parameters);
+                var dataContext = new StatementDataContext(_rootSchema.plus(), _typeFactory, cancelFlag, request.CommandTimeoutSeconds * 1000L, boundParameters);
                 var ctx = new PrepareContext(_typeFactory, _rootSchema, _config, dataContext, _defaultSchemaPath);
 
                 var prepare = (CalcitePrepare)CalcitePrepare.DEFAULT_FACTORY.apply();

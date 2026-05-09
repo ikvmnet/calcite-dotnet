@@ -96,9 +96,9 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Returns the keys present in this connection string as an enumerable.
+        /// Returns the keys present in this connection string as a strongly typed enumerable.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The connection string keys, in the order they are stored by the underlying <see cref="DbConnectionStringBuilder"/>.</returns>
         public IEnumerable<string> EnumerateKeys()
         {
             foreach (var key in Keys)

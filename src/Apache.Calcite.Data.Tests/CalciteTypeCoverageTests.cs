@@ -102,7 +102,7 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal("a", r.GetString(0).TrimEnd());
         }
 
-        [Fact(Skip = "Calcite emits DATE values as the raw int day-since-epoch; RowMaterializer needs to convert to DateTime based on column SQL type.")]
+        [Fact]
         public void Output_Date_should_round_trip_as_DateTime()
         {
             using var r = ExecuteSingleRow("VALUES (DATE '2024-01-15')");
@@ -113,7 +113,7 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(15, dt.Day);
         }
 
-        [Fact(Skip = "Calcite emits TIMESTAMP values as the raw long ms-since-epoch; RowMaterializer needs to convert to DateTime based on column SQL type.")]
+        [Fact]
         public void Output_Timestamp_should_round_trip_as_DateTime()
         {
             using var r = ExecuteSingleRow("VALUES (TIMESTAMP '2024-01-15 12:34:56')");
@@ -122,7 +122,7 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(new DateTime(2024, 1, 15, 12, 34, 56, DateTimeKind.Utc), dt.ToUniversalTime());
         }
 
-        [Fact(Skip = "Calcite emits TIME values as the raw int ms-since-midnight; RowMaterializer needs to convert to TimeSpan based on column SQL type.")]
+        [Fact]
         public void Output_Time_should_round_trip_as_TimeSpan()
         {
             using var r = ExecuteSingleRow("VALUES (TIME '12:34:56')");
@@ -133,7 +133,7 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(56, v.Seconds);
         }
 
-        [Fact(Skip = "Calcite emits BINARY values as org.apache.calcite.avatica.util.ByteString; RowMaterializer needs to convert to byte[].")]
+        [Fact]
         public void Output_Binary_should_round_trip_as_byte_array()
         {
             using var r = ExecuteSingleRow("VALUES (X'01020304')");
@@ -151,99 +151,97 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
-        // Input: parameter binding for the standard DbType set, round-tripped via SELECT ?.
-        // These tests are skipped pending wiring of CalciteParameterValue into
-        // CalciteEngineClient.ExecuteAsync (dynamic parameter binding is not yet implemented).
+        // Input: parameter binding for the standard DbType set, round-tripped via
+        // VALUES (CAST(? AS <sql_type>)). Calcite is positional like ODBC: '?' placeholders
+        // are bound by ordinal in the order Parameters were added; ParameterName is informational.
+        // The CAST around '?' supplies the SQL type the planner needs at validation time.
         // ------------------------------------------------------------------------------------
 
-        const string DynamicParametersNotImplemented =
-            "Dynamic parameter binding is not yet wired through CalciteEngineClient.ExecuteAsync.";
-
-        [Fact(Skip = DynamicParametersNotImplemented)]
+        [Fact]
         public void Parameter_Boolean_should_round_trip()
         {
-            AssertParameterRoundTrip(DbType.Boolean, true);
+            AssertParameterRoundTrip("BOOLEAN", DbType.Boolean, true);
         }
 
-        [Fact(Skip = DynamicParametersNotImplemented)]
+        [Fact]
         public void Parameter_Byte_should_round_trip()
         {
-            AssertParameterRoundTrip(DbType.Byte, (byte)5);
+            AssertParameterRoundTrip("SMALLINT", DbType.Byte, (byte)5);
         }
 
-        [Fact(Skip = DynamicParametersNotImplemented)]
+        [Fact]
         public void Parameter_Int16_should_round_trip()
         {
-            AssertParameterRoundTrip(DbType.Int16, (short)1234);
+            AssertParameterRoundTrip("SMALLINT", DbType.Int16, (short)1234);
         }
 
-        [Fact(Skip = DynamicParametersNotImplemented)]
+        [Fact]
         public void Parameter_Int32_should_round_trip()
         {
-            AssertParameterRoundTrip(DbType.Int32, 123456);
+            AssertParameterRoundTrip("INTEGER", DbType.Int32, 123456);
         }
 
-        [Fact(Skip = DynamicParametersNotImplemented)]
+        [Fact]
         public void Parameter_Int64_should_round_trip()
         {
-            AssertParameterRoundTrip(DbType.Int64, 9000000000L);
+            AssertParameterRoundTrip("BIGINT", DbType.Int64, 9000000000L);
         }
 
-        [Fact(Skip = DynamicParametersNotImplemented)]
+        [Fact]
         public void Parameter_Single_should_round_trip()
         {
-            AssertParameterRoundTrip(DbType.Single, 1.5f);
+            AssertParameterRoundTrip("REAL", DbType.Single, 1.5f);
         }
 
-        [Fact(Skip = DynamicParametersNotImplemented)]
+        [Fact]
         public void Parameter_Double_should_round_trip()
         {
-            AssertParameterRoundTrip(DbType.Double, 3.14d);
+            AssertParameterRoundTrip("DOUBLE", DbType.Double, 3.14d);
         }
 
-        [Fact(Skip = DynamicParametersNotImplemented)]
+        [Fact]
         public void Parameter_Decimal_should_round_trip()
         {
-            AssertParameterRoundTrip(DbType.Decimal, 123.45m);
+            AssertParameterRoundTrip("DECIMAL(10,2)", DbType.Decimal, 123.45m);
         }
 
-        [Fact(Skip = DynamicParametersNotImplemented)]
+        [Fact]
         public void Parameter_String_should_round_trip()
         {
-            AssertParameterRoundTrip(DbType.String, "hello");
+            AssertParameterRoundTrip("VARCHAR(16)", DbType.String, "hello");
         }
 
-        [Fact(Skip = DynamicParametersNotImplemented)]
+        [Fact]
         public void Parameter_DateTime_should_round_trip()
         {
-            AssertParameterRoundTrip(DbType.DateTime, new DateTime(2024, 1, 15, 12, 34, 56, DateTimeKind.Utc));
+            AssertParameterRoundTrip("TIMESTAMP", DbType.DateTime, new DateTime(2024, 1, 15, 12, 34, 56, DateTimeKind.Utc));
         }
 
-        [Fact(Skip = DynamicParametersNotImplemented)]
+        [Fact]
         public void Parameter_Date_should_round_trip()
         {
-            AssertParameterRoundTrip(DbType.Date, new DateTime(2024, 1, 15));
+            AssertParameterRoundTrip("DATE", DbType.Date, new DateTime(2024, 1, 15));
         }
 
-        [Fact(Skip = DynamicParametersNotImplemented)]
+        [Fact]
         public void Parameter_Time_should_round_trip()
         {
-            AssertParameterRoundTrip(DbType.Time, new TimeSpan(12, 34, 56));
+            AssertParameterRoundTrip("TIME", DbType.Time, new TimeSpan(12, 34, 56));
         }
 
-        [Fact(Skip = DynamicParametersNotImplemented)]
+        [Fact]
         public void Parameter_Binary_should_round_trip()
         {
-            AssertParameterRoundTrip(DbType.Binary, new byte[] { 1, 2, 3, 4 });
+            AssertParameterRoundTrip("VARBINARY", DbType.Binary, new byte[] { 1, 2, 3, 4 });
         }
 
-        [Fact(Skip = DynamicParametersNotImplemented)]
+        [Fact]
         public void Parameter_Null_should_round_trip_as_DbNull()
         {
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
             c.Open();
             using var cmd = c.CreateCommand();
-            cmd.CommandText = "VALUES (?)";
+            cmd.CommandText = "VALUES (CAST(? AS VARCHAR(8)))";
             var p = cmd.CreateParameter();
             p.ParameterName = "?";
             p.DbType = DbType.String;
@@ -252,6 +250,19 @@ namespace Apache.Calcite.Data.Tests
 
             var v = cmd.ExecuteScalar();
             Assert.True(v is null || v is DBNull);
+        }
+
+        [Fact]
+        public void Parameters_should_bind_positionally_in_collection_order()
+        {
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST(? AS INTEGER) + CAST(? AS INTEGER))";
+            cmd.Parameters.Add(new CalciteParameter("?", 10));
+            cmd.Parameters.Add(new CalciteParameter("?", 32));
+
+            Assert.Equal(42, Convert.ToInt32(cmd.ExecuteScalar()));
         }
 
         // ------------------------------------------------------------------------------------
@@ -269,12 +280,12 @@ namespace Apache.Calcite.Data.Tests
             return r;
         }
 
-        static void AssertParameterRoundTrip(DbType dbType, object value)
+        static void AssertParameterRoundTrip(string sqlType, DbType dbType, object value)
         {
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
             c.Open();
             using var cmd = c.CreateCommand();
-            cmd.CommandText = "VALUES (?)";
+            cmd.CommandText = $"VALUES (CAST(? AS {sqlType}))";
             var p = cmd.CreateParameter();
             p.ParameterName = "?";
             p.DbType = dbType;
@@ -288,6 +299,8 @@ namespace Apache.Calcite.Data.Tests
                 Assert.Equal(bytes, (byte[])actual!);
             else if (value is DateTime dt && dbType == DbType.DateTime)
                 Assert.Equal(dt, ((DateTime)actual!).ToUniversalTime());
+            else if (value is string s)
+                Assert.Equal(s, ((string)actual!).TrimEnd());
             else
                 Assert.Equal(value, Convert.ChangeType(actual, value.GetType()));
         }

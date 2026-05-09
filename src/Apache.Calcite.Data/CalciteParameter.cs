@@ -2,13 +2,20 @@ using System;
 using System.Data;
 using System.Data.Common;
 
+using Apache.Calcite.Data.Internal;
+
 
 namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Represents a parameter to a <see cref="CalciteCommand"/>.
+    /// Represents a parameter to a <see cref="CalciteCommand"/>. This class cannot be inherited.
     /// </summary>
+    /// <remarks>
+    /// Calcite parameters are positional. The order in which parameters are added to
+    /// <see cref="CalciteParameterCollection"/> determines the binding order of the corresponding
+    /// <c>?</c> placeholders in the SQL text; <see cref="ParameterName"/> is informational.
+    /// </remarks>
     public sealed class CalciteParameter : DbParameter
     {
 

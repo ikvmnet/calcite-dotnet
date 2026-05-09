@@ -8,7 +8,7 @@ using org.apache.calcite.jdbc;
 using org.apache.calcite.linq4j;
 
 
-namespace Apache.Calcite.Data
+namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>

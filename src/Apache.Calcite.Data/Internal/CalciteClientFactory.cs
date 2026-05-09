@@ -1,6 +1,6 @@
 using System;
 
-namespace Apache.Calcite.Data
+namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
@@ -19,7 +19,7 @@ namespace Apache.Calcite.Data
             if (options is null)
                 throw new ArgumentNullException(nameof(options));
 
-            return new Apache.Calcite.Data.CalciteEngineClient(options);
+            return new CalciteEngineClient(options);
         }
 
     }

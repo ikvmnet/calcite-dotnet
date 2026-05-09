@@ -2,30 +2,32 @@ using System;
 using System.Collections.Generic;
 
 using org.apache.calcite.avatica;
+using org.apache.calcite.avatica.util;
 
 
-namespace Apache.Calcite.Data
+namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
     /// Materializes a single row produced by a Calcite enumerator into a managed object array,
-    /// honoring the <see cref="Meta.CursorFactory"/> style chosen by the planner.
+    /// honoring the <see cref="Meta.CursorFactory"/> style chosen by the planner and the SQL type
+    /// of each column.
     /// </summary>
     internal sealed class RowMaterializer
     {
 
         readonly Meta.CursorFactory _cursorFactory;
-        readonly int _columnCount;
+        readonly IReadOnlyList<CalciteColumn> _columns;
 
-        RowMaterializer(Meta.CursorFactory cursorFactory, int columnCount)
+        RowMaterializer(Meta.CursorFactory cursorFactory, IReadOnlyList<CalciteColumn> columns)
         {
             _cursorFactory = cursorFactory;
-            _columnCount = columnCount;
+            _columns = columns;
         }
 
         public static RowMaterializer For(Meta.CursorFactory cursorFactory, IReadOnlyList<CalciteColumn> columns)
         {
-            return new RowMaterializer(cursorFactory, columns.Count);
+            return new RowMaterializer(cursorFactory, columns);
         }
 
         public IReadOnlyList<object?> Materialize(object? row)
@@ -34,8 +36,7 @@ namespace Apache.Calcite.Data
 
             if (style == Meta.Style.OBJECT)
             {
-                // Single column, value is the row itself.
-                return new[] { ConvertValue(row) };
+                return new[] { ConvertValue(row, 0) };
             }
 
             if (style == Meta.Style.ARRAY)
@@ -43,7 +44,7 @@ namespace Apache.Calcite.Data
                 var arr = (object[])row!;
                 var values = new object?[arr.Length];
                 for (var i = 0; i < arr.Length; i++)
-                    values[i] = ConvertValue(arr[i]);
+                    values[i] = ConvertValue(arr[i], i);
                 return values;
             }
 
@@ -53,12 +54,58 @@ namespace Apache.Calcite.Data
                 var size = list.size();
                 var values = new object?[size];
                 for (var i = 0; i < size; i++)
-                    values[i] = ConvertValue(list.get(i));
+                    values[i] = ConvertValue(list.get(i), i);
                 return values;
             }
 
-            // RECORD / MAP styles fall back to reflection over public fields if needed.
             throw new NotSupportedException($"Cursor style '{style}' is not yet supported.");
+        }
+
+        object? ConvertValue(object? v, int columnIndex)
+        {
+            if (v is null)
+                return null;
+
+            var sqlType = columnIndex < _columns.Count ? _columns[columnIndex].ProviderTypeName : null;
+
+            switch (sqlType)
+            {
+                case "DATE":
+                    return v switch
+                    {
+                        java.lang.Integer i => UnixEpoch.AddDays(i.intValue()),
+                        java.lang.Number n => UnixEpoch.AddDays(n.longValue()),
+                        java.sql.Date d => UnixEpoch.AddMilliseconds(d.getTime()),
+                        _ => v,
+                    };
+                case "TIME":
+                case "TIME WITH LOCAL TIME ZONE":
+                    return v switch
+                    {
+                        java.lang.Integer i => TimeSpan.FromMilliseconds(i.intValue()),
+                        java.lang.Number n => TimeSpan.FromMilliseconds(n.longValue()),
+                        java.sql.Time t => TimeSpan.FromMilliseconds(t.getTime()),
+                        _ => v,
+                    };
+                case "TIMESTAMP":
+                case "TIMESTAMP WITH LOCAL TIME ZONE":
+                    return v switch
+                    {
+                        java.lang.Number n => UnixEpoch.AddMilliseconds(n.longValue()),
+                        java.sql.Timestamp ts => UnixEpoch.AddMilliseconds(ts.getTime()),
+                        _ => v,
+                    };
+                case "BINARY":
+                case "VARBINARY":
+                    return v switch
+                    {
+                        ByteString bs => bs.getBytes(),
+                        byte[] b => b,
+                        _ => v,
+                    };
+            }
+
+            return ConvertValue(v);
         }
 
         static object? ConvertValue(object? v)
@@ -67,7 +114,7 @@ namespace Apache.Calcite.Data
                 return null;
 
             if (v is java.lang.String) return v.ToString();
-            if (v is java.math.BigDecimal bd) return decimal.Parse(bd.toPlainString(), System.Globalization.CultureInfo.InvariantCulture);
+            if (v is java.math.BigDecimal bd) return BigDecimalConverter.ToDecimal(bd);
             if (v is java.lang.Boolean b) return b.booleanValue();
             if (v is java.lang.Byte by) return (sbyte)by.byteValue();
             if (v is java.lang.Short sh) return sh.shortValue();
@@ -79,6 +126,7 @@ namespace Apache.Calcite.Data
             if (v is java.sql.Timestamp ts) return UnixEpoch.AddMilliseconds(ts.getTime());
             if (v is java.sql.Date dt) return UnixEpoch.AddMilliseconds(dt.getTime());
             if (v is java.sql.Time tm) return TimeSpan.FromMilliseconds(tm.getTime());
+            if (v is ByteString bs) return bs.getBytes();
 
             return v;
         }

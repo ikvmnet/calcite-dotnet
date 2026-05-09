@@ -6,12 +6,14 @@ using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Apache.Calcite.Data.Internal;
 
 namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Provides a forward-only reader over the rows produced by a <see cref="CalciteCommand"/>.
+    /// Provides a way of reading a forward-only stream of rows produced by executing a
+    /// <see cref="CalciteCommand"/>. This class cannot be inherited.
     /// </summary>
     public sealed class CalciteDataReader : DbDataReader
     {

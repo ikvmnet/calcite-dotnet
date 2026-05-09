@@ -6,7 +6,8 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Represents an error raised by the Apache Calcite ADO.NET provider.
+    /// The exception that is thrown when the Apache Calcite ADO.NET provider encounters an engine
+    /// or planner error during execution.
     /// </summary>
     [Serializable]
     public class CalciteException : DbException

@@ -7,8 +7,13 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Represents a collection of parameters associated with a <see cref="CalciteCommand"/>.
+    /// Represents a collection of parameters associated with a <see cref="CalciteCommand"/>. This class cannot be inherited.
     /// </summary>
+    /// <remarks>
+    /// The order in which <see cref="CalciteParameter"/> instances are added to this collection
+    /// determines the order in which they are bound to positional <c>?</c> placeholders in the SQL
+    /// text of the owning <see cref="CalciteCommand"/>.
+    /// </remarks>
     public sealed class CalciteParameterCollection : DbParameterCollection
     {
 
@@ -30,10 +35,11 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Adds a strongly typed parameter to the collection.
+        /// Adds the specified <see cref="CalciteParameter"/> to the end of the collection.
         /// </summary>
-        /// <param name="value"></param>
-        /// <returns></returns>
+        /// <param name="value">The <see cref="CalciteParameter"/> to add.</param>
+        /// <returns>The <paramref name="value"/> added to the collection.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is <see langword="null"/>.</exception>
         public CalciteParameter Add(CalciteParameter value)
         {
             if (value is null)

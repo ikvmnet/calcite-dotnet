@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Apache.Calcite.Data
+namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>

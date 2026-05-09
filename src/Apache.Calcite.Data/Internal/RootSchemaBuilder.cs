@@ -9,7 +9,7 @@ using org.apache.calcite.jdbc;
 using org.apache.calcite.model;
 using org.apache.calcite.schema;
 
-namespace Apache.Calcite.Data
+namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
