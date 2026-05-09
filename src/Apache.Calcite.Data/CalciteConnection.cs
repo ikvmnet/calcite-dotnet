@@ -4,6 +4,8 @@ using System.Data.Common;
 
 using Apache.Calcite.Data.Internal;
 
+using SchemaInfo = Apache.Calcite.Data.Internal.CalciteSchemaInfo;
+
 using org.apache.calcite.adapter.java;
 using org.apache.calcite.config;
 using org.apache.calcite.schema;
@@ -128,6 +130,70 @@ namespace Apache.Calcite.Data
                 Close();
 
             base.Dispose(disposing);
+        }
+
+        /// <inheritdoc />
+        public override DataTable GetSchema() => GetSchema(SchemaInfo.MetaDataCollections, null);
+
+        /// <inheritdoc />
+        public override DataTable GetSchema(string collectionName) => GetSchema(collectionName, null);
+
+        /// <inheritdoc />
+        public override DataTable GetSchema(string collectionName, string?[]? restrictionValues)
+        {
+            if (collectionName is null)
+                throw new ArgumentNullException(nameof(collectionName));
+
+            if (string.Equals(collectionName, SchemaInfo.MetaDataCollections, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildMetaDataCollections();
+
+            if (string.Equals(collectionName, SchemaInfo.Restrictions, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildRestrictions();
+
+            // The remaining collections require an open connection.
+            RequireSession();
+
+            if (string.Equals(collectionName, SchemaInfo.DataSourceInformation, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildDataSourceInformation(this);
+
+            if (string.Equals(collectionName, SchemaInfo.DataTypes, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildDataTypes(this);
+
+            if (string.Equals(collectionName, SchemaInfo.ReservedWords, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildReservedWords(this);
+
+            if (string.Equals(collectionName, SchemaInfo.Schemas, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildSchemas(this, GetRestriction(restrictionValues, 0));
+
+            if (string.Equals(collectionName, SchemaInfo.Tables, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildTables(this,
+                    GetRestriction(restrictionValues, 0),
+                    GetRestriction(restrictionValues, 1),
+                    GetRestriction(restrictionValues, 2));
+
+            if (string.Equals(collectionName, SchemaInfo.Columns, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildColumns(this,
+                    GetRestriction(restrictionValues, 0),
+                    GetRestriction(restrictionValues, 1),
+                    GetRestriction(restrictionValues, 2),
+                    GetRestriction(restrictionValues, 3));
+
+            if (string.Equals(collectionName, SchemaInfo.Views, StringComparison.OrdinalIgnoreCase))
+                return SchemaInfo.BuildViews(this,
+                    GetRestriction(restrictionValues, 0),
+                    GetRestriction(restrictionValues, 1),
+                    GetRestriction(restrictionValues, 2));
+
+            throw new ArgumentException($"The metadata collection '{collectionName}' is not supported by this provider.", nameof(collectionName));
+        }
+
+        static string? GetRestriction(string?[]? restrictions, int index)
+        {
+            if (restrictions is null || index >= restrictions.Length)
+                return null;
+
+            var v = restrictions[index];
+            return string.IsNullOrEmpty(v) ? null : v;
         }
 
         /// <summary>
