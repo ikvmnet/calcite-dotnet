@@ -1,4 +1,6 @@
 
+using System.Data.Common;
+
 using Xunit;
 
 namespace Apache.Calcite.Data.Tests

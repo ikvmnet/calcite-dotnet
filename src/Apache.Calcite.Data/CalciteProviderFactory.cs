@@ -9,8 +9,8 @@ namespace Apache.Calcite.Data
     /// </summary>
     /// <remarks>
     /// Use the <see cref="Instance"/> field directly, or register it with
-    /// <c>DbProviderFactories.RegisterFactory</c> under an invariant name such as
-    /// <c>Apache.Calcite.Data</c>.
+    /// <see cref="DbProviderFactories.RegisterFactory(string, DbProviderFactory)"/> under an
+    /// invariant name such as <c>Apache.Calcite.Data</c>.
     /// </remarks>
     public sealed class CalciteProviderFactory : DbProviderFactory
     {

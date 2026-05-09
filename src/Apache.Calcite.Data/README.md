@@ -103,6 +103,9 @@ await using var reader = await cmd.ExecuteReaderAsync();
 
 ### Using `DbProviderFactory`
 
+Like other ADO.NET providers (Npgsql, MySqlConnector, `Microsoft.Data.SqlClient`, etc.),
+the factory is not auto-registered. Register it once at application startup:
+
 ```csharp
 using System.Data.Common;
 using Apache.Calcite.Data;
@@ -128,6 +131,29 @@ Exposed by [`CalciteConnectionStringBuilder`](src/Apache.Calcite.Data/CalciteCon
 
 Unknown keys are preserved and forwarded to the engine, so any Calcite property that is not
 listed above can still be supplied by name.
+
+## Identifier casing
+
+Calcite's default lexer (`Lex.ORACLE`) follows standard SQL rules:
+
+- The quote character is `"` (double quote).
+- **Unquoted** identifiers are folded to **upper case** at parse time.
+- **Quoted** identifiers are left **unchanged**.
+- Identifier matching against the schema is **case-sensitive**.
+
+So in the quick-start example above, `emps` and `deptno` are normalized to `EMPS` and
+`DEPTNO` before lookup. This works against most built-in adapters (CSV, JDBC against
+Oracle/H2/HSQLDB, etc.) because they expose names in upper case as well.
+
+If your underlying schema uses mixed- or lower-case names, quote them:
+
+```csharp
+cmd.CommandText = """SELECT "Name", "DeptNo" FROM "Emps" WHERE "DeptNo" = 10""";
+```
+
+You can also relax matching by setting `CaseSensitive=false` in the connection string, or
+switch to a different lexical convention (e.g. `MYSQL_ANSI`, which leaves unquoted
+identifiers unchanged) by passing the `Lex` property through the connection string.
 
 ## Direct engine access
 
