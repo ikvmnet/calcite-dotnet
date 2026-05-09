@@ -60,7 +60,10 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
-        public override string Database => _options.Schema ?? string.Empty;
+        /// <remarks>
+        /// Calcite has no notion of a current database, so this property always returns <see cref="string.Empty"/>.
+        /// </remarks>
+        public override string Database => string.Empty;
 
         /// <inheritdoc />
         public override string DataSource => _options.Model ?? string.Empty;
@@ -75,9 +78,13 @@ namespace Apache.Calcite.Data
         protected override DbProviderFactory DbProviderFactory => CalciteProviderFactory.Instance;
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Not supported by Calcite. To change the default schema used to resolve unqualified
+        /// identifiers, set the <c>Schema</c> connection-string property before opening the connection.
+        /// </remarks>
         public override void ChangeDatabase(string databaseName)
         {
-            _options.Schema = databaseName;
+            throw new NotSupportedException("Apache Calcite does not support changing the database on an open connection.");
         }
 
         /// <inheritdoc />

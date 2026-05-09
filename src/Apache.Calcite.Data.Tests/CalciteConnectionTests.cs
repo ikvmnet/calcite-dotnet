@@ -61,11 +61,17 @@ namespace Apache.Calcite.Data.Tests
         }
 
         [Fact]
-        public void ChangeDatabase_should_update_schema()
+        public void ChangeDatabase_should_throw_not_supported()
         {
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
-            c.ChangeDatabase("NEW_SCHEMA");
-            Assert.Equal("NEW_SCHEMA", c.Database);
+            Assert.Throws<NotSupportedException>(() => c.ChangeDatabase("NEW_SCHEMA"));
+        }
+
+        [Fact]
+        public void Database_should_be_empty()
+        {
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            Assert.Equal(string.Empty, c.Database);
         }
 
         [Fact]
