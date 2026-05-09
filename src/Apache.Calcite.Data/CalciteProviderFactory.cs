@@ -37,6 +37,15 @@ namespace Apache.Calcite.Data
         /// <inheritdoc />
         public override DbConnectionStringBuilder CreateConnectionStringBuilder() => new CalciteConnectionStringBuilder();
 
+        /// <inheritdoc />
+        public override bool CanCreateBatch => true;
+
+        /// <inheritdoc />
+        public override DbBatch CreateBatch() => new CalciteBatch();
+
+        /// <inheritdoc />
+        public override DbBatchCommand CreateBatchCommand() => new CalciteBatchCommand();
+
     }
 
 }

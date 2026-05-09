@@ -4,12 +4,9 @@ using System.Data.Common;
 
 using Apache.Calcite.Data.Internal;
 
-using SchemaInfo = Apache.Calcite.Data.Internal.CalciteSchemaInfo;
-
 using org.apache.calcite.adapter.java;
 using org.apache.calcite.config;
 using org.apache.calcite.schema;
-
 
 namespace Apache.Calcite.Data
 {
@@ -57,6 +54,7 @@ namespace Apache.Calcite.Data
             {
                 if (_state != ConnectionState.Closed)
                     throw new InvalidOperationException("Connection string cannot be changed while the connection is open.");
+
                 _options = new CalciteConnectionStringBuilder(value);
             }
         }
@@ -133,6 +131,18 @@ namespace Apache.Calcite.Data
         public new CalciteCommand CreateCommand() => new() { Connection = this };
 
         /// <inheritdoc />
+        public override bool CanCreateBatch => true;
+
+        /// <inheritdoc />
+        protected override DbBatch CreateDbBatch() => new CalciteBatch(this);
+
+        /// <summary>
+        /// Creates and returns a new <see cref="CalciteBatch"/> associated with this connection.
+        /// </summary>
+        /// <returns>A new <see cref="CalciteBatch"/> whose <see cref="CalciteBatch.Connection"/> is set to this instance.</returns>
+        public new CalciteBatch CreateBatch() => new(this);
+
+        /// <inheritdoc />
         protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
             new CalciteTransaction(this, isolationLevel);
 
@@ -146,7 +156,7 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
-        public override DataTable GetSchema() => GetSchema(SchemaInfo.MetaDataCollections, null);
+        public override DataTable GetSchema() => GetSchema(CalciteSchemaInfo.MetaDataCollections, null);
 
         /// <inheritdoc />
         public override DataTable GetSchema(string collectionName) => GetSchema(collectionName, null);
@@ -157,127 +167,25 @@ namespace Apache.Calcite.Data
             if (collectionName is null)
                 throw new ArgumentNullException(nameof(collectionName));
 
-            if (string.Equals(collectionName, SchemaInfo.MetaDataCollections, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildMetaDataCollections();
+            if (string.Equals(collectionName, CalciteSchemaInfo.MetaDataCollections, StringComparison.OrdinalIgnoreCase))
+                return CalciteSchemaInfo.BuildMetaDataCollections();
 
-            if (string.Equals(collectionName, SchemaInfo.Restrictions, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildRestrictions();
+            if (string.Equals(collectionName, CalciteSchemaInfo.Restrictions, StringComparison.OrdinalIgnoreCase))
+                return CalciteSchemaInfo.BuildRestrictions();
 
             // The remaining collections require an open connection.
             RequireSession();
 
-            if (string.Equals(collectionName, SchemaInfo.DataSourceInformation, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildDataSourceInformation(this);
+            if (string.Equals(collectionName, CalciteSchemaInfo.DataSourceInformation, StringComparison.OrdinalIgnoreCase))
+                return CalciteSchemaInfo.BuildDataSourceInformation(this);
 
-            if (string.Equals(collectionName, SchemaInfo.DataTypes, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildDataTypes(this);
+            if (string.Equals(collectionName, CalciteSchemaInfo.DataTypes, StringComparison.OrdinalIgnoreCase))
+                return CalciteSchemaInfo.BuildDataTypes(this);
 
-            if (string.Equals(collectionName, SchemaInfo.ReservedWords, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildReservedWords(this);
-
-            if (string.Equals(collectionName, SchemaInfo.Schemas, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildSchemas(this, GetRestriction(restrictionValues, 0));
-
-            if (string.Equals(collectionName, SchemaInfo.Tables, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildTables(this,
-                    GetRestriction(restrictionValues, 0),
-                    GetRestriction(restrictionValues, 1),
-                    GetRestriction(restrictionValues, 2));
-
-            if (string.Equals(collectionName, SchemaInfo.Columns, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildColumns(this,
-                    GetRestriction(restrictionValues, 0),
-                    GetRestriction(restrictionValues, 1),
-                    GetRestriction(restrictionValues, 2),
-                    GetRestriction(restrictionValues, 3));
-
-            if (string.Equals(collectionName, SchemaInfo.Views, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildViews(this,
-                    GetRestriction(restrictionValues, 0),
-                    GetRestriction(restrictionValues, 1),
-                    GetRestriction(restrictionValues, 2));
-
-            if (string.Equals(collectionName, SchemaInfo.ViewColumns, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildViewColumns(this,
-                    GetRestriction(restrictionValues, 0),
-                    GetRestriction(restrictionValues, 1),
-                    GetRestriction(restrictionValues, 2),
-                    GetRestriction(restrictionValues, 3));
-
-            if (string.Equals(collectionName, SchemaInfo.Indexes, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildIndexes(this,
-                    GetRestriction(restrictionValues, 0),
-                    GetRestriction(restrictionValues, 1),
-                    GetRestriction(restrictionValues, 2),
-                    GetRestriction(restrictionValues, 3));
-
-            if (string.Equals(collectionName, SchemaInfo.IndexColumns, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildIndexColumns(this,
-                    GetRestriction(restrictionValues, 0),
-                    GetRestriction(restrictionValues, 1),
-                    GetRestriction(restrictionValues, 2),
-                    GetRestriction(restrictionValues, 3),
-                    GetRestriction(restrictionValues, 4));
-
-            if (string.Equals(collectionName, SchemaInfo.PrimaryKeys, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildPrimaryKeys(this,
-                    GetRestriction(restrictionValues, 0),
-                    GetRestriction(restrictionValues, 1),
-                    GetRestriction(restrictionValues, 2),
-                    GetRestriction(restrictionValues, 3));
-
-            if (string.Equals(collectionName, SchemaInfo.ForeignKeys, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildForeignKeys(this,
-                    GetRestriction(restrictionValues, 0),
-                    GetRestriction(restrictionValues, 1),
-                    GetRestriction(restrictionValues, 2),
-                    GetRestriction(restrictionValues, 3));
-
-            if (string.Equals(collectionName, SchemaInfo.Procedures, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildProcedures(this,
-                    GetRestriction(restrictionValues, 0),
-                    GetRestriction(restrictionValues, 1),
-                    GetRestriction(restrictionValues, 2),
-                    GetRestriction(restrictionValues, 3));
-
-            if (string.Equals(collectionName, SchemaInfo.ProcedureParameters, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildProcedureParameters(this,
-                    GetRestriction(restrictionValues, 0),
-                    GetRestriction(restrictionValues, 1),
-                    GetRestriction(restrictionValues, 2),
-                    GetRestriction(restrictionValues, 3),
-                    GetRestriction(restrictionValues, 4));
-
-            if (string.Equals(collectionName, SchemaInfo.Functions, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildFunctions(this,
-                    GetRestriction(restrictionValues, 0),
-                    GetRestriction(restrictionValues, 1),
-                    GetRestriction(restrictionValues, 2),
-                    GetRestriction(restrictionValues, 3));
-
-            if (string.Equals(collectionName, SchemaInfo.FunctionParameters, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildFunctionParameters(this,
-                    GetRestriction(restrictionValues, 0),
-                    GetRestriction(restrictionValues, 1),
-                    GetRestriction(restrictionValues, 2),
-                    GetRestriction(restrictionValues, 3),
-                    GetRestriction(restrictionValues, 4));
-
-            if (string.Equals(collectionName, SchemaInfo.UserDefinedTypes, StringComparison.OrdinalIgnoreCase))
-                return SchemaInfo.BuildUserDefinedTypes(this,
-                    GetRestriction(restrictionValues, 0),
-                    GetRestriction(restrictionValues, 1));
+            if (string.Equals(collectionName, CalciteSchemaInfo.ReservedWords, StringComparison.OrdinalIgnoreCase))
+                return CalciteSchemaInfo.BuildReservedWords(this);
 
             throw new ArgumentException($"The metadata collection '{collectionName}' is not supported by this provider.", nameof(collectionName));
-        }
-
-        static string? GetRestriction(string?[]? restrictions, int index)
-        {
-            if (restrictions is null || index >= restrictions.Length)
-                return null;
-
-            var v = restrictions[index];
-            return string.IsNullOrEmpty(v) ? null : v;
         }
 
         /// <summary>
