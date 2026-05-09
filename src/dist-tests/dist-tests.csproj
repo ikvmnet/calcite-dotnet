@@ -8,7 +8,9 @@
 
     <ItemGroup>
         <TestTarget Include="Apache.Calcite.Tests|net8.0" ProjectName="Apache.Calcite.Tests" TargetFramework="net8.0" />
+        <TestTarget Include="Apache.Calcite.Tests|net10.0" ProjectName="Apache.Calcite.Tests" TargetFramework="net10.0" />
         <TestTarget Include="Apache.Calcite.Adapter.AdoNet.Tests|net8.0" ProjectName="Apache.Calcite.Adapter.AdoNet.Tests" TargetFramework="net8.0" />
+        <TestTarget Include="Apache.Calcite.Adapter.AdoNet.Tests|net10.0" ProjectName="Apache.Calcite.Adapter.AdoNet.Tests" TargetFramework="net10.0" />
         <TestTarget Include="Apache.Calcite.Data.Tests|net8.0" ProjectName="Apache.Calcite.Data.Tests" TargetFramework="net8.0" />
         <TestTarget Include="Apache.Calcite.Data.Tests|net10.0" ProjectName="Apache.Calcite.Data.Tests" TargetFramework="net10.0" />
     </ItemGroup>
