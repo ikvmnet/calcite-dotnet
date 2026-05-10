@@ -40,6 +40,8 @@ namespace Apache.Calcite.Data.Internal
             if (t == typeof(DateTime)) return DbType.DateTime;
             if (t == typeof(DateTimeOffset)) return DbType.DateTimeOffset;
             if (t == typeof(TimeSpan)) return DbType.Time;
+            if (t == typeof(DateOnly)) return DbType.Date;
+            if (t == typeof(TimeOnly)) return DbType.Time;
             if (t == typeof(byte[])) return DbType.Binary;
 
             return DbType.Object;

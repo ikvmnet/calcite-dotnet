@@ -23,6 +23,8 @@ namespace Apache.Calcite.Data.Internal.Tests
         [InlineData(typeof(DateTime), DbType.DateTime)]
         [InlineData(typeof(DateTimeOffset), DbType.DateTimeOffset)]
         [InlineData(typeof(TimeSpan), DbType.Time)]
+        [InlineData(typeof(DateOnly), DbType.Date)]
+        [InlineData(typeof(TimeOnly), DbType.Time)]
         [InlineData(typeof(byte[]), DbType.Binary)]
         public void ToDbType_should_map_known_types(Type clr, DbType expected)
         {

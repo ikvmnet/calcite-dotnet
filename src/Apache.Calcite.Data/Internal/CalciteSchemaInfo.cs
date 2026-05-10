@@ -59,7 +59,6 @@ namespace Apache.Calcite.Data.Internal
             t.Columns.Add("ParameterName", typeof(string));
             t.Columns.Add("RestrictionDefault", typeof(string));
             t.Columns.Add("RestrictionNumber", typeof(int));
-
             return t;
         }
 

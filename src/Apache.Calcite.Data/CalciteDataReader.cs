@@ -117,6 +117,74 @@ namespace Apache.Calcite.Data
         /// <inheritdoc />
         public override DateTime GetDateTime(int ordinal) => Convert.ToDateTime(GetValue(ordinal));
 
+        /// <summary>
+        /// Returns the value of the specified column as a <see cref="DateTimeOffset"/>. The value is
+        /// assumed to be UTC since Calcite's <c>TIMESTAMP</c> has no zone offset.
+        /// </summary>
+        public DateTimeOffset GetDateTimeOffset(int ordinal)
+        {
+            var v = GetValue(ordinal);
+            return v switch
+            {
+                DateTimeOffset dto => dto,
+                DateTime dt => new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc), TimeSpan.Zero),
+                _ => new DateTimeOffset(Convert.ToDateTime(v), TimeSpan.Zero),
+            };
+        }
+
+        /// <summary>
+        /// Returns the value of the specified column as a <see cref="TimeSpan"/>.
+        /// </summary>
+        public TimeSpan GetTimeSpan(int ordinal)
+        {
+            var v = GetValue(ordinal);
+            return v switch
+            {
+                TimeSpan ts => ts,
+                DateTime dt => dt.TimeOfDay,
+                _ => (TimeSpan)v,
+            };
+        }
+
+        /// <inheritdoc />
+        public override T GetFieldValue<T>(int ordinal)
+        {
+            var v = GetValue(ordinal);
+
+            if (v is T t)
+                return t;
+
+            if (typeof(T) == typeof(DateOnly))
+            {
+                var dt = v switch
+                {
+                    DateTime d => d,
+                    DateTimeOffset dto => dto.UtcDateTime,
+                    _ => Convert.ToDateTime(v),
+                };
+                return (T)(object)DateOnly.FromDateTime(dt);
+            }
+
+            if (typeof(T) == typeof(TimeOnly))
+            {
+                var ts = v switch
+                {
+                    TimeSpan span => span,
+                    DateTime d => d.TimeOfDay,
+                    _ => (TimeSpan)v,
+                };
+                return (T)(object)TimeOnly.FromTimeSpan(ts);
+            }
+
+            if (typeof(T) == typeof(DateTimeOffset))
+                return (T)(object)GetDateTimeOffset(ordinal);
+
+            if (typeof(T) == typeof(TimeSpan))
+                return (T)(object)GetTimeSpan(ordinal);
+
+            return base.GetFieldValue<T>(ordinal);
+        }
+
         /// <inheritdoc />
         public override decimal GetDecimal(int ordinal) => Convert.ToDecimal(GetValue(ordinal));
 

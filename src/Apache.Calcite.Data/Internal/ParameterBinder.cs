@@ -98,6 +98,7 @@ namespace Apache.Calcite.Data.Internal
             {
                 DateTime d => DateTime.SpecifyKind(d.Date, DateTimeKind.Utc),
                 DateTimeOffset dto => DateTime.SpecifyKind(dto.UtcDateTime.Date, DateTimeKind.Utc),
+                DateOnly d => new DateTime(d.Year, d.Month, d.Day, 0, 0, 0, DateTimeKind.Utc),
                 _ => DateTime.SpecifyKind(System.Convert.ToDateTime(value).Date, DateTimeKind.Utc),
             };
             var days = (int)(dt - UnixEpoch).TotalDays;
@@ -110,6 +111,7 @@ namespace Apache.Calcite.Data.Internal
             {
                 DateTime d => d.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(d, DateTimeKind.Utc) : d.ToUniversalTime(),
                 DateTimeOffset dto => dto.UtcDateTime,
+                DateOnly d => new DateTime(d.Year, d.Month, d.Day, 0, 0, 0, DateTimeKind.Utc),
                 _ => DateTime.SpecifyKind(System.Convert.ToDateTime(value), DateTimeKind.Utc),
             };
             var ms = (long)(dt - UnixEpoch).TotalMilliseconds;
@@ -122,6 +124,7 @@ namespace Apache.Calcite.Data.Internal
             {
                 TimeSpan t => t,
                 DateTime d => d.TimeOfDay,
+                TimeOnly t => t.ToTimeSpan(),
                 _ => TimeSpan.Parse(System.Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "0"),
             };
             return java.lang.Integer.valueOf((int)ts.TotalMilliseconds);

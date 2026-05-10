@@ -134,6 +134,30 @@ namespace Apache.Calcite.Data.Tests
         }
 
         [Fact]
+        public void Output_Date_should_be_readable_as_DateOnly()
+        {
+            using var r = (CalciteDataReader)ExecuteSingleRow("VALUES (DATE '2024-01-15')");
+            var v = r.GetFieldValue<DateOnly>(0);
+            Assert.Equal(new DateOnly(2024, 1, 15), v);
+        }
+
+        [Fact]
+        public void Output_Time_should_be_readable_as_TimeOnly()
+        {
+            using var r = (CalciteDataReader)ExecuteSingleRow("VALUES (TIME '12:34:56')");
+            var v = r.GetFieldValue<TimeOnly>(0);
+            Assert.Equal(new TimeOnly(12, 34, 56), v);
+        }
+
+        [Fact]
+        public void Output_Timestamp_should_be_readable_as_DateTimeOffset()
+        {
+            using var r = (CalciteDataReader)ExecuteSingleRow("VALUES (TIMESTAMP '2024-01-15 12:34:56')");
+            var v = r.GetFieldValue<DateTimeOffset>(0);
+            Assert.Equal(new DateTimeOffset(2024, 1, 15, 12, 34, 56, TimeSpan.Zero), v.ToUniversalTime());
+        }
+
+        [Fact]
         public void Output_Binary_should_round_trip_as_byte_array()
         {
             using var r = ExecuteSingleRow("VALUES (X'01020304')");
