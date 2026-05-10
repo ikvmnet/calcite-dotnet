@@ -79,8 +79,6 @@ namespace Apache.Calcite.Data.Internal
                         _ => v,
                     };
                 case "TIME":
-                case "TIME WITH LOCAL TIME ZONE":
-                case "TIME WITH TIME ZONE":
                     return v switch
                     {
                         java.lang.Integer i => TimeSpan.FromMilliseconds(i.intValue()),
@@ -88,13 +86,32 @@ namespace Apache.Calcite.Data.Internal
                         java.sql.Time t => TimeSpan.FromMilliseconds(t.getTime()),
                         _ => v,
                     };
+                case "TIME WITH LOCAL TIME ZONE":
+                case "TIME WITH TIME ZONE":
+                    // Calcite's wire form is a count of milliseconds-since-midnight; the offset is
+                    // not carried per-row, so surface as DateTimeOffset at the epoch date with UTC offset
+                    // (matches IKVM.Jdbc's OffsetTime path which anchors at 0001-01-01).
+                    return v switch
+                    {
+                        java.lang.Integer i => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(i.intValue())),
+                        java.lang.Number n => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(n.longValue())),
+                        java.sql.Time t => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(t.getTime())),
+                        _ => v,
+                    };
                 case "TIMESTAMP":
-                case "TIMESTAMP WITH LOCAL TIME ZONE":
-                case "TIMESTAMP WITH TIME ZONE":
                     return v switch
                     {
                         java.lang.Number n => UnixEpoch.AddMilliseconds(n.longValue()),
                         java.sql.Timestamp ts => UnixEpoch.AddMilliseconds(ts.getTime()),
+                        _ => v,
+                    };
+                case "TIMESTAMP WITH LOCAL TIME ZONE":
+                case "TIMESTAMP WITH TIME ZONE":
+                    // UTC instant; surface as DateTimeOffset with UTC offset.
+                    return v switch
+                    {
+                        java.lang.Number n => new DateTimeOffset(UnixEpoch.AddMilliseconds(n.longValue()), TimeSpan.Zero),
+                        java.sql.Timestamp ts => new DateTimeOffset(UnixEpoch.AddMilliseconds(ts.getTime()), TimeSpan.Zero),
                         _ => v,
                     };
                 case "BINARY":

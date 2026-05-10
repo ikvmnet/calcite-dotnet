@@ -158,25 +158,25 @@ namespace Apache.Calcite.Data.Tests
         }
 
         [Fact]
-        public void Output_TimestampWithLocalTimeZone_should_be_readable_as_DateTimeOffset()
+        public void Output_TimestampWithLocalTimeZone_should_be_DateTimeOffset()
         {
-            // Calcite represents TIMESTAMP WITH LOCAL TIME ZONE as a UTC instant; CAST a literal
-            // to that type so the materializer goes through the WITH LOCAL TIME ZONE path.
+            // Calcite represents TIMESTAMP WITH LOCAL TIME ZONE as a UTC instant; surfaced as DateTimeOffset.
             using var r = (CalciteDataReader)ExecuteSingleRow("VALUES (CAST(TIMESTAMP '2024-01-15 12:34:56' AS TIMESTAMP WITH LOCAL TIME ZONE))");
 
+            Assert.Equal(typeof(DateTimeOffset), r.GetFieldType(0));
             var v = r.GetFieldValue<DateTimeOffset>(0);
             Assert.Equal(TimeSpan.Zero, v.Offset);
             Assert.Equal(new DateTimeOffset(2024, 1, 15, 12, 34, 56, TimeSpan.Zero), v.ToUniversalTime());
         }
 
         [Fact]
-        public void Output_TimestampWithTimeZone_should_be_readable_as_DateTimeOffset()
+        public void Output_TimestampWithTimeZone_should_be_DateTimeOffset()
         {
-            // Calcite documents TIMESTAMP WITH TIME ZONE as a supported SQL type. The Avatica wire
-            // representation has no per-row offset, so any offset is normalized; this test asserts
-            // the value can be materialized as DateTimeOffset and compares the UTC instant.
+            // Calcite documents TIMESTAMP WITH TIME ZONE as a supported SQL type; surfaced as DateTimeOffset
+            // (matches JDBC's TIMESTAMP_WITH_TIMEZONE convention used by IKVM.Jdbc).
             using var r = (CalciteDataReader)ExecuteSingleRow("VALUES (CAST(TIMESTAMP '2024-01-15 12:34:56' AS TIMESTAMP WITH TIME ZONE))");
 
+            Assert.Equal(typeof(DateTimeOffset), r.GetFieldType(0));
             var v = r.GetFieldValue<DateTimeOffset>(0);
             Assert.Equal(new DateTimeOffset(2024, 1, 15, 12, 34, 56, TimeSpan.Zero), v.ToUniversalTime());
         }
@@ -196,6 +196,55 @@ namespace Apache.Calcite.Data.Tests
             using var r = ExecuteSingleRow("VALUES (CAST(NULL AS VARCHAR(8)))");
             Assert.True(r.IsDBNull(0));
             Assert.Equal(DBNull.Value, r.GetValue(0));
+        }
+
+        [Fact]
+        public void Output_DateTimeFunctions_should_be_retrievable_as_clr_types()
+        {
+            // Calcite datetime functions. Note: the Calcite docs describe CURRENT_TIME and
+            // CURRENT_TIMESTAMP as TIMESTAMP WITH TIME ZONE, but at runtime CalciteSignature.columns
+            // reports them as plain TIME / TIMESTAMP, so the ADO.NET surface mirrors that.
+            //   LOCALTIME, LOCALTIME(p)            -> TIME      -> TimeSpan / TimeOnly
+            //   LOCALTIMESTAMP, LOCALTIMESTAMP(p)  -> TIMESTAMP -> DateTime
+            //   CURRENT_TIME                       -> TIME      -> TimeSpan
+            //   CURRENT_DATE                       -> DATE      -> DateTime / DateOnly
+            //   CURRENT_TIMESTAMP                  -> TIMESTAMP -> DateTime
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (LOCALTIME, LOCALTIME(3), LOCALTIMESTAMP, LOCALTIMESTAMP(3), CURRENT_TIME, CURRENT_DATE, CURRENT_TIMESTAMP)";
+            using var r = (CalciteDataReader)cmd.ExecuteReader();
+            Assert.True(r.Read());
+
+            Assert.Equal(typeof(TimeSpan), r.GetFieldType(0));
+            var localTime = (TimeSpan)r.GetValue(0);
+            Assert.InRange(localTime, TimeSpan.Zero, TimeSpan.FromDays(1));
+            Assert.Equal(localTime, r.GetFieldValue<TimeOnly>(0).ToTimeSpan());
+
+            Assert.Equal(typeof(TimeSpan), r.GetFieldType(1));
+            var localTimeP = (TimeSpan)r.GetValue(1);
+            Assert.InRange(localTimeP, TimeSpan.Zero, TimeSpan.FromDays(1));
+
+            Assert.Equal(typeof(DateTime), r.GetFieldType(2));
+            var localTimestamp = r.GetDateTime(2);
+            Assert.NotEqual(default, localTimestamp);
+
+            Assert.Equal(typeof(DateTime), r.GetFieldType(3));
+            var localTimestampP = r.GetDateTime(3);
+            Assert.NotEqual(default, localTimestampP);
+
+            Assert.Equal(typeof(TimeSpan), r.GetFieldType(4));
+            var currentTime = (TimeSpan)r.GetValue(4);
+            Assert.InRange(currentTime, TimeSpan.Zero, TimeSpan.FromDays(1));
+
+            Assert.Equal(typeof(DateTime), r.GetFieldType(5));
+            var currentDate = r.GetDateTime(5);
+            Assert.Equal(TimeSpan.Zero, currentDate.TimeOfDay);
+            Assert.Equal(DateOnly.FromDateTime(currentDate), r.GetFieldValue<DateOnly>(5));
+
+            Assert.Equal(typeof(DateTime), r.GetFieldType(6));
+            var currentTimestamp = r.GetDateTime(6);
+            Assert.NotEqual(default, currentTimestamp);
         }
 
         // ------------------------------------------------------------------------------------

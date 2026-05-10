@@ -115,7 +115,16 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
-        public override DateTime GetDateTime(int ordinal) => Convert.ToDateTime(GetValue(ordinal));
+        public override DateTime GetDateTime(int ordinal)
+        {
+            var v = GetValue(ordinal);
+            return v switch
+            {
+                DateTime dt => dt,
+                DateTimeOffset dto => dto.UtcDateTime,
+                _ => Convert.ToDateTime(v),
+            };
+        }
 
         /// <summary>
         /// Returns the value of the specified column as a <see cref="DateTimeOffset"/>. The value is
@@ -142,6 +151,7 @@ namespace Apache.Calcite.Data
             {
                 TimeSpan ts => ts,
                 DateTime dt => dt.TimeOfDay,
+                DateTimeOffset dto => dto.TimeOfDay,
                 _ => (TimeSpan)v,
             };
         }
@@ -171,6 +181,7 @@ namespace Apache.Calcite.Data
                 {
                     TimeSpan span => span,
                     DateTime d => d.TimeOfDay,
+                    DateTimeOffset dto => dto.TimeOfDay,
                     _ => (TimeSpan)v,
                 };
                 return (T)(object)TimeOnly.FromTimeSpan(ts);

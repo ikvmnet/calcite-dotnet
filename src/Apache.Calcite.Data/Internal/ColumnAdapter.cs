@@ -38,17 +38,20 @@ namespace Apache.Calcite.Data.Internal
         {
             // The SQL type name takes precedence for date/time/binary because Calcite's runtime
             // representation (rep) is the internal storage form (int days, long ms, ByteString),
-            // not the public CLR type expected by ADO.NET consumers.
+            // not the public CLR type expected by ADO.NET consumers. Zone-aware SQL types map to
+            // DateTimeOffset (matching JDBC's TIMESTAMP_WITH_TIMEZONE / TIME_WITH_TIMEZONE convention
+            // used by IKVM.Jdbc and most ADO.NET providers for zoned types).
             switch (type.name)
             {
                 case "DATE":
                 case "TIMESTAMP":
+                    return typeof(DateTime);
                 case "TIMESTAMP WITH LOCAL TIME ZONE":
                 case "TIMESTAMP WITH TIME ZONE":
-                    return typeof(DateTime);
-                case "TIME":
                 case "TIME WITH LOCAL TIME ZONE":
                 case "TIME WITH TIME ZONE":
+                    return typeof(DateTimeOffset);
+                case "TIME":
                     return typeof(TimeSpan);
                 case "BINARY":
                 case "VARBINARY":
