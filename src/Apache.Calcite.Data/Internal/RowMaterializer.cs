@@ -80,6 +80,7 @@ namespace Apache.Calcite.Data.Internal
                     };
                 case "TIME":
                 case "TIME WITH LOCAL TIME ZONE":
+                case "TIME WITH TIME ZONE":
                     return v switch
                     {
                         java.lang.Integer i => TimeSpan.FromMilliseconds(i.intValue()),
@@ -89,6 +90,7 @@ namespace Apache.Calcite.Data.Internal
                     };
                 case "TIMESTAMP":
                 case "TIMESTAMP WITH LOCAL TIME ZONE":
+                case "TIMESTAMP WITH TIME ZONE":
                     return v switch
                     {
                         java.lang.Number n => UnixEpoch.AddMilliseconds(n.longValue()),

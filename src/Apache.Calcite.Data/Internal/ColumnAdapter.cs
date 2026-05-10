@@ -44,9 +44,11 @@ namespace Apache.Calcite.Data.Internal
                 case "DATE":
                 case "TIMESTAMP":
                 case "TIMESTAMP WITH LOCAL TIME ZONE":
+                case "TIMESTAMP WITH TIME ZONE":
                     return typeof(DateTime);
                 case "TIME":
                 case "TIME WITH LOCAL TIME ZONE":
+                case "TIME WITH TIME ZONE":
                     return typeof(TimeSpan);
                 case "BINARY":
                 case "VARBINARY":

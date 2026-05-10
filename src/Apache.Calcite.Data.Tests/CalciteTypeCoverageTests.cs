@@ -158,6 +158,30 @@ namespace Apache.Calcite.Data.Tests
         }
 
         [Fact]
+        public void Output_TimestampWithLocalTimeZone_should_be_readable_as_DateTimeOffset()
+        {
+            // Calcite represents TIMESTAMP WITH LOCAL TIME ZONE as a UTC instant; CAST a literal
+            // to that type so the materializer goes through the WITH LOCAL TIME ZONE path.
+            using var r = (CalciteDataReader)ExecuteSingleRow("VALUES (CAST(TIMESTAMP '2024-01-15 12:34:56' AS TIMESTAMP WITH LOCAL TIME ZONE))");
+
+            var v = r.GetFieldValue<DateTimeOffset>(0);
+            Assert.Equal(TimeSpan.Zero, v.Offset);
+            Assert.Equal(new DateTimeOffset(2024, 1, 15, 12, 34, 56, TimeSpan.Zero), v.ToUniversalTime());
+        }
+
+        [Fact]
+        public void Output_TimestampWithTimeZone_should_be_readable_as_DateTimeOffset()
+        {
+            // Calcite documents TIMESTAMP WITH TIME ZONE as a supported SQL type. The Avatica wire
+            // representation has no per-row offset, so any offset is normalized; this test asserts
+            // the value can be materialized as DateTimeOffset and compares the UTC instant.
+            using var r = (CalciteDataReader)ExecuteSingleRow("VALUES (CAST(TIMESTAMP '2024-01-15 12:34:56' AS TIMESTAMP WITH TIME ZONE))");
+
+            var v = r.GetFieldValue<DateTimeOffset>(0);
+            Assert.Equal(new DateTimeOffset(2024, 1, 15, 12, 34, 56, TimeSpan.Zero), v.ToUniversalTime());
+        }
+
+        [Fact]
         public void Output_Binary_should_round_trip_as_byte_array()
         {
             using var r = ExecuteSingleRow("VALUES (X'01020304')");
