@@ -128,13 +128,25 @@ namespace Apache.Calcite.Data.Internal
         /// Implements the GetString operation.
         /// </summary>
         /// <returns></returns>
-        public string GetString() => Convert.ToString(_value) ?? throw new InvalidOperationException();
+        public string GetString()
+        {
+            if (_value is string)
+                return (string)_value;
+            else
+                throw new InvalidCastException();
+        }
 
         /// <summary>
         /// Implements the GetChar operation.
         /// </summary>
         /// <returns></returns>
-        public char GetChar() => Convert.ToChar(_value) ?? throw new InvalidOperationException();
+        public char GetChar()
+        {
+            if (_value is java.lang.Character c)
+                return c.charValue();
+            else
+                throw new InvalidCastException();
+        }
 
         /// <summary>
         /// Implements the GetBytes operation to a destination buffer.
@@ -147,7 +159,13 @@ namespace Apache.Calcite.Data.Internal
         /// <exception cref="InvalidOperationException"></exception>
         public long GetBytes(long dataOffset, byte[]? buffer, int bufferOffset, int length)
         {
-            var bytes = (byte[]?)_value ?? throw new InvalidOperationException();
+            if (_value is not null && _value is not byte[])
+                throw new InvalidCastException();
+
+            if (_value is null)
+                return 0;
+
+            var bytes = (byte[])_value;
             if (buffer is null)
                 return bytes.LongLength;
 
@@ -183,66 +201,118 @@ namespace Apache.Calcite.Data.Internal
             return copy;
         }
 
+        /// <summary>
+        /// Implements the GetObject operation.
+        /// </summary>
+        /// <returns></returns>
         public object? GetObject()
         {
-            throw new NotImplementedException();
+            return _value;
         }
 
+        /// <summary>
+        /// Implements the GetDateTime operation.
+        /// </summary>
+        /// <returns></returns>
         public DateTime GetDateTime()
         {
             throw new NotImplementedException();
         }
 
+        /// <summary>
+        /// Implements the GetDateTimeOffset operation.
+        /// </summary>
+        /// <returns></returns>
         public DateTimeOffset GetDateTimeOffset()
         {
             throw new NotImplementedException();
         }
 
+        /// <summary>
+        /// Implements the GetTimeSpan operation.
+        /// </summary>
+        /// <returns></returns>
         public TimeSpan GetTimeSpan()
         {
             throw new NotImplementedException();
         }
 
+        /// <summary>
+        /// Implements the GetDecimal operation.
+        /// </summary>
+        /// <returns></returns>
         public decimal GetDecimal()
         {
             throw new NotImplementedException();
         }
 
+        /// <summary>
+        /// Implements the GetDouble operation.
+        /// </summary>
+        /// <returns></returns>
         public double GetDouble()
         {
             throw new NotImplementedException();
         }
 
+        /// <summary>
+        /// Implements the GetFloat operation.
+        /// </summary>
+        /// <returns></returns>
         public float GetFloat()
         {
             throw new NotImplementedException();
         }
 
+        /// <summary>
+        /// Implements the GetGuid operation.
+        /// </summary>
+        /// <returns></returns>
         public Guid GetGuid()
         {
             throw new NotImplementedException();
         }
 
+        /// <summary>
+        /// Implements the GetInt16 operation.
+        /// </summary>
+        /// <returns></returns>
         public short GetInt16()
         {
             throw new NotImplementedException();
         }
 
+        /// <summary>
+        /// Implements the GetInt32 operation.
+        /// </summary>
+        /// <returns></returns>
         public int GetInt32()
         {
             throw new NotImplementedException();
         }
 
+        /// <summary>
+        /// Implements the GetInt64 operation.
+        /// </summary>
+        /// <returns></returns>
         public long GetInt64()
         {
             throw new NotImplementedException();
         }
 
+        /// <summary>
+        /// Implements the GetDateOnly operation.
+        /// </summary>
+        /// <returns></returns>
         public DateOnly GetDateOnly()
         {
             throw new NotImplementedException();
         }
 
+        /// <summary>
+        /// Implements the GetTimeOnly operation.
+        /// </summary>
+        /// <returns></returns>
         public TimeOnly GetTimeOnly()
         {
             throw new NotImplementedException();
