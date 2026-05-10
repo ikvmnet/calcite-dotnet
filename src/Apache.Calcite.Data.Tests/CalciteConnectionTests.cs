@@ -1,7 +1,6 @@
 using System;
 using System.Data;
 
-
 using Xunit;
 
 namespace Apache.Calcite.Data.Tests
@@ -61,17 +60,11 @@ namespace Apache.Calcite.Data.Tests
         }
 
         [Fact]
-        public void ChangeDatabase_should_throw_not_supported()
+        public void ChangeDatabase_should_update_schema()
         {
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
-            Assert.Throws<NotSupportedException>(() => c.ChangeDatabase("NEW_SCHEMA"));
-        }
-
-        [Fact]
-        public void Database_should_be_empty()
-        {
-            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
-            Assert.Equal(string.Empty, c.Database);
+            c.ChangeDatabase("NEW_SCHEMA");
+            Assert.Equal("NEW_SCHEMA", c.Database);
         }
 
         [Fact]
