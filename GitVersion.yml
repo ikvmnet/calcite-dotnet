@@ -6,7 +6,7 @@ patch-version-bump-message: '\+semver:\s?(patch)'
 branches:
   main:
     regex: ^main$
-    label: dev
+    label: pre
     increment: Patch
   develop:
     regex: ^develop$
