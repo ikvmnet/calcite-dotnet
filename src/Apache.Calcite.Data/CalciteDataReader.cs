@@ -1,6 +1,5 @@
 using System;
 using System.Collections;
-using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
 using System.Threading;
@@ -18,12 +17,18 @@ namespace Apache.Calcite.Data
     public sealed class CalciteDataReader : DbDataReader
     {
 
-        readonly ICalciteResult _result;
+        readonly CalciteResult _result;
         readonly CommandBehavior _behavior;
         bool _closed;
         bool _hasRow;
 
-        internal CalciteDataReader(ICalciteResult result, CommandBehavior behavior)
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        /// <param name="result"></param>
+        /// <param name="behavior"></param>
+        /// <exception cref="ArgumentNullException"></exception>
+        internal CalciteDataReader(CalciteResult result, CommandBehavior behavior)
         {
             _result = result ?? throw new ArgumentNullException(nameof(result));
             _behavior = behavior;
@@ -67,221 +72,23 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
-        public override bool GetBoolean(int ordinal) => Convert.ToBoolean(GetValue(ordinal));
-
-        /// <inheritdoc />
-        public override byte GetByte(int ordinal) => Convert.ToByte(GetValue(ordinal));
-
-        /// <inheritdoc />
-        public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length)
-        {
-            var bytes = (byte[])GetValue(ordinal);
-            if (buffer is null)
-                return bytes.LongLength;
-
-            var available = bytes.LongLength - dataOffset;
-            if (available <= 0)
-                return 0;
-
-            var copy = (int)Math.Min(length, available);
-            Array.Copy(bytes, dataOffset, buffer, bufferOffset, copy);
-            return copy;
-        }
-
-        /// <inheritdoc />
-        public override char GetChar(int ordinal) => Convert.ToChar(GetValue(ordinal));
-
-        /// <inheritdoc />
-        public override long GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length)
-        {
-            var s = GetString(ordinal);
-            if (buffer is null)
-                return s.Length;
-
-            var available = s.Length - dataOffset;
-            if (available <= 0)
-                return 0;
-
-            var copy = (int)Math.Min(length, available);
-            s.CopyTo((int)dataOffset, buffer, bufferOffset, copy);
-            return copy;
-        }
-
-        /// <inheritdoc />
-        public override string GetDataTypeName(int ordinal)
-        {
-            ThrowIfClosed();
-            return _result.Columns[ordinal].ProviderTypeName;
-        }
-
-        /// <inheritdoc />
-        public override DateTime GetDateTime(int ordinal)
-        {
-            var v = GetValue(ordinal);
-            return v switch
-            {
-                DateTime dt => dt,
-                DateTimeOffset dto => dto.UtcDateTime,
-                _ => Convert.ToDateTime(v),
-            };
-        }
-
-        /// <summary>
-        /// Returns the value of the specified column as a <see cref="DateTimeOffset"/>. The value is
-        /// assumed to be UTC since Calcite's <c>TIMESTAMP</c> has no zone offset.
-        /// </summary>
-        public DateTimeOffset GetDateTimeOffset(int ordinal)
-        {
-            var v = GetValue(ordinal);
-            return v switch
-            {
-                DateTimeOffset dto => dto,
-                DateTime dt => new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc), TimeSpan.Zero),
-                _ => new DateTimeOffset(Convert.ToDateTime(v), TimeSpan.Zero),
-            };
-        }
-
-        /// <summary>
-        /// Returns the value of the specified column as a <see cref="TimeSpan"/>.
-        /// </summary>
-        public TimeSpan GetTimeSpan(int ordinal)
-        {
-            var v = GetValue(ordinal);
-            return v switch
-            {
-                TimeSpan ts => ts,
-                DateTime dt => dt.TimeOfDay,
-                DateTimeOffset dto => dto.TimeOfDay,
-                _ => (TimeSpan)v,
-            };
-        }
-
-        /// <inheritdoc />
-        public override T GetFieldValue<T>(int ordinal)
-        {
-            var v = GetValue(ordinal);
-
-            if (v is T t)
-                return t;
-
-            if (typeof(T) == typeof(DateOnly))
-            {
-                var dt = v switch
-                {
-                    DateTime d => d,
-                    DateTimeOffset dto => dto.UtcDateTime,
-                    _ => Convert.ToDateTime(v),
-                };
-                return (T)(object)DateOnly.FromDateTime(dt);
-            }
-
-            if (typeof(T) == typeof(TimeOnly))
-            {
-                var ts = v switch
-                {
-                    TimeSpan span => span,
-                    DateTime d => d.TimeOfDay,
-                    DateTimeOffset dto => dto.TimeOfDay,
-                    _ => (TimeSpan)v,
-                };
-                return (T)(object)TimeOnly.FromTimeSpan(ts);
-            }
-
-            if (typeof(T) == typeof(DateTimeOffset))
-                return (T)(object)GetDateTimeOffset(ordinal);
-
-            if (typeof(T) == typeof(TimeSpan))
-                return (T)(object)GetTimeSpan(ordinal);
-
-            return base.GetFieldValue<T>(ordinal);
-        }
-
-        /// <inheritdoc />
-        public override decimal GetDecimal(int ordinal) => Convert.ToDecimal(GetValue(ordinal));
-
-        /// <inheritdoc />
-        public override double GetDouble(int ordinal) => Convert.ToDouble(GetValue(ordinal));
-
-        /// <inheritdoc />
-        public override IEnumerator GetEnumerator() => new DbEnumerator(this, (_behavior & CommandBehavior.CloseConnection) != 0);
-
-        /// <inheritdoc />
-        public override Type GetFieldType(int ordinal)
-        {
-            ThrowIfClosed();
-            return _result.Columns[ordinal].ClrType;
-        }
-
-        /// <inheritdoc />
-        public override float GetFloat(int ordinal) => Convert.ToSingle(GetValue(ordinal));
-
-        /// <inheritdoc />
-        public override Guid GetGuid(int ordinal) => (Guid)GetValue(ordinal);
-
-        /// <inheritdoc />
-        public override short GetInt16(int ordinal) => Convert.ToInt16(GetValue(ordinal));
-
-        /// <inheritdoc />
-        public override int GetInt32(int ordinal) => Convert.ToInt32(GetValue(ordinal));
-
-        /// <inheritdoc />
-        public override long GetInt64(int ordinal) => Convert.ToInt64(GetValue(ordinal));
-
-        /// <inheritdoc />
-        public override string GetName(int ordinal)
-        {
-            ThrowIfClosed();
-            return _result.Columns[ordinal].Name;
-        }
-
-        /// <inheritdoc />
-        public override int GetOrdinal(string name)
-        {
-            ThrowIfClosed();
-            for (var i = 0; i < _result.Columns.Count; i++)
-                if (string.Equals(_result.Columns[i].Name, name, StringComparison.OrdinalIgnoreCase))
-                    return i;
-
-            throw new IndexOutOfRangeException($"Column '{name}' was not found.");
-        }
-
-        /// <inheritdoc />
-        public override string GetString(int ordinal) => Convert.ToString(GetValue(ordinal)) ?? string.Empty;
-
-        /// <inheritdoc />
-        public override object GetValue(int ordinal)
-        {
-            ThrowIfNoRow();
-            var v = _result.Current![ordinal];
-            return v ?? DBNull.Value;
-        }
-
-        /// <inheritdoc />
-        public override int GetValues(object[] values)
-        {
-            if (values is null)
-                throw new ArgumentNullException(nameof(values));
-
-            ThrowIfNoRow();
-            var count = Math.Min(values.Length, _result.Columns.Count);
-            for (var i = 0; i < count; i++)
-                values[i] = _result.Current![i] ?? DBNull.Value;
-
-            return count;
-        }
-
-        /// <inheritdoc />
         public override bool IsDBNull(int ordinal)
         {
             ThrowIfNoRow();
-            return _result.Current![ordinal] is null;
+            return _result.Current.GetValue(ordinal) is null;
         }
 
         /// <inheritdoc />
-        public override bool NextResult() => false;
+        public override bool NextResult()
+        {
+            return false;
+        }
 
         /// <inheritdoc />
-        public override Task<bool> NextResultAsync(CancellationToken cancellationToken) => Task.FromResult(false);
+        public override Task<bool> NextResultAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(false);
+        }
 
         /// <inheritdoc />
         public override bool Read() => ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
@@ -308,13 +115,12 @@ namespace Apache.Calcite.Data
 
             for (var i = 0; i < _result.Columns.Count; i++)
             {
-                var c = _result.Columns[i];
                 var row = dt.NewRow();
-                row[SchemaTableColumn.ColumnName] = c.Name;
+                row[SchemaTableColumn.ColumnName] = _result.Columns.GetName(i);
                 row[SchemaTableColumn.ColumnOrdinal] = i;
-                row[SchemaTableColumn.DataType] = c.ClrType;
-                row[SchemaTableColumn.ProviderType] = c.ProviderTypeName;
-                row[SchemaTableColumn.AllowDBNull] = c.AllowDbNull;
+                row[SchemaTableColumn.DataType] = _result.Columns.GetClrType(i);
+                row[SchemaTableColumn.ProviderType] = _result.Columns.GetProviderTypeName(i);
+                row[SchemaTableColumn.AllowDBNull] = _result.Columns.GetIsNullable(i);
                 dt.Rows.Add(row);
             }
 
@@ -349,20 +155,212 @@ namespace Apache.Calcite.Data
         void ThrowIfNoRow()
         {
             ThrowIfClosed();
-            if (_hasRow == false || _result.Current is null)
+            if (_hasRow == false)
                 throw new InvalidOperationException("No row is currently available. Call Read() first.");
         }
 
-        /// <summary>
-        /// Workaround for unused symbol warnings on the type map in Phase 1; the reader will use it
-        /// once full type-aware materialization paths land.
-        /// </summary>
-        internal static IReadOnlyDictionary<Type, DbType> KnownTypes => _knownTypes;
+        /// <inheritdoc />
+        public override IEnumerator GetEnumerator() => new DbEnumerator(this, (_behavior & CommandBehavior.CloseConnection) != 0);
 
-        static readonly IReadOnlyDictionary<Type, DbType> _knownTypes = new Dictionary<Type, DbType>
+        /// <inheritdoc />
+        public override int GetOrdinal(string name)
         {
-            { typeof(int), CalciteTypeMap.ToDbType(typeof(int)) },
-        };
+            ThrowIfClosed();
+
+            for (var i = 0; i < _result.Columns.Count; i++)
+                if (string.Equals(_result.Columns.GetName(i), name, StringComparison.OrdinalIgnoreCase))
+                    return i;
+
+            throw new IndexOutOfRangeException($"Column '{name}' was not found.");
+        }
+
+        /// <inheritdoc />
+        public override string GetName(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Columns.GetName(ordinal);
+        }
+
+        /// <inheritdoc />
+        public override string GetDataTypeName(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Columns.GetProviderTypeName(ordinal);
+        }
+
+        /// <inheritdoc />
+        public override int GetValues(object[] values)
+        {
+            ArgumentNullException.ThrowIfNull(values);
+            ThrowIfNoRow();
+
+            var count = Math.Min(values.Length, _result.Columns.Count);
+            for (var i = 0; i < count; i++)
+                values[i] = GetValue(i);
+
+            return count;
+        }
+
+        /// <inheritdoc />
+        public override T GetFieldValue<T>(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Current.GetValue(ordinal).GetFieldValue<T>();
+        }
+
+        /// <inheritdoc />
+        public override object GetValue(int ordinal)
+        {
+            ThrowIfNoRow();
+            return _result.Current.GetValue(ordinal).GetValue();
+        }
+
+        /// <inheritdoc />
+        public override string GetString(int ordinal)
+        {
+            ThrowIfNoRow();
+            return _result.Current.GetValue(ordinal).GetString();
+        }
+
+        /// <inheritdoc />
+        public override Type GetFieldType(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Columns.GetClrType(ordinal);
+        }
+
+        /// <inheritdoc />
+        public override bool GetBoolean(int ordinal)
+        {
+            ThrowIfClosed();
+            return Convert.ToBoolean(GetValue(ordinal));
+        }
+
+        /// <inheritdoc />
+        public override byte GetByte(int ordinal)
+        {
+            ThrowIfClosed();
+            return Convert.ToByte(GetValue(ordinal));
+        }
+
+        /// <inheritdoc />
+        public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length)
+        {
+            ThrowIfClosed();
+            return _result.Current.GetValue(ordinal).GetBytes(dataOffset, buffer, bufferOffset, length);
+        }
+
+        /// <inheritdoc />
+        public override char GetChar(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Current.GetValue(ordinal).GetChar();
+        }
+
+        /// <inheritdoc />
+        public override long GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length)
+        {
+            ThrowIfClosed();
+            return _result.Current.GetValue(ordinal).GetChars(dataOffset, buffer, bufferOffset, length);
+        }
+
+        /// <inheritdoc />
+        public override DateTime GetDateTime(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Current.GetValue(ordinal).GetDateTime();
+        }
+
+        /// <summary>
+        /// Returns the value of the specified column as a <see cref="DateTimeOffset"/>.
+        /// </summary>
+        public DateTimeOffset GetDateTimeOffset(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Current.GetValue(ordinal).GetDateTimeOffset();
+        }
+
+        /// <summary>
+        /// Returns the value of the specified column as a <see cref="TimeSpan"/>.
+        /// </summary>
+        public TimeSpan GetTimeSpan(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Current.GetValue(ordinal).GetTimeSpan();
+        }
+
+        /// <inheritdoc />
+        public override decimal GetDecimal(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Current.GetValue(ordinal).GetDecimal();
+        }
+
+        /// <inheritdoc />
+        public override double GetDouble(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Current.GetValue(ordinal).GetDouble();
+        }
+
+        /// <inheritdoc />
+        public override float GetFloat(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Current.GetValue(ordinal).GetFloat();
+        }
+
+        /// <inheritdoc />
+        public override Guid GetGuid(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Current.GetValue(ordinal).GetGuid();
+        }
+
+        /// <inheritdoc />
+        public override short GetInt16(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Current.GetValue(ordinal).GetInt16();
+        }
+
+        /// <inheritdoc />
+        public override int GetInt32(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Current.GetValue(ordinal).GetInt32();
+        }
+
+        /// <inheritdoc />
+        public override long GetInt64(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Current.GetValue(ordinal).GetInt64();
+        }
+
+        /// <summary>
+        /// Retrieves the value of the specified column as a DateOnly object.
+        /// </summary>
+        /// <remarks>This method throws an exception if the data reader is closed or if the specified
+        /// column does not contain a valid date value.</remarks>
+        /// <param name="ordinal">The zero-based column ordinal indicating which column's value to retrieve.</param>
+        /// <returns>A DateOnly value representing the date stored in the specified column.</returns>
+        public DateOnly GetDateOnly(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Current.GetValue(ordinal).GetDateOnly();
+        }
+
+        /// <summary>
+        /// Retrieves the value of the specified column as a TimeOnly object.
+        /// </summary>
+        /// <param name="ordinal"></param>
+        /// <returns></returns>
+        public TimeOnly GetTimeOnly(int ordinal)
+        {
+            ThrowIfClosed();
+            return _result.Current.GetValue(ordinal).GetTimeOnly();
+        }
 
     }
 

@@ -169,7 +169,7 @@ namespace Apache.Calcite.Data
             if (result.Columns.Count == 0)
                 return null;
 
-            return result.Current?[0];
+            return result.Current.GetValue(0);
         }
 
         /// <inheritdoc />
@@ -183,7 +183,7 @@ namespace Apache.Calcite.Data
             return new CalciteDataReader(result, behavior);
         }
 
-        async Task<ICalciteResult> ExecuteCoreAsync(CancellationToken cancellationToken)
+        async Task<CalciteResult> ExecuteCoreAsync(CancellationToken cancellationToken)
         {
             var session = GetOpenSession();
             var values = new CalciteParameterValue[_parameters.Items.Count];
@@ -194,7 +194,7 @@ namespace Apache.Calcite.Data
             }
 
             var request = new CalciteExecuteRequest(_commandText, values, _commandTimeout);
-            return await session.Client.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
+            return await session.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
         }
 
         CalciteSession GetOpenSession()

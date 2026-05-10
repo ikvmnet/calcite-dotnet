@@ -96,8 +96,7 @@ namespace Apache.Calcite.Data
             SetState(ConnectionState.Connecting);
             try
             {
-                var client = CalciteClientFactory.Create(_options);
-                _session = new CalciteSession(_options, client);
+                _session = new CalciteSession(_options);
                 SetState(ConnectionState.Open);
             }
             catch
@@ -201,19 +200,19 @@ namespace Apache.Calcite.Data
         /// statements executed on this connection.
         /// </summary>
         /// <exception cref="InvalidOperationException">The connection is not open.</exception>
-        public SchemaPlus RootSchema => RequireSession().Client.RootSchema;
+        public SchemaPlus RootSchema => RequireSession().RootSchema;
 
         /// <summary>
         /// Gets the Calcite <see cref="JavaTypeFactory"/> used by this connection's engine.
         /// </summary>
         /// <exception cref="InvalidOperationException">The connection is not open.</exception>
-        public JavaTypeFactory TypeFactory => RequireSession().Client.TypeFactory;
+        public JavaTypeFactory TypeFactory => RequireSession().TypeFactory;
 
         /// <summary>
         /// Gets the resolved <see cref="CalciteConnectionConfig"/> for this connection.
         /// </summary>
         /// <exception cref="InvalidOperationException">The connection is not open.</exception>
-        public CalciteConnectionConfig Config => RequireSession().Client.Config;
+        public CalciteConnectionConfig Config => RequireSession().Config;
 
         /// <summary>
         /// Returns the active session, throwing if the connection is not open.
