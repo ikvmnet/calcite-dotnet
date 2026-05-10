@@ -8,7 +8,7 @@ branches:
     regex: ^main$
     label: pre
     increment: Patch
-     is-release-branch: false
+    is-release-branch: false
   develop:
     regex: ^develop$
     label: dev
