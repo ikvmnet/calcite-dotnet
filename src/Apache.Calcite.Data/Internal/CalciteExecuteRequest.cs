@@ -19,7 +19,7 @@ namespace Apache.Calcite.Data.Internal
         public CalciteExecuteRequest(string sql, IReadOnlyList<CalciteParameterValue> parameters, int commandTimeoutSeconds)
         {
             Sql = sql ?? throw new ArgumentNullException(nameof(sql));
-            Parameters = parameters ?? Array.Empty<CalciteParameterValue>();
+            Parameters = parameters ?? [];
             CommandTimeoutSeconds = commandTimeoutSeconds;
         }
 

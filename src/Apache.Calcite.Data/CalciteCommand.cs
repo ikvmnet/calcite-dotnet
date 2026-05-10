@@ -144,7 +144,10 @@ namespace Apache.Calcite.Data
         protected override DbParameter CreateDbParameter() => new CalciteParameter();
 
         /// <inheritdoc />
-        public override int ExecuteNonQuery() => ExecuteNonQueryAsync(CancellationToken.None).GetAwaiter().GetResult();
+        public override int ExecuteNonQuery()
+        {
+            return ExecuteNonQueryAsync(CancellationToken.None).GetAwaiter().GetResult();
+        }
 
         /// <inheritdoc />
         public override async Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
@@ -157,7 +160,10 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
-        public override object? ExecuteScalar() => ExecuteScalarAsync(CancellationToken.None).GetAwaiter().GetResult();
+        public override object? ExecuteScalar()
+        {
+            return ExecuteScalarAsync(CancellationToken.None).GetAwaiter().GetResult();
+        }
 
         /// <inheritdoc />
         public override async Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
@@ -169,12 +175,14 @@ namespace Apache.Calcite.Data
             if (result.Columns.Count == 0)
                 return null;
 
-            return result.Current.GetValue(0);
+            return result.Current.GetValue(0).GetValue();
         }
 
         /// <inheritdoc />
-        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) =>
-            ExecuteDbDataReaderAsync(behavior, CancellationToken.None).GetAwaiter().GetResult();
+        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
+        {
+            return ExecuteDbDataReaderAsync(behavior, CancellationToken.None).GetAwaiter().GetResult();
+        }
 
         /// <inheritdoc />
         protected override async Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
@@ -193,8 +201,7 @@ namespace Apache.Calcite.Data
                 values[i] = new CalciteParameterValue(p.ParameterName, p.DbType, p.Value);
             }
 
-            var request = new CalciteExecuteRequest(_commandText, values, _commandTimeout);
-            return await session.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
+            return await session.ExecuteAsync(new CalciteExecuteRequest(_commandText, values, _commandTimeout), cancellationToken).ConfigureAwait(false);
         }
 
         CalciteSession GetOpenSession()

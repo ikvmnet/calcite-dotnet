@@ -11,7 +11,6 @@ using org.apache.calcite.jdbc;
 using org.apache.calcite.linq4j;
 using org.apache.calcite.schema;
 
-
 namespace Apache.Calcite.Data.Internal
 {
 
@@ -35,8 +34,7 @@ namespace Apache.Calcite.Data.Internal
         /// <exception cref="CalciteException"></exception>
         public CalciteSession(CalciteConnectionStringBuilder options)
         {
-            if (options is null)
-                throw new ArgumentNullException(nameof(options));
+            ArgumentNullException.ThrowIfNull(options);
 
             try
             {
@@ -48,7 +46,7 @@ namespace Apache.Calcite.Data.Internal
             }
             catch (Exception e) when (e is not CalciteException)
             {
-                throw new CalciteException("Failed to initialize Calcite engine.", e);
+                throw new CalciteException("Failed to initialize Calcite.", e);
             }
         }
 
@@ -79,8 +77,7 @@ namespace Apache.Calcite.Data.Internal
         /// <exception cref="CalciteException"></exception>
         public Task<CalciteResult> ExecuteAsync(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {
-            if (request is null)
-                throw new ArgumentNullException(nameof(request));
+            ArgumentNullException.ThrowIfNull(request);
 
             ThrowIfDisposed();
             cancellationToken.ThrowIfCancellationRequested();
@@ -99,7 +96,7 @@ namespace Apache.Calcite.Data.Internal
                 CalcitePrepare.CalciteSignature signature;
                 try
                 {
-                    signature = prepare.prepareSql(ctx, query, java.lang.Class.forName("[Ljava.lang.Object;"), -1);
+                    signature = prepare.prepareSql(ctx, query, (java.lang.Class)typeof(java.lang.Object), -1);
                 }
                 finally
                 {

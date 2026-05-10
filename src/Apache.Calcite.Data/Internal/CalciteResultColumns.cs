@@ -2,6 +2,7 @@
 
 using org.apache.calcite.avatica;
 using org.apache.calcite.jdbc;
+using org.apache.calcite.sql.type;
 
 namespace Apache.Calcite.Data.Internal
 {
@@ -73,7 +74,7 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="signature"></param>
         public CalciteResultColumns(CalcitePrepare.CalciteSignature signature)
         {
-            _signature = signature;
+            _signature = signature ?? throw new ArgumentNullException(nameof(signature));
         }
 
         /// <summary>
@@ -119,6 +120,17 @@ namespace Apache.Calcite.Data.Internal
         public string GetProviderTypeName(int index)
         {
             return GetColumn(index).type.name;
+        }
+
+        /// <summary>
+        /// Gets the Calcite <see cref="SqlTypeName"/> enum value for the column.
+        /// </summary>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        public SqlTypeName.__Enum GetSqlType(int index)
+        {
+            var field = (org.apache.calcite.rel.type.RelDataTypeField)_signature.rowType.getFieldList().get(index);
+            return (SqlTypeName.__Enum)field.getType().getSqlTypeName().ordinal();
         }
 
         /// <summary>

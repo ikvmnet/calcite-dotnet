@@ -18,6 +18,7 @@ namespace Apache.Calcite.Data.Internal
         readonly CalciteResultColumns _columns;
         readonly Enumerator _enumerator;
         readonly CancellationTokenRegistration _cancelRegistration;
+
         CalciteResultRow? _current = null;
         bool _disposed;
 
@@ -29,12 +30,19 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="cancelRegistration"></param>
         public CalciteResult(CalcitePrepare.CalciteSignature signature, Enumerator enumerator, CancellationTokenRegistration cancelRegistration)
         {
-            _columns = new CalciteResultColumns(_signature);
+            ArgumentNullException.ThrowIfNull(signature);
+            ArgumentNullException.ThrowIfNull(enumerator);
+            ArgumentNullException.ThrowIfNull(cancelRegistration);
+
+            _columns = new CalciteResultColumns(signature);
             _signature = signature;
             _enumerator = enumerator;
             _cancelRegistration = cancelRegistration;
         }
 
+        /// <summary>
+        /// Gets the collection of columns returned by the Calcite query result.
+        /// </summary>
         public CalciteResultColumns Columns => _columns;
 
         /// <summary>

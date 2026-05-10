@@ -21,7 +21,7 @@ namespace Apache.Calcite.Data.Tests
             cmd.CommandText = "VALUES 1";
 
             var v = cmd.ExecuteScalar();
-            Assert.Equal(1, Convert.ToInt32(v));
+            Assert.Equal(1, v);
         }
 
         [Fact]

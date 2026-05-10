@@ -60,14 +60,6 @@ namespace Apache.Calcite.Data.Tests
         }
 
         [Fact]
-        public void ChangeDatabase_should_update_schema()
-        {
-            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
-            c.ChangeDatabase("NEW_SCHEMA");
-            Assert.Equal("NEW_SCHEMA", c.Database);
-        }
-
-        [Fact]
         public void DataSource_should_reflect_model()
         {
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);

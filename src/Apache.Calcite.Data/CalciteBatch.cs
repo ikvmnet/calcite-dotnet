@@ -118,11 +118,16 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
-        public override Task PrepareAsync(CancellationToken cancellationToken = default) =>
-            cancellationToken.IsCancellationRequested ? Task.FromCanceled(cancellationToken) : Task.CompletedTask;
+        public override Task PrepareAsync(CancellationToken cancellationToken = default)
+        {
+            return cancellationToken.IsCancellationRequested ? Task.FromCanceled(cancellationToken) : Task.CompletedTask;
+        }
 
         /// <inheritdoc />
-        public override int ExecuteNonQuery() => ExecuteNonQueryAsync(CancellationToken.None).GetAwaiter().GetResult();
+        public override int ExecuteNonQuery()
+        {
+            return ExecuteNonQueryAsync(CancellationToken.None).GetAwaiter().GetResult();
+        }
 
         /// <inheritdoc />
         public override async Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default)
@@ -167,7 +172,7 @@ namespace Apache.Calcite.Data
                 if (i == 0)
                 {
                     if (await result.ReadAsync(cancellationToken).ConfigureAwait(false) && result.Columns.Count > 0)
-                        scalar = result.Current?[0];
+                        scalar = result.Current.GetValue(0);
                 }
             }
 
@@ -209,7 +214,7 @@ namespace Apache.Calcite.Data
             base.Dispose();
         }
 
-        async Task<ICalciteResult> ExecuteCommandAsync(CalciteSession session, CalciteBatchCommand command, CancellationToken cancellationToken)
+        async Task<CalciteResult> ExecuteCommandAsync(CalciteSession session, CalciteBatchCommand command, CancellationToken cancellationToken)
         {
             var parameters = command.Parameters;
             var values = new CalciteParameterValue[parameters.Items.Count];
@@ -220,7 +225,7 @@ namespace Apache.Calcite.Data
             }
 
             var request = new CalciteExecuteRequest(command.CommandText, values, _timeout);
-            return await session.Client.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
+            return await session.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
         }
 
         CalciteSession GetOpenSession()

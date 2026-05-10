@@ -72,13 +72,6 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
-        public override bool IsDBNull(int ordinal)
-        {
-            ThrowIfNoRow();
-            return _result.Current.GetValue(ordinal) is null;
-        }
-
-        /// <inheritdoc />
         public override bool NextResult()
         {
             return false;
@@ -186,6 +179,13 @@ namespace Apache.Calcite.Data
         {
             ThrowIfClosed();
             return _result.Columns.GetProviderTypeName(ordinal);
+        }
+
+        /// <inheritdoc />
+        public override bool IsDBNull(int ordinal)
+        {
+            ThrowIfNoRow();
+            return _result.Current.GetValue(ordinal).IsDbNull();
         }
 
         /// <inheritdoc />
