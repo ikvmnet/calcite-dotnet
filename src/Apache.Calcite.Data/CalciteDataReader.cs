@@ -84,7 +84,10 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
-        public override bool Read() => ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
+        public override bool Read()
+        {
+            return ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
+        }
 
         /// <inheritdoc />
         public override async Task<bool> ReadAsync(CancellationToken cancellationToken)

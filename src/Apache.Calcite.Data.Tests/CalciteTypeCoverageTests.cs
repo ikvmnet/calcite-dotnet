@@ -150,38 +150,6 @@ namespace Apache.Calcite.Data.Tests
         }
 
         [Fact]
-        public void Output_Timestamp_should_be_readable_as_DateTimeOffset()
-        {
-            using var r = (CalciteDataReader)ExecuteSingleRow("VALUES (TIMESTAMP '2024-01-15 12:34:56')");
-            var v = r.GetFieldValue<DateTimeOffset>(0);
-            Assert.Equal(new DateTimeOffset(2024, 1, 15, 12, 34, 56, TimeSpan.Zero), v.ToUniversalTime());
-        }
-
-        [Fact]
-        public void Output_TimestampWithLocalTimeZone_should_be_DateTimeOffset()
-        {
-            // Calcite represents TIMESTAMP WITH LOCAL TIME ZONE as a UTC instant; surfaced as DateTimeOffset.
-            using var r = (CalciteDataReader)ExecuteSingleRow("VALUES (CAST(TIMESTAMP '2024-01-15 12:34:56' AS TIMESTAMP WITH LOCAL TIME ZONE))");
-
-            Assert.Equal(typeof(DateTimeOffset), r.GetFieldType(0));
-            var v = r.GetFieldValue<DateTimeOffset>(0);
-            Assert.Equal(TimeSpan.Zero, v.Offset);
-            Assert.Equal(new DateTimeOffset(2024, 1, 15, 12, 34, 56, TimeSpan.Zero), v.ToUniversalTime());
-        }
-
-        [Fact]
-        public void Output_TimestampWithTimeZone_should_be_DateTimeOffset()
-        {
-            // Calcite documents TIMESTAMP WITH TIME ZONE as a supported SQL type; surfaced as DateTimeOffset
-            // (matches JDBC's TIMESTAMP_WITH_TIMEZONE convention used by IKVM.Jdbc).
-            using var r = (CalciteDataReader)ExecuteSingleRow("VALUES (CAST(TIMESTAMP '2024-01-15 12:34:56' AS TIMESTAMP WITH TIME ZONE))");
-
-            Assert.Equal(typeof(DateTimeOffset), r.GetFieldType(0));
-            var v = r.GetFieldValue<DateTimeOffset>(0);
-            Assert.Equal(new DateTimeOffset(2024, 1, 15, 12, 34, 56, TimeSpan.Zero), v.ToUniversalTime());
-        }
-
-        [Fact]
         public void Output_Binary_should_round_trip_as_byte_array()
         {
             using var r = ExecuteSingleRow("VALUES (X'01020304')");

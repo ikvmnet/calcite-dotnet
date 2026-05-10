@@ -96,7 +96,7 @@ namespace Apache.Calcite.Data.Internal
                 CalcitePrepare.CalciteSignature signature;
                 try
                 {
-                    signature = prepare.prepareSql(ctx, query, (java.lang.Class)typeof(java.lang.Object), -1);
+                    signature = prepare.prepareSql(ctx, query, (java.lang.Class)typeof(java.lang.Object[]), -1);
                 }
                 finally
                 {
@@ -116,9 +116,7 @@ namespace Apache.Calcite.Data.Internal
                     throw;
                 }
 
-                var enumerator = enumerable.enumerator();
-                var result = new CalciteResult(signature, enumerator, registration);
-                return Task.FromResult(result);
+                return Task.FromResult(new CalciteResult(signature, enumerable.enumerator(), registration));
             }
             catch (CalciteException)
             {
