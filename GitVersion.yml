@@ -5,12 +5,14 @@ minor-version-bump-message: '\+semver:\s?(minor)'
 patch-version-bump-message: '\+semver:\s?(patch)'
 branches:
   main:
+    mode: ContinuousDelivery
     regex: ^main$
     label: pre
     increment: Patch
     is-release-branch: false
   develop:
+    mode: ContinuousDelivery
     regex: ^develop$
     label: dev
     increment: Minor
-    
+    is-release-branch: false
