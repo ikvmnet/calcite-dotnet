@@ -98,6 +98,54 @@ namespace Apache.Calcite.Data.Tests
         }
 
         [Fact]
+        public void ExecuteScalar_with_multiple_rows_and_columns_should_return_first_column_of_first_row()
+        {
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(x, y)";
+
+            var v = cmd.ExecuteScalar();
+            Assert.Equal(1, Convert.ToInt32(v));
+        }
+
+        [Fact]
+        public async Task ExecuteScalarAsync_with_multiple_rows_and_columns_should_return_first_column_of_first_row()
+        {
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(x, y)";
+
+            var v = await cmd.ExecuteScalarAsync(CancellationToken.None);
+            Assert.Equal(1, Convert.ToInt32(v));
+        }
+
+        [Fact]
+        public void ExecuteNonQuery_with_select_should_return_minus_one()
+        {
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (1, 2, 3)";
+
+            var affected = cmd.ExecuteNonQuery();
+            Assert.Equal(-1, affected);
+        }
+
+        [Fact]
+        public async Task ExecuteNonQueryAsync_with_select_should_return_minus_one()
+        {
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (1, 2, 3)";
+
+            var affected = await cmd.ExecuteNonQueryAsync(CancellationToken.None);
+            Assert.Equal(-1, affected);
+        }
+
+        [Fact]
         public void Cancel_should_be_noop_on_idle_command()
         {
             using var cmd = new CalciteCommand();

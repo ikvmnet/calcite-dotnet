@@ -122,7 +122,9 @@ namespace Apache.Calcite.Data.Internal
                 Enumerable? enumerable = null;
                 try
                 {
-                    enumerable = signature.enumerable(dataContext);
+                    var statementType = (Meta.StatementType.__Enum)signature.statementType.ordinal();
+                    if (!IsDdl(statementType))
+                        enumerable = signature.enumerable(dataContext);
                 }
                 catch
                 {
@@ -185,8 +187,14 @@ namespace Apache.Calcite.Data.Internal
                         // defined by RelOptUtil.createDmlRowType.
                         recordsAffected = 0;
                         using var e = signature.enumerable(dataContext).enumerator();
-                        if (e.moveNext() && e.current() is object[] row && row.Length > 0)
-                            recordsAffected = Convert.ToInt64(row[0]);
+                        if (e.moveNext())
+                        {
+                            var cur = e.current();
+                            if (cur is object[] row && row.Length > 0)
+                                recordsAffected = ToInt64(row[0]);
+                            else if (cur != null)
+                                recordsAffected = ToInt64(cur);
+                        }
                     }
                 }
                 catch
@@ -214,6 +222,16 @@ namespace Apache.Calcite.Data.Internal
             Meta.StatementType.__Enum.DROP => true,
             Meta.StatementType.__Enum.OTHER_DDL => true,
             _ => false,
+        };
+
+        static long ToInt64(object? value) => value switch
+        {
+            null => 0,
+            java.lang.Long l => l.longValue(),
+            java.lang.Integer i => i.intValue(),
+            java.lang.Number n => n.longValue(),
+            IConvertible c => c.ToInt64(null),
+            _ => Convert.ToInt64(value.ToString()),
         };
 
         public void Dispose()
