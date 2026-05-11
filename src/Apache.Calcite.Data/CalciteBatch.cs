@@ -139,18 +139,21 @@ namespace Apache.Calcite.Data
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                using var result = await ExecuteCommandAsync(session, command, cancellationToken).ConfigureAwait(false);
+                using var result = await ExecuteNonQueryCoreAsync(session, command, cancellationToken).ConfigureAwait(false);
                 var n = result.RecordsAffected;
-                command.SetRecordsAffected(ClampToInt32(n));
+                command.SetRecordsAffected(CalciteExecuteRequest.ClampToInt32(n));
                 if (n > 0)
                     total += n;
             }
 
-            return ClampToInt32(total);
+            return CalciteExecuteRequest.ClampToInt32(total);
         }
 
         /// <inheritdoc />
-        public override object? ExecuteScalar() => ExecuteScalarAsync(CancellationToken.None).GetAwaiter().GetResult();
+        public override object? ExecuteScalar()
+        {
+            return ExecuteScalarAsync(CancellationToken.None).GetAwaiter().GetResult();
+        }
 
         /// <inheritdoc />
         public override async Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken = default)
@@ -166,13 +169,17 @@ namespace Apache.Calcite.Data
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var command = _batchCommands.Items[i];
-                using var result = await ExecuteCommandAsync(session, command, cancellationToken).ConfigureAwait(false);
-                command.SetRecordsAffected(ClampToInt32(result.RecordsAffected));
-
                 if (i == 0)
                 {
+                    using var result = await ExecuteReaderCoreAsync(session, command, cancellationToken).ConfigureAwait(false);
+                    command.SetRecordsAffected(CalciteExecuteRequest.ClampToInt32(result.RecordsAffected));
                     if (await result.ReadAsync(cancellationToken).ConfigureAwait(false) && result.Columns.Count > 0)
-                        scalar = result.Current.GetValue(0);
+                        scalar = result.Current.GetValue(0).GetValue();
+                }
+                else
+                {
+                    using var result = await ExecuteNonQueryCoreAsync(session, command, cancellationToken).ConfigureAwait(false);
+                    command.SetRecordsAffected(CalciteExecuteRequest.ClampToInt32(result.RecordsAffected));
                 }
             }
 
@@ -180,8 +187,10 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
-        protected override DbDataReader ExecuteDbDataReader(System.Data.CommandBehavior behavior) =>
-            ExecuteDbDataReaderAsync(behavior, CancellationToken.None).GetAwaiter().GetResult();
+        protected override DbDataReader ExecuteDbDataReader(System.Data.CommandBehavior behavior)
+        {
+            return ExecuteDbDataReaderAsync(behavior, CancellationToken.None).GetAwaiter().GetResult();
+        }
 
         /// <inheritdoc />
         protected override async Task<DbDataReader> ExecuteDbDataReaderAsync(System.Data.CommandBehavior behavior, CancellationToken cancellationToken = default)
@@ -197,37 +206,45 @@ namespace Apache.Calcite.Data
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var command = _batchCommands.Items[i];
-                using var result = await ExecuteCommandAsync(session, command, cancellationToken).ConfigureAwait(false);
-                command.SetRecordsAffected(ClampToInt32(result.RecordsAffected));
+                using var result = await ExecuteNonQueryCoreAsync(session, command, cancellationToken).ConfigureAwait(false);
+                command.SetRecordsAffected(CalciteExecuteRequest.ClampToInt32(result.RecordsAffected));
             }
 
             var last = _batchCommands.Items[_batchCommands.Items.Count - 1];
-            var lastResult = await ExecuteCommandAsync(session, last, cancellationToken).ConfigureAwait(false);
-            last.SetRecordsAffected(ClampToInt32(lastResult.RecordsAffected));
+            var lastResult = await ExecuteReaderCoreAsync(session, last, cancellationToken).ConfigureAwait(false);
+            last.SetRecordsAffected(CalciteExecuteRequest.ClampToInt32(lastResult.RecordsAffected));
             return new CalciteDataReader(lastResult, behavior);
         }
 
-        /// <inheritdoc />
-        public override void Dispose()
+        /// <summary>
+        /// Executes the specified <see cref="CalciteBatchCommand"/> using the provided <see cref="CalciteSession"/> and returns the resulting <see cref="CalciteResult"/>.
+        /// </summary>
+        /// <param name="session"></param>
+        /// <param name="command"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        Task<CalciteResult> ExecuteReaderCoreAsync(CalciteSession session, CalciteBatchCommand command, CancellationToken cancellationToken)
         {
-            _batchCommands.Clear();
-            base.Dispose();
+            return session.ExecuteReaderAsync(CalciteExecuteRequest.From(command.CommandText, command.Parameters, _timeout), cancellationToken);
         }
 
-        async Task<CalciteResult> ExecuteCommandAsync(CalciteSession session, CalciteBatchCommand command, CancellationToken cancellationToken)
+        /// <summary>
+        /// Executes the specified <see cref="CalciteBatchCommand"/> using the provided <see cref="CalciteSession"/> and returns the resulting <see cref="CalciteResult"/>.
+        /// </summary>
+        /// <param name="session"></param>
+        /// <param name="command"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        Task<CalciteResult> ExecuteNonQueryCoreAsync(CalciteSession session, CalciteBatchCommand command, CancellationToken cancellationToken)
         {
-            var parameters = command.Parameters;
-            var values = new CalciteParameterValue[parameters.Items.Count];
-            for (var i = 0; i < parameters.Items.Count; i++)
-            {
-                var p = parameters.Items[i];
-                values[i] = new CalciteParameterValue(p.ParameterName, p.DbType, p.Value);
-            }
-
-            var request = new CalciteExecuteRequest(command.CommandText, values, _timeout);
-            return await session.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
+            return session.ExecuteNonQueryAsync(CalciteExecuteRequest.From(command.CommandText, command.Parameters, _timeout), cancellationToken);
         }
 
+        /// <summary>
+        /// Gets the open <see cref="CalciteSession"/> from the current <see cref="CalciteConnection"/>.
+        /// </summary>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
         CalciteSession GetOpenSession()
         {
             if (_connection is null)
@@ -236,11 +253,11 @@ namespace Apache.Calcite.Data
             return _connection.RequireSession();
         }
 
-        static int ClampToInt32(long value)
+        /// <inheritdoc />
+        public override void Dispose()
         {
-            if (value > int.MaxValue) return int.MaxValue;
-            if (value < int.MinValue) return int.MinValue;
-            return (int)value;
+            _batchCommands.Clear();
+            base.Dispose();
         }
 
     }

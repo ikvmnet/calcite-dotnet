@@ -178,8 +178,11 @@ namespace Apache.Calcite.Data.Internal
                     }
                     else
                     {
-                        // DML: drain the enumerator now — this is what actually runs the mutation.
-                        // Calcite yields a single Object[]{ updateCount } row.
+                        // DML (INSERT/UPDATE/DELETE/MERGE): drain the enumerator to trigger execution.
+                        // Because prepareSql is called with elementType=Object[], the prefer hint is
+                        // ARRAY and cursorFactory is CursorFactory.ARRAY. Calcite therefore yields a
+                        // single Object[] row whose only element [0] is the ROWCOUNT BIGINT column
+                        // defined by RelOptUtil.createDmlRowType.
                         recordsAffected = 0;
                         using var e = signature.enumerable(dataContext).enumerator();
                         if (e.moveNext() && e.current() is object[] row && row.Length > 0)

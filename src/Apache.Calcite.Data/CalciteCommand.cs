@@ -152,11 +152,8 @@ namespace Apache.Calcite.Data
         /// <inheritdoc />
         public override async Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
         {
-            using var result = await ExecuteCoreAsync(cancellationToken).ConfigureAwait(false);
-            var n = result.RecordsAffected;
-            if (n > int.MaxValue) return int.MaxValue;
-            if (n < int.MinValue) return int.MinValue;
-            return (int)n;
+            using var result = await ExecuteNonQueryCoreAsync(cancellationToken).ConfigureAwait(false);
+            return CalciteExecuteRequest.ClampToInt32(result.RecordsAffected);
         }
 
         /// <inheritdoc />
@@ -168,7 +165,7 @@ namespace Apache.Calcite.Data
         /// <inheritdoc />
         public override async Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
         {
-            using var result = await ExecuteCoreAsync(cancellationToken).ConfigureAwait(false);
+            using var result = await ExecuteReaderCoreAsync(cancellationToken).ConfigureAwait(false);
             if (await result.ReadAsync(cancellationToken).ConfigureAwait(false) == false)
                 return null;
 
@@ -187,21 +184,28 @@ namespace Apache.Calcite.Data
         /// <inheritdoc />
         protected override async Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
         {
-            var result = await ExecuteCoreAsync(cancellationToken).ConfigureAwait(false);
+            var result = await ExecuteReaderCoreAsync(cancellationToken).ConfigureAwait(false);
             return new CalciteDataReader(result, behavior);
         }
 
-        async Task<CalciteResult> ExecuteCoreAsync(CancellationToken cancellationToken)
+        /// <summary>
+        /// Executes the command and returns a <see cref="CalciteResult"/> containing the results.
+        /// </summary>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        Task<CalciteResult> ExecuteReaderCoreAsync(CancellationToken cancellationToken)
         {
-            var session = GetOpenSession();
-            var values = new CalciteParameterValue[_parameters.Items.Count];
-            for (var i = 0; i < _parameters.Items.Count; i++)
-            {
-                var p = _parameters.Items[i];
-                values[i] = new CalciteParameterValue(p.ParameterName, p.DbType, p.Value);
-            }
+            return GetOpenSession().ExecuteReaderAsync(CalciteExecuteRequest.From(_commandText, _parameters, _commandTimeout), cancellationToken);
+        }
 
-            return await session.ExecuteAsync(new CalciteExecuteRequest(_commandText, values, _commandTimeout), cancellationToken).ConfigureAwait(false);
+        /// <summary>
+        /// Executes the command and returns a <see cref="CalciteResult"/> containing the number of records affected.
+        /// </summary>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        Task<CalciteResult> ExecuteNonQueryCoreAsync(CancellationToken cancellationToken)
+        {
+            return GetOpenSession().ExecuteNonQueryAsync(CalciteExecuteRequest.From(_commandText, _parameters, _commandTimeout), cancellationToken);
         }
 
         CalciteSession GetOpenSession()

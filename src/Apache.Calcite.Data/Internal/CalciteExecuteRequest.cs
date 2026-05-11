@@ -1,5 +1,5 @@
 using System;
-using System.Collections.Generic;
+using System.Collections.Immutable;
 
 namespace Apache.Calcite.Data.Internal
 {
@@ -11,15 +11,37 @@ namespace Apache.Calcite.Data.Internal
     {
 
         /// <summary>
+        /// Builds a <see cref="CalciteExecuteRequest"/> from a <see cref="CalciteParameterCollection"/>.
+        /// </summary>
+        internal static CalciteExecuteRequest From(string commandText, CalciteParameterCollection parameters, int timeoutSeconds)
+        {
+            var values = ImmutableArray.CreateBuilder<CalciteParameterValue>(parameters.Items.Count);
+            foreach (var p in parameters.Items)
+                values.Add(new CalciteParameterValue(p.ParameterName, p.DbType, p.Value));
+
+            return new CalciteExecuteRequest(commandText, values.ToImmutable(), timeoutSeconds);
+        }
+
+        /// <summary>
+        /// Clamps a <see cref="long"/> records-affected value to the <see cref="int"/> range.
+        /// </summary>
+        internal static int ClampToInt32(long value)
+        {
+            if (value > int.MaxValue) return int.MaxValue;
+            if (value < int.MinValue) return int.MinValue;
+            return (int)value;
+        }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="CalciteExecuteRequest"/> class.
         /// </summary>
         /// <param name="sql"></param>
         /// <param name="parameters"></param>
         /// <param name="commandTimeoutSeconds"></param>
-        public CalciteExecuteRequest(string sql, IReadOnlyList<CalciteParameterValue> parameters, int commandTimeoutSeconds)
+        public CalciteExecuteRequest(string sql, ImmutableArray<CalciteParameterValue> parameters, int commandTimeoutSeconds)
         {
             Sql = sql ?? throw new ArgumentNullException(nameof(sql));
-            Parameters = parameters ?? [];
+            Parameters = parameters;
             CommandTimeoutSeconds = commandTimeoutSeconds;
         }
 
@@ -31,7 +53,7 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Gets the parameter values bound to the request.
         /// </summary>
-        public IReadOnlyList<CalciteParameterValue> Parameters { get; }
+        public ImmutableArray<CalciteParameterValue> Parameters { get; }
 
         /// <summary>
         /// Gets the command timeout in seconds, or <c>0</c> for no timeout.
