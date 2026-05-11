@@ -20,6 +20,13 @@ namespace Apache.Calcite.Data
     /// (for example <c>Model</c> and <c>Schema</c>) and mirrors the Calcite JDBC driver's properties
     /// where practical. Calcite-native objects associated with the open session are exposed through
     /// the <see cref="RootSchema"/>, <see cref="TypeFactory"/>, and <see cref="Config"/> properties.
+    /// <para>
+    /// The underlying Calcite session is created on the first call to <see cref="Open"/> and is
+    /// intentionally kept alive across <see cref="Close"/>/<see cref="Open"/> cycles. This means
+    /// that schema objects registered on <see cref="RootSchema"/>, tables created via DDL, and any
+    /// other in-process state survive a close and are still visible after the connection is reopened.
+    /// The session is torn down permanently only when the connection is disposed.
+    /// </para>
     /// </remarks>
     public sealed class CalciteConnection : DbConnection
     {
@@ -45,15 +52,33 @@ namespace Apache.Calcite.Data
             ConnectionString = connectionString ?? string.Empty;
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Gets or sets the connection string used to configure the Calcite engine session.
+        /// </summary>
+        /// <remarks>
+        /// Unlike most ADO.NET providers, the connection string can only be set <em>before</em> the
+        /// first call to <see cref="Open"/>. Once the session has been created it is reused for the
+        /// lifetime of this instance, so changing the connection string after that point would have no
+        /// effect. Attempting to do so throws an <see cref="InvalidOperationException"/>.
+        /// <para>
+        /// To use a different connection string, create a new <see cref="CalciteConnection"/> instance.
+        /// </para>
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">
+        /// The connection has already been opened. The connection string is fixed for the lifetime of
+        /// the connection once <see cref="Open"/> has been called.
+        /// </exception>
         [System.Diagnostics.CodeAnalysis.AllowNull]
         public override string ConnectionString
         {
             get => _options.ConnectionString;
             set
             {
-                if (_state != ConnectionState.Closed)
-                    throw new InvalidOperationException("Connection string cannot be changed while the connection is open.");
+                if (_session is not null)
+                    throw new InvalidOperationException(
+                        "The connection string cannot be changed after the connection has been opened. " +
+                        "The Calcite session is fixed for the lifetime of this instance. " +
+                        "To use a different connection string, create a new CalciteConnection.");
 
                 _options = new CalciteConnectionStringBuilder(value);
             }
@@ -87,7 +112,17 @@ namespace Apache.Calcite.Data
             throw new NotSupportedException("Apache Calcite does not support changing the database on an open connection.");
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Opens the connection and makes it ready to execute commands.
+        /// </summary>
+        /// <remarks>
+        /// The underlying Calcite session is created the first time this method is called and is
+        /// reused on subsequent calls. Closing and reopening the connection does not discard the
+        /// session — any schema mutations made while the connection was open (for example DDL
+        /// executed via <see cref="CalciteCommand"/>) remain visible after reopening.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">The connection is already open.</exception>
+        /// <exception cref="CalciteException">The Calcite session could not be initialized.</exception>
         public override void Open()
         {
             if (_state != ConnectionState.Closed)
@@ -96,7 +131,8 @@ namespace Apache.Calcite.Data
             SetState(ConnectionState.Connecting);
             try
             {
-                _session = new CalciteSession(_options);
+                // Session is created once on the first Open() and reused across Close/Open cycles.
+                _session ??= new CalciteSession(_options);
                 SetState(ConnectionState.Open);
             }
             catch
@@ -106,14 +142,20 @@ namespace Apache.Calcite.Data
             }
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Closes the connection. The underlying Calcite session is kept alive and will be reused
+        /// if the connection is reopened.
+        /// </summary>
+        /// <remarks>
+        /// To permanently release all Calcite resources, dispose the connection via
+        /// <see cref="IDisposable.Dispose"/> rather than calling <see cref="Close"/>.
+        /// </remarks>
         public override void Close()
         {
             if (_state == ConnectionState.Closed)
                 return;
 
-            _session?.Dispose();
-            _session = null;
+            // Session is intentionally kept alive; it will be reused on the next Open().
             SetState(ConnectionState.Closed);
         }
 
@@ -156,7 +198,11 @@ namespace Apache.Calcite.Data
         protected override void Dispose(bool disposing)
         {
             if (disposing)
+            {
                 Close();
+                _session?.Dispose();
+                _session = null;
+            }
 
             base.Dispose(disposing);
         }

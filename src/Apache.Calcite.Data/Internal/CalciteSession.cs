@@ -22,6 +22,7 @@ namespace Apache.Calcite.Data.Internal
     {
 
         readonly CalciteSchema _rootSchema;
+        readonly SchemaPlus _rootSchemaPlus;
         readonly JavaTypeFactory _typeFactory;
         readonly CalciteConnectionConfig _config;
         readonly IReadOnlyList<string> _defaultSchemaPath;
@@ -41,6 +42,7 @@ namespace Apache.Calcite.Data.Internal
             {
                 var builder = new RootSchemaBuilder(options);
                 _rootSchema = builder.Build();
+                _rootSchemaPlus = _rootSchema.plus();
                 _config = new CalciteConnectionConfigImpl(builder.BuildEngineProperties());
                 _typeFactory = new JavaTypeFactoryImpl();
                 _defaultSchemaPath = string.IsNullOrEmpty(options.Schema) ? [] : [options.Schema];
@@ -54,9 +56,7 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Gets the root schema for the current context.
         /// </summary>
-        /// <remarks>The root schema serves as the entry point for accessing all available database
-        /// objects and sub-schemas. Use this property to navigate or query the schema hierarchy.</remarks>
-        public SchemaPlus RootSchema => _rootSchema.plus();
+        public SchemaPlus RootSchema => _rootSchemaPlus;
 
         /// <summary>
         /// Gets the factory used to create Java type representations.
