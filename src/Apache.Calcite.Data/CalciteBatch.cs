@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Data.Common;
 using System.Threading;
 using System.Threading.Tasks;
@@ -60,6 +61,7 @@ namespace Apache.Calcite.Data
             {
                 if (value < 0)
                     throw new ArgumentOutOfRangeException(nameof(value));
+
                 _timeout = value;
             }
         }
@@ -199,21 +201,26 @@ namespace Apache.Calcite.Data
                 throw new InvalidOperationException("Batch contains no commands.");
 
             var session = GetOpenSession();
-
-            // Execute all but the last command for their side effects, then return the reader for the last command.
-            for (var i = 0; i < _batchCommands.Items.Count - 1; i++)
+            var results = new List<CalciteResult>(_batchCommands.Items.Count);
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                foreach (var command in _batchCommands.Items)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var result = await ExecuteReaderCoreAsync(session, command, cancellationToken).ConfigureAwait(false);
+                    command.SetRecordsAffected(CalciteExecuteRequest.ClampToInt32(result.RecordsAffected));
+                    results.Add(result);
+                }
+            }
+            catch
+            {
+                foreach (var r in results)
+                    r.Dispose();
 
-                var command = _batchCommands.Items[i];
-                using var result = await ExecuteNonQueryCoreAsync(session, command, cancellationToken).ConfigureAwait(false);
-                command.SetRecordsAffected(CalciteExecuteRequest.ClampToInt32(result.RecordsAffected));
+                throw;
             }
 
-            var last = _batchCommands.Items[_batchCommands.Items.Count - 1];
-            var lastResult = await ExecuteReaderCoreAsync(session, last, cancellationToken).ConfigureAwait(false);
-            last.SetRecordsAffected(CalciteExecuteRequest.ClampToInt32(lastResult.RecordsAffected));
-            return new CalciteDataReader(lastResult, behavior);
+            return new CalciteDataReader(results.ToArray(), behavior);
         }
 
         /// <summary>

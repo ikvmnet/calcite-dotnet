@@ -12,27 +12,44 @@ namespace Apache.Calcite.Data
 
     /// <summary>
     /// Provides a way of reading a forward-only stream of rows produced by executing a
-    /// <see cref="CalciteCommand"/>. This class cannot be inherited.
+    /// <see cref="CalciteCommand"/> or <see cref="CalciteBatch"/>. This class cannot be inherited.
     /// </summary>
+    /// <remarks>
+    /// When the reader is produced by a <see cref="CalciteBatch"/> that contains multiple commands,
+    /// each command produces an independent result set. After exhausting the rows of one result set,
+    /// call <see cref="NextResult"/> or <see cref="NextResultAsync"/> to advance to the next.
+    /// </remarks>
     public sealed class CalciteDataReader : DbDataReader
     {
 
-        readonly CalciteResult _result;
+        readonly CalciteResult[] _results;
         readonly CommandBehavior _behavior;
+        int _resultIndex;
         bool _closed;
         bool _hasRow;
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Initializes a new instance with a single result set.
         /// </summary>
-        /// <param name="result"></param>
-        /// <param name="behavior"></param>
-        /// <exception cref="ArgumentNullException"></exception>
-        internal CalciteDataReader(CalciteResult result, CommandBehavior behavior)
+        internal CalciteDataReader(CalciteResult result, CommandBehavior behavior) :
+            this([result ?? throw new ArgumentNullException(nameof(result))], behavior)
         {
-            _result = result ?? throw new ArgumentNullException(nameof(result));
+
+        }
+
+        /// <summary>
+        /// Initializes a new instance with multiple result sets, supporting <see cref="NextResult"/>.
+        /// </summary>
+        internal CalciteDataReader(CalciteResult[] results, CommandBehavior behavior)
+        {
+            if (results is null || results.Length == 0)
+                throw new ArgumentException("At least one result is required.", nameof(results));
+
+            _results = results;
             _behavior = behavior;
         }
+
+        CalciteResult ActiveResult => _results[_resultIndex];
 
         /// <inheritdoc />
         public override object this[int ordinal] => GetValue(ordinal);
@@ -49,7 +66,7 @@ namespace Apache.Calcite.Data
             get
             {
                 ThrowIfClosed();
-                return _result.Columns.Count;
+                return ActiveResult.Columns.Count;
             }
         }
 
@@ -64,7 +81,7 @@ namespace Apache.Calcite.Data
         {
             get
             {
-                var v = _result.RecordsAffected;
+                var v = ActiveResult.RecordsAffected;
                 if (v > int.MaxValue) return int.MaxValue;
                 if (v < int.MinValue) return int.MinValue;
                 return (int)v;
@@ -74,13 +91,19 @@ namespace Apache.Calcite.Data
         /// <inheritdoc />
         public override bool NextResult()
         {
-            return false;
+            ThrowIfClosed();
+            if (_resultIndex >= _results.Length - 1)
+                return false;
+            _results[_resultIndex].Dispose();
+            _resultIndex++;
+            _hasRow = false;
+            return true;
         }
 
         /// <inheritdoc />
         public override Task<bool> NextResultAsync(CancellationToken cancellationToken)
         {
-            return Task.FromResult(false);
+            return Task.FromResult(NextResult());
         }
 
         /// <inheritdoc />
@@ -93,7 +116,7 @@ namespace Apache.Calcite.Data
         public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
         {
             ThrowIfClosed();
-            _hasRow = await _result.ReadAsync(cancellationToken).ConfigureAwait(false);
+            _hasRow = await ActiveResult.ReadAsync(cancellationToken).ConfigureAwait(false);
             return _hasRow;
         }
 
@@ -109,14 +132,14 @@ namespace Apache.Calcite.Data
             dt.Columns.Add(SchemaTableColumn.ProviderType, typeof(string));
             dt.Columns.Add(SchemaTableColumn.AllowDBNull, typeof(bool));
 
-            for (var i = 0; i < _result.Columns.Count; i++)
+            for (var i = 0; i < ActiveResult.Columns.Count; i++)
             {
                 var row = dt.NewRow();
-                row[SchemaTableColumn.ColumnName] = _result.Columns.GetName(i);
+                row[SchemaTableColumn.ColumnName] = ActiveResult.Columns.GetName(i);
                 row[SchemaTableColumn.ColumnOrdinal] = i;
-                row[SchemaTableColumn.DataType] = _result.Columns.GetClrType(i);
-                row[SchemaTableColumn.ProviderType] = _result.Columns.GetProviderTypeName(i);
-                row[SchemaTableColumn.AllowDBNull] = _result.Columns.GetIsNullable(i);
+                row[SchemaTableColumn.DataType] = ActiveResult.Columns.GetClrType(i);
+                row[SchemaTableColumn.ProviderType] = ActiveResult.Columns.GetProviderTypeName(i);
+                row[SchemaTableColumn.AllowDBNull] = ActiveResult.Columns.GetIsNullable(i);
                 dt.Rows.Add(row);
             }
 
@@ -130,7 +153,8 @@ namespace Apache.Calcite.Data
                 return;
 
             _closed = true;
-            _result.Dispose();
+            for (var i = _resultIndex; i < _results.Length; i++)
+                _results[i].Dispose();
         }
 
         /// <inheritdoc />
@@ -163,8 +187,8 @@ namespace Apache.Calcite.Data
         {
             ThrowIfClosed();
 
-            for (var i = 0; i < _result.Columns.Count; i++)
-                if (string.Equals(_result.Columns.GetName(i), name, StringComparison.OrdinalIgnoreCase))
+            for (var i = 0; i < ActiveResult.Columns.Count; i++)
+                if (string.Equals(ActiveResult.Columns.GetName(i), name, StringComparison.OrdinalIgnoreCase))
                     return i;
 
             throw new IndexOutOfRangeException($"Column '{name}' was not found.");
@@ -174,21 +198,21 @@ namespace Apache.Calcite.Data
         public override string GetName(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Columns.GetName(ordinal);
+            return ActiveResult.Columns.GetName(ordinal);
         }
 
         /// <inheritdoc />
         public override string GetDataTypeName(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Columns.GetProviderTypeName(ordinal);
+            return ActiveResult.Columns.GetProviderTypeName(ordinal);
         }
 
         /// <inheritdoc />
         public override bool IsDBNull(int ordinal)
         {
             ThrowIfNoRow();
-            return _result.Current.GetValue(ordinal).IsDbNull();
+            return ActiveResult.Current.GetValue(ordinal).IsDbNull();
         }
 
         /// <inheritdoc />
@@ -197,7 +221,7 @@ namespace Apache.Calcite.Data
             ArgumentNullException.ThrowIfNull(values);
             ThrowIfNoRow();
 
-            var count = Math.Min(values.Length, _result.Columns.Count);
+            var count = Math.Min(values.Length, ActiveResult.Columns.Count);
             for (var i = 0; i < count; i++)
                 values[i] = GetValue(i);
 
@@ -208,28 +232,28 @@ namespace Apache.Calcite.Data
         public override T GetFieldValue<T>(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Current.GetValue(ordinal).GetFieldValue<T>();
+            return ActiveResult.Current.GetValue(ordinal).GetFieldValue<T>();
         }
 
         /// <inheritdoc />
         public override object GetValue(int ordinal)
         {
             ThrowIfNoRow();
-            return _result.Current.GetValue(ordinal).GetValue();
+            return ActiveResult.Current.GetValue(ordinal).GetValue();
         }
 
         /// <inheritdoc />
         public override string GetString(int ordinal)
         {
             ThrowIfNoRow();
-            return _result.Current.GetValue(ordinal).GetString();
+            return ActiveResult.Current.GetValue(ordinal).GetString();
         }
 
         /// <inheritdoc />
         public override Type GetFieldType(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Columns.GetClrType(ordinal);
+            return ActiveResult.Columns.GetClrType(ordinal);
         }
 
         /// <inheritdoc />
@@ -250,28 +274,28 @@ namespace Apache.Calcite.Data
         public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length)
         {
             ThrowIfClosed();
-            return _result.Current.GetValue(ordinal).GetBytes(dataOffset, buffer, bufferOffset, length);
+            return ActiveResult.Current.GetValue(ordinal).GetBytes(dataOffset, buffer, bufferOffset, length);
         }
 
         /// <inheritdoc />
         public override char GetChar(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Current.GetValue(ordinal).GetChar();
+            return ActiveResult.Current.GetValue(ordinal).GetChar();
         }
 
         /// <inheritdoc />
         public override long GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length)
         {
             ThrowIfClosed();
-            return _result.Current.GetValue(ordinal).GetChars(dataOffset, buffer, bufferOffset, length);
+            return ActiveResult.Current.GetValue(ordinal).GetChars(dataOffset, buffer, bufferOffset, length);
         }
 
         /// <inheritdoc />
         public override DateTime GetDateTime(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Current.GetValue(ordinal).GetDateTime();
+            return ActiveResult.Current.GetValue(ordinal).GetDateTime();
         }
 
         /// <summary>
@@ -280,7 +304,7 @@ namespace Apache.Calcite.Data
         public DateTimeOffset GetDateTimeOffset(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Current.GetValue(ordinal).GetDateTimeOffset();
+            return ActiveResult.Current.GetValue(ordinal).GetDateTimeOffset();
         }
 
         /// <summary>
@@ -289,56 +313,56 @@ namespace Apache.Calcite.Data
         public TimeSpan GetTimeSpan(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Current.GetValue(ordinal).GetTimeSpan();
+            return ActiveResult.Current.GetValue(ordinal).GetTimeSpan();
         }
 
         /// <inheritdoc />
         public override decimal GetDecimal(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Current.GetValue(ordinal).GetDecimal();
+            return ActiveResult.Current.GetValue(ordinal).GetDecimal();
         }
 
         /// <inheritdoc />
         public override double GetDouble(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Current.GetValue(ordinal).GetDouble();
+            return ActiveResult.Current.GetValue(ordinal).GetDouble();
         }
 
         /// <inheritdoc />
         public override float GetFloat(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Current.GetValue(ordinal).GetFloat();
+            return ActiveResult.Current.GetValue(ordinal).GetFloat();
         }
 
         /// <inheritdoc />
         public override Guid GetGuid(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Current.GetValue(ordinal).GetGuid();
+            return ActiveResult.Current.GetValue(ordinal).GetGuid();
         }
 
         /// <inheritdoc />
         public override short GetInt16(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Current.GetValue(ordinal).GetInt16();
+            return ActiveResult.Current.GetValue(ordinal).GetInt16();
         }
 
         /// <inheritdoc />
         public override int GetInt32(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Current.GetValue(ordinal).GetInt32();
+            return ActiveResult.Current.GetValue(ordinal).GetInt32();
         }
 
         /// <inheritdoc />
         public override long GetInt64(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Current.GetValue(ordinal).GetInt64();
+            return ActiveResult.Current.GetValue(ordinal).GetInt64();
         }
 
         /// <summary>
@@ -351,7 +375,7 @@ namespace Apache.Calcite.Data
         public DateOnly GetDateOnly(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Current.GetValue(ordinal).GetDateOnly();
+            return ActiveResult.Current.GetValue(ordinal).GetDateOnly();
         }
 
         /// <summary>
@@ -362,7 +386,7 @@ namespace Apache.Calcite.Data
         public TimeOnly GetTimeOnly(int ordinal)
         {
             ThrowIfClosed();
-            return _result.Current.GetValue(ordinal).GetTimeOnly();
+            return ActiveResult.Current.GetValue(ordinal).GetTimeOnly();
         }
 
     }
