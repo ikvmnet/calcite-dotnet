@@ -24,8 +24,45 @@ namespace Apache.Calcite.Data.Internal
     internal sealed class RootSchemaBuilder
     {
 
+        /// <summary>
+        /// Maps each <see cref="CalciteConnectionStringBuilder"/> key constant to the
+        /// corresponding <see cref="CalciteConnectionProperty"/>, which is the authoritative
+        /// source of the camelCase property name Calcite expects.
+        /// </summary>
+        static readonly Dictionary<string, CalciteConnectionProperty> KeyToProperty = new(StringComparer.OrdinalIgnoreCase)
+        {
+            [CalciteConnectionStringBuilder.ApproximateDecimalKey] = CalciteConnectionProperty.APPROXIMATE_DECIMAL,
+            [CalciteConnectionStringBuilder.ApproximateDistinctCountKey] = CalciteConnectionProperty.APPROXIMATE_DISTINCT_COUNT,
+            [CalciteConnectionStringBuilder.ApproximateTopNKey] = CalciteConnectionProperty.APPROXIMATE_TOP_N,
+            [CalciteConnectionStringBuilder.CaseSensitiveKey] = CalciteConnectionProperty.CASE_SENSITIVE,
+            [CalciteConnectionStringBuilder.ConformanceKey] = CalciteConnectionProperty.CONFORMANCE,
+            [CalciteConnectionStringBuilder.CreateMaterializationsKey] = CalciteConnectionProperty.CREATE_MATERIALIZATIONS,
+            [CalciteConnectionStringBuilder.DefaultNullCollationKey] = CalciteConnectionProperty.DEFAULT_NULL_COLLATION,
+            [CalciteConnectionStringBuilder.DruidFetchKey] = CalciteConnectionProperty.DRUID_FETCH,
+            [CalciteConnectionStringBuilder.ForceDecorrelateKey] = CalciteConnectionProperty.FORCE_DECORRELATE,
+            [CalciteConnectionStringBuilder.FunKey] = CalciteConnectionProperty.FUN,
+            [CalciteConnectionStringBuilder.LexKey] = CalciteConnectionProperty.LEX,
+            [CalciteConnectionStringBuilder.MaterializationsEnabledKey] = CalciteConnectionProperty.MATERIALIZATIONS_ENABLED,
+            [CalciteConnectionStringBuilder.ParserFactoryKey] = CalciteConnectionProperty.PARSER_FACTORY,
+            [CalciteConnectionStringBuilder.QuotingKey] = CalciteConnectionProperty.QUOTING,
+            [CalciteConnectionStringBuilder.QuotedCasingKey] = CalciteConnectionProperty.QUOTED_CASING,
+            [CalciteConnectionStringBuilder.UnquotedCasingKey] = CalciteConnectionProperty.UNQUOTED_CASING,
+            [CalciteConnectionStringBuilder.SchemaKey] = CalciteConnectionProperty.SCHEMA,
+            [CalciteConnectionStringBuilder.SchemaFactoryKey] = CalciteConnectionProperty.SCHEMA_FACTORY,
+            [CalciteConnectionStringBuilder.SchemaTypeKey] = CalciteConnectionProperty.SCHEMA_TYPE,
+            [CalciteConnectionStringBuilder.SparkKey] = CalciteConnectionProperty.SPARK,
+            [CalciteConnectionStringBuilder.TimeZoneKey] = CalciteConnectionProperty.TIME_ZONE,
+            [CalciteConnectionStringBuilder.TypeSystemKey] = CalciteConnectionProperty.TYPE_SYSTEM,
+            [CalciteConnectionStringBuilder.TypeCoercionKey] = CalciteConnectionProperty.TYPE_COERCION,
+        };
+
         readonly CalciteConnectionStringBuilder _options;
 
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        /// <param name="options"></param>
+        /// <exception cref="ArgumentNullException"></exception>
         public RootSchemaBuilder(CalciteConnectionStringBuilder options)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -45,20 +82,11 @@ namespace Apache.Calcite.Data.Internal
             foreach (var key in _options.EnumerateKeys())
             {
                 if (string.Equals(key, CalciteConnectionStringBuilder.ModelKey, StringComparison.OrdinalIgnoreCase))
-                    continue; // model is materialized into the schema, not propagated
+                    continue;
 
                 if (_options.TryGetValue(key, out var v) && v is not null)
-                    props.setProperty(MapToCalciteProperty(key), v.ToString());
+                    props.setProperty(KeyToProperty.TryGetValue(key, out var prop) ? prop.camelName() : key, v.ToString());
             }
-
-            if (string.IsNullOrEmpty(_options.Schema) == false)
-                props.setProperty(CalciteConnectionProperty.SCHEMA.camelName(), _options.Schema);
-
-            if (_options.CaseSensitive is bool cs)
-                props.setProperty(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), cs ? "true" : "false");
-
-            if (string.IsNullOrEmpty(_options.Conformance) == false)
-                props.setProperty(CalciteConnectionProperty.CONFORMANCE.camelName(), _options.Conformance);
 
             return props;
         }
@@ -88,16 +116,6 @@ namespace Apache.Calcite.Data.Internal
             {
                 throw new CalciteException("Failed to load Calcite model.", e);
             }
-        }
-
-        static string MapToCalciteProperty(string key)
-        {
-            // The connection-string keys defined on CalciteConnectionStringBuilder happen to use
-            // PascalCase that matches Calcite's camelCase property names when first-lowered.
-            if (string.IsNullOrEmpty(key))
-                return key;
-
-            return char.ToLowerInvariant(key[0]) + key.Substring(1);
         }
 
     }

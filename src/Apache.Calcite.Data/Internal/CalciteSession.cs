@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using java.util.concurrent.atomic;
 
 using org.apache.calcite.adapter.java;
+using org.apache.calcite.avatica;
 using org.apache.calcite.config;
 using org.apache.calcite.jdbc;
 using org.apache.calcite.linq4j;

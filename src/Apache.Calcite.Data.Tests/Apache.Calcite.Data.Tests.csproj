@@ -12,6 +12,7 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <MavenReference Include="org.apache.calcite:calcite-core" Version="1.41.0" />
+        <MavenReference Include="org.apache.calcite:calcite-server" Version="1.41.0" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
         <PackageReference Include="xunit" Version="2.9.3" />
         <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
