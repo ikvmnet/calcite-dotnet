@@ -16,7 +16,8 @@ namespace Apache.Calcite.Data.Internal
 
         readonly CalcitePrepare.CalciteSignature _signature;
         readonly CalciteResultColumns _columns;
-        readonly Enumerator _enumerator;
+        readonly Enumerator? _enumerator;
+        readonly long _recordsAffected;
         readonly CancellationTokenRegistration _cancelRegistration;
 
         CalciteResultRow? _current = null;
@@ -27,17 +28,18 @@ namespace Apache.Calcite.Data.Internal
         /// </summary>
         /// <param name="signature"></param>
         /// <param name="enumerator"></param>
+        /// <param name="recordsAffected"></param>
         /// <param name="cancelRegistration"></param>
-        public CalciteResult(CalcitePrepare.CalciteSignature signature, Enumerator enumerator, CancellationTokenRegistration cancelRegistration)
+        public CalciteResult(CalcitePrepare.CalciteSignature signature, CancellationTokenRegistration cancelRegistration, Enumerator? enumerator, long recordsAffected = -1)
         {
             ArgumentNullException.ThrowIfNull(signature);
-            ArgumentNullException.ThrowIfNull(enumerator);
             ArgumentNullException.ThrowIfNull(cancelRegistration);
 
             _columns = new CalciteResultColumns(signature);
             _signature = signature;
-            _enumerator = enumerator;
             _cancelRegistration = cancelRegistration;
+            _enumerator = enumerator;
+            _recordsAffected = recordsAffected;
         }
 
         /// <summary>
@@ -48,7 +50,7 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Gets the number of records affected by the operation, if available.
         /// </summary>
-        public long RecordsAffected => -1;
+        public long RecordsAffected => _recordsAffected;
 
         /// <summary>
         /// Reads the next row from the enumerator. Returns <c>false</c> if there are no more rows to read.
@@ -60,7 +62,7 @@ namespace Apache.Calcite.Data.Internal
             ThrowIfDisposed();
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (_enumerator.moveNext() == false)
+            if (_enumerator is null || _enumerator.moveNext() == false)
             {
                 _current = null;
                 return Task.FromResult(false);
@@ -88,7 +90,7 @@ namespace Apache.Calcite.Data.Internal
 
             try
             {
-                _enumerator.close();
+                _enumerator?.close();
             }
             catch
             {

@@ -69,6 +69,38 @@ namespace Apache.Calcite.Data.Internal
         public CalciteConnectionConfig Config => _config;
 
         /// <summary>
+        /// Prepares the SQL statement and outputs the relevant objects capturing it.
+        /// </summary>
+        /// <param name="request"></param>
+        /// <param name="signature"></param>
+        /// <param name="dataContext"></param>
+        /// <param name="registration"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        void Prepare(CalciteExecuteRequest request, out CalcitePrepare.CalciteSignature signature, out StatementDataContext dataContext, out CancellationTokenRegistration registration, CancellationToken cancellationToken)
+        {
+            var cancelFlag = new AtomicBoolean(false);
+            var boundParameters = ParameterBinder.Bind(request.Parameters);
+            dataContext = new StatementDataContext(_rootSchema.plus(), _typeFactory, cancelFlag, request.CommandTimeoutSeconds * 1000L, boundParameters);
+            var ctx = new PrepareContext(_typeFactory, _rootSchema, _config, dataContext, _defaultSchemaPath);
+
+            var prepare = (CalcitePrepare)CalcitePrepare.DEFAULT_FACTORY.apply();
+            var query = CalcitePrepare.Query.of(request.Sql);
+
+            CalcitePrepare.Dummy.push(ctx);
+            try
+            {
+                signature = prepare.prepareSql(ctx, query, (java.lang.Class)typeof(java.lang.Object[]), -1);
+            }
+            finally
+            {
+                CalcitePrepare.Dummy.pop(ctx);
+            }
+
+            registration = cancellationToken.Register(() => cancelFlag.set(true));
+        }
+
+        /// <summary>
         /// Prepares and executes a SQL statement asynchronously, returning a <see cref="CalciteResult"/>.
         /// </summary>
         /// <param name="request"></param>
@@ -76,7 +108,7 @@ namespace Apache.Calcite.Data.Internal
         /// <returns></returns>
         /// <exception cref="ArgumentNullException"></exception>
         /// <exception cref="CalciteException"></exception>
-        public Task<CalciteResult> ExecuteAsync(CalciteExecuteRequest request, CancellationToken cancellationToken)
+        public Task<CalciteResult> ExecuteReaderAsync(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(request);
 
@@ -85,28 +117,9 @@ namespace Apache.Calcite.Data.Internal
 
             try
             {
-                var cancelFlag = new AtomicBoolean(false);
-                var boundParameters = ParameterBinder.Bind(request.Parameters);
-                var dataContext = new StatementDataContext(_rootSchema.plus(), _typeFactory, cancelFlag, request.CommandTimeoutSeconds * 1000L, boundParameters);
-                var ctx = new PrepareContext(_typeFactory, _rootSchema, _config, dataContext, _defaultSchemaPath);
+                Prepare(request, out var signature, out var dataContext, out var registration, cancellationToken);
 
-                var prepare = (CalcitePrepare)CalcitePrepare.DEFAULT_FACTORY.apply();
-                var query = CalcitePrepare.Query.of(request.Sql);
-
-                CalcitePrepare.Dummy.push(ctx);
-                CalcitePrepare.CalciteSignature signature;
-                try
-                {
-                    signature = prepare.prepareSql(ctx, query, (java.lang.Class)typeof(java.lang.Object[]), -1);
-                }
-                finally
-                {
-                    CalcitePrepare.Dummy.pop(ctx);
-                }
-
-                var registration = cancellationToken.Register(() => cancelFlag.set(true));
-
-                Enumerable enumerable;
+                Enumerable? enumerable = null;
                 try
                 {
                     enumerable = signature.enumerable(dataContext);
@@ -117,7 +130,7 @@ namespace Apache.Calcite.Data.Internal
                     throw;
                 }
 
-                return Task.FromResult(new CalciteResult(signature, enumerable.enumerator(), registration));
+                return Task.FromResult(new CalciteResult(signature, registration, enumerable?.enumerator(), 0));
             }
             catch (CalciteException)
             {
@@ -128,6 +141,77 @@ namespace Apache.Calcite.Data.Internal
                 throw new CalciteException("Failed to execute Calcite statement.", e);
             }
         }
+
+        /// <summary>
+        /// Prepares and executes a SQL statement asynchronously, returning a <see cref="CalciteResult"/>.
+        /// </summary>
+        /// <param name="request"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        /// <exception cref="CalciteException"></exception>
+        public Task<CalciteResult> ExecuteNonQueryAsync(CalciteExecuteRequest request, CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            ThrowIfDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                Prepare(request, out var signature, out var dataContext, out var registration, cancellationToken);
+
+                long recordsAffected;
+                try
+                {
+                    var statementType = (Meta.StatementType.__Enum)signature.statementType.ordinal();
+
+                    if (IsDdl(statementType))
+                    {
+                        // DDL: already executed as a side-effect of prepareSql; nothing to enumerate.
+                        recordsAffected = 0;
+                    }
+                    else if (statementType == Meta.StatementType.__Enum.SELECT)
+                    {
+                        // SELECT has no affected row count by ADO.NET convention.
+                        recordsAffected = -1;
+                    }
+                    else
+                    {
+                        // DML: drain the enumerator now — this is what actually runs the mutation.
+                        // Calcite yields a single Object[]{ updateCount } row.
+                        recordsAffected = 0;
+                        using var e = signature.enumerable(dataContext).enumerator();
+                        if (e.moveNext() && e.current() is object[] row && row.Length > 0)
+                            recordsAffected = Convert.ToInt64(row[0]);
+                    }
+                }
+                catch
+                {
+                    registration.Dispose();
+                    throw;
+                }
+
+                return Task.FromResult(new CalciteResult(signature, registration, enumerator: null, recordsAffected));
+            }
+            catch (CalciteException)
+            {
+                throw;
+            }
+            catch (Exception e)
+            {
+                throw new CalciteException("Failed to execute Calcite statement.", e);
+            }
+        }
+
+        static bool IsDdl(Meta.StatementType.__Enum t) => t switch
+        {
+            Meta.StatementType.__Enum.CREATE => true,
+            Meta.StatementType.__Enum.ALTER => true,
+            Meta.StatementType.__Enum.DROP => true,
+            Meta.StatementType.__Enum.OTHER_DDL => true,
+            _ => false,
+        };
 
         public void Dispose()
         {

@@ -1,5 +1,3 @@
-using System;
-
 using Xunit;
 
 namespace Apache.Calcite.Data.Tests
@@ -28,7 +26,7 @@ namespace Apache.Calcite.Data.Tests
             using var c = new CalciteConnection(ServerDdlConnectionString);
             c.Open();
             using var cmd = c.CreateCommand();
-            cmd.CommandText = "CREATE SCHEMA \"myschema\"";
+            cmd.CommandText = "CREATE SCHEMA IF NOT EXISTS \"myschema\"";
             var affected = cmd.ExecuteNonQuery();
             Assert.True(affected >= 0);
         }
@@ -39,7 +37,7 @@ namespace Apache.Calcite.Data.Tests
             using var c = new CalciteConnection(ServerDdlConnectionString);
             c.Open();
             using var cmd = c.CreateCommand();
-            cmd.CommandText = "CREATE SCHEMA \"myschema\"";
+            cmd.CommandText = "CREATE SCHEMA IF NOT EXISTS \"myschema\"";
             cmd.ExecuteNonQuery();
 
             // Running the same statement a second time should not throw.
