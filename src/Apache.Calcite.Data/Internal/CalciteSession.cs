@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 
 using java.util.concurrent.atomic;
 
+using org.apache.calcite;
 using org.apache.calcite.adapter.java;
 using org.apache.calcite.avatica;
 using org.apache.calcite.config;
@@ -77,7 +78,7 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="registration"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        void Prepare(CalciteExecuteRequest request, out CalcitePrepare.CalciteSignature signature, out StatementDataContext dataContext, out CancellationTokenRegistration registration, CancellationToken cancellationToken)
+        void Prepare(CalciteExecuteRequest request, out CalcitePrepare.CalciteSignature signature, out DataContext dataContext, out CancellationTokenRegistration registration, CancellationToken cancellationToken)
         {
             var cancelFlag = new AtomicBoolean(false);
             var boundParameters = ParameterBinder.Bind(request.Parameters);
