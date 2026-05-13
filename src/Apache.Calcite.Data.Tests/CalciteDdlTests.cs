@@ -13,7 +13,7 @@ namespace Apache.Calcite.Data.Tests
 
         static CalciteDdlTests()
         {
-            ikvm.runtime.Startup.addBootClassPathAssembly(typeof(org.apache.calcite.sql.parser.ddl.SqlDdlParserImpl).Assembly);
+            ikvm.runtime.Startup.addBootClassPathAssembly(typeof(org.apache.calcite.server.ServerDdlExecutor).Assembly);
         }
 
         static readonly string ServerDdlConnectionString = new CalciteConnectionStringBuilder
