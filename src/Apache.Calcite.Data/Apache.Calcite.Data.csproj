@@ -2,7 +2,6 @@
 
     <PropertyGroup>
         <TargetFrameworks>net8.0</TargetFrameworks>
-        <Nullable>enable</Nullable>
         <Description>Apache Calcite for ADO.NET. A native, in-process ADO.NET provider that runs the Apache Calcite SQL parser, planner, and runtime via IKVM.</Description>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageTags>apache;calcite;ado.net;sql;ikvm;dbprovider</PackageTags>

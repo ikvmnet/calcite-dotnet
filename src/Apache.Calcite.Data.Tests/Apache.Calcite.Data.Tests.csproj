@@ -6,7 +6,7 @@
     </PropertyGroup>
 
     <PropertyGroup>
-        <CalciteLocalMavenRepo>$(MSBuildThisFileDirectory)ext\maven-repo</CalciteLocalMavenRepo>
+        <CalciteLocalMavenRepo>$(MSBuildThisFileDirectory)..\..\ext\maven-repo</CalciteLocalMavenRepo>
         <MavenAdditionalRepositories>$(MavenAdditionalRepositories);calcite-local=file:///$([MSBuild]::NormalizePath('$(CalciteLocalMavenRepo)').Replace('\','/'));</MavenAdditionalRepositories>
     </PropertyGroup>
 
