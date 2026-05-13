@@ -26,9 +26,9 @@
     </PropertyGroup>
 
     <PropertyGroup Label="Package Info">
-        <RepositoryUrl Condition=" '$(RepositoryUrl)' == '' ">https://github.com/alethic/calcite-data.git</RepositoryUrl>
+        <RepositoryUrl Condition=" '$(RepositoryUrl)' == '' ">https://github.com/ikvmnet/calcite-adonet.git</RepositoryUrl>
         <RepositoryType Condition=" '$(RepositoryType)' == '' ">git</RepositoryType>
-        <PackageProjectUrl  Condition=" '$(PackageProjectUrl)' == '' ">https://github.com/alethic/calcite-data</PackageProjectUrl>
+        <PackageProjectUrl  Condition=" '$(PackageProjectUrl)' == '' ">https://github.com/ikvmnet/calcite-adonet</PackageProjectUrl>
         <PackageVersion Condition=" '$(PackageVersion)' == '' ">$(Version)</PackageVersion>
         <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     </PropertyGroup>
