@@ -134,6 +134,29 @@ namespace Apache.Calcite.Data.Tests
             Assert.False(reader.Read());
         }
 
+        [Fact]
+        public void Insert_then_update_then_select_should_reflect_updated_value()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS \"update_tbl\" (\"id\" INTEGER NOT NULL, \"val\" VARCHAR(100))";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "INSERT INTO \"update_tbl\" VALUES (1, 'original')";
+            Assert.Equal(1, cmd.ExecuteNonQuery());
+
+            cmd.CommandText = "UPDATE \"update_tbl\" SET \"val\" = 'updated' WHERE \"id\" = 1";
+            Assert.Equal(1, cmd.ExecuteNonQuery());
+
+            cmd.CommandText = "SELECT \"val\" FROM \"update_tbl\" WHERE \"id\" = 1";
+            using var reader = cmd.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal("updated", reader.GetString(0));
+            Assert.False(reader.Read());
+        }
+
     }
 
 }

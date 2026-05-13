@@ -12,8 +12,8 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.41.0" />
-        <MavenReference Include="org.apache.calcite:calcite-server" Version="1.41.0" />
+        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.42.0-SNAPSHOT" />
+        <MavenReference Include="org.apache.calcite:calcite-server" Version="1.42.0-SNAPSHOT" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
         <PackageReference Include="xunit" Version="2.9.3" />
         <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
@@ -21,6 +21,11 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
     </ItemGroup>
+
+    <PropertyGroup>
+        <CalciteLocalMavenRepo>$(MSBuildThisFileDirectory)ext\maven-repo</CalciteLocalMavenRepo>
+        <MavenAdditionalRepositories>$(MavenAdditionalRepositories);calcite-local=file:///$([MSBuild]::NormalizePath('$(CalciteLocalMavenRepo)').Replace('\','/'))</MavenAdditionalRepositories>
+    </PropertyGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\Apache.Calcite.Data\Apache.Calcite.Data.csproj" />
