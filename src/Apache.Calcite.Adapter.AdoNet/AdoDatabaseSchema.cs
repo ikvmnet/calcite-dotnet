@@ -17,8 +17,8 @@ namespace Apache.Calcite.Adapter.AdoNet
     /// This schema does not directly contain tables, but contains a sub-schema for each schema in the database in
     /// the back-end. Each of those sub-schemas is an instance of <see cref="AdoSchema"/>.
     /// 
-    /// This schema is lazy: it does not compute teh list of schema names until the first call to <see
-    /// cref="subSchemas"/> and <see cref="Lookup.get(string)"/>. Then it create sa <see cref="AdoSchema"/> for
+    /// This schema is lazy: it does not compute the list of schema names until the first call to <see
+    /// cref="subSchemas"/> and <see cref="Lookup.get(string)"/>. Then it creates a <see cref="AdoSchema"/> for
     /// this schema name. Each <see cref="AdoSchema"/> will populate its tables on demand.
     /// </remarks>
     public class AdoDatabaseSchema : AdoBaseSchema

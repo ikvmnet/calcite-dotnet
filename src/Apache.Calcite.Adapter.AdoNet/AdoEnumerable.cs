@@ -211,8 +211,6 @@ namespace Apache.Calcite.Adapter.AdoNet
                 var cmd = cnn.CreateCommand();
                 cmd.CommandText = _sql;
                 _dbCommandEnricher?.Enrich(cmd);
-                Console.WriteLine(cmd.CommandText);
-                Console.WriteLine();
                 return CreateEnumerator(cnn, cmd);
             }
             catch (DbException e)
