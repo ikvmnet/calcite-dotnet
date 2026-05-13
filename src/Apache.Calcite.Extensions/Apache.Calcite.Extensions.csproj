@@ -18,9 +18,6 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-    </ItemGroup>
-
-    <ItemGroup>
         <MavenReference Include="org.apache.calcite:calcite-core" Version="1.41.0" />
     </ItemGroup>
 
