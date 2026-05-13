@@ -150,6 +150,47 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(ConnectionState.Open, c.State);
         }
 
+        [Fact]
+        public void Open_should_throw_after_dispose()
+        {
+            var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Dispose();
+            Assert.Throws<ObjectDisposedException>(() => c.Open());
+        }
+
+        [Fact]
+        public void ConnectionString_set_should_throw_after_dispose()
+        {
+            var c = new CalciteConnection();
+            c.Dispose();
+            Assert.Throws<ObjectDisposedException>(() => c.ConnectionString = TestModels.InlineEmptyModelConnectionString);
+        }
+
+        [Fact]
+        public void CreateCommand_should_throw_after_dispose()
+        {
+            var c = new CalciteConnection();
+            c.Dispose();
+            Assert.Throws<ObjectDisposedException>(() => c.CreateCommand());
+        }
+
+        [Fact]
+        public void BeginTransaction_should_throw_after_dispose()
+        {
+            var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Dispose();
+            Assert.Throws<ObjectDisposedException>(() => c.BeginTransaction());
+        }
+
+        [Fact]
+        public void RootSchema_should_throw_after_dispose()
+        {
+            var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            c.Dispose();
+            Assert.Throws<ObjectDisposedException>(() => c.RootSchema);
+        }
+
     }
 
 }

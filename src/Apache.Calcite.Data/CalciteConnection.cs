@@ -34,6 +34,7 @@ namespace Apache.Calcite.Data
         CalciteConnectionStringBuilder _options = new();
         CalciteSession? _session;
         ConnectionState _state = ConnectionState.Closed;
+        bool _disposed;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="CalciteConnection"/> class.
@@ -74,6 +75,7 @@ namespace Apache.Calcite.Data
             get => _options.ConnectionString;
             set
             {
+                ThrowIfDisposed();
                 if (_session is not null)
                     throw new InvalidOperationException(
                         "The connection string cannot be changed after the connection has been opened. " +
@@ -125,6 +127,7 @@ namespace Apache.Calcite.Data
         /// <exception cref="CalciteException">The Calcite session could not be initialized.</exception>
         public override void Open()
         {
+            ThrowIfDisposed();
             if (_state != ConnectionState.Closed)
                 throw new InvalidOperationException("Connection is already open or in a transitional state.");
 
@@ -170,19 +173,31 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
-        protected override DbCommand CreateDbCommand() => new CalciteCommand { Connection = this };
+        protected override DbCommand CreateDbCommand()
+        {
+            ThrowIfDisposed();
+            return new CalciteCommand { Connection = this };
+        }
 
         /// <summary>
         /// Creates and returns a new <see cref="CalciteCommand"/> object associated with this connection.
         /// </summary>
         /// <returns>A new <see cref="CalciteCommand"/> whose <see cref="CalciteCommand.Connection"/> is set to this instance.</returns>
-        public new CalciteCommand CreateCommand() => new() { Connection = this };
+        public new CalciteCommand CreateCommand()
+        {
+            ThrowIfDisposed();
+            return new CalciteCommand { Connection = this };
+        }
 
         /// <inheritdoc />
         public override bool CanCreateBatch => true;
 
         /// <inheritdoc />
-        protected override DbBatch CreateDbBatch() => new CalciteBatch(this);
+        protected override DbBatch CreateDbBatch()
+        {
+            ThrowIfDisposed();
+            return new CalciteBatch(this);
+        }
 
         /// <summary>
         /// Creates and returns a new <see cref="CalciteBatch"/> associated with this connection.
@@ -191,14 +206,18 @@ namespace Apache.Calcite.Data
         public new CalciteBatch CreateBatch() => new(this);
 
         /// <inheritdoc />
-        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
-            new CalciteTransaction(this, isolationLevel);
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
+        {
+            ThrowIfDisposed();
+            return new CalciteTransaction(this, isolationLevel);
+        }
 
         /// <inheritdoc />
         protected override void Dispose(bool disposing)
         {
-            if (disposing)
+            if (disposing && !_disposed)
             {
+                _disposed = true;
                 Close();
                 _session?.Dispose();
                 _session = null;
@@ -265,8 +284,20 @@ namespace Apache.Calcite.Data
         /// </summary>
         /// <returns>The current <see cref="CalciteSession"/> for this connection.</returns>
         /// <exception cref="InvalidOperationException">The connection is not open.</exception>
+        void ThrowIfDisposed()
+        {
+            if (_disposed)
+                throw new ObjectDisposedException(GetType().Name);
+        }
+
+        /// <summary>
+        /// Returns the active session, throwing if the connection is not open.
+        /// </summary>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
         internal CalciteSession RequireSession()
         {
+            ThrowIfDisposed();
             if (_state != ConnectionState.Open || _session is null)
                 throw new InvalidOperationException("Connection is not open.");
 
