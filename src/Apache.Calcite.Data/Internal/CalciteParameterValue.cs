@@ -12,20 +12,13 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Initializes a new instance of the <see cref="CalciteParameterValue"/> struct.
         /// </summary>
-        /// <param name="name"></param>
         /// <param name="dbType"></param>
         /// <param name="value"></param>
-        public CalciteParameterValue(string name, DbType dbType, object? value)
+        public CalciteParameterValue(DbType dbType, object? value)
         {
-            Name = name;
             DbType = dbType;
             Value = value;
         }
-
-        /// <summary>
-        /// Gets the parameter name.
-        /// </summary>
-        public string Name { get; }
 
         /// <summary>
         /// Gets the parameter type.

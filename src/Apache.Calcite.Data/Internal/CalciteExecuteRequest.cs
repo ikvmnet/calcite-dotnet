@@ -17,7 +17,7 @@ namespace Apache.Calcite.Data.Internal
         {
             var values = ImmutableArray.CreateBuilder<CalciteParameterValue>(parameters.Items.Count);
             foreach (var p in parameters.Items)
-                values.Add(new CalciteParameterValue(p.ParameterName, p.DbType, p.Value));
+                values.Add(new CalciteParameterValue(p.DbType, p.Value));
 
             return new CalciteExecuteRequest(commandText, values.ToImmutable(), timeoutSeconds);
         }

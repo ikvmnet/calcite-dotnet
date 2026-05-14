@@ -157,6 +157,54 @@ namespace Apache.Calcite.Data.Tests
             Assert.False(reader.Read());
         }
 
+        [Fact]
+        public void Insert_then_update_decimal_then_select_should_reflect_updated_value()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS \"decimal_update_tbl\" (\"id\" INTEGER NOT NULL, \"amount\" DECIMAL(18, 4))";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "INSERT INTO \"decimal_update_tbl\" VALUES (1, 9.99)";
+            Assert.Equal(1, cmd.ExecuteNonQuery());
+
+            cmd.CommandText = "UPDATE \"decimal_update_tbl\" SET \"amount\" = 19.99 WHERE \"id\" = 1";
+            Assert.Equal(1, cmd.ExecuteNonQuery());
+
+            cmd.CommandText = "SELECT \"amount\" FROM \"decimal_update_tbl\" WHERE \"id\" = 1";
+            using var reader = cmd.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal(19.99m, reader.GetDecimal(0));
+            Assert.False(reader.Read());
+        }
+
+        [Fact]
+        public void Insert_then_update_string_decimal_int_then_select_should_reflect_updated_values()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS \"multi_update_tbl\" (\"id\" INTEGER NOT NULL, \"label\" VARCHAR(100), \"amount\" DECIMAL(18, 4), \"qty\" INTEGER)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "INSERT INTO \"multi_update_tbl\" VALUES (1, 'before', 7.5, 10)";
+            Assert.Equal(1, cmd.ExecuteNonQuery());
+
+            cmd.CommandText = "UPDATE \"multi_update_tbl\" SET \"label\" = 'after', \"amount\" = 2.50, \"qty\" = 20 WHERE \"id\" = 1";
+            Assert.Equal(1, cmd.ExecuteNonQuery());
+
+            cmd.CommandText = "SELECT \"label\", \"amount\", \"qty\" FROM \"multi_update_tbl\" WHERE \"id\" = 1";
+            using var reader = cmd.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal("after", reader.GetString(0));
+            Assert.Equal(2.50m, reader.GetDecimal(1));
+            Assert.Equal(20, reader.GetInt32(2));
+            Assert.False(reader.Read());
+        }
+
     }
 
 }
