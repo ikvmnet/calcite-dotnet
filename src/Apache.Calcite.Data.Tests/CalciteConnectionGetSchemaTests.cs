@@ -84,6 +84,64 @@ namespace Apache.Calcite.Data.Tests
             Assert.Throws<ArgumentNullException>(() => c.GetSchema(null!));
         }
 
+        [Fact]
+        public void GetSchema_should_return_tables_collection()
+        {
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+
+            var t = c.GetSchema(CalciteSchemaInfo.Tables);
+
+            Assert.Equal(CalciteSchemaInfo.Tables, t.TableName);
+            Assert.True(t.Columns.Contains("TABLE_CATALOG"));
+            Assert.True(t.Columns.Contains("TABLE_SCHEMA"));
+            Assert.True(t.Columns.Contains("TABLE_NAME"));
+            Assert.True(t.Columns.Contains("TABLE_TYPE"));
+        }
+
+        [Fact]
+        public void GetSchema_tables_is_listed_in_metadata_collections()
+        {
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+
+            var t = c.GetSchema();
+            var names = t.Rows.Cast<DataRow>().Select(r => (string)r["CollectionName"]).ToArray();
+            Assert.Contains(CalciteSchemaInfo.Tables, names);
+        }
+
+        [Fact]
+        public void GetSchema_should_return_columns_collection()
+        {
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+
+            var t = c.GetSchema(CalciteSchemaInfo.Columns);
+
+            Assert.Equal(CalciteSchemaInfo.Columns, t.TableName);
+            Assert.True(t.Columns.Contains("TABLE_CATALOG"));
+            Assert.True(t.Columns.Contains("TABLE_SCHEMA"));
+            Assert.True(t.Columns.Contains("TABLE_NAME"));
+            Assert.True(t.Columns.Contains("COLUMN_NAME"));
+            Assert.True(t.Columns.Contains("ORDINAL_POSITION"));
+            Assert.True(t.Columns.Contains("IS_NULLABLE"));
+            Assert.True(t.Columns.Contains("DATA_TYPE"));
+            Assert.True(t.Columns.Contains("CHARACTER_MAXIMUM_LENGTH"));
+            Assert.True(t.Columns.Contains("NUMERIC_PRECISION"));
+            Assert.True(t.Columns.Contains("NUMERIC_SCALE"));
+        }
+
+        [Fact]
+        public void GetSchema_columns_is_listed_in_metadata_collections()
+        {
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+
+            var t = c.GetSchema();
+            var names = t.Rows.Cast<DataRow>().Select(r => (string)r["CollectionName"]).ToArray();
+            Assert.Contains(CalciteSchemaInfo.Columns, names);
+        }
+
     }
 
 }

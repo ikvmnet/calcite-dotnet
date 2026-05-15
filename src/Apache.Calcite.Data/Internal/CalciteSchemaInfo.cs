@@ -28,6 +28,8 @@ namespace Apache.Calcite.Data.Internal
         public static readonly string DataSourceInformation = DbMetaDataCollectionNames.DataSourceInformation;
         public static readonly string DataTypes = DbMetaDataCollectionNames.DataTypes;
         public static readonly string ReservedWords = DbMetaDataCollectionNames.ReservedWords;
+        public static readonly string Tables = "Tables";
+        public static readonly string Columns = "Columns";
 
         /// <summary>
         /// Returns the names and shapes of every metadata collection supported by the provider.
@@ -44,6 +46,8 @@ namespace Apache.Calcite.Data.Internal
             t.Rows.Add(DataSourceInformation, 0, 0);
             t.Rows.Add(DataTypes, 0, 0);
             t.Rows.Add(ReservedWords, 0, 0);
+            t.Rows.Add(Tables, 4, 3);
+            t.Rows.Add(Columns, 4, 4);
 
             return t;
         }
@@ -59,6 +63,17 @@ namespace Apache.Calcite.Data.Internal
             t.Columns.Add("ParameterName", typeof(string));
             t.Columns.Add("RestrictionDefault", typeof(string));
             t.Columns.Add("RestrictionNumber", typeof(int));
+
+            t.Rows.Add(Tables, "Catalog", "@Catalog", null, 1);
+            t.Rows.Add(Tables, "Schema", "@Schema", null, 2);
+            t.Rows.Add(Tables, "Table", "@Table", null, 3);
+            t.Rows.Add(Tables, "TableType", "@TableType", null, 4);
+
+            t.Rows.Add(Columns, "Catalog", "@Catalog", null, 1);
+            t.Rows.Add(Columns, "Schema", "@Schema", null, 2);
+            t.Rows.Add(Columns, "Table", "@Table", null, 3);
+            t.Rows.Add(Columns, "Column", "@Column", null, 4);
+
             return t;
         }
 
@@ -194,6 +209,146 @@ namespace Apache.Calcite.Data.Internal
             Add(SqlTypeName.DATE, "DATE", DbType.Date, typeof(DateTime), fixedLen: true, prefix: "DATE '", suffix: "'");
             Add(SqlTypeName.TIME, "TIME", DbType.Time, typeof(TimeSpan), fixedLen: true, prefix: "TIME '", suffix: "'");
             Add(SqlTypeName.TIMESTAMP, "TIMESTAMP", DbType.DateTime, typeof(DateTime), fixedLen: true, prefix: "TIMESTAMP '", suffix: "'");
+
+            return t;
+        }
+
+        /// <summary>
+        /// Returns the tables visible through the root schema of the connection.
+        /// </summary>
+        /// <param name="connection">The open connection whose root schema is enumerated.</param>
+        /// <param name="restrictionValues">
+        /// Optional restrictions in ADO.NET order: [0] catalog (ignored), [1] schema name, [2] table name, [3] table type.
+        /// </param>
+        public static DataTable BuildTables(CalciteConnection connection, string?[]? restrictionValues)
+        {
+            var t = new DataTable(Tables);
+            t.Columns.Add("TABLE_CATALOG", typeof(string));
+            t.Columns.Add("TABLE_SCHEMA", typeof(string));
+            t.Columns.Add("TABLE_NAME", typeof(string));
+            t.Columns.Add("TABLE_TYPE", typeof(string));
+
+            var schemaFilter    = restrictionValues?.Length > 1 ? restrictionValues[1] : null;
+            var tableFilter     = restrictionValues?.Length > 2 ? restrictionValues[2] : null;
+            var tableTypeFilter = restrictionValues?.Length > 3 ? restrictionValues[3] : null;
+
+            var root = connection.RootSchema;
+            var schemaNames = root.getSubSchemaNames().iterator();
+            while (schemaNames.hasNext())
+            {
+                var schemaName = (string)schemaNames.next();
+                if (schemaFilter is not null && !string.Equals(schemaName, schemaFilter, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var subSchema = root.getSubSchema(schemaName);
+                if (subSchema is null)
+                    continue;
+
+                var tableNames = subSchema.getTableNames().iterator();
+                while (tableNames.hasNext())
+                {
+                    var tableName = (string)tableNames.next();
+                    if (tableFilter is not null && !string.Equals(tableName, tableFilter, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    var table = subSchema.getTable(tableName);
+                    var tableType = table?.getJdbcTableType()?.jdbcName ?? "TABLE";
+
+                    if (tableTypeFilter is not null && !string.Equals(tableType, tableTypeFilter, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    t.Rows.Add(DBNull.Value, schemaName, tableName, tableType);
+                }
+            }
+
+            return t;
+        }
+
+        /// <summary>
+        /// Returns the columns of all tables visible through the root schema of the connection.
+        /// </summary>
+        /// <param name="connection">The open connection whose root schema is enumerated.</param>
+        /// <param name="restrictionValues">
+        /// Optional restrictions in ADO.NET order: [0] catalog (ignored), [1] schema name, [2] table name, [3] column name.
+        /// </param>
+        public static DataTable BuildColumns(CalciteConnection connection, string?[]? restrictionValues)
+        {
+            var t = new DataTable(Columns);
+            t.Columns.Add("TABLE_CATALOG", typeof(string));
+            t.Columns.Add("TABLE_SCHEMA", typeof(string));
+            t.Columns.Add("TABLE_NAME", typeof(string));
+            t.Columns.Add("COLUMN_NAME", typeof(string));
+            t.Columns.Add("ORDINAL_POSITION", typeof(int));
+            t.Columns.Add("COLUMN_DEFAULT", typeof(string));
+            t.Columns.Add("IS_NULLABLE", typeof(string));
+            t.Columns.Add("DATA_TYPE", typeof(string));
+            t.Columns.Add("CHARACTER_MAXIMUM_LENGTH", typeof(int));
+            t.Columns.Add("NUMERIC_PRECISION", typeof(int));
+            t.Columns.Add("NUMERIC_SCALE", typeof(int));
+
+            var schemaFilter = restrictionValues?.Length > 1 ? restrictionValues[1] : null;
+            var tableFilter  = restrictionValues?.Length > 2 ? restrictionValues[2] : null;
+            var columnFilter = restrictionValues?.Length > 3 ? restrictionValues[3] : null;
+
+            var typeFactory = connection.TypeFactory;
+            var root = connection.RootSchema;
+            var schemaNames = root.getSubSchemaNames().iterator();
+            while (schemaNames.hasNext())
+            {
+                var schemaName = (string)schemaNames.next();
+                if (schemaFilter is not null && !string.Equals(schemaName, schemaFilter, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var subSchema = root.getSubSchema(schemaName);
+                if (subSchema is null)
+                    continue;
+
+                var tableNames = subSchema.getTableNames().iterator();
+                while (tableNames.hasNext())
+                {
+                    var tableName = (string)tableNames.next();
+                    if (tableFilter is not null && !string.Equals(tableName, tableFilter, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    var table = subSchema.getTable(tableName);
+                    if (table is null)
+                        continue;
+
+                    var rowType = table.getRowType(typeFactory);
+                    var fields = rowType.getFieldList();
+                    for (int i = 0; i < fields.size(); i++)
+                    {
+                        var field = (org.apache.calcite.rel.type.RelDataTypeField)fields.get(i);
+                        var columnName = field.getName();
+
+                        if (columnFilter is not null && !string.Equals(columnName, columnFilter, StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        var fieldType = field.getType();
+                        var sqlTypeName = fieldType.getSqlTypeName().getName();
+                        var isNullable = fieldType.isNullable();
+                        var precision = fieldType.getPrecision();
+                        var scale = fieldType.getScale();
+
+                        var isCharType = fieldType.getSqlTypeName() == org.apache.calcite.sql.type.SqlTypeName.CHAR
+                                      || fieldType.getSqlTypeName() == org.apache.calcite.sql.type.SqlTypeName.VARCHAR;
+
+                        t.Rows.Add(
+                            DBNull.Value,
+                            schemaName,
+                            tableName,
+                            columnName,
+                            i + 1,
+                            DBNull.Value,
+                            isNullable ? "YES" : "NO",
+                            sqlTypeName,
+                            isCharType && precision >= 0 ? (object)precision : DBNull.Value,
+                            !isCharType && precision >= 0 ? (object)precision : DBNull.Value,
+                            !isCharType && scale >= 0 ? (object)scale : DBNull.Value
+                        );
+                    }
+                }
+            }
 
             return t;
         }

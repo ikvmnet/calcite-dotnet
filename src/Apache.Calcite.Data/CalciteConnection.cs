@@ -256,6 +256,12 @@ namespace Apache.Calcite.Data
             if (string.Equals(collectionName, CalciteSchemaInfo.ReservedWords, StringComparison.OrdinalIgnoreCase))
                 return CalciteSchemaInfo.BuildReservedWords(this);
 
+            if (string.Equals(collectionName, CalciteSchemaInfo.Tables, StringComparison.OrdinalIgnoreCase))
+                return CalciteSchemaInfo.BuildTables(this, restrictionValues);
+
+            if (string.Equals(collectionName, CalciteSchemaInfo.Columns, StringComparison.OrdinalIgnoreCase))
+                return CalciteSchemaInfo.BuildColumns(this, restrictionValues);
+
             throw new ArgumentException($"The metadata collection '{collectionName}' is not supported by this provider.", nameof(collectionName));
         }
 
