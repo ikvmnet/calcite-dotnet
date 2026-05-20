@@ -99,7 +99,7 @@ namespace Apache.Calcite.Data.Internal
 
             try
             {
-                if (model!.StartsWith("inline:", StringComparison.OrdinalIgnoreCase) || model.TrimStart().StartsWith("{"))
+                if (model.StartsWith("inline:", StringComparison.OrdinalIgnoreCase) || model.TrimStart().StartsWith("{"))
                 {
                     var inline = model.StartsWith("inline:", StringComparison.OrdinalIgnoreCase) ? model.Substring("inline:".Length) : model;
                     new ModelHandler(root, "inline:" + inline);
