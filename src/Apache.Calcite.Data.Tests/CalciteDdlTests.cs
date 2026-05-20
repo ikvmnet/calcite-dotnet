@@ -1,5 +1,7 @@
 using System.Threading.Tasks;
 
+using Apache.Calcite.Data.Internal;
+
 using Xunit;
 
 namespace Apache.Calcite.Data.Tests
@@ -20,6 +22,7 @@ namespace Apache.Calcite.Data.Tests
         {
             Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
             ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+            Schema = "adhoc",
         }.ConnectionString;
 
         [Fact]
@@ -86,6 +89,73 @@ namespace Apache.Calcite.Data.Tests
             cmd.CommandText = "INSERT INTO \"dmltest\" VALUES (2)";
             var affected = cmd.ExecuteNonQuery();
             Assert.Equal(1, affected);
+        }
+
+        [Fact]
+        public void CreateTable_should_be_visible_in_get_schema_tables()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS \"schema_table_test\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+
+            var t = c.GetSchema(CalciteSchemaInfo.Tables);
+            foreach (System.Data.DataRow row in t.Rows)
+            {
+                if ((string)row["TABLE_SCHEMA"] == "adhoc" &&
+                    (string)row["TABLE_NAME"] == "schema_table_test" &&
+                    (string)row["TABLE_TYPE"] == "TABLE")
+                    return;
+            }
+
+            Assert.Fail("Expected dynamically created table to appear in GetSchema(\"Tables\").");
+        }
+
+        [Fact]
+        public void CreateTable_should_be_visible_in_get_schema_columns_with_expected_values()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS \"schema_columns_test\" (\"amount\" DECIMAL(18, 4) NOT NULL, \"name\" VARCHAR(100))";
+            cmd.ExecuteNonQuery();
+
+            var t = c.GetSchema(CalciteSchemaInfo.Columns, [null, "adhoc", "schema_columns_test", null]);
+
+            System.Data.DataRow? amountRow = null;
+            System.Data.DataRow? nameRow = null;
+
+            foreach (System.Data.DataRow row in t.Rows)
+            {
+                if ((string)row["COLUMN_NAME"] == "amount")
+                    amountRow = row;
+                else if ((string)row["COLUMN_NAME"] == "name")
+                    nameRow = row;
+            }
+
+            Assert.NotNull(amountRow);
+            Assert.NotNull(nameRow);
+
+            Assert.Equal("adhoc", amountRow!["TABLE_SCHEMA"]);
+            Assert.Equal("schema_columns_test", amountRow["TABLE_NAME"]);
+            Assert.Equal(1, amountRow["ORDINAL_POSITION"]);
+            Assert.Equal("NO", amountRow["IS_NULLABLE"]);
+            Assert.Equal("DECIMAL", amountRow["DATA_TYPE"]);
+            Assert.Equal(System.DBNull.Value, amountRow["CHARACTER_MAXIMUM_LENGTH"]);
+            Assert.Equal(18, amountRow["NUMERIC_PRECISION"]);
+            Assert.Equal(4, amountRow["NUMERIC_SCALE"]);
+
+            Assert.Equal("adhoc", nameRow!["TABLE_SCHEMA"]);
+            Assert.Equal("schema_columns_test", nameRow["TABLE_NAME"]);
+            Assert.Equal(2, nameRow["ORDINAL_POSITION"]);
+            Assert.Equal("YES", nameRow["IS_NULLABLE"]);
+            Assert.Equal("VARCHAR", nameRow["DATA_TYPE"]);
+            Assert.Equal(100, nameRow["CHARACTER_MAXIMUM_LENGTH"]);
+            Assert.Equal(System.DBNull.Value, nameRow["NUMERIC_PRECISION"]);
+            Assert.Equal(System.DBNull.Value, nameRow["NUMERIC_SCALE"]);
         }
 
         [Fact]

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
+using java.util;
 using java.util.concurrent.atomic;
 
 using org.apache.calcite;
@@ -11,6 +13,7 @@ using org.apache.calcite.avatica;
 using org.apache.calcite.config;
 using org.apache.calcite.jdbc;
 using org.apache.calcite.linq4j;
+using org.apache.calcite.model;
 using org.apache.calcite.schema;
 
 namespace Apache.Calcite.Data.Internal
@@ -21,6 +24,38 @@ namespace Apache.Calcite.Data.Internal
     /// </summary>
     internal sealed class CalciteSession
     {
+
+        /// <summary>
+        /// Maps each <see cref="CalciteConnectionStringBuilder"/> key constant to the
+        /// corresponding <see cref="CalciteConnectionProperty"/>, which is the authoritative
+        /// source of the camelCase property name Calcite expects.
+        /// </summary>
+        static readonly Dictionary<string, CalciteConnectionProperty> KeyToProperty = new(StringComparer.OrdinalIgnoreCase)
+        {
+            [CalciteConnectionStringBuilder.ApproximateDecimalKey] = CalciteConnectionProperty.APPROXIMATE_DECIMAL,
+            [CalciteConnectionStringBuilder.ApproximateDistinctCountKey] = CalciteConnectionProperty.APPROXIMATE_DISTINCT_COUNT,
+            [CalciteConnectionStringBuilder.ApproximateTopNKey] = CalciteConnectionProperty.APPROXIMATE_TOP_N,
+            [CalciteConnectionStringBuilder.CaseSensitiveKey] = CalciteConnectionProperty.CASE_SENSITIVE,
+            [CalciteConnectionStringBuilder.ConformanceKey] = CalciteConnectionProperty.CONFORMANCE,
+            [CalciteConnectionStringBuilder.CreateMaterializationsKey] = CalciteConnectionProperty.CREATE_MATERIALIZATIONS,
+            [CalciteConnectionStringBuilder.DefaultNullCollationKey] = CalciteConnectionProperty.DEFAULT_NULL_COLLATION,
+            [CalciteConnectionStringBuilder.DruidFetchKey] = CalciteConnectionProperty.DRUID_FETCH,
+            [CalciteConnectionStringBuilder.ForceDecorrelateKey] = CalciteConnectionProperty.FORCE_DECORRELATE,
+            [CalciteConnectionStringBuilder.FunKey] = CalciteConnectionProperty.FUN,
+            [CalciteConnectionStringBuilder.LexKey] = CalciteConnectionProperty.LEX,
+            [CalciteConnectionStringBuilder.MaterializationsEnabledKey] = CalciteConnectionProperty.MATERIALIZATIONS_ENABLED,
+            [CalciteConnectionStringBuilder.ParserFactoryKey] = CalciteConnectionProperty.PARSER_FACTORY,
+            [CalciteConnectionStringBuilder.QuotingKey] = CalciteConnectionProperty.QUOTING,
+            [CalciteConnectionStringBuilder.QuotedCasingKey] = CalciteConnectionProperty.QUOTED_CASING,
+            [CalciteConnectionStringBuilder.UnquotedCasingKey] = CalciteConnectionProperty.UNQUOTED_CASING,
+            [CalciteConnectionStringBuilder.SchemaKey] = CalciteConnectionProperty.SCHEMA,
+            [CalciteConnectionStringBuilder.SchemaFactoryKey] = CalciteConnectionProperty.SCHEMA_FACTORY,
+            [CalciteConnectionStringBuilder.SchemaTypeKey] = CalciteConnectionProperty.SCHEMA_TYPE,
+            [CalciteConnectionStringBuilder.SparkKey] = CalciteConnectionProperty.SPARK,
+            [CalciteConnectionStringBuilder.TimeZoneKey] = CalciteConnectionProperty.TIME_ZONE,
+            [CalciteConnectionStringBuilder.TypeSystemKey] = CalciteConnectionProperty.TYPE_SYSTEM,
+            [CalciteConnectionStringBuilder.TypeCoercionKey] = CalciteConnectionProperty.TYPE_COERCION,
+        };
 
         readonly CalciteSchema _rootSchema;
         readonly SchemaPlus _rootSchemaPlus;
@@ -41,17 +76,91 @@ namespace Apache.Calcite.Data.Internal
 
             try
             {
-                var builder = new RootSchemaBuilder(options);
-                _rootSchema = builder.Build();
+                _rootSchema = BuildRootSchema(options, out var modelDefaultSchema);
                 _rootSchemaPlus = _rootSchema.plus();
-                _config = new CalciteConnectionConfigImpl(builder.BuildEngineProperties());
+                _config = new CalciteConnectionConfigImpl(BuildEngineProperties(options));
                 _typeFactory = new JavaTypeFactoryImpl();
-                _defaultSchemaPath = string.IsNullOrEmpty(options.Schema) ? [] : [options.Schema];
+                _defaultSchemaPath = string.IsNullOrEmpty(modelDefaultSchema ?? options.Schema) ? [] : [modelDefaultSchema ?? options.Schema];
             }
             catch (Exception e) when (e is not CalciteException)
             {
                 throw new CalciteException("Failed to initialize Calcite.", e);
             }
+        }
+
+        /// <summary>
+        /// Builds the root schema based on the provided connection options, applying any specified model and determining the default schema path.
+        /// </summary>
+        /// <param name="options"></param>
+        /// <param name="defaultSchema"></param>
+        /// <returns></returns>
+        CalciteSchema BuildRootSchema(CalciteConnectionStringBuilder options, out string? defaultSchema)
+        {
+            var rootSchema = CalciteSchema.createRootSchema(addMetadataSchema: true);
+            defaultSchema = null;
+
+            if (string.IsNullOrEmpty(options.Model) == false)
+                ApplyModel(rootSchema, options.Model, out defaultSchema);
+
+            return rootSchema;
+        }
+
+        /// <summary>
+        /// Applies a Calcite model to the root schema, either from an inline JSON definition or a file path.
+        /// </summary>
+        /// <param name="rootSchema">The root schema to which the model will be applied.</param>
+        /// <param name="model">Either an inline JSON model definition (prefixed with "inline:" or starting with "{") or a file path to a
+        /// model definition.</param>
+        /// <param name="defaultSchema">When this method returns, contains the default schema name defined in the model, or <see langword="null"/>
+        /// if no default schema is defined.</param>
+        /// <exception cref="FileNotFoundException">Thrown when the specified model file does not exist.</exception>
+        /// <exception cref="CalciteException">Thrown when the model fails to load.</exception>
+        void ApplyModel(CalciteSchema rootSchema, string model, out string? defaultSchema)
+        {
+            try
+            {
+                if (model.StartsWith("inline:", StringComparison.OrdinalIgnoreCase) || model.TrimStart().StartsWith("{"))
+                {
+                    var inline = model.StartsWith("inline:", StringComparison.OrdinalIgnoreCase) ? model.Substring("inline:".Length) : model;
+                    var handler = new ModelHandler(rootSchema.plus(), "inline:" + inline);
+                    defaultSchema = handler.defaultSchemaName();
+                }
+                else
+                {
+                    if (!File.Exists(model))
+                        throw new FileNotFoundException("Model file was not found.", model);
+
+                    var handler = new ModelHandler(rootSchema.plus(), model);
+                    defaultSchema = handler.defaultSchemaName();
+                }
+
+            }
+            catch (Exception e) when (e is not CalciteException)
+            {
+                throw new CalciteException("Failed to load Calcite model.", e);
+            }
+        }
+
+        /// <summary>
+        /// Builds a Java Properties object from connection string options, mapping keys to their camel-cased property
+        /// names and excluding the Model key.
+        /// </summary>
+        /// <param name="options">The connection string builder containing the options to convert.</param>
+        /// <returns>A Properties object populated with the connection string options.</returns>
+        Properties BuildEngineProperties(CalciteConnectionStringBuilder options)
+        {
+            var props = new Properties();
+
+            foreach (var key in options.EnumerateKeys())
+            {
+                if (string.Equals(key, CalciteConnectionStringBuilder.ModelKey, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (options.TryGetValue(key, out var v) && v is not null)
+                    props.setProperty(KeyToProperty.TryGetValue(key, out var prop) ? prop.camelName() : key, v.ToString());
+            }
+
+            return props;
         }
 
         /// <summary>

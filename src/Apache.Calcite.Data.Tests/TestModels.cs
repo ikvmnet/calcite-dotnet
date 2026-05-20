@@ -17,7 +17,7 @@ namespace Apache.Calcite.Data.Tests
         /// A connection string referencing <see cref="InlineEmptyModelJson"/>.
         /// </summary>
         public const string InlineEmptyModelConnectionString =
-            "Model=inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}";
+            "Model=inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]};Schema=adhoc";
 
     }
 
