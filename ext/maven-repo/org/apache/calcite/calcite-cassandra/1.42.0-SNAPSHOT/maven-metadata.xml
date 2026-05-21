@@ -3,21 +3,21 @@
   <groupId>org.apache.calcite</groupId>
   <artifactId>calcite-cassandra</artifactId>
   <versioning>
-    <lastUpdated>20260521230328</lastUpdated>
+    <lastUpdated>20260521231410</lastUpdated>
     <snapshot>
-      <timestamp>20260521.230328</timestamp>
-      <buildNumber>1</buildNumber>
+      <timestamp>20260521.231410</timestamp>
+      <buildNumber>2</buildNumber>
     </snapshot>
     <snapshotVersions>
       <snapshotVersion>
         <extension>jar</extension>
-        <value>1.42.0-20260521.230328-1</value>
-        <updated>20260521230328</updated>
+        <value>1.42.0-20260521.231410-2</value>
+        <updated>20260521231410</updated>
       </snapshotVersion>
       <snapshotVersion>
         <extension>pom</extension>
-        <value>1.42.0-20260521.230328-1</value>
-        <updated>20260521230328</updated>
+        <value>1.42.0-20260521.231410-2</value>
+        <updated>20260521231410</updated>
       </snapshotVersion>
     </snapshotVersions>
   </versioning>
