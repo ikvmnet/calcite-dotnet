@@ -40,6 +40,18 @@ namespace Apache.Calcite.Data.Internal
                 case "BINARY":
                 case "VARBINARY":
                     return typeof(byte[]);
+                case "TINYINT UNSIGNED":
+                case "UTINYINT":
+                    return typeof(byte);
+                case "SMALLINT UNSIGNED":
+                case "USMALLINT":
+                    return typeof(ushort);
+                case "INTEGER UNSIGNED":
+                case "UINTEGER":
+                    return typeof(uint);
+                case "BIGINT UNSIGNED":
+                case "UBIGINT":
+                    return typeof(ulong);
             }
 
             return MapClrType(type.rep);

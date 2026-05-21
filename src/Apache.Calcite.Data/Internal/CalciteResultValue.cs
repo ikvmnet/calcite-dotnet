@@ -91,6 +91,16 @@ namespace Apache.Calcite.Data.Internal
                 return (T)(object)GetInt32();
             if (target == typeof(long))
                 return (T)(object)GetInt64();
+            if (target == typeof(sbyte))
+                return (T)(object)GetSByte();
+            if (target == typeof(byte))
+                return (T)(object)GetByte();
+            if (target == typeof(ushort))
+                return (T)(object)GetUInt16();
+            if (target == typeof(uint))
+                return (T)(object)GetUInt32();
+            if (target == typeof(ulong))
+                return (T)(object)GetUInt64();
 
             // Fallback: try to convert via GetValue if possible
             var val = GetValue();
@@ -193,9 +203,27 @@ namespace Apache.Calcite.Data.Internal
                 if (_value is java.sql.Date dt) return UnixEpoch.AddMilliseconds(dt.getTime());
                 if (_value is java.sql.Time tm) return TimeSpan.FromMilliseconds(tm.getTime());
                 if (_value is org.apache.calcite.avatica.util.ByteString bs) return bs.getBytes();
+                // joou unsigned integer types: Calcite may return these when unsigned columns are
+                // read. Map each to its natural unsigned CLR counterpart.
+                if (_value is org.joou.UByte ub) return (byte)ub.intValue();
+                if (_value is org.joou.UShort us) return (ushort)us.intValue();
+                if (_value is org.joou.UInteger ui) return (uint)ui.longValue();
+                if (_value is org.joou.ULong ul) return (ulong)ul.toBigInteger().longValue();
             }
 
             return _value;
+        }
+
+        /// <summary>
+        /// Implements the GetBoolean operation.
+        /// </summary>
+        public bool GetBoolean()
+        {
+            return _value switch
+            {
+                java.lang.Boolean b => b.booleanValue(),
+                _ => throw new InvalidCastException(),
+            };
         }
 
         /// <summary>
@@ -420,6 +448,72 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Long l => l.longValue(),
+                _ => throw new InvalidCastException(),
+            };
+        }
+
+        /// <summary>
+        /// Implements the GetByte operation. Accepts any numeric value that fits in a <see cref="byte"/>.
+        /// </summary>
+        public byte GetByte()
+        {
+            return _value switch
+            {
+                org.joou.UByte ub => (byte)ub.intValue(),
+                java.lang.Number n => checked((byte)n.longValue()),
+                _ => throw new InvalidCastException(),
+            };
+        }
+
+        /// <summary>
+        /// Implements the GetSByte operation. Accepts any numeric value that fits in a <see cref="sbyte"/>.
+        /// </summary>
+        public sbyte GetSByte()
+        {
+            return _value switch
+            {
+                java.lang.Byte by => (sbyte)by.byteValue(),
+                java.lang.Number n => checked((sbyte)n.longValue()),
+                _ => throw new InvalidCastException(),
+            };
+        }
+
+        /// <summary>
+        /// Implements the GetUInt16 operation. Accepts any numeric value that fits in a <see cref="ushort"/>.
+        /// </summary>
+        public ushort GetUInt16()
+        {
+            return _value switch
+            {
+                org.joou.UShort us => (ushort)us.intValue(),
+                java.lang.Number n => checked((ushort)n.longValue()),
+                _ => throw new InvalidCastException(),
+            };
+        }
+
+        /// <summary>
+        /// Implements the GetUInt32 operation. Accepts any numeric value that fits in a <see cref="uint"/>.
+        /// </summary>
+        public uint GetUInt32()
+        {
+            return _value switch
+            {
+                org.joou.UInteger ui => (uint)ui.longValue(),
+                java.lang.Number n => checked((uint)n.longValue()),
+                _ => throw new InvalidCastException(),
+            };
+        }
+
+        /// <summary>
+        /// Implements the GetUInt64 operation. Accepts any numeric value representable as a <see cref="ulong"/>.
+        /// </summary>
+        public ulong GetUInt64()
+        {
+            return _value switch
+            {
+                org.joou.ULong ul => (ulong)ul.toBigInteger().longValue(),
+                java.math.BigDecimal bd => (ulong)BigDecimalConverter.ToDecimal(bd),
+                java.lang.Number n => (ulong)n.longValue(),
                 _ => throw new InvalidCastException(),
             };
         }

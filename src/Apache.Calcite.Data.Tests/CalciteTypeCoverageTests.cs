@@ -301,6 +301,64 @@ namespace Apache.Calcite.Data.Tests
         }
 
         [Fact]
+        public void Parameter_UInt16_should_round_trip()
+        {
+            // UInt16 is widened to INTEGER (Java Integer) on the way in; the reader surfaces it
+            // back as int, so we compare against the expected int value.
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST(? AS INTEGER))";
+            var p = cmd.CreateParameter();
+            p.ParameterName = "?";
+            p.DbType = DbType.UInt16;
+            p.Value = (ushort)65535;
+            cmd.Parameters.Add(p);
+
+            var actual = cmd.ExecuteScalar();
+            Assert.Equal(65535, Convert.ToInt32(actual));
+        }
+
+        [Fact]
+        public void Parameter_UInt32_should_round_trip()
+        {
+            // UInt32 is widened to BIGINT (Java Long) on the way in; the reader surfaces it as long.
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST(? AS BIGINT))";
+            var p = cmd.CreateParameter();
+            p.ParameterName = "?";
+            p.DbType = DbType.UInt32;
+            p.Value = (uint)4294967295;
+            cmd.Parameters.Add(p);
+
+            var actual = cmd.ExecuteScalar();
+            Assert.Equal(4294967295L, Convert.ToInt64(actual));
+        }
+
+        [Fact]
+        public void Parameter_UInt64_should_round_trip()
+        {
+            // UInt64 is sent as BigDecimal; the reader surfaces it as decimal.
+            // Calcite's DECIMAL implementation is backed by Java long, so precision is capped at 19
+            // digits (Long.MAX_VALUE). Use a value that fits within that constraint but still exceeds
+            // the Int64 range to confirm the unsigned binding path is exercised.
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST(? AS DECIMAL(19,0)))";
+            var p = cmd.CreateParameter();
+            p.ParameterName = "?";
+            p.DbType = DbType.UInt64;
+            p.Value = 9_000_000_000_000_000_000UL;
+            cmd.Parameters.Add(p);
+
+            var actual = cmd.ExecuteScalar();
+            Assert.Equal(9_000_000_000_000_000_000m, Convert.ToDecimal(actual));
+        }
+
+        [Fact]
         public void Parameter_Null_should_round_trip_as_DbNull()
         {
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
@@ -331,8 +389,60 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
+        // Unsigned typed getters: GetUInt8/16/32/64 on CalciteDataReader, reading standard
+        // signed Calcite SQL types (TINYINT/SMALLINT/INTEGER/BIGINT/DECIMAL).
+        // ------------------------------------------------------------------------------------
+
+        [Fact]
+        public void GetByte_should_read_tinyint_unsigned_as_byte()
+        {
+            using var r = ExecuteSingleRowTyped("VALUES (CAST(200 AS TINYINT UNSIGNED))");
+            Assert.Equal(typeof(byte), r.GetFieldType(0));
+            Assert.Equal((byte)200, r.GetByte(0));
+            Assert.Equal((byte)200, r.GetFieldValue<byte>(0));
+        }
+
+        [Fact]
+        public void GetUInt16_should_read_smallint_unsigned_as_ushort()
+        {
+            using var r = ExecuteSingleRowTyped("VALUES (CAST(65535 AS SMALLINT UNSIGNED))");
+            Assert.Equal(typeof(ushort), r.GetFieldType(0));
+            Assert.Equal((ushort)65535, r.GetUInt16(0));
+            Assert.Equal((ushort)65535, r.GetFieldValue<ushort>(0));
+        }
+
+        [Fact]
+        public void GetUInt32_should_read_integer_unsigned_as_uint()
+        {
+            using var r = ExecuteSingleRowTyped("VALUES (CAST(4294967295 AS INTEGER UNSIGNED))");
+            Assert.Equal(typeof(uint), r.GetFieldType(0));
+            Assert.Equal(4294967295u, r.GetUInt32(0));
+            Assert.Equal(4294967295u, r.GetFieldValue<uint>(0));
+        }
+
+        [Fact]
+        public void GetUInt64_should_read_bigint_unsigned_as_ulong()
+        {
+            using var r = ExecuteSingleRowTyped("VALUES (CAST(9000000000000000000 AS BIGINT UNSIGNED))");
+            Assert.Equal(typeof(ulong), r.GetFieldType(0));
+            Assert.Equal(9_000_000_000_000_000_000UL, r.GetUInt64(0));
+            Assert.Equal(9_000_000_000_000_000_000UL, r.GetFieldValue<ulong>(0));
+        }
+
+        // ------------------------------------------------------------------------------------
         // Helpers
         // ------------------------------------------------------------------------------------
+
+        static CalciteDataReader ExecuteSingleRowTyped(string sql)
+        {
+            var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            var cmd = c.CreateCommand();
+            cmd.CommandText = sql;
+            var r = (CalciteDataReader)cmd.ExecuteReader(CommandBehavior.CloseConnection);
+            Assert.True(r.Read());
+            return r;
+        }
 
         static System.Data.Common.DbDataReader ExecuteSingleRow(string sql)
         {

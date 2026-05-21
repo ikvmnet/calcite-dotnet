@@ -260,14 +260,23 @@ namespace Apache.Calcite.Data
         public override bool GetBoolean(int ordinal)
         {
             ThrowIfClosed();
-            return Convert.ToBoolean(GetValue(ordinal));
+            return ActiveResult.Current.GetValue(ordinal).GetBoolean();
         }
 
         /// <inheritdoc />
         public override byte GetByte(int ordinal)
         {
             ThrowIfClosed();
-            return Convert.ToByte(GetValue(ordinal));
+            return ActiveResult.Current.GetValue(ordinal).GetByte();
+        }
+
+        /// <summary>
+        /// Returns the value of the specified column as an <see cref="sbyte"/> (signed 8-bit integer).
+        /// </summary>
+        public sbyte GetSByte(int ordinal)
+        {
+            ThrowIfClosed();
+            return ActiveResult.Current.GetValue(ordinal).GetSByte();
         }
 
         /// <inheritdoc />
@@ -363,6 +372,33 @@ namespace Apache.Calcite.Data
         {
             ThrowIfClosed();
             return ActiveResult.Current.GetValue(ordinal).GetInt64();
+        }
+
+        /// <summary>
+        /// Returns the value of the specified column as a <see cref="ushort"/> (unsigned 16-bit integer).
+        /// </summary>
+        public ushort GetUInt16(int ordinal)
+        {
+            ThrowIfClosed();
+            return ActiveResult.Current.GetValue(ordinal).GetUInt16();
+        }
+
+        /// <summary>
+        /// Returns the value of the specified column as a <see cref="uint"/> (unsigned 32-bit integer).
+        /// </summary>
+        public uint GetUInt32(int ordinal)
+        {
+            ThrowIfClosed();
+            return ActiveResult.Current.GetValue(ordinal).GetUInt32();
+        }
+
+        /// <summary>
+        /// Returns the value of the specified column as a <see cref="ulong"/> (unsigned 64-bit integer).
+        /// </summary>
+        public ulong GetUInt64(int ordinal)
+        {
+            ThrowIfClosed();
+            return ActiveResult.Current.GetValue(ordinal).GetUInt64();
         }
 
         /// <summary>
