@@ -1,7 +1,6 @@
 using System;
 using System.Data;
 
-
 using Xunit;
 
 namespace Apache.Calcite.Data.Tests
@@ -15,9 +14,7 @@ namespace Apache.Calcite.Data.Tests
         {
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
             c.Open();
-            var tx = (CalciteTransaction)c.BeginTransaction();
-            tx.Commit();
-            Assert.Throws<InvalidOperationException>(() => tx.Commit());
+            Assert.Throws<NotSupportedException>(() => c.BeginTransaction());
         }
 
         [Fact]
@@ -25,9 +22,7 @@ namespace Apache.Calcite.Data.Tests
         {
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
             c.Open();
-            var tx = (CalciteTransaction)c.BeginTransaction();
-            tx.Rollback();
-            Assert.Throws<InvalidOperationException>(() => tx.Rollback());
+            Assert.Throws<NotSupportedException>(() => c.BeginTransaction());
         }
 
         [Fact]
@@ -35,9 +30,7 @@ namespace Apache.Calcite.Data.Tests
         {
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
             c.Open();
-            var tx = (CalciteTransaction)c.BeginTransaction();
-            tx.Dispose();
-            Assert.Throws<InvalidOperationException>(() => tx.Commit());
+            Assert.Throws<NotSupportedException>(() => c.BeginTransaction());
         }
 
         [Theory]
@@ -48,8 +41,7 @@ namespace Apache.Calcite.Data.Tests
         {
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
             c.Open();
-            using var tx = c.BeginTransaction(level);
-            Assert.Equal(level, tx.IsolationLevel);
+            Assert.Throws<NotSupportedException>(() => c.BeginTransaction(level));
         }
 
     }

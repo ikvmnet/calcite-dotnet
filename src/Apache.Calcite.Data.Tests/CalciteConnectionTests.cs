@@ -86,8 +86,7 @@ namespace Apache.Calcite.Data.Tests
         {
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
             c.Open();
-            using var tx = c.BeginTransaction(IsolationLevel.ReadCommitted);
-            Assert.Equal(IsolationLevel.ReadCommitted, tx.IsolationLevel);
+            Assert.Throws<NotSupportedException>(() => c.BeginTransaction(IsolationLevel.ReadCommitted));
         }
 
         [Fact]
