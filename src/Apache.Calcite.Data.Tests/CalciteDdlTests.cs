@@ -332,6 +332,111 @@ namespace Apache.Calcite.Data.Tests
             Assert.False(reader.Read());
         }
 
+        [Fact]
+        public void Delete_should_return_row_count()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS \"delete_tbl\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "INSERT INTO \"delete_tbl\" VALUES (1)";
+            Assert.Equal(1, cmd.ExecuteNonQuery());
+
+            cmd.CommandText = "INSERT INTO \"delete_tbl\" VALUES (2)";
+            Assert.Equal(1, cmd.ExecuteNonQuery());
+
+            cmd.CommandText = "DELETE FROM \"delete_tbl\" WHERE \"id\" = 1";
+            Assert.Equal(1, cmd.ExecuteNonQuery());
+
+            cmd.CommandText = "SELECT COUNT(*) FROM \"delete_tbl\"";
+            using var reader = cmd.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal(1L, reader.GetInt64(0));
+        }
+
+        [Fact]
+        public void MultiRow_insert_should_return_correct_row_count()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS \"multi_insert_tbl\" (\"id\" INTEGER NOT NULL, \"val\" VARCHAR(50))";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "INSERT INTO \"multi_insert_tbl\" VALUES (1, 'a'), (2, 'b'), (3, 'c')";
+            Assert.Equal(3, cmd.ExecuteNonQuery());
+
+            cmd.CommandText = "SELECT COUNT(*) FROM \"multi_insert_tbl\"";
+            using var reader = cmd.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal(3L, reader.GetInt64(0));
+        }
+
+        [Fact]
+        public void MultiRow_update_should_return_correct_row_count()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS \"multi_update_rows_tbl\" (\"id\" INTEGER NOT NULL, \"flag\" INTEGER)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "INSERT INTO \"multi_update_rows_tbl\" VALUES (1, 0), (2, 0), (3, 1)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "UPDATE \"multi_update_rows_tbl\" SET \"flag\" = 1 WHERE \"flag\" = 0";
+            Assert.Equal(2, cmd.ExecuteNonQuery());
+
+            cmd.CommandText = "SELECT COUNT(*) FROM \"multi_update_rows_tbl\" WHERE \"flag\" = 1";
+            using var reader = cmd.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal(3L, reader.GetInt64(0));
+        }
+
+        /// <summary>
+        /// Verifies that DELETE removes multiple rows and returns the correct affected-row count
+        /// for a single-column table.
+        ///
+        /// <para>
+        /// Note: Calcite's <c>EnumerableTableModify</c> uses <c>Collection.removeAll</c> backed by
+        /// Java <c>Object[].equals</c> (reference equality) to locate rows to remove.  For
+        /// single-column tables Calcite optimises the physical row format from ARRAY to SCALAR, so
+        /// each row is a plain scalar value whose <c>equals</c> is value-based — reference identity
+        /// is preserved through the scan, and <c>removeAll</c> succeeds.  Multi-column tables stay
+        /// in ARRAY format and the conversion branch in <c>EnumerableTableModify.implement</c>
+        /// creates brand-new <c>Object[]</c> instances, so <c>removeAll</c> finds no matches;
+        /// this is a known Calcite limitation (CALCITE-style bug in the enumerable DELETE path).
+        /// </para>
+        /// </summary>
+        [Fact]
+        public void MultiRow_delete_should_return_correct_row_count_for_single_column_table()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            // Single-column table: Calcite uses SCALAR row format, so Object.equals is value-based
+            // and Collection.removeAll correctly locates and removes the matching rows.
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS \"multi_delete_sc_tbl\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "INSERT INTO \"multi_delete_sc_tbl\" VALUES (1), (2), (3)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "DELETE FROM \"multi_delete_sc_tbl\" WHERE \"id\" < 3";
+            Assert.Equal(2, cmd.ExecuteNonQuery());
+
+            cmd.CommandText = "SELECT COUNT(*) FROM \"multi_delete_sc_tbl\"";
+            using var reader = cmd.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal(1L, reader.GetInt64(0));
+        }
+
     }
 
 }
