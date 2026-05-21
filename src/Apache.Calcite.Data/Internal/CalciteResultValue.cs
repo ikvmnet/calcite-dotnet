@@ -205,10 +205,10 @@ namespace Apache.Calcite.Data.Internal
                 if (_value is org.apache.calcite.avatica.util.ByteString bs) return bs.getBytes();
                 // joou unsigned integer types: Calcite may return these when unsigned columns are
                 // read. Map each to its natural unsigned CLR counterpart.
-                if (_value is org.joou.UByte ub) return (byte)ub.intValue();
-                if (_value is org.joou.UShort us) return (ushort)us.intValue();
-                if (_value is org.joou.UInteger ui) return (uint)ui.longValue();
-                if (_value is org.joou.ULong ul) return (ulong)ul.toBigInteger().longValue();
+                if (_value is org.joou.UByte ub) return (byte)ub.byteValue();
+                if (_value is org.joou.UShort us) return (ushort)us.shortValue();
+                if (_value is org.joou.UInteger ui) return (uint)ui.intValue();
+                if (_value is org.joou.ULong ul) return (ulong)ul.longValue();
             }
 
             return _value;
@@ -459,7 +459,7 @@ namespace Apache.Calcite.Data.Internal
         {
             return _value switch
             {
-                org.joou.UByte ub => (byte)ub.intValue(),
+                org.joou.UByte ub => (byte)ub.byteValue(),
                 java.lang.Number n => checked((byte)n.longValue()),
                 _ => throw new InvalidCastException(),
             };
@@ -485,7 +485,7 @@ namespace Apache.Calcite.Data.Internal
         {
             return _value switch
             {
-                org.joou.UShort us => (ushort)us.intValue(),
+                org.joou.UShort us => (ushort)us.shortValue(),
                 java.lang.Number n => checked((ushort)n.longValue()),
                 _ => throw new InvalidCastException(),
             };
@@ -498,7 +498,7 @@ namespace Apache.Calcite.Data.Internal
         {
             return _value switch
             {
-                org.joou.UInteger ui => (uint)ui.longValue(),
+                org.joou.UInteger ui => (uint)ui.intValue(),
                 java.lang.Number n => checked((uint)n.longValue()),
                 _ => throw new InvalidCastException(),
             };
@@ -511,7 +511,7 @@ namespace Apache.Calcite.Data.Internal
         {
             return _value switch
             {
-                org.joou.ULong ul => (ulong)ul.toBigInteger().longValue(),
+                org.joou.ULong ul => (ulong)ul.longValue(),
                 java.math.BigDecimal bd => (ulong)BigDecimalConverter.ToDecimal(bd),
                 java.lang.Number n => (ulong)n.longValue(),
                 _ => throw new InvalidCastException(),
