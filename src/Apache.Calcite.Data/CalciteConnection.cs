@@ -209,7 +209,14 @@ namespace Apache.Calcite.Data
         protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel)
         {
             ThrowIfDisposed();
-            return new CalciteTransaction(this, isolationLevel);
+            throw new NotSupportedException("Transactions are not supported by Apache Calcite.");
+        }
+
+        /// <inheritdoc />
+        public override void EnlistTransaction(System.Transactions.Transaction? transaction)
+        {
+            ThrowIfDisposed();
+            throw new NotSupportedException("Transactions are not supported by Apache Calcite.");
         }
 
         /// <inheritdoc />

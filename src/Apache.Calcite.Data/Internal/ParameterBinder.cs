@@ -24,6 +24,15 @@ namespace Apache.Calcite.Data.Internal
 
         static readonly DateTime UnixEpoch = new(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
+        /// <summary>
+        /// Converts a list of <see cref="CalciteParameterValue"/> instances into the Java/Calcite-native
+        /// representations passed to the <c>DataContext</c> at execution time.
+        /// </summary>
+        /// <param name="parameters">The parameter values to bind. May be <see langword="null"/> or empty.</param>
+        /// <returns>
+        /// An array of converted values in positional order, or an empty array when <paramref name="parameters"/> is
+        /// <see langword="null"/> or contains no elements.
+        /// </returns>
         public static IReadOnlyList<object?> Bind(IReadOnlyList<CalciteParameterValue> parameters)
         {
             if (parameters is null || parameters.Count == 0)
@@ -36,6 +45,13 @@ namespace Apache.Calcite.Data.Internal
             return result;
         }
 
+        /// <summary>
+        /// Converts a single <see cref="CalciteParameterValue"/> to the Java/Calcite-native representation
+        /// appropriate for its <see cref="CalciteParameterValue.DbType"/>, falling back to CLR-type inference
+        /// when the type is <see cref="DbType.Object"/> or unrecognized.
+        /// </summary>
+        /// <param name="p">The parameter value to convert.</param>
+        /// <returns>The converted value, or <see langword="null"/> when the parameter value is <see langword="null"/> or <see cref="DBNull"/>.</returns>
         static object? Convert(CalciteParameterValue p)
         {
             var value = p.Value;
@@ -69,6 +85,12 @@ namespace Apache.Calcite.Data.Internal
             };
         }
 
+        /// <summary>
+        /// Infers the Calcite-native representation from the CLR type of <paramref name="value"/> when no
+        /// explicit <see cref="DbType"/> mapping is available.
+        /// </summary>
+        /// <param name="value">The non-null CLR value to convert.</param>
+        /// <returns>The converted Java/Calcite-native value, or the original <paramref name="value"/> if no mapping is defined.</returns>
         static object InferFromClr(object value)
         {
             return value switch
@@ -92,6 +114,12 @@ namespace Apache.Calcite.Data.Internal
             };
         }
 
+        /// <summary>
+        /// Converts a date value to the number of days since the Unix epoch (<c>1970-01-01</c>),
+        /// which is the representation Calcite uses for the SQL <c>DATE</c> type.
+        /// </summary>
+        /// <param name="value">A <see cref="DateTime"/>, <see cref="DateTimeOffset"/>, <see cref="DateOnly"/>, or any value convertible to <see cref="DateTime"/>.</param>
+        /// <returns>A boxed <c>int</c> representing the number of days since the Unix epoch.</returns>
         static java.lang.Integer ConvertDate(object value)
         {
             var dt = value switch
@@ -105,6 +133,12 @@ namespace Apache.Calcite.Data.Internal
             return java.lang.Integer.valueOf(days);
         }
 
+        /// <summary>
+        /// Converts a date/time value to the number of milliseconds since the Unix epoch (<c>1970-01-01T00:00:00Z</c>),
+        /// which is the representation Calcite uses for the SQL <c>TIMESTAMP</c> type.
+        /// </summary>
+        /// <param name="value">A <see cref="DateTime"/>, <see cref="DateTimeOffset"/>, <see cref="DateOnly"/>, or any value convertible to <see cref="DateTime"/>.</param>
+        /// <returns>A boxed <c>long</c> representing the number of milliseconds since the Unix epoch.</returns>
         static java.lang.Long ConvertTimestamp(object value)
         {
             var dt = value switch
@@ -118,6 +152,12 @@ namespace Apache.Calcite.Data.Internal
             return java.lang.Long.valueOf(ms);
         }
 
+        /// <summary>
+        /// Converts a time-of-day value to the number of milliseconds since midnight,
+        /// which is the representation Calcite uses for the SQL <c>TIME</c> type.
+        /// </summary>
+        /// <param name="value">A <see cref="TimeSpan"/>, <see cref="DateTime"/>, <see cref="TimeOnly"/>, or any value convertible to a time string.</param>
+        /// <returns>A boxed <c>int</c> representing the number of milliseconds since midnight.</returns>
         static java.lang.Integer ConvertTime(object value)
         {
             var ts = value switch
@@ -130,6 +170,12 @@ namespace Apache.Calcite.Data.Internal
             return java.lang.Integer.valueOf((int)ts.TotalMilliseconds);
         }
 
+        /// <summary>
+        /// Converts an unsigned 64-bit integer to a <see cref="java.math.BigDecimal"/> with scale 0,
+        /// preserving the full unsigned range that does not fit in a signed <c>long</c>.
+        /// </summary>
+        /// <param name="value">The <see cref="ulong"/> value to convert.</param>
+        /// <returns>A <see cref="java.math.BigDecimal"/> with scale 0 equal to <paramref name="value"/>.</returns>
         static java.math.BigDecimal UInt64ToBigDecimal(ulong value)
         {
             // Big-endian unsigned magnitude; signum=1 (or 0 for zero).
@@ -146,6 +192,12 @@ namespace Apache.Calcite.Data.Internal
             return new java.math.BigDecimal(unscaled);
         }
 
+        /// <summary>
+        /// Converts a binary value to a Calcite <see cref="ByteString"/>.
+        /// </summary>
+        /// <param name="value">A <see cref="T:byte[]"/> or a <see cref="string"/> whose UTF-8 encoding is used.</param>
+        /// <returns>A <see cref="ByteString"/> wrapping the binary content.</returns>
+        /// <exception cref="InvalidCastException">Thrown when <paramref name="value"/> is neither a byte array nor a string.</exception>
         static ByteString ConvertBinary(object value)
         {
             if (value is byte[] bytes)

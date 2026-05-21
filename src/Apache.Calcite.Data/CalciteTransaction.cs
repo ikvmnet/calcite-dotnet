@@ -20,6 +20,12 @@ namespace Apache.Calcite.Data
         readonly IsolationLevel _isolationLevel;
         bool _completed;
 
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        /// <param name="connection"></param>
+        /// <param name="isolationLevel"></param>
+        /// <exception cref="ArgumentNullException"></exception>
         internal CalciteTransaction(CalciteConnection connection, IsolationLevel isolationLevel)
         {
             _connection = connection ?? throw new ArgumentNullException(nameof(connection));
@@ -37,6 +43,7 @@ namespace Apache.Calcite.Data
         {
             ThrowIfCompleted();
             _completed = true;
+            throw new NotSupportedException("Commit is not supported by Apache Calcite.");
         }
 
         /// <inheritdoc />
@@ -44,6 +51,7 @@ namespace Apache.Calcite.Data
         {
             ThrowIfCompleted();
             _completed = true;
+            throw new NotSupportedException("Rollback is not supported by Apache Calcite.");
         }
 
         /// <inheritdoc />

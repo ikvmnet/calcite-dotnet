@@ -23,7 +23,7 @@ namespace Apache.Calcite.Data.Tests
             Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
             ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
             Schema = "adhoc",
-        }.ConnectionString;
+        };
 
         [Fact]
         public void CreateSchema_IfNotExists_should_succeed_when_serverDdl_is_enabled()
@@ -97,14 +97,14 @@ namespace Apache.Calcite.Data.Tests
             Model = "inline:{\"version\":\"1.0\",\"schemas\":[{\"name\":\"adhoc\"}]}",
             ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
             Schema = "adhoc",
-        }.ConnectionString;
+        };
 
         static readonly string ModelDefaultSchemaOnlyConnectionString = new CalciteConnectionStringBuilder
         {
             // Model carries defaultSchema — no Schema property on the connection string.
             Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
             ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
-        }.ConnectionString;
+        };
 
         [Fact]
         public void CreateTable_with_connection_string_schema_property_should_land_in_that_schema()

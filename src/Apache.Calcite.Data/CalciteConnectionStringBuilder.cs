@@ -16,6 +16,8 @@ namespace Apache.Calcite.Data
     public sealed class CalciteConnectionStringBuilder : DbConnectionStringBuilder
     {
 
+        public static implicit operator string(CalciteConnectionStringBuilder builder) => builder.ConnectionString;
+
         /// <summary>
         /// Connection string key for the Calcite model file URI or inline JSON model.
         /// </summary>
