@@ -91,6 +91,63 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(1, affected);
         }
 
+        static readonly string SchemaPropertyOnlyConnectionString = new CalciteConnectionStringBuilder
+        {
+            // Model has NO defaultSchema — the connection-string Schema property is the sole source.
+            Model = "inline:{\"version\":\"1.0\",\"schemas\":[{\"name\":\"adhoc\"}]}",
+            ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+            Schema = "adhoc",
+        }.ConnectionString;
+
+        static readonly string ModelDefaultSchemaOnlyConnectionString = new CalciteConnectionStringBuilder
+        {
+            // Model carries defaultSchema — no Schema property on the connection string.
+            Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
+            ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+        }.ConnectionString;
+
+        [Fact]
+        public void CreateTable_with_connection_string_schema_property_should_land_in_that_schema()
+        {
+            using var c = new CalciteConnection(SchemaPropertyOnlyConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS \"cs_schema_tbl\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+
+            var t = c.GetSchema(CalciteSchemaInfo.Tables);
+            foreach (System.Data.DataRow row in t.Rows)
+            {
+                if ((string)row["TABLE_SCHEMA"] == "adhoc" &&
+                    (string)row["TABLE_NAME"] == "cs_schema_tbl")
+                    return;
+            }
+
+            Assert.Fail("Expected table created via connection-string Schema to appear in the 'adhoc' schema.");
+        }
+
+        [Fact]
+        public void CreateTable_with_model_defaultSchema_should_land_in_that_schema()
+        {
+            using var c = new CalciteConnection(ModelDefaultSchemaOnlyConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS \"model_schema_tbl\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+
+            var t = c.GetSchema(CalciteSchemaInfo.Tables);
+            foreach (System.Data.DataRow row in t.Rows)
+            {
+                if ((string)row["TABLE_SCHEMA"] == "adhoc" &&
+                    (string)row["TABLE_NAME"] == "model_schema_tbl")
+                    return;
+            }
+
+            Assert.Fail("Expected table created via model defaultSchema to appear in the 'adhoc' schema.");
+        }
+
         [Fact]
         public void CreateTable_should_be_visible_in_get_schema_tables()
         {
