@@ -33,9 +33,18 @@ namespace Apache.Calcite.Data.Tests
         public void Output_TinyInt_should_round_trip_as_sbyte()
         {
             using var r = ExecuteSingleRow("VALUES (CAST(1 AS TINYINT))");
-            // Calcite TINYINT maps to sbyte (signed) per ColumnAdapter.
+            // Calcite TINYINT is a signed 8-bit integer; maps to CLR sbyte.
             Assert.Equal(typeof(sbyte), r.GetFieldType(0));
             Assert.Equal((sbyte)1, (sbyte)r.GetValue(0));
+        }
+
+        [Fact]
+        public void Output_TinyIntUnsigned_should_round_trip_as_byte()
+        {
+            using var r = ExecuteSingleRow("VALUES (CAST(200 AS TINYINT UNSIGNED))");
+            // Calcite TINYINT UNSIGNED is an unsigned 8-bit integer; maps to CLR byte.
+            Assert.Equal(typeof(byte), r.GetFieldType(0));
+            Assert.Equal((byte)200, r.GetByte(0));
         }
 
         [Fact]
@@ -340,7 +349,15 @@ namespace Apache.Calcite.Data.Tests
         [Fact]
         public void Parameter_Byte_should_round_trip()
         {
-            AssertParameterRoundTrip("SMALLINT", DbType.Byte, (byte)5);
+            // CLR byte (unsigned 8-bit) maps to Calcite TINYINT UNSIGNED.
+            AssertParameterRoundTrip("TINYINT UNSIGNED", DbType.Byte, (byte)5);
+        }
+
+        [Fact]
+        public void Parameter_SByte_should_round_trip()
+        {
+            // CLR sbyte (signed 8-bit) maps to Calcite TINYINT.
+            AssertParameterRoundTrip("TINYINT", DbType.SByte, (sbyte)-5);
         }
 
         [Fact]

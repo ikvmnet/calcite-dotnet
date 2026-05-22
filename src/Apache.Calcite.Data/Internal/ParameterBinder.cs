@@ -60,21 +60,19 @@ namespace Apache.Calcite.Data.Internal
 
             return p.DbType switch
             {
-                DbType.Boolean => java.lang.Boolean.valueOf(System.Convert.ToBoolean(value)),
-                DbType.Byte => java.lang.Short.valueOf(System.Convert.ToInt16(value)),
-                DbType.SByte => java.lang.Byte.valueOf(unchecked((byte)System.Convert.ToSByte(value))),
-                DbType.Int16 => java.lang.Short.valueOf(System.Convert.ToInt16(value)),
-                DbType.UInt16 => java.lang.Integer.valueOf(System.Convert.ToInt32(value)),
-                DbType.Int32 => java.lang.Integer.valueOf(System.Convert.ToInt32(value)),
-                DbType.UInt32 => java.lang.Long.valueOf(System.Convert.ToInt64(value)),
-                DbType.Int64 => java.lang.Long.valueOf(System.Convert.ToInt64(value)),
-                DbType.UInt64 => UInt64ToBigDecimal(System.Convert.ToUInt64(value)),
-                DbType.Single => java.lang.Float.valueOf(System.Convert.ToSingle(value)),
-                DbType.Double => java.lang.Double.valueOf(System.Convert.ToDouble(value)),
-                DbType.Decimal or DbType.Currency or DbType.VarNumeric =>
-                    BigDecimalConverter.ToBigDecimal(System.Convert.ToDecimal(value)),
-                DbType.String or DbType.AnsiString or DbType.StringFixedLength or DbType.AnsiStringFixedLength =>
-                    System.Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture),
+                DbType.Boolean => java.lang.Boolean.valueOf((bool)value),
+                DbType.Byte => org.joou.UByte.valueOf((byte)value),
+                DbType.SByte => java.lang.Byte.valueOf(unchecked((byte)(sbyte)value)),
+                DbType.Int16 => java.lang.Short.valueOf((short)value),
+                DbType.UInt16 => org.joou.UShort.valueOf((ushort)value),
+                DbType.Int32 => java.lang.Integer.valueOf((int)value),
+                DbType.UInt32 => org.joou.UInteger.valueOf((uint)value),
+                DbType.Int64 => java.lang.Long.valueOf((long)value),
+                DbType.UInt64 => org.joou.ULong.valueOf(unchecked((long)(ulong)value)),
+                DbType.Single => java.lang.Float.valueOf((float)value),
+                DbType.Double => java.lang.Double.valueOf((double)value),
+                DbType.Decimal or DbType.Currency or DbType.VarNumeric => BigDecimalConverter.ToBigDecimal((decimal)value),
+                DbType.String or DbType.AnsiString or DbType.StringFixedLength or DbType.AnsiStringFixedLength => (string)value,
                 DbType.Guid => value is Guid g ? g.ToString() : value.ToString(),
                 DbType.Date => ConvertDate(value),
                 DbType.DateTime or DbType.DateTime2 => ConvertTimestamp(value),
@@ -97,10 +95,13 @@ namespace Apache.Calcite.Data.Internal
             {
                 bool b => java.lang.Boolean.valueOf(b),
                 sbyte sb => java.lang.Byte.valueOf(unchecked((byte)sb)),
-                byte by => java.lang.Short.valueOf(by),
+                byte by => org.joou.UByte.valueOf(by),
                 short s => java.lang.Short.valueOf(s),
+                ushort us => org.joou.UShort.valueOf(us),
                 int i => java.lang.Integer.valueOf(i),
+                uint ui => org.joou.UInteger.valueOf(ui),
                 long l => java.lang.Long.valueOf(l),
+                ulong ul => org.joou.ULong.valueOf(unchecked((long)ul)),
                 float f => java.lang.Float.valueOf(f),
                 double d => java.lang.Double.valueOf(d),
                 decimal m => BigDecimalConverter.ToBigDecimal(m),
@@ -168,28 +169,6 @@ namespace Apache.Calcite.Data.Internal
                 _ => TimeSpan.Parse(System.Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "0"),
             };
             return java.lang.Integer.valueOf((int)ts.TotalMilliseconds);
-        }
-
-        /// <summary>
-        /// Converts an unsigned 64-bit integer to a <see cref="java.math.BigDecimal"/> with scale 0,
-        /// preserving the full unsigned range that does not fit in a signed <c>long</c>.
-        /// </summary>
-        /// <param name="value">The <see cref="ulong"/> value to convert.</param>
-        /// <returns>A <see cref="java.math.BigDecimal"/> with scale 0 equal to <paramref name="value"/>.</returns>
-        static java.math.BigDecimal UInt64ToBigDecimal(ulong value)
-        {
-            // Big-endian unsigned magnitude; signum=1 (or 0 for zero).
-            var bytes = new byte[8];
-            bytes[0] = (byte)(value >> 56);
-            bytes[1] = (byte)(value >> 48);
-            bytes[2] = (byte)(value >> 40);
-            bytes[3] = (byte)(value >> 32);
-            bytes[4] = (byte)(value >> 24);
-            bytes[5] = (byte)(value >> 16);
-            bytes[6] = (byte)(value >> 8);
-            bytes[7] = (byte)value;
-            var unscaled = new java.math.BigInteger(value == 0 ? 0 : 1, bytes);
-            return new java.math.BigDecimal(unscaled);
         }
 
         /// <summary>
