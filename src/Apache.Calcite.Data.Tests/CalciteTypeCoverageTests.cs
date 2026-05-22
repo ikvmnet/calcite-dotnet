@@ -134,6 +134,115 @@ namespace Apache.Calcite.Data.Tests
         }
 
         [Fact]
+        public void Output_Timestamp_with_milliseconds_should_round_trip()
+        {
+            using var r = ExecuteSingleRow("VALUES (TIMESTAMP '2023-06-15 08:30:45.123')");
+            Assert.Equal(typeof(DateTime), r.GetFieldType(0));
+            var dt = r.GetDateTime(0);
+            Assert.Equal(new DateTime(2023, 6, 15, 8, 30, 45, 123, DateTimeKind.Utc), dt.ToUniversalTime());
+        }
+
+        [Fact]
+        public void Output_Timestamp_near_unix_epoch_should_round_trip()
+        {
+            // 1970-01-01 00:00:00.001 — one millisecond after epoch
+            using var r = ExecuteSingleRow("VALUES (TIMESTAMP '1970-01-01 00:00:00.001')");
+            var dt = r.GetDateTime(0).ToUniversalTime();
+            Assert.Equal(new DateTime(1970, 1, 1, 0, 0, 0, 1, DateTimeKind.Utc), dt);
+        }
+
+        [Fact]
+        public void Output_Timestamp_before_unix_epoch_should_round_trip()
+        {
+            // 1960-03-15 23:59:59.999 — negative Unix timestamp with fractional ms
+            using var r = ExecuteSingleRow("VALUES (TIMESTAMP '1960-03-15 23:59:59.999')");
+            var dt = r.GetDateTime(0).ToUniversalTime();
+            Assert.Equal(new DateTime(1960, 3, 15, 23, 59, 59, 999, DateTimeKind.Utc), dt);
+        }
+
+        [Fact]
+        public void Output_Timestamp_early_date_0001_should_round_trip()
+        {
+            // Earliest representable Calcite TIMESTAMP — proleptic Gregorian year 0001
+            using var r = ExecuteSingleRow("VALUES (TIMESTAMP '0001-01-01 00:00:00')");
+            var dt = r.GetDateTime(0).ToUniversalTime();
+            Assert.Equal(1, dt.Year);
+            Assert.Equal(1, dt.Month);
+            Assert.Equal(1, dt.Day);
+            Assert.Equal(0, dt.Hour);
+            Assert.Equal(0, dt.Minute);
+            Assert.Equal(0, dt.Second);
+        }
+
+        [Fact]
+        public void Output_Timestamp_early_date_with_fractional_seconds_should_round_trip()
+        {
+            // 0001-01-01 00:00:00.456
+            using var r = ExecuteSingleRow("VALUES (TIMESTAMP '0001-01-01 00:00:00.456')");
+            var dt = r.GetDateTime(0).ToUniversalTime();
+            Assert.Equal(1, dt.Year);
+            Assert.Equal(1, dt.Month);
+            Assert.Equal(1, dt.Day);
+            Assert.Equal(456, dt.Millisecond);
+        }
+
+        [Fact]
+        public void Parameter_Timestamp_sub_millisecond_ticks_are_truncated_to_ms()
+        {
+            // 0001-01-01T00:00:00.0102004 — ticks value 102004 (10.2004 ms).
+            // Calcite TIMESTAMP resolution is milliseconds. The binding calls
+            // DateTimeOffset.ToUnixTimeMilliseconds(), which truncates toward zero.
+            // Because this date produces a large negative Unix timestamp, truncation
+            // toward zero effectively rounds the fractional ms *up*: 10.2004 ms → 11 ms.
+            var input = new DateTime(1, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddTicks(102004);
+            Assert.Equal(10, input.Millisecond); // sanity: the CLR ms field is 10
+
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST(? AS TIMESTAMP(3)))";
+            var p = cmd.CreateParameter();
+            p.ParameterName = "?";
+            p.DbType = DbType.DateTime;
+            p.Value = input;
+            cmd.Parameters.Add(p);
+
+            var actual = (DateTime)cmd.ExecuteScalar()!;
+            // ToUnixTimeMilliseconds truncates toward zero → negative remainder rounds up to 11 ms.
+            var expected = new DateTime(1, 1, 1, 0, 0, 0, 11, DateTimeKind.Utc);
+            Assert.Equal(expected, actual.ToUniversalTime());
+        }
+
+        [Fact]
+        public void Output_Timestamp_readable_as_DateTimeOffset_utc()
+        {
+            using var r = (CalciteDataReader)ExecuteSingleRow("VALUES (TIMESTAMP '2024-07-04 13:45:30.750')");
+            // GetDateTime materialises as UTC DateTime; wrap it for a DateTimeOffset comparison.
+            var dt = r.GetDateTime(0).ToUniversalTime();
+            Assert.Equal(new DateTimeOffset(2024, 7, 4, 13, 45, 30, 750, TimeSpan.Zero), new DateTimeOffset(dt));
+        }
+
+        [Fact]
+        public void Output_Date_near_min_value_should_round_trip()
+        {
+            // DATE 0001-01-01 — minimum date expressible in SQL
+            using var r = ExecuteSingleRow("VALUES (DATE '0001-01-01')");
+            Assert.Equal(typeof(DateTime), r.GetFieldType(0));
+            var dt = r.GetDateTime(0);
+            Assert.Equal(1, dt.Year);
+            Assert.Equal(1, dt.Month);
+            Assert.Equal(1, dt.Day);
+        }
+
+        [Fact]
+        public void Output_Date_near_min_value_as_DateOnly()
+        {
+            using var r = (CalciteDataReader)ExecuteSingleRow("VALUES (DATE '0001-01-02')");
+            var v = r.GetFieldValue<DateOnly>(0);
+            Assert.Equal(new DateOnly(1, 1, 2), v);
+        }
+
+        [Fact]
         public void Output_Date_should_be_readable_as_DateOnly()
         {
             using var r = (CalciteDataReader)ExecuteSingleRow("VALUES (DATE '2024-01-15')");
