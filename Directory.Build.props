@@ -46,7 +46,7 @@
     </ItemGroup>
 
     <PropertyGroup>
-        <MavenAdditionalRepositories>$(MavenAdditionalRepositories)</MavenAdditionalRepositories>
+        <MavenAdditionalRepositories>$(MavenAdditionalRepositories);jboss=https://repository.jboss.org/nexus/content/groups/public;</MavenAdditionalRepositories>
     </PropertyGroup>
 
 </Project>
