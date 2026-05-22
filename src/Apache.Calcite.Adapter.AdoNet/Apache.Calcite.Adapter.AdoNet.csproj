@@ -16,6 +16,7 @@
         <PackageReference Include="System.Data.Odbc" Version="9.0.9" />
         <PackageReference Include="System.Data.OleDb" Version="9.0.9" />
         <MavenReference Include="org.apache.calcite:calcite-core" Version="1.41.0" />
+        <MavenReference Include="org.jooq:joou-java-6" Version="0.9.5" />
     </ItemGroup>
     
 </Project>
