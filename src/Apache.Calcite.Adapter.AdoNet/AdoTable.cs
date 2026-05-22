@@ -188,11 +188,11 @@ namespace Apache.Calcite.Adapter.AdoNet
                 case DbType.Time:
                     return typeFactory.createSqlType(SqlTypeName.TIME);
                 case DbType.UInt16:
-                    return typeFactory.createSqlType(SqlTypeName.SMALLINT);
+                    return typeFactory.createSqlType(SqlTypeName.USMALLINT);
                 case DbType.UInt32:
-                    return typeFactory.createSqlType(SqlTypeName.INTEGER);
+                    return typeFactory.createSqlType(SqlTypeName.UINTEGER);
                 case DbType.UInt64:
-                    return typeFactory.createSqlType(SqlTypeName.BIGINT);
+                    return typeFactory.createSqlType(SqlTypeName.UBIGINT);
                 case DbType.VarNumeric:
                     break;
                 case DbType.AnsiStringFixedLength:
