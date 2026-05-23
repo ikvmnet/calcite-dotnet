@@ -66,7 +66,7 @@ namespace Apache.Calcite.Data.Internal
             if (target == typeof(char))
                 return (T)(object)GetChar();
             if (target == typeof(byte[]))
-                return (T)(object)(GetValue() as byte[] ?? throw new InvalidCastException());
+                return (T)(object)(GetValue() as byte[] ?? throw new InvalidCastException($"Cannot convert value of type '{_value.GetType().Name}' (SQL type: {_sqlType}) to 'Byte[]'"));
             if (target == typeof(DateTime))
                 return (T)(object)GetDateTime();
             if (target == typeof(DateTimeOffset))
@@ -107,7 +107,7 @@ namespace Apache.Calcite.Data.Internal
             if (val is T tval)
                 return tval;
 
-            throw new InvalidCastException($"Cannot convert value of type '{_value.GetType().Name}' to '{typeof(T).Name}'");
+            throw new InvalidCastException($"Cannot convert value of type '{_value.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to '{typeof(T).Name}'");
         }
 
         /// <summary>
@@ -222,7 +222,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Boolean b => b.booleanValue(),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Boolean'"),
             };
         }
 
@@ -235,7 +235,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 string s => s,
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'String'"),
             };
         }
 
@@ -248,7 +248,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Character c => c.charValue(),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Char'"),
             };
         }
 
@@ -264,7 +264,7 @@ namespace Apache.Calcite.Data.Internal
         public long GetBytes(long dataOffset, byte[]? buffer, int bufferOffset, int length)
         {
             if (_value is not null && _value is not byte[])
-                throw new InvalidCastException();
+                throw new InvalidCastException($"Cannot convert value of type '{_value.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Byte[]'");
 
             if (_value is null)
                 return 0;
@@ -326,7 +326,7 @@ namespace Apache.Calcite.Data.Internal
                 java.sql.Date d when _sqlType == SqlTypeName.__Enum.DATE => UnixEpoch.AddMilliseconds(d.getTime()),
                 java.lang.Long l when _sqlType == SqlTypeName.__Enum.TIMESTAMP => UnixEpoch.AddMilliseconds(l.longValue()),
                 java.sql.Timestamp ts when _sqlType == SqlTypeName.__Enum.TIMESTAMP => UnixEpoch.AddMilliseconds(ts.getTime()),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'DateTime'"),
             };
         }
 
@@ -342,7 +342,7 @@ namespace Apache.Calcite.Data.Internal
                 java.sql.Timestamp ts when _sqlType is SqlTypeName.__Enum.TIMESTAMP_WITH_LOCAL_TIME_ZONE or SqlTypeName.__Enum.TIMESTAMP_TZ => new DateTimeOffset(UnixEpoch.AddMilliseconds(ts.getTime()), TimeSpan.Zero),
                 java.lang.Integer i when _sqlType is SqlTypeName.__Enum.TIME_WITH_LOCAL_TIME_ZONE or SqlTypeName.__Enum.TIME_TZ => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(i.intValue())),
                 java.sql.Time t when _sqlType is SqlTypeName.__Enum.TIME_WITH_LOCAL_TIME_ZONE or SqlTypeName.__Enum.TIME_TZ => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(t.getTime())),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'DateTimeOffset'"),
             };
         }
 
@@ -356,7 +356,7 @@ namespace Apache.Calcite.Data.Internal
             {
                 java.lang.Integer i when _sqlType == SqlTypeName.__Enum.TIME => TimeSpan.FromMilliseconds(i.intValue()),
                 java.sql.Time t when _sqlType == SqlTypeName.__Enum.TIME => TimeSpan.FromMilliseconds(t.getTime()),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'TimeSpan'"),
             };
         }
 
@@ -369,7 +369,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.math.BigDecimal bd => BigDecimalConverter.ToDecimal(bd),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Decimal'"),
             };
         }
 
@@ -382,7 +382,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Double d => d.doubleValue(),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Double'"),
             };
         }
 
@@ -395,7 +395,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Float f => f.floatValue(),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Single'"),
             };
         }
 
@@ -409,7 +409,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 string s when Guid.TryParse(s, out _) => Guid.Parse(s),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Guid'"),
             };
         }
 
@@ -422,7 +422,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Short s => s.shortValue(),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Int16'"),
             };
         }
 
@@ -435,7 +435,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Integer i => i.intValue(),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Int32'"),
             };
         }
 
@@ -448,7 +448,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Long l => l.longValue(),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Int64'"),
             };
         }
 
@@ -461,7 +461,7 @@ namespace Apache.Calcite.Data.Internal
             {
                 org.joou.UByte ub => (byte)ub.byteValue(),
                 java.lang.Number n => checked((byte)n.longValue()),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Byte'"),
             };
         }
 
@@ -474,7 +474,7 @@ namespace Apache.Calcite.Data.Internal
             {
                 java.lang.Byte by => (sbyte)by.byteValue(),
                 java.lang.Number n => checked((sbyte)n.longValue()),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'SByte'"),
             };
         }
 
@@ -487,7 +487,7 @@ namespace Apache.Calcite.Data.Internal
             {
                 org.joou.UShort us => (ushort)us.shortValue(),
                 java.lang.Number n => checked((ushort)n.longValue()),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'UInt16'"),
             };
         }
 
@@ -500,7 +500,7 @@ namespace Apache.Calcite.Data.Internal
             {
                 org.joou.UInteger ui => (uint)ui.intValue(),
                 java.lang.Number n => checked((uint)n.longValue()),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'UInt32'"),
             };
         }
 
@@ -514,7 +514,7 @@ namespace Apache.Calcite.Data.Internal
                 org.joou.ULong ul => (ulong)ul.longValue(),
                 java.math.BigDecimal bd => (ulong)BigDecimalConverter.ToDecimal(bd),
                 java.lang.Number n => (ulong)n.longValue(),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'UInt64'"),
             };
         }
 
@@ -528,7 +528,7 @@ namespace Apache.Calcite.Data.Internal
             {
                 java.lang.Integer i when _sqlType == SqlTypeName.__Enum.DATE => DateOnly.FromDateTime(UnixEpoch.AddDays(i.intValue())),
                 java.sql.Date d when _sqlType == SqlTypeName.__Enum.DATE => DateOnly.FromDateTime(UnixEpoch.AddMilliseconds(d.getTime())),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'DateOnly'"),
             };
         }
 
@@ -542,7 +542,7 @@ namespace Apache.Calcite.Data.Internal
             {
                 java.lang.Integer i when _sqlType == SqlTypeName.__Enum.TIME => TimeOnly.FromTimeSpan(TimeSpan.FromMilliseconds(i.intValue())),
                 java.sql.Time t when _sqlType == SqlTypeName.__Enum.TIME => TimeOnly.FromTimeSpan(TimeSpan.FromMilliseconds(t.getTime())),
-                _ => throw new InvalidCastException(),
+                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'TimeOnly'"),
             };
         }
 
