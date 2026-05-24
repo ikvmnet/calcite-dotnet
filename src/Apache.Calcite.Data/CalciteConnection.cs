@@ -35,6 +35,27 @@ namespace Apache.Calcite.Data
         CalciteSession? _session;
         ConnectionState _state = ConnectionState.Closed;
         bool _disposed;
+        Func<org.apache.calcite.jdbc.CalcitePrepare>? _prepareFactory;
+
+        /// <summary>
+        /// Gets or sets a factory that produces the <see cref="org.apache.calcite.jdbc.CalcitePrepare"/>
+        /// instance used to plan and compile each query.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">
+        /// The factory cannot be changed after the connection has been opened.
+        /// </exception>
+        public Func<org.apache.calcite.jdbc.CalcitePrepare>? PrepareFactory
+        {
+            get => _prepareFactory;
+            set
+            {
+                ThrowIfDisposed();
+                if (_session is not null)
+                    throw new InvalidOperationException("PrepareFactory cannot be changed after the connection has been opened.");
+
+                _prepareFactory = value;
+            }
+        }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="CalciteConnection"/> class.
@@ -135,7 +156,7 @@ namespace Apache.Calcite.Data
             try
             {
                 // Session is created once on the first Open() and reused across Close/Open cycles.
-                _session ??= new CalciteSession(_options);
+                _session ??= new CalciteSession(_options, _prepareFactory);
                 SetState(ConnectionState.Open);
             }
             catch
