@@ -25,7 +25,6 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Apache.Calcite.Extensions\Apache.Calcite.Extensions.csproj" />
-        <ProjectReference Include="..\Apache.Calcite.Linq4j\Apache.Calcite.Linq4j.csproj" />
     </ItemGroup>
 
 </Project>
