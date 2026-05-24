@@ -1,4 +1,4 @@
-﻿<Project Sdk="MSTest.Sdk">
+<Project Sdk="MSTest.Sdk">
 
     <PropertyGroup>
         <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
@@ -8,6 +8,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <PackageReference Include="FastExpressionCompiler.LightExpression" Version="5.4.1" />
         <PackageReference Include="FluentAssertions" Version="8.10.0" />
         <PackageReference Include="IKVM" Version="8.15.0" />
         <PackageReference Include="IKVM.Java.Extensions" Version="8.15.0" />
@@ -24,6 +25,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Apache.Calcite.Extensions\Apache.Calcite.Extensions.csproj" />
+        <ProjectReference Include="..\Apache.Calcite.Linq4j\Apache.Calcite.Linq4j.csproj" />
     </ItemGroup>
 
 </Project>
