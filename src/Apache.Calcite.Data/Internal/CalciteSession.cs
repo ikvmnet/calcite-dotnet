@@ -62,20 +62,26 @@ namespace Apache.Calcite.Data.Internal
         readonly JavaTypeFactory _typeFactory;
         readonly CalciteConnectionConfig _config;
         readonly IReadOnlyList<string> _defaultSchemaPath;
+        readonly Func<CalcitePrepare> _prepareFactory;
         bool _disposed;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="options"></param>
+        /// <param name="options">The connection string options.</param>
+        /// <param name="prepareFactory">
+        /// Optional factory that produces the <see cref="CalcitePrepare"/> instance used for each
+        /// query. When <see langword="null"/>, <see cref="CalcitePrepare.DEFAULT_FACTORY"/> is used.
+        /// </param>
         /// <exception cref="ArgumentNullException"></exception>
         /// <exception cref="CalciteException"></exception>
-        public CalciteSession(CalciteConnectionStringBuilder options)
+        public CalciteSession(CalciteConnectionStringBuilder options, Func<CalcitePrepare>? prepareFactory = null)
         {
             ArgumentNullException.ThrowIfNull(options);
 
             try
             {
+                _prepareFactory = prepareFactory ?? (() => (CalcitePrepare)CalcitePrepare.DEFAULT_FACTORY.apply());
                 _rootSchema = BuildRootSchema(options, out var modelDefaultSchema);
                 _rootSchemaPlus = _rootSchema.plus();
                 _config = new CalciteConnectionConfigImpl(BuildEngineProperties(options));
@@ -194,7 +200,7 @@ namespace Apache.Calcite.Data.Internal
             dataContext = new StatementDataContext(_rootSchema.plus(), _typeFactory, cancelFlag, request.CommandTimeoutSeconds * 1000L, boundParameters);
             var ctx = new PrepareContext(_typeFactory, _rootSchema, _config, dataContext, _defaultSchemaPath);
 
-            var prepare = (CalcitePrepare)CalcitePrepare.DEFAULT_FACTORY.apply();
+            var prepare = _prepareFactory();
             var query = CalcitePrepare.Query.of(request.Sql);
 
             CalcitePrepare.Dummy.push(ctx);
