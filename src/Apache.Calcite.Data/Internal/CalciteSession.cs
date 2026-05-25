@@ -4,6 +4,8 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Apache.Calcite.Data;
+
 using java.util;
 using java.util.concurrent.atomic;
 
@@ -206,7 +208,23 @@ namespace Apache.Calcite.Data.Internal
             CalcitePrepare.Dummy.push(ctx);
             try
             {
-                signature = prepare.prepareSql(ctx, query, (java.lang.Class)typeof(java.lang.Object[]), -1);
+                List<org.apache.calcite.runtime.Hook.Closeable>? closeables = null;
+                if (request.Hooks is not null)
+                {
+                    closeables = [];
+                    foreach (var entry in request.Hooks)
+                        closeables.Add(entry.Hook.addThread(org.apache.calcite.runtime.Hook.propertyJ(entry.Value)));
+                }
+                try
+                {
+                    signature = prepare.prepareSql(ctx, query, (java.lang.Class)typeof(java.lang.Object[]), -1);
+                }
+                finally
+                {
+                    if (closeables is not null)
+                        foreach (var c in closeables)
+                            c?.close();
+                }
             }
             finally
             {

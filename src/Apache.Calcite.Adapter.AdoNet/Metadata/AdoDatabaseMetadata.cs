@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
 using org.apache.calcite.sql;
 
@@ -6,58 +6,63 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
 {
 
     /// <summary>
-    /// Abstract class for providing metadata regarding ADO.NET data sources.
+    /// Describes the schema structure of an ADO.NET data source to the Calcite adapter.
     /// </summary>
+    /// <remarks>
+    /// Implement this class and provide an instance to your <see cref="AdoDataSource"/> so that
+    /// the Calcite adapter can discover databases, schemas, tables, and columns at query-planning
+    /// time. The adapter also uses <see cref="GetDialect"/> to generate SQL that is syntactically
+    /// correct for the target database.
+    /// </remarks>
     public abstract class AdoDatabaseMetadata
     {
 
         /// <summary>
-        /// Gets the current database name.
+        /// Returns the name of the default database for this data source, or <see langword="null"/> if the
+        /// concept does not apply.
         /// </summary>
-        /// <returns></returns>
         public abstract string? GetDefaultDatabase();
 
         /// <summary>
-        /// Gets the current schema name.
+        /// Returns the name of the default schema within the default database, or <see langword="null"/> if
+        /// the concept does not apply.
         /// </summary>
-        /// <returns></returns>
         public abstract string? GetDefaultSchema();
 
         /// <summary>
-        /// Gets the <see cref="SqlDialect"/> for the data source. This replaces <see cref="SqlDialectFactory"/>, which requires JDBC Metadata.
+        /// Returns the <see cref="SqlDialect"/> that the adapter uses to generate SQL for this data source.
         /// </summary>
-        /// <returns></returns>
         public abstract SqlDialect GetDialect();
 
         /// <summary>
-        /// Gets the set of schemas available within the database.
+        /// Returns all schemas available in the specified database.
         /// </summary>
-        /// <param name="databaseName"></param>
-        /// <returns></returns>
+        /// <param name="databaseName">The database to enumerate schemas for, or <see langword="null"/> for the default database.</param>
+        /// <returns>A set of <see cref="AdoSchemaMetadata"/> values describing each schema.</returns>
         public abstract IReadOnlySet<AdoSchemaMetadata> GetSchemas(string? databaseName);
 
         /// <summary>
-        /// Gets the set of tables available within the schema.
+        /// Returns all tables available in the specified schema.
         /// </summary>
-        /// <param name="databaseName"></param>
-        /// <param name="schemaName"></param>
-        /// <returns></returns>
+        /// <param name="databaseName">The database that contains the schema, or <see langword="null"/> for the default database.</param>
+        /// <param name="schemaName">The schema to enumerate tables for, or <see langword="null"/> for the default schema.</param>
+        /// <returns>A set of <see cref="AdoTableMetadata"/> values describing each table.</returns>
         public abstract IReadOnlySet<AdoTableMetadata> GetTables(string? databaseName, string? schemaName);
 
         /// <summary>
-        /// Gets the set of fields available within the table.
+        /// Returns all columns in the specified table.
         /// </summary>
-        /// <param name="databaseName"></param>
-        /// <param name="schemaName"></param>
-        /// <param name="tableName"></param>
-        /// <returns></returns>
+        /// <param name="databaseName">The database that contains the table, or <see langword="null"/> for the default database.</param>
+        /// <param name="schemaName">The schema that contains the table, or <see langword="null"/> for the default schema.</param>
+        /// <param name="tableName">The name of the table whose columns to enumerate.</param>
+        /// <returns>A set of <see cref="AdoFieldMetadata"/> values describing each column.</returns>
         public abstract IReadOnlySet<AdoFieldMetadata> GetFields(string? databaseName, string? schemaName, string tableName);
 
         /// <summary>
-        /// Gets the parameter name to use for the parameter at index i.
+        /// Returns the SQL parameter placeholder name to use for the parameter at the specified zero-based index.
         /// </summary>
-        /// <param name="index"></param>
-        /// <returns></returns> 
+        /// <param name="index">The zero-based ordinal of the parameter.</param>
+        /// <returns>A parameter name string suitable for inclusion in a SQL statement.</returns>
         public abstract string GetParameterName(int index);
 
     }

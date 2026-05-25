@@ -13,12 +13,12 @@ namespace Apache.Calcite.Data
     /// Represents a batch of SQL commands to execute against an Apache Calcite engine. This class cannot be inherited.
     /// </summary>
     /// <remarks>
-    /// Each <see cref="CalciteBatchCommand"/> in <see cref="BatchCommands"/> is executed sequentially
-    /// against the same open <see cref="CalciteConnection"/>. Calcite does not currently expose a
-    /// dedicated batched execution API to this provider, so the batch is executed as a series of
-    /// individual statements; the cumulative records-affected value is reported through
-    /// <see cref="DbBatch.ExecuteNonQuery"/> and reflected on each command's
-    /// <see cref="DbBatchCommand.RecordsAffected"/>.
+    /// Add one or more <see cref="CalciteBatchCommand"/> instances to <see cref="BatchCommands"/> and
+    /// then call <see cref="DbBatch.ExecuteNonQuery"/> or <see cref="DbBatch.ExecuteReader"/> to run
+    /// them all. Commands are executed sequentially against the same open <see cref="CalciteConnection"/>.
+    /// The cumulative records-affected count is returned by <see cref="DbBatch.ExecuteNonQuery"/> and
+    /// the per-command count is available via <see cref="DbBatchCommand.RecordsAffected"/> after
+    /// execution completes.
     /// </remarks>
     public sealed class CalciteBatch : DbBatch
     {
@@ -29,8 +29,9 @@ namespace Apache.Calcite.Data
         int _timeout = 30;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="CalciteBatch"/> class.
+        /// Initializes a new instance of the <see cref="CalciteBatch"/> class with no connection.
         /// </summary>
+        /// <remarks>Set <see cref="Connection"/> before executing.</remarks>
         public CalciteBatch()
         {
 
@@ -39,7 +40,7 @@ namespace Apache.Calcite.Data
         /// <summary>
         /// Initializes a new instance of the <see cref="CalciteBatch"/> class associated with the specified connection.
         /// </summary>
-        /// <param name="connection">The <see cref="CalciteConnection"/> against which the batch will execute.</param>
+        /// <param name="connection">The <see cref="CalciteConnection"/> that the batch will execute against, or <see langword="null"/> to set it later via <see cref="Connection"/>.</param>
         public CalciteBatch(CalciteConnection? connection)
         {
             _connection = connection;
@@ -49,8 +50,9 @@ namespace Apache.Calcite.Data
         protected override DbBatchCommandCollection DbBatchCommands => _batchCommands;
 
         /// <summary>
-        /// Gets the strongly typed collection of <see cref="CalciteBatchCommand"/> instances in this batch.
+        /// Gets the strongly typed collection of commands that will be executed when the batch runs.
         /// </summary>
+        /// <remarks>Add commands in the order you want them executed.</remarks>
         public new CalciteBatchCommandCollection BatchCommands => _batchCommands;
 
         /// <inheritdoc />
@@ -74,8 +76,9 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Gets or sets the <see cref="CalciteConnection"/> used by this batch.
+        /// Gets or sets the connection that the batch executes against.
         /// </summary>
+        /// <remarks>Must be set to an open <see cref="CalciteConnection"/> before calling any Execute method.</remarks>
         public new CalciteConnection? Connection
         {
             get => _connection;
@@ -90,8 +93,9 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Gets or sets the <see cref="CalciteTransaction"/> within which this batch executes.
+        /// Gets or sets the transaction within which all commands in this batch execute.
         /// </summary>
+        /// <remarks>Calcite does not support transactions; this property is provided for ADO.NET API compatibility only.</remarks>
         public new CalciteTransaction? Transaction
         {
             get => _transaction;
@@ -102,9 +106,14 @@ namespace Apache.Calcite.Data
         protected override DbBatchCommand CreateDbBatchCommand() => new CalciteBatchCommand();
 
         /// <summary>
-        /// Creates and returns a new <see cref="CalciteBatchCommand"/> for use with this batch.
+        /// Creates a new <see cref="CalciteBatchCommand"/> for use in this batch.
         /// </summary>
-        /// <returns>A new <see cref="CalciteBatchCommand"/> instance.</returns>
+        /// <remarks>
+        /// The returned command is not automatically added to <see cref="BatchCommands"/>. Set its
+        /// <see cref="CalciteBatchCommand.CommandText"/> and <see cref="CalciteBatchCommand.Parameters"/>,
+        /// then add it via <c>BatchCommands.Add(...)</c>.
+        /// </remarks>
+        /// <returns>A new, empty <see cref="CalciteBatchCommand"/>.</returns>
         public new CalciteBatchCommand CreateBatchCommand() => new();
 
         /// <inheritdoc />

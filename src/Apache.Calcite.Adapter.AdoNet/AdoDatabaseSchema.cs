@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data;
 
 using com.google.common.collect;
@@ -11,15 +11,18 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Schema based upon a ADO.NET database name.
+    /// A Calcite schema that represents a named database in an ADO.NET data source.
     /// </summary>
     /// <remarks>
-    /// This schema does not directly contain tables, but contains a sub-schema for each schema in the database in
-    /// the back-end. Each of those sub-schemas is an instance of <see cref="AdoSchema"/>.
-    /// 
-    /// This schema is lazy: it does not compute the list of schema names until the first call to <see
-    /// cref="subSchemas"/> and <see cref="Lookup.get(string)"/>. Then it creates a <see cref="AdoSchema"/> for
-    /// this schema name. Each <see cref="AdoSchema"/> will populate its tables on demand.
+    /// <para>
+    /// This schema does not expose tables directly. Instead it exposes one child <see cref="AdoSchema"/>
+    /// per database schema (e.g. SQL Server <c>dbo</c>, <c>sales</c>). Each child schema then
+    /// lazily discovers its tables on demand.
+    /// </para>
+    /// <para>
+    /// Schema names are resolved from <see cref="AdoDatabaseMetadata.GetSchemas"/> and cached after
+    /// the first lookup. Tables within each child schema are populated on first access.
+    /// </para>
     /// </remarks>
     public class AdoDatabaseSchema : AdoBaseSchema
     {

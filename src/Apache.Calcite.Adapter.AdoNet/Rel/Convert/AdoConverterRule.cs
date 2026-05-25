@@ -1,10 +1,11 @@
-﻿using org.apache.calcite.rel.convert;
+using org.apache.calcite.rel.convert;
 
 namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {
 
     /// <summary>
-    /// Base ADO rule.
+    /// Base class for Calcite planner rules that convert a standard relational operator
+    /// to its ADO.NET-convention counterpart.
     /// </summary>
     public abstract class AdoConverterRule : ConverterRule
     {

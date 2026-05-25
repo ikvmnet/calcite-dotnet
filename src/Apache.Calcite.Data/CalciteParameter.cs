@@ -38,10 +38,10 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="CalciteParameter"/> class.
+        /// Initializes a new instance of the <see cref="CalciteParameter"/> class with a name and value.
         /// </summary>
-        /// <param name="parameterName"></param>
-        /// <param name="value"></param>
+        /// <param name="parameterName">An informational name for the parameter. Because Calcite uses positional binding, this name does not affect query execution.</param>
+        /// <param name="value">The value of the parameter, or <see langword="null"/>.</param>
         public CalciteParameter(string parameterName, object? value)
         {
             ParameterName = parameterName;
@@ -49,10 +49,10 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="CalciteParameter"/> class.
+        /// Initializes a new instance of the <see cref="CalciteParameter"/> class with a name and database type.
         /// </summary>
-        /// <param name="parameterName"></param>
-        /// <param name="dbType"></param>
+        /// <param name="parameterName">An informational name for the parameter.</param>
+        /// <param name="dbType">The <see cref="DbType"/> of the parameter.</param>
         public CalciteParameter(string parameterName, DbType dbType)
         {
             ParameterName = parameterName;

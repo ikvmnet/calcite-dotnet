@@ -1,4 +1,4 @@
-﻿using java.util;
+using java.util;
 
 using org.apache.calcite.linq4j.tree;
 using org.apache.calcite.rel.type;
@@ -9,8 +9,14 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Base class for ADO schemas.
+    /// Base class for Calcite <see cref="Schema"/> implementations backed by an ADO.NET data source.
     /// </summary>
+    /// <remarks>
+    /// Provides default implementations of the Calcite <see cref="Schema"/> interface that delegate
+    /// table and sub-schema resolution to the abstract <see cref="tables"/> and <see cref="subSchemas"/>
+    /// lookups. Concrete types such as <see cref="AdoSchema"/> and <see cref="AdoDatabaseSchema"/>
+    /// supply those lookups from an <see cref="AdoDataSource"/>.
+    /// </remarks>
     public abstract class AdoBaseSchema : Schema
     {
 

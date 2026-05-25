@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data;
 using System.Threading;
 
@@ -25,8 +25,14 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Queryable table that gets its data from a table within a ADO connection.
+    /// A Calcite queryable table backed by a table in an ADO.NET data source.
     /// </summary>
+    /// <remarks>
+    /// Implements both <c>TranslatableTable</c> and <c>ScannableTable</c> so the planner can
+    /// either push operations into the ADO layer as SQL or fall back to an in-memory scan.
+    /// Instances are created by <see cref="AdoSchema"/> during table discovery and are not
+    /// intended to be constructed directly.
+    /// </remarks>
     public class AdoTable : AbstractQueryableTable, TranslatableTable, ScannableTable
     {
 
@@ -41,7 +47,7 @@ namespace Apache.Calcite.Adapter.AdoNet
 
         SqlIdentifier? _fullyQualifiedTableName;
 
-        /// <summary>sssssssssss
+        /// <summary>
         /// Initializes a new instance.
         /// </summary>
         /// <param name="dataSource"></param>

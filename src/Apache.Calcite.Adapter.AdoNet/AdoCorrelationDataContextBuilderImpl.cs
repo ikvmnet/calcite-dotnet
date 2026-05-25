@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 using com.google.common.collect;
 
@@ -11,7 +11,8 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// An implementation of <see cref="IAdoCorrelationDataContextBuilder"/>.
+    /// Default implementation of <see cref="IAdoCorrelationDataContextBuilder"/> that
+    /// generates code to construct an <see cref="AdoCorrelationDataContext"/> at plan execution time.
     /// </summary>
     public class AdoCorrelationDataContextBuilderImpl : IAdoCorrelationDataContextBuilder
     {

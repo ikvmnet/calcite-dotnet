@@ -7,11 +7,12 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Represents the collection of <see cref="CalciteBatchCommand"/> instances within a
+    /// An ordered collection of <see cref="CalciteBatchCommand"/> instances that belong to a
     /// <see cref="CalciteBatch"/>. This class cannot be inherited.
     /// </summary>
     /// <remarks>
-    /// The order in which commands are added determines the order in which they are executed.
+    /// Commands are executed in the order they appear in this collection. Use the typed
+    /// <see cref="Add(CalciteBatchCommand)"/> overload to add commands without boxing.
     /// </remarks>
     public sealed class CalciteBatchCommandCollection : DbBatchCommandCollection
     {
@@ -34,9 +35,10 @@ namespace Apache.Calcite.Data
         public override void Add(DbBatchCommand item) => _items.Add(AsBatchCommand(item));
 
         /// <summary>
-        /// Adds a strongly typed <see cref="CalciteBatchCommand"/> to the end of the collection.
+        /// Adds a <see cref="CalciteBatchCommand"/> to the end of the collection.
         /// </summary>
-        /// <param name="item">The <see cref="CalciteBatchCommand"/> to add.</param>
+        /// <param name="item">The command to add.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="item"/> is <see langword="null"/>.</exception>
         public void Add(CalciteBatchCommand item)
         {
             if (item is null)

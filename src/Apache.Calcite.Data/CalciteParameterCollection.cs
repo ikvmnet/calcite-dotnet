@@ -37,8 +37,8 @@ namespace Apache.Calcite.Data
         /// <summary>
         /// Adds the specified <see cref="CalciteParameter"/> to the end of the collection.
         /// </summary>
-        /// <param name="value">The <see cref="CalciteParameter"/> to add.</param>
-        /// <returns>The <paramref name="value"/> added to the collection.</returns>
+        /// <param name="value">The parameter to add.</param>
+        /// <returns>The same <paramref name="value"/> instance that was added.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="value"/> is <see langword="null"/>.</exception>
         public CalciteParameter Add(CalciteParameter value)
         {

@@ -1,4 +1,4 @@
-﻿using System.Data.Common;
+using System.Data.Common;
 using System.Data.Odbc;
 using System.Data.OleDb;
 
@@ -6,13 +6,20 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
 {
 
     /// <summary>
-    /// Default implementation of <see cref="AdoDatabaseMetadataFactory"/> that discovers metadata from a connection.
+    /// The default <see cref="AdoDatabaseMetadataFactory"/> that selects the best-fit
+    /// <see cref="AdoDatabaseMetadata"/> implementation for a given ADO.NET connection type.
     /// </summary>
+    /// <remarks>
+    /// Supports SQL Server, SQLite, ODBC, and OLE DB connections out of the box. For any other
+    /// provider, this factory throws <see cref="AdoCalciteException"/>. Use
+    /// <see cref="AdoDatabaseMetadataFactory"/> directly if you need to supply a custom metadata
+    /// provider for an unsupported driver.
+    /// </remarks>
     public class AdoDatabaseMetadataFactoryImpl : AdoDatabaseMetadataFactory
     {
 
         /// <summary>
-        /// Gets the default singleton instance.
+        /// Gets the shared singleton instance of <see cref="AdoDatabaseMetadataFactoryImpl"/>.
         /// </summary>
         public static readonly AdoDatabaseMetadataFactoryImpl Instance = new AdoDatabaseMetadataFactoryImpl();
 

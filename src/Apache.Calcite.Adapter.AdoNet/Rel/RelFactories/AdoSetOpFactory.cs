@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 using java.lang;
 using java.util;
@@ -11,9 +11,15 @@ using static org.apache.calcite.rel.core.RelFactories;
 namespace Apache.Calcite.Adapter.AdoNet.Rel.RelFactories
 {
 
+    /// <summary>
+    /// <see cref="SetOpFactory"/> implementation that creates <see cref="AdoUnion"/>,
+    /// <see cref="AdoIntersect"/>, and <see cref="AdoMinus"/> nodes during relational-algebra
+    /// construction in the <see cref="AdoConvention"/>.
+    /// </summary>
     public class AdoSetOpFactory : SetOpFactory
     {
 
+        /// <inheritdoc />
         public RelNode createSetOp(SqlKind kind, List inputs, bool all)
         {
             var input = (RelNode)inputs.get(0);

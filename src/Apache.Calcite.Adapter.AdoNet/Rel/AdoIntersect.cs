@@ -1,4 +1,4 @@
-﻿using java.util;
+using java.util;
 
 using org.apache.calcite.plan;
 using org.apache.calcite.rel.core;
@@ -8,7 +8,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
 {
 
     /// <summary>
-    /// Intersect operator implemented in ADO convention.
+    /// Intersect operator implemented in the <see cref="AdoConvention"/> calling convention.
     /// </summary>
     public class AdoIntersect : Intersect, AdoRel
     {

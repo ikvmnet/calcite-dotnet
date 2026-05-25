@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
 
@@ -12,20 +13,21 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Represents an open connection to an Apache Calcite engine. This class cannot be inherited.
+    /// Represents a connection to an in-process Apache Calcite engine. This class cannot be inherited.
     /// </summary>
     /// <remarks>
-    /// A <see cref="CalciteConnection"/> hosts a Calcite planner and runtime in-process via IKVM.
-    /// The connection string follows the keys exposed by <see cref="CalciteConnectionStringBuilder"/>
-    /// (for example <c>Model</c> and <c>Schema</c>) and mirrors the Calcite JDBC driver's properties
-    /// where practical. Calcite-native objects associated with the open session are exposed through
-    /// the <see cref="RootSchema"/>, <see cref="TypeFactory"/>, and <see cref="Config"/> properties.
     /// <para>
-    /// The underlying Calcite session is created on the first call to <see cref="Open"/> and is
-    /// intentionally kept alive across <see cref="Close"/>/<see cref="Open"/> cycles. This means
-    /// that schema objects registered on <see cref="RootSchema"/>, tables created via DDL, and any
-    /// other in-process state survive a close and are still visible after the connection is reopened.
-    /// The session is torn down permanently only when the connection is disposed.
+    /// Create a connection with a connection string whose keys match those on
+    /// <see cref="CalciteConnectionStringBuilder"/> — for example <c>Model</c> and <c>Schema</c>.
+    /// Call <see cref="Open"/> before executing commands, and <see cref="IDisposable.Dispose"/> when
+    /// done to release all engine resources.
+    /// </para>
+    /// <para>
+    /// The underlying Calcite session is created on the first call to <see cref="Open"/> and is kept
+    /// alive across <see cref="Close"/>/<see cref="Open"/> cycles. Schema objects registered on
+    /// <see cref="RootSchema"/>, tables created via DDL, and any other in-process state survive
+    /// a close and remain visible after reopening. The session is torn down permanently only when
+    /// the connection is disposed.
     /// </para>
     /// </remarks>
     public sealed class CalciteConnection : DbConnection
@@ -36,13 +38,18 @@ namespace Apache.Calcite.Data
         ConnectionState _state = ConnectionState.Closed;
         bool _disposed;
         Func<org.apache.calcite.jdbc.CalcitePrepare>? _prepareFactory;
+        List<CalciteHookEntry>? _hooks;
 
         /// <summary>
-        /// Gets or sets a factory that produces the <see cref="org.apache.calcite.jdbc.CalcitePrepare"/>
+        /// Gets or sets a factory that supplies the <see cref="org.apache.calcite.jdbc.CalcitePrepare"/>
         /// instance used to plan and compile each query.
         /// </summary>
+        /// <remarks>
+        /// Set this before calling <see cref="Open"/> to substitute a custom planner implementation.
+        /// When <see langword="null"/> (the default), Calcite's built-in planner is used.
+        /// </remarks>
         /// <exception cref="InvalidOperationException">
-        /// The factory cannot be changed after the connection has been opened.
+        /// Thrown when the property is set after the connection has already been opened.
         /// </exception>
         public Func<org.apache.calcite.jdbc.CalcitePrepare>? PrepareFactory
         {
@@ -58,8 +65,36 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="CalciteConnection"/> class.
+        /// Registers a Calcite hook that will be activated for every statement executed on this connection.
         /// </summary>
+        /// <param name="hook">The Calcite hook constant to activate, for example <c>Hook.ENABLE_BINDABLE</c>.</param>
+        /// <param name="value">
+        /// The value to supply to the hook while the statement is being planned. CLR primitives
+        /// (<see cref="bool"/>, <see cref="int"/>, <see cref="long"/>, <see cref="double"/>, etc.)
+        /// are automatically converted to their Java boxed equivalents; values that are already
+        /// Java objects are passed through unchanged.
+        /// </param>
+        /// <remarks>
+        /// Hooks registered here apply to all commands created from this connection. Connection-level
+        /// hooks are always activated before any hooks added to an individual command via
+        /// <see cref="CalciteCommand.RegisterHook"/>. Hooks are scoped to the planning phase of
+        /// each statement and are automatically torn down when planning completes.
+        /// </remarks>
+        public void RegisterHook(org.apache.calcite.runtime.Hook hook, object? value)
+        {
+            ThrowIfDisposed();
+            (_hooks ??= new List<CalciteHookEntry>()).Add(new CalciteHookEntry(hook, value));
+        }
+
+        internal List<CalciteHookEntry>? Hooks => _hooks;
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CalciteConnection"/> class with an empty connection string.
+        /// </summary>
+        /// <remarks>
+        /// Set <see cref="ConnectionString"/> before calling <see cref="Open"/>, or register schemas
+        /// directly on <see cref="RootSchema"/> after opening.
+        /// </remarks>
         public CalciteConnection()
         {
 
@@ -68,27 +103,26 @@ namespace Apache.Calcite.Data
         /// <summary>
         /// Initializes a new instance of the <see cref="CalciteConnection"/> class with the specified connection string.
         /// </summary>
-        /// <param name="connectionString">The connection string used to open the Calcite engine session, or <see langword="null"/> for an empty connection string. Recognized keys are described on <see cref="CalciteConnectionStringBuilder"/>.</param>
+        /// <param name="connectionString">
+        /// The connection string that configures the Calcite engine session, or <see langword="null"/> for
+        /// an empty connection string. Recognized keys are documented on <see cref="CalciteConnectionStringBuilder"/>.
+        /// </param>
         public CalciteConnection(string? connectionString)
         {
             ConnectionString = connectionString ?? string.Empty;
         }
 
         /// <summary>
-        /// Gets or sets the connection string used to configure the Calcite engine session.
+        /// Gets or sets the connection string that configures the Calcite engine session.
         /// </summary>
         /// <remarks>
-        /// Unlike most ADO.NET providers, the connection string can only be set <em>before</em> the
-        /// first call to <see cref="Open"/>. Once the session has been created it is reused for the
-        /// lifetime of this instance, so changing the connection string after that point would have no
-        /// effect. Attempting to do so throws an <see cref="InvalidOperationException"/>.
-        /// <para>
-        /// To use a different connection string, create a new <see cref="CalciteConnection"/> instance.
-        /// </para>
+        /// The connection string must be set <em>before</em> calling <see cref="Open"/> for the first
+        /// time. Once the session has been started it cannot be changed — the Calcite engine is
+        /// initialized once and reused for the lifetime of the connection. To use different settings,
+        /// create a new <see cref="CalciteConnection"/>.
         /// </remarks>
         /// <exception cref="InvalidOperationException">
-        /// The connection has already been opened. The connection string is fixed for the lifetime of
-        /// the connection once <see cref="Open"/> has been called.
+        /// Thrown when the connection string is set after the connection has already been opened.
         /// </exception>
         [System.Diagnostics.CodeAnalysis.AllowNull]
         public override string ConnectionString
@@ -136,16 +170,16 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Opens the connection and makes it ready to execute commands.
+        /// Opens the connection, initializing the Calcite engine session if this is the first call.
         /// </summary>
         /// <remarks>
-        /// The underlying Calcite session is created the first time this method is called and is
-        /// reused on subsequent calls. Closing and reopening the connection does not discard the
-        /// session — any schema mutations made while the connection was open (for example DDL
-        /// executed via <see cref="CalciteCommand"/>) remain visible after reopening.
+        /// The Calcite session is created once on the first call and reused on all subsequent
+        /// <see cref="Open"/> calls. Closing and reopening the connection does not reset the engine —
+        /// any schemas registered on <see cref="RootSchema"/> or tables created via DDL remain visible
+        /// after reopening.
         /// </remarks>
-        /// <exception cref="InvalidOperationException">The connection is already open.</exception>
-        /// <exception cref="CalciteException">The Calcite session could not be initialized.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the connection is already open.</exception>
+        /// <exception cref="CalciteException">Thrown when the Calcite engine could not be initialized.</exception>
         public override void Open()
         {
             ThrowIfDisposed();
@@ -167,12 +201,13 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Closes the connection. The underlying Calcite session is kept alive and will be reused
-        /// if the connection is reopened.
+        /// Closes the connection without destroying the underlying Calcite session.
         /// </summary>
         /// <remarks>
-        /// To permanently release all Calcite resources, dispose the connection via
-        /// <see cref="IDisposable.Dispose"/> rather than calling <see cref="Close"/>.
+        /// Closing the connection only changes its state to <see cref="System.Data.ConnectionState.Closed"/>;
+        /// the engine session is preserved so that calling <see cref="Open"/> again is inexpensive and
+        /// retains all in-process state. To fully release engine resources, call
+        /// <see cref="IDisposable.Dispose"/> instead.
         /// </remarks>
         public override void Close()
         {
@@ -201,9 +236,9 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Creates and returns a new <see cref="CalciteCommand"/> object associated with this connection.
+        /// Creates a new <see cref="CalciteCommand"/> associated with this connection.
         /// </summary>
-        /// <returns>A new <see cref="CalciteCommand"/> whose <see cref="CalciteCommand.Connection"/> is set to this instance.</returns>
+        /// <returns>A new <see cref="CalciteCommand"/> associated with this connection.</returns>
         public new CalciteCommand CreateCommand()
         {
             ThrowIfDisposed();
@@ -221,8 +256,13 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Creates and returns a new <see cref="CalciteBatch"/> associated with this connection.
+        /// Creates a new <see cref="CalciteBatch"/> associated with this connection.
         /// </summary>
+        /// <remarks>
+        /// A batch lets you send multiple SQL statements in a single round-trip to the engine.
+        /// Add commands via <see cref="CalciteBatch.CreateBatchCommand"/> and execute the batch
+        /// by calling <see cref="CalciteBatch.ExecuteNonQuery"/>.
+        /// </remarks>
         /// <returns>A new <see cref="CalciteBatch"/> whose <see cref="CalciteBatch.Connection"/> is set to this instance.</returns>
         public new CalciteBatch CreateBatch() => new(this);
 
@@ -254,13 +294,32 @@ namespace Apache.Calcite.Data
             base.Dispose(disposing);
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns a <see cref="DataTable"/> listing the metadata collections supported by this provider.
+        /// </summary>
+        /// <returns>A <see cref="DataTable"/> describing the available schema collections.</returns>
         public override DataTable GetSchema() => GetSchema(CalciteSchemaInfo.MetaDataCollections, null);
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns a <see cref="DataTable"/> containing schema information for the specified collection.
+        /// </summary>
+        /// <param name="collectionName">The name of the metadata collection to retrieve, such as <c>Tables</c> or <c>Columns</c>.</param>
+        /// <returns>A <see cref="DataTable"/> containing the requested schema information.</returns>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="collectionName"/> is not supported by this provider.</exception>
         public override DataTable GetSchema(string collectionName) => GetSchema(collectionName, null);
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns a <see cref="DataTable"/> containing schema information for the specified collection,
+        /// filtered by the supplied restriction values.
+        /// </summary>
+        /// <param name="collectionName">The name of the metadata collection to retrieve, such as <c>Tables</c> or <c>Columns</c>.</param>
+        /// <param name="restrictionValues">
+        /// An ordered array of restriction values that narrow the results, or <see langword="null"/> to return all rows.
+        /// The number and meaning of restrictions for each collection are described by <see cref="GetSchema()"/>.
+        /// </param>
+        /// <returns>A <see cref="DataTable"/> containing the requested schema information.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="collectionName"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="collectionName"/> is not supported by this provider.</exception>
         public override DataTable GetSchema(string collectionName, string?[]? restrictionValues)
         {
             if (collectionName is null)
@@ -294,41 +353,44 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Gets the Calcite root <see cref="SchemaPlus"/> for the open connection. Use this to register
-        /// schemas, tables, functions, or other Calcite-native artifacts that should be visible to
-        /// statements executed on this connection.
+        /// Gets the root <see cref="SchemaPlus"/> for this connection's Calcite engine.
         /// </summary>
-        /// <exception cref="InvalidOperationException">The connection is not open.</exception>
+        /// <remarks>
+        /// Use this to register schemas, tables, custom functions, or other Calcite artifacts that
+        /// should be visible to SQL statements executed on this connection. Objects added here
+        /// persist for the lifetime of the session, including across <see cref="Close"/>/<see cref="Open"/> cycles.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">Thrown when the connection is not open.</exception>
         public SchemaPlus RootSchema => RequireSession().RootSchema;
 
         /// <summary>
-        /// Gets the Calcite <see cref="JavaTypeFactory"/> used by this connection's engine.
+        /// Gets the <see cref="JavaTypeFactory"/> used by this connection's Calcite engine.
         /// </summary>
-        /// <exception cref="InvalidOperationException">The connection is not open.</exception>
+        /// <remarks>
+        /// The type factory translates between .NET and Calcite's internal type system. It is
+        /// needed when constructing custom <see cref="SchemaPlus"/> table types or Calcite functions
+        /// that must declare their SQL types programmatically.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">Thrown when the connection is not open.</exception>
         public JavaTypeFactory TypeFactory => RequireSession().TypeFactory;
 
         /// <summary>
         /// Gets the resolved <see cref="CalciteConnectionConfig"/> for this connection.
         /// </summary>
-        /// <exception cref="InvalidOperationException">The connection is not open.</exception>
+        /// <remarks>
+        /// Exposes the effective Calcite configuration derived from the connection string, such as
+        /// the lexical policy, conformance level, and null collation. This is the same configuration
+        /// object that the Calcite planner uses internally.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">Thrown when the connection is not open.</exception>
         public CalciteConnectionConfig Config => RequireSession().Config;
 
-        /// <summary>
-        /// Returns the active session, throwing if the connection is not open.
-        /// </summary>
-        /// <returns>The current <see cref="CalciteSession"/> for this connection.</returns>
-        /// <exception cref="InvalidOperationException">The connection is not open.</exception>
         void ThrowIfDisposed()
         {
             if (_disposed)
                 throw new ObjectDisposedException(GetType().Name);
         }
 
-        /// <summary>
-        /// Returns the active session, throwing if the connection is not open.
-        /// </summary>
-        /// <returns></returns>
-        /// <exception cref="InvalidOperationException"></exception>
         internal CalciteSession RequireSession()
         {
             ThrowIfDisposed();

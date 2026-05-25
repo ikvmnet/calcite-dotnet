@@ -6,13 +6,13 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Represents a single command within a <see cref="CalciteBatch"/>. This class cannot be inherited.
+    /// Represents a single SQL statement within a <see cref="CalciteBatch"/>. This class cannot be inherited.
     /// </summary>
     /// <remarks>
-    /// A <see cref="CalciteBatchCommand"/> carries the SQL text and parameter set for one statement
-    /// in a batched execution. Only <see cref="CommandType.Text"/> is supported. Parameter
-    /// placeholders are positional <c>?</c> markers, bound by ordinal in the order they were added
-    /// to <see cref="DbBatchCommand.Parameters"/>.
+    /// Set <see cref="DbBatchCommand.CommandText"/> to the SQL text to run and add any parameters to
+    /// <see cref="Parameters"/>. Only <see cref="CommandType.Text"/> is supported. Parameter
+    /// placeholders are positional <c>?</c> markers, bound in the order parameters were added to
+    /// <see cref="Parameters"/>.
     /// </remarks>
     public sealed class CalciteBatchCommand : DbBatchCommand
     {
@@ -23,7 +23,7 @@ namespace Apache.Calcite.Data
         int _recordsAffected;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="CalciteBatchCommand"/> class.
+        /// Initializes a new instance of the <see cref="CalciteBatchCommand"/> class with an empty command text.
         /// </summary>
         public CalciteBatchCommand()
         {
@@ -33,7 +33,7 @@ namespace Apache.Calcite.Data
         /// <summary>
         /// Initializes a new instance of the <see cref="CalciteBatchCommand"/> class with the specified SQL text.
         /// </summary>
-        /// <param name="commandText">The SQL text to execute against the Calcite engine, or <see langword="null"/> for an empty command text.</param>
+        /// <param name="commandText">The SQL statement to execute, or <see langword="null"/> for an empty command text.</param>
         public CalciteBatchCommand(string? commandText)
         {
             _commandText = commandText ?? string.Empty;
@@ -65,8 +65,12 @@ namespace Apache.Calcite.Data
         protected override DbParameterCollection DbParameterCollection => _parameters;
 
         /// <summary>
-        /// Gets the strongly typed <see cref="CalciteParameterCollection"/> associated with this batch command.
+        /// Gets the strongly typed parameter collection for this command.
         /// </summary>
+        /// <remarks>
+        /// Add <see cref="CalciteParameter"/> instances in the order they correspond to <c>?</c>
+        /// placeholders in <see cref="DbBatchCommand.CommandText"/>.
+        /// </remarks>
         public new CalciteParameterCollection Parameters => _parameters;
 
         internal void SetRecordsAffected(int value) => _recordsAffected = value;

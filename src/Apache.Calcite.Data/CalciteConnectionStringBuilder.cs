@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Data.Common;
 
@@ -6,16 +5,22 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Strongly typed connection string builder for the Apache Calcite ADO.NET provider.
+    /// Builds and parses connection strings for the Apache Calcite ADO.NET provider.
     /// </summary>
     /// <remarks>
-    /// Property names mirror the Calcite JDBC driver connection properties where practical, while
-    /// surfacing them through .NET conventions. Unknown keys are preserved so the underlying engine
-    /// can read provider-specific options.
+    /// Each property corresponds to a Calcite engine option. Set the properties you need, then pass
+    /// <see cref="DbConnectionStringBuilder.ConnectionString"/> (or the builder itself, via the
+    /// implicit <see langword="string"/> conversion) to <see cref="CalciteConnection"/> or
+    /// <see cref="CalciteDataSource"/>. Properties not recognized by the builder are preserved in
+    /// the connection string and forwarded to the engine as-is.
     /// </remarks>
     public sealed class CalciteConnectionStringBuilder : DbConnectionStringBuilder
     {
 
+        /// <summary>
+        /// Implicitly converts a <see cref="CalciteConnectionStringBuilder"/> to its connection string representation.
+        /// </summary>
+        /// <param name="builder">The builder to convert.</param>
         public static implicit operator string(CalciteConnectionStringBuilder builder) => builder.ConnectionString;
 
         /// <summary>
@@ -147,9 +152,10 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="CalciteConnectionStringBuilder"/> class with the specified connection string.
+        /// Initializes a new instance of the <see cref="CalciteConnectionStringBuilder"/> class
+        /// populated from the specified connection string.
         /// </summary>
-        /// <param name="connectionString"></param>
+        /// <param name="connectionString">An existing connection string to parse, or <see langword="null"/> for an empty builder.</param>
         public CalciteConnectionStringBuilder(string? connectionString)
         {
             ConnectionString = connectionString ?? string.Empty;
@@ -428,9 +434,9 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Returns the keys present in this connection string as a strongly typed enumerable.
+        /// Enumerates all keys currently present in this connection string.
         /// </summary>
-        /// <returns>The connection string keys, in the order they are stored by the underlying <see cref="DbConnectionStringBuilder"/>.</returns>
+        /// <returns>The keys in the order they are stored by the underlying <see cref="DbConnectionStringBuilder"/>.</returns>
         public IEnumerable<string> EnumerateKeys()
         {
             foreach (var key in Keys)

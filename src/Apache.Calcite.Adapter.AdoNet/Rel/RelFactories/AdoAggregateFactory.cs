@@ -1,4 +1,4 @@
-﻿using com.google.common.collect;
+using com.google.common.collect;
 
 using java.lang;
 using java.util;
@@ -11,9 +11,14 @@ using static org.apache.calcite.rel.core.RelFactories;
 namespace Apache.Calcite.Adapter.AdoNet.Rel.RelFactories
 {
 
+    /// <summary>
+    /// <see cref="AggregateFactory"/> implementation that creates <see cref="AdoAggregate"/> nodes
+    /// during relational-algebra construction in the <see cref="AdoConvention"/>.
+    /// </summary>
     public class AdoAggregateFactory : AggregateFactory
     {
 
+        /// <inheritdoc />
         public RelNode createAggregate(RelNode input, List hints, ImmutableBitSet groupSet, ImmutableList groupSets, List aggCalls)
         {
             Objects.requireNonNull(input.getConvention(), "input.getConvention()");

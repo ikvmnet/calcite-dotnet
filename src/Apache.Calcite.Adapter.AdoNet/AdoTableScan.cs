@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 using Apache.Calcite.Adapter.AdoNet.Rel;
 
@@ -14,7 +14,8 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Relational expression representing a scan of a table in an ADO data source.
+    /// Relational expression representing a full table scan of an <see cref="AdoTable"/>
+    /// in the <see cref="AdoConvention"/> calling convention.
     /// </summary>
     public class AdoTableScan : TableScan, AdoRel
     {

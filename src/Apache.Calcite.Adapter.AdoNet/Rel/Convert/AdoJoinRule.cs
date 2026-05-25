@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 
 using java.lang;
 using java.util;
@@ -13,14 +13,18 @@ using org.apache.calcite.sql;
 namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {
 
+    /// <summary>
+    /// Planner rule that converts a <see cref="Join"/> expressed in the default calling
+    /// convention to an <see cref="AdoJoin"/> in the <see cref="AdoConvention"/>.
+    /// </summary>
     public class AdoJoinRule : AdoConverterRule
     {
 
         /// <summary>
-        /// Creates a new instance of the rule.
+        /// Creates a rule instance bound to the specified <see cref="AdoConvention"/>.
         /// </summary>
-        /// <param name="convention"></param>
-        /// <returns></returns>
+        /// <param name="convention">The ADO convention that this rule targets.</param>
+        /// <returns>A configured <see cref="AdoJoinRule"/> instance.</returns>
         public static AdoJoinRule Create(AdoConvention convention)
         {
             return (AdoJoinRule)Config.INSTANCE

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data;
 using System.Data.Common;
 
@@ -11,8 +11,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Utils
 {
 
     /// <summary>
-    /// Builds that calls <see cref="DbDataReader"/>
+    /// Reads one row from a <see cref="DbDataReader"/> and returns it as an <c>object[]</c>
+    /// array aligned to the projected field list.
     /// </summary>
+    /// <remarks>
+    /// This class implements the Calcite <c>Function0</c> interface so it can be called
+    /// repeatedly by the enumeration loop to produce successive rows.
+    /// </remarks>
     public class ObjectArrayRowBuilder : Function0
     {
 
@@ -20,11 +25,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Utils
         readonly List _fields;
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Initializes a new instance of <see cref="ObjectArrayRowBuilder"/>.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="fields"></param>
-        /// <exception cref="AdoCalciteException"></exception>
+        /// <param name="reader">The open <see cref="DbDataReader"/> positioned before the first row.</param>
+        /// <param name="fields">The Calcite <c>RelDataTypeField</c> list that defines the projected columns.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="reader"/> or <paramref name="fields"/> is <see langword="null"/>.</exception>
         public ObjectArrayRowBuilder(DbDataReader reader, List fields)
         {
             _reader = reader ?? throw new ArgumentNullException(nameof(reader));

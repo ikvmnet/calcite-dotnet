@@ -1,9 +1,11 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Linq.Expressions;
+
+using Apache.Calcite.Data;
 
 using java.lang;
 using java.util;
@@ -11,25 +13,33 @@ using java.util;
 namespace Apache.Calcite.Extensions
 {
 
+    /// <summary>
+    /// A dictionary view over the <c>schema.*</c> entries in a Calcite <see cref="Properties"/> map.
+    /// </summary>
+    /// <remarks>
+    /// Properties in this dictionary are stored with a <c>schema.</c> prefix in the underlying
+    /// <see cref="Properties"/> map and are forwarded to the Calcite schema factory at connection
+    /// time. Access this map through <see cref="CalciteConnectionProperties.SchemaProperties"/>.
+    /// </remarks>
     public class CalciteConnectionPropertiesSchemaMap : IDictionary<string, string>
     {
 
         readonly Properties _properties;
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Initializes a new instance backed by the specified <see cref="Properties"/> map.
         /// </summary>
-        /// <param name="properties"></param>
+        /// <param name="properties">The property map that backs this dictionary view.</param>
         public CalciteConnectionPropertiesSchemaMap(Properties properties)
         {
             _properties = properties;
         }
 
         /// <summary>
-        /// Gets or sets the schema property with the given name.
+        /// Gets or sets the schema property with the specified key.
         /// </summary>
-        /// <param name="key"></param>
-        /// <returns></returns>
+        /// <param name="key">The schema property name, without the <c>schema.</c> prefix.</param>
+        /// <returns>The property value.</returns>
         public string this[string key]
         {
             get => _properties.getProperty($"schema.{key}");
@@ -37,7 +47,7 @@ namespace Apache.Calcite.Extensions
         }
 
         /// <summary>
-        /// Gets the set of matching entries.
+        /// Enumerates all <c>schema.*</c> entries in the backing property map.
         /// </summary>
         IEnumerable<Map.Entry> Entries => _properties.elements()
             .AsEnumerable<Map.Entry>()

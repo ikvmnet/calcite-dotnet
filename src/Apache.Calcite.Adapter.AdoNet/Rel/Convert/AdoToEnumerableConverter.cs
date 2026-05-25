@@ -1,4 +1,4 @@
-﻿using System.Data.Common;
+using System.Data.Common;
 
 using java.lang;
 using java.lang.reflect;
@@ -25,7 +25,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {
 
     /// <summary>
-    /// Relational expression represeting a scan of a table in an ADO data source.
+    /// Relational operator that converts a tree of <see cref="AdoConvention"/> nodes into
+    /// an <see cref="EnumerableConvention"/> result by executing the generated SQL against
+    /// the underlying ADO.NET data source.
     /// </summary>
     public class AdoToEnumerableConverter : ConverterImpl, EnumerableRel
     {

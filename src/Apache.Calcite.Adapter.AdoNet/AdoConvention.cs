@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 using Apache.Calcite.Adapter.AdoNet.Rel;
 
@@ -11,37 +11,38 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Calling convention for relational operations that occur in an ADO database.
-    /// 
-    /// The convention is a slight misnomer. The operations occur in whatever
-    /// data-flow architecture the database uses internally. Nevertheless, the result
-    /// pops out in ADO.NET.
-    /// 
-    /// This is the only convention, thus far, that is not a singleton. Each
-    /// instance contains an ADO.NET schema (and therefore a data source). If Calcite is
-    /// working with two different databases, it would even make sense to convert
-    /// from "ADO#A" convention to "ADO#B", even though we don't do it currently.
-    /// (That would involve asking database B to open a database link to database
-    /// A.)
-    /// 
-    /// As a result, converter rules from and to this convention need to be
-    /// instantiated, at the start of planning, for each ADO database in play.
+    /// Calcite calling convention that identifies relational nodes whose results are produced
+    /// by executing SQL against a specific ADO.NET data source.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Unlike most Calcite conventions, <see cref="AdoConvention"/> is not a singleton: each
+    /// instance is bound to a particular <see cref="AdoDataSource"/> and its <see cref="SqlDialect"/>.
+    /// When a query touches two different ADO.NET databases, the planner uses two separate convention
+    /// instances and inserts the necessary converter nodes between them.
+    /// </para>
+    /// <para>
+    /// Use <see cref="Create"/> to obtain an instance. Converter rules that push relational
+    /// operators into the ADO layer are registered per-instance at the start of planning.
+    /// </para>
+    /// </remarks>
     public class AdoConvention : Convention.Impl
     {
 
         /// <summary>
-        /// Cost of a ADO node veruss implementing an equivalent node in a "typical" calling convention.
+        /// Relative cost multiplier applied to ADO relational nodes during planning.
+        /// A value below 1.0 makes the planner prefer pushing operations into the ADO layer
+        /// over equivalent in-memory implementations.
         /// </summary>
         public const double CostMultiplier = .8d;
 
         /// <summary>
-        /// Creates a new ADO convention.
+        /// Creates a new <see cref="AdoConvention"/> for the given SQL dialect, schema expression, and display name.
         /// </summary>
-        /// <param name="dialect"></param>
-        /// <param name="expression"></param>
-        /// <param name="name"></param>
-        /// <returns></returns>
+        /// <param name="dialect">The SQL dialect used to generate SQL for the target database.</param>
+        /// <param name="expression">The LINQ expression that represents the schema root at planning time.</param>
+        /// <param name="name">A short display name appended to the convention identifier (e.g. the schema name).</param>
+        /// <returns>A new <see cref="AdoConvention"/> instance.</returns>
         public static AdoConvention Create(SqlDialect dialect, Expression expression, string name)
         {
             return new AdoConvention(dialect, expression, name);
@@ -51,11 +52,12 @@ namespace Apache.Calcite.Adapter.AdoNet
         readonly Expression _expression;
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Initializes a new instance of <see cref="AdoConvention"/>.
+        /// Prefer <see cref="Create"/> over calling this constructor directly.
         /// </summary>
-        /// <param name="dialect"></param>
-        /// <param name="expression"></param>
-        /// <param name="name"></param>
+        /// <param name="dialect">The SQL dialect used to generate SQL for the target database.</param>
+        /// <param name="expression">The LINQ expression that represents the schema root at planning time.</param>
+        /// <param name="name">A short display name appended to the convention identifier.</param>
         public AdoConvention(SqlDialect dialect, Expression expression, string name) :
             base("ADO." + name, typeof(AdoRel))
         {
@@ -67,12 +69,12 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Gets the dialect of the convention.
+        /// Gets the SQL dialect used when generating SQL for the target ADO.NET database.
         /// </summary>
         public SqlDialect Dialect => _dialect;
 
         /// <summary>
-        /// Gets the expression of the convention.
+        /// Gets the LINQ expression that represents the schema root for this convention at planning time.
         /// </summary>
         public Expression Expression => _expression;
 

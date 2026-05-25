@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 using Apache.Calcite.Adapter.AdoNet.Rel;
 
@@ -17,7 +17,8 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// State for generating a SQL statement.
+    /// Translates a tree of <see cref="AdoConvention"/> relational nodes into a SQL statement
+    /// that can be executed against an ADO.NET data source.
     /// </summary>
     public class AdoImplementor : RelToSqlConverter
     {

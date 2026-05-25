@@ -1,10 +1,10 @@
-﻿namespace Apache.Calcite.Adapter.AdoNet.Metadata
+namespace Apache.Calcite.Adapter.AdoNet.Metadata
 {
 
     /// <summary>
-    /// Describes a database schema.
+    /// Describes a schema returned by <see cref="AdoDatabaseMetadata.GetSchemas"/>.
     /// </summary>
-    /// <param name="Name"></param>
+    /// <param name="Name">The schema name as it appears in the database.</param>
     public readonly record struct AdoSchemaMetadata(
         string Name
     )

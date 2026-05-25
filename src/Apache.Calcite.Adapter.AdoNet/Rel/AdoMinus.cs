@@ -1,4 +1,4 @@
-﻿using java.util;
+using java.util;
 
 using org.apache.calcite.plan;
 using org.apache.calcite.rel.core;
@@ -7,7 +7,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
 {
 
     /// <summary>
-    /// Minus operator implemented in ADO convention
+    /// Minus (EXCEPT) operator implemented in the <see cref="AdoConvention"/> calling convention.
     /// </summary>
     public class AdoMinus : Minus, AdoRel
     {

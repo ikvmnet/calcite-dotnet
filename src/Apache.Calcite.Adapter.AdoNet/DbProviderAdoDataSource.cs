@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data.Common;
 
 using Apache.Calcite.Adapter.AdoNet.Metadata;
@@ -7,8 +7,13 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Provides an implementation of <see cref="AdoDataSource"/> backed by a <see cref="DbProviderFactory"/>.
+    /// An <see cref="AdoDataSource"/> backed by a <see cref="DbProviderFactory"/> and a connection string.
     /// </summary>
+    /// <remarks>
+    /// Use this class when you want to expose an ADO.NET provider to the Calcite adapter using the
+    /// provider-factory pattern. Each call to <see cref="AdoDataSource.OpenConnection"/> creates and
+    /// opens a new connection via the factory.
+    /// </remarks>
     public class DbProviderAdoDataSource : AdoDataSource
     {
 
@@ -17,12 +22,12 @@ namespace Apache.Calcite.Adapter.AdoNet
         readonly AdoDatabaseMetadata _metadata;
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Initializes a new instance of the <see cref="DbProviderAdoDataSource"/> class.
         /// </summary>
-        /// <param name="factory"></param>
-        /// <param name="connectionString"></param>
-        /// <param name="metadata"></param>
-        /// <exception cref="ArgumentNullException"></exception>
+        /// <param name="factory">The provider factory used to create connections.</param>
+        /// <param name="connectionString">The connection string passed to each new connection.</param>
+        /// <param name="metadata">The metadata provider that describes the data source's schema.</param>
+        /// <exception cref="ArgumentNullException">Any argument is <see langword="null"/>.</exception>
         public DbProviderAdoDataSource(DbProviderFactory factory, string connectionString, AdoDatabaseMetadata metadata)
         {
             _factory = factory ?? throw new ArgumentNullException(nameof(factory));

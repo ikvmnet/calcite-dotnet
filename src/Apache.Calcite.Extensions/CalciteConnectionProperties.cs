@@ -1,4 +1,4 @@
-﻿using Apache.Calcite.Extensions;
+using Apache.Calcite.Extensions;
 
 using java.util;
 
@@ -10,8 +10,15 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Provides typed access to <see cref="CalciteConnectionProperty"/> instances stored in a <see cref="Properties"/>.
+    /// Provides strongly typed access to Apache Calcite connection properties stored in a
+    /// <see cref="Properties"/> map.
     /// </summary>
+    /// <remarks>
+    /// This class wraps a <see cref="Properties"/> instance and exposes each Calcite connection
+    /// option as a .NET property, handling Java enum serialization and type conversion transparently.
+    /// Use it when building or inspecting Calcite configuration programmatically from .NET code
+    /// rather than working with raw property strings.
+    /// </remarks>
     public class CalciteConnectionProperties
     {
 
@@ -19,9 +26,9 @@ namespace Apache.Calcite.Data
         readonly CalciteConnectionPropertiesSchemaMap _schemaMap;
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Initializes a new instance backed by an existing <see cref="Properties"/> map.
         /// </summary>
-        /// <param name="properties"></param>
+        /// <param name="properties">The property map to read from and write to.</param>
         public CalciteConnectionProperties(Properties properties)
         {
             _properties = properties;
@@ -29,7 +36,7 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Initializes a new instance backed by a new, empty <see cref="Properties"/> map.
         /// </summary>
         public CalciteConnectionProperties()
         {

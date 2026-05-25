@@ -1,4 +1,4 @@
-﻿using com.google.common.collect;
+using com.google.common.collect;
 
 using java.lang;
 using java.util;
@@ -14,7 +14,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
 {
 
     /// <summary>
-    /// Union operator implemented in ADO convention.
+    /// Aggregate operator implemented in the <see cref="AdoConvention"/> calling convention.
     /// </summary>
     public class AdoAggregate : Aggregate, AdoRel
     {

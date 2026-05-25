@@ -1,4 +1,4 @@
-﻿using org.apache.calcite.plan;
+using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.metadata;
@@ -8,7 +8,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
 {
 
     /// <summary>
-    /// Union operator implemented in ADO convention.
+    /// Sort operator implemented in the <see cref="AdoConvention"/> calling convention.
     /// </summary>
     public class AdoSort : Sort, AdoRel
     {

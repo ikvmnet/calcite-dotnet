@@ -1,4 +1,4 @@
-﻿using java.util.function;
+using java.util.function;
 
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.rel;
@@ -14,10 +14,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
     {
 
         /// <summary>
-        /// Creates a new instance of the rule.
+        /// Creates a rule instance bound to the specified <see cref="AdoConvention"/>.
         /// </summary>
-        /// <param name="convention"></param>
-        /// <returns></returns>
+        /// <param name="convention">The ADO convention whose nodes will be converted to <see cref="EnumerableConvention"/>.</param>
+        /// <returns>A configured <see cref="AdoToEnumerableConverterRule"/> instance.</returns>
         public static AdoToEnumerableConverterRule Create(AdoConvention convention)
         {
             return (AdoToEnumerableConverterRule)Config.INSTANCE
@@ -27,9 +27,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Initializes a new instance using the supplied rule configuration.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule configuration produced by <see cref="Create"/>.</param>
         public AdoToEnumerableConverterRule(Config config) :
             base(config)
         {

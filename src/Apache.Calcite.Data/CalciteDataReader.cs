@@ -11,7 +11,7 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Provides a way of reading a forward-only stream of rows produced by executing a
+    /// Provides a forward-only, read-only stream of rows from a result set produced by a
     /// <see cref="CalciteCommand"/> or <see cref="CalciteBatch"/>. This class cannot be inherited.
     /// </summary>
     /// <remarks>

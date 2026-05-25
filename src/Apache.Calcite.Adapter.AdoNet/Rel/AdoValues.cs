@@ -1,4 +1,4 @@
-﻿using com.google.common.collect;
+using com.google.common.collect;
 
 using java.util;
 
@@ -10,7 +10,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
 {
 
     /// <summary>
-    /// Values operator implemented in ADO convention.
+    /// Values operator implemented in the <see cref="AdoConvention"/> calling convention.
     /// </summary>
     public class AdoValues : Values, AdoRel
     {

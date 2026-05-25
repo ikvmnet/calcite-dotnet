@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 using java.lang;
 using java.util;
@@ -12,9 +12,14 @@ using static org.apache.calcite.rel.core.RelFactories;
 namespace Apache.Calcite.Adapter.AdoNet.Rel.RelFactories
 {
 
+    /// <summary>
+    /// <see cref="JoinFactory"/> implementation that creates <see cref="AdoJoin"/> nodes
+    /// during relational-algebra construction in the <see cref="AdoConvention"/>.
+    /// </summary>
     public class AdoJoinFactory : JoinFactory
     {
 
+        /// <inheritdoc />
         public RelNode createJoin(RelNode left, RelNode right, List hints, RexNode condition, Set variablesSet, JoinRelType joinType, bool semiJoinDone)
         {
             ArgumentNullException.ThrowIfNull(left);

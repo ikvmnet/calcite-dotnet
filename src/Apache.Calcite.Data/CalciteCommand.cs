@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -27,6 +29,7 @@ namespace Apache.Calcite.Data
         int _commandTimeout = 30;
         CommandType _commandType = CommandType.Text;
         UpdateRowSource _updateRowSource = UpdateRowSource.None;
+        List<CalciteHookEntry>? _hooks;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="CalciteCommand"/> class.
@@ -120,6 +123,24 @@ namespace Apache.Calcite.Data
         public new CalciteParameterCollection Parameters => _parameters;
 
         /// <summary>
+        /// Registers a Calcite hook to activate for the duration of each execute request on this command.
+        /// </summary>
+        /// <param name="hook">The Calcite hook to activate.</param>
+        /// <param name="value">
+        /// The value to supply to the hook. CLR primitives (<see cref="bool"/>, <see cref="int"/>,
+        /// <see cref="long"/>, <see cref="double"/>, etc.) are automatically converted to their
+        /// Java boxed equivalents; values that are already Java objects are passed through unchanged.
+        /// </param>
+        /// <remarks>
+        /// Connection-level hooks registered via <see cref="CalciteConnection.RegisterHook{T}"/> always
+        /// run first, followed by any hooks registered on this command.
+        /// </remarks>
+        public void RegisterHook(org.apache.calcite.runtime.Hook hook, object? value)
+        {
+            (_hooks ??= new List<CalciteHookEntry>()).Add(new CalciteHookEntry(hook, value));
+        }
+
+        /// <summary>
         /// Gets or sets the <see cref="CalciteConnection"/> used by this command.
         /// </summary>
         public new CalciteConnection? Connection
@@ -189,23 +210,32 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Executes the command and returns a <see cref="CalciteResult"/> containing the results.
+        /// Executes the command and returns a <see cref="CalciteResult"/> containing the result set.
         /// </summary>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
+        /// <param name="cancellationToken">A token to cancel the operation.</param>
         Task<CalciteResult> ExecuteReaderCoreAsync(CancellationToken cancellationToken)
         {
-            return GetOpenSession().ExecuteReaderAsync(CalciteExecuteRequest.From(_commandText, _parameters, _commandTimeout), cancellationToken);
+            return GetOpenSession().ExecuteReaderAsync(CalciteExecuteRequest.From(_commandText, _parameters, _commandTimeout, ResolveHooks()), cancellationToken);
+        }
+
+        Task<CalciteResult> ExecuteNonQueryCoreAsync(CancellationToken cancellationToken)
+        {
+            return GetOpenSession().ExecuteNonQueryAsync(CalciteExecuteRequest.From(_commandText, _parameters, _commandTimeout, ResolveHooks()), cancellationToken);
         }
 
         /// <summary>
-        /// Executes the command and returns a <see cref="CalciteResult"/> containing the number of records affected.
+        /// Returns the combined hook entries for this request: connection-level first, then command-level.
         /// </summary>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        Task<CalciteResult> ExecuteNonQueryCoreAsync(CancellationToken cancellationToken)
+        /// <exception cref="InvalidOperationException">Thrown when no connection is set.</exception>
+        IEnumerable<CalciteHookEntry>? ResolveHooks()
         {
-            return GetOpenSession().ExecuteNonQueryAsync(CalciteExecuteRequest.From(_commandText, _parameters, _commandTimeout), cancellationToken);
+            if (_connection is null)
+                throw new InvalidOperationException("Command requires an open connection.");
+
+            var connectionHooks = _connection.Hooks;
+            if (connectionHooks is null) return _hooks;
+            if (_hooks is null) return connectionHooks;
+            return connectionHooks.Concat(_hooks);
         }
 
         CalciteSession GetOpenSession()

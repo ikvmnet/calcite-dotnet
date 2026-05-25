@@ -1,4 +1,4 @@
-﻿using java.util;
+using java.util;
 
 using org.apache.calcite.plan;
 using org.apache.calcite.rel.core;
@@ -8,7 +8,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
 {
 
     /// <summary>
-    /// Union operator implemented in ADO convention.
+    /// Union operator implemented in the <see cref="AdoConvention"/> calling convention.
     /// </summary>
     public class AdoUnion : Union, AdoRel
     {
