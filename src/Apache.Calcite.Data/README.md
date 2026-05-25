@@ -2,6 +2,8 @@
 
 [Apache Calcite](https://calcite.apache.org/) for ADO.NET.
 
+NuGet package: `Apache.Calcite.Data`
+
 `Apache.Calcite.Data` is a native, in-process ADO.NET provider for Apache Calcite. It exposes
 Calcite's SQL parser, planner, and runtime through the standard `System.Data.Common`
 abstractions — so any code that knows how to talk to a `DbConnection` / `DbCommand` /
