@@ -25,10 +25,6 @@ connection property helpers and related utility types used by the provider and a
 
 NuGet package: `Apache.Calcite.Extensions`
 
-### `Apache.Calcite.Linq4j` (`src/Apache.Calcite.Linq4j`)
-
-Internal support library with Calcite LINQ4J bridge/runtime pieces used by other projects in this repository.
-
 ### Test projects
 
 - `Apache.Calcite.Tests`
