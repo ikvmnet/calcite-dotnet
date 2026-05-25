@@ -208,23 +208,7 @@ namespace Apache.Calcite.Data.Internal
             CalcitePrepare.Dummy.push(ctx);
             try
             {
-                List<org.apache.calcite.runtime.Hook.Closeable>? closeables = null;
-                if (request.Hooks is not null)
-                {
-                    closeables = [];
-                    foreach (var entry in request.Hooks)
-                        closeables.Add(entry.Hook.addThread(org.apache.calcite.runtime.Hook.propertyJ(entry.Value)));
-                }
-                try
-                {
-                    signature = prepare.prepareSql(ctx, query, (java.lang.Class)typeof(java.lang.Object[]), -1);
-                }
-                finally
-                {
-                    if (closeables is not null)
-                        foreach (var c in closeables)
-                            c?.close();
-                }
+                signature = prepare.prepareSql(ctx, query, (java.lang.Class)typeof(java.lang.Object[]), -1);
             }
             finally
             {
@@ -232,6 +216,35 @@ namespace Apache.Calcite.Data.Internal
             }
 
             registration = cancellationToken.Register(() => cancelFlag.set(true));
+        }
+
+        /// <summary>
+        /// Calls <c>Hook.addThread</c> for each entry, binding it to the current thread for the
+        /// duration of execution. Returns the list of <c>Closeable</c> handles that must be passed
+        /// to <see cref="DeactivateHooks"/> when execution ends, or <see langword="null"/> when
+        /// <paramref name="hooks"/> is <see langword="null"/>.
+        /// </summary>
+        List<org.apache.calcite.runtime.Hook.Closeable>? ActivateHooks(IEnumerable<CalciteHookEntry>? hooks)
+        {
+            if (hooks is null)
+                return null;
+
+            var closeables = new List<org.apache.calcite.runtime.Hook.Closeable>();
+            foreach (var entry in hooks)
+                closeables.Add(entry.Hook.addThread(org.apache.calcite.runtime.Hook.propertyJ(entry.Value)));
+
+            return closeables;
+        }
+
+        /// <summary>
+        /// Closes each handle returned by <see cref="ActivateHooks"/>, deregistering the hooks
+        /// from the current thread. Safe to call with a <see langword="null"/> list.
+        /// </summary>
+        void DeactivateHooks(List<org.apache.calcite.runtime.Hook.Closeable>? closeables)
+        {
+            if (closeables is not null)
+                foreach (var c in closeables)
+                    c?.close();
         }
 
         /// <summary>
@@ -249,6 +262,7 @@ namespace Apache.Calcite.Data.Internal
             ThrowIfDisposed();
             cancellationToken.ThrowIfCancellationRequested();
 
+            var closeables = ActivateHooks(request.Hooks);
             try
             {
                 Prepare(request, out var signature, out var dataContext, out var registration, cancellationToken);
@@ -276,6 +290,10 @@ namespace Apache.Calcite.Data.Internal
             {
                 throw new CalciteException("Failed to execute Calcite statement.", e);
             }
+            finally
+            {
+                DeactivateHooks(closeables);
+            }
         }
 
         /// <summary>
@@ -293,6 +311,7 @@ namespace Apache.Calcite.Data.Internal
             ThrowIfDisposed();
             cancellationToken.ThrowIfCancellationRequested();
 
+            var closeables = ActivateHooks(request.Hooks);
             try
             {
                 Prepare(request, out var signature, out var dataContext, out var registration, cancellationToken);
@@ -346,6 +365,10 @@ namespace Apache.Calcite.Data.Internal
             catch (Exception e)
             {
                 throw new CalciteException("Failed to execute Calcite statement.", e);
+            }
+            finally
+            {
+                DeactivateHooks(closeables);
             }
         }
 

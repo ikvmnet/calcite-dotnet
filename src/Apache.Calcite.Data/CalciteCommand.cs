@@ -132,8 +132,10 @@ namespace Apache.Calcite.Data
         /// Java boxed equivalents; values that are already Java objects are passed through unchanged.
         /// </param>
         /// <remarks>
-        /// Connection-level hooks registered via <see cref="CalciteConnection.RegisterHook{T}"/> always
-        /// run first, followed by any hooks registered on this command.
+        /// Connection-level hooks registered via <see cref="CalciteConnection.RegisterHook"/> are
+        /// always activated first, followed by any hooks registered on this command. Each hook is
+        /// activated on the current thread before any part of statement execution begins and
+        /// torn down automatically when execution completes.
         /// </remarks>
         public void RegisterHook(org.apache.calcite.runtime.Hook hook, object? value)
         {

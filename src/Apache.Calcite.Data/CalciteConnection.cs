@@ -77,8 +77,8 @@ namespace Apache.Calcite.Data
         /// <remarks>
         /// Hooks registered here apply to all commands created from this connection. Connection-level
         /// hooks are always activated before any hooks added to an individual command via
-        /// <see cref="CalciteCommand.RegisterHook"/>. Hooks are scoped to the planning phase of
-        /// each statement and are automatically torn down when planning completes.
+        /// <see cref="CalciteCommand.RegisterHook"/>. Each hook is activated on the current thread
+        /// before any part of statement execution begins and torn down automatically when execution completes.
         /// </remarks>
         public void RegisterHook(org.apache.calcite.runtime.Hook hook, object? value)
         {
