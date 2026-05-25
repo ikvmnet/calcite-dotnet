@@ -4,7 +4,13 @@
         <TargetFrameworks>net8.0</TargetFrameworks>
         <Nullable>enable</Nullable>
         <Description>Apache Calcite Adapter for ADO.NET database connections.</Description>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageTags>apache;calcite;ado.net;adapter;sql;ikvm</PackageTags>
     </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\" />
+    </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="IKVM" Version="8.15.0" />
