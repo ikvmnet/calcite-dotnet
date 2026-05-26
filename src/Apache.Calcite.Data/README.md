@@ -99,15 +99,6 @@ cmd.CommandText = "SELECT * FROM \"MEM\".\"USERS\" ORDER BY \"ID\"";
 await using var reader = await cmd.ExecuteReaderAsync();
 ```
 
-## Connection lifecycle
-
-`CalciteConnection` is designed to be **long-lived**, mirroring the behaviour of Calcite's own JDBC driver. Opening a connection initialises the in-process Calcite engine, parses and validates the model, and builds the schema — work that is relatively expensive and intended to be amortised over many queries. Keep one connection (or one `CalciteDataSource`) open for the lifetime of a logical data source rather than opening and closing connections per query.
-
-**Thread safety:**
-
-- The **ADO.NET layer** (`CalciteConnection`, `CalciteCommand`, `CalciteDataReader`, etc.) is thread-safe: multiple threads may share a single connection and issue concurrent commands against it.
-- The **Calcite engine layer** (schemas, the planner, `RootSchema`, etc.) is thread-safe for concurrent *reads and queries*. Mutating the schema (e.g. calling `RootSchema.add(...)`) while queries are in-flight is Calcite's concern, not this provider's; refer to the [Apache Calcite documentation](https://calcite.apache.org/docs/) for its concurrency guarantees.
-
 ## Using `DbDataSource` (.NET 7+)
 
 `CalciteDataSource` implements the modern `DbDataSource` pattern for dependency-injection and pooled-connection scenarios:
@@ -115,7 +106,6 @@ await using var reader = await cmd.ExecuteReaderAsync();
 ```csharp
 using Apache.Calcite.Data;
 
-// Create once and share across the application (e.g. register as a singleton in DI).
 await using var dataSource = new CalciteDataSource("Model=path/to/model.json");
 
 await using var conn = await dataSource.OpenConnectionAsync();

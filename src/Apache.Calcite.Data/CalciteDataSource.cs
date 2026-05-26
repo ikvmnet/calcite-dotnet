@@ -8,23 +8,41 @@ namespace Apache.Calcite.Data
 
     /// <summary>
     /// Represents a source of <see cref="CalciteConnection"/> instances configured by a single
-    /// connection string. This is the Apache Calcite implementation of the .NET 7+
-    /// <see cref="DbDataSource"/> pattern.
+    /// connection string. This is the Apache Calcite implementation of the .NET 7+ <see cref="DbDataSource"/> pattern.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A <see cref="CalciteDataSource"/> is intended to be created once per logical data source and
-    /// shared across the application. Each call to <see cref="OpenConnection"/>,
-    /// <see cref="OpenConnectionAsync(CancellationToken)"/>, or the <see cref="DbDataSource.CreateConnection"/>
-    /// override returns a fresh <see cref="CalciteConnection"/> bound to the configured
-    /// <see cref="DbDataSource.ConnectionString"/>.
+    /// A <see cref="CalciteDataSource"/> is intended to be created once per logical data source and shared across the application. Each call to <see cref="OpenConnection"/>,
+    /// <see cref="OpenConnectionAsync(CancellationToken)"/>, or the <see cref="DbDataSource.CreateConnection"/> override returns a fresh <see cref="CalciteConnection"/>
+    /// bound to the configured <see cref="DbDataSource.ConnectionString"/>.
     /// </para>
     /// <para>
-    /// The Calcite provider does not perform connection pooling; each opened connection initializes
-    /// its own in-process Calcite engine session.
+    /// The Calcite provider does not perform connection pooling; each opened connection initializes its own in-process Calcite engine session.
+    /// </para>
+    /// <para>
+    /// To share a pre-built schema across all connections produced by this data source, subclass <see cref="CalciteDataSource"/> and override <see cref="CreateDbConnection"/> to
+    /// open the connection and register schemas on <see cref="CalciteConnection.RootSchema"/> before returning it:
+    /// <code>
+    /// public class MyDataSource : CalciteDataSource
+    /// {
+    ///     readonly Schema _sharedSchema = new MySchema();
+    ///
+    ///     public MyDataSource(string connectionString) : base(connectionString) { }
+    ///
+    ///     protected override DbConnection CreateDbConnection()
+    ///     {
+    ///         var conn = (CalciteConnection)base.CreateDbConnection();
+    ///         conn.Open();
+    ///         conn.RootSchema.add("MY", _sharedSchema);
+    ///         return conn;
+    ///     }
+    /// }
+    /// </code>
+    /// Because each <see cref="CalciteConnection"/> owns its own Calcite engine session, the <c>Schema</c> instance itself must be thread-safe if the same instance is added to
+    /// connections that may be used concurrently.
     /// </para>
     /// </remarks>
-    public sealed class CalciteDataSource : DbDataSource
+    public class CalciteDataSource : DbDataSource
     {
 
         readonly string _connectionString;
@@ -32,7 +50,8 @@ namespace Apache.Calcite.Data
         /// <summary>
         /// Initializes a new instance of the <see cref="CalciteDataSource"/> class with the specified connection string.
         /// </summary>
-        /// <param name="connectionString">The connection string used by every connection produced from this data source. Recognized keys are described on <see cref="CalciteConnectionStringBuilder"/>.</param>
+        /// <param name="connectionString">The connection string used by every connection produced from this data source.
+        /// Recognized keys are described on <see cref="CalciteConnectionStringBuilder"/>.</param>
         /// <exception cref="ArgumentNullException"><paramref name="connectionString"/> is <see langword="null"/>.</exception>
         public CalciteDataSource(string connectionString)
         {
@@ -75,8 +94,7 @@ namespace Apache.Calcite.Data
         /// <returns>A task whose result is an opened <see cref="CalciteConnection"/> instance.</returns>
         public new async ValueTask<CalciteConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
         {
-            var connection = await base.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-            return (CalciteConnection)connection;
+            return (CalciteConnection)await base.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         }
 
     }
