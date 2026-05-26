@@ -1,29 +1,22 @@
 # Apache.Calcite.Data
 
-[Apache Calcite](https://calcite.apache.org/) for ADO.NET.
+[![NuGet](https://img.shields.io/nuget/v/Apache.Calcite.Data)](https://www.nuget.org/packages/Apache.Calcite.Data)
 
-NuGet package: `Apache.Calcite.Data`
+**Apache.Calcite.Data** is a native, in-process ADO.NET provider for [Apache Calcite](https://calcite.apache.org/) — the SQL parser, optimizer, and execution framework that powers many leading database and data-virtualization products.
 
-`Apache.Calcite.Data` is a native, in-process ADO.NET provider for Apache Calcite. It exposes
-Calcite's SQL parser, planner, and runtime through the standard `System.Data.Common`
-abstractions — so any code that knows how to talk to a `DbConnection` / `DbCommand` /
-`DbDataReader` can talk to Calcite.
+The Calcite engine runs directly inside your .NET process via [IKVM](https://github.com/ikvmnet/ikvm). There is no JDBC driver, no Avatica server, and no separate process. SQL flows from your `DbConnection` straight into Calcite's planner.
 
-The Calcite engine itself is loaded into the same process via [IKVM](https://github.com/ikvmnet/ikvm).
-There is no JDBC driver, no Avatica server, and no separate process: SQL flows directly from
-your .NET code into Calcite's planner.
+## Why use this?
 
-## Why this provider?
+- **Standard ADO.NET** — works with any code that understands `DbConnection` / `DbCommand` / `DbDataReader`, including Dapper, EF Core conventions, and generic data-access layers.
+- **Federated queries** — join CSV files, in-memory collections, REST adapters, JDBC databases, and custom Calcite schemas in a single SQL statement.
+- **Rich SQL** — standards-conformant SQL with window functions, lateral joins, `MATCH_RECOGNIZE`, and much more.
+- **Code-driven schemas** — register .NET objects as Calcite schemas, tables, and user-defined functions at runtime via the `SchemaPlus` API; no JSON model required.
+- **No external dependencies** — everything runs in-process; no server to provision or maintain.
 
-Apache Calcite is a SQL parser, optimizer, and execution framework. It is the engine behind
-many database and data-virtualization products. With this provider you can:
+## Supported platforms
 
-- Run **Calcite SQL** — a standards-conformant SQL dialect with rich semantics — from .NET.
-- **Federate** heterogeneous data sources (files, REST APIs, JDBC databases, in-memory
-  collections, custom adapters) through a single SQL surface.
-- Author **schemas, tables, views, and user-defined functions** in .NET and expose them to
-  SQL via Calcite's `SchemaPlus` API.
-- Use any tool that consumes a `DbProviderFactory` / ADO.NET connection string.
+Targets **.NET 8** and is verified on **.NET 8** and **.NET 10**.
 
 ## Install
 
@@ -31,17 +24,11 @@ many database and data-virtualization products. With this provider you can:
 dotnet add package Apache.Calcite.Data
 ```
 
-Targets **.NET 8** and is verified on **.NET 8** and **.NET 10**.
+## Quick start — inline JSON model
 
-## Quick start
-
-The simplest connection uses an inline JSON model that defines one or more schemas. This
-mirrors the [Calcite tutorial](https://calcite.apache.org/docs/tutorial.html) and the
-[JDBC connection string](https://calcite.apache.org/docs/adapter.html#jdbc-connect-string-parameters)
-form, with .NET-style key/value pairs.
+The quickest way to connect is with an inline [Calcite model](https://calcite.apache.org/docs/model.html) that wires up one or more adapters:
 
 ```csharp
-using System.Data;
 using Apache.Calcite.Data;
 
 const string model = """
@@ -59,35 +46,44 @@ const string model = """
 }
 """;
 
-await using var conn = new CalciteConnection($"Model=inline:{model};Schema=SALES");
+await using var conn = new CalciteConnection($"Model=inline:{model}");
 await conn.OpenAsync();
 
 await using var cmd = conn.CreateCommand();
-cmd.CommandText = "SELECT name, deptno FROM emps WHERE deptno = 10";
+cmd.CommandText = "SELECT \"NAME\", \"DEPTNO\" FROM \"EMPS\" WHERE \"DEPTNO\" = 10";
 
 await using var reader = await cmd.ExecuteReaderAsync();
 while (await reader.ReadAsync())
     Console.WriteLine($"{reader.GetString(0)}\t{reader.GetInt32(1)}");
 ```
 
-### Parameters
+## Quick start — model file
 
-Calcite uses positional `?` placeholders, like ODBC. Parameters are bound by the order they
-are added to the command's `Parameters` collection; `ParameterName` is informational.
+Point `Model` at a JSON file on disk:
+
+```csharp
+await using var conn = new CalciteConnection("Model=path/to/model.json;Schema=SALES");
+await conn.OpenAsync();
+```
+
+## Parameterized queries
+
+Calcite uses positional `?` placeholders (ODBC-style). Parameters are matched to placeholders by the order they are added to `Parameters`; the `ParameterName` is informational only.
 
 ```csharp
 await using var cmd = conn.CreateCommand();
-cmd.CommandText = "SELECT name FROM emps WHERE deptno = ? AND salary > ?";
-cmd.Parameters.Add(new CalciteParameter("?", 10));
-cmd.Parameters.Add(new CalciteParameter("?", 50_000m));
+cmd.CommandText = "SELECT \"NAME\" FROM \"EMPS\" WHERE \"DEPTNO\" = ? AND \"SALARY\" > ?";
+cmd.Parameters.Add(new CalciteParameter("deptno", 10));
+cmd.Parameters.Add(new CalciteParameter("salary", 50_000m));
 
 await using var reader = await cmd.ExecuteReaderAsync();
+while (await reader.ReadAsync())
+    Console.WriteLine(reader.GetString(0));
 ```
 
-### Registering schemas in code
+## Code-driven schemas
 
-Instead of (or in addition to) a JSON model, you can drive Calcite directly from .NET by
-adding schemas, tables, and functions to the connection's root schema:
+Register .NET objects as Calcite schemas directly — no JSON model required:
 
 ```csharp
 using org.apache.calcite.schema;
@@ -96,84 +92,127 @@ await using var conn = new CalciteConnection();
 await conn.OpenAsync();
 
 SchemaPlus root = conn.RootSchema;
-root.add("MEM", new MyInMemorySchema());
+root.add("MEM", new MyCustomSchema());   // any org.apache.calcite.schema.Schema implementation
 
 await using var cmd = conn.CreateCommand();
-cmd.CommandText = "SELECT * FROM MEM.users";
+cmd.CommandText = "SELECT * FROM \"MEM\".\"USERS\" ORDER BY \"ID\"";
 await using var reader = await cmd.ExecuteReaderAsync();
 ```
 
-### Using `DbProviderFactory`
+## Connection lifecycle
 
-Like other ADO.NET providers (Npgsql, MySqlConnector, `Microsoft.Data.SqlClient`, etc.),
-the factory is not auto-registered. Register it once at application startup:
+`CalciteConnection` is designed to be **long-lived**, mirroring the behaviour of Calcite's own JDBC driver. Opening a connection initialises the in-process Calcite engine, parses and validates the model, and builds the schema — work that is relatively expensive and intended to be amortised over many queries. Keep one connection (or one `CalciteDataSource`) open for the lifetime of a logical data source rather than opening and closing connections per query.
+
+**Thread safety:**
+
+- The **ADO.NET layer** (`CalciteConnection`, `CalciteCommand`, `CalciteDataReader`, etc.) is thread-safe: multiple threads may share a single connection and issue concurrent commands against it.
+- The **Calcite engine layer** (schemas, the planner, `RootSchema`, etc.) is thread-safe for concurrent *reads and queries*. Mutating the schema (e.g. calling `RootSchema.add(...)`) while queries are in-flight is Calcite's concern, not this provider's; refer to the [Apache Calcite documentation](https://calcite.apache.org/docs/) for its concurrency guarantees.
+
+## Using `DbDataSource` (.NET 7+)
+
+`CalciteDataSource` implements the modern `DbDataSource` pattern for dependency-injection and pooled-connection scenarios:
+
+```csharp
+using Apache.Calcite.Data;
+
+// Create once and share across the application (e.g. register as a singleton in DI).
+await using var dataSource = new CalciteDataSource("Model=path/to/model.json");
+
+await using var conn = await dataSource.OpenConnectionAsync();
+await using var cmd = conn.CreateCommand();
+cmd.CommandText = "SELECT COUNT(*) FROM \"ORDERS\"";
+var count = await cmd.ExecuteScalarAsync();
+Console.WriteLine($"Order count: {count}");
+```
+
+## Using `DbProviderFactory`
 
 ```csharp
 using System.Data.Common;
 using Apache.Calcite.Data;
 
+// Register once at startup.
 DbProviderFactories.RegisterFactory("Apache.Calcite.Data", CalciteProviderFactory.Instance);
 
+// Resolve anywhere.
 var factory = DbProviderFactories.GetFactory("Apache.Calcite.Data");
-using var conn = factory.CreateConnection()!;
+await using var conn = factory.CreateConnection()!;
 conn.ConnectionString = "Model=path/to/model.json";
-conn.Open();
+await conn.OpenAsync();
 ```
 
-## Connection string keys
+## Connection string reference
 
-Exposed by [`CalciteConnectionStringBuilder`](src/Apache.Calcite.Data/CalciteConnectionStringBuilder.cs):
+All keys are exposed as typed properties on `CalciteConnectionStringBuilder`. Unknown keys are preserved and forwarded to the engine.
 
-| Key | Description |
-| --- | --- |
-| `Model` | Path or URI to a Calcite model file, or `inline:<json>` for an inline model. |
-| `Schema` | Default schema name used when a query does not qualify identifiers. |
-| `CaseSensitive` | Whether identifier matching is case-sensitive. |
-| `Conformance` | SQL conformance level (e.g. `DEFAULT`, `STRICT_2003`, `PRAGMATIC_2003`). |
-
-Unknown keys are preserved and forwarded to the engine, so any Calcite property that is not
-listed above can still be supplied by name.
+| Key | Type | Description |
+|-----|------|-------------|
+| `Model` | `string` | Path/URI to a Calcite model JSON file, or `inline:<json>` for an embedded model. |
+| `Schema` | `string` | Default schema name when identifiers are unqualified. |
+| `CaseSensitive` | `bool` | Whether identifier lookup is case-sensitive (default: `true`). |
+| `Conformance` | `string` | SQL conformance level: `DEFAULT`, `STRICT_2003`, `PRAGMATIC_2003`, etc. |
+| `Lex` | `string` | Lexical policy: `ORACLE` (default), `MYSQL`, `MYSQL_ANSI`, `SQL_SERVER`, `JAVA`, `BIG_QUERY`. |
+| `Quoting` | `string` | Quote style: `DOUBLE_QUOTE`, `BACK_TICK`, `BACK_TICK_BACKSLASH`, `BRACKET`. |
+| `QuotedCasing` | `string` | How quoted identifiers are stored: `UNCHANGED`, `TO_UPPER`, `TO_LOWER`. |
+| `UnquotedCasing` | `string` | How unquoted identifiers are stored: `UNCHANGED`, `TO_UPPER`, `TO_LOWER`. |
+| `Fun` | `string` | Extra function libraries: `standard` (default), `oracle`, `spatial`, or comma-separated combinations. |
+| `TimeZone` | `string` | Session time zone, e.g. `UTC` or `gmt-3`. Defaults to the JVM time zone. |
+| `Conformance` | `string` | SQL conformance level. |
+| `DefaultNullCollation` | `string` | How NULLs sort when `NULLS FIRST`/`NULLS LAST` is not specified. Default: `HIGH` (Oracle behaviour). |
+| `ForceDecorrelate` | `bool` | Whether the planner aggressively de-correlates subqueries (default: `true`). |
+| `MaterializationsEnabled` | `bool` | Whether the planner may use materializations (default: `false`). |
+| `TypeCoercion` | `bool` | Whether implicit type coercion is applied during validation (default: `true`). |
+| `parserFactory` | `string` | Custom SQL parser factory class, e.g. `org.apache.calcite.sql.parser.ddl.SqlDdlParserImpl#FACTORY`. |
 
 ## Identifier casing
 
-Calcite's default lexer (`Lex.ORACLE`) follows standard SQL rules:
+Calcite's default lexer (`Lex=ORACLE`) follows standard SQL rules:
 
-- The quote character is `"` (double quote).
-- **Unquoted** identifiers are folded to **upper case** at parse time.
-- **Quoted** identifiers are left **unchanged**.
-- Identifier matching against the schema is **case-sensitive**.
+| Identifier kind | Normalized to | Compared |
+|-----------------|--------------|---------|
+| Unquoted (`emps`) | Upper case (`EMPS`) | Case-sensitive |
+| Quoted (`"Emps"`) | Unchanged (`Emps`) | Case-sensitive |
 
-So in the quick-start example above, `emps` and `deptno` are normalized to `EMPS` and
-`DEPTNO` before lookup. This works against most built-in adapters (CSV, JDBC against
-Oracle/H2/HSQLDB, etc.) because they expose names in upper case as well.
+Most built-in adapters (CSV, JDBC against H2/HSQLDB/Oracle) expose names in upper case, so unquoted identifiers work naturally with them.
 
-If your underlying schema uses mixed- or lower-case names, quote them:
+If your schema uses mixed- or lower-case names, quote them:
 
 ```csharp
 cmd.CommandText = """SELECT "Name", "DeptNo" FROM "Emps" WHERE "DeptNo" = 10""";
 ```
 
-You can also relax matching by setting `CaseSensitive=false` in the connection string, or
-switch to a different lexical convention (e.g. `MYSQL_ANSI`, which leaves unquoted
-identifiers unchanged) by passing the `Lex` property through the connection string.
+Or switch to a case-insensitive lexer:
 
-## Direct engine access
+```csharp
+// Lex=MYSQL_ANSI: unquoted identifiers are left unchanged, matching is case-insensitive.
+await using var conn = new CalciteConnection("Model=inline:{...};Lex=MYSQL_ANSI");
+```
 
-`CalciteConnection` exposes selected Calcite-native objects as typed properties for advanced
-scenarios — no `Unwrap` escape hatch required:
+## Accessing the Calcite engine directly
 
-- `RootSchema` — `org.apache.calcite.schema.SchemaPlus`
-- `TypeFactory` — `org.apache.calcite.adapter.java.JavaTypeFactory`
-- `Config` — `org.apache.calcite.config.CalciteConnectionConfig`
+`CalciteConnection` exposes Calcite-native objects as typed .NET properties for advanced scenarios:
 
-These are valid only while the connection is open.
+| Property | Java type | Purpose |
+|----------|-----------|---------|
+| `RootSchema` | `org.apache.calcite.schema.SchemaPlus` | Add/remove schemas and tables at runtime. |
+| `TypeFactory` | `org.apache.calcite.adapter.java.JavaTypeFactory` | Construct Calcite `RelDataType` instances. |
+| `Config` | `org.apache.calcite.config.CalciteConnectionConfig` | Inspect resolved connection configuration. |
+
+These properties are only valid while the connection is open.
+
+## Related packages
+
+| Package | Purpose |
+|---------|---------|
+| [`Apache.Calcite.Adapter.AdoNet`](https://www.nuget.org/packages/Apache.Calcite.Adapter.AdoNet) | Expose any ADO.NET data source as a federated Calcite schema with query pushdown. |
+| [`Apache.Calcite.Extensions`](https://www.nuget.org/packages/Apache.Calcite.Extensions) | .NET helper types for working with Calcite connection properties and IKVM interop. |
 
 ## Further reading
 
 - [Apache Calcite documentation](https://calcite.apache.org/docs/)
 - [Calcite adapters](https://calcite.apache.org/docs/adapter.html)
-- [JSON model reference](https://calcite.apache.org/docs/model.html)
-- [Provider design notes](src/Apache.Calcite.Data/DESIGN.md)
+- [Calcite model JSON reference](https://calcite.apache.org/docs/model.html)
+- [Source repository](https://github.com/ikvmnet/calcite-dotnet)
 
 ## License
 

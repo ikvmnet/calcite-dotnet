@@ -187,14 +187,15 @@ namespace Apache.Calcite.Data.Internal
         public CalciteConnectionConfig Config => _config;
 
         /// <summary>
-        /// Prepares the SQL statement and outputs the relevant objects capturing it.
+        /// Builds the <see cref="PrepareContext"/> and <see cref="StatementDataContext"/> for the
+        /// request, calls <c>prepareSql</c> to produce a <see cref="CalcitePrepare.CalciteSignature"/>,
+        /// and registers the cancellation callback.
         /// </summary>
-        /// <param name="request"></param>
-        /// <param name="signature"></param>
-        /// <param name="dataContext"></param>
-        /// <param name="registration"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
+        /// <param name="request">The execute request containing the SQL text, bound parameters, and timeout.</param>
+        /// <param name="signature">Receives the compiled statement signature including cursor factory and column metadata.</param>
+        /// <param name="dataContext">Receives the <see cref="StatementDataContext"/> that binds parameters and cancellation to the statement.</param>
+        /// <param name="registration">Receives the <see cref="CancellationTokenRegistration"/> that sets the cancel flag when the token fires.</param>
+        /// <param name="cancellationToken">Token used to cancel execution.</param>
         void Prepare(CalciteExecuteRequest request, out CalcitePrepare.CalciteSignature signature, out DataContext dataContext, out CancellationTokenRegistration registration, CancellationToken cancellationToken)
         {
             var cancelFlag = new AtomicBoolean(false);
@@ -224,7 +225,7 @@ namespace Apache.Calcite.Data.Internal
         /// to <see cref="DeactivateHooks"/> when execution ends, or <see langword="null"/> when
         /// <paramref name="hooks"/> is <see langword="null"/>.
         /// </summary>
-        List<org.apache.calcite.runtime.Hook.Closeable>? ActivateHooks(IEnumerable<CalciteHookEntry>? hooks)
+        static List<org.apache.calcite.runtime.Hook.Closeable>? ActivateHooks(IEnumerable<CalciteHookEntry>? hooks)
         {
             if (hooks is null)
                 return null;
@@ -240,7 +241,7 @@ namespace Apache.Calcite.Data.Internal
         /// Closes each handle returned by <see cref="ActivateHooks"/>, deregistering the hooks
         /// from the current thread. Safe to call with a <see langword="null"/> list.
         /// </summary>
-        void DeactivateHooks(List<org.apache.calcite.runtime.Hook.Closeable>? closeables)
+        static void DeactivateHooks(List<org.apache.calcite.runtime.Hook.Closeable>? closeables)
         {
             if (closeables is not null)
                 foreach (var c in closeables)
@@ -248,13 +249,14 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Prepares and executes a SQL statement asynchronously, returning a <see cref="CalciteResult"/>.
+        /// Prepares and executes a query, returning a <see cref="CalciteResult"/> whose enumerator
+        /// streams the result rows. For DDL statements the enumerator is <see langword="null"/>.
         /// </summary>
-        /// <param name="request"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        /// <exception cref="ArgumentNullException"></exception>
-        /// <exception cref="CalciteException"></exception>
+        /// <param name="request">The execute request containing SQL text, parameters, timeout, and hooks.</param>
+        /// <param name="cancellationToken">Token used to cancel execution.</param>
+        /// <returns>A <see cref="CalciteResult"/> holding the signature, cancellation registration, and row enumerator.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="request"/> is <see langword="null"/>.</exception>
+        /// <exception cref="CalciteException">Thrown when planning or execution fails.</exception>
         public Task<CalciteResult> ExecuteReaderAsync(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(request);
@@ -297,13 +299,15 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Prepares and executes a SQL statement asynchronously, returning a <see cref="CalciteResult"/>.
+        /// Prepares and executes a DML, DDL, or SELECT statement and returns the number of rows affected.
+        /// For SELECT the affected-row count is <c>-1</c> by ADO.NET convention; for DDL it is <c>0</c>;
+        /// for DML it is the row count reported by Calcite.
         /// </summary>
-        /// <param name="request"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        /// <exception cref="ArgumentNullException"></exception>
-        /// <exception cref="CalciteException"></exception>
+        /// <param name="request">The execute request containing SQL text, parameters, timeout, and hooks.</param>
+        /// <param name="cancellationToken">Token used to cancel execution.</param>
+        /// <returns>A <see cref="CalciteResult"/> with <c>RecordsAffected</c> set and no row enumerator.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="request"/> is <see langword="null"/>.</exception>
+        /// <exception cref="CalciteException">Thrown when planning or execution fails.</exception>
         public Task<CalciteResult> ExecuteNonQueryAsync(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(request);
@@ -372,6 +376,7 @@ namespace Apache.Calcite.Data.Internal
             }
         }
 
+        /// <summary>Returns <see langword="true"/> when <paramref name="t"/> represents a DDL statement type.</summary>
         static bool IsDdl(Meta.StatementType.__Enum t) => t switch
         {
             Meta.StatementType.__Enum.CREATE => true,
@@ -381,6 +386,7 @@ namespace Apache.Calcite.Data.Internal
             _ => false,
         };
 
+        /// <summary>Converts a Calcite row-count value (Java boxed number or CLR primitive) to <see cref="long"/>.</summary>
         static long ToInt64(object? value) => value switch
         {
             null => 0,
@@ -391,6 +397,7 @@ namespace Apache.Calcite.Data.Internal
             _ => Convert.ToInt64(value.ToString()),
         };
 
+        /// <summary>Marks the session as disposed. Further calls to execute methods will throw <see cref="ObjectDisposedException"/>.</summary>
         public void Dispose()
         {
             _disposed = true;

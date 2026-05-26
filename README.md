@@ -1,37 +1,83 @@
 # Apache Calcite for .NET
 
-This repository provides .NET projects that expose Apache Calcite capabilities through ADO.NET and IKVM.
+This repository provides .NET projects that expose [Apache Calcite](https://calcite.apache.org/) — the SQL parser, optimizer, and execution framework — through standard ADO.NET abstractions, powered by [IKVM](https://github.com/ikvmnet/ikvm).
 
-## Projects
+## Packages
 
-### `Apache.Calcite.Data` (`src/Apache.Calcite.Data`)
+### [`Apache.Calcite.Data`](https://www.nuget.org/packages/Apache.Calcite.Data) · `src/Apache.Calcite.Data`
 
-Primary ADO.NET provider package for Apache Calcite. It exposes `DbConnection`, `DbCommand`, `DbDataReader`,
-`DbBatch`, connection-string configuration, and provider-factory support so .NET applications can query Calcite.
+The core ADO.NET provider. Exposes `CalciteConnection`, `CalciteCommand`, `CalciteDataReader`, `CalciteBatch`, `CalciteDataSource`, `CalciteProviderFactory`, and `CalciteConnectionStringBuilder` so any .NET code that speaks `DbConnection` / `DbCommand` / `DbDataReader` can execute Calcite SQL.
 
-NuGet package: `Apache.Calcite.Data`
+The Calcite engine runs fully in-process via IKVM — no JDBC driver, no Avatica server, no extra process.
 
-### `Apache.Calcite.Adapter.AdoNet` (`src/Apache.Calcite.Adapter.AdoNet`)
+```sh
+dotnet add package Apache.Calcite.Data
+```
 
-Calcite adapter package that maps external ADO.NET data sources into Calcite schemas and relational operators.
-This enables query pushdown and federated SQL planning across connected data sources.
+### [`Apache.Calcite.Adapter.AdoNet`](https://www.nuget.org/packages/Apache.Calcite.Adapter.AdoNet) · `src/Apache.Calcite.Adapter.AdoNet`
 
-NuGet package: `Apache.Calcite.Adapter.AdoNet`
+Federated query adapter that bridges Calcite to external ADO.NET data sources. Exposes any database reachable via `DbProviderFactory` or `DbDataSource` as a Calcite schema, with pushdown of filters, projections, joins, aggregations, sorts, and set operations.
 
-### `Apache.Calcite.Extensions` (`src/Apache.Calcite.Extensions`)
+Ships built-in metadata for SQL Server, SQLite, ODBC, OLE DB, and any `INFORMATION_SCHEMA`-compliant database.
 
-Supporting extension package that provides .NET-friendly wrappers and helpers for Calcite/IKVM interop (for example,
-connection property helpers and related utility types used by the provider and adapter projects).
+```sh
+dotnet add package Apache.Calcite.Adapter.AdoNet
+```
 
-NuGet package: `Apache.Calcite.Extensions`
+### [`Apache.Calcite.Extensions`](https://www.nuget.org/packages/Apache.Calcite.Extensions) · `src/Apache.Calcite.Extensions`
 
-### Test projects
+.NET-friendly interop helpers. Provides `CalciteConnectionProperties` — a strongly-typed wrapper over Calcite's `java.util.Properties` — so you can configure the engine with compile-time-safe .NET properties instead of raw string keys.
 
-- `Apache.Calcite.Tests`
-- `Apache.Calcite.Data.Tests`
-- `Apache.Calcite.Adapter.AdoNet.Tests`
+```sh
+dotnet add package Apache.Calcite.Extensions
+```
 
-### Distribution projects
+## Test and distribution projects
 
-- `dist-nuget`: packages the NuGet artifacts
-- `dist-tests`: packages test artifacts for CI
+| Project | Purpose |
+|---------|---------|
+| `Apache.Calcite.Tests` | Core engine integration tests |
+| `Apache.Calcite.Data.Tests` | Provider integration tests |
+| `Apache.Calcite.Adapter.AdoNet.Tests` | Adapter integration tests |
+| `dist-nuget` | Packages NuGet artifacts |
+| `dist-tests` | Packages test artifacts for CI |
+
+## Quick example
+
+```csharp
+using Apache.Calcite.Data;
+
+const string model = """
+{
+  "version": "1.0",
+  "defaultSchema": "HR",
+  "schemas": [{
+    "name": "HR",
+    "type": "custom",
+    "factory": "org.apache.calcite.adapter.csv.CsvSchemaFactory",
+    "operand": { "directory": "hr" }
+  }]
+}
+""";
+
+await using var conn = new CalciteConnection($"Model=inline:{model}");
+await conn.OpenAsync();
+
+await using var cmd = conn.CreateCommand();
+cmd.CommandText = "SELECT \"NAME\", \"DEPTNO\" FROM \"EMPS\" ORDER BY \"NAME\"";
+
+await using var reader = await cmd.ExecuteReaderAsync();
+while (await reader.ReadAsync())
+    Console.WriteLine($"{reader.GetString(0)}\t{reader.GetInt32(1)}");
+```
+
+## Further reading
+
+- [Apache Calcite documentation](https://calcite.apache.org/docs/)
+- [Calcite adapters](https://calcite.apache.org/docs/adapter.html)
+- [JSON model reference](https://calcite.apache.org/docs/model.html)
+- [IKVM](https://github.com/ikvmnet/ikvm)
+
+## License
+
+Apache License 2.0.
