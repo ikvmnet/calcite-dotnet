@@ -1,14 +1,16 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFrameworks>net8.0</TargetFrameworks>
         <Description>Apache Calcite for ADO.NET. A native, in-process ADO.NET provider that runs the Apache Calcite SQL parser, planner, and runtime via IKVM.</Description>
         <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageIcon>icon.png</PackageIcon>
         <PackageTags>apache;calcite;ado.net;sql;ikvm;dbprovider</PackageTags>
     </PropertyGroup>
 
     <ItemGroup>
         <None Include="README.md" Pack="true" PackagePath="\" />
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\" />
     </ItemGroup>
 
     <ItemGroup>
