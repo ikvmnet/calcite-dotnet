@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data.Common;
 
 using org.apache.calcite.rel.type;
@@ -60,6 +60,8 @@ namespace Apache.Calcite.Adapter.AdoNet
                     return reader.IsDBNull(index) ? null : java.lang.Double.valueOf(reader.GetDouble(index));
                 case SqlTypeName.__Enum.VARCHAR:
                     return GetString(reader, index);
+                case SqlTypeName.__Enum.OTHER:
+                    return GetValue(reader, index);
                 default:
                     break;
             }
@@ -131,6 +133,21 @@ namespace Apache.Calcite.Adapter.AdoNet
         public static object? GetString(DbDataReader reader, int index)
         {
             return reader.IsDBNull(index) ? null : reader.GetString(index);
+        }
+
+        /// <summary>
+        /// Gets the native provider value for types with no dedicated Calcite mapping (e.g. <c>OTHER</c>).
+        /// </summary>
+        /// <param name="reader"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        public static object? GetValue(DbDataReader reader, int index)
+        {
+            if (reader.IsDBNull(index))
+                return null;
+
+            var value = reader.GetValue(index);
+            return value == DBNull.Value ? null : value;
         }
 
     }
