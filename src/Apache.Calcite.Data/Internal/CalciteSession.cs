@@ -16,6 +16,7 @@ using org.apache.calcite.config;
 using org.apache.calcite.jdbc;
 using org.apache.calcite.linq4j;
 using org.apache.calcite.model;
+using org.apache.calcite.runtime;
 using org.apache.calcite.schema;
 
 namespace Apache.Calcite.Data.Internal
@@ -225,14 +226,15 @@ namespace Apache.Calcite.Data.Internal
         /// to <see cref="DeactivateHooks"/> when execution ends, or <see langword="null"/> when
         /// <paramref name="hooks"/> is <see langword="null"/>.
         /// </summary>
-        static List<org.apache.calcite.runtime.Hook.Closeable>? ActivateHooks(IEnumerable<CalciteHookEntry>? hooks)
+        static List<Hook.Closeable>? ActivateHooks(IEnumerable<CalciteHookEntry>? hooks)
         {
             if (hooks is null)
                 return null;
 
-            var closeables = new List<org.apache.calcite.runtime.Hook.Closeable>();
+            var closeables = new List<Hook.Closeable>();
             foreach (var entry in hooks)
-                closeables.Add(entry.Hook.addThread(org.apache.calcite.runtime.Hook.propertyJ(entry.Value)));
+                if (entry.Consumer is { } consumer)
+                    closeables.Add(entry.Hook.addThread(consumer));
 
             return closeables;
         }
@@ -241,7 +243,7 @@ namespace Apache.Calcite.Data.Internal
         /// Closes each handle returned by <see cref="ActivateHooks"/>, deregistering the hooks
         /// from the current thread. Safe to call with a <see langword="null"/> list.
         /// </summary>
-        static void DeactivateHooks(List<org.apache.calcite.runtime.Hook.Closeable>? closeables)
+        static void DeactivateHooks(List<Hook.Closeable>? closeables)
         {
             if (closeables is not null)
                 foreach (var c in closeables)

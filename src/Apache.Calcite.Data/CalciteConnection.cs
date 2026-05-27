@@ -5,8 +5,11 @@ using System.Data.Common;
 
 using Apache.Calcite.Data.Internal;
 
+using java.util.function;
+
 using org.apache.calcite.adapter.java;
 using org.apache.calcite.config;
+using org.apache.calcite.runtime;
 using org.apache.calcite.schema;
 
 namespace Apache.Calcite.Data
@@ -65,25 +68,103 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Registers a Calcite hook that will be activated for every statement executed on this connection.
+        /// Registers a Calcite hook with a Java <see cref="Consumer"/> for the duration of every statement executed on this connection.
         /// </summary>
-        /// <param name="hook">The Calcite hook constant to activate, for example <c>Hook.ENABLE_BINDABLE</c>.</param>
-        /// <param name="value">
-        /// The value to supply to the hook while the statement is being planned. CLR primitives
-        /// (<see cref="bool"/>, <see cref="int"/>, <see cref="long"/>, <see cref="double"/>, etc.)
-        /// are automatically converted to their Java boxed equivalents; values that are already
-        /// Java objects are passed through unchanged.
-        /// </param>
-        /// <remarks>
-        /// Hooks registered here apply to all commands created from this connection. Connection-level
-        /// hooks are always activated before any hooks added to an individual command via
-        /// <see cref="CalciteCommand.RegisterHook"/>. Each hook is activated on the current thread
-        /// before any part of statement execution begins and torn down automatically when execution completes.
-        /// </remarks>
-        public void RegisterHook(org.apache.calcite.runtime.Hook hook, object? value)
+        /// <param name="hook">The Calcite hook to activate.</param>
+        /// <param name="consumer">The Java consumer invoked by the hook.</param>
+        public void RegisterHook(org.apache.calcite.runtime.Hook hook, Consumer consumer)
         {
             ThrowIfDisposed();
-            (_hooks ??= new List<CalciteHookEntry>()).Add(new CalciteHookEntry(hook, value));
+            (_hooks ??= new List<CalciteHookEntry>()).Add(new CalciteHookEntry(hook, consumer));
+        }
+
+        /// <summary>
+        /// Registers a Calcite hook with a <see cref="bool"/> property value for the duration of every statement executed on this connection.
+        /// </summary>
+        /// <param name="hook">The Calcite hook to activate.</param>
+        /// <param name="value">The boolean value to set on the hook property.</param>
+        public void RegisterHook(Hook hook, bool value)
+        {
+            ThrowIfDisposed();
+            (_hooks ??= new List<CalciteHookEntry>()).Add(new CalciteHookEntry(hook, Hook.propertyJ(java.lang.Boolean.valueOf(value))));
+        }
+
+        /// <summary>
+        /// Registers a Calcite hook with an <see cref="int"/> property value for the duration of every statement executed on this connection.
+        /// </summary>
+        /// <param name="hook">The Calcite hook to activate.</param>
+        /// <param name="value">The integer value to set on the hook property.</param>
+        public void RegisterHook(Hook hook, int value)
+        {
+            ThrowIfDisposed();
+            (_hooks ??= new List<CalciteHookEntry>()).Add(new CalciteHookEntry(hook, Hook.propertyJ(java.lang.Integer.valueOf(value))));
+        }
+
+        /// <summary>
+        /// Registers a Calcite hook with a <see cref="long"/> property value for the duration of every statement executed on this connection.
+        /// </summary>
+        /// <param name="hook">The Calcite hook to activate.</param>
+        /// <param name="value">The long value to set on the hook property.</param>
+        public void RegisterHook(Hook hook, long value)
+        {
+            ThrowIfDisposed();
+            (_hooks ??= new List<CalciteHookEntry>()).Add(new CalciteHookEntry(hook, Hook.propertyJ(java.lang.Long.valueOf(value))));
+        }
+
+        /// <summary>
+        /// Registers a Calcite hook with a <see cref="double"/> property value for the duration of every statement executed on this connection.
+        /// </summary>
+        /// <param name="hook">The Calcite hook to activate.</param>
+        /// <param name="value">The double value to set on the hook property.</param>
+        public void RegisterHook(Hook hook, double value)
+        {
+            ThrowIfDisposed();
+            (_hooks ??= new List<CalciteHookEntry>()).Add(new CalciteHookEntry(hook, Hook.propertyJ(java.lang.Double.valueOf(value))));
+        }
+
+        /// <summary>
+        /// Registers a Calcite hook with a <see cref="float"/> property value for the duration of every statement executed on this connection.
+        /// </summary>
+        /// <param name="hook">The Calcite hook to activate.</param>
+        /// <param name="value">The float value to set on the hook property.</param>
+        public void RegisterHook(Hook hook, float value)
+        {
+            ThrowIfDisposed();
+            (_hooks ??= new List<CalciteHookEntry>()).Add(new CalciteHookEntry(hook, Hook.propertyJ(java.lang.Float.valueOf(value))));
+        }
+
+        /// <summary>
+        /// Registers a Calcite hook with a <see cref="short"/> property value for the duration of every statement executed on this connection.
+        /// </summary>
+        /// <param name="hook">The Calcite hook to activate.</param>
+        /// <param name="value">The short value to set on the hook property.</param>
+        public void RegisterHook(Hook hook, short value)
+        {
+            ThrowIfDisposed();
+            (_hooks ??= new List<CalciteHookEntry>()).Add(new CalciteHookEntry(hook, Hook.propertyJ(java.lang.Short.valueOf(value))));
+        }
+
+        /// <summary>
+        /// Registers a Calcite hook with a <see cref="byte"/> property value for the duration of every statement executed on this connection.
+        /// </summary>
+        /// <param name="hook">The Calcite hook to activate.</param>
+        /// <param name="value">The byte value to set on the hook property.</param>
+        public void RegisterHook(Hook hook, byte value)
+        {
+            ThrowIfDisposed();
+            (_hooks ??= []).Add(new CalciteHookEntry(hook, Hook.propertyJ(java.lang.Byte.valueOf(value))));
+        }
+
+        /// <summary>
+        /// Registers a Calcite hook with a .NET <see cref="Action{T}"/> callback for the duration of every statement executed on this connection.
+        /// The action is wrapped in a Java consumer and invoked with the hook's argument on each execution.
+        /// </summary>
+        /// <param name="hook">The Calcite hook to activate.</param>
+        /// <param name="function">The .NET delegate invoked by the hook.</param>
+        public void RegisterHook(Hook hook, Action<object> function)
+        {
+            ThrowIfDisposed();
+            (_hooks ??= new List<CalciteHookEntry>()).Add(new CalciteHookEntry(hook, new DelegateConsumer<object>(function)));
         }
 
         internal List<CalciteHookEntry>? Hooks => _hooks;
