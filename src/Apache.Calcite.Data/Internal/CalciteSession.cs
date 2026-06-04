@@ -1,11 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
-
-using Apache.Calcite.Data;
-
 using java.util;
 using java.util.concurrent.atomic;
 
@@ -18,6 +10,12 @@ using org.apache.calcite.linq4j;
 using org.apache.calcite.model;
 using org.apache.calcite.runtime;
 using org.apache.calcite.schema;
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Apache.Calcite.Data.Internal
 {
@@ -192,32 +190,39 @@ namespace Apache.Calcite.Data.Internal
         /// request, calls <c>prepareSql</c> to produce a <see cref="CalcitePrepare.CalciteSignature"/>,
         /// and registers the cancellation callback.
         /// </summary>
-        /// <param name="request">The execute request containing the SQL text, bound parameters, and timeout.</param>
-        /// <param name="signature">Receives the compiled statement signature including cursor factory and column metadata.</param>
-        /// <param name="dataContext">Receives the <see cref="StatementDataContext"/> that binds parameters and cancellation to the statement.</param>
-        /// <param name="registration">Receives the <see cref="CancellationTokenRegistration"/> that sets the cancel flag when the token fires.</param>
-        /// <param name="cancellationToken">Token used to cancel execution.</param>
-        void Prepare(CalciteExecuteRequest request, out CalcitePrepare.CalciteSignature signature, out DataContext dataContext, out CancellationTokenRegistration registration, CancellationToken cancellationToken)
+        /// <summary>
+        /// Parses and plans <paramref name="request"/>, returning the compiled
+        /// <see cref="CalcitePrepare.CalciteSignature"/>. No execution state is created here.
+        /// </summary>
+        CalcitePrepare.CalciteSignature Plan(CalciteExecuteRequest request)
         {
-            var cancelFlag = new AtomicBoolean(false);
-            var boundParameters = ParameterBinder.Bind(request.Parameters);
-            dataContext = new StatementDataContext(_rootSchema.plus(), _typeFactory, cancelFlag, request.CommandTimeoutSeconds * 1000L, boundParameters);
-            var ctx = new PrepareContext(_typeFactory, _rootSchema, _config, dataContext, _defaultSchemaPath);
-
+            var ctx = new PrepareContext(_typeFactory, _rootSchema, _config, _defaultSchemaPath);
             var prepare = _prepareFactory();
             var query = CalcitePrepare.Query.of(request.Sql);
 
             CalcitePrepare.Dummy.push(ctx);
             try
             {
-                signature = prepare.prepareSql(ctx, query, (java.lang.Class)typeof(java.lang.Object[]), -1);
+                return prepare.prepareSql(ctx, query, (java.lang.Class)typeof(java.lang.Object[]), -1);
             }
             finally
             {
                 CalcitePrepare.Dummy.pop(ctx);
             }
+        }
 
-            registration = cancellationToken.Register(() => cancelFlag.set(true));
+        /// <summary>
+        /// Creates the execution-time <see cref="DataContext"/> for a planned <paramref name="signature"/>.
+        /// Mirrors the work done by <c>CalciteConnectionImpl.enumerable()</c> just before it calls
+        /// <c>signature.enumerable(dataContext)</c>: bound parameters, stashed compile-time values
+        /// from <c>signature.internalParameters</c>, cancel flag, and timeout are assembled into a
+        /// single <see cref="StatementDataContext"/>.
+        /// </summary>
+        void Bind(CalciteExecuteRequest request, CalcitePrepare.CalciteSignature signature, out DataContext dataContext, out AtomicBoolean cancelFlag)
+        {
+            cancelFlag = new AtomicBoolean(false);
+            var boundParameters = ParameterBinder.Bind(request.Parameters);
+            dataContext = new StatementDataContext(_rootSchema.plus(), _typeFactory, cancelFlag, request.CommandTimeoutSeconds * 1000L, boundParameters, signature.internalParameters);
         }
 
         /// <summary>
@@ -267,24 +272,19 @@ namespace Apache.Calcite.Data.Internal
             cancellationToken.ThrowIfCancellationRequested();
 
             var closeables = ActivateHooks(request.Hooks);
+
             try
             {
-                Prepare(request, out var signature, out var dataContext, out var registration, cancellationToken);
+                var signature = Plan(request);
+                Bind(request, signature, out var dataContext, out _);
+
+                var statementType = (Meta.StatementType.__Enum)signature.statementType.ordinal();
 
                 Enumerable? enumerable = null;
-                try
-                {
-                    var statementType = (Meta.StatementType.__Enum)signature.statementType.ordinal();
-                    if (!IsDdl(statementType))
-                        enumerable = signature.enumerable(dataContext);
-                }
-                catch
-                {
-                    registration.Dispose();
-                    throw;
-                }
+                if (!IsDdl(statementType))
+                    enumerable = signature.enumerable(dataContext);
 
-                return Task.FromResult(new CalciteResult(signature, registration, enumerable?.enumerator(), 0));
+                return Task.FromResult(new CalciteResult(signature, enumerable?.enumerator(), 0));
             }
             catch (CalciteException)
             {
@@ -320,49 +320,46 @@ namespace Apache.Calcite.Data.Internal
             var closeables = ActivateHooks(request.Hooks);
             try
             {
-                Prepare(request, out var signature, out var dataContext, out var registration, cancellationToken);
+                var signature = Plan(request);
+                Bind(request, signature, out var dataContext, out var cancelFlag);
+
+                var statementType = (Meta.StatementType.__Enum)signature.statementType.ordinal();
 
                 long recordsAffected;
-                try
+                if (IsDdl(statementType))
                 {
-                    var statementType = (Meta.StatementType.__Enum)signature.statementType.ordinal();
-
-                    if (IsDdl(statementType))
+                    // DDL: already executed as a side-effect of prepareSql; nothing to enumerate.
+                    recordsAffected = 0;
+                }
+                else if (statementType == Meta.StatementType.__Enum.SELECT)
+                {
+                    // SELECT has no affected row count by ADO.NET convention.
+                    recordsAffected = -1;
+                }
+                else
+                {
+                    // DML (INSERT/UPDATE/DELETE/MERGE): drain the enumerator to trigger execution.
+                    // Wire the cancellation token to the Calcite cancel flag only here, where we
+                    // are synchronously enumerating and need Calcite's check-points to be able to
+                    // interrupt the loop. The registration is scoped to this block only.
+                    // Because prepareSql is called with elementType=Object[], the prefer hint is
+                    // ARRAY and cursorFactory is CursorFactory.ARRAY. Calcite therefore yields a
+                    // single Object[] row whose only element [0] is the ROWCOUNT BIGINT column
+                    // defined by RelOptUtil.createDmlRowType.
+                    recordsAffected = 0;
+                    using var _ = cancellationToken.Register(() => cancelFlag.set(true));
+                    using var e = signature.enumerable(dataContext).enumerator();
+                    if (e.moveNext())
                     {
-                        // DDL: already executed as a side-effect of prepareSql; nothing to enumerate.
-                        recordsAffected = 0;
-                    }
-                    else if (statementType == Meta.StatementType.__Enum.SELECT)
-                    {
-                        // SELECT has no affected row count by ADO.NET convention.
-                        recordsAffected = -1;
-                    }
-                    else
-                    {
-                        // DML (INSERT/UPDATE/DELETE/MERGE): drain the enumerator to trigger execution.
-                        // Because prepareSql is called with elementType=Object[], the prefer hint is
-                        // ARRAY and cursorFactory is CursorFactory.ARRAY. Calcite therefore yields a
-                        // single Object[] row whose only element [0] is the ROWCOUNT BIGINT column
-                        // defined by RelOptUtil.createDmlRowType.
-                        recordsAffected = 0;
-                        using var e = signature.enumerable(dataContext).enumerator();
-                        if (e.moveNext())
-                        {
-                            var cur = e.current();
-                            if (cur is object[] row && row.Length > 0)
-                                recordsAffected = ToInt64(row[0]);
-                            else if (cur != null)
-                                recordsAffected = ToInt64(cur);
-                        }
+                        var cur = e.current();
+                        if (cur is object[] row && row.Length > 0)
+                            recordsAffected = ToInt64(row[0]);
+                        else if (cur != null)
+                            recordsAffected = ToInt64(cur);
                     }
                 }
-                catch
-                {
-                    registration.Dispose();
-                    throw;
-                }
 
-                return Task.FromResult(new CalciteResult(signature, registration, enumerator: null, recordsAffected));
+                return Task.FromResult(new CalciteResult(signature, enumerator: null, recordsAffected));
             }
             catch (CalciteException)
             {

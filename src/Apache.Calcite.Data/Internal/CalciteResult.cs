@@ -1,9 +1,9 @@
+using org.apache.calcite.jdbc;
+using org.apache.calcite.linq4j;
+
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-
-using org.apache.calcite.jdbc;
-using org.apache.calcite.linq4j;
 
 namespace Apache.Calcite.Data.Internal
 {
@@ -18,7 +18,6 @@ namespace Apache.Calcite.Data.Internal
         readonly CalciteResultColumns _columns;
         readonly Enumerator? _enumerator;
         readonly long _recordsAffected;
-        readonly CancellationTokenRegistration _cancelRegistration;
 
         CalciteResultRow? _current = null;
         bool _disposed;
@@ -29,15 +28,12 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="signature"></param>
         /// <param name="enumerator"></param>
         /// <param name="recordsAffected"></param>
-        /// <param name="cancelRegistration"></param>
-        public CalciteResult(CalcitePrepare.CalciteSignature signature, CancellationTokenRegistration cancelRegistration, Enumerator? enumerator, long recordsAffected = -1)
+        public CalciteResult(CalcitePrepare.CalciteSignature signature, Enumerator? enumerator, long recordsAffected = -1)
         {
             ArgumentNullException.ThrowIfNull(signature);
-            ArgumentNullException.ThrowIfNull(cancelRegistration);
 
             _columns = new CalciteResultColumns(signature);
             _signature = signature;
-            _cancelRegistration = cancelRegistration;
             _enumerator = enumerator;
             _recordsAffected = recordsAffected;
         }
@@ -53,7 +49,7 @@ namespace Apache.Calcite.Data.Internal
         public long RecordsAffected => _recordsAffected;
 
         /// <summary>
-        /// Reads the next row from the enumerator. Returns <c>false</c> if there are no more rows to read.
+        /// Reads the next row from the enumerator.
         /// </summary>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
@@ -86,7 +82,6 @@ namespace Apache.Calcite.Data.Internal
                 return;
 
             _disposed = true;
-            _cancelRegistration.Dispose();
 
             try
             {

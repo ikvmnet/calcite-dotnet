@@ -3,7 +3,14 @@ using System.Data;
 using System.Threading;
 using System.Threading.Tasks;
 
+using org.apache.calcite;
+using org.apache.calcite.adapter.java;
+using org.apache.calcite.linq4j;
+using org.apache.calcite.rel.type;
 using org.apache.calcite.runtime;
+using org.apache.calcite.schema;
+using org.apache.calcite.schema.impl;
+using org.apache.calcite.sql.type;
 
 using Xunit;
 
@@ -233,6 +240,42 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(99, Convert.ToInt32(cmd.ExecuteScalar()));
         }
 
+        [Fact]
+        public void ScannableTable_query_exercises_stash()
+        {
+            // A ScannableTable is scanned via BindableTableScan, which the planner wraps in an
+            // EnumerableInterpreter. EnumerableInterpreter.implement() calls
+            // implementor.stash(getInput(), RelNode.class), storing the RelNode in
+            // signature.internalParameters under a key like "v0stashed". The generated bind(root)
+            // method then retrieves it with root.get("v0stashed"). This test verifies that stashed
+            // values are present in the DataContext at execution time, i.e. that Bind() is called
+            // after Plan() so that signature.internalParameters is already populated.
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            c.RootSchema.add("STASH_TEST", new StashTestTable());
+
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT * FROM \"STASH_TEST\"";
+            var result = cmd.ExecuteScalar();
+            Assert.Equal(42, Convert.ToInt32(result));
+        }
+
+    }
+
+    /// <summary>
+    /// A minimal <see cref="ScannableTable"/> that returns a single row with a single integer column.
+    /// Registering it on a schema causes the planner to emit an <c>EnumerableInterpreter</c> wrapping
+    /// a <c>BindableTableScan</c>, which exercises <c>EnumerableRelImplementor.stash()</c>.
+    /// </summary>
+    sealed class StashTestTable : AbstractTable, ScannableTable
+    {
+        public override RelDataType getRowType(RelDataTypeFactory typeFactory) =>
+            new RelDataTypeFactory.Builder(typeFactory)
+                .add("VAL", SqlTypeName.INTEGER)
+                .build();
+
+        public Enumerable scan(DataContext root) =>
+            Linq4j.singletonEnumerable(new object[] { 42 });
     }
 
 }

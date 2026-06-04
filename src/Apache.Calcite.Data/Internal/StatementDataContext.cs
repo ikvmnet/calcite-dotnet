@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 
+using java.util;
 using java.util.concurrent.atomic;
 
 using org.apache.calcite;
@@ -12,15 +13,15 @@ namespace Apache.Calcite.Data.Internal
 
     /// <summary>
     /// A native <see cref="DataContext"/> used at execution time. Provides the schema, type factory, per-statement variables (current
-    /// timestamp, cancel flag, timeout), and positional parameter values addressed by Calcite as <c>?0</c>, <c>?1</c>, ... that Calcite
-    /// expects.
+    /// timestamp, cancel flag, timeout), positional parameter values addressed by Calcite as <c>?0</c>, <c>?1</c>, ..., and any
+    /// stashed compile-time values recorded by <c>EnumerableRelImplementor.stash()</c> during planning.
     /// </summary>
     internal sealed class StatementDataContext : DataContext
     {
 
         readonly SchemaPlus _rootSchema;
         readonly JavaTypeFactory _typeFactory;
-        readonly Dictionary<string, object?> _vars;
+        readonly IReadOnlyDictionary<string, object?> _vars;
         readonly IReadOnlyList<object?> _parameters;
 
         /// <summary>
@@ -30,8 +31,14 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="typeFactory"></param>
         /// <param name="cancelFlag"></param>
         /// <param name="queryTimeoutMillis"></param>
-        /// <param name="parameters"></param>
-        public StatementDataContext(SchemaPlus rootSchema, JavaTypeFactory typeFactory, AtomicBoolean cancelFlag, long queryTimeoutMillis, IReadOnlyList<object?> parameters)
+        /// <param name="parameters">Bound positional query parameters (<c>?0</c>, <c>?1</c>, …).</param>
+        /// <param name="internalParameters">
+        /// The <c>signature.internalParameters</c> map produced by planning. Contains values stashed by
+        /// <c>EnumerableRelImplementor.stash()</c> (e.g. <c>"v0stashed"</c>, <c>"_conformance"</c>) that
+        /// the generated <c>bind(root)</c> method retrieves via <c>root.get(name)</c> at execution time.
+        /// Pass <see langword="null"/> when constructing a throwaway planning-only context.
+        /// </param>
+        public StatementDataContext(SchemaPlus rootSchema, JavaTypeFactory typeFactory, AtomicBoolean cancelFlag, long queryTimeoutMillis, IReadOnlyList<object?> parameters, java.util.Map? internalParameters = null)
         {
             _rootSchema = rootSchema;
             _typeFactory = typeFactory;
@@ -39,7 +46,7 @@ namespace Apache.Calcite.Data.Internal
 
             var nowUtc = java.lang.System.currentTimeMillis();
 
-            _vars = new Dictionary<string, object?>
+            var vars = new Dictionary<string, object?>
             {
                 { DataContext.Variable.UTC_TIMESTAMP.camelName, java.lang.Long.valueOf(nowUtc) },
                 { DataContext.Variable.CURRENT_TIMESTAMP.camelName, java.lang.Long.valueOf(nowUtc) },
@@ -48,6 +55,20 @@ namespace Apache.Calcite.Data.Internal
                 { DataContext.Variable.CANCEL_FLAG.camelName, cancelFlag },
                 { DataContext.Variable.TIMEOUT.camelName, java.lang.Long.valueOf(queryTimeoutMillis) },
             };
+
+            // Merge stashed compile-time values from planning, mirroring
+            // CalciteConnectionImpl.enumerable()'s map.putAll(signature.internalParameters).
+            if (internalParameters != null && !internalParameters.isEmpty())
+            {
+                var it = internalParameters.entrySet().iterator();
+                while (it.hasNext())
+                {
+                    var entry = (java.util.Map.Entry)it.next();
+                    vars[(string)entry.getKey()] = entry.getValue();
+                }
+            }
+
+            _vars = vars;
         }
 
         /// <summary>
