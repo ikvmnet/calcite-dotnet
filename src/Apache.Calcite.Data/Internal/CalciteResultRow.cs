@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 using org.apache.calcite.avatica;
 
@@ -43,7 +43,7 @@ namespace Apache.Calcite.Data.Internal
 
             if (style == Meta.Style.OBJECT)
             {
-                if (ordinal < 0 || ordinal > 1)
+                if (ordinal != 0)
                     throw new IndexOutOfRangeException();
 
                 return new CalciteResultValue(_columns.GetSqlType(ordinal), _row);
