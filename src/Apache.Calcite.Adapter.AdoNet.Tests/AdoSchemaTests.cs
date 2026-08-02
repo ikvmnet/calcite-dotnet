@@ -1,191 +1,245 @@
-﻿//using System;
-//using System.Data.Common;
-//using System.IO;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-//using com.google.common.collect;
+using org.apache.calcite.jdbc;
+using org.apache.calcite.rel.type;
+using org.apache.calcite.sql.type;
 
-//using IKVM.Jdbc.Data;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
-//using java.sql;
-//using java.util;
+namespace Apache.Calcite.Adapter.AdoNet.Tests
+{
 
-//using Microsoft.Data.Sqlite;
-//using Microsoft.VisualStudio.TestTools.UnitTesting;
+    /// <summary>
+    /// Covers what the adapter discovers about a database, and the Calcite types it derives from it.
+    /// </summary>
+    [TestClass]
+    public class AdoSchemaTests
+    {
 
-//using org.apache.calcite.adapter.csv;
-//using org.apache.calcite.config;
-//using org.apache.calcite.jdbc;
-//using org.apache.calcite.plan;
-//using org.apache.calcite.schema;
-//using org.apache.calcite.schema.impl;
-//using org.apache.calcite.tools;
+        SqliteFixture _sqlite = null!;
+        org.apache.calcite.schema.SchemaPlus _root = null!;
+        AdoSchema _schema = null!;
+        JavaTypeFactoryImpl _types = null!;
 
-//namespace Apache.Calcite.Adapter.AdoNet.Tests
-//{
+        [TestInitialize]
+        public void Setup()
+        {
+            _sqlite = new SqliteFixture();
+            _types = new JavaTypeFactoryImpl();
 
-//    [TestClass]
-//    public class AdoSchemaTests
-//    {
+            // a real parent: AdoSchema derives its own expression from one, and cannot be given null
+            _root = org.apache.calcite.tools.Frameworks.createRootSchema(true);
+            _schema = AdoSchema.Create(_root, "ADO", _sqlite.DataSource, null, null);
+        }
 
-//        static AdoSchemaTests()
-//        {
-//            ikvm.runtime.Startup.addBootClassPathAssembly(typeof(AdoSchemaFactory).Assembly);
-//            DbProviderFactories.RegisterFactory("Microsoft.Data.Sqlite", SqliteFactory.Instance);
-//            ikvm.runtime.Startup.addBootClassPathAssembly(typeof(org.apache.calcite.jdbc.CalciteJdbc41Factory).Assembly);
-//            java.lang.Class.forName("org.apache.calcite.jdbc.CalciteJdbc41Factory");
-//            java.lang.Class.forName("org.apache.calcite.jdbc.Driver");
-//            ikvm.runtime.Startup.addBootClassPathAssembly(typeof(CsvSchemaFactory).Assembly);
-//            java.lang.Class.forName("org.apache.calcite.adapter.csv.CsvSchemaFactory");
-//        }
+        [TestCleanup]
+        public void Cleanup()
+        {
+            _sqlite?.Dispose();
+        }
 
-//        /// <summary>
-//        /// Configures the SQLlite database.
-//        /// </summary>
-//        void SetupSqlite()
-//        {
-//            // clean existing database
-//            if (File.Exists("test.db"))
-//                File.Delete("test.db");
+        /// <summary>
+        /// Returns the names of the columns of a table, in order.
+        /// </summary>
+        /// <param name="tableName"></param>
+        /// <returns></returns>
+        List<string> Columns(string tableName)
+        {
+            var fields = Table(tableName).getRowType(_types).getFieldList();
 
-//            // create and open new database
-//            using var cnn = new SqliteConnection("Data Source=./test.db");
-//            cnn.Open();
+            var names = new List<string>(fields.size());
+            for (int i = 0; i < fields.size(); i++)
+                names.Add(((RelDataTypeField)fields.get(i)).getName());
 
-//            // create table
-//            using (var cmd = new SqliteCommand("CREATE TABLE IF NOT EXISTS table1 (Id INTEGER PRIMARY KEY, Text NVARCHAR(1024) NULL)", cnn))
-//                cmd.ExecuteNonQuery();
+            return names;
+        }
 
-//            // person 2
-//            for (int i = 0; i < 256; i++)
-//            {
-//                using var cmd = new SqliteCommand("INSERT INTO table1 (Text) VALUES ($Name)", cnn);
-//                cmd.Parameters.AddWithValue("$Name", $"Person {i}");
-//                cmd.ExecuteNonQuery();
-//            }
-//        }
+        /// <summary>
+        /// Returns a table by name.
+        /// </summary>
+        /// <param name="tableName"></param>
+        /// <returns></returns>
+        org.apache.calcite.schema.Table Table(string tableName)
+        {
+            return (org.apache.calcite.schema.Table?)_schema.tables().get(tableName)
+                ?? throw new AssertFailedException($"no table {tableName}; found {string.Join(", ", TableNames())}");
+        }
 
-//        /// <summary>
-//        /// Creates a schema reading from the ADO Sqlite connection.
-//        /// </summary>
-//        /// <param name="rootSchema"></param>
-//        void CreateSqliteSchema(SchemaPlus rootSchema)
-//        {
-//            SetupSqlite();
+        /// <summary>
+        /// Returns every table name the schema exposes.
+        /// </summary>
+        /// <returns></returns>
+        IEnumerable<string> TableNames()
+        {
+            var names = _schema.tables().getNames(org.apache.calcite.schema.lookup.LikePattern.any());
 
-//            var properties = new HashMap();
-//            properties.put("adoProviderName", "Microsoft.Data.Sqlite");
-//            properties.put("adoConnectionString", "Data Source=./test.db");
-//            properties.put("adoDatabaseMetadata", "Apache.Calcite.Adapter.AdoNet.Metadata.SqliteDatabaseMetadata");
-//            properties.put("adoSchema", "");
-//            var s = AdoSchemaFactory.Instance.create(rootSchema, "testdb", properties);
-//            rootSchema.add("testdb", s);
-//        }
+            var result = new List<string>();
+            for (var i = names.iterator(); i.hasNext();)
+                result.Add((string)i.next());
 
-//        /// <summary>
-//        /// Creates a schema reading from the CSV files.
-//        /// </summary>
-//        /// <param name="rootSchema"></param>
-//        void CreateCsvSchema(SchemaPlus rootSchema)
-//        {
-//            var properties = new HashMap();
-//            properties.put("directory", System.IO.Path.Combine(System.IO.Path.GetDirectoryName(typeof(AdoSchemaTests).Assembly.Location), "csv"));
-//            properties.put("flavor", "translatable");
-//            var s = CsvSchemaFactory.INSTANCE.create(rootSchema, "csv", properties);
-//            rootSchema.add("csv", s);
-//        }
+            return result;
+        }
 
-//        /// <summary>
-//        /// Creates a new adhoc schema containing virtual tables.
-//        /// </summary>
-//        /// <param name="rootSchema"></param>
-//        void CreateAdhocSchema(SchemaPlus rootSchema)
-//        {
-//            var people = """
-//                SELECT      T."Id"                  AS "Id",
-//                            T."Text" || '_'         AS "Name",
-//                            P."Age"                 AS "Age"
-//                FROM        "testdb"."table1"       T
-//                INNER JOIN  "csv"."people"          P
-//                    ON      P."Id" = T."Id"
-//                """;
+        /// <summary>
+        /// Returns the Calcite type of a named column.
+        /// </summary>
+        /// <param name="tableName"></param>
+        /// <param name="columnName"></param>
+        /// <returns></returns>
+        RelDataType TypeOf(string tableName, string columnName)
+        {
+            var fields = Table(tableName).getRowType(_types).getFieldList();
 
-//            var s = new AbstractSchema();
-//            var p = rootSchema.add("adhoc", s);
-//            p.add("people", ViewTable.viewMacro(p, people, ImmutableList.of("adhoc"), ImmutableList.of("adhoc", "people"), null));
-//        }
+            for (int i = 0; i < fields.size(); i++)
+                if (((RelDataTypeField)fields.get(i)).getName().Equals(columnName, StringComparison.OrdinalIgnoreCase))
+                    return ((RelDataTypeField)fields.get(i)).getType();
 
-//        /// <summary>
-//        /// Complex hand built example for testing.
-//        /// </summary>
-//        [TestMethod]
-//        public void ComplexSample()
-//        {
-//            var properties = new Properties();
-//            properties.setProperty(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), "false");
-//            var jdbcConnection = DriverManager.getConnection("jdbc:calcite:", properties);
-//            var calciteConnection = (CalciteConnection)jdbcConnection.unwrap(typeof(CalciteConnection));
-//            using var connection = new JdbcConnection(jdbcConnection);
+            throw new AssertFailedException($"no column {columnName} on {tableName}");
+        }
 
-//            var rootSchema = calciteConnection.getRootSchema();
-//            CreateSqliteSchema(rootSchema);
-//            CreateCsvSchema(rootSchema);
-//            CreateAdhocSchema(rootSchema);
+        #region Discovery
 
-//            var config = Frameworks.newConfigBuilder().defaultSchema(rootSchema).build();
-//            var planner = Frameworks.getPlanner(config);
+        [TestMethod]
+        public void TheSchemaFindsTheTables()
+        {
+            var names = TableNames().ToList();
 
-//            var query = """ SELECT * FROM "testdb"."people" P WHERE P."Id" > 10 AND P."Name" LIKE 'Per%' """;
+            CollectionAssert.Contains(names, "EMPS");
+            CollectionAssert.Contains(names, "DEPTS");
+        }
 
-//            Console.WriteLine("SqlNode:");
-//            var sqlNode = planner.parse(query);
-//            sqlNode = planner.validate(sqlNode);
-//            Console.WriteLine(sqlNode.toString());
-//            Console.WriteLine();
+        [TestMethod]
+        public void AMissingTableIsAbsentRatherThanEmpty()
+        {
+            Assert.IsNull(_schema.tables().get("NO_SUCH_TABLE"));
+        }
 
-//            Console.WriteLine("RelRoot:");
-//            var relRoot = planner.rel(sqlNode);
-//            Console.WriteLine(relRoot.toString());
-//            Console.WriteLine();
+        [TestMethod]
+        public void ATableIsAnAdoTable()
+        {
+            Assert.IsInstanceOfType<AdoTable>(Table("EMPS"));
+        }
 
-//            Console.WriteLine("RelNode:");
-//            var relNode = relRoot.project();
-//            Console.WriteLine(RelOptUtil.toString(relNode));
-//            Console.WriteLine();
+        [TestMethod]
+        public void ATableKnowsItsDataSource()
+        {
+            Assert.IsNotNull(((AdoTable)Table("EMPS")).DataSource);
+        }
 
-//            Console.WriteLine("Plan:");
-//            using (var statement = connection.CreateCommand())
-//            {
-//                statement.CommandText = $""" EXPLAIN PLAN FOR {query} """;
-//                Console.WriteLine((string?)statement.ExecuteScalar() + " ");
-//            }
+        #endregion
 
-//            using (var statement = connection.CreateCommand())
-//            {
-//                statement.CommandText = query;
-//                using var reader = statement.ExecuteReader();
+        #region Row types
 
-//                for (int i = 0; i < reader.FieldCount; i++)
-//                {
-//                    Console.Write(reader.GetName(i).PadLeft(20));
-//                    Console.Write(" ");
-//                }
+        [TestMethod]
+        public void ColumnsAreDiscoveredInOrder()
+        {
+            CollectionAssert.AreEqual(
+                new[] { "EMPNO", "NAME", "DEPTNO", "SALARY", "HIREDATE" },
+                Columns("EMPS"));
+        }
 
-//                Console.WriteLine();
+        [TestMethod]
+        public void DeptsHasItsOwnColumns()
+        {
+            CollectionAssert.AreEqual(new[] { "DEPTNO", "DNAME" }, Columns("DEPTS"));
+        }
 
-//                while (reader.Read())
-//                {
-//                    for (int i = 0; i < reader.FieldCount; i++)
-//                    {
-//                        var v = reader.GetValue(i);
-//                        Console.Write(v.ToString().PadLeft(20));
-//                        Console.Write(" ");
-//                    }
+        [TestMethod]
+        public void AnIntegerColumnBecomesAnIntegralSqlType()
+        {
+            var name = TypeOf("EMPS", "EMPNO").getSqlTypeName().name();
 
-//                    Console.WriteLine();
-//                }
-//            }
-//        }
+            CollectionAssert.Contains(
+                new[] { nameof(SqlTypeName.INTEGER), nameof(SqlTypeName.BIGINT), nameof(SqlTypeName.SMALLINT) },
+                name,
+                $"EMPNO came back as {name}");
+        }
 
-//    }
+        [TestMethod]
+        public void ATextColumnBecomesACharacterSqlType()
+        {
+            var name = TypeOf("EMPS", "NAME").getSqlTypeName().name();
 
-//}
+            CollectionAssert.Contains(
+                new[] { nameof(SqlTypeName.VARCHAR), nameof(SqlTypeName.CHAR) },
+                name,
+                $"NAME came back as {name}");
+        }
+
+        [TestMethod]
+        public void ARealColumnBecomesAnApproximateSqlType()
+        {
+            var name = TypeOf("EMPS", "SALARY").getSqlTypeName().name();
+
+            CollectionAssert.Contains(
+                new[] { nameof(SqlTypeName.DOUBLE), nameof(SqlTypeName.REAL), nameof(SqlTypeName.FLOAT), nameof(SqlTypeName.DECIMAL) },
+                name,
+                $"SALARY came back as {name}");
+        }
+
+        /// <summary>
+        /// Nullability is carried onto the Calcite type, which is what lets the planner reason about null
+        /// rather than discovering one at runtime.
+        /// </summary>
+        [TestMethod]
+        public void NullabilityIsCarriedOntoTheType()
+        {
+            Assert.IsFalse(TypeOf("EMPS", "EMPNO").isNullable(), "EMPNO is declared NOT NULL");
+            Assert.IsTrue(TypeOf("EMPS", "DEPTNO").isNullable(), "DEPTNO is declared NULL");
+        }
+
+        [TestMethod]
+        public void TheRowTypeIsStableAcrossCalls()
+        {
+            var first = Table("EMPS").getRowType(_types);
+            var second = Table("EMPS").getRowType(_types);
+
+            Assert.AreEqual(first.getFullTypeString(), second.getFullTypeString());
+        }
+
+        #endregion
+
+        #region Metadata selection
+
+        /// <summary>
+        /// The factory picks a metadata provider from the connection type, which is what lets one adapter
+        /// serve providers that describe themselves differently.
+        /// </summary>
+        [TestMethod]
+        public void ASqliteConnectionSelectsTheSqliteMetadata()
+        {
+            var metadata = Metadata.AdoDatabaseMetadataFactoryImpl.Instance.Create(_sqlite.DataSource);
+            Assert.AreEqual("SqliteDatabaseMetadata", metadata.GetType().Name);
+        }
+
+        [TestMethod]
+        public void TheMetadataOffersADialect()
+        {
+            var metadata = Metadata.AdoDatabaseMetadataFactoryImpl.Instance.Create(_sqlite.DataSource);
+            Assert.IsNotNull(metadata.GetDialect());
+        }
+
+        #endregion
+
+        #region Change
+
+        /// <summary>
+        /// A table created after the schema was built is still reachable: a schema that cached its first
+        /// answer forever would make a long-lived connection wrong.
+        /// </summary>
+        [TestMethod]
+        public void ATableAddedLaterCanBeFound()
+        {
+            _sqlite.Execute("CREATE TABLE LATE (ID INTEGER NOT NULL)");
+
+            _schema = AdoSchema.Create(_root, "ADO", _sqlite.DataSource, null, null);
+            CollectionAssert.Contains(TableNames().ToList(), "LATE");
+        }
+
+        #endregion
+
+    }
+
+}
