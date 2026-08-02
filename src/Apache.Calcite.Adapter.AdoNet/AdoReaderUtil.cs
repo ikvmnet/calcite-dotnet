@@ -34,39 +34,39 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <returns></returns>
         public static object? GetDbReaderValue(DbDataReader reader, int index, SqlTypeName typeName)
         {
-            switch ((SqlTypeName.__Enum)typeName.ordinal())
+            switch (typeName.name())
             {
-                case SqlTypeName.__Enum.NULL:
+                case nameof(SqlTypeName.NULL):
                     return null;
-                case SqlTypeName.__Enum.BOOLEAN:
+                case nameof(SqlTypeName.BOOLEAN):
                     return GetBoolean(reader, index);
-                case SqlTypeName.__Enum.TINYINT:
+                case nameof(SqlTypeName.TINYINT):
                     return GetByte(reader, index);
-                case SqlTypeName.__Enum.CHAR:
+                case nameof(SqlTypeName.CHAR):
                     return GetString(reader, index);
-                case SqlTypeName.__Enum.SMALLINT:
+                case nameof(SqlTypeName.SMALLINT):
                     return GetShort(reader, index);
-                case SqlTypeName.__Enum.INTEGER:
+                case nameof(SqlTypeName.INTEGER):
                     return GetInt(reader, index);
-                case SqlTypeName.__Enum.BIGINT:
+                case nameof(SqlTypeName.BIGINT):
                     return GetLong(reader, index);
-                case SqlTypeName.__Enum.TIMESTAMP:
+                case nameof(SqlTypeName.TIMESTAMP):
                     return reader.IsDBNull(index) ? null : java.lang.Long.valueOf(((DateTimeOffset)reader.GetDateTime(index)).ToUnixTimeMilliseconds());
-                case SqlTypeName.__Enum.DATE:
+                case nameof(SqlTypeName.DATE):
                     return reader.IsDBNull(index) ? null : java.lang.Long.valueOf(((DateTimeOffset)reader.GetDateTime(index)).ToUnixTimeMilliseconds());
-                case SqlTypeName.__Enum.FLOAT:
+                case nameof(SqlTypeName.FLOAT):
                     return reader.IsDBNull(index) ? null : java.lang.Float.valueOf(reader.GetFloat(index));
-                case SqlTypeName.__Enum.DOUBLE:
+                case nameof(SqlTypeName.DOUBLE):
                     return reader.IsDBNull(index) ? null : java.lang.Double.valueOf(reader.GetDouble(index));
-                case SqlTypeName.__Enum.VARCHAR:
+                case nameof(SqlTypeName.VARCHAR):
                     return GetString(reader, index);
-                case SqlTypeName.__Enum.OTHER:
+                case nameof(SqlTypeName.OTHER):
                     return GetValue(reader, index);
                 default:
                     break;
             }
 
-            throw new AdoCalciteException($"Unsupported SQL type mapping: {(SqlTypeName.__Enum)typeName.ordinal()}");
+            throw new AdoCalciteException($"Unsupported SQL type mapping: {typeName.name()}");
         }
 
         /// <summary>
