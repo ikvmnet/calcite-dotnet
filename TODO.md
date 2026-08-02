@@ -12,6 +12,28 @@ None of the six below are covered by tests either way: the 75 adapter tests exer
 only. The last four bugs found in this adapter were all in code nothing executed, so write the
 failing test first.
 
+### 0. Correlation values are never bound
+
+Found by writing the tests for it, and worse than the rest of this list because the feature is not
+missing — it is present, reachable, and broken.
+
+`AdoToEnumerableConverter` creates an `AdoCorrelationDataContextBuilderImpl` and hands it to
+`GenerateSql`, so the generated SQL correctly gets a parameter marker per correlation variable. It
+then never calls `Build()` on it. Nothing carries the values to the `DbCommand`, so execution fails
+with the provider complaining about unbound parameters. Calcite does the missing step at
+`JdbcToEnumerableConverter:222`, wrapping `dataContextBuilder.build()` in an enricher and passing it
+to the prepared-statement enumerable.
+
+Everything needed is already here and unused: `AdoEnumerable.CreateReader(dataSource, sql,
+rowBuilderFactory, DbCommandEnricher)`, `AdoEnumerable.CreateEnricher(metadata, indexes, context)`,
+and the `DbCommandEnricher` interface. Note the two do not currently line up — `CreateEnricher`
+returns `Action<DbCommand>` where `CreateReader` wants a `DbCommandEnricher`.
+
+This is invisible by default because Calcite decorrelates correlated sub-queries into joins before
+they reach the adapter, and eleven passing tests in `AdoCorrelationTests` confirm the answers are
+right that way. Three further tests, marked `[Ignore]`, use `forceDecorrelate=false` to leave the
+`Correlate` in the plan; un-ignore them when this is fixed.
+
 ### 1. DML never reaches the provider
 
 `INSERT` / `UPDATE` / `DELETE` do not push down. Calcite has three pieces we have none of:
