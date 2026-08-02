@@ -247,7 +247,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         [TestMethod]
-        [Ignore("Correlation values are never bound. AdoToEnumerableConverter creates the correlation data context builder and hands it to GenerateSql, so the SQL gets its parameters, but never calls Build(), so nothing carries the values to the command. Calcite does it at JdbcToEnumerableConverter:222. See TODO.md.")]
+        [Ignore("Three of the four defects behind this are fixed (Build was never called, the context ignored its parameters, and a bad cast broke the builder class init). What remains is that the provider still rejects the command for unbound parameters: the SQL carries Calcite's ? marker while the enricher adds parameters named by AdoDatabaseMetadata.GetParameterName, which is $P0 for SQLite. See TODO.md item 0.")]
         public void ExistsIsCorrectWithoutDecorrelation()
         {
             CollectionAssert.AreEquivalent(
@@ -256,7 +256,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         [TestMethod]
-        [Ignore("Correlation values are never bound. AdoToEnumerableConverter creates the correlation data context builder and hands it to GenerateSql, so the SQL gets its parameters, but never calls Build(), so nothing carries the values to the command. Calcite does it at JdbcToEnumerableConverter:222. See TODO.md.")]
+        [Ignore("Three of the four defects behind this are fixed (Build was never called, the context ignored its parameters, and a bad cast broke the builder class init). What remains is that the provider still rejects the command for unbound parameters: the SQL carries Calcite's ? marker while the enricher adds parameters named by AdoDatabaseMetadata.GetParameterName, which is $P0 for SQLite. See TODO.md item 0.")]
         public void AScalarSubQueryIsCorrectWithoutDecorrelation()
         {
             CollectionAssert.AreEquivalent(
@@ -265,7 +265,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         [TestMethod]
-        [Ignore("Correlation values are never bound. AdoToEnumerableConverter creates the correlation data context builder and hands it to GenerateSql, so the SQL gets its parameters, but never calls Build(), so nothing carries the values to the command. Calcite does it at JdbcToEnumerableConverter:222. See TODO.md.")]
+        [Ignore("Three of the four defects behind this are fixed (Build was never called, the context ignored its parameters, and a bad cast broke the builder class init). What remains is that the provider still rejects the command for unbound parameters: the SQL carries Calcite's ? marker while the enricher adds parameters named by AdoDatabaseMetadata.GetParameterName, which is $P0 for SQLite. See TODO.md item 0.")]
         public void AnAggregatingSubQueryIsCorrectWithoutDecorrelation()
         {
             CollectionAssert.AreEquivalent(

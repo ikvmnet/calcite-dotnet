@@ -130,22 +130,38 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Creates an encricher that sets parameters from the context.
+        /// Creates an enricher that fills the command's parameters from the context.
+        /// </summary>
+        /// <param name="dataSource">The source whose metadata names parameters for this provider.</param>
+        /// <param name="indexes">The variable index behind each parameter, in parameter order.</param>
+        /// <param name="context">The context the values are read from, one per correlation variable.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Reached from the code the converter generates, once per execution of the inner side of a
+        /// correlated join. The context is an <see cref="AdoCorrelationDataContext"/> closed over the outer
+        /// row, so reading <c>?N</c> yields that row's value.
+        /// </remarks>
+        public static DbCommandEnricher CreateEnricher(AdoDataSource dataSource, java.util.List indexes, DataContext context)
+        {
+            return new ParameterEnricher(dataSource.Metadata, indexes, context);
+        }
+
+        /// <summary>
+        /// Sets one parameter per correlation variable, reading each from the context.
         /// </summary>
         /// <param name="metadata"></param>
         /// <param name="indexes"></param>
         /// <param name="context"></param>
-        /// <returns></returns>
-        public static Action<DbCommand> CreateEnricher(AdoDatabaseMetadata metadata, int[] indexes, DataContext context)
+        sealed class ParameterEnricher(AdoDatabaseMetadata metadata, java.util.List indexes, DataContext context) : DbCommandEnricher
         {
-            return command =>
+
+            /// <inheritdoc />
+            public void Enrich(DbCommand command)
             {
-                for (int i = 0; i < indexes.Length; i++)
-                {
-                    var index = indexes[i];
-                    SetParameter(metadata, command, i, context.get("?" + index));
-                }
-            };
+                for (int i = 0; i < indexes.size(); i++)
+                    SetParameter(metadata, command, i, context.get("?" + ((java.lang.Number)indexes.get(i)).intValue()));
+            }
+
         }
 
         /// <summary>
