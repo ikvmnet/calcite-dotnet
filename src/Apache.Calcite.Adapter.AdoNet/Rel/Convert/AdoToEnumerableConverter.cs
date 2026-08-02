@@ -34,6 +34,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 
         static readonly Method GetDbReaderValueMethod = ((Class)typeof(AdoReaderUtil)).getDeclaredMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(SqlTypeName)]);
         static readonly Method CreateReaderMethod = ((Class)typeof(AdoEnumerable)).getDeclaredMethod(nameof(AdoEnumerable.CreateReader), [typeof(AdoDataSource), typeof(string), typeof(Function1)]);
+        static readonly Method CreateReaderWithEnricherMethod = ((Class)typeof(AdoEnumerable)).getDeclaredMethod(nameof(AdoEnumerable.CreateReader), [typeof(AdoDataSource), typeof(string), typeof(Function1), typeof(DbCommandEnricher)]);
+        static readonly Method CreateEnricherMethod = ((Class)typeof(AdoEnumerable)).getDeclaredMethod(nameof(AdoEnumerable.CreateEnricher), [typeof(AdoDataSource), typeof(java.util.List), typeof(DataContext)]);
 
         /// <summary>
         /// Initializes a new instance.
@@ -148,13 +150,34 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                                 Expressions.lambda(rowBuilder.toBlock()))),
                         reader_));
 
-            // call AdoEnumerable.CreateReader
-            var enumerable_ = list
-                .append("enumerable",
+            var dataSource_ = Schemas.unwrap(convention.Expression, typeof(AdoDataSource));
+
+            // a correlated sub-query leaves a parameter marker per correlation variable in the SQL, and the
+            // values live on the context the builder closed over the outer row. Without this the command is
+            // handed to the provider with its parameters unfilled. Calcite does the same at
+            // JdbcToEnumerableConverter:222.
+            var parameters = sqlString.getDynamicParameters();
+            var enumerable_ = parameters is not null && parameters.isEmpty() == false
+                ? list.append("enumerable",
+                    Expressions.call(
+                        null,
+                        CreateReaderWithEnricherMethod,
+                        dataSource_,
+                        sql_,
+                        rowBuilderFactory_,
+                        list.append("enricher",
+                            Expressions.call(
+                                null,
+                                CreateEnricherMethod,
+                                dataSource_,
+                                // the indexes are settled while planning, so they travel as a constant
+                                Expressions.constant(Indexes(parameters)),
+                                dataContextBuilder.Build()))))
+                : list.append("enumerable",
                     Expressions.call(
                         null,
                         CreateReaderMethod,
-                        Schemas.unwrap(convention.Expression, typeof(AdoDataSource)),
+                        dataSource_,
                         sql_,
                         rowBuilderFactory_));
 
@@ -163,6 +186,20 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 
             // return block
             return implementor.result(physType, list.toBlock());
+        }
+
+        /// <summary>
+        /// Returns the variable index behind each dynamic parameter, in parameter order.
+        /// </summary>
+        /// <param name="parameters"></param>
+        /// <returns></returns>
+        static java.util.List Indexes(java.util.List parameters)
+        {
+            var indexes = new java.util.ArrayList(parameters.size());
+            for (int i = 0; i < parameters.size(); i++)
+                indexes.add(java.lang.Integer.valueOf(((java.lang.Number)parameters.get(i)).intValue()));
+
+            return indexes;
         }
 
         /// <summary>

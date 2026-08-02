@@ -12,27 +12,32 @@ None of the six below are covered by tests either way: the 75 adapter tests exer
 only. The last four bugs found in this adapter were all in code nothing executed, so write the
 failing test first.
 
-### 0. Correlation values are never bound
+### 0. Correlated sub-queries do not execute — one defect left of four
 
-Found by writing the tests for it, and worse than the rest of this list because the feature is not
-missing — it is present, reachable, and broken.
+The feature is not missing; it is present, reachable, and was broken in four separate ways. Three are
+fixed. It is invisible by default because Calcite decorrelates correlated sub-queries into joins
+before they reach the adapter — eleven passing tests in `AdoCorrelationTests` confirm the answers are
+right that way, and none of them touch this code at all. Three further tests, marked `[Ignore]`, use
+`forceDecorrelate=false` to leave the `Correlate` in the plan. Un-ignore them when this is finished.
 
-`AdoToEnumerableConverter` creates an `AdoCorrelationDataContextBuilderImpl` and hands it to
-`GenerateSql`, so the generated SQL correctly gets a parameter marker per correlation variable. It
-then never calls `Build()` on it. Nothing carries the values to the `DbCommand`, so execution fails
-with the provider complaining about unbound parameters. Calcite does the missing step at
-`JdbcToEnumerableConverter:222`, wrapping `dataContextBuilder.build()` in an enricher and passing it
-to the prepared-statement enumerable.
+**Fixed.** `AdoToEnumerableConverter` created the correlation data context builder, handed it to
+`GenerateSql` so the SQL got its parameter markers, and never called `Build()`, so nothing carried
+the values to the command. It now builds an enricher and takes the four-argument `CreateReader`, the
+way Calcite does at `JdbcToEnumerableConverter:222`.
 
-Everything needed is already here and unused: `AdoEnumerable.CreateReader(dataSource, sql,
-rowBuilderFactory, DbCommandEnricher)`, `AdoEnumerable.CreateEnricher(metadata, indexes, context)`,
-and the `DbCommandEnricher` interface. Note the two do not currently line up — `CreateEnricher`
-returns `Action<DbCommand>` where `CreateReader` wants a `DbCommandEnricher`.
+**Fixed.** `AdoCorrelationDataContext.get` delegated every lookup and ignored `_parameters`
+entirely — the interception its own doc comment described was never implemented.
 
-This is invisible by default because Calcite decorrelates correlated sub-queries into joins before
-they reach the adapter, and eleven passing tests in `AdoCorrelationTests` confirm the answers are
-right that way. Three further tests, marked `[Ignore]`, use `forceDecorrelate=false` to leave the
-`Correlate` in the plan; un-ignore them when this is fixed.
+**Fixed.** `AdoCorrelationDataContextBuilderImpl` cast `typeof(X)` to `java.lang.reflect.Type`, which
+is a plain runtime cast a `System.RuntimeType` fails; only `(java.lang.Class)` is converted by IKVM.
+Every use of the class threw. This stayed hidden because C# defers a static field until it is first
+read, and the only read was in `Build()` — the method nobody called.
+
+**Remaining.** The provider still rejects the command for unbound parameters. The SQL carries
+Calcite's `?` marker while the enricher adds parameters named by
+`AdoDatabaseMetadata.GetParameterName`, which is `$P0` for SQLite. Confirming that mismatch by
+inspecting the generated SQL is the next step; the fix is most likely a dialect that unparses a
+dynamic parameter using the provider's marker, rather than the JDBC default.
 
 ### 1. DML never reaches the provider
 
