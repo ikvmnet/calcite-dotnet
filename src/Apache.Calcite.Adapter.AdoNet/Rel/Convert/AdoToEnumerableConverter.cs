@@ -96,41 +96,47 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                 (Class)typeof(DbDataReader),
                 rowBuilder.newName("reader"));
 
-            // declare values array
-            var values_ = rowBuilder
-                .append("values",
-                    Expressions.newArrayBounds(
-                        (Class)typeof(object),
-                        1,
-                        Expressions.constant(getRowType().getFieldCount())));
-
-            // generate a call to GetDbReaderValue for each field
-            for (int i = 0; i < getRowType().getFieldCount(); i++)
+            // the shape of a row is decided by how many fields it has, exactly as
+            // JdbcToEnumerableConverter decides it, because JavaRowFormat.optimize has already told the
+            // physical type the same thing: no field is a null, one field is the value itself, and only
+            // beyond that is a row an array. Returning an array for a single column leaves Avatica's
+            // accessor casting an Object[] to the column's type.
+            var fieldCount = getRowType().getFieldCount();
+            if (fieldCount == 0)
             {
-                var primitive = Primitive.ofBoxOr(physType.fieldClass(i));
-                var fieldType = ((RelDataTypeField)physType.getRowType().getFieldList().get(i)).getType();
-
-                // extract value from DbReader
-                var value_ = rowBuilder
-                    .append("value",
-                        Expressions.call(
-                            null,
-                            GetDbReaderValueMethod,
-                            reader_,
-                            Expressions.constant(i),
-                            Expressions.constant(fieldType.getSqlTypeName())));
-
-                // assign value to array at specified field index
                 rowBuilder.add(
-                    Expressions.statement(
-                        Expressions.assign(
-                            Expressions.arrayIndex(values_, Expressions.constant(i)),
-                            value_)));
+                    Expressions.return_(null, Expressions.constant(null, (Class)typeof(object))));
             }
+            else if (fieldCount == 1)
+            {
+                rowBuilder.add(
+                    Expressions.return_(null, ReadField(rowBuilder, reader_, physType, 0)));
+            }
+            else
+            {
+                // declare values array
+                var values_ = rowBuilder
+                    .append("values",
+                        Expressions.newArrayBounds(
+                            (Class)typeof(object),
+                            1,
+                            Expressions.constant(fieldCount)));
 
-            // return values array
-            rowBuilder.add(
-                Expressions.return_(null, values_));
+                // generate a call to GetDbReaderValue for each field
+                for (int i = 0; i < fieldCount; i++)
+                {
+                    // assign value to array at specified field index
+                    rowBuilder.add(
+                        Expressions.statement(
+                            Expressions.assign(
+                                Expressions.arrayIndex(values_, Expressions.constant(i)),
+                                ReadField(rowBuilder, reader_, physType, i))));
+                }
+
+                // return values array
+                rowBuilder.add(
+                    Expressions.return_(null, values_));
+            }
 
             // generate row builder factory lambda
             var rowBuilderFactory_ = list
@@ -157,6 +163,31 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 
             // return block
             return implementor.result(physType, list.toBlock());
+        }
+
+        /// <summary>
+        /// Appends the read of one field and returns the expression holding it.
+        /// </summary>
+        /// <param name="rowBuilder"></param>
+        /// <param name="reader_"></param>
+        /// <param name="physType"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The declared SQL type decides how the value is read, not whatever the provider chose to surface
+        /// it as, so the row holds what the plan was built against.
+        /// </remarks>
+        static Expression ReadField(BlockBuilder rowBuilder, ParameterExpression reader_, PhysType physType, int index)
+        {
+            var fieldType = ((RelDataTypeField)physType.getRowType().getFieldList().get(index)).getType();
+
+            return rowBuilder.append("value",
+                Expressions.call(
+                    null,
+                    GetDbReaderValueMethod,
+                    reader_,
+                    Expressions.constant(index),
+                    Expressions.constant(fieldType.getSqlTypeName())));
         }
 
         /// <summary>
