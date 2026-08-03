@@ -21,12 +21,22 @@ namespace Apache.Calcite.Linq.Tree
     {
 
         /// <summary>
-        /// The adapter for each interface an anonymous class is declared against.
+        /// The adapter for each interface a lambda may be declared against.
         /// </summary>
         static readonly Dictionary<Type, Type> Adapters = new()
         {
             [typeof(java.util.Comparator)] = typeof(ClrComparator<>),
+            [typeof(org.apache.calcite.linq4j.function.Function0)] = typeof(DelegateFunction0<>),
+            [typeof(org.apache.calcite.linq4j.function.Function1)] = typeof(DelegateFunction1Of<,>),
+            [typeof(org.apache.calcite.linq4j.function.Function2)] = typeof(DelegateFunction2<,,>),
         };
+
+        /// <summary>
+        /// Returns whether a lambda declared against this type has to be wrapped to be used as one.
+        /// </summary>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        public static bool Handles(Type type) => Adapters.ContainsKey(type);
 
         /// <summary>
         /// Returns an expression yielding an implementation of <paramref name="type"/> that calls
@@ -42,19 +52,35 @@ namespace Apache.Calcite.Linq.Tree
             ArgumentNullException.ThrowIfNull(lambda);
 
             if (Adapters.TryGetValue(type, out var adapter) == false)
-                throw new NotSupportedException($"There is no adapter for an anonymous '{type}'.");
+                throw new NotSupportedException($"There is no adapter for a lambda declared as '{type}'.");
 
-            var parameters = lambda.Parameters;
-            if (parameters.Count == 0)
-                throw new NotSupportedException($"An anonymous '{type}' has no parameter to take its element type from.");
+            // a comparator is named by what it compares; the rest by what they take and return
+            var arguments = adapter == typeof(ClrComparator<>)
+                ? [lambda.Parameters[0].Type]
+                : Arguments(lambda);
 
-            var closed = adapter.MakeGenericType(parameters[0].Type);
+            var closed = adapter.MakeGenericType(arguments);
             var constructor = closed.GetConstructor([lambda.Type])
-                ?? throw new NotSupportedException($"'{closed}' takes no '{lambda.Type}'.");
+                ?? closed.GetConstructors()[0];
 
-            // typed as the interface rather than the adapter, because that is what the anonymous class it
-            // stands for was typed as
+            // typed as the interface rather than the adapter, because that is what the lambda was declared as
             return Expression.Convert(Expression.New(constructor, lambda), type);
+        }
+
+        /// <summary>
+        /// Returns the parameter types of a lambda followed by its result type.
+        /// </summary>
+        /// <param name="lambda"></param>
+        /// <returns></returns>
+        static Type[] Arguments(LambdaExpression lambda)
+        {
+            var arguments = new Type[lambda.Parameters.Count + 1];
+            for (int i = 0; i < lambda.Parameters.Count; i++)
+                arguments[i] = lambda.Parameters[i].Type;
+
+            arguments[^1] = lambda.ReturnType;
+
+            return arguments;
         }
 
     }

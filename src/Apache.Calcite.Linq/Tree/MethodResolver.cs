@@ -57,6 +57,69 @@ namespace Apache.Calcite.Linq.Tree
         }
 
         /// <summary>
+        /// Returns the overload that accepts the given arguments, which is not always the one a linq4j call
+        /// names.
+        /// </summary>
+        /// <param name="method"></param>
+        /// <param name="arguments"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A linq4j tree records a Method, but Janino never uses it: the tree is written out as source and the
+        /// Java compiler resolves the overload from the argument expressions. So the recorded method is only
+        /// what the code that built the tree happened to name. Calcite writes Linq4j.asEnumerable(list) against
+        /// BuiltInMethod.AS_ENUMERABLE, whose parameter is an array, and Java binds the List overload.
+        /// </remarks>
+        public static MethodInfo Rebind(MethodInfo method, Type[] arguments)
+        {
+            ArgumentNullException.ThrowIfNull(method);
+            ArgumentNullException.ThrowIfNull(arguments);
+
+            if (Accepts(method, arguments))
+                return method;
+
+            // an argument that is statically an object fits every overload, so there is nothing to choose on
+            // and the method the tree names is the only information there is
+            foreach (var argument in arguments)
+                if (argument == typeof(object))
+                    return method;
+
+            MethodInfo? best = null;
+
+            foreach (var candidate in method.DeclaringType!.GetMethods(All))
+            {
+                if (candidate.Name != method.Name || candidate.IsStatic != method.IsStatic)
+                    continue;
+                if (Accepts(candidate, arguments) == false)
+                    continue;
+
+                // the most specific of those that fit, which is what Java would choose
+                if (best == null || best.GetParameters()[0].ParameterType.IsAssignableFrom(candidate.GetParameters()[0].ParameterType))
+                    best = candidate;
+            }
+
+            return best ?? method;
+        }
+
+        /// <summary>
+        /// Returns whether every argument fits the parameter it would be passed as.
+        /// </summary>
+        /// <param name="method"></param>
+        /// <param name="arguments"></param>
+        /// <returns></returns>
+        static bool Accepts(MethodInfo method, Type[] arguments)
+        {
+            var parameters = method.GetParameters();
+            if (parameters.Length != arguments.Length)
+                return false;
+
+            for (int i = 0; i < parameters.Length; i++)
+                if (parameters[i].ParameterType.IsAssignableFrom(arguments[i]) == false)
+                    return false;
+
+            return true;
+        }
+
+        /// <summary>
         /// Finds a method that a remapped Java class keeps outside the CLR type it was remapped onto.
         /// </summary>
         /// <param name="clazz"></param>

@@ -123,6 +123,10 @@ namespace Apache.Calcite.Linq.Tests
             // AVG has no implementor of its own; a real program reduces it to SUM over COUNT first, and this
             // rule lives in RelOptRules.BASE_RULES rather than in any convention's set
             rules.add(org.apache.calcite.rel.rules.CoreRules.AGGREGATE_REDUCE_FUNCTIONS);
+
+            // a project holding an OVER is refused by both conventions; it becomes a LogicalWindow first, and
+            // that rule likewise lives outside any convention's set
+            rules.add(org.apache.calcite.rel.rules.CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW);
             foreach (var rule in RelOptRules.CALC_RULES.toArray())
                 calcRules.add(rule);
 

@@ -619,17 +619,25 @@ namespace Apache.Calcite.Linq.Tree
             var target = expression.targetExpression == null ? null : Translate(expression.targetExpression);
 
             var arguments = expression.expressions;
-            var parameters = method.GetParameters();
 
             // a method IKVM moved off a remapped class is static and takes the receiver first, so what Java
             // called the target is argument zero
             var offset = target != null && method.IsStatic ? 1 : 0;
-            var resolved = new Expression[arguments.size() + offset];
+            var translated = new Expression[arguments.size() + offset];
             if (offset == 1)
-                resolved[0] = JavaCast.To(target!, parameters[0].ParameterType);
+                translated[0] = target!;
 
             for (int i = 0; i < arguments.size(); i++)
-                resolved[i + offset] = JavaCast.To(Translate((J.Node)arguments.get(i)), parameters[i + offset].ParameterType);
+                translated[i + offset] = Translate((J.Node)arguments.get(i));
+
+            // the overload is chosen by what is being passed, not by the method the tree names: Janino
+            // resolves it from the source text and never looks at that method
+            method = MethodResolver.Rebind(method, Array.ConvertAll(translated, e => e.Type));
+
+            var parameters = method.GetParameters();
+            var resolved = new Expression[translated.Length];
+            for (int i = 0; i < translated.Length; i++)
+                resolved[i] = Coerce(translated[i], parameters[i].ParameterType);
 
             if (method.IsStatic)
                 return Expression.Call(null, method, resolved);
@@ -677,7 +685,7 @@ namespace Apache.Calcite.Linq.Tree
 
                 var arms = new Expression[resolved.Length];
                 for (int i = 0; i < resolved.Length; i++)
-                    arms[i] = JavaCast.To(resolved[i], parameters[i].ParameterType);
+                    arms[i] = Coerce(resolved[i], parameters[i].ParameterType);
 
                 return Expression.New(candidate, arms);
             }
@@ -950,6 +958,25 @@ namespace Apache.Calcite.Linq.Tree
                 parameters[i] = Variable((J.ParameterExpression)expression.parameterList.get(i));
 
             return Expression.Lambda(TranslateBody(body, TypeResolver.Resolve(body.getType())), parameters);
+        }
+
+        /// <summary>
+        /// Brings a value to the type it is being passed as.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A lambda is left a lambda everywhere else, because the operators of this convention take delegates.
+        /// A block of Calcite's making takes one of linq4j's functional interfaces, and that is decided here,
+        /// where the value meets the parameter it is passed as, rather than where the lambda was built.
+        /// </remarks>
+        static Expression Coerce(Expression value, Type type)
+        {
+            if (value is LambdaExpression lambda && SamAdapters.Handles(type))
+                return SamAdapters.Wrap(type, lambda);
+
+            return JavaCast.To(value, type);
         }
 
     }
