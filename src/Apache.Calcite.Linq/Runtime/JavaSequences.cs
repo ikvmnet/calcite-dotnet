@@ -43,6 +43,23 @@ namespace Apache.Calcite.Linq.Runtime
         }
 
         /// <summary>
+        /// Runs a compiled plan and reads its rows as a linq4j sequence.
+        /// </summary>
+        /// <param name="plan"></param>
+        /// <param name="root"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// What a converter out of this convention calls. Calcite compiles its side from generated source,
+        /// which cannot mention an object, so the delegate travels on the DataContext and is called from here.
+        /// </remarks>
+        public static Enumerable Bind(System.Func<org.apache.calcite.DataContext, IEnumerable> plan, org.apache.calcite.DataContext root)
+        {
+            ArgumentNullException.ThrowIfNull(plan);
+
+            return ToJava(System.Linq.Enumerable.Cast<object>(plan(root)));
+        }
+
+        /// <summary>
         /// Reads a .NET sequence as a linq4j one.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>

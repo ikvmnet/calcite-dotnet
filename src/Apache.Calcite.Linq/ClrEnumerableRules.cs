@@ -45,6 +45,7 @@ namespace Apache.Calcite.Linq
                 ClrEnumerableCollectRule.Create(),
                 ClrEnumerableUncollectRule.Create(),
                 EnumerableToClrEnumerableConverterRule.Create(),
+                ClrEnumerableToEnumerableConverterRule.Create(),
             ];
         }
 
