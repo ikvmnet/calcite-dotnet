@@ -880,7 +880,11 @@ namespace Apache.Calcite.Linq.Tree
 
             switch (expression.getNodeType().name())
             {
+                // Java has no checked conversion: a narrowing cast truncates, which is what JavaCast does.
+                // Expression.ConvertChecked would throw on overflow, and also demands a type where the
+                // arithmetic operators take none.
                 case nameof(J.ExpressionType.Convert):
+                case nameof(J.ExpressionType.ConvertChecked):
                     return JavaCast.To(operand, TypeResolver.Resolve(expression.getType()));
 
                 // Java's ! is only ever applied to a boolean; its bitwise complement is a separate operator
