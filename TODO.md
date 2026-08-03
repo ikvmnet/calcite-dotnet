@@ -117,6 +117,29 @@ opens a connection to read the server version, and `AdoConvention.Dialect` is re
 that matches while planning. What is left is caching *across* metadata instances, which only matters
 when several schemas point at one database. Lowest priority; measure before assuming it matters.
 
+## Test suites not yet written
+
+Sized against measured coverage: `Apache.Calcite.Data` 69.9%, `Apache.Calcite.Adapter.AdoNet` ~60%.
+Listed worst-first by uncovered lines.
+
+- **`CalciteResultValue`** — 56%, **282 uncovered**, the largest single gap anywhere. It is the whole
+  type-conversion surface, and the `DATE`-as-milliseconds bug lived in exactly this kind of code.
+- **`AdoSchemaFactory` from a Calcite model** — 0%. The operand-driven path is the primary documented
+  way anyone configures an adapter, and nothing proves it works.
+- **`AdoInformationSchemaDatabaseMetadata`** — 130 lines at 0%, shared by the SqlServer, Odbc and
+  OleDb providers, so one suite lifts four.
+- **Connection strings, parameters, batches** — `CalciteConnectionStringBuilder` 35% (148 uncovered),
+  `CalciteParameterCollection` 55% (78), `CalciteBatchCommandCollection` 21% (62). Mechanical, high
+  line yield.
+
+Also at 0% and worth deciding about rather than covering: `AdoTableQueryable` (no provider ships, see
+§5), `AdoUpdateEnumerable` (orphaned, see §1), and the twelve `Ado*Factory` relational factories with
+`AdoRules.GetRules(convention, relBuilderFactory)`, which nothing calls.
+
+`CalciteTransaction` is 46 lines at 0% because `BeginDbTransaction` always throws and the tests
+correctly assert that. It is unreachable, not untested, and it stays — it is part of the ADO.NET
+surface whether or not the operation succeeds.
+
 ## Smaller items
 
 - `AdoSchema.Create(null, …)` throws `NullReferenceException` from inside `Schemas.expression`
