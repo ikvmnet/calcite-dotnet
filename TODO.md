@@ -151,9 +151,14 @@ surface whether or not the operation succeeds.
 
 ## Apache.Calcite.Linq: where the CLR conventions stand
 
-`ClrEnumerableConvention` runs. Scan, values, calc, project, filter, sort, limit, offset, union,
-intersect, minus and hash/semi/anti join all plan into it, compile to `System.Linq.Expressions` and
-return rows; 59 tests pass. `ClrAsyncEnumerableConvention` does not exist yet — not one file of it.
+`ClrEnumerableConvention` runs. 72 tests pass. `ClrAsyncEnumerableConvention` does not exist yet — not
+one file of it, deferred deliberately until the sync side is finished.
+
+### Done
+
+Scan, values, calc, project, filter, sort, limit, offset, limit-with-sort, union, intersect, minus,
+hash/semi/anti join, nested loop join, correlate, aggregate, collect and uncollect. Converters in
+both directions, so one plan can hold nodes of both conventions and the rows cross untouched.
 
 ### The rules that hold
 
@@ -163,32 +168,35 @@ return rows; 59 tests pass. `ClrAsyncEnumerableConvention` does not exist yet �
   reaches); `PhysType`'s expression members and `JavaRowFormat.field`; a table's own
   `getExpression(Queryable.class)`, which the schema SPI defines as linq4j; and the block Calcite's
   implementor produces for an `EnumerableConvention` sub-plan at a converter.
-- The translator exists because reimplementing `RexToLixTranslator` and `RexImpTable` is not on the
-  table yet. It is not a licence to keep everything else in linq4j.
-- **`ClrEnumerableRules.Rules()` and `CalcRules()` are two passes, not one.** `VolcanoCost.isLt`
-  compares the row count and nothing else, so a project and a calc are never cheaper than one another
-  and the planner keeps whichever it saw first. `Programs.standard` runs the calc rules afterwards as
-  a hep pass; anything registering these rules must do the same or a project will be chosen and will
-  refuse to implement itself.
+- **`JavaCast` is for what Java the language converts and an expression tree will not** — boxing,
+  unboxing, numeric promotion. It is not a way to make one type into another where they ought already
+  to agree. Measured across every plan the tests run: four reference conversions and one boxing.
+- **`Rules()` and `CalcRules()` are two passes.** `VolcanoCost.isLt` compares the row count and nothing
+  else, so a project and a calc are never cheaper than one another and the planner keeps whichever it
+  saw first. `Programs.standard` runs the calc rules afterwards as a hep pass. A caller must do the
+  same, must run `Programs.subQuery` before the planner, and — to reach `ClrEnumerableCorrelate` at all
+  — must *not* decorrelate.
+- **A join boxes its rows.** Calcite builds the selector and predicate against boxed rows because
+  linq4j's `Function2` and `Predicate2` erase to `Object`, and because an outer join compares a row to
+  null. A delegate is typed where those interfaces were not, so the sequence is boxed to agree.
+- **A block consumed apart from what reads it must come from a non-optimising `BlockBuilder`.** An
+  optimising one inlines a declaration used once, which leaves a reference already built into a
+  translated sub-plan pointing at a variable that no longer exists. `ClrEnumerableCorrelate` needs this.
 
-### Not done
+### Nodes not done
 
-- **The whole async convention.** Every node, rule, converter and runtime operator, mirroring the
-  sync side. `System.Linq.AsyncEnumerable` in .NET 10 covers most operators.
-- **Nodes**: Aggregate, SortedAggregate, Window, Match, Correlate, ConditionalCorrelate,
-  NestedLoopJoin, MergeJoin, AsofJoin, BatchNestedLoopJoin, Collect, Uncollect, TableModify,
-  TableSpool, RepeatUnion, TableFunctionScan, MergeUnion, Combine, LimitSort, Interpreter, Bindable.
-  The runtime methods for the joins and correlate exist; the nodes do not.
-- **Aggregate is the big one.** `EnumerableAggregateBase.createAggStateTypes`,
-  `declareParentAccumulator`, `createAccumulatorAdders` and `implementLambdaFactory` are `protected`,
-  so they need porting rather than reusing, exactly as `EnumUtils.joinSelector` and
-  `generatePredicate` did. Each accumulator lambda then has to be wrapped back into a `Function0` or
-  `Function2` for `AggregateLambdaFactory`, which is the `SamAdapters` table in the other direction.
-- **`ClrEnumerableToEnumerableConverter`.** The forward converter exists and is untested — no query
-  has yet mixed conventions. The reverse one has to compile its sub-plan, stash the delegate, and let
-  a linq4j tree call it.
-- **Nothing connects the convention to `Apache.Calcite.Data`,** and nothing exposes the two-pass
-  program as something a caller can just use; the tests wire it by hand.
+Window, Match, TableModify, TableSpool, RepeatUnion, TableFunctionScan, MergeJoin,
+BatchNestedLoopJoin, SortedAggregate, MergeUnion, Interpreter and Bindable. `Combine` and `AsofJoin`
+should be checked for existence in 1.41 before being attempted at all.
+
+Window (1007 lines) and Match (547) are the two large ones. An aggregate call carrying its own
+ordering is also not covered: it needs `LazyAggregateLambdaFactory` and a `SourceSorter` per call,
+where only the unordered `BasicAggregateLambdaFactory` is built today.
+
+**TableModify is the one to be careful with.** The version at `D:\calcite` implements it with private
+helpers (`applyDeleteRowsByKey`, `normalizeSourceExpression`) that are part of the UPDATE fix this
+repo pins the snapshot for. Those are 1.42; the projects reference 1.41. Porting that file as read
+would be porting semantics the referenced Calcite does not have.
 
 ### Two facts that will bite
 
@@ -198,6 +206,9 @@ return rows; 59 tests pass. `ClrAsyncEnumerableConvention` does not exist yet �
 - **`global.json` has `rollForward: latestMajor`,** so every build here picks the .NET 11 preview SDK
   rather than 10.0.302. It also makes `dotnet sln add` rewrite every project in the solution with
   x64/x86 configurations — edit the solution by hand instead.
+
+Also unwired: nothing connects the convention to `Apache.Calcite.Data`, and nothing exposes the
+three-pass program as something a caller can just use; the tests wire it by hand.
 
 The old line is still on the `clr-conventions` branch with a working copy at
 `D:\calcite-dotnet-conventions-aside`. Nothing from it has been used, and `ClrPhysType`,
