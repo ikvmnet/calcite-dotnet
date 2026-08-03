@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+using org.apache.calcite.linq4j.function;
+
 namespace Apache.Calcite.Linq.Runtime
 {
 
@@ -127,6 +129,140 @@ namespace Apache.Calcite.Linq.Runtime
         public static IEnumerable<TSource> Take<TSource>(IEnumerable<TSource> source, int count)
         {
             return source.Take(count);
+        }
+
+        /// <summary>
+        /// Returns the rows of both sequences, keeping duplicates.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="other"></param>
+        /// <returns></returns>
+        public static IEnumerable<TSource> Concat<TSource>(IEnumerable<TSource> source, IEnumerable<TSource> other)
+        {
+            return source.Concat(other);
+        }
+
+        /// <summary>
+        /// Returns the distinct rows of both sequences.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="other"></param>
+        /// <param name="comparer"></param>
+        /// <returns></returns>
+        public static IEnumerable<TSource> Union<TSource>(IEnumerable<TSource> source, IEnumerable<TSource> other, EqualityComparer? comparer)
+        {
+            return source.Union(other, JavaEqualityComparer<TSource>.Of(comparer));
+        }
+
+        /// <summary>
+        /// Returns the rows in both sequences.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="other"></param>
+        /// <param name="comparer"></param>
+        /// <param name="all">Whether a row present more than once in each is returned more than once.</param>
+        /// <returns></returns>
+        public static IEnumerable<TSource> Intersect<TSource>(IEnumerable<TSource> source, IEnumerable<TSource> other, EqualityComparer? comparer, bool all)
+        {
+            if (all == false)
+                return source.Intersect(other, JavaEqualityComparer<TSource>.Of(comparer));
+
+            return IntersectAll(source, other, JavaEqualityComparer<TSource>.Of(comparer));
+        }
+
+        /// <summary>
+        /// Returns each row as many times as it appears in both sequences.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="other"></param>
+        /// <param name="comparer"></param>
+        /// <returns></returns>
+        static IEnumerable<TSource> IntersectAll<TSource>(IEnumerable<TSource> source, IEnumerable<TSource> other, IEqualityComparer<TSource> comparer)
+        {
+            var counts = Count(other, comparer);
+
+            foreach (var row in source)
+            {
+                if (counts.TryGetValue(row, out var remaining) == false || remaining == 0)
+                    continue;
+
+                counts[row] = remaining - 1;
+                yield return row;
+            }
+        }
+
+        /// <summary>
+        /// Returns the rows of the first sequence that are not in the second.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="other"></param>
+        /// <param name="comparer"></param>
+        /// <param name="all">Whether a row is removed once per appearance in the second rather than entirely.</param>
+        /// <returns></returns>
+        public static IEnumerable<TSource> Except<TSource>(IEnumerable<TSource> source, IEnumerable<TSource> other, EqualityComparer? comparer, bool all)
+        {
+            if (all == false)
+                return source.Except(other, JavaEqualityComparer<TSource>.Of(comparer));
+
+            return ExceptAll(source, other, JavaEqualityComparer<TSource>.Of(comparer));
+        }
+
+        /// <summary>
+        /// Returns each row of the first sequence except as many times as it appears in the second.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="other"></param>
+        /// <param name="comparer"></param>
+        /// <returns></returns>
+        static IEnumerable<TSource> ExceptAll<TSource>(IEnumerable<TSource> source, IEnumerable<TSource> other, IEqualityComparer<TSource> comparer)
+        {
+            var counts = Count(other, comparer);
+
+            foreach (var row in source)
+            {
+                if (counts.TryGetValue(row, out var remaining) && remaining > 0)
+                {
+                    counts[row] = remaining - 1;
+                    continue;
+                }
+
+                yield return row;
+            }
+        }
+
+        /// <summary>
+        /// Counts how many times each row appears.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="comparer"></param>
+        /// <returns></returns>
+        static Dictionary<TSource, int> Count<TSource>(IEnumerable<TSource> source, IEqualityComparer<TSource> comparer)
+        {
+            var counts = new Dictionary<TSource, int>(comparer);
+
+            foreach (var row in source)
+                counts[row] = counts.TryGetValue(row, out var count) ? count + 1 : 1;
+
+            return counts;
+        }
+
+        /// <summary>
+        /// Returns the distinct rows of a sequence.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="comparer"></param>
+        /// <returns></returns>
+        public static IEnumerable<TSource> Distinct<TSource>(IEnumerable<TSource> source, EqualityComparer? comparer)
+        {
+            return source.Distinct(JavaEqualityComparer<TSource>.Of(comparer));
         }
 
         /// <summary>

@@ -205,6 +205,48 @@ namespace Apache.Calcite.Linq.Tests
         }
 
         [TestMethod]
+        public void ShouldUnionAll()
+        {
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1 UNION ALL SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1");
+
+            rows.Select(r => (string)r[0]).Should().Equal("SMITH", "SMITH");
+        }
+
+        [TestMethod]
+        public void ShouldUnionDistinct()
+        {
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1 UNION SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1");
+
+            rows.Select(r => (string)r[0]).Should().Equal("SMITH");
+        }
+
+        [TestMethod]
+        public void ShouldIntersect()
+        {
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"AGE\" > 25 INTERSECT SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1");
+
+            rows.Select(r => (string)r[0]).Should().Equal("SMITH");
+        }
+
+        [TestMethod]
+        public void ShouldExcept()
+        {
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" EXCEPT SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"AGE\" > 25");
+
+            rows.Select(r => (string)r[0]).Should().Equal("BROWN");
+        }
+
+        [TestMethod]
+        public void ShouldUnionWholeRowsRatherThanCompareArraysByReference()
+        {
+            // a row of JavaRowFormat.ARRAY is an array, and two equal rows are two arrays. Without the comparer
+            // PhysType gives for the format, a distinct union would keep both.
+            var rows = Run("SELECT \"ID\", \"NAME\" FROM \"PEOPLE\" UNION SELECT \"ID\", \"NAME\" FROM \"PEOPLE\"");
+
+            rows.Should().HaveCount(3);
+        }
+
+        [TestMethod]
         public void ShouldReadValues()
         {
             var rows = Run("SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");

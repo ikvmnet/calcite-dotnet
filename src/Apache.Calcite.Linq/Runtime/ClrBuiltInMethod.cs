@@ -51,6 +51,31 @@ namespace Apache.Calcite.Linq.Runtime
         public static readonly MethodInfo Take = Of(nameof(ClrEnumerables.Take));
 
         /// <summary>
+        /// <see cref="ClrEnumerables.Concat"/>.
+        /// </summary>
+        public static readonly MethodInfo Concat = Of(nameof(ClrEnumerables.Concat));
+
+        /// <summary>
+        /// <see cref="ClrEnumerables.Union"/>.
+        /// </summary>
+        public static readonly MethodInfo Union = Of(nameof(ClrEnumerables.Union));
+
+        /// <summary>
+        /// <see cref="ClrEnumerables.Intersect"/>.
+        /// </summary>
+        public static readonly MethodInfo Intersect = Of(nameof(ClrEnumerables.Intersect));
+
+        /// <summary>
+        /// <see cref="ClrEnumerables.Except"/>.
+        /// </summary>
+        public static readonly MethodInfo Except = Of(nameof(ClrEnumerables.Except));
+
+        /// <summary>
+        /// <see cref="ClrEnumerables.Distinct"/>.
+        /// </summary>
+        public static readonly MethodInfo Distinct = Of(nameof(ClrEnumerables.Distinct));
+
+        /// <summary>
         /// <see cref="ClrEnumerables.AsEnumerable"/>.
         /// </summary>
         public static readonly MethodInfo AsEnumerable = Of(nameof(ClrEnumerables.AsEnumerable));
