@@ -218,7 +218,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         public void TheMetadataOffersADialect()
         {
             var metadata = Metadata.AdoDatabaseMetadataFactoryImpl.Instance.Create(_sqlite.DataSource);
-            Assert.IsNotNull(metadata.GetDialect());
+            Assert.IsNotNull(metadata.Dialect);
         }
 
         #endregion

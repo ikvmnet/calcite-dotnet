@@ -8,36 +8,53 @@ project, filter, aggregate, sort, union, intersect, minus, values and the to-enu
 are all present on both sides, with the same node classes behind them, and correlated sub-queries
 work.
 
-None of the six below are covered by tests either way: the 75 adapter tests exercise the query path
-only. The last four bugs found in this adapter were all in code nothing executed, so write the
+None of the items below are covered by tests either way: the 98 adapter tests exercise the query path
+only. Every bug found in this adapter so far has been in code nothing executed, so write the
 failing test first.
 
-### 0. Correlated sub-queries do not execute — one defect left of four
+### 0. Correlated sub-queries — done, but thinly tested
 
-The feature is not missing; it is present, reachable, and was broken in four separate ways. Three are
-fixed. It is invisible by default because Calcite decorrelates correlated sub-queries into joins
-before they reach the adapter — eleven passing tests in `AdoCorrelationTests` confirm the answers are
-right that way, and none of them touch this code at all. Three further tests, marked `[Ignore]`, use
-`forceDecorrelate=false` to leave the `Correlate` in the plan. Un-ignore them when this is finished.
+Fixed. Kept here only for the note at the end.
 
-**Fixed.** `AdoToEnumerableConverter` created the correlation data context builder, handed it to
-`GenerateSql` so the SQL got its parameter markers, and never called `Build()`, so nothing carried
-the values to the command. It now builds an enricher and takes the four-argument `CreateReader`, the
-way Calcite does at `JdbcToEnumerableConverter:222`.
+The feature was present, reachable, and broken in five separate ways, none of which could be seen
+without `forceDecorrelate=false` — Calcite rewrites a correlated sub-query into a join before it
+reaches the adapter, so eleven passing tests in `AdoCorrelationTests` never touched any of this code.
 
-**Fixed.** `AdoCorrelationDataContext.get` delegated every lookup and ignored `_parameters`
-entirely — the interception its own doc comment described was never implemented.
+`AdoToEnumerableConverter` built the correlation data context and never called `Build()` on it.
+`AdoCorrelationDataContext.get` ignored the parameters it was constructed with.
+`AdoCorrelationDataContextBuilderImpl` cast `typeof(X)` to `java.lang.reflect.Type`, which a
+`System.RuntimeType` fails, so the class could never initialize — hidden because C# defers a static
+field until first read and the only read was in `Build()`. The generated SQL carried Calcite's
+positional `?` where ADO.NET matches by name. And correlation values arrived as boxed Java types no
+provider can bind.
 
-**Fixed.** `AdoCorrelationDataContextBuilderImpl` cast `typeof(X)` to `java.lang.reflect.Type`, which
-is a plain runtime cast a `System.RuntimeType` fails; only `(java.lang.Class)` is converted by IKVM.
-Every use of the class threw. This stayed hidden because C# defers a static field until it is first
-read, and the only read was in `Build()` — the method nobody called.
+`AdoEnumerable.ToProviderValue` unwraps those boxed values, and is now exercised for an integer, a
+real, a string and a date. `Boolean`, `Double`, `BigDecimal` and `ByteString` remain unexercised —
+SQLite has no column of those types in the fixture, so covering them needs either a wider fixture or
+a second provider.
 
-**Remaining.** The provider still rejects the command for unbound parameters. The SQL carries
-Calcite's `?` marker while the enricher adds parameters named by
-`AdoDatabaseMetadata.GetParameterName`, which is `$P0` for SQLite. Confirming that mismatch by
-inspecting the generated SQL is the next step; the fix is most likely a dialect that unparses a
-dynamic parameter using the provider's marker, rather than the JDBC default.
+### 0b. ODBC and OleDb cannot answer what they are
+
+`OdbcDatabaseMetadata` and `OleDbDatabaseMetadata` throw from `Dialect`, `GetDefaultSchema` and
+`ParseDbType`. That reads like laziness; it is not. ODBC is a transport, not a database — one
+`OdbcConnection` may front SQL Server, Oracle, PostgreSQL, DB2 or Teradata, each with a different
+grammar. No dialect follows from "this is ODBC", so there is nothing to return without connecting.
+
+Calcite treats this as the general case rather than a special one. `SqlDialectFactoryImpl.create`
+takes a live `DatabaseMetaData`, reads `getDatabaseProductName()`, and returns the matching dialect;
+`JdbcUtils.DialectPool` caches the answer per data source so it is asked once. The ADO.NET input is
+the same: `DbConnection.GetSchema(DbMetaDataCollectionNames.DataSourceInformation)` yields
+`DataSourceProductName` and version.
+
+This is the clearest case for keeping the dialect and the parameter syntax apart. For ODBC the
+dialect is unknown until a connection is opened, because it belongs to the server behind the bridge;
+the parameter form is known statically, because ODBC always binds positional `?`. One member could
+not answer both.
+
+And `?` is the case `GetParameterName(int)` cannot express — a bare marker carries no position. So
+ODBC needs more than a different string: `AdoEnumerable.SetParameter` sets `ParameterName` and relies
+on the name matching the marker, and ODBC binds by the order of the parameter collection instead.
+Supporting it means a positional path through the enricher.
 
 ### 1. DML never reaches the provider
 
@@ -93,9 +110,12 @@ on its own.
 
 ### 6. Dialect and data source lookups are not cached
 
-`JdbcUtils.DialectPool` and `JdbcUtils.DataSourcePool` cache by key. We rebuild each time, so dialect
-detection re-queries provider metadata on every schema construction. Lowest priority; measure before
-assuming it matters.
+`JdbcUtils.DialectPool` and `JdbcUtils.DataSourcePool` cache by key, per data source, across schemas.
+
+`SqlServerDatabaseMetadata` now memoizes its own dialect, which was the pressing part: deriving it
+opens a connection to read the server version, and `AdoConvention.Dialect` is read for every rule
+that matches while planning. What is left is caching *across* metadata instances, which only matters
+when several schemas point at one database. Lowest priority; measure before assuming it matters.
 
 ## Smaller items
 

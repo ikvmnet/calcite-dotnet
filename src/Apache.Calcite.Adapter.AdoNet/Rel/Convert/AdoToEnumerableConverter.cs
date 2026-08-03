@@ -76,9 +76,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             var dataContextBuilder =
                 new AdoCorrelationDataContextBuilderImpl(implementor, list, DataContext.ROOT);
 
-            // generate the SQL for the query
-            var sqlString = GenerateSql(convention.Dialect, dataContextBuilder, self);
-            var sql = sqlString.getSql();
+            // generate the SQL for the query, with every parameter already written as the name this
+            // provider binds by rather than the bare ? that JDBC would match by position
+            var writer = GenerateSql(convention, dataContextBuilder, self);
+            var dataSource = Schemas.unwrap(convention.Expression, typeof(AdoDataSource));
+
+            var parameters = writer.Indexes;
+            var hasParameters = parameters.isEmpty() == false;
+
+            var sql = writer.toSqlString().getSql();
             Hook.QUERY_PLAN.run(sql);
 
             // declare SQL string as a variable
@@ -150,34 +156,30 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                                 Expressions.lambda(rowBuilder.toBlock()))),
                         reader_));
 
-            var dataSource_ = Schemas.unwrap(convention.Expression, typeof(AdoDataSource));
-
-            // a correlated sub-query leaves a parameter marker per correlation variable in the SQL, and the
-            // values live on the context the builder closed over the outer row. Without this the command is
-            // handed to the provider with its parameters unfilled. Calcite does the same at
-            // JdbcToEnumerableConverter:222.
-            var parameters = sqlString.getDynamicParameters();
-            var enumerable_ = parameters is not null && parameters.isEmpty() == false
+            // a correlated sub-query leaves a parameter per correlation variable in the SQL, and the values
+            // live on the context the builder closed over the outer row. Without the enricher the command is
+            // handed to the provider unfilled. Calcite does the same at JdbcToEnumerableConverter:222.
+            var enumerable_ = hasParameters
                 ? list.append("enumerable",
                     Expressions.call(
                         null,
                         CreateReaderWithEnricherMethod,
-                        dataSource_,
+                        dataSource,
                         sql_,
                         rowBuilderFactory_,
                         list.append("enricher",
                             Expressions.call(
                                 null,
                                 CreateEnricherMethod,
-                                dataSource_,
+                                dataSource,
                                 // the indexes are settled while planning, so they travel as a constant
-                                Expressions.constant(Indexes(parameters)),
+                                Expressions.constant(parameters),
                                 dataContextBuilder.Build()))))
                 : list.append("enumerable",
                     Expressions.call(
                         null,
                         CreateReaderMethod,
-                        dataSource_,
+                        dataSource,
                         sql_,
                         rowBuilderFactory_));
 
@@ -186,20 +188,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 
             // return block
             return implementor.result(physType, list.toBlock());
-        }
-
-        /// <summary>
-        /// Returns the variable index behind each dynamic parameter, in parameter order.
-        /// </summary>
-        /// <param name="parameters"></param>
-        /// <returns></returns>
-        static java.util.List Indexes(java.util.List parameters)
-        {
-            var indexes = new java.util.ArrayList(parameters.size());
-            for (int i = 0; i < parameters.size(); i++)
-                indexes.add(java.lang.Integer.valueOf(((java.lang.Number)parameters.get(i)).intValue()));
-
-            return indexes;
         }
 
         /// <summary>
@@ -234,11 +222,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// <param name="dataContextBuilder"></param>
         /// <param name="input"></param>
         /// <returns></returns>
-        SqlString GenerateSql(SqlDialect dialect, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input)
+        AdoSqlWriter GenerateSql(AdoConvention convention, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input)
         {
-            var implementor = new AdoImplementor(dialect, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder);
+            var implementor = new AdoImplementor(convention.Dialect, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder);
             var result = implementor.visitRoot(input);
-            return result.asStatement().toSqlString(dialect);
+
+            var writer = new AdoSqlWriter(convention.Dialect, convention.Syntax);
+            result.asStatement().unparse(writer, 0, 0);
+            return writer;
         }
 
         #region EnumerableRel

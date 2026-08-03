@@ -247,7 +247,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         [TestMethod]
-        [Ignore("Three of the four defects behind this are fixed (Build was never called, the context ignored its parameters, and a bad cast broke the builder class init). What remains is that the provider still rejects the command for unbound parameters: the SQL carries Calcite's ? marker while the enricher adds parameters named by AdoDatabaseMetadata.GetParameterName, which is $P0 for SQLite. See TODO.md item 0.")]
         public void ExistsIsCorrectWithoutDecorrelation()
         {
             CollectionAssert.AreEquivalent(
@@ -256,7 +255,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         [TestMethod]
-        [Ignore("Three of the four defects behind this are fixed (Build was never called, the context ignored its parameters, and a bad cast broke the builder class init). What remains is that the provider still rejects the command for unbound parameters: the SQL carries Calcite's ? marker while the enricher adds parameters named by AdoDatabaseMetadata.GetParameterName, which is $P0 for SQLite. See TODO.md item 0.")]
         public void AScalarSubQueryIsCorrectWithoutDecorrelation()
         {
             CollectionAssert.AreEquivalent(
@@ -265,12 +263,154 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         [TestMethod]
-        [Ignore("Three of the four defects behind this are fixed (Build was never called, the context ignored its parameters, and a bad cast broke the builder class init). What remains is that the provider still rejects the command for unbound parameters: the SQL carries Calcite's ? marker while the enricher adds parameters named by AdoDatabaseMetadata.GetParameterName, which is $P0 for SQLite. See TODO.md item 0.")]
         public void AnAggregatingSubQueryIsCorrectWithoutDecorrelation()
         {
             CollectionAssert.AreEquivalent(
                 new[] { "Sales|2", "Engineering|2", "Empty|0" },
                 CorrelatedRows("SELECT D.DNAME, (SELECT COUNT(*) FROM ADO.EMPS E WHERE E.DEPTNO = D.DEPTNO) FROM ADO.DEPTS D"));
+        }
+
+        /// <summary>
+        /// Correlating on an approximate column rather than an integer.
+        /// </summary>
+        /// <remarks>
+        /// The value bound into the inner query has to survive the trip out of the plan, where it is a boxed
+        /// Java type, and into a <see cref="System.Data.Common.DbParameter"/>, which knows nothing of those.
+        /// Every other test here correlates on <c>DEPTNO</c>, so only the integer path was ever taken.
+        /// Everyone but the highest paid has someone above them; Dave's salary is null, so the comparison is
+        /// unknown and he does not survive.
+        /// </remarks>
+        [TestMethod]
+        public void CorrelatingOnARealIsCorrectWithoutDecorrelation()
+        {
+            CollectionAssert.AreEquivalent(
+                new[] { "Alice", "Bob", "Erin" },
+                CorrelatedRows("SELECT E.NAME FROM ADO.EMPS E WHERE EXISTS (SELECT 1 FROM ADO.EMPS E2 WHERE E2.SALARY > E.SALARY)"));
+        }
+
+        /// <summary>
+        /// Correlating on a character column: everyone but the last name in order has one after them.
+        /// </summary>
+        [TestMethod]
+        public void CorrelatingOnAStringIsCorrectWithoutDecorrelation()
+        {
+            CollectionAssert.AreEquivalent(
+                new[] { "Alice", "Bob", "Carol", "Dave" },
+                CorrelatedRows("SELECT E.NAME FROM ADO.EMPS E WHERE EXISTS (SELECT 1 FROM ADO.EMPS E2 WHERE E2.NAME > E.NAME)"));
+        }
+
+        /// <summary>
+        /// Correlating on a date, which Calcite carries as a day count rather than a timestamp.
+        /// </summary>
+        [TestMethod]
+        public void CorrelatingOnADateIsCorrectWithoutDecorrelation()
+        {
+            CollectionAssert.AreEquivalent(
+                new[] { "Carol", "Alice", "Bob" },
+                CorrelatedRows("SELECT E.NAME FROM ADO.EMPS E WHERE EXISTS (SELECT 1 FROM ADO.EMPS E2 WHERE E2.HIREDATE > E.HIREDATE)"));
+        }
+
+        /// <summary>
+        /// Two correlation variables in one statement, of different types.
+        /// </summary>
+        /// <remarks>
+        /// The case that catches a parameter bound to the wrong value. Each marker is named for its position
+        /// among parameters, while the value behind it is found by a variable index that is nothing like that
+        /// position, so the writer and the enricher have to agree on the mapping between them. Swapping the
+        /// two would compare a department against a salary and give a different answer rather than an error.
+        /// Only Alice has someone in her own department earning more.
+        /// </remarks>
+        [TestMethod]
+        public void TwoCorrelationVariablesAreBoundToTheRightParameters()
+        {
+            CollectionAssert.AreEquivalent(
+                new[] { "Alice" },
+                CorrelatedRows("""
+                    SELECT E.NAME FROM ADO.EMPS E
+                    WHERE EXISTS (SELECT 1 FROM ADO.EMPS E2 WHERE E2.DEPTNO = E.DEPTNO AND E2.SALARY > E.SALARY)
+                    """));
+        }
+
+        /// <summary>
+        /// One correlation variable read twice, which is two parameters carrying one value.
+        /// </summary>
+        /// <remarks>
+        /// Everyone with a later employee within two of them, which is everyone but the last.
+        /// </remarks>
+        [TestMethod]
+        public void OneVariableReadTwiceFillsBothParameters()
+        {
+            CollectionAssert.AreEquivalent(
+                new[] { "Alice", "Bob", "Carol", "Dave" },
+                CorrelatedRows("""
+                    SELECT E.NAME FROM ADO.EMPS E
+                    WHERE EXISTS (SELECT 1 FROM ADO.EMPS E2 WHERE E2.EMPNO > E.EMPNO AND E2.EMPNO <= E.EMPNO + 2)
+                    """));
+        }
+
+        /// <summary>
+        /// A correlated sub-query inside a correlated sub-query.
+        /// </summary>
+        /// <remarks>
+        /// Two contexts are live at once, each closed over a different outer row. A department survives when
+        /// it has an employee who has a colleague, so the empty one does not.
+        /// </remarks>
+        [TestMethod]
+        public void NestedCorrelationIsCorrectWithoutDecorrelation()
+        {
+            CollectionAssert.AreEquivalent(
+                new[] { "Sales", "Engineering" },
+                CorrelatedRows("""
+                    SELECT D.DNAME FROM ADO.DEPTS D
+                    WHERE EXISTS (
+                        SELECT 1 FROM ADO.EMPS E
+                        WHERE E.DEPTNO = D.DEPTNO
+                          AND EXISTS (SELECT 1 FROM ADO.EMPS E2 WHERE E2.DEPTNO = E.DEPTNO AND E2.EMPNO <> E.EMPNO))
+                    """));
+        }
+
+        /// <summary>
+        /// A null correlation value, which is bound rather than skipped.
+        /// </summary>
+        /// <remarks>
+        /// Erin's department is null. The parameter is still filled — with <see cref="System.DBNull"/> — and
+        /// the inner comparison is then unknown for every row, so her count is zero rather than the query
+        /// failing on an unfilled parameter.
+        /// </remarks>
+        [TestMethod]
+        public void ANullCorrelationValueIsBound()
+        {
+            CollectionAssert.AreEquivalent(
+                new[] { "Alice|2", "Bob|2", "Carol|2", "Dave|2", "Erin|0" },
+                CorrelatedRows("SELECT E.NAME, (SELECT COUNT(*) FROM ADO.EMPS E2 WHERE E2.DEPTNO = E.DEPTNO) FROM ADO.EMPS E"));
+        }
+
+        /// <summary>
+        /// A correlate under a sort: the inner query runs per row, and the ordering is applied to what
+        /// survives.
+        /// </summary>
+        [TestMethod]
+        public void ACorrelateSurvivesSorting()
+        {
+            CollectionAssert.AreEqual(
+                new[] { "Alice", "Bob", "Carol", "Dave" },
+                CorrelatedRows("""
+                    SELECT E.NAME FROM ADO.EMPS E
+                    WHERE EXISTS (SELECT 1 FROM ADO.DEPTS D WHERE D.DEPTNO = E.DEPTNO)
+                    ORDER BY E.NAME
+                    """));
+        }
+
+        /// <summary>
+        /// An outer query matching nothing never runs the inner one.
+        /// </summary>
+        [TestMethod]
+        public void AnEmptyOuterYieldsNothing()
+        {
+            Assert.AreEqual(0, CorrelatedRows("""
+                SELECT E.NAME FROM ADO.EMPS E
+                WHERE E.EMPNO = 999 AND EXISTS (SELECT 1 FROM ADO.DEPTS D WHERE D.DEPTNO = E.DEPTNO)
+                """).Count);
         }
 
         #endregion
