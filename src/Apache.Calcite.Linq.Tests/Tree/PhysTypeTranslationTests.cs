@@ -47,6 +47,22 @@ namespace Apache.Calcite.Linq.Tests.Tree
             physType = PhysTypeImpl.of(typeFactory, rowType, JavaRowFormat.ARRAY);
         }
 
+        /// <summary>
+        /// Translates a comparator and returns it as something that can be called.
+        /// </summary>
+        /// <param name="expression"></param>
+        /// <returns></returns>
+        static Func<object[], object[], int> Comparator(J.Expression expression)
+        {
+            var translated = new ExpressionTranslator().Translate(expression);
+
+            translated.Type.Should().Be(typeof(java.util.Comparator), "an anonymous class is wrapped back into its interface");
+
+            var comparator = Expression.Lambda<Func<java.util.Comparator>>(translated).Compile()();
+
+            return (x, y) => comparator.compare(x, y);
+        }
+
         [TestMethod]
         public void ShouldTranslateFieldReference()
         {
@@ -92,11 +108,9 @@ namespace Apache.Calcite.Linq.Tests.Tree
         public void ShouldTranslateComparator()
         {
             // an anonymous java.util.Comparator, which an expression tree cannot declare, so it becomes the
-            // lambda its compare method already is
+            // lambda its compare method already is, wrapped back into the interface it was declared against
             var collation = RelCollations.of(0);
-            var comparator = (LambdaExpression)new ExpressionTranslator().Translate(physType.generateComparator(collation));
-
-            var compare = (Func<object[], object[], int>)comparator.Compile();
+            var compare = Comparator(physType.generateComparator(collation));
 
             compare([Integer.valueOf(1), "a"], [Integer.valueOf(2), "b"]).Should().BeNegative();
             compare([Integer.valueOf(2), "b"], [Integer.valueOf(1), "a"]).Should().BePositive();
@@ -107,9 +121,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
         public void ShouldTranslateDescendingComparator()
         {
             var collation = RelCollations.of(new RelFieldCollation(0, RelFieldCollation.Direction.DESCENDING));
-            var comparator = (LambdaExpression)new ExpressionTranslator().Translate(physType.generateComparator(collation));
-
-            var compare = (Func<object[], object[], int>)comparator.Compile();
+            var compare = Comparator(physType.generateComparator(collation));
 
             compare([Integer.valueOf(1), "a"], [Integer.valueOf(2), "b"]).Should().BePositive();
         }
@@ -117,8 +129,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
         [TestMethod]
         public void ShouldSortWithATranslatedComparator()
         {
-            var comparator = (LambdaExpression)new ExpressionTranslator().Translate(physType.generateComparator(RelCollations.of(0)));
-            var compare = (Func<object[], object[], int>)comparator.Compile();
+            var compare = Comparator(physType.generateComparator(RelCollations.of(0)));
 
             var rows = new List<object[]>
             {
@@ -158,8 +169,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
             // C# cannot tell apart. Map.Entry gives the same two values under names that are not overloaded.
             pair.getValue().Should().NotBeNull("more than one collation puts the ordering in a comparator");
 
-            var comparator = (LambdaExpression)new ExpressionTranslator().Translate((J.Expression)pair.getValue());
-            var compare = (Func<object[], object[], int>)comparator.Compile();
+            var compare = Comparator((J.Expression)pair.getValue());
 
             compare([Integer.valueOf(1), "a"], [Integer.valueOf(1), "b"]).Should().BeNegative();
         }

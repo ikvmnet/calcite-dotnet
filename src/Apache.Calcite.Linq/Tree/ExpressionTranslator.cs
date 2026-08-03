@@ -136,6 +136,41 @@ namespace Apache.Calcite.Linq.Tree
         }
 
         /// <summary>
+        /// Translates a selector, which <c>PhysType</c> does not always give as a lambda.
+        /// </summary>
+        /// <param name="selector"></param>
+        /// <param name="sourceType"></param>
+        /// <returns></returns>
+        /// <exception cref="NotSupportedException"></exception>
+        /// <remarks>
+        /// Where a projection is the identity, <c>PhysType.generateSelector</c> returns a call to
+        /// <c>Functions.identitySelector</c> rather than a lambda, and its value is a linq4j <c>Function1</c>
+        /// that no delegate can be made from. The identity is the one thing a caller can supply for itself.
+        /// </remarks>
+        public LambdaExpression TranslateSelector(J.Expression selector, Type sourceType)
+        {
+            ArgumentNullException.ThrowIfNull(selector);
+            ArgumentNullException.ThrowIfNull(sourceType);
+
+            var translated = Translate(selector);
+            if (translated is LambdaExpression lambda)
+                return lambda;
+
+            if (translated is MethodCallExpression call && call.Method == IdentitySelector)
+            {
+                var row = Expression.Parameter(sourceType, "row");
+                return Expression.Lambda(row, row);
+            }
+
+            throw new NotSupportedException($"A selector of '{translated.Type}' is neither a lambda nor the identity.");
+        }
+
+        /// <summary>
+        /// <c>Functions.identitySelector</c>, which is what a projection that changes nothing comes back as.
+        /// </summary>
+        static readonly MethodInfo IdentitySelector = MethodResolver.Resolve(org.apache.calcite.util.BuiltInMethod.IDENTITY_SELECTOR.method);
+
+        /// <summary>
         /// Translates a node in a position that takes a statement rather than a value.
         /// </summary>
         /// <param name="node"></param>
@@ -668,7 +703,11 @@ namespace Apache.Calcite.Linq.Tree
             for (int i = 0; i < parameters.Length; i++)
                 parameters[i] = Variable((J.ParameterExpression)declaration.parameters.get(i));
 
-            return Expression.Lambda(TranslateBody(declaration.body, TypeResolver.Resolve(declaration.resultType)), parameters);
+            var lambda = Expression.Lambda(TranslateBody(declaration.body, TypeResolver.Resolve(declaration.resultType)), parameters);
+
+            // the value still has to be the interface it was declared against, because the same operator takes
+            // one that never was an anonymous class
+            return SamAdapters.Wrap(type, lambda);
         }
 
         /// <summary>

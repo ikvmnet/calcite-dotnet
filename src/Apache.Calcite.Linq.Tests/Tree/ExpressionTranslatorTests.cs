@@ -296,9 +296,17 @@ namespace Apache.Calcite.Linq.Tests.Tree
                         java.util.Arrays.asList([v0, v1]),
                         body.toBlock())));
 
-            var translated = (LambdaExpression)new ExpressionTranslator().Translate(e);
+            var translated = new ExpressionTranslator().Translate(e);
 
-            ((Func<int, int, int>)translated.Compile())(5, 3).Should().Be(2);
+            // the lambda is wrapped back into the interface the class was declared against, because the same
+            // operator takes a comparator that never was an anonymous class
+            translated.Type.Should().Be(typeof(java.util.Comparator));
+
+            var comparator = Expression.Lambda<Func<java.util.Comparator>>(translated).Compile()();
+
+            // the adapter casts each argument to the type the declaration gave its parameters, exactly as the
+            // erased compare(Object, Object) of the class it stands for would have
+            comparator.compare(5, 3).Should().Be(2);
         }
 
         [TestMethod]
