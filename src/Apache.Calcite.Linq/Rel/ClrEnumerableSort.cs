@@ -76,7 +76,7 @@ namespace Apache.Calcite.Linq.Rel
             var keySelector = implementor.Translator.TranslateSelector((J.Expression)pair.getKey(), sourceType);
             var comparator = pair.getValue() == null
                 ? Expression.Constant(null, typeof(java.util.Comparator))
-                : JavaCast.To(implementor.Translator.Translate((J.Expression)pair.getValue()), typeof(java.util.Comparator));
+                : implementor.Translator.Translate((J.Expression)pair.getValue());
 
             var keyType = keySelector.ReturnType;
 

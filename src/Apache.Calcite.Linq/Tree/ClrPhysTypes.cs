@@ -35,7 +35,7 @@ namespace Apache.Calcite.Linq.Tree
 
             return comparer == null
                 ? Expression.Constant(null, typeof(EqualityComparer))
-                : JavaCast.To(implementor.Translator.Translate(comparer), typeof(EqualityComparer));
+                : implementor.Translator.Translate(comparer);
         }
 
     }

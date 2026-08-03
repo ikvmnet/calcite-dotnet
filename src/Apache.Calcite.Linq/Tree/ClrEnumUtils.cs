@@ -77,7 +77,7 @@ namespace Apache.Calcite.Linq.Tree
 
             return Expression.Lambda(
                 typeof(Func<,,>).MakeGenericType(parameters[0].Type, parameters[1].Type, rowType),
-                JavaCast.To(implementor.Translator.Translate(physType.record(expressions)), rowType),
+                implementor.Translator.Translate(physType.record(expressions)),
                 parameters);
         }
 

@@ -37,9 +37,9 @@ namespace Apache.Calcite.Linq.Tests
 
             static readonly object[][] Rows =
             [
-                [java.lang.Integer.valueOf(1), "SMITH", java.lang.Integer.valueOf(30)],
-                [java.lang.Integer.valueOf(2), "JONES", java.lang.Integer.valueOf(40)],
-                [java.lang.Integer.valueOf(3), "BROWN", java.lang.Integer.valueOf(20)],
+                [java.lang.Integer.valueOf(1), "SMITH", java.lang.Integer.valueOf(30), java.lang.Integer.valueOf(5)],
+                [java.lang.Integer.valueOf(2), "JONES", java.lang.Integer.valueOf(40), null],
+                [java.lang.Integer.valueOf(3), "BROWN", java.lang.Integer.valueOf(20), java.lang.Integer.valueOf(7)],
             ];
 
             /// <inheritdoc />
@@ -49,6 +49,7 @@ namespace Apache.Calcite.Linq.Tests
                     .add("ID", typeFactory.createSqlType(SqlTypeName.INTEGER))
                     .add("NAME", typeFactory.createSqlType(SqlTypeName.VARCHAR))
                     .add("AGE", typeFactory.createSqlType(SqlTypeName.INTEGER))
+                    .add("BONUS", typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.INTEGER), true))
                     .build();
             }
 
@@ -202,6 +203,19 @@ namespace Apache.Calcite.Linq.Tests
             var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" ORDER BY \"ID\" OFFSET 1 ROWS FETCH NEXT 1 ROWS ONLY");
 
             rows.Select(r => (string)r[0]).Should().Equal("JONES");
+        }
+
+        [TestMethod]
+        public void ShouldComputeOverANullableColumn()
+        {
+            // a nullable column is a java.lang.Integer and the arithmetic is on an int, so this is the query
+            // that makes RexImpTable emit the boxing and unboxing the tests otherwise never reach
+            var rows = Run("SELECT \"AGE\" + \"BONUS\" FROM \"PEOPLE\" ORDER BY \"ID\"");
+
+            rows.Should().HaveCount(3);
+            rows[0][0].Should().Be(java.lang.Integer.valueOf(35));
+            rows[1][0].Should().BeNull();
+            rows[2][0].Should().Be(java.lang.Integer.valueOf(27));
         }
 
         [TestMethod]

@@ -18,9 +18,18 @@ namespace Apache.Calcite.Linq.Tree
     /// an instance of a class rather than a boxed CLR value, so <see cref="Expression.Convert(Expression,
     /// Type)"/> would emit an <c>unbox.any</c> demanding a runtime type that is never there.
     ///
-    /// <para>This is also what coerces an argument to the parameter it is passed as. Java erases generics,
-    /// so a value reaches a call typed more loosely than the method takes, and the call cannot be built until
-    /// the difference is spent.</para>
+    /// <para>The rule is that this is for what Java the language does implicitly and an expression tree will
+    /// not: boxing where a primitive is passed as an Object, unboxing where a box is used as a number,
+    /// widening one operand of a binary operator to meet the other, promoting a byte. It is not a way to make
+    /// one type into another where they ought already to agree; converting a value that already has the type
+    /// wanted does nothing except absorb the case where it does not, and the code that produced the wrong type
+    /// is where that should be seen.</para>
+    ///
+    /// <para>Measured against every plan the tests run, including arithmetic over a nullable column, what is
+    /// actually asked for is four reference conversions and one boxing. No unboxing, no widening and no byte
+    /// promotion is reached, because <c>RexImpTable</c> emits <c>Integer.valueOf</c> and <c>intValue()</c> as
+    /// calls in the tree rather than leaning on autoboxing -- Calcite writes Java source that has to compile,
+    /// and needs the null handling exact. Those paths are what Java means, but they are unproven here.</para>
     /// </remarks>
     public static class JavaCast
     {

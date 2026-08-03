@@ -88,7 +88,7 @@ namespace Apache.Calcite.Linq.Rel
             var element = TypeResolver.FromClass(elementType);
 
             return implementor.Result(physType,
-                ToRows(implementor, physType, Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(element), JavaCast.To(source, typeof(Enumerable))), element));
+                ToRows(implementor, physType, Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(element), source), element));
         }
 
         /// <summary>
@@ -159,7 +159,7 @@ namespace Apache.Calcite.Linq.Rel
             var rowType = TypeResolver.Resolve(physType.getJavaRowType());
             var selector = Expression.Lambda(
                 typeof(Func<,>).MakeGenericType(element, rowType),
-                JavaCast.To(implementor.Translator.Translate(physType.record(expressionList)), rowType),
+                implementor.Translator.Translate(physType.record(expressionList)),
                 parameter);
 
             return Expression.Call(null, ClrBuiltInMethod.Select.MakeGenericMethod(element, rowType), source, selector);

@@ -220,10 +220,9 @@ namespace Apache.Calcite.Linq.Tree
             if (value == null)
                 return Expression.Constant(null, type.IsValueType ? typeof(object) : type);
 
-            // a Class used as a value, which the tree carries as the Java type and a CLR tree wants as its own
-            if (value is java.lang.Class clazz)
-                return Expression.Constant(TypeResolver.FromClass(clazz), typeof(Type));
-
+            // a Class used as a value stays a Class. Schemas.tableExpression passes the element type of a
+            // QueryableTable to Schemas.queryable, which takes a Class, so turning it into a System.Type here
+            // leaves the call unable to be built.
             if (type.IsValueType && value.GetType() != type)
                 return Expression.Constant(JavaCast.Unwrap(value, type), type);
 
