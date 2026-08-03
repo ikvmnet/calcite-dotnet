@@ -200,6 +200,29 @@ compatible with it means. Neither node has a test. Whatever makes a recursive qu
 own convention is what would make it run here, and finding that out is the next step, not a
 workaround in this rule.
 
+### Window works, and translates far more linq4j than it should
+
+`ClrEnumerableWindow` lets `EnumerableWindow` build the whole block and translates it. Seven queries
+agree with `EnumerableConvention` row for row, so it is correct, and it is the largest single piece of
+linq4j translated anywhere in this port -- which is the opposite of the rule the rest of it holds to.
+
+About half of that block is legitimately linq4j: the window aggregate implementors, the frame bound
+expressions, and the `PhysType` calls. The other half is not, and is the same shape as the loop
+`ClrEnumerables.Calc` already owns:
+
+- `getPartitionIterator` -- a `SortedMultiMap`, `putMulti` per row, `arrays(comparator)`
+- the per-partition `Object[]` buffering and the index loop over it
+- frame maintenance: `prevStart`/`prevEnd`, clamping start and end, deciding when to recompute
+- buffering the output into an `ArrayList` and turning it back into a sequence
+
+Those should be a `ClrEnumerables.Window` written once, taking the translated per-expression pieces --
+reset, add, result, the bound expressions, the key selector, the comparator -- as arguments. Calcite
+generates an anonymous `Enumerator` for the same reason it does in a calc: generated Java source is the
+only place it can put a loop.
+
+The seven differential tests are what makes that refactor safe to attempt, and they did not exist when
+the current shape was written.
+
 ### Nodes not done
 
 The standing scope is feature compatibility with `EnumerableConvention`: whatever it does, this does.
