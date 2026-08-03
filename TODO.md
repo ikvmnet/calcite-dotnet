@@ -183,10 +183,26 @@ both directions, so one plan can hold nodes of both conventions and the rows cro
   optimising one inlines a declaration used once, which leaves a reference already built into a
   translated sub-plan pointing at a variable that no longer exists. `ClrEnumerableCorrelate` needs this.
 
+### Recursive CTE is written but unreachable
+
+`ClrEnumerableRepeatUnion` and `ClrEnumerableTableSpool` exist and compile, and nothing about them is
+a write: the spool is a tee that passes rows through and leaves the round behind it, and
+`WITH RECURSIVE` is a read-only query. The spool captures its collection directly rather than looking
+the table up by name, which Calcite only does because the Java it generates cannot mention an object.
+
+They cannot be reached. `EnumerableTableScan.canHandle` refuses any `TransientTable` outright
+(CALCITE-3673), so the scan of the scratch table cannot be converted, and the rule here delegates to
+that check. Calcite has the same limitation in 1.41. Making it work needs two things that were not
+attempted: a scan rule that accepts a transient table, and a `RepeatUnion` that registers the table
+in the runtime root schema so the scan resolves it -- which is the part of Calcite's mechanism that
+is not merely a Janino artefact.
+
+Neither node has a test, for that reason.
+
 ### Nodes not done
 
-Window, Match, TableModify, TableSpool, RepeatUnion, TableFunctionScan, MergeJoin,
-BatchNestedLoopJoin, SortedAggregate, MergeUnion, Interpreter and Bindable. `Combine` and `AsofJoin`
+Window, Match, TableFunctionScan, MergeJoin, BatchNestedLoopJoin, SortedAggregate, MergeUnion,
+Interpreter and Bindable. TableModify is out of scope while the convention is read-only. `Combine` and `AsofJoin`
 should be checked for existence in 1.41 before being attempted at all.
 
 Window (1007 lines) and Match (547) are the two large ones. An aggregate call carrying its own

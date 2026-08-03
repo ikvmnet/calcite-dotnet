@@ -671,6 +671,78 @@ namespace Apache.Calcite.Linq.Runtime
         }
 
         /// <summary>
+        /// Passes every row through, and leaves them in a collection behind it.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="collection"></param>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.lazyCollectionSpool</c>. Rows are buffered while they are
+        /// yielded and the collection is replaced once the input is exhausted, so it holds one round rather
+        /// than everything seen so far. That is what makes the next round of a recursive query read a delta.
+        /// </remarks>
+        public static IEnumerable<TSource> LazyCollectionSpool<TSource>(java.util.Collection collection, IEnumerable<TSource> input)
+        {
+            ArgumentNullException.ThrowIfNull(collection);
+            ArgumentNullException.ThrowIfNull(input);
+
+            var buffer = new List<TSource>();
+
+            foreach (var row in input)
+            {
+                buffer.Add(row);
+                yield return row;
+            }
+
+            collection.clear();
+            foreach (var row in buffer)
+                collection.add(row);
+        }
+
+        /// <summary>
+        /// Returns the seed, then the iterative part over and over until it yields nothing.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="seed"></param>
+        /// <param name="iteration"></param>
+        /// <param name="iterationLimit">A negative value for no limit.</param>
+        /// <param name="all">Whether a row already returned is returned again.</param>
+        /// <param name="comparer"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.repeatUnion</c>, which is what WITH RECURSIVE becomes. The
+        /// iterative part is enumerated afresh each round, reading what the spool beneath it left behind.
+        /// </remarks>
+        public static IEnumerable<TSource> RepeatUnion<TSource>(IEnumerable<TSource> seed, IEnumerable<TSource> iteration, int iterationLimit, bool all, EqualityComparer? comparer)
+        {
+            ArgumentNullException.ThrowIfNull(seed);
+            ArgumentNullException.ThrowIfNull(iteration);
+
+            var processed = all ? null : new HashSet<TSource>(JavaEqualityComparer<TSource>.Of(comparer));
+
+            foreach (var row in seed)
+                if (processed == null || processed.Add(row))
+                    yield return row;
+
+            for (int i = 0; iterationLimit < 0 || i < iterationLimit; i++)
+            {
+                var any = false;
+
+                foreach (var row in iteration)
+                {
+                    any = true;
+
+                    if (processed == null || processed.Add(row))
+                        yield return row;
+                }
+
+                if (any == false)
+                    yield break;
+            }
+        }
+
+        /// <summary>
         /// Returns the rows of an array.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>

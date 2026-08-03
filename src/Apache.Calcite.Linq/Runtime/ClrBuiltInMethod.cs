@@ -126,6 +126,16 @@ namespace Apache.Calcite.Linq.Runtime
         public static readonly MethodInfo ToJavaMap = Of(nameof(ClrEnumerables.ToJavaMap));
 
         /// <summary>
+        /// <see cref="ClrEnumerables.LazyCollectionSpool"/>.
+        /// </summary>
+        public static readonly MethodInfo LazyCollectionSpool = Of(nameof(ClrEnumerables.LazyCollectionSpool));
+
+        /// <summary>
+        /// <see cref="ClrEnumerables.RepeatUnion"/>.
+        /// </summary>
+        public static readonly MethodInfo RepeatUnion = Of(nameof(ClrEnumerables.RepeatUnion));
+
+        /// <summary>
         /// <see cref="ClrEnumerables.AsEnumerable"/>.
         /// </summary>
         public static readonly MethodInfo AsEnumerable = Of(nameof(ClrEnumerables.AsEnumerable));
