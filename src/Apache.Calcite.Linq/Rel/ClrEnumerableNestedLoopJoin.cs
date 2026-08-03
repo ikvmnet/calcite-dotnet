@@ -53,8 +53,10 @@ namespace Apache.Calcite.Linq.Rel
 
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.preferArray());
 
-            var leftType = TypeResolver.Resolve(leftResult.PhysType.getJavaRowType());
-            var rightType = TypeResolver.Resolve(rightResult.PhysType.getJavaRowType());
+            var leftSource = ClrEnumUtils.BoxRows(leftResult.PhysType, leftResult.Expression);
+            var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
+            var leftType = leftSource.Type.GetGenericArguments()[0];
+            var rightType = rightSource.Type.GetGenericArguments()[0];
             var rowType = TypeResolver.Resolve(physType.getJavaRowType());
 
             var predicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), left, right, leftResult.PhysType, rightResult.PhysType, getCondition());
@@ -63,8 +65,8 @@ namespace Apache.Calcite.Linq.Rel
             return implementor.Result(physType,
                 Expression.Call(null,
                     ClrBuiltInMethod.NestedLoopJoin.MakeGenericMethod(leftType, rightType, rowType),
-                    leftResult.Expression,
-                    rightResult.Expression,
+                    leftSource,
+                    rightSource,
                     selector,
                     predicate,
                     Expression.Constant(ClrEnumUtils.ToLinq4jJoinType(joinType))));

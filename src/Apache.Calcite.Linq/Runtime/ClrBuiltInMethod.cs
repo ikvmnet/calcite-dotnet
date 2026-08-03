@@ -106,6 +106,26 @@ namespace Apache.Calcite.Linq.Runtime
         public static readonly MethodInfo Aggregate = Of(nameof(ClrEnumerables.Aggregate));
 
         /// <summary>
+        /// <see cref="ClrEnumerables.SelectMany"/>.
+        /// </summary>
+        public static readonly MethodInfo SelectMany = Of(nameof(ClrEnumerables.SelectMany));
+
+        /// <summary>
+        /// <see cref="ClrEnumerables.OrderByWithFetchAndOffset"/>.
+        /// </summary>
+        public static readonly MethodInfo OrderByWithFetchAndOffset = Of(nameof(ClrEnumerables.OrderByWithFetchAndOffset));
+
+        /// <summary>
+        /// <see cref="ClrEnumerables.ToJavaList"/>.
+        /// </summary>
+        public static readonly MethodInfo ToJavaList = Of(nameof(ClrEnumerables.ToJavaList));
+
+        /// <summary>
+        /// <see cref="ClrEnumerables.ToJavaMap"/>.
+        /// </summary>
+        public static readonly MethodInfo ToJavaMap = Of(nameof(ClrEnumerables.ToJavaMap));
+
+        /// <summary>
         /// <see cref="ClrEnumerables.AsEnumerable"/>.
         /// </summary>
         public static readonly MethodInfo AsEnumerable = Of(nameof(ClrEnumerables.AsEnumerable));

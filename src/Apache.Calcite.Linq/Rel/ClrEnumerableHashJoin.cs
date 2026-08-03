@@ -88,8 +88,10 @@ namespace Apache.Calcite.Linq.Rel
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.preferArray());
             var keyPhysType = leftResult.PhysType.project(analyzeCondition().leftKeys, JavaRowFormat.LIST);
 
-            var leftType = TypeResolver.Resolve(leftResult.PhysType.getJavaRowType());
-            var rightType = TypeResolver.Resolve(rightResult.PhysType.getJavaRowType());
+            var leftSource = ClrEnumUtils.BoxRows(leftResult.PhysType, leftResult.Expression);
+            var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
+            var leftType = leftSource.Type.GetGenericArguments()[0];
+            var rightType = rightSource.Type.GetGenericArguments()[0];
             var rowType = TypeResolver.Resolve(physType.getJavaRowType());
 
             var info = analyzeCondition();
@@ -103,8 +105,8 @@ namespace Apache.Calcite.Linq.Rel
             return implementor.Result(physType,
                 Expression.Call(null,
                     ClrBuiltInMethod.HashJoin.MakeGenericMethod(leftType, rightType, keyType, rowType),
-                    leftResult.Expression,
-                    rightResult.Expression,
+                    leftSource,
+                    rightSource,
                     leftKey,
                     rightKey,
                     selector,

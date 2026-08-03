@@ -586,6 +586,91 @@ namespace Apache.Calcite.Linq.Runtime
         }
 
         /// <summary>
+        /// Returns each row of each sequence a function yields.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="selector">Yields a linq4j sequence for one row, which is what Calcite builds here.</param>
+        /// <returns></returns>
+        public static IEnumerable<TResult> SelectMany<TSource, TResult>(IEnumerable<TSource> source, Function1 selector)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(selector);
+
+            foreach (var row in source)
+                foreach (var item in JavaSequences.FromJava<TResult>((org.apache.calcite.linq4j.Enumerable)selector.apply(row!)))
+                    yield return item;
+        }
+
+        /// <summary>
+        /// Orders rows by a key, then skips and takes.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TKey"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="keySelector"></param>
+        /// <param name="comparator"></param>
+        /// <param name="offset"></param>
+        /// <param name="fetch"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.orderBy</c> with a fetch and an offset, which is a sort
+        /// carrying a limit rather than a sort followed by one.
+        /// </remarks>
+        public static IEnumerable<TSource> OrderByWithFetchAndOffset<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, int offset, int fetch)
+        {
+            var ordered = OrderBy(source, keySelector, comparator);
+
+            if (offset > 0)
+                ordered = ordered.Skip(offset);
+
+            if (fetch != int.MaxValue)
+                ordered = ordered.Take(fetch);
+
+            return ordered;
+        }
+
+        /// <summary>
+        /// Reads every row into a list.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A java.util.List, because this is a value in a row and the reader of that row is Calcite's.
+        /// </remarks>
+        public static java.util.List ToJavaList<TSource>(IEnumerable<TSource> source)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+
+            var list = new java.util.ArrayList();
+            foreach (var row in source)
+                list.add(row);
+
+            return list;
+        }
+
+        /// <summary>
+        /// Reads every row into a map, keeping the order the keys were seen in.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="keySelector"></param>
+        /// <param name="valueSelector"></param>
+        /// <returns></returns>
+        public static java.util.Map ToJavaMap<TSource>(IEnumerable<TSource> source, Func<TSource, object> keySelector, Func<TSource, object> valueSelector)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+
+            var map = new java.util.LinkedHashMap();
+            foreach (var row in source)
+                map.put(keySelector(row), valueSelector(row));
+
+            return map;
+        }
+
+        /// <summary>
         /// Returns the rows of an array.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>

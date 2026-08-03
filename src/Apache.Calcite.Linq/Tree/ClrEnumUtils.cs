@@ -97,6 +97,32 @@ namespace Apache.Calcite.Linq.Tree
         }
 
         /// <summary>
+        /// Boxes a sequence whose rows are a primitive, and returns it unchanged otherwise.
+        /// </summary>
+        /// <param name="physType"></param>
+        /// <param name="source"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A join selector takes its rows boxed, because Calcite builds it against a linq4j Function whose
+        /// arguments are erased to Object, and because an outer join compares a row to null, which a primitive
+        /// cannot be. The sequence has to agree: a delegate is typed where the Java interface was not.
+        /// </remarks>
+        public static System.Linq.Expressions.Expression BoxRows(PhysType physType, System.Linq.Expressions.Expression source)
+        {
+            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            if (rowType.IsValueType == false)
+                return source;
+
+            var boxed = TypeResolver.Resolve(J.Primitive.box(physType.getJavaRowType()));
+            var row = System.Linq.Expressions.Expression.Parameter(rowType, "row");
+
+            return System.Linq.Expressions.Expression.Call(null,
+                Runtime.ClrBuiltInMethod.Select.MakeGenericMethod(rowType, boxed),
+                source,
+                System.Linq.Expressions.Expression.Lambda(JavaCast.To(row, boxed), row));
+        }
+
+        /// <summary>
         /// Returns the linq4j join type a relational one means.
         /// </summary>
         /// <param name="joinType"></param>
@@ -194,10 +220,15 @@ namespace Apache.Calcite.Linq.Tree
             var left_ = J.Expressions.parameter(leftPhysType.getJavaRowType(), "left");
             var right_ = J.Expressions.parameter(rightPhysType.getJavaRowType(), "right");
 
-            var leftParameter = Expression.Parameter(TypeResolver.Resolve(leftPhysType.getJavaRowType()), "left");
-            var rightParameter = Expression.Parameter(TypeResolver.Resolve(rightPhysType.getJavaRowType()), "right");
-            implementor.Translator.Bind(left_, leftParameter);
-            implementor.Translator.Bind(right_, rightParameter);
+            // the rows arrive boxed, because the sequence a join runs over is boxed for the selector, so the
+            // predicate takes them boxed and unboxes on the way in
+            var leftParameter = Expression.Parameter(TypeResolver.Resolve(J.Primitive.box(leftPhysType.getJavaRowType())), "left");
+            var rightParameter = Expression.Parameter(TypeResolver.Resolve(J.Primitive.box(rightPhysType.getJavaRowType())), "right");
+
+            var leftRow = Expression.Variable(TypeResolver.Resolve(leftPhysType.getJavaRowType()), "leftRow");
+            var rightRow = Expression.Variable(TypeResolver.Resolve(rightPhysType.getJavaRowType()), "rightRow");
+            implementor.Translator.Bind(left_, leftRow);
+            implementor.Translator.Bind(right_, rightRow);
 
             var program = new RexProgramBuilder(
                 implementor.TypeFactory.builder()
@@ -224,7 +255,10 @@ namespace Apache.Calcite.Linq.Tree
 
             return Expression.Lambda(
                 typeof(Func<,,>).MakeGenericType(leftParameter.Type, rightParameter.Type, typeof(bool)),
-                implementor.Translator.TranslateBody(builder.toBlock(), typeof(bool)),
+                Expression.Block(typeof(bool), [leftRow, rightRow],
+                    Expression.Assign(leftRow, JavaCast.To(leftParameter, leftRow.Type)),
+                    Expression.Assign(rightRow, JavaCast.To(rightParameter, rightRow.Type)),
+                    implementor.Translator.TranslateBody(builder.toBlock(), typeof(bool))),
                 leftParameter,
                 rightParameter);
         }

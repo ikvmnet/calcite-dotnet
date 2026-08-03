@@ -363,6 +363,33 @@ namespace Apache.Calcite.Linq.Tests
         }
 
         [TestMethod]
+        public void ShouldSortAndLimitTogether()
+        {
+            // a sort carrying a fetch is one node, so only as many rows as are wanted are kept
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" ORDER BY \"AGE\" DESC FETCH NEXT 2 ROWS ONLY");
+
+            rows.Select(r => (string)r[0]).Should().Equal("JONES", "SMITH");
+        }
+
+        [TestMethod]
+        public void ShouldCollectASubQueryIntoAMultiset()
+        {
+            var rows = Run("SELECT MULTISET(SELECT \"NAME\" FROM \"PEOPLE\") FROM (VALUES (1))");
+
+            rows.Should().ContainSingle();
+            ((java.util.List)rows[0][0]).size().Should().Be(3);
+        }
+
+        [TestMethod]
+        public void ShouldUncollectAnArray()
+        {
+            var rows = Run("SELECT * FROM UNNEST(ARRAY['a', 'b', 'c'])");
+
+            rows.Should().HaveCount(3);
+            rows.Select(r => (string)r[0]).Should().Equal("a", "b", "c");
+        }
+
+        [TestMethod]
         public void ShouldReadValues()
         {
             var rows = Run("SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");
