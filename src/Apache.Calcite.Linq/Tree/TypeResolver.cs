@@ -46,9 +46,20 @@ namespace Apache.Calcite.Linq.Tree
         {
             ArgumentNullException.ThrowIfNull(clazz);
 
+            // IKVM keeps a java.lang.Object of its own for the class object and for `new Object()`, but every
+            // signature it compiles uses System.Object -- java.util.Objects.equals takes two of those, and
+            // java.util.List.get returns one. A tree naming Object means the one in the signatures.
+            if (clazz == ObjectClass)
+                return typeof(object);
+
             return ikvm.runtime.Util.getInstanceTypeFromClass(clazz)
                 ?? throw new NotSupportedException($"No CLR type backs the Java class '{clazz.getName()}'.");
         }
+
+        /// <summary>
+        /// <c>java.lang.Object</c>, which does not resolve the way every other class does.
+        /// </summary>
+        static readonly java.lang.Class ObjectClass = (java.lang.Class)typeof(java.lang.Object);
 
         /// <summary>
         /// Resolves a parameterized Java type to a closed CLR generic type.
@@ -58,10 +69,13 @@ namespace Apache.Calcite.Linq.Tree
         static Type FromParameterizedType(java.lang.reflect.ParameterizedType type)
         {
             var raw = Resolve(type.getRawType());
-            var args = type.getActualTypeArguments();
-            if (args.Length == 0)
+
+            // Java erases its generics and IKVM compiles what is left, so Enumerable<Employee> is Enumerable.
+            // linq4j still carries the arguments, and they have nowhere to go.
+            if (raw.IsGenericTypeDefinition == false)
                 return raw;
 
+            var args = type.getActualTypeArguments();
             var resolved = new Type[args.Length];
             for (int i = 0; i < args.Length; i++)
                 resolved[i] = Resolve(args[i]);
