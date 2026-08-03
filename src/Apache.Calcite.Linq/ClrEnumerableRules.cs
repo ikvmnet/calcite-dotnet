@@ -32,6 +32,7 @@ namespace Apache.Calcite.Linq
                 ClrEnumerableProjectRule.Create(),
                 ClrEnumerableFilterRule.Create(),
                 ClrEnumerableCalcRule.Create(),
+                ClrEnumerableAggregateRule.Create(),
                 ClrEnumerableJoinRule.Create(),
                 ClrEnumerableUnionRule.Create(),
                 ClrEnumerableIntersectRule.Create(),

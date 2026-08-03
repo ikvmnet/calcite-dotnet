@@ -96,6 +96,16 @@ namespace Apache.Calcite.Linq.Runtime
         public static readonly MethodInfo CorrelateJoin = Of(nameof(ClrEnumerables.CorrelateJoin));
 
         /// <summary>
+        /// <see cref="ClrEnumerables.GroupBy"/>.
+        /// </summary>
+        public static readonly MethodInfo GroupBy = Of(nameof(ClrEnumerables.GroupBy));
+
+        /// <summary>
+        /// <see cref="ClrEnumerables.Aggregate"/>.
+        /// </summary>
+        public static readonly MethodInfo Aggregate = Of(nameof(ClrEnumerables.Aggregate));
+
+        /// <summary>
         /// <see cref="ClrEnumerables.AsEnumerable"/>.
         /// </summary>
         public static readonly MethodInfo AsEnumerable = Of(nameof(ClrEnumerables.AsEnumerable));

@@ -22,6 +22,81 @@ namespace Apache.Calcite.Linq.Tree
     {
 
         /// <summary>
+        /// Returns the Java class of a relational type, or an object array where it has no class.
+        /// </summary>
+        /// <param name="typeFactory"></param>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        public static java.lang.reflect.Type JavaClass(org.apache.calcite.adapter.java.JavaTypeFactory typeFactory, org.apache.calcite.rel.type.RelDataType type)
+        {
+            var clazz = typeFactory.getJavaClass(type);
+
+            return clazz is java.lang.Class ? clazz : (java.lang.Class)typeof(object[]);
+        }
+
+        /// <summary>
+        /// Returns the types of the fields an aggregate call reads.
+        /// </summary>
+        /// <param name="inputRowType"></param>
+        /// <param name="argList"></param>
+        /// <returns></returns>
+        public static java.util.List FieldRowTypes(org.apache.calcite.rel.type.RelDataType inputRowType, java.util.List argList)
+        {
+            var inputFields = inputRowType.getFieldList();
+            var types = new java.util.ArrayList(argList.size());
+
+            for (int i = 0; i < argList.size(); i++)
+                types.add(((org.apache.calcite.rel.type.RelDataTypeField)inputFields.get(((java.lang.Integer)argList.get(i)).intValue())).getType());
+
+            return types;
+        }
+
+        /// <summary>
+        /// Returns the Java classes of a list of relational types.
+        /// </summary>
+        /// <param name="typeFactory"></param>
+        /// <param name="inputTypes"></param>
+        /// <returns></returns>
+        public static java.util.List FieldTypes(org.apache.calcite.adapter.java.JavaTypeFactory typeFactory, java.util.List inputTypes)
+        {
+            var types = new java.util.ArrayList(inputTypes.size());
+
+            for (int i = 0; i < inputTypes.size(); i++)
+                types.add(JavaClass(typeFactory, (org.apache.calcite.rel.type.RelDataType)inputTypes.get(i)));
+
+            return types;
+        }
+
+        /// <summary>
+        /// Returns the physical type of an accumulator, whose Java type is a synthetic record rather than a
+        /// relational type.
+        /// </summary>
+        /// <param name="typeFactory"></param>
+        /// <param name="javaRowClass"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// PhysTypeImpl has this and keeps it package private. The row type is rebuilt from the fields of the
+        /// record and the format is left unoptimised, exactly as it does, because an accumulator of one field
+        /// is still a record.
+        /// </remarks>
+        public static PhysType AccumulatorPhysType(org.apache.calcite.adapter.java.JavaTypeFactory typeFactory, java.lang.reflect.Type javaRowClass)
+        {
+            var builder = typeFactory.builder();
+
+            if (javaRowClass is J.Types.RecordType recordType)
+            {
+                var fields = recordType.getRecordFields();
+                for (int i = 0; i < fields.size(); i++)
+                {
+                    var field = (J.Types.RecordField)fields.get(i);
+                    builder.add(field.getName(), typeFactory.createType(field.getType()));
+                }
+            }
+
+            return PhysTypeImpl.of(typeFactory, builder.build(), JavaRowFormat.CUSTOM, false);
+        }
+
+        /// <summary>
         /// Returns the lambda that builds an output row from a row of each input.
         /// </summary>
         /// <param name="implementor"></param>

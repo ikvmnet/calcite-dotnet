@@ -219,6 +219,56 @@ namespace Apache.Calcite.Linq.Tests
         }
 
         [TestMethod]
+        public void ShouldCountEveryRow()
+        {
+            var rows = Run("SELECT COUNT(*) FROM \"PEOPLE\"");
+
+            rows.Should().ContainSingle();
+            rows[0][0].Should().Be(java.lang.Long.valueOf(3L));
+        }
+
+        [TestMethod]
+        public void ShouldAggregateWithoutAGroup()
+        {
+            var rows = Run("SELECT SUM(\"AGE\"), MIN(\"AGE\"), MAX(\"AGE\") FROM \"PEOPLE\"");
+
+            rows.Should().ContainSingle();
+            rows[0][0].Should().Be(java.lang.Integer.valueOf(90));
+            rows[0][1].Should().Be(java.lang.Integer.valueOf(20));
+            rows[0][2].Should().Be(java.lang.Integer.valueOf(40));
+        }
+
+        [TestMethod]
+        public void ShouldGroupBy()
+        {
+            var rows = Run("SELECT \"NAME\", COUNT(*) FROM \"PEOPLE\" GROUP BY \"NAME\" ORDER BY \"NAME\"");
+
+            rows.Should().HaveCount(3);
+            rows.Select(r => (string)r[0]).Should().Equal("BROWN", "JONES", "SMITH");
+            rows.Select(r => r[1]).Should().AllBeEquivalentTo(java.lang.Long.valueOf(1L));
+        }
+
+        [TestMethod]
+        public void ShouldGroupByAndSum()
+        {
+            var rows = Run("SELECT \"AGE\" > 25, SUM(\"AGE\") FROM \"PEOPLE\" GROUP BY \"AGE\" > 25 ORDER BY 1");
+
+            rows.Should().HaveCount(2);
+            rows[0][1].Should().Be(java.lang.Integer.valueOf(20));
+            rows[1][1].Should().Be(java.lang.Integer.valueOf(70));
+        }
+
+        [TestMethod]
+        public void ShouldAggregateOverANullableColumn()
+        {
+            // SUM skips a null, so this is 12 rather than null
+            var rows = Run("SELECT SUM(\"BONUS\") FROM \"PEOPLE\"");
+
+            rows.Should().ContainSingle();
+            rows[0][0].Should().Be(java.lang.Integer.valueOf(12));
+        }
+
+        [TestMethod]
         public void ShouldInnerJoin()
         {
             var rows = Run("SELECT a.\"NAME\", b.\"AGE\" FROM \"PEOPLE\" a JOIN \"PEOPLE\" b ON a.\"ID\" = b.\"ID\" WHERE a.\"ID\" = 1");

@@ -516,6 +516,76 @@ namespace Apache.Calcite.Linq.Runtime
         }
 
         /// <summary>
+        /// Groups rows by a key and folds each group into one row.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TKey"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="keySelector"></param>
+        /// <param name="accumulatorInitializer"></param>
+        /// <param name="accumulatorAdder"></param>
+        /// <param name="resultSelector"></param>
+        /// <param name="comparer"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.groupBy</c>. The three functions are Calcite's, because
+        /// they come from its <c>AggregateLambdaFactory</c> rather than from anything built here. Groups are
+        /// returned in the order their keys were first seen, which is what linq4j's own map ordering gives.
+        /// </remarks>
+        public static IEnumerable<TResult> GroupBy<TSource, TKey, TResult>(
+            IEnumerable<TSource> source,
+            Func<TSource, TKey> keySelector,
+            Function0 accumulatorInitializer,
+            Function2 accumulatorAdder,
+            Function2 resultSelector,
+            EqualityComparer? comparer)
+        {
+            var accumulators = new Dictionary<TKey, object>(JavaEqualityComparer<TKey>.Of(comparer));
+            var order = new List<TKey>();
+
+            foreach (var row in source)
+            {
+                var key = keySelector(row);
+
+                if (accumulators.TryGetValue(key, out var accumulator) == false)
+                {
+                    accumulator = accumulatorInitializer.apply();
+                    order.Add(key);
+                }
+
+                accumulators[key] = accumulatorAdder.apply(accumulator, row);
+            }
+
+            foreach (var key in order)
+                yield return (TResult)resultSelector.apply(key, accumulators[key]);
+        }
+
+        /// <summary>
+        /// Folds every row into one.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="seed"></param>
+        /// <param name="accumulatorAdder"></param>
+        /// <param name="resultSelector"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.aggregate</c>, which is what a query with aggregate calls
+        /// and no GROUP BY becomes.
+        /// </remarks>
+        public static TResult Aggregate<TSource, TResult>(IEnumerable<TSource> source, object seed, Function2 accumulatorAdder, Function1 resultSelector)
+        {
+            var accumulator = seed;
+
+            foreach (var row in source)
+                accumulator = accumulatorAdder.apply(accumulator, row);
+
+            return (TResult)resultSelector.apply(accumulator);
+        }
+
+        /// <summary>
         /// Returns the rows of an array.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>
