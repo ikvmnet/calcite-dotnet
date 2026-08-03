@@ -83,9 +83,37 @@ normal Calcite format; `ClrEnumerable` and `ClrAsyncEnumerable` are like `Enumer
 pass rows from one step to the next unmodified. Some rows happen to be CUSTOM or non-SQL types, and
 that is handled the way Calcite handles it.
 
-So `ToClrType` goes — field types come from `getJavaClass`, with at most one deliberate translation
-(a boxed wrapper to `Nullable<T>`, .NET's calling convention for absence). Do **not** bring over the
-five AdoNet CLR converter files from `clr-conventions`.
+### What the port is, concretely
+
+The conventions differ from `EnumerableConvention` in **exactly two ways**: the sequence they build
+is `IEnumerable<T>` / `IAsyncEnumerable<T>` rather than a linq4j `Enumerable`, and the code generator
+is `System.Linq.Expressions` rather than linq4j trees plus Janino. Nothing else differs. No field
+types of our own, no row formats of our own.
+
+**There is no `ClrPhysType`.** The nodes hold Calcite's `PhysType`, from
+`PhysTypeImpl.of(typeFactory, rowType, format)`, exactly as Calcite's nodes do. It already answers
+`getJavaRowType()`, `fieldClass(i)`, `getFormat()`, `fieldNullable(i)` and `getRowType()`. The only
+members that cannot be reused are the expression-producing ones, because they return linq4j trees, so
+the only new code is a static builder taking a `PhysType`:
+
+    Expression FieldReference(PhysType physType, Expression row, int index)
+    Expression Record(PhysType physType, IReadOnlyList<Expression> fields)
+
+plus one helper turning `getJavaRowType()` into a `System.Type`.
+
+A wrapper class that forwards `RowClass`, `FieldType`, `Format` and `FieldNullable` to `PhysType` and
+adds those two methods is ceremony — it was considered and rejected. Holding Calcite's `PhysType`
+directly also means a node *cannot* consult a private type mapping, because there is none to consult:
+the invariant is enforced by the types rather than by discipline.
+
+The aside at `D:\calcite-dotnet-conventions-aside` still contains `ClrPhysType.cs`, 577 lines of the
+mapping described above. **Do not port it.** Its shape is the artifact of the mistake, not a guide.
+
+Also do not port, because each exists only to bridge two representations that will no longer differ:
+`ClrValueConverter` (`FromCalcite` / `ToCalcite`), `ClrFunctions`, and
+`ClrEnumeratorAdapter.ToCalciteRow`. `EnumerableToClrEnumerableConverter` and
+`ClrEnumerableToEnumerableConverter` re-wrap the sequence and leave the rows alone. Do **not** bring
+over the five AdoNet CLR converter files from `clr-conventions` either.
 
 ## Traps
 
