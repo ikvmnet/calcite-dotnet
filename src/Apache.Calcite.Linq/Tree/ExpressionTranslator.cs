@@ -153,7 +153,9 @@ namespace Apache.Calcite.Linq.Tree
             ArgumentNullException.ThrowIfNull(sourceType);
 
             var translated = Translate(selector);
-            if (translated is LambdaExpression lambda)
+
+            var lambda = SamAdapters.Unwrap(translated);
+            if (lambda != null)
                 return lambda;
 
             if (translated is MethodCallExpression call && call.Method == IdentitySelector)
@@ -630,8 +632,15 @@ namespace Apache.Calcite.Linq.Tree
             for (int i = 0; i < arguments.size(); i++)
                 translated[i + offset] = Translate((J.Node)arguments.get(i));
 
-            // the overload is chosen by what is being passed, not by the method the tree names: Janino
-            // resolves it from the source text and never looks at that method
+            // the overload is chosen by the receiver and by what is being passed, not by the method the tree
+            // names: Janino resolves both from the source text and never looks at that method
+            var argumentTypes = new Type[arguments.size()];
+            for (int i = 0; i < argumentTypes.Length; i++)
+                argumentTypes[i] = translated[i + offset].Type;
+
+            if (target != null && method.IsStatic == false)
+                method = MethodResolver.RebindReceiver(method, target.Type, argumentTypes);
+
             method = MethodResolver.Rebind(method, Array.ConvertAll(translated, e => e.Type));
 
             var parameters = method.GetParameters();
@@ -957,7 +966,14 @@ namespace Apache.Calcite.Linq.Tree
             for (int i = 0; i < parameters.Length; i++)
                 parameters[i] = Variable((J.ParameterExpression)expression.parameterList.get(i));
 
-            return Expression.Lambda(TranslateBody(body, TypeResolver.Resolve(body.getType())), parameters);
+            var lambda = Expression.Lambda(TranslateBody(body, TypeResolver.Resolve(body.getType())), parameters);
+
+            // linq4j declares a lambda against one of its functional interfaces, and a block of Calcite's making
+            // uses it as that interface, including where it is passed as an object. So it is one from here, and
+            // a node of this convention that wants the delegate asks for it back through TranslateSelector.
+            var declared = TypeResolver.Resolve(expression.getType());
+
+            return SamAdapters.Handles(declared) ? SamAdapters.Wrap(declared, lambda) : lambda;
         }
 
         /// <summary>

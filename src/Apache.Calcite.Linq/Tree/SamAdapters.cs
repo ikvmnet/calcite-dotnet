@@ -68,6 +68,29 @@ namespace Apache.Calcite.Linq.Tree
         }
 
         /// <summary>
+        /// Returns the lambda inside an adapter, or null where the expression is not one.
+        /// </summary>
+        /// <param name="expression"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A lambda a linq4j tree declared against one of its functional interfaces is wrapped to be that
+        /// interface, because that is what the tree says it is. An operator of this convention takes the
+        /// delegate, so it asks for it back.
+        /// </remarks>
+        public static LambdaExpression? Unwrap(Expression expression)
+        {
+            if (expression is LambdaExpression lambda)
+                return lambda;
+
+            if (expression is UnaryExpression { NodeType: ExpressionType.Convert, Operand: NewExpression created }
+                && created.Arguments.Count == 1
+                && created.Arguments[0] is LambdaExpression inner)
+                return inner;
+
+            return null;
+        }
+
+        /// <summary>
         /// Returns the parameter types of a lambda followed by its result type.
         /// </summary>
         /// <param name="lambda"></param>

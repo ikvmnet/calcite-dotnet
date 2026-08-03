@@ -23,7 +23,7 @@ namespace Apache.Calcite.Linq.Runtime
         /// <inheritdoc />
         public object apply(object arg)
         {
-            return function((TArg)arg)!;
+            return JavaValues.From(function(JavaValues.As<TArg>(arg)));
         }
 
     }

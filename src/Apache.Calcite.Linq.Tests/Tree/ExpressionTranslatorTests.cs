@@ -269,9 +269,10 @@ namespace Apache.Calcite.Linq.Tests.Tree
                 J.Expressions.block(J.Expressions.return_(null, J.Expressions.multiply(v, J.Expressions.constant(Integer.valueOf(2))))),
                 v);
 
-            var translated = (LambdaExpression)new ExpressionTranslator().Translate(e);
+            // a lambda linq4j declared as a Function1 is one, so the delegate is asked for back
+            var translated = SamAdapters.Unwrap(new ExpressionTranslator().Translate(e))!;
 
-            translated.Should().BeAssignableTo<LambdaExpression>();
+            translated.Should().NotBeNull();
             ((Func<int, int>)translated.Compile())(21).Should().Be(42);
         }
 

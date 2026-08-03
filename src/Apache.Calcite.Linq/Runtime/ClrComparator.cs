@@ -22,7 +22,7 @@ namespace Apache.Calcite.Linq.Runtime
         /// <inheritdoc />
         public int compare(object x, object y)
         {
-            return comparison((T)x, (T)y);
+            return comparison(JavaValues.As<T>(x), JavaValues.As<T>(y));
         }
 
         /// <inheritdoc />

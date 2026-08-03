@@ -558,7 +558,7 @@ namespace Apache.Calcite.Linq.Runtime
             }
 
             foreach (var key in order)
-                yield return (TResult)resultSelector.apply(key, accumulators[key]);
+                yield return JavaValues.As<TResult>(resultSelector.apply(key, accumulators[key]));
         }
 
         /// <summary>
@@ -582,7 +582,7 @@ namespace Apache.Calcite.Linq.Runtime
             foreach (var row in source)
                 accumulator = accumulatorAdder.apply(accumulator, row);
 
-            return (TResult)resultSelector.apply(accumulator);
+            return JavaValues.As<TResult>(resultSelector.apply(accumulator));
         }
 
         /// <summary>

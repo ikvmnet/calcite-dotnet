@@ -101,6 +101,33 @@ namespace Apache.Calcite.Linq.Tree
         }
 
         /// <summary>
+        /// Returns the method of the receiver's own type, which is not always the one a linq4j call names.
+        /// </summary>
+        /// <param name="method"></param>
+        /// <param name="receiver"></param>
+        /// <param name="arguments"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The same reason as <see cref="Rebind"/>, in the other position. Calcite writes multiMap.size()
+        /// against BuiltInMethod.COLLECTION_SIZE, and a SortedMultiMap is a Map rather than a Collection; Java
+        /// binds Map.size() from the receiver in the source text and never looks at the named method.
+        /// </remarks>
+        public static MethodInfo RebindReceiver(MethodInfo method, Type receiver, Type[] arguments)
+        {
+            ArgumentNullException.ThrowIfNull(method);
+            ArgumentNullException.ThrowIfNull(receiver);
+
+            if (method.IsStatic || method.DeclaringType!.IsAssignableFrom(receiver))
+                return method;
+
+            foreach (var candidate in receiver.GetMethods(All))
+                if (candidate.Name == method.Name && candidate.IsStatic == false && Accepts(candidate, arguments))
+                    return candidate;
+
+            return method;
+        }
+
+        /// <summary>
         /// Returns whether every argument fits the parameter it would be passed as.
         /// </summary>
         /// <param name="method"></param>

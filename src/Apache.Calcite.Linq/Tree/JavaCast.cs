@@ -135,6 +135,34 @@ namespace Apache.Calcite.Linq.Tree
         }
 
         /// <summary>
+        /// Returns <paramref name="value"/> boxed as Java boxes it.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        /// <exception cref="NotSupportedException"></exception>
+        /// <remarks>
+        /// The counterpart of <see cref="Unwrap"/>, and needed for the same reason: a value handed back to
+        /// Calcite as an object has to be a java.lang.Integer rather than a boxed CLR int, because that is what
+        /// the type factory says the value is and what everything reading it expects.
+        /// </remarks>
+        public static object Box(object value, Type type)
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            ArgumentNullException.ThrowIfNull(type);
+
+            if (Primitives.TryGetValue(type, out var primitive) == false)
+                return value;
+
+            var box = TypeResolver.FromClass(primitive.boxClass);
+            var valueOf = box.GetMethod("valueOf", BindingFlags.Public | BindingFlags.Static, null, [type], null)
+                ?? throw new NotSupportedException($"'{box}' has no valueOf for '{type}'.");
+
+            return valueOf.Invoke(null, [value])
+                ?? throw new NotSupportedException($"valueOf on '{box}' gave nothing.");
+        }
+
+        /// <summary>
         /// Converts between two primitives, and returns <paramref name="expression"/> when they agree.
         /// </summary>
         /// <param name="expression"></param>
