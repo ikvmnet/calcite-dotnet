@@ -221,7 +221,15 @@ generates an anonymous `Enumerator` for the same reason it does in a calc: gener
 only place it can put a loop.
 
 The seven differential tests are what makes that refactor safe to attempt, and they did not exist when
-the current shape was written.
+the current shape was written. Keep the working node registered until the replacement passes them.
+
+The one part of the split that is not obvious: Calcite declares each window aggregate's state as
+block-local variables and mutates them in place, so it cannot be lifted into a lambda as it stands.
+`ClrEnumerableAggregate` already solves the same problem — it builds a synthetic record for the
+accumulator and points `agg.state` at `accPhysType.fieldReference(acc_, j)`, so the state becomes a value
+passed in and out. The loop variables the aggregate contexts read (`i`, `startX`, `endX`, `hasRows`,
+`frameRowCount`, `partitionRowCount`, `rows`) become linq4j parameters bound to the CLR parameters of the
+lambdas, the same way a row parameter is bound everywhere else.
 
 ### Nodes not done
 
