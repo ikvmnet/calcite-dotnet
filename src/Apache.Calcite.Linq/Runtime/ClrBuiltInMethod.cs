@@ -76,6 +76,26 @@ namespace Apache.Calcite.Linq.Runtime
         public static readonly MethodInfo Distinct = Of(nameof(ClrEnumerables.Distinct));
 
         /// <summary>
+        /// <see cref="ClrEnumerables.HashJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo HashJoin = Of(nameof(ClrEnumerables.HashJoin));
+
+        /// <summary>
+        /// <see cref="ClrEnumerables.SemiJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo SemiJoin = Of(nameof(ClrEnumerables.SemiJoin));
+
+        /// <summary>
+        /// <see cref="ClrEnumerables.NestedLoopJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo NestedLoopJoin = Of(nameof(ClrEnumerables.NestedLoopJoin));
+
+        /// <summary>
+        /// <see cref="ClrEnumerables.CorrelateJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo CorrelateJoin = Of(nameof(ClrEnumerables.CorrelateJoin));
+
+        /// <summary>
         /// <see cref="ClrEnumerables.AsEnumerable"/>.
         /// </summary>
         public static readonly MethodInfo AsEnumerable = Of(nameof(ClrEnumerables.AsEnumerable));

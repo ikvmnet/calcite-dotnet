@@ -205,6 +205,35 @@ namespace Apache.Calcite.Linq.Tests
         }
 
         [TestMethod]
+        public void ShouldInnerJoin()
+        {
+            var rows = Run("SELECT a.\"NAME\", b.\"AGE\" FROM \"PEOPLE\" a JOIN \"PEOPLE\" b ON a.\"ID\" = b.\"ID\" WHERE a.\"ID\" = 1");
+
+            rows.Should().ContainSingle();
+            rows[0][0].Should().Be("SMITH");
+            rows[0][1].Should().Be(java.lang.Integer.valueOf(30));
+        }
+
+        [TestMethod]
+        public void ShouldLeftJoinAndPadWithNulls()
+        {
+            var rows = Run("SELECT a.\"NAME\", b.\"NAME\" FROM \"PEOPLE\" a LEFT JOIN (SELECT * FROM \"PEOPLE\" WHERE \"ID\" = 1) b ON a.\"ID\" = b.\"ID\" ORDER BY a.\"ID\"");
+
+            rows.Should().HaveCount(3);
+            rows[0][1].Should().Be("SMITH");
+            rows[1][1].Should().BeNull();
+            rows[2][1].Should().BeNull();
+        }
+
+        [TestMethod]
+        public void ShouldJoinOnMoreThanAnEquality()
+        {
+            var rows = Run("SELECT a.\"NAME\" FROM \"PEOPLE\" a JOIN \"PEOPLE\" b ON a.\"ID\" = b.\"ID\" AND a.\"AGE\" > 25");
+
+            rows.Select(r => (string)r[0]).Should().BeEquivalentTo(["SMITH", "JONES"]);
+        }
+
+        [TestMethod]
         public void ShouldUnionAll()
         {
             var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1 UNION ALL SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1");

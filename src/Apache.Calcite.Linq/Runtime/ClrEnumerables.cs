@@ -266,6 +266,256 @@ namespace Apache.Calcite.Linq.Runtime
         }
 
         /// <summary>
+        /// Joins two sequences on a key.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TInner"></typeparam>
+        /// <typeparam name="TKey"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="outer"></param>
+        /// <param name="inner"></param>
+        /// <param name="outerKeySelector"></param>
+        /// <param name="innerKeySelector"></param>
+        /// <param name="resultSelector"></param>
+        /// <param name="comparer"></param>
+        /// <param name="generateNullsOnLeft">Whether an inner row with no match is returned against a null left.</param>
+        /// <param name="generateNullsOnRight">Whether an outer row with no match is returned against a null right.</param>
+        /// <param name="predicate">The part of the condition that is not an equality, or null when there is none.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.hashJoin</c>, taking the same arguments. A key that is null
+        /// matches nothing, which is what the null aware accessor of a physical type arranges by returning null
+        /// for the whole key.
+        /// </remarks>
+        public static IEnumerable<TResult> HashJoin<TSource, TInner, TKey, TResult>(
+            IEnumerable<TSource> outer,
+            IEnumerable<TInner> inner,
+            Func<TSource, TKey> outerKeySelector,
+            Func<TInner, TKey> innerKeySelector,
+            Func<TSource, TInner, TResult> resultSelector,
+            EqualityComparer? comparer,
+            bool generateNullsOnLeft,
+            bool generateNullsOnRight,
+            Func<TSource, TInner, bool>? predicate)
+        {
+            var equality = JavaEqualityComparer<TKey>.Of(comparer);
+            var lookup = new Dictionary<TKey, List<TInner>>(equality);
+            var matched = generateNullsOnLeft ? new HashSet<TKey>(equality) : null;
+
+            foreach (var row in inner)
+            {
+                var key = innerKeySelector(row);
+                if (key == null)
+                    continue;
+
+                if (lookup.TryGetValue(key, out var bucket) == false)
+                    lookup[key] = bucket = [];
+
+                bucket.Add(row);
+            }
+
+            foreach (var row in outer)
+            {
+                var key = outerKeySelector(row);
+                var any = false;
+
+                if (key != null && lookup.TryGetValue(key, out var bucket))
+                {
+                    foreach (var other in bucket)
+                    {
+                        if (predicate != null && predicate(row, other) == false)
+                            continue;
+
+                        any = true;
+                        matched?.Add(key);
+                        yield return resultSelector(row, other);
+                    }
+                }
+
+                if (any == false && generateNullsOnRight)
+                    yield return resultSelector(row, default!);
+            }
+
+            if (matched == null)
+                yield break;
+
+            foreach (var pair in lookup)
+                if (matched.Contains(pair.Key) == false)
+                    foreach (var other in pair.Value)
+                        yield return resultSelector(default!, other);
+        }
+
+        /// <summary>
+        /// Returns the rows of the first sequence that have, or have not, a match in the second.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TInner"></typeparam>
+        /// <typeparam name="TKey"></typeparam>
+        /// <param name="outer"></param>
+        /// <param name="inner"></param>
+        /// <param name="outerKeySelector"></param>
+        /// <param name="innerKeySelector"></param>
+        /// <param name="comparer"></param>
+        /// <param name="anti">Whether the rows without a match are the ones returned.</param>
+        /// <param name="predicate"></param>
+        /// <returns></returns>
+        public static IEnumerable<TSource> SemiJoin<TSource, TInner, TKey>(
+            IEnumerable<TSource> outer,
+            IEnumerable<TInner> inner,
+            Func<TSource, TKey> outerKeySelector,
+            Func<TInner, TKey> innerKeySelector,
+            EqualityComparer? comparer,
+            bool anti,
+            Func<TSource, TInner, bool>? predicate)
+        {
+            var equality = JavaEqualityComparer<TKey>.Of(comparer);
+            var lookup = new Dictionary<TKey, List<TInner>>(equality);
+
+            foreach (var row in inner)
+            {
+                var key = innerKeySelector(row);
+                if (key == null)
+                    continue;
+
+                if (lookup.TryGetValue(key, out var bucket) == false)
+                    lookup[key] = bucket = [];
+
+                bucket.Add(row);
+            }
+
+            foreach (var row in outer)
+            {
+                var key = outerKeySelector(row);
+                var any = false;
+
+                if (key != null && lookup.TryGetValue(key, out var bucket))
+                    foreach (var other in bucket)
+                        if (predicate == null || predicate(row, other))
+                        {
+                            any = true;
+                            break;
+                        }
+
+                if (any != anti)
+                    yield return row;
+            }
+        }
+
+        /// <summary>
+        /// Joins two sequences on a condition, comparing every pair.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TInner"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="outer"></param>
+        /// <param name="inner"></param>
+        /// <param name="resultSelector"></param>
+        /// <param name="predicate"></param>
+        /// <param name="joinType"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.nestedLoopJoin</c>. The inner sequence is read once and
+        /// kept, because it is walked again for every outer row.
+        /// </remarks>
+        public static IEnumerable<TResult> NestedLoopJoin<TSource, TInner, TResult>(
+            IEnumerable<TSource> outer,
+            IEnumerable<TInner> inner,
+            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource, TInner, bool> predicate,
+            org.apache.calcite.linq4j.JoinType joinType)
+        {
+            var rows = inner as IReadOnlyList<TInner> ?? [.. inner];
+            var name = joinType.name();
+            var nullsOnRight = name is nameof(org.apache.calcite.linq4j.JoinType.LEFT) or nameof(org.apache.calcite.linq4j.JoinType.FULL);
+            var nullsOnLeft = name is nameof(org.apache.calcite.linq4j.JoinType.RIGHT) or nameof(org.apache.calcite.linq4j.JoinType.FULL);
+            var semi = name == nameof(org.apache.calcite.linq4j.JoinType.SEMI);
+            var anti = name == nameof(org.apache.calcite.linq4j.JoinType.ANTI);
+            var matched = nullsOnLeft ? new bool[rows.Count] : null;
+
+            foreach (var row in outer)
+            {
+                var any = false;
+
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    if (predicate(row, rows[i]) == false)
+                        continue;
+
+                    any = true;
+                    if (matched != null)
+                        matched[i] = true;
+
+                    if (semi || anti)
+                        break;
+
+                    yield return resultSelector(row, rows[i]);
+                }
+
+                if (semi && any)
+                    yield return resultSelector(row, default!);
+                else if (anti && any == false)
+                    yield return resultSelector(row, default!);
+                else if (any == false && nullsOnRight)
+                    yield return resultSelector(row, default!);
+            }
+
+            if (matched == null)
+                yield break;
+
+            for (int i = 0; i < rows.Count; i++)
+                if (matched[i] == false)
+                    yield return resultSelector(default!, rows[i]);
+        }
+
+        /// <summary>
+        /// Joins each row of a sequence to the rows a function of it yields.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TInner"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="outer"></param>
+        /// <param name="inner">The sequence for one outer row, which is what makes the join correlated.</param>
+        /// <param name="resultSelector"></param>
+        /// <param name="joinType"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.correlateJoin</c>.
+        /// </remarks>
+        public static IEnumerable<TResult> CorrelateJoin<TSource, TInner, TResult>(
+            IEnumerable<TSource> outer,
+            Func<TSource, IEnumerable<TInner>> inner,
+            Func<TSource, TInner, TResult> resultSelector,
+            org.apache.calcite.linq4j.JoinType joinType)
+        {
+            var name = joinType.name();
+            var semi = name == nameof(org.apache.calcite.linq4j.JoinType.SEMI);
+            var anti = name == nameof(org.apache.calcite.linq4j.JoinType.ANTI);
+            var nullsOnRight = name == nameof(org.apache.calcite.linq4j.JoinType.LEFT);
+
+            foreach (var row in outer)
+            {
+                var any = false;
+
+                foreach (var other in inner(row))
+                {
+                    any = true;
+
+                    if (semi || anti)
+                        break;
+
+                    yield return resultSelector(row, other);
+                }
+
+                if (semi && any)
+                    yield return resultSelector(row, default!);
+                else if (anti && any == false)
+                    yield return resultSelector(row, default!);
+                else if (any == false && nullsOnRight)
+                    yield return resultSelector(row, default!);
+            }
+        }
+
+        /// <summary>
         /// Returns the rows of an array.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>
