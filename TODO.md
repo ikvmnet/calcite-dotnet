@@ -202,18 +202,27 @@ workaround in this rule.
 
 ### Nodes not done
 
-Window, Match, TableFunctionScan, MergeJoin, BatchNestedLoopJoin, SortedAggregate, MergeUnion,
-Interpreter and Bindable. TableModify is out of scope while the convention is read-only. `Combine` and `AsofJoin`
-should be checked for existence in 1.41 before being attempted at all.
+The standing scope is feature compatibility with `EnumerableConvention`: whatever it does, this does.
+Against the referenced 1.41, that leaves:
 
-Window (1007 lines) and Match (547) are the two large ones. An aggregate call carrying its own
-ordering is also not covered: it needs `LazyAggregateLambdaFactory` and a `SourceSorter` per call,
-where only the unordered `BasicAggregateLambdaFactory` is built today.
+- **Window** and **Match**. These are the substantial ones and they are not started. Window is 1007
+  lines and Match 547, and neither is mostly its `implement` method: `translateBound`,
+  `declareAndResetState`, `getPartitionIterator`, `getRowCollationKey` and `WindowRelInputGetter` are
+  all private, so all of them have to be ported, and they are order sensitive code over nested block
+  builders mutating an `Object[]` of partition rows. Getting one detail wrong gives wrong analytic
+  results rather than a failure, which is the reason not to rush them.
+- **TableFunctionScan**, **MergeJoin**, **BatchNestedLoopJoin**, **SortedAggregate**, **MergeUnion**,
+  **Interpreter**, **Bindable**.
+- **TableModify**, once the convention is more than read-only.
+- An aggregate call carrying its own ordering, which needs `LazyAggregateLambdaFactory` and a
+  `SourceSorter` per call. Only the unordered `BasicAggregateLambdaFactory` is built today.
 
-**TableModify is the one to be careful with.** The version at `D:\calcite` implements it with private
-helpers (`applyDeleteRowsByKey`, `normalizeSourceExpression`) that are part of the UPDATE fix this
-repo pins the snapshot for. Those are 1.42; the projects reference 1.41. Porting that file as read
-would be porting semantics the referenced Calcite does not have.
+`AsofJoin` is **not** in scope: `org.apache.calcite.rel.core.Asof` does not exist in 1.41. `Combine`
+has not been checked and is probably the same, being newer still.
+
+Worth knowing while these are outstanding: a query using OVER or MATCH_RECOGNIZE still runs. The
+planner puts the node in `EnumerableConvention` and the converters carry the rows in and out. What is
+missing is the node in *this* convention, not the feature.
 
 ### Two facts that will bite
 
