@@ -77,28 +77,18 @@ namespace Apache.Calcite.Linq.Rel
         public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
         {
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), Format());
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
 
-            // everything up to here is Calcite's, in linq4j, because how a table produces rows is the table's
-            var expression = GetExpression(physType);
-            var translated = JavaCast.To(implementor.Translator.Translate(expression), typeof(Enumerable));
+            // the only linq4j here is the table's own expression, which the schema SPI defines as one, and the
+            // row shape below. It is translated as soon as it is in hand; what a sequence is made to do after
+            // that is this convention's, and is built as this convention builds everything.
+            var expression = table.getExpression(typeof(Queryable))
+                ?? throw new java.lang.IllegalStateException($"Unable to implement {RelOptUtil.toString(this, org.apache.calcite.sql.SqlExplainLevel.ALL_ATTRIBUTES)}: {table}.getExpression(Queryable.class) returned null");
+
+            var source = ToEnumerable(implementor.Translator.Translate(expression));
+            var element = TypeResolver.FromClass(elementType);
 
             return implementor.Result(physType,
-                Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), translated));
-        }
-
-        /// <summary>
-        /// Returns the linq4j expression yielding the table's rows, in the physical type asked for.
-        /// </summary>
-        /// <param name="physType"></param>
-        /// <returns></returns>
-        J.Expression GetExpression(PhysType physType)
-        {
-            var expression = table.getExpression(typeof(Queryable));
-            if (expression == null)
-                throw new java.lang.IllegalStateException($"Unable to implement {RelOptUtil.toString(this, org.apache.calcite.sql.SqlExplainLevel.ALL_ATTRIBUTES)}: {table}.getExpression(Queryable.class) returned null");
-
-            return ToRows(physType, ToEnumerable(expression));
+                ToRows(implementor, physType, Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(element), JavaCast.To(source, typeof(Enumerable))), element));
         }
 
         /// <summary>
@@ -106,36 +96,42 @@ namespace Apache.Calcite.Linq.Rel
         /// </summary>
         /// <param name="expression"></param>
         /// <returns></returns>
-        static J.Expression ToEnumerable(J.Expression expression)
+        static Expression ToEnumerable(Expression expression)
         {
-            var type = expression.getType();
+            var type = expression.Type;
 
-            if (J.Types.isArray(type))
+            if (type.IsArray)
             {
-                var component = J.Types.toClass(type).getComponentType();
-                if (component != null && component.isPrimitive())
-                    expression = J.Expressions.call(BuiltInMethod.AS_LIST.method, expression);
+                if (type.GetElementType()!.IsValueType)
+                    expression = Expression.Call(null, AsList, expression);
 
-                return J.Expressions.call(BuiltInMethod.AS_ENUMERABLE.method, expression);
+                return Expression.Call(null, AsEnumerable, expression);
             }
 
-            if (J.Types.isAssignableFrom((java.lang.Class)typeof(java.lang.Iterable), type) && J.Types.isAssignableFrom((java.lang.Class)typeof(Enumerable), type) == false)
-                return J.Expressions.call(BuiltInMethod.AS_ENUMERABLE2.method, expression);
+            if (typeof(java.lang.Iterable).IsAssignableFrom(type) && typeof(Enumerable).IsAssignableFrom(type) == false)
+                return Expression.Call(null, AsEnumerable2, expression);
 
             // Queryable extends Enumerable but is too clever, so asEnumerable makes take(int) evaluate directly
-            if (J.Types.isAssignableFrom((java.lang.Class)typeof(Queryable), type))
-                return J.Expressions.call(expression, BuiltInMethod.QUERYABLE_AS_ENUMERABLE.method);
+            if (typeof(Queryable).IsAssignableFrom(type))
+                return Expression.Call(expression, QueryableAsEnumerable);
 
             return expression;
         }
 
+        static readonly System.Reflection.MethodInfo AsList = MethodResolver.Resolve(BuiltInMethod.AS_LIST.method);
+        static readonly System.Reflection.MethodInfo AsEnumerable = MethodResolver.Resolve(BuiltInMethod.AS_ENUMERABLE.method);
+        static readonly System.Reflection.MethodInfo AsEnumerable2 = MethodResolver.Resolve(BuiltInMethod.AS_ENUMERABLE2.method);
+        static readonly System.Reflection.MethodInfo QueryableAsEnumerable = MethodResolver.Resolve(BuiltInMethod.QUERYABLE_AS_ENUMERABLE.method);
+
         /// <summary>
         /// Brings the table's rows into the physical type asked for.
         /// </summary>
+        /// <param name="implementor"></param>
         /// <param name="physType"></param>
-        /// <param name="expression"></param>
+        /// <param name="source"></param>
+        /// <param name="element"></param>
         /// <returns></returns>
-        J.Expression ToRows(PhysType physType, J.Expression expression)
+        Expression ToRows(ClrEnumerableRelImplementor implementor, PhysType physType, Expression source, Type element)
         {
             if (physType.getFormat() == JavaRowFormat.SCALAR
                 && ((java.lang.Class)typeof(object[])).isAssignableFrom(elementType)
@@ -143,21 +139,30 @@ namespace Apache.Calcite.Linq.Rel
                 && (table.unwrap(typeof(ScannableTable)) != null
                     || table.unwrap(typeof(FilterableTable)) != null
                     || table.unwrap(typeof(ProjectableFilterableTable)) != null))
-                return J.Expressions.call(BuiltInMethod.SLICE0.method, expression);
+                return Expression.Call(null, ClrBuiltInMethod.Slice0, source);
 
             var oldFormat = Format();
             if (physType.getFormat() == oldFormat && HasCollectionField(getRowType()) == false)
-                return expression;
+                return source;
 
+            // the row shape is PhysType's, and record takes linq4j, so the field expressions are linq4j too.
+            // That is the whole of it: one call feeding another, translated the moment it is built.
             var row = J.Expressions.parameter(elementType, "row");
+            var parameter = Expression.Parameter(element, "row");
+            implementor.Translator.Bind(row, parameter);
+
             var fieldCount = table.getRowType().getFieldCount();
             var expressionList = new java.util.ArrayList(fieldCount);
             for (int i = 0; i < fieldCount; i++)
                 expressionList.add(FieldExpression(row, i, physType, oldFormat));
 
-            return J.Expressions.call(expression,
-                BuiltInMethod.SELECT.method,
-                J.Expressions.lambda((java.lang.Class)typeof(org.apache.calcite.linq4j.function.Function1), physType.record(expressionList), row));
+            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var selector = Expression.Lambda(
+                typeof(Func<,>).MakeGenericType(element, rowType),
+                JavaCast.To(implementor.Translator.Translate(physType.record(expressionList)), rowType),
+                parameter);
+
+            return Expression.Call(null, ClrBuiltInMethod.Select.MakeGenericMethod(element, rowType), source, selector);
         }
 
         /// <summary>

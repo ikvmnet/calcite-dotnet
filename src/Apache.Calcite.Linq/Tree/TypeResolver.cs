@@ -30,6 +30,7 @@ namespace Apache.Calcite.Linq.Tree
             return type switch
             {
                 java.lang.Class c => FromClass(c),
+                org.apache.calcite.jdbc.JavaTypeFactoryImpl.SyntheticRecordType r => SyntheticRecordEmitter.Emit(r),
                 java.lang.reflect.ParameterizedType p => FromParameterizedType(p),
                 java.lang.reflect.GenericArrayType g => Resolve(g.getGenericComponentType()).MakeArrayType(),
                 _ => throw new NotSupportedException($"Cannot resolve a CLR type for '{type}' ({type.GetType()}).")

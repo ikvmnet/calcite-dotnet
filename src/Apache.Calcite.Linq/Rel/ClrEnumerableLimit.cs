@@ -3,7 +3,6 @@ using System.Linq.Expressions;
 using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
-using org.apache.calcite;
 using java.util.function;
 
 using org.apache.calcite.adapter.enumerable;
@@ -13,7 +12,6 @@ using org.apache.calcite.rel.metadata;
 using org.apache.calcite.rex;
 using org.apache.calcite.util;
 
-using J = org.apache.calcite.linq4j.tree;
 
 namespace Apache.Calcite.Linq.Rel
 {
@@ -97,19 +95,24 @@ namespace Apache.Calcite.Linq.Rel
         /// <param name="implementor"></param>
         /// <param name="rexNode"></param>
         /// <returns></returns>
+        /// <remarks>
+        /// Nothing of Calcite's generates this, so nothing here is linq4j. A linq4j tree belongs in a node only
+        /// where a generator of Calcite's produced one or takes one.
+        /// </remarks>
         static Expression Count(ClrEnumerableRelImplementor implementor, RexNode rexNode)
         {
             if (rexNode is RexDynamicParam param)
-                return implementor.Translator.Translate(
-                    J.Expressions.convert_(
-                        J.Expressions.call(
-                            DataContext.ROOT,
-                            BuiltInMethod.DATA_CONTEXT_GET.method,
-                            J.Expressions.constant("?" + param.getIndex())),
-                        java.lang.Integer.TYPE));
+                return JavaCast.To(
+                    Expression.Call(implementor.Root, DataContextGet, Expression.Constant("?" + param.getIndex())),
+                    typeof(int));
 
             return Expression.Constant(RexLiteral.intValue(rexNode));
         }
+
+        /// <summary>
+        /// <c>DataContext.get</c>, which a value prepared as a parameter arrives by.
+        /// </summary>
+        static readonly System.Reflection.MethodInfo DataContextGet = MethodResolver.Resolve(BuiltInMethod.DATA_CONTEXT_GET.method);
 
     }
 
