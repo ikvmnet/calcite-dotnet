@@ -149,9 +149,56 @@ surface whether or not the operation succeeds.
 - The AdoNet adapter is tested against SQLite only. `SqlServerDatabaseMetadata`,
   `OdbcDatabaseMetadata` and `OleDbDatabaseMetadata` have no coverage.
 
-## Elsewhere
+## Apache.Calcite.Linq: where the CLR conventions stand
 
-- The CLR enumerable / async-enumerable conventions are parked on the `clr-conventions` branch, with
-  a working copy at `D:\calcite-dotnet-conventions-aside` (and its tests alongside). When they come
-  back, the constraint to hold is that the adapter returns normal Calcite types in the normal Calcite
-  format, and the conventions pass rows through untouched.
+`ClrEnumerableConvention` runs. Scan, values, calc, project, filter, sort, limit, offset, union,
+intersect, minus and hash/semi/anti join all plan into it, compile to `System.Linq.Expressions` and
+return rows; 59 tests pass. `ClrAsyncEnumerableConvention` does not exist yet — not one file of it.
+
+### The rules that hold
+
+- **linq4j appears in a node only where a Calcite generator produced one or takes one**, and is
+  translated where it is produced rather than composed into a larger linq4j tree first. That is four
+  things: Rex (`translateCondition`, `translateProjects`, `translateLiteral`, everything `RexImpTable`
+  reaches); `PhysType`'s expression members and `JavaRowFormat.field`; a table's own
+  `getExpression(Queryable.class)`, which the schema SPI defines as linq4j; and the block Calcite's
+  implementor produces for an `EnumerableConvention` sub-plan at a converter.
+- The translator exists because reimplementing `RexToLixTranslator` and `RexImpTable` is not on the
+  table yet. It is not a licence to keep everything else in linq4j.
+- **`ClrEnumerableRules.Rules()` and `CalcRules()` are two passes, not one.** `VolcanoCost.isLt`
+  compares the row count and nothing else, so a project and a calc are never cheaper than one another
+  and the planner keeps whichever it saw first. `Programs.standard` runs the calc rules afterwards as
+  a hep pass; anything registering these rules must do the same or a project will be chosen and will
+  refuse to implement itself.
+
+### Not done
+
+- **The whole async convention.** Every node, rule, converter and runtime operator, mirroring the
+  sync side. `System.Linq.AsyncEnumerable` in .NET 10 covers most operators.
+- **Nodes**: Aggregate, SortedAggregate, Window, Match, Correlate, ConditionalCorrelate,
+  NestedLoopJoin, MergeJoin, AsofJoin, BatchNestedLoopJoin, Collect, Uncollect, TableModify,
+  TableSpool, RepeatUnion, TableFunctionScan, MergeUnion, Combine, LimitSort, Interpreter, Bindable.
+  The runtime methods for the joins and correlate exist; the nodes do not.
+- **Aggregate is the big one.** `EnumerableAggregateBase.createAggStateTypes`,
+  `declareParentAccumulator`, `createAccumulatorAdders` and `implementLambdaFactory` are `protected`,
+  so they need porting rather than reusing, exactly as `EnumUtils.joinSelector` and
+  `generatePredicate` did. Each accumulator lambda then has to be wrapped back into a `Function0` or
+  `Function2` for `AggregateLambdaFactory`, which is the `SamAdapters` table in the other direction.
+- **`ClrEnumerableToEnumerableConverter`.** The forward converter exists and is untested — no query
+  has yet mixed conventions. The reverse one has to compile its sub-plan, stash the delegate, and let
+  a linq4j tree call it.
+- **Nothing connects the convention to `Apache.Calcite.Data`,** and nothing exposes the two-pass
+  program as something a caller can just use; the tests wire it by hand.
+
+### Two facts that will bite
+
+- **The Calcite checked out at `D:\calcite` is 1.42.0-SNAPSHOT; the projects reference 1.41.0.**
+  `PhysType.generateNullAwareAccessor` and `JoinInfo.nullExclusionFlags` are 1.42 only, and the hash
+  join was written against 1.41 because of it. Read the source, then check the member exists.
+- **`global.json` has `rollForward: latestMajor`,** so every build here picks the .NET 11 preview SDK
+  rather than 10.0.302. It also makes `dotnet sln add` rewrite every project in the solution with
+  x64/x86 configurations — edit the solution by hand instead.
+
+The old line is still on the `clr-conventions` branch with a working copy at
+`D:\calcite-dotnet-conventions-aside`. Nothing from it has been used, and `ClrPhysType`,
+`ClrValueConverter`, `ClrFunctions` and `ClrEnumeratorAdapter.ToCalciteRow` still should not be.
