@@ -709,36 +709,44 @@ namespace Apache.Calcite.Linq.Runtime
         /// <param name="iterationLimit">A negative value for no limit.</param>
         /// <param name="all">Whether a row already returned is returned again.</param>
         /// <param name="comparer"></param>
+        /// <param name="cleanUp">Run once the sequence is finished with, or null.</param>
         /// <returns></returns>
         /// <remarks>
         /// The counterpart of <c>EnumerableDefaults.repeatUnion</c>, which is what WITH RECURSIVE becomes. The
         /// iterative part is enumerated afresh each round, reading what the spool beneath it left behind.
         /// </remarks>
-        public static IEnumerable<TSource> RepeatUnion<TSource>(IEnumerable<TSource> seed, IEnumerable<TSource> iteration, int iterationLimit, bool all, EqualityComparer? comparer)
+        public static IEnumerable<TSource> RepeatUnion<TSource>(IEnumerable<TSource> seed, IEnumerable<TSource> iteration, int iterationLimit, bool all, EqualityComparer? comparer, Action? cleanUp)
         {
             ArgumentNullException.ThrowIfNull(seed);
             ArgumentNullException.ThrowIfNull(iteration);
 
-            var processed = all ? null : new HashSet<TSource>(JavaEqualityComparer<TSource>.Of(comparer));
-
-            foreach (var row in seed)
-                if (processed == null || processed.Add(row))
-                    yield return row;
-
-            for (int i = 0; iterationLimit < 0 || i < iterationLimit; i++)
+            try
             {
-                var any = false;
+                var processed = all ? null : new HashSet<TSource>(JavaEqualityComparer<TSource>.Of(comparer));
 
-                foreach (var row in iteration)
-                {
-                    any = true;
-
+                foreach (var row in seed)
                     if (processed == null || processed.Add(row))
                         yield return row;
-                }
 
-                if (any == false)
-                    yield break;
+                for (int i = 0; iterationLimit < 0 || i < iterationLimit; i++)
+                {
+                    var any = false;
+
+                    foreach (var row in iteration)
+                    {
+                        any = true;
+
+                        if (processed == null || processed.Add(row))
+                            yield return row;
+                    }
+
+                    if (any == false)
+                        yield break;
+                }
+            }
+            finally
+            {
+                cleanUp?.Invoke();
             }
         }
 

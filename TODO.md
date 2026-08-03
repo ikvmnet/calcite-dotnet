@@ -183,21 +183,22 @@ both directions, so one plan can hold nodes of both conventions and the rows cro
   optimising one inlines a declaration used once, which leaves a reference already built into a
   translated sub-plan pointing at a variable that no longer exists. `ClrEnumerableCorrelate` needs this.
 
-### Recursive CTE is written but unreachable
+### Recursive CTE: the nodes exist, and a scan of the scratch table does not convert
 
-`ClrEnumerableRepeatUnion` and `ClrEnumerableTableSpool` exist and compile, and nothing about them is
-a write: the spool is a tee that passes rows through and leaves the round behind it, and
-`WITH RECURSIVE` is a read-only query. The spool captures its collection directly rather than looking
-the table up by name, which Calcite only does because the Java it generates cannot mention an object.
+`ClrEnumerableRepeatUnion` and `ClrEnumerableTableSpool` exist and register the transient table in the
+runtime root schema exactly as Calcite does. Nothing about them is a write: a spool is a tee that
+passes rows through and leaves the round behind it, and `WITH RECURSIVE` is a read-only query.
 
-They cannot be reached. `EnumerableTableScan.canHandle` refuses any `TransientTable` outright
-(CALCITE-3673), so the scan of the scratch table cannot be converted, and the rule here delegates to
-that check. Calcite has the same limitation in 1.41. Making it work needs two things that were not
-attempted: a scan rule that accepts a transient table, and a `RepeatUnion` that registers the table
-in the runtime root schema so the scan resolves it -- which is the part of Calcite's mechanism that
-is not merely a Janino artefact.
+They are not reachable, and the reason is deliberate on Calcite's side rather than an oversight to
+work around. `SpoolRelOptTable.getExpression` returns null on purpose — "so EnumerableTableScanRule
+won't try to convert spool table scans" — and `EnumerableTableScan.canHandle` refusing a
+`TransientTable` (CALCITE-3673) is the matching half. Dropping our half of that guard only moves the
+failure from planning to implementation, because there is still no expression for the table.
 
-Neither node has a test, for that reason.
+So the behaviour here matches `EnumerableConvention`, refusal included, which is what being feature
+compatible with it means. Neither node has a test. Whatever makes a recursive query run in Calcite's
+own convention is what would make it run here, and finding that out is the next step, not a
+workaround in this rule.
 
 ### Nodes not done
 
