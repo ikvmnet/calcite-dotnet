@@ -97,6 +97,28 @@ namespace Apache.Calcite.Linq.Tree
         }
 
         /// <summary>
+        /// Returns the linq4j join type a relational one means.
+        /// </summary>
+        /// <param name="joinType"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// EnumUtils.toLinq4jJoinType is package private, and is one name against another.
+        /// </remarks>
+        public static org.apache.calcite.linq4j.JoinType ToLinq4jJoinType(JoinRelType joinType)
+        {
+            return joinType.name() switch
+            {
+                nameof(JoinRelType.INNER) => org.apache.calcite.linq4j.JoinType.INNER,
+                nameof(JoinRelType.LEFT) => org.apache.calcite.linq4j.JoinType.LEFT,
+                nameof(JoinRelType.RIGHT) => org.apache.calcite.linq4j.JoinType.RIGHT,
+                nameof(JoinRelType.FULL) => org.apache.calcite.linq4j.JoinType.FULL,
+                nameof(JoinRelType.SEMI) => org.apache.calcite.linq4j.JoinType.SEMI,
+                nameof(JoinRelType.ANTI) => org.apache.calcite.linq4j.JoinType.ANTI,
+                _ => throw new System.NotSupportedException($"There is no linq4j join type for {joinType.name()}.")
+            };
+        }
+
+        /// <summary>
         /// Returns the lambda that builds an output row from a row of each input.
         /// </summary>
         /// <param name="implementor"></param>

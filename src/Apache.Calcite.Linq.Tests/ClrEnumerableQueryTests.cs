@@ -113,6 +113,7 @@ namespace Apache.Calcite.Linq.Tests
             var config = Frameworks.newConfigBuilder()
                 .defaultSchema(rootSchema)
                 .programs(
+                    Programs.subQuery(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE),
                     Programs.ofRules(rules),
                     Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE))
                 .build();
@@ -122,9 +123,14 @@ namespace Apache.Calcite.Linq.Tests
             var validated = planner.validate(parsed);
             var logical = planner.rel(validated).project();
 
+            // the passes Programs.standard makes, less the decorrelation: a sub-query has to be expanded
+            // before the planner sees it, because a filter carrying one is refused as Calcite refuses it, and
+            // leaving the correlate in place is what puts ClrEnumerableCorrelate on the plan at all
+            var expanded = planner.transform(0, logical.getTraitSet(), logical);
+
             var traitSet = planner.getEmptyTraitSet().replace(ClrEnumerableConvention.Instance);
-            var chosen = planner.transform(0, traitSet, logical);
-            var physical = (ClrEnumerableRel)planner.transform(1, chosen.getTraitSet(), chosen);
+            var chosen = planner.transform(1, traitSet, expanded);
+            var physical = (ClrEnumerableRel)planner.transform(2, chosen.getTraitSet(), chosen);
 
             org.apache.calcite.runtime.Bindable bindable;
             try
@@ -295,6 +301,23 @@ namespace Apache.Calcite.Linq.Tests
             var rows = Run("SELECT a.\"NAME\" FROM \"PEOPLE\" a JOIN \"PEOPLE\" b ON a.\"ID\" = b.\"ID\" AND a.\"AGE\" > 25");
 
             rows.Select(r => (string)r[0]).Should().BeEquivalentTo(["SMITH", "JONES"]);
+        }
+
+        [TestMethod]
+        public void ShouldJoinOnAnInequalityAlone()
+        {
+            // no equality to build a lookup on, so the hash join rule refuses and the nested loop takes it
+            var rows = Run("SELECT a.\"NAME\", b.\"NAME\" FROM \"PEOPLE\" a JOIN \"PEOPLE\" b ON a.\"AGE\" < b.\"AGE\"");
+
+            rows.Should().HaveCount(3);
+        }
+
+        [TestMethod]
+        public void ShouldRunACorrelatedSubQuery()
+        {
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" a WHERE \"AGE\" = (SELECT MAX(\"AGE\") FROM \"PEOPLE\" b WHERE b.\"ID\" = a.\"ID\")");
+
+            rows.Select(r => (string)r[0]).Should().BeEquivalentTo(["SMITH", "JONES", "BROWN"]);
         }
 
         [TestMethod]

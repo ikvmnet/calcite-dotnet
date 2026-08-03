@@ -254,8 +254,31 @@ namespace Apache.Calcite.Linq.Tree
         /// </remarks>
         Expression Block(J.BlockStatement block)
         {
-            var declared = new List<ParameterExpression>();
-            var body = new List<Expression>();
+            TranslateStatements(block, out var declared, out var body);
+
+            if (body.Count == 0)
+                body.Add(Expression.Empty());
+
+            return Expression.Block(typeof(void), declared, body);
+        }
+
+        /// <summary>
+        /// Translates the statements of a block without closing it, so a caller can put something of its own
+        /// in the same scope.
+        /// </summary>
+        /// <param name="block"></param>
+        /// <param name="declared"></param>
+        /// <param name="body"></param>
+        /// <remarks>
+        /// A correlate needs this. The variables holding the fields of the outer row are declared in a block of
+        /// Calcite's making, and the inner sub-plan reads them, so the two have to end up in one scope.
+        /// </remarks>
+        public void TranslateStatements(J.BlockStatement block, out List<ParameterExpression> declared, out List<Expression> body)
+        {
+            ArgumentNullException.ThrowIfNull(block);
+
+            declared = [];
+            body = [];
 
             var statements = block.statements;
             for (int i = 0; i < statements.size(); i++)
@@ -266,11 +289,6 @@ namespace Apache.Calcite.Linq.Tree
 
                 body.Add(Statement(statement));
             }
-
-            if (body.Count == 0)
-                body.Add(Expression.Empty());
-
-            return Expression.Block(typeof(void), declared, body);
         }
 
         /// <summary>

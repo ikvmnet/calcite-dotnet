@@ -34,6 +34,8 @@ namespace Apache.Calcite.Linq
                 ClrEnumerableCalcRule.Create(),
                 ClrEnumerableAggregateRule.Create(),
                 ClrEnumerableJoinRule.Create(),
+                ClrEnumerableCorrelateRule.Create(),
+                ClrEnumerableNestedLoopJoinRule.Create(),
                 ClrEnumerableUnionRule.Create(),
                 ClrEnumerableIntersectRule.Create(),
                 ClrEnumerableMinusRule.Create(),
