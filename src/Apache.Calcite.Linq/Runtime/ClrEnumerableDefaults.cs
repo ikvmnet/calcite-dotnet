@@ -560,6 +560,57 @@ namespace Apache.Calcite.Linq.Runtime
         }
 
         /// <summary>
+        /// Aggregates an input that already arrives grouped, by walking it once.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TKey"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="keySelector"></param>
+        /// <param name="accumulatorInitializer"></param>
+        /// <param name="accumulatorAdder"></param>
+        /// <param name="resultSelector"></param>
+        /// <param name="comparator">Decides where one group ends and the next begins.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.sortedGroupBy</c> and its
+        /// <c>SortedAggregateEnumerator</c>. Nothing is held but the accumulator of the group being read,
+        /// which is the whole point of it against <see cref="GroupBy"/>, and the groups come out in the
+        /// order the input was sorted in rather than a map's.
+        /// </remarks>
+        public static IEnumerable<TResult> SortedGroupBy<TSource, TKey, TResult>(
+            IEnumerable<TSource> source,
+            Func<TSource, TKey> keySelector,
+            Function0 accumulatorInitializer,
+            Function2 accumulatorAdder,
+            Function2 resultSelector,
+            java.util.Comparator comparator)
+        {
+            object? accumulator = null;
+            object? previousKey = null;
+            var any = false;
+
+            foreach (var row in source)
+            {
+                var key = JavaValues.From(keySelector(row));
+
+                if (any && comparator.compare(previousKey, key) != 0)
+                {
+                    yield return JavaValues.As<TResult>(resultSelector.apply(previousKey, accumulator));
+                    accumulator = null;
+                }
+
+                accumulator ??= accumulatorInitializer.apply();
+                accumulator = accumulatorAdder.apply(accumulator, row);
+                previousKey = key;
+                any = true;
+            }
+
+            if (any)
+                yield return JavaValues.As<TResult>(resultSelector.apply(previousKey, accumulator));
+        }
+
+        /// <summary>
         /// Returns the rows of sequences that are each already sorted on the key, in that order.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>

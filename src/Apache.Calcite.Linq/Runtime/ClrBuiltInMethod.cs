@@ -116,6 +116,11 @@ namespace Apache.Calcite.Linq.Runtime
         public static readonly MethodInfo GroupBy = Of(nameof(ClrEnumerableDefaults.GroupBy));
 
         /// <summary>
+        /// <see cref="ClrEnumerableDefaults.SortedGroupBy"/>.
+        /// </summary>
+        public static readonly MethodInfo SortedGroupBy = Of(nameof(ClrEnumerableDefaults.SortedGroupBy));
+
+        /// <summary>
         /// <see cref="ClrEnumerableDefaults.Aggregate"/>.
         /// </summary>
         public static readonly MethodInfo Aggregate = Of(nameof(ClrEnumerableDefaults.Aggregate));

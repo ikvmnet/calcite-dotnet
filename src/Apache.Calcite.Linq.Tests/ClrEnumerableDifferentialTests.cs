@@ -193,7 +193,7 @@ namespace Apache.Calcite.Linq.Tests
         /// <param name="topDown">Whether the planner optimises top down, which is what asks a node to pass a
         /// trait down to its inputs or derive one from them.</param>
         /// <returns></returns>
-        static List<string> Run(string sql, bool clr, bool topDown = false, bool planOnly = false)
+        static List<string> Run(string sql, bool clr, bool topDown = false, bool planOnly = false, bool sortedAggregate = false)
         {
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add("SALES", new SalesTable());
@@ -216,6 +216,12 @@ namespace Apache.Calcite.Linq.Tests
             // Calcite's own rules are registered by DefaultRulesProgram, because RelOptUtil.registerDefaultRules
             // registers ENUMERABLE_RULES itself. Where this convention has no node for something the planner
             // takes Calcite's, and the converters carry the rows across.
+
+            // Calcite turns the sorted aggregate on by configuration rather than putting it in
+            // ENUMERABLE_RULES, and this convention does the same, so a test that wants it asks for it and
+            // each side registers its own
+            if (sortedAggregate)
+                rules.add(clr ? Rel.Convert.ClrEnumerableSortedAggregateRule.Create() : EnumerableRules.ENUMERABLE_SORTED_AGGREGATE_RULE);
 
             // AVG has no implementor of its own; a real program reduces it to SUM over COUNT first, and this
             // rule lives in RelOptRules.BASE_RULES rather than in any convention's set
@@ -283,9 +289,9 @@ namespace Apache.Calcite.Linq.Tests
         /// <param name="sql"></param>
         /// <param name="clr"></param>
         /// <returns></returns>
-        internal static string PlanOf(string sql, bool clr)
+        internal static string PlanOf(string sql, bool clr, bool sortedAggregate = false)
         {
-            return Run(sql, clr, false, true)[0];
+            return Run(sql, clr, false, true, sortedAggregate)[0];
         }
 
         /// <summary>
@@ -296,6 +302,22 @@ namespace Apache.Calcite.Linq.Tests
         {
             var mine = Run(sql, true);
             var calcite = Run(sql, false);
+
+            mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
+        }
+
+        /// <summary>
+        /// Requires that a query gives the same rows in both conventions, with the sorted aggregate rule on.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <remarks>
+        /// Neither convention registers that rule by default, because Calcite does not: a caller turns it on.
+        /// Each side gets its own.
+        /// </remarks>
+        static void SameSortedAggregate(string sql)
+        {
+            var mine = Run(sql, true, false, false, true);
+            var calcite = Run(sql, false, false, false, true);
 
             mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
         }
@@ -619,6 +641,31 @@ namespace Apache.Calcite.Linq.Tests
         [TestMethod]
         public void ShouldAgreeOnALeftJoinOverSortedInputs() =>
             Same("SELECT \"S1\".\"K\", \"S2\".\"V\" FROM \"SORTED\" \"S1\" LEFT JOIN \"SORTED\" \"S2\" ON \"S1\".\"K\" = \"S2\".\"K\" AND \"S2\".\"V\" <> 'B' ORDER BY 1, 2");
+
+        // A sorted aggregate, which needs its rule turned on and is chosen where the query wants its output
+        // ordered by the group key over an input that carries that collation. A global aggregate is refused
+        // by our rule: Calcite builds the node for one and then cannot implement it, because the collation it
+        // would tell groups apart with is empty.
+
+        [TestMethod]
+        public void ShouldAgreeOnASortedAggregate() =>
+            SameSortedAggregate("SELECT \"K\", COUNT(*) FROM \"SORTED\" GROUP BY \"K\" ORDER BY \"K\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnASortedAggregateOfSeveralCalls() =>
+            SameSortedAggregate("SELECT \"K\", COUNT(*), MIN(\"V\"), MAX(\"V\") FROM \"SORTED\" GROUP BY \"K\" ORDER BY \"K\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnASortedAggregateOverAFilteredInput() =>
+            SameSortedAggregate("SELECT \"K\", COUNT(*) FROM \"SORTED\" WHERE \"V\" <> 'C' GROUP BY \"K\" ORDER BY \"K\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnAGlobalAggregateWithTheSortedRuleOn() =>
+            SameSortedAggregate("SELECT COUNT(*), MIN(\"V\") FROM \"SORTED\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnAnUnorderedGroupByWithTheSortedRuleOn() =>
+            SameSortedAggregate("SELECT \"K\", COUNT(*) FROM \"SORTED\" GROUP BY \"K\"");
 
         [TestMethod]
         public void ShouldAgreeOnAGroupByOverASortedInput() =>

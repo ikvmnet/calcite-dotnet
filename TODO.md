@@ -151,7 +151,7 @@ surface whether or not the operation succeeds.
 
 ## Apache.Calcite.Linq: where the CLR conventions stand
 
-`ClrEnumerableConvention` runs. 178 tests pass. `ClrAsyncEnumerableConvention` does not exist yet — not
+`ClrEnumerableConvention` runs. 183 tests pass. `ClrAsyncEnumerableConvention` does not exist yet — not
 one file of it, deferred deliberately until the sync side is finished.
 
 ### What this convention is for, and how it is built
@@ -202,10 +202,9 @@ three-pass program — `Programs.subQuery`, then the rules, then the calc rules 
 decorrelation — as anything a caller can use; every test wires it by hand. This is worth more to anyone
 using the library than another join algorithm, and it is small.
 
-**2. Two planning questions, each to be answered before any code.** Whether `EnumerableSortedAggregate`
-loses purely on the row-count-only cost model, in which case it can never be chosen and a test has to force
-it; and what `BatchNestedLoopJoin` needs. Detail in *The sorted nodes*. Dump the chosen plan first — that is
-what answered the third question, which used to be here.
+**2. One planning question, to be answered before any code.** What `BatchNestedLoopJoin` needs. Detail in
+*The sorted nodes*. Dump the chosen plan first — that is what answered the two questions that used to be
+here, and both answers contradicted the guess written next to them.
 
 **3. Two open mysteries, either of which may stay open.**
 - A window table function does not run by either route: through the node, translating
@@ -233,8 +232,8 @@ name (`rel.core.Asof`, which really is 1.42) and stood unchecked. The node is no
 
 Scan, values, calc, project, filter, sort, limit, offset, limit-with-sort, union, intersect, minus,
 hash/semi/anti join, nested loop join, merge join, ASOF join, correlate, aggregate — ordered calls
-included — window, merge union, table function scan, collect and uncollect. Converters in both directions, so one plan can hold nodes of both conventions and the rows
-cross untouched. 178 tests pass.
+included — sorted aggregate, window, merge union, table function scan, collect and uncollect. Converters in both directions, so one plan can hold nodes of both conventions and the rows
+cross untouched. 183 tests pass.
 
 `PARITY.md` is the member-by-member comparison against 1.41, rebuilt from the source at the tag and checked
 against the assembly. What is left is section 6 of it and the list above.
@@ -533,7 +532,7 @@ convention's one converter rule, so the whole plan lands in `EnumerableConventio
 survive a real generated block. The two existing mixed-convention tests could not have caught this, because
 they give the planner both rule sets and this convention wins nearly everything.
 
-### The sorted nodes: two written, two left
+### The sorted nodes: three written, one left
 
 MergeJoin, MergeUnion, SortedAggregate and BatchNestedLoopJoin are only ever chosen over their hash and
 buffering counterparts when the input already carries a collation, and a table is where one comes from:
@@ -558,19 +557,36 @@ Five differential tests: UNION ALL, UNION distinct, with a limit, with an offset
 inputs. Three of them reach the node — the two carrying a limit plan to a limit-sort instead, which is a
 cost decision and not a failure, and they agree either way.
 
-The two left:
+**SortedAggregate is written, and the guess in front of it was wrong.** This file said it most likely loses
+on the row-count-only cost model and could never be chosen, so a test would have to force it. Dumping three
+plans with the rule registered says otherwise:
 
-- `EnumerableSortedAggregateRule` asks, in `convert`, for an input carrying a collation on the group set,
-  and `SORTED` supplies exactly that — yet the plain `EnumerableAggregate` still wins. Most likely the cost
-  model rather than the rule: `VolcanoCost.isLt` compares the row count and nothing else, so a sorted
-  aggregate and a hash one tie and the planner keeps whichever it saw first. The same quirk makes a project
-  and a calc indistinguishable. If that is the reason it can never be chosen on cost, and a test has to
-  force it. Dump the plan first, as MergeUnion turned out to need.
-- `BatchNestedLoopJoin` has not been investigated at all.
+    SELECT "K", COUNT(*) FROM "SORTED" GROUP BY "K"                 → EnumerableAggregate
+    SELECT "K", COUNT(*) FROM "SORTED" GROUP BY "K" ORDER BY "K"    → EnumerableSortedAggregate
+    SELECT "REGION", COUNT(*) FROM "SALES" GROUP BY "REGION"        → EnumerableAggregate
+
+It is chosen when the query wants its output ordered by the group key over an input that carries the
+collation, because then the ordering is free and the hash aggregate would need a sort on top. Cost was never
+the obstacle; nobody had turned the rule on.
+
+Five differential tests, three of which reach the node. The rule is not in `ClrEnumerableRules.Rules()`,
+because Calcite does not put its own in `ENUMERABLE_RULES` — a caller turns it on, and the harness turns on
+each side's own.
+
+**Turning that rule on found a defect in Calcite too.** For `GROUP BY ()` the collation the node would tell
+groups apart with is empty, and Calcite's rule builds the node anyway: `SELECT COUNT(*) FROM t` with the
+rule registered plans to `EnumerableSortedAggregate` and then fails with "Unable to implement". Ours refuses
+an empty group set, which is one line and is recorded in `PARITY.md` §6.
+
+The one left:
+
+- `BatchNestedLoopJoin` has not been investigated at all. Dump the plan first; that is what answered the
+  two questions before it, and both answers contradicted what was written here.
 
 Also: `ENUMERABLE_SORTED_AGGREGATE_RULE` and `ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE` are **not** in
-`EnumerableRules.ENUMERABLE_RULES`; Calcite turns them on by configuration, so the harness has to add them
-to both sides for a comparison to mean anything.
+`EnumerableRules.ENUMERABLE_RULES`; Calcite turns them on by configuration. The harness does the same, per
+test and per side — registering the sorted aggregate rule for every query breaks queries that have nothing
+to do with it, because of the defect above.
 
 ### Match: not done, and here is exactly what stops it
 

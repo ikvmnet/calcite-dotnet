@@ -202,6 +202,11 @@ Calcite's helpers are instance methods that never read `this`; ours are static, 
 |---|---|---|
 | 2 ctors, `copy`, `implement` | 1 ctor, `copy`, `Implement` | |
 
+| `EnumerableSortedAggregate` | `ClrEnumerableSortedAggregate` | |
+|---|---|---|
+| ctor, `copy`, `passThroughTraits`, `implement` | all four | two guards added, both in §6 |
+| `EnumerableDefaults.sortedGroupBy`, `SortedAggregateEnumerator` | `ClrEnumerableDefaults.SortedGroupBy` | one walk of the input, holding only the accumulator of the group being read |
+
 Both constructors refuse what the node cannot implement, by throwing `InvalidRelException` for the rule to
 catch, and they refuse the same three things. An aggregate call carrying its own ordering is implemented,
 not refused: `hasOrderedCall` picks `LazyAggregateLambdaFactory` over a `SourceSorter` per ordered call and
@@ -268,7 +273,7 @@ the multiplier of the convention they produce.
 | `EnumerableProjectToCalcRule` | `ClrEnumerableProjectToCalcRule` | present |
 | `EnumerableMergeJoinRule` | `ClrEnumerableMergeJoinRule` | identical |
 | `EnumerableMergeUnionRule` | `ClrEnumerableMergeUnionRule` | identical, including the pushed-down limit |
-| `EnumerableSortedAggregateRule` | **—** | node not written |
+| `EnumerableSortedAggregateRule` | `ClrEnumerableSortedAggregateRule` | one refusal added; §6 |
 | `EnumerableBatchNestedLoopJoinRule` | **—** | node not written |
 | `EnumerableMatchRule` | **—** | blocked; see `TODO.md` |
 | `EnumerableTableModifyRule` | **—** | the convention is read-only |
@@ -306,7 +311,7 @@ whole `enumerable.impl` package.
 | — | `BoxRows` |
 
 `ClrEnumerableDefaults` is the counterpart of linq4j's `EnumerableDefaults`, not of anything in this
-package: 31 operators over typed delegates where linq4j's are over `Function1` and `Function2`. Where an
+package: 32 operators over typed delegates where linq4j's are over `Function1` and `Function2`. Where an
 operator's output order is a collection's — group by, distinct, union, intersect, except, and the unmatched
 tail of a hash join — it holds the rows in the same Java collection linq4j does, because the order is part of
 the answer. `EnumerableDefaults.Wrapped` is ported as `JavaWrapped` for the same reason. `ClrPhysTypes`,
@@ -321,11 +326,10 @@ an expression tree costs where Calcite has Java source.
 Everything here is a difference from `EnumerableConvention` that nothing yet argues for. The list is the
 work; an entry leaves it by being resolved, or by moving to §6 with the argument written down.
 
-**Nodes not written.** Six, each with its rule: `EnumerableSortedAggregate`,
-`EnumerableBatchNestedLoopJoin`, `EnumerableMatch`, `EnumerableTableModify`, `EnumerableInterpreter`,
-`EnumerableBindable`. Two have an open question in front of the code — whether `SortedAggregate` can be
-chosen on a row-count-only cost model, and what `BatchNestedLoopJoin` needs — and `TODO.md` holds those.
-Match is argued in §6; the other four are simply not done.
+**Nodes not written.** Five, each with its rule: `EnumerableBatchNestedLoopJoin`, `EnumerableMatch`,
+`EnumerableTableModify`, `EnumerableInterpreter`, `EnumerableBindable`. One has an open question in front of
+the code — what `BatchNestedLoopJoin` needs — and `TODO.md` holds it. Match is argued in §6; the other three
+are simply not done.
 
 **`EnumUtils.markJoinSelector` has no counterpart.** Nothing needs it while the mark-join paths are 1.42
 only, but that is a version accident rather than a reason.
@@ -364,7 +368,8 @@ Each is listed against its original in §1 and §2.
 `EnumerableRel.Prefer` is a Java enum carrying methods, which C# has no equivalent of — and what a node asks
 its input for belongs to the convention asking. Converted at the two converters and nowhere else.
 
-**`ClrEnumerableMergeJoin.passThroughTraits` refuses a foreign convention.** *A defect in Calcite,
+**`ClrEnumerableMergeJoin.passThroughTraits` and `ClrEnumerableSortedAggregate.passThroughTraits` refuse a
+foreign convention.** *A defect in Calcite,
 demonstrated.* `EnumerableMergeJoin` returns `Pair.of(required, …)` — the trait set it was handed, convention
 and all — and `PhysicalNode.passThrough` copies the node onto it. With both conventions in one planner and
 top-down optimisation on, a CLR_ENUMERABLE subset asking Calcite's node to pass through gets an
@@ -388,6 +393,13 @@ a `HashSet`, and answered a query differently from `EnumerableConvention` for th
 holds them in the Java collection linq4j holds them in, and `JavaWrapped` — the port of
 `EnumerableDefaults.Wrapped` — is how a comparer reaches those collections. Nine unordered differential
 tests hold it.
+
+**`ClrEnumerableSortedAggregateRule` refuses an empty group set.** *A defect in Calcite, demonstrated.* The
+node tells one group from the next with a comparator built from the collation it carries, and for
+`GROUP BY ()` that collation is empty. Calcite's rule builds the node anyway: register
+`ENUMERABLE_SORTED_AGGREGATE_RULE` and run `SELECT COUNT(*) FROM t` and the planner chooses it, then
+`implementRoot` throws "Unable to implement EnumerableSortedAggregate(group=[{}] …)". A global aggregate has
+nothing to sort by, so ours leaves it to `ClrEnumerableAggregate`.
 
 **A correlate boxes its rows.** *A defect, demonstrated.* `EnumUtils.joinSelector` boxes both of its
 parameter types, because linq4j's `Function2` erases to `Object`. Every other join here boxes its sequences
