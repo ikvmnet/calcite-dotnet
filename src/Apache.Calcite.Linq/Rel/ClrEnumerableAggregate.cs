@@ -59,11 +59,6 @@ namespace Apache.Calcite.Linq.Rel
                     throw new InvalidRelException("distinct aggregation not supported");
                 if (call.distinctKeys != null)
                     throw new InvalidRelException("within-distinct aggregation not supported");
-                // an ordered call is answered with LazyAggregateLambdaFactory and a SourceSorter, neither of
-                // which is written here; refused where the node is built, as Calcite refuses what it cannot
-                // implement, so the rule leaves the query to EnumerableAggregate rather than answering wrongly
-                if (call.collation.equals(RelCollations.EMPTY) == false)
-                    throw new InvalidRelException("aggregate call with its own ordering not supported");
                 if (RexImpTable.INSTANCE.get(call.getAggregation(), false) == null)
                     throw new InvalidRelException($"aggregation {call.getAggregation()} not supported");
             }
@@ -117,7 +112,7 @@ namespace Apache.Calcite.Linq.Rel
             implementor.Translator.Bind(acc_, accParameter);
 
             var adders = CreateAccumulatorAdders(implementor, in_, inParameter, aggs, accPhysType, acc_, accParameter, inputPhysType, typeFactory, accType, sourceType);
-            var lambdaFactory = ImplementLambdaFactory(accumulatorInitializer, adders);
+            var lambdaFactory = ImplementLambdaFactory(implementor, inputPhysType, aggs, adders, accumulatorInitializer, HasOrderedCall(aggs), sourceType);
 
             // the block that turns a key and a finished accumulator into an output row
             var resultBlock = new J.BlockBuilder();

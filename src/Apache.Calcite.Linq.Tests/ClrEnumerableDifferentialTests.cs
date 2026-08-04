@@ -193,7 +193,7 @@ namespace Apache.Calcite.Linq.Tests
         /// <param name="topDown">Whether the planner optimises top down, which is what asks a node to pass a
         /// trait down to its inputs or derive one from them.</param>
         /// <returns></returns>
-        static List<string> Run(string sql, bool clr, bool topDown = false)
+        static List<string> Run(string sql, bool clr, bool topDown = false, bool planOnly = false)
         {
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add("SALES", new SalesTable());
@@ -248,6 +248,9 @@ namespace Apache.Calcite.Linq.Tests
             var chosen = planner.transform(1, expanded.getTraitSet().replace(convention).simplify(), expanded);
             var physical = planner.transform(2, chosen.getTraitSet(), chosen);
 
+            if (planOnly)
+                return [org.apache.calcite.plan.RelOptUtil.toString(physical)];
+
             var parameters = new java.util.HashMap();
             var bindable = physical is ClrEnumerableRel node
                 ? ClrEnumerableInterpretable.ToBindable(parameters, node, ClrEnumerablePrefer.Array)
@@ -272,6 +275,17 @@ namespace Apache.Calcite.Linq.Tests
                 return string.Join("|", array.Select(Render));
 
             return row?.ToString() ?? "<null>";
+        }
+
+        /// <summary>
+        /// Returns the chosen plan, for a question about which nodes a query reaches.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <param name="clr"></param>
+        /// <returns></returns>
+        internal static string PlanOf(string sql, bool clr)
+        {
+            return Run(sql, clr, false, true)[0];
         }
 
         /// <summary>
@@ -348,15 +362,27 @@ namespace Apache.Calcite.Linq.Tests
         [TestMethod]
         public void ShouldAgreeOnAGlobalAggregate() => Same("SELECT COUNT(*), SUM(\"AMOUNT\"), AVG(\"AMOUNT\") FROM \"SALES\"");
 
-        /// <summary>
-        /// An aggregate call carrying its own ordering, which this convention refuses where the node is built:
-        /// it needs <c>LazyAggregateLambdaFactory</c> and a <c>SourceSorter</c> per call. The rule catches the
-        /// refusal and the query plans in <c>EnumerableConvention</c>, so what this proves is that the rows
-        /// still cross — and that the refusal is in the right place, which is not <c>Implement</c>.
-        /// </summary>
+        // An aggregate call carrying its own ordering, which holds the rows of a group and folds them once
+        // the call's ordering has been applied — LazyAggregateLambdaFactory over a SourceSorter per ordered
+        // call and a BasicLazyAccumulator per unordered one. The four cover: one ordered call, a global
+        // aggregate with no GROUP BY, an ordered and an unordered call in one aggregate, and an ordering on a
+        // nullable column.
+
         [TestMethod]
         public void ShouldAgreeOnAnOrderedAggregateCall() =>
             Same("SELECT \"REGION\", LISTAGG(\"LABEL\", ',') WITHIN GROUP (ORDER BY \"ID\" DESC) FROM \"SALES\" GROUP BY \"REGION\" ORDER BY \"REGION\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnAGlobalOrderedAggregateCall() =>
+            Same("SELECT LISTAGG(\"LABEL\", ',') WITHIN GROUP (ORDER BY \"ID\" DESC) FROM \"SALES\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnAnOrderedAndAnUnorderedCallTogether() =>
+            Same("SELECT \"REGION\", COUNT(*), LISTAGG(\"LABEL\", ',') WITHIN GROUP (ORDER BY \"ID\") FROM \"SALES\" GROUP BY \"REGION\" ORDER BY \"REGION\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnAnAggregateCallOrderedByANullableColumn() =>
+            Same("SELECT \"REGION\", LISTAGG(\"LABEL\", ',') WITHIN GROUP (ORDER BY \"AMOUNT\") FROM \"SALES\" GROUP BY \"REGION\" ORDER BY \"REGION\"");
 
         [TestMethod]
         public void ShouldAgreeOnAnInnerJoin() => Same("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"REGION\" = b.\"REGION\" ORDER BY a.\"ID\", b.\"ID\"");
@@ -597,6 +623,30 @@ namespace Apache.Calcite.Linq.Tests
         [TestMethod]
         public void ShouldAgreeOnAGroupByOverASortedInput() =>
             Same("SELECT \"K\", COUNT(*) FROM \"SORTED\" GROUP BY \"K\" ORDER BY 1");
+
+        // A merge union: an ORDER BY directly over a UNION, which is the shape its rule requires. Naming the
+        // columns instead of SELECT * puts a projection between the two and the rule never fires — that is
+        // what made this node look unreachable for a while.
+
+        [TestMethod]
+        public void ShouldAgreeOnAMergeUnionAll() =>
+            Same("SELECT * FROM \"SORTED\" UNION ALL SELECT * FROM \"SORTED\" ORDER BY 1");
+
+        [TestMethod]
+        public void ShouldAgreeOnAMergeUnionDistinct() =>
+            Same("SELECT * FROM \"SORTED\" UNION SELECT * FROM \"SORTED\" ORDER BY 1");
+
+        [TestMethod]
+        public void ShouldAgreeOnAMergeUnionWithALimit() =>
+            Same("SELECT * FROM \"SORTED\" UNION ALL SELECT * FROM \"SORTED\" ORDER BY 1 FETCH FIRST 3 ROWS ONLY");
+
+        [TestMethod]
+        public void ShouldAgreeOnAMergeUnionWithAnOffsetAndALimit() =>
+            Same("SELECT * FROM \"SORTED\" UNION ALL SELECT * FROM \"SORTED\" ORDER BY 1 OFFSET 2 ROWS FETCH FIRST 3 ROWS ONLY");
+
+        [TestMethod]
+        public void ShouldAgreeOnAMergeUnionOfThreeInputs() =>
+            Same("SELECT * FROM \"SORTED\" UNION ALL SELECT * FROM \"SORTED\" UNION ALL SELECT * FROM \"SORTED\" ORDER BY 1");
 
         [TestMethod]
         public void ShouldAgreeOnAUnionOverSortedInputs() =>

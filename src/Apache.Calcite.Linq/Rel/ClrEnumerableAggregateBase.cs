@@ -229,27 +229,81 @@ namespace Apache.Calcite.Linq.Rel
         /// <summary>
         /// Builds the factory the three lambdas an aggregate runs on are taken from.
         /// </summary>
-        /// <param name="accumulatorInitializer"></param>
+        /// <param name="implementor"></param>
+        /// <param name="inputPhysType"></param>
+        /// <param name="aggs"></param>
         /// <param name="adders"></param>
+        /// <param name="accumulatorInitializer"></param>
+        /// <param name="hasOrderedCall"></param>
+        /// <param name="sourceType"></param>
         /// <returns></returns>
         /// <remarks>
-        /// Only the unordered factory is built. An aggregate call carrying its own ordering needs
-        /// <c>LazyAggregateLambdaFactory</c> and a <c>SourceSorter</c> per call, which is not here yet.
+        /// Two factories, as Calcite has two. Where no call carries an ordering the adders fold each row as
+        /// it arrives. Where one does, the rows of a group are held instead and folded at the end, once the
+        /// call's own ordering has been applied to them — a <c>SourceSorter</c> per ordered call, a
+        /// <c>BasicLazyAccumulator</c> per unordered one, and <c>LazyAggregateLambdaFactory</c> over the
+        /// list. All three are Calcite's, and public, so they are used rather than written again.
         /// </remarks>
-        protected static Expression ImplementLambdaFactory(Expression accumulatorInitializer, java.util.List adders)
+        protected static Expression ImplementLambdaFactory(
+            ClrEnumerableRelImplementor implementor,
+            PhysType inputPhysType,
+            java.util.List aggs,
+            java.util.List adders,
+            Expression accumulatorInitializer,
+            bool hasOrderedCall,
+            Type sourceType)
         {
-            var list = Expression.Variable(typeof(java.util.List), "accumulatorAdders");
+            if (hasOrderedCall == false)
+            {
+                var adderList = Expression.Variable(typeof(java.util.List), "accumulatorAdders");
+                var adderBody = new System.Collections.Generic.List<Expression>
+                {
+                    Expression.Assign(adderList, Expression.New(typeof(java.util.LinkedList).GetConstructor([])!)),
+                };
+
+                for (int i = 0; i < adders.size(); i++)
+                    adderBody.Add(Expression.Call(adderList, CollectionAdd, Expression.Convert((Expression)adders.get(i), typeof(object))));
+
+                adderBody.Add(Expression.New(BasicFactory, accumulatorInitializer, adderList));
+
+                return Expression.Block(typeof(AggregateLambdaFactory), [adderList], adderBody);
+            }
+
+            var lazyList = Expression.Variable(typeof(java.util.List), "lazyAccumulators");
             var body = new System.Collections.Generic.List<Expression>
             {
-                Expression.Assign(list, Expression.New(typeof(java.util.LinkedList).GetConstructor([])!)),
+                Expression.Assign(lazyList, Expression.New(typeof(java.util.LinkedList).GetConstructor([])!)),
             };
 
-            for (int i = 0; i < adders.size(); i++)
-                body.Add(Expression.Call(list, CollectionAdd, Expression.Convert((Expression)adders.get(i), typeof(object))));
+            for (int i = 0; i < aggs.size(); i++)
+            {
+                var agg = (AggImpState)aggs.get(i);
+                var adder = (Expression)adders.get(i);
 
-            body.Add(Expression.New(BasicFactory, accumulatorInitializer, list));
+                if (agg.call.collation.equals(RelCollations.EMPTY))
+                {
+                    // a call with no ordering of its own still folds a row at a time, once the rows are held
+                    body.Add(Expression.Call(lazyList, CollectionAdd,
+                        Expression.Convert(Expression.New(BasicLazyAccumulator, adder), typeof(object))));
 
-            return Expression.Block(typeof(AggregateLambdaFactory), [list], body);
+                    continue;
+                }
+
+                var pair = inputPhysType.generateCollationKey(agg.call.collation.getFieldCollations());
+                var keySelector = implementor.Translator.TranslateSelector((J.Expression)pair.getKey(), sourceType);
+                var comparator = pair.getValue() == null
+                    ? Expression.Constant(null, typeof(java.util.Comparator))
+                    : implementor.Translator.Translate((J.Expression)pair.getValue());
+
+                body.Add(Expression.Call(lazyList, CollectionAdd,
+                    Expression.Convert(
+                        Expression.New(SourceSorter, adder, Function1Of(keySelector, sourceType, keySelector.ReturnType), comparator),
+                        typeof(object))));
+            }
+
+            body.Add(Expression.New(LazyFactory, accumulatorInitializer, lazyList));
+
+            return Expression.Block(typeof(AggregateLambdaFactory), [lazyList], body);
         }
 
         /// <summary>
@@ -277,6 +331,9 @@ namespace Apache.Calcite.Linq.Rel
         }
 
         protected static readonly System.Reflection.ConstructorInfo BasicFactory = typeof(BasicAggregateLambdaFactory).GetConstructors()[0];
+        protected static readonly System.Reflection.ConstructorInfo LazyFactory = typeof(LazyAggregateLambdaFactory).GetConstructors()[0];
+        protected static readonly System.Reflection.ConstructorInfo BasicLazyAccumulator = typeof(BasicLazyAccumulator).GetConstructors()[0];
+        protected static readonly System.Reflection.ConstructorInfo SourceSorter = typeof(SourceSorter).GetConstructors()[0];
         protected static readonly System.Reflection.MethodInfo CollectionAdd = typeof(java.util.List).GetMethod("add", [typeof(object)])!;
         protected static readonly System.Reflection.MethodInfo AccInitializer = typeof(AggregateLambdaFactory).GetMethod("accumulatorInitializer")!;
         protected static readonly System.Reflection.MethodInfo AccAdder = typeof(AggregateLambdaFactory).GetMethod("accumulatorAdder")!;

@@ -151,7 +151,7 @@ surface whether or not the operation succeeds.
 
 ## Apache.Calcite.Linq: where the CLR conventions stand
 
-`ClrEnumerableConvention` runs. 159 tests pass. `ClrAsyncEnumerableConvention` does not exist yet — not
+`ClrEnumerableConvention` runs. 178 tests pass. `ClrAsyncEnumerableConvention` does not exist yet — not
 one file of it, deferred deliberately until the sync side is finished.
 
 ### What this convention is for, and how it is built
@@ -202,13 +202,10 @@ three-pass program — `Programs.subQuery`, then the rules, then the calc rules 
 decorrelation — as anything a caller can use; every test wires it by hand. This is worth more to anyone
 using the library than another join algorithm, and it is small.
 
-**2. Three planning questions, each to be answered before any code.** They are not one question: each of
-these nodes needs a different thing that a collated input does not give it. Why `EnumerableMergeUnionRule`
-does not match when its operand — a `LogicalSort` directly over a `LogicalUnion` — looks satisfiable;
-whether `EnumerableSortedAggregate` loses purely on the row-count-only cost model, in which case it can
-never be chosen and a test has to force it; and what `BatchNestedLoopJoin` needs. Detail in *The four sorted
-nodes*. The harness now registers what Calcite registers and can plan top down, so both are available to
-answer these with.
+**2. Two planning questions, each to be answered before any code.** Whether `EnumerableSortedAggregate`
+loses purely on the row-count-only cost model, in which case it can never be chosen and a test has to force
+it; and what `BatchNestedLoopJoin` needs. Detail in *The sorted nodes*. Dump the chosen plan first — that is
+what answered the third question, which used to be here.
 
 **3. Two open mysteries, either of which may stay open.**
 - A window table function does not run by either route: through the node, translating
@@ -220,10 +217,7 @@ answer these with.
   whose rows are objects rather than `Object[]` gives CUSTOM format, which is how Calcite's own
   MATCH_RECOGNIZE tests pass — that would give Match an oracle and might move the whole thing.
 
-**4. Nodes not started and not investigated.** Interpreter and Bindable. Also an aggregate call carrying its
-own ordering, which needs `LazyAggregateLambdaFactory` and a `SourceSorter` per call: it is refused in
-`ClrEnumerableAggregate`'s constructor for now, so such a query plans in `EnumerableConvention` and the rows
-cross a converter, which a differential test holds to.
+**4. Nodes not started and not investigated.** Interpreter and Bindable.
 
 **5. Blocked, and not by effort.** Match cannot be written as a node: `PassedRowsInputGetter` and
 `PrevInputGetter` are package private *types* that Calcite's own translator casts to, and reflection is
@@ -238,9 +232,9 @@ name (`rel.core.Asof`, which really is 1.42) and stood unchecked. The node is no
 ### Done
 
 Scan, values, calc, project, filter, sort, limit, offset, limit-with-sort, union, intersect, minus,
-hash/semi/anti join, nested loop join, merge join, ASOF join, correlate, aggregate, window, table function
-scan, collect and uncollect. Converters in both directions, so one plan can hold nodes of both conventions and the rows
-cross untouched. 159 tests pass.
+hash/semi/anti join, nested loop join, merge join, ASOF join, correlate, aggregate — ordered calls
+included — window, merge union, table function scan, collect and uncollect. Converters in both directions, so one plan can hold nodes of both conventions and the rows
+cross untouched. 178 tests pass.
 
 `PARITY.md` is the member-by-member comparison against 1.41, rebuilt from the source at the tag and checked
 against the assembly. What is left is section 6 of it and the list above.
@@ -316,6 +310,21 @@ Six differential tests: an inner ASOF join, a left one, one looking forward rath
 two-field key, one with a null key, and one with no ORDER BY at all — that last is the one that holds the
 emit order to Calcite's. The node is on the chosen plan rather than the converter carrying it, checked by
 making `Implement` throw and watching all six fail through it.
+
+### An ordered aggregate call is implemented, not refused
+
+`SUM(x ORDER BY y)` and `LISTAGG(x, ',') WITHIN GROUP (ORDER BY y)` hold the rows of a group and fold them
+once the call's own ordering has been applied. `EnumerableAggregateBase.implementLambdaFactory` has two
+branches and now so does ours: `BasicAggregateLambdaFactory` where no call is ordered, and
+`LazyAggregateLambdaFactory` over a `SourceSorter` per ordered call and a `BasicLazyAccumulator` per
+unordered one where any is. All four classes are Calcite's and public, so none of them is written again.
+
+The accumulator changes type on that path — it becomes a `LazySource` holding the rows rather than the state
+record — and nothing here had to change for it, because the runtime passes an accumulator as an object and
+only the factory knows what it is.
+
+Four differential tests: one ordered call, a global aggregate with no GROUP BY, an ordered and an unordered
+call in one aggregate, and an ordering on a nullable column. The node is reached, checked the usual way.
 
 ### Two things reshaped to match Calcite's own division
 
@@ -524,32 +533,39 @@ convention's one converter rule, so the whole plan lands in `EnumerableConventio
 survive a real generated block. The two existing mixed-convention tests could not have caught this, because
 they give the planner both rule sets and this convention wins nearly everything.
 
-### The three sorted nodes left, and each is blocked on its own thing
+### The sorted nodes: two written, two left
 
 MergeJoin, MergeUnion, SortedAggregate and BatchNestedLoopJoin are only ever chosen over their hash and
 buffering counterparts when the input already carries a collation, and a table is where one comes from:
 `getStatistic().getCollations()` is what both conventions' scans put in their trait set. Every fixture
-table advertised none, so none of the four could be planned **in either convention** — writing any of them
-would have produced a node no test could reach, which is the mistake TUMBLE already cost a turn to.
-`SortedTable`, registered as `SORTED`, advertises a collation on its first field, and that unblocked the
-first of the four.
+table advertised none, so none of the four could be planned **in either convention**. `SortedTable`,
+registered as `SORTED`, advertises a collation on its first field, and that unblocked two of them.
 
-**MergeJoin is written**, and the section above records it. It needed less than the others: a collated
-input and nothing more.
+**MergeJoin is written**, and the section above records it.
 
-The other three:
+**MergeUnion is written, and the question in front of it had an answer.** This file said the rule never
+matches because a SELECT list over a UNION puts a `LogicalProject` between the sort and the union, and that
+adding `PROJECT_REMOVE` and `PROJECT_MERGE` does not help. The first half is right and the second was never
+the point: the operand wants the sort *directly* over the union, and
 
-- `EnumerableMergeUnionRule` is not a converter rule. Its operand is a `LogicalSort` with a `LogicalUnion`
-  **as its immediate input**, and a SELECT list over a UNION puts a `LogicalProject` between the two, so it
-  never matches. Adding `PROJECT_REMOVE` and `PROJECT_MERGE` to the same pass does not fix it — the
-  projections here are identities and should go, so either they are not removed before the rule is tried or
-  something else also blocks it. That is the next thing to find out.
+    SELECT * FROM "SORTED" UNION ALL SELECT * FROM "SORTED" ORDER BY 1
+
+is that shape. Calcite plans it as `EnumerableMergeUnion`; naming the columns instead of `SELECT *` plans it
+as a sort over a union. Dumping the chosen plan for three candidate queries is all it took, and it is worth
+doing that before calling a node unreachable again.
+
+Five differential tests: UNION ALL, UNION distinct, with a limit, with an offset and a limit, and three
+inputs. Three of them reach the node — the two carrying a limit plan to a limit-sort instead, which is a
+cost decision and not a failure, and they agree either way.
+
+The two left:
+
 - `EnumerableSortedAggregateRule` asks, in `convert`, for an input carrying a collation on the group set,
   and `SORTED` supplies exactly that — yet the plain `EnumerableAggregate` still wins. Most likely the cost
   model rather than the rule: `VolcanoCost.isLt` compares the row count and nothing else, so a sorted
   aggregate and a hash one tie and the planner keeps whichever it saw first. The same quirk makes a project
   and a calc indistinguishable. If that is the reason it can never be chosen on cost, and a test has to
-  force it.
+  force it. Dump the plan first, as MergeUnion turned out to need.
 - `BatchNestedLoopJoin` has not been investigated at all.
 
 Also: `ENUMERABLE_SORTED_AGGREGATE_RULE` and `ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE` are **not** in

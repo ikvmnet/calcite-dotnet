@@ -86,6 +86,11 @@ namespace Apache.Calcite.Linq.Runtime
         public static readonly MethodInfo SemiJoin = Of(nameof(ClrEnumerableDefaults.SemiJoin));
 
         /// <summary>
+        /// <see cref="ClrEnumerableDefaults.MergeUnion"/>.
+        /// </summary>
+        public static readonly MethodInfo MergeUnion = Of(nameof(ClrEnumerableDefaults.MergeUnion));
+
+        /// <summary>
         /// <see cref="ClrEnumerableDefaults.MergeJoin"/>.
         /// </summary>
         public static readonly MethodInfo MergeJoin = Of(nameof(ClrEnumerableDefaults.MergeJoin));

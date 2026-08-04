@@ -560,6 +560,135 @@ namespace Apache.Calcite.Linq.Runtime
         }
 
         /// <summary>
+        /// Returns the rows of sequences that are each already sorted on the key, in that order.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TKey"></typeparam>
+        /// <param name="sources"></param>
+        /// <param name="sortKeySelector"></param>
+        /// <param name="sortComparator"></param>
+        /// <param name="all">Whether a row that repeats is kept.</param>
+        /// <param name="comparer">Decides whether two rows are the same, where duplicates are dropped.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.mergeUnion</c> and its <c>MergeUnionEnumerator</c>: take
+        /// the smallest row across the inputs, emit it, and advance that input alone.
+        ///
+        /// <para>Dropping duplicates does not need every row emitted so far, only the ones sharing the
+        /// current key: the inputs are sorted, so a row that repeats one already emitted arrives before the
+        /// key changes. That is Calcite's reasoning and its set is cleared the same way.</para>
+        /// </remarks>
+        public static IEnumerable<TSource> MergeUnion<TSource, TKey>(
+            java.util.List sources,
+            Func<TSource, TKey> sortKeySelector,
+            java.util.Comparator sortComparator,
+            bool all,
+            EqualityComparer? comparer)
+        {
+            var inputs = new IEnumerator<TSource>[sources.size()];
+            for (int i = 0; i < inputs.Length; i++)
+                inputs[i] = ((IEnumerable<TSource>)sources.get(i)).GetEnumerator();
+
+            var current = new TSource[inputs.Length];
+            var finished = new bool[inputs.Length];
+            var active = inputs.Length;
+
+            // only where duplicates are dropped, and only ever holding the rows of one key
+            var processed = all ? null : new java.util.HashSet();
+            object? keyInProcessed = null;
+
+            void Move(int i)
+            {
+                if (inputs[i].MoveNext() == false)
+                {
+                    active--;
+                    finished[i] = true;
+                    current[i] = default!;
+                }
+                else
+                {
+                    current[i] = inputs[i].Current;
+                    finished[i] = false;
+                }
+            }
+
+            bool NotDuplicated(TSource value)
+            {
+                if (processed == null)
+                    return true;
+
+                var wrapped = JavaWrapped.Of(comparer, JavaValues.From(value));
+                if (processed.contains(wrapped))
+                    return false;
+
+                var key = JavaValues.From(sortKeySelector(value));
+                if (processed.isEmpty() == false)
+                {
+                    if (sortComparator.compare(key, keyInProcessed) != 0)
+                    {
+                        processed.clear();
+                        keyInProcessed = key;
+                    }
+                }
+                else
+                {
+                    keyInProcessed = key;
+                }
+
+                processed.add(wrapped);
+                return true;
+            }
+
+            int Compare(TSource a, TSource b)
+            {
+                return sortComparator.compare(JavaValues.From(sortKeySelector(a)), JavaValues.From(sortKeySelector(b)));
+            }
+
+            try
+            {
+                for (int i = 0; i < inputs.Length; i++)
+                    Move(i);
+
+                while (active > 0)
+                {
+                    var candidate = -1;
+                    for (int i = 0; i < current.Length; i++)
+                    {
+                        if (finished[i] == false)
+                        {
+                            candidate = i;
+                            break;
+                        }
+                    }
+
+                    if (active > 1)
+                    {
+                        for (int i = candidate + 1; i < current.Length; i++)
+                        {
+                            if (finished[i])
+                                continue;
+
+                            if (Compare(current[candidate], current[i]) > 0)
+                                candidate = i;
+                        }
+                    }
+
+                    var value = current[candidate];
+                    var emit = NotDuplicated(value);
+                    Move(candidate);
+
+                    if (emit)
+                        yield return value;
+                }
+            }
+            finally
+            {
+                foreach (var input in inputs)
+                    input.Dispose();
+            }
+        }
+
+        /// <summary>
         /// Returns whether a merge join can answer a join of this type.
         /// </summary>
         /// <param name="joinType"></param>

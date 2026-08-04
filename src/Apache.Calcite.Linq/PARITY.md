@@ -163,6 +163,8 @@ run afterwards and a calc is never worse.
 | Calcite | ours | |
 |---|---|---|
 | `EnumerableUnion` / `EnumerableIntersect` / `EnumerableMinus`: ctor, `copy`, `implement` | the same three each | |
+| `EnumerableMergeUnion`: ctor (with both checks), `create`, `copy`, `implement` | all four | extends the union node, as Calcite's extends `EnumerableUnion` |
+| `EnumerableDefaults.mergeUnion`, `MergeUnionEnumerator` | `ClrEnumerableDefaults.MergeUnion` | the k-way merge as an iterator, duplicate set cleared per key as Calcite clears it |
 | `EnumerableRepeatUnion`: ctor, `copy`, `implement` | the same three | ours is public where Calcite's ctor is package private |
 | `EnumerableTableSpool`: ctor, `create`, `copy`, `implement` (refuses anything but LAZY) | all four, the refusal included | |
 
@@ -201,9 +203,9 @@ Calcite's helpers are instance methods that never read `this`; ours are static, 
 | 2 ctors, `copy`, `implement` | 1 ctor, `copy`, `Implement` | |
 
 Both constructors refuse what the node cannot implement, by throwing `InvalidRelException` for the rule to
-catch. Ours refuses one thing more: an aggregate call carrying its own ordering, which Calcite answers with
-`LazyAggregateLambdaFactory` and a `SourceSorter` per call. Refused where the node is built, never in
-`Implement`; the query then plans in `EnumerableConvention` and the rows cross a converter.
+catch, and they refuse the same three things. An aggregate call carrying its own ordering is implemented,
+not refused: `hasOrderedCall` picks `LazyAggregateLambdaFactory` over a `SourceSorter` per ordered call and
+a `BasicLazyAccumulator` per unordered one, which are Calcite's classes and public.
 
 ### Window
 
@@ -265,15 +267,16 @@ the multiplier of the convention they produce.
 | `EnumerableFilterToCalcRule` | `ClrEnumerableFilterToCalcRule` | present |
 | `EnumerableProjectToCalcRule` | `ClrEnumerableProjectToCalcRule` | present |
 | `EnumerableMergeJoinRule` | `ClrEnumerableMergeJoinRule` | identical |
-| `EnumerableMergeUnionRule` | **—** | node not written |
+| `EnumerableMergeUnionRule` | `ClrEnumerableMergeUnionRule` | identical, including the pushed-down limit |
 | `EnumerableSortedAggregateRule` | **—** | node not written |
 | `EnumerableBatchNestedLoopJoinRule` | **—** | node not written |
 | `EnumerableMatchRule` | **—** | blocked; see `TODO.md` |
 | `EnumerableTableModifyRule` | **—** | the convention is read-only |
 | `EnumerableInterpreterRule`, `EnumerableBindable.EnumerableToBindableConverterRule` | **—** | not started |
 
-**Rule sets.** `EnumerableRules.ENUMERABLE_RULES` is 24 at 1.41. `ClrEnumerableRules.Rules()` is 23 of ours —
-the 24 less match — plus the two converters. `CalcRules()` is the counterpart of
+**Rule sets.** `EnumerableRules.ENUMERABLE_RULES` is 24 at 1.41. `ClrEnumerableRules.Rules()` is 24 of ours —
+the 24 less match and table modify, plus the merge union rule, which Calcite registers by configuration —
+plus the two converters. `CalcRules()` is the counterpart of
 `RelOptRules.CALC_RULES` plus this convention's two calc rules, run as a second pass, which is what
 `Programs.standard` does with Calcite's.
 
@@ -303,7 +306,7 @@ whole `enumerable.impl` package.
 | — | `BoxRows` |
 
 `ClrEnumerableDefaults` is the counterpart of linq4j's `EnumerableDefaults`, not of anything in this
-package: 30 operators over typed delegates where linq4j's are over `Function1` and `Function2`. Where an
+package: 31 operators over typed delegates where linq4j's are over `Function1` and `Function2`. Where an
 operator's output order is a collection's — group by, distinct, union, intersect, except, and the unmatched
 tail of a hash join — it holds the rows in the same Java collection linq4j does, because the order is part of
 the answer. `EnumerableDefaults.Wrapped` is ported as `JavaWrapped` for the same reason. `ClrPhysTypes`,
@@ -318,15 +321,11 @@ an expression tree costs where Calcite has Java source.
 Everything here is a difference from `EnumerableConvention` that nothing yet argues for. The list is the
 work; an entry leaves it by being resolved, or by moving to §6 with the argument written down.
 
-**Nodes not written.** Seven, each with its rule: `EnumerableMergeUnion`, `EnumerableSortedAggregate`,
+**Nodes not written.** Six, each with its rule: `EnumerableSortedAggregate`,
 `EnumerableBatchNestedLoopJoin`, `EnumerableMatch`, `EnumerableTableModify`, `EnumerableInterpreter`,
-`EnumerableBindable`. Three of them have an open question in front of the code — why `MergeUnionRule` never
-matches, whether `SortedAggregate` can be chosen on a row-count-only cost model, what `BatchNestedLoopJoin`
-needs — and `TODO.md` holds those. Match is argued in §6; the other six are simply not done.
-
-**An aggregate call with its own ordering is refused, not implemented.** `HasOrderedCall` is ported and
-nothing reads it. Answering the query needs `LazyAggregateLambdaFactory` and a `SourceSorter` per call.
-Where the refusal is placed is justified in §6; that it refuses at all is not.
+`EnumerableBindable`. Two have an open question in front of the code — whether `SortedAggregate` can be
+chosen on a row-count-only cost model, and what `BatchNestedLoopJoin` needs — and `TODO.md` holds those.
+Match is argued in §6; the other four are simply not done.
 
 **`EnumUtils.markJoinSelector` has no counterpart.** Nothing needs it while the mark-join paths are 1.42
 only, but that is a version accident rather than a reason.
@@ -334,9 +333,6 @@ only, but that is a version accident rather than a reason.
 **The window table function path is refused.** `isImplementorDefined` and `tvfImplementorBasedImplement`
 have no counterpart, and TUMBLE runs by neither route. Two failures are recorded in `TODO.md` and neither is
 understood; until one is, this is outstanding rather than justified.
-
-**`ClrEnumerableTableFunctionScan.Format` is ours alone.** Calcite decides the row format inline in
-`defaultTableFunctionImplement`. The method has no counterpart and no argument for being one.
 
 ---
 
@@ -402,10 +398,6 @@ to match; the correlate did not, and an EXISTS sub-query — whose right side is
 both the empty constructor and the all-fields one, and for a record of no fields those are the same
 signature; two of them in one emitted type cannot be told apart by `Type.GetConstructor`. A semi join whose
 right input projects nothing is one.
-
-**The refusal of an ordered aggregate call is placed where Calcite places a refusal.** *Calcite's own
-mechanism.* `InvalidRelException` from the constructor, which the rule catches, so the query plans in
-`EnumerableConvention` and the rows cross a converter. That it refuses at all is §5.
 
 **Match is not written, and cannot be as a node.** *Calcite's own type is unreachable.*
 `EnumerableMatch.PassedRowsInputGetter` and `PrevInputGetter` are package private *types* that Calcite's own

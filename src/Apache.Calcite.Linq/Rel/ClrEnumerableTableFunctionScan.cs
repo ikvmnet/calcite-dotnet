@@ -79,7 +79,20 @@ namespace Apache.Calcite.Linq.Rel
         ClrEnumerableResult ImplementTableFunction(ClrEnumerableRelImplementor implementor)
         {
             var typeFactory = implementor.TypeFactory;
-            var physType = PhysTypeImpl.of(typeFactory, getRowType(), Format(), false);
+
+            // a user-specified element type that is not an array is not supported, which is Calcite's limit
+            var elementType = getElementType();
+            JavaRowFormat format;
+            if (elementType == null)
+                format = JavaRowFormat.ARRAY;
+            else if (getRowType().getFieldCount() == 1 && IsQueryable())
+                format = JavaRowFormat.SCALAR;
+            else if (elementType is java.lang.Class clazz && ((java.lang.Class)typeof(object[])).isAssignableFrom(clazz))
+                format = JavaRowFormat.ARRAY;
+            else
+                format = JavaRowFormat.CUSTOM;
+
+            var physType = PhysTypeImpl.of(typeFactory, getRowType(), format, false);
 
             var block = new J.BlockBuilder();
             var translator = RexToLixTranslator
@@ -94,30 +107,6 @@ namespace Apache.Calcite.Linq.Rel
                 Expression.Call(null,
                     ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType),
                     implementor.Translator.TranslateBody(block.toBlock(), typeof(org.apache.calcite.linq4j.Enumerable))));
-        }
-
-        /// <summary>
-        /// Returns how a row of a table function's result is represented.
-        /// </summary>
-        /// <returns></returns>
-        /// <remarks>
-        /// A user-specified element type that is not an array is not supported, which is Calcite's limit
-        /// rather than one added here.
-        /// </remarks>
-        JavaRowFormat Format()
-        {
-            var elementType = getElementType();
-
-            if (elementType == null)
-                return JavaRowFormat.ARRAY;
-
-            if (getRowType().getFieldCount() == 1 && IsQueryable())
-                return JavaRowFormat.SCALAR;
-
-            if (elementType is java.lang.Class clazz && ((java.lang.Class)typeof(object[])).isAssignableFrom(clazz))
-                return JavaRowFormat.ARRAY;
-
-            return JavaRowFormat.CUSTOM;
         }
 
         /// <summary>

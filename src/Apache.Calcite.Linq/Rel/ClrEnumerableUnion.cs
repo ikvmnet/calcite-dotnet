@@ -37,7 +37,7 @@ namespace Apache.Calcite.Linq.Rel
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public virtual ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             Expression? unionExp = null;
             ClrEnumerableResult? last = null;
