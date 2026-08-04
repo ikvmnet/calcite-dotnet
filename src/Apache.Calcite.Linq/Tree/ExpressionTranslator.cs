@@ -883,6 +883,13 @@ namespace Apache.Calcite.Linq.Tree
             if (op == ExpressionType.Add && TypeResolver.Resolve(expression.getType()) == typeof(string))
                 return Expression.Call(Concat, JavaCast.To(left, typeof(object)), JavaCast.To(right, typeof(object)));
 
+            // Java's && and || take booleans and unbox a Boolean to get one; the CLR has no operator for two
+            // references, so the unboxing that Java leaves implicit is written out. A condition over a
+            // nullable column is a Boolean, and a disjunction of a hundred of them is what a batch nested
+            // loop join builds.
+            if (op is ExpressionType.AndAlso or ExpressionType.OrElse)
+                return Expression.MakeBinary(op, JavaCast.To(left, typeof(bool)), JavaCast.To(right, typeof(bool)));
+
             Promote(ref left, ref right, op);
 
             return Expression.MakeBinary(op, left, right);

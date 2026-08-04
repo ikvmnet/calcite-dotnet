@@ -106,6 +106,11 @@ namespace Apache.Calcite.Linq.Runtime
         public static readonly MethodInfo NestedLoopJoin = Of(nameof(ClrEnumerableDefaults.NestedLoopJoin));
 
         /// <summary>
+        /// <see cref="ClrEnumerableDefaults.CorrelateBatchJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo CorrelateBatchJoin = Of(nameof(ClrEnumerableDefaults.CorrelateBatchJoin));
+
+        /// <summary>
         /// <see cref="ClrEnumerableDefaults.CorrelateJoin"/>.
         /// </summary>
         public static readonly MethodInfo CorrelateJoin = Of(nameof(ClrEnumerableDefaults.CorrelateJoin));

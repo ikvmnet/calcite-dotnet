@@ -151,7 +151,7 @@ surface whether or not the operation succeeds.
 
 ## Apache.Calcite.Linq: where the CLR conventions stand
 
-`ClrEnumerableConvention` runs. 183 tests pass. `ClrAsyncEnumerableConvention` does not exist yet — not
+`ClrEnumerableConvention` runs. 188 tests pass. `ClrAsyncEnumerableConvention` does not exist yet — not
 one file of it, deferred deliberately until the sync side is finished.
 
 ### What this convention is for, and how it is built
@@ -202,11 +202,7 @@ three-pass program — `Programs.subQuery`, then the rules, then the calc rules 
 decorrelation — as anything a caller can use; every test wires it by hand. This is worth more to anyone
 using the library than another join algorithm, and it is small.
 
-**2. One planning question, to be answered before any code.** What `BatchNestedLoopJoin` needs. Detail in
-*The sorted nodes*. Dump the chosen plan first — that is what answered the two questions that used to be
-here, and both answers contradicted the guess written next to them.
-
-**3. Two open mysteries, either of which may stay open.**
+**2. Two open mysteries, either of which may stay open.**
 - A window table function does not run by either route: through the node, translating
   `EnumUtils.tumblingWindowSelector` leaves an `Object[] _input` referenced from no scope that declares
   it; through the converter, the same. Four explanations tried and disproved — they are listed so they
@@ -216,9 +212,9 @@ here, and both answers contradicted the guess written next to them.
   whose rows are objects rather than `Object[]` gives CUSTOM format, which is how Calcite's own
   MATCH_RECOGNIZE tests pass — that would give Match an oracle and might move the whole thing.
 
-**4. Nodes not started and not investigated.** Interpreter and Bindable.
+**3. Nodes not started and not investigated.** Interpreter and Bindable.
 
-**5. Blocked, and not by effort.** Match cannot be written as a node: `PassedRowsInputGetter` and
+**4. Blocked, and not by effort.** Match cannot be written as a node: `PassedRowsInputGetter` and
 `PrevInputGetter` are package private *types* that Calcite's own translator casts to, and reflection is
 not an acceptable way in. TableModify waits on the convention being more than read-only. A recursive CTE
 is refused by Calcite too, deliberately.
@@ -231,9 +227,10 @@ name (`rel.core.Asof`, which really is 1.42) and stood unchecked. The node is no
 ### Done
 
 Scan, values, calc, project, filter, sort, limit, offset, limit-with-sort, union, intersect, minus,
-hash/semi/anti join, nested loop join, merge join, ASOF join, correlate, aggregate — ordered calls
-included — sorted aggregate, window, merge union, table function scan, collect and uncollect. Converters in both directions, so one plan can hold nodes of both conventions and the rows
-cross untouched. 183 tests pass.
+hash/semi/anti join, nested loop join, batch nested loop join, merge join, ASOF join, correlate, aggregate
+— ordered calls included — sorted aggregate, window, merge union, table function scan, collect and
+uncollect. Converters in both directions, so one plan can hold nodes of both conventions and the rows
+cross untouched. 188 tests pass.
 
 `PARITY.md` is the member-by-member comparison against 1.41, rebuilt from the source at the tag and checked
 against the assembly. What is left is section 6 of it and the list above.
@@ -532,7 +529,7 @@ convention's one converter rule, so the whole plan lands in `EnumerableConventio
 survive a real generated block. The two existing mixed-convention tests could not have caught this, because
 they give the planner both rule sets and this convention wins nearly everything.
 
-### The sorted nodes: three written, one left
+### The sorted nodes: all four written
 
 MergeJoin, MergeUnion, SortedAggregate and BatchNestedLoopJoin are only ever chosen over their hash and
 buffering counterparts when the input already carries a collation, and a table is where one comes from:
@@ -578,10 +575,21 @@ groups apart with is empty, and Calcite's rule builds the node anyway: `SELECT C
 rule registered plans to `EnumerableSortedAggregate` and then fails with "Unable to implement". Ours refuses
 an empty group set, which is one line and is recorded in `PARITY.md` §6.
 
-The one left:
+**BatchNestedLoopJoin is written, and it needed nothing but its rule.** The third question in a row whose
+answer was one plan dump away: register `ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE` and it is chosen at once,
+for an equi-join and a non-equi one alike, over a hash join. Nothing about a collation was ever involved —
+it belongs in this section only because this file put it here.
 
-- `BatchNestedLoopJoin` has not been investigated at all. Dump the plan first; that is what answered the
-  two questions before it, and both answers contradicted what was written here.
+The rule rewrites the right input into a filter over a disjunction of the batch's conditions, one
+correlation variable per batch position, so one pass of the right input serves a hundred left rows. The node
+declares those variables out of the list a batch arrives in; `ClrEnumerableDefaults.CorrelateBatchJoin` is
+`correlateBatchJoin`. Five differential tests, three of which reach the node — the semi and anti ones plan to
+a correlate instead.
+
+**It also found a defect in the translator, and a general one.** A condition over a nullable column is a
+`Boolean`, and a disjunction of a hundred of them is `||` over two boxed booleans. Java unboxes there and
+the CLR has no operator for two references, so `ExpressionTranslator.Binary` now writes the unboxing out for
+`&&` and `||`. Nothing else had produced a boxed operand to a conditional operator.
 
 Also: `ENUMERABLE_SORTED_AGGREGATE_RULE` and `ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE` are **not** in
 `EnumerableRules.ENUMERABLE_RULES`; Calcite turns them on by configuration. The harness does the same, per

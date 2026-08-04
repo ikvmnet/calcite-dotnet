@@ -1060,6 +1060,90 @@ namespace Apache.Calcite.Linq.Runtime
         }
 
         /// <summary>
+        /// Joins by running the right input once per batch of left rows, rather than once per row.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TInner"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="joinType"></param>
+        /// <param name="outer"></param>
+        /// <param name="inner">Yields the right rows for a batch of left rows.</param>
+        /// <param name="resultSelector"></param>
+        /// <param name="predicate"></param>
+        /// <param name="batchSize"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.correlateBatchJoin</c>. The right input is a filter over
+        /// a disjunction of the batch's conditions, so one pass of it serves every row of the batch; the
+        /// rows it yields are held for the batch and each left row is then compared against them.
+        ///
+        /// <para>Calcite reads the right input lazily for the first left row of a batch and from the list
+        /// after that, which is the same rows in the same order by a longer road. Reading it once up front is
+        /// the one difference, and it costs a full pass of a filtered scan where a batch of one matched
+        /// early.</para>
+        /// </remarks>
+        public static IEnumerable<TResult> CorrelateBatchJoin<TSource, TInner, TResult>(
+            org.apache.calcite.linq4j.JoinType joinType,
+            IEnumerable<TSource> outer,
+            Func<java.util.List, IEnumerable<TInner>> inner,
+            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource, TInner, bool> predicate,
+            int batchSize)
+        {
+            var name = joinType.name();
+            var isSemi = name == nameof(org.apache.calcite.linq4j.JoinType.SEMI);
+            var isAnti = name == nameof(org.apache.calcite.linq4j.JoinType.ANTI);
+            var isLeft = name == nameof(org.apache.calcite.linq4j.JoinType.LEFT);
+
+            var batch = new List<TSource>(batchSize);
+            using var enumerator = outer.GetEnumerator();
+
+            while (true)
+            {
+                batch.Clear();
+                while (batch.Count < batchSize && enumerator.MoveNext())
+                    batch.Add(enumerator.Current);
+
+                if (batch.Count == 0)
+                    yield break;
+
+                // a short batch is padded by repeating its first row, as Calcite pads it: the condition is a
+                // disjunction, so a row that repeats adds nothing to it
+                var padded = new java.util.ArrayList(batchSize);
+                for (int i = 0; i < batchSize; i++)
+                    padded.add(JavaValues.From(batch[i < batch.Count ? i : 0]));
+
+                var rows = inner(padded) is IEnumerable<TInner> sequence ? new List<TInner>(sequence) : [];
+
+                foreach (var left in batch)
+                {
+                    var any = false;
+
+                    foreach (var right in rows)
+                    {
+                        if (predicate(left, right) == false)
+                            continue;
+
+                        any = true;
+
+                        // an anti join wants the rows that match nothing, and a semi join wants each left
+                        // row once, so both stop at the first match
+                        if (isAnti)
+                            break;
+
+                        yield return resultSelector(left, right);
+
+                        if (isSemi)
+                            break;
+                    }
+
+                    if (any == false && (isLeft || isAnti))
+                        yield return resultSelector(left, default!);
+                }
+            }
+        }
+
+        /// <summary>
         /// Joins two sequences on a condition, comparing every pair.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>

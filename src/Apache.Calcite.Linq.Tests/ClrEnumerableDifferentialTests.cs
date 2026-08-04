@@ -193,7 +193,7 @@ namespace Apache.Calcite.Linq.Tests
         /// <param name="topDown">Whether the planner optimises top down, which is what asks a node to pass a
         /// trait down to its inputs or derive one from them.</param>
         /// <returns></returns>
-        static List<string> Run(string sql, bool clr, bool topDown = false, bool planOnly = false, bool sortedAggregate = false)
+        static List<string> Run(string sql, bool clr, bool topDown = false, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false)
         {
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add("SALES", new SalesTable());
@@ -221,7 +221,10 @@ namespace Apache.Calcite.Linq.Tests
             // ENUMERABLE_RULES, and this convention does the same, so a test that wants it asks for it and
             // each side registers its own
             if (sortedAggregate)
-                rules.add(clr ? Rel.Convert.ClrEnumerableSortedAggregateRule.Create() : EnumerableRules.ENUMERABLE_SORTED_AGGREGATE_RULE);
+                rules.add(clr ? ClrEnumerableRules.ClrEnumerableSortedAggregateRule : EnumerableRules.ENUMERABLE_SORTED_AGGREGATE_RULE);
+
+            if (batchNestedLoopJoin)
+                rules.add(clr ? ClrEnumerableRules.ClrEnumerableBatchNestedLoopJoinRule : EnumerableRules.ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE);
 
             // AVG has no implementor of its own; a real program reduces it to SUM over COUNT first, and this
             // rule lives in RelOptRules.BASE_RULES rather than in any convention's set
@@ -289,9 +292,9 @@ namespace Apache.Calcite.Linq.Tests
         /// <param name="sql"></param>
         /// <param name="clr"></param>
         /// <returns></returns>
-        internal static string PlanOf(string sql, bool clr, bool sortedAggregate = false)
+        internal static string PlanOf(string sql, bool clr, bool sortedAggregate = false, bool batchNestedLoopJoin = false)
         {
-            return Run(sql, clr, false, true, sortedAggregate)[0];
+            return Run(sql, clr, false, true, sortedAggregate, batchNestedLoopJoin)[0];
         }
 
         /// <summary>
@@ -318,6 +321,23 @@ namespace Apache.Calcite.Linq.Tests
         {
             var mine = Run(sql, true, false, false, true);
             var calcite = Run(sql, false, false, false, true);
+
+            mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
+        }
+
+        /// <summary>
+        /// Requires that a query gives the same rows in both conventions, with the batch nested loop join
+        /// rule on.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <remarks>
+        /// Neither convention registers that rule by default, because Calcite does not. Each side gets its
+        /// own, at Calcite's batch size of 100.
+        /// </remarks>
+        static void SameBatchNestedLoopJoin(string sql)
+        {
+            var mine = Run(sql, true, false, false, false, true);
+            var calcite = Run(sql, false, false, false, false, true);
 
             mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
         }
@@ -411,6 +431,29 @@ namespace Apache.Calcite.Linq.Tests
 
         [TestMethod]
         public void ShouldAgreeOnALeftJoin() => Same("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a LEFT JOIN (SELECT * FROM \"SALES\" WHERE \"AMOUNT\" > 25) b ON a.\"REGION\" = b.\"REGION\" ORDER BY a.\"ID\", b.\"ID\"");
+
+        // A batch nested loop join, which needs its rule turned on. The right input becomes a filter over a
+        // disjunction of the batch's conditions, so one pass of it serves a hundred left rows.
+
+        [TestMethod]
+        public void ShouldAgreeOnABatchNestedLoopJoin() =>
+            SameBatchNestedLoopJoin("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"REGION\" = b.\"REGION\" ORDER BY a.\"ID\", b.\"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnABatchNestedLoopLeftJoin() =>
+            SameBatchNestedLoopJoin("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a LEFT JOIN (SELECT * FROM \"SALES\" WHERE \"ID\" > 4) b ON a.\"REGION\" = b.\"REGION\" ORDER BY a.\"ID\", b.\"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnABatchNestedLoopJoinWithAnInequality() =>
+            SameBatchNestedLoopJoin("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"AMOUNT\" < b.\"AMOUNT\" ORDER BY a.\"ID\", b.\"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnABatchNestedLoopSemiJoin() =>
+            SameBatchNestedLoopJoin("SELECT \"ID\" FROM \"SALES\" a WHERE EXISTS (SELECT 1 FROM \"SALES\" b WHERE b.\"REGION\" = a.\"REGION\" AND b.\"ID\" > a.\"ID\") ORDER BY \"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnABatchNestedLoopAntiJoin() =>
+            SameBatchNestedLoopJoin("SELECT \"ID\" FROM \"SALES\" a WHERE NOT EXISTS (SELECT 1 FROM \"SALES\" b WHERE b.\"REGION\" = a.\"REGION\" AND b.\"ID\" > a.\"ID\") ORDER BY \"ID\"");
 
         [TestMethod]
         public void ShouldAgreeOnAJoinWithAnInequality() => Same("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"AMOUNT\" < b.\"AMOUNT\" ORDER BY a.\"ID\", b.\"ID\"");

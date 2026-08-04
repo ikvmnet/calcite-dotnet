@@ -49,6 +49,16 @@ one of those is accounted for in §5 — outstanding, nothing yet argues for it 
 | `getDeriveMode` default → `LEFT_FIRST` | same | |
 | — | `passThrough`, `derive` ×2 forwarded to `PhysicalNode.__DefaultMethods` | C# does not inherit the defaults of an interface IKVM compiled |
 
+### `EnumerableRules` → `ClrEnumerableRules`
+
+| Calcite | ours | |
+|---|---|---|
+| a `public static final` field per rule | a `public static readonly` field per rule | one instance, so a caller can add or remove a named rule |
+| `ENUMERABLE_RULES` (public list) | private list behind `Rules()` | the accessor is the counterpart of `rules()`; nothing needs two names for it |
+| `rules()` | `Rules()` | |
+| `ENUMERABLE_SORTED_AGGREGATE_RULE`, `ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE` — fields, not in the list | the same two, as fields | Calcite turns them on by configuration and so does this |
+| `RelOptRules.CALC_RULES` | `CalcRules()` | rule for rule and in the same order, less `Bindables.FROM_NONE_RULE`, which belongs to a convention not ported |
+
 ### `EnumerableRel.Prefer` → `ClrEnumerablePrefer`
 
 | Calcite | ours | |
@@ -146,6 +156,12 @@ run afterwards and a calc is never worse.
 | `buildMapping`, `extendCollation`, `intersectCollationAndJoinKey` | `BuildMapping`, `ExtendCollation`, `IntersectCollationAndJoinKey` | private there, ported |
 | `EnumerableDefaults.mergeJoin`, `isMergeJoinSupported`, `compareNullsLastForMergeJoin` | `ClrEnumerableDefaults.MergeJoin`, `IsMergeJoinSupported`, `CompareNullsLastForMergeJoin` | the algorithm over typed delegates, as an iterator rather than an enumerator with a state machine |
 | — | `Predicate`, `Cartesian` | ours, factored out |
+
+| `EnumerableBatchNestedLoopJoin` | ours | |
+|---|---|---|
+| ctor, `create`, `copy`, `implement` | all four | |
+| `computeSelfCost`, `passThroughTraits`, `deriveTraits`, `getDeriveMode`, `explainTerms` | all five | |
+| `EnumerableDefaults.correlateBatchJoin` | `ClrEnumerableDefaults.CorrelateBatchJoin` | the right input is read once per batch up front rather than lazily across the batch's first row; §6 |
 
 | `EnumerableAsofJoin` | ours | |
 |---|---|---|
@@ -274,7 +290,7 @@ the multiplier of the convention they produce.
 | `EnumerableMergeJoinRule` | `ClrEnumerableMergeJoinRule` | identical |
 | `EnumerableMergeUnionRule` | `ClrEnumerableMergeUnionRule` | identical, including the pushed-down limit |
 | `EnumerableSortedAggregateRule` | `ClrEnumerableSortedAggregateRule` | one refusal added; §6 |
-| `EnumerableBatchNestedLoopJoinRule` | **—** | node not written |
+| `EnumerableBatchNestedLoopJoinRule` | `ClrEnumerableBatchNestedLoopJoinRule` | identical |
 | `EnumerableMatchRule` | **—** | blocked; see `TODO.md` |
 | `EnumerableTableModifyRule` | **—** | the convention is read-only |
 | `EnumerableInterpreterRule`, `EnumerableBindable.EnumerableToBindableConverterRule` | **—** | not started |
@@ -311,7 +327,7 @@ whole `enumerable.impl` package.
 | — | `BoxRows` |
 
 `ClrEnumerableDefaults` is the counterpart of linq4j's `EnumerableDefaults`, not of anything in this
-package: 32 operators over typed delegates where linq4j's are over `Function1` and `Function2`. Where an
+package: 33 operators over typed delegates where linq4j's are over `Function1` and `Function2`. Where an
 operator's output order is a collection's — group by, distinct, union, intersect, except, and the unmatched
 tail of a hash join — it holds the rows in the same Java collection linq4j does, because the order is part of
 the answer. `EnumerableDefaults.Wrapped` is ported as `JavaWrapped` for the same reason. `ClrPhysTypes`,
@@ -326,10 +342,9 @@ an expression tree costs where Calcite has Java source.
 Everything here is a difference from `EnumerableConvention` that nothing yet argues for. The list is the
 work; an entry leaves it by being resolved, or by moving to §6 with the argument written down.
 
-**Nodes not written.** Five, each with its rule: `EnumerableBatchNestedLoopJoin`, `EnumerableMatch`,
-`EnumerableTableModify`, `EnumerableInterpreter`, `EnumerableBindable`. One has an open question in front of
-the code — what `BatchNestedLoopJoin` needs — and `TODO.md` holds it. Match is argued in §6; the other three
-are simply not done.
+**Nodes not written.** Four, each with its rule: `EnumerableMatch`, `EnumerableTableModify`,
+`EnumerableInterpreter`, `EnumerableBindable`. Match is argued in §6; `TableModify` waits on the convention
+being more than read-only; the interpreter and bindable are simply not done.
 
 **`EnumUtils.markJoinSelector` has no counterpart.** Nothing needs it while the mark-join paths are 1.42
 only, but that is a version accident rather than a reason.
@@ -400,6 +415,11 @@ node tells one group from the next with a comparator built from the collation it
 `ENUMERABLE_SORTED_AGGREGATE_RULE` and run `SELECT COUNT(*) FROM t` and the planner chooses it, then
 `implementRoot` throws "Unable to implement EnumerableSortedAggregate(group=[{}] …)". A global aggregate has
 nothing to sort by, so ours leaves it to `ClrEnumerableAggregate`.
+
+**`CorrelateBatchJoin` reads the right input once per batch.** *An expression tree cannot express it,
+narrowly.* Calcite reads it lazily while the batch's first left row is compared, filling a list the other
+rows of the batch then read from. Same rows, same order, one pass either way; ours materialises up front,
+which costs a full pass of a filtered scan in the case where a batch of one matched early and stopped.
 
 **A correlate boxes its rows.** *A defect, demonstrated.* `EnumUtils.joinSelector` boxes both of its
 parameter types, because linq4j's `Function2` erases to `Object`. Every other join here boxes its sequences
