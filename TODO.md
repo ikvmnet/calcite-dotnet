@@ -801,12 +801,37 @@ without running it.
   `JoinInfo.nullExclusionFlags` were called 1.42-only and are — which now means *available*, because 1.42 is
   what is referenced. The hash join was written without the mark-join path on the strength of that word.
   Check a member with `git cat-file -e calcite-1.42.0:<path>`, never by reading the tree.
-- **The unreleased 1.43 cannot compile a DELETE over a one-column table.** CALCITE-7510 declares `sinkRow`
-  as `Object` and then emits `Expressions.convert_(sinkRow, tablePhysType.getJavaRowType())`; for one column
-  that row type is a primitive, so the generated source says `(int) sinkRow` and Janino refuses with
-  "Cannot cast java.lang.Object to int". Two `CalciteDdlTests` are skipped for it, naming the commit, and
-  both passed on 1.42.0-SNAPSHOT. **This is the changeset that would carry `EnumerableTableModify`**, so
-  anyone starting that node meets this first.
+- **The unreleased 1.43 cannot compile a DELETE over a one-column table, and two tests are red for it.**
+  Root-caused, not worked around. `EnumerableTableModify.deleteFromCollection` (CALCITE-7510, `5cdc09b8c`,
+  the newest commit on that file and on `main`) declares the sink row as `Object` and then writes
+  `Expressions.convert_(sinkRow, tablePhysType.getJavaRowType())`. For one column that row type is a
+  primitive: `EnumerableTableScan.deduceFormat` says ARRAY because `MutableArrayTable.getElementType()` is
+  `Object[]`, and the *optimising* `PhysTypeImpl.of` then turns ARRAY into SCALAR for a single field. So the
+  generated source says `(int) sinkRow`.
+
+  `(int) someObject` is legal Java — JLS 5.5, narrowing reference conversion then unboxing — and javac
+  compiles it. **Janino does not implement it.** Measured against the Janino on this classpath: `(int) o`
+  gives `Cannot cast "java.lang.Object" to "int"`, `(java.lang.Integer) o` compiles. Calcite compiles with
+  Janino, so it must not emit the first form.
+
+  **The fix is one line, upstream**: `Expressions.convert_(sinkRow, Primitive.box(tablePhysType
+  .getJavaRowType()))`. `Primitive.box` leaves `Object[]` alone, so the multi-column path — the only one
+  CALCITE-7510 added tests for, all of them `create table t (i int not null, j int not null)` — generates
+  exactly what it does today. File it; it is not ours to work around.
+
+  **The version trade is measured**, and neither end is clean: on 1.43.0-SNAPSHOT these two one-column
+  DELETE tests fail; on 1.42.0 they pass and *four* UPDATE tests fail instead, because fixing UPDATE is what
+  CALCITE-7510 is for. 1.43 is the smaller loss and is what the test project references. The two are left
+  failing rather than skipped — a suite that says what is broken is worth more than a green one that does
+  not — and the reason is written on both tests.
+
+  **This is also `PARITY.md` 6.9's family, in Calcite's own code**: a physical type optimised to SCALAR
+  while the thing that produced it still says the rows are `Object[]`. There the consequence was a physType
+  that lies about a pass-through node's rows; here it is a cast Janino cannot compile. Worth remembering
+  when 6.9 is finally measured — the pattern is not hypothetical.
+
+  **This is the changeset that would carry `EnumerableTableModify`**, so anyone starting that node meets it
+  first.
 - **`global.json` has `rollForward: latestMajor`,** so every build here picks the .NET 11 preview SDK
   rather than 10.0.302. It also makes `dotnet sln add` rewrite every project in the solution with
   x64/x86 configurations — edit the solution by hand instead.

@@ -33,6 +33,10 @@ Apache Calcite under IKVM, with an ADO.NET adapter, an ADO.NET client surface, a
   | 1.42 (referenced) | `EnumerableCombine`, `EnumerableConditionalCorrelate` and their rules, `EnumUtils.markJoinSelector` and the mark-join paths, `PhysType.generateNullAwareAccessor`, `JoinInfo.nullExclusionFlags` |
   | 1.43 (unreleased) | `org.apache.calcite.rel.core.Asof`, `FetchOffsetRoundingPolicy`, `RexImplementorTable(s)`, and `EnumerableTableModify`'s five private helpers — the UPDATE/DELETE/INSERT rewrite, CALCITE-7510 |
 
+  **1.43's DELETE cannot compile over a one-column table**, and two `CalciteDdlTests` are red for it
+  rather than skipped. CALCITE-7510 emits `(int) sinkRow` from a `sinkRow` declared `Object`; javac
+  accepts that and **Janino does not** — measured. `TODO.md` has the one-line upstream fix.
+
   **`AsofJoin` is neither** — `rel.core.AsofJoin`, `EnumerableAsofJoin` and `ENUMERABLE_ASOFJOIN_RULE` are
   all in 1.41, and a claim that it was 1.42 stood in this file for a while on the strength of the wrong
   class name. `rel.core.Asof` is a different class and is 1.43, not 1.42 as this file said.

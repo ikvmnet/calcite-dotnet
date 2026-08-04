@@ -332,7 +332,27 @@ namespace Apache.Calcite.Data.Tests
             Assert.False(reader.Read());
         }
 
-        [Fact(Skip = "Broken upstream in 1.43.0-SNAPSHOT by CALCITE-7510 (EnumerableTableModify: advanced UPDATE, DELETE and INSERT). It declares sinkRow as Object and then emits Expressions.convert_(sinkRow, tablePhysType.getJavaRowType()); for a one-column table that row type is a primitive, so the generated source says (int) sinkRow and Janino refuses it with \"Cannot cast java.lang.Object to int\". Both of these tables are one column. Passed on 1.42.0-SNAPSHOT. Re-enable when the snapshot carries a fix.")]
+        /// <remarks>
+        /// <para><b>Fails on calcite-core 1.43.0-SNAPSHOT, and the defect is upstream and one line.</b>
+        /// <c>EnumerableTableModify.deleteFromCollection</c> (CALCITE-7510, commit 5cdc09b8c) declares the
+        /// sink row as <c>Object</c> and then writes
+        /// <c>Expressions.convert_(sinkRow, tablePhysType.getJavaRowType())</c>. For a one-column table that
+        /// row type is a primitive — <c>deduceFormat</c> says ARRAY because the table's element type is
+        /// <c>Object[]</c>, and the optimising <c>PhysTypeImpl.of</c> turns ARRAY into SCALAR for one field —
+        /// so the generated source says <c>(int) sinkRow</c>.</para>
+        /// <para><c>(int) someObject</c> is legal Java: JLS 5.5 allows a narrowing reference conversion
+        /// followed by unboxing, and javac compiles it. <b>Janino does not implement it</b>, measured against
+        /// the Janino on this classpath: <c>(int) o</c> gives "Cannot cast "java.lang.Object" to "int"",
+        /// while <c>(java.lang.Integer) o</c> compiles. Calcite compiles with Janino, so it must not emit
+        /// the first form. The fix is to box the target type —
+        /// <c>Expressions.convert_(sinkRow, Primitive.box(tablePhysType.getJavaRowType()))</c> — which is a
+        /// no-op for the multi-column <c>Object[]</c> case and so changes nothing that works today.</para>
+        /// <para>Every test CALCITE-7510 added uses a two-column table, which is why this shape was never
+        /// seen. Both of these tables are one column. They pass on 1.42.0 — where four UPDATE tests fail
+        /// instead, because 1.42 is what CALCITE-7510 fixes. Not skipped: the suite should say what is
+        /// broken.</para>
+        /// </remarks>
+        [Fact]
         public void Delete_should_return_row_count()
         {
             using var c = new CalciteConnection(ServerDdlConnectionString);
@@ -413,7 +433,27 @@ namespace Apache.Calcite.Data.Tests
         /// this is a known Calcite limitation (CALCITE-style bug in the enumerable DELETE path).
         /// </para>
         /// </summary>
-        [Fact(Skip = "Broken upstream in 1.43.0-SNAPSHOT by CALCITE-7510 (EnumerableTableModify: advanced UPDATE, DELETE and INSERT). It declares sinkRow as Object and then emits Expressions.convert_(sinkRow, tablePhysType.getJavaRowType()); for a one-column table that row type is a primitive, so the generated source says (int) sinkRow and Janino refuses it with \"Cannot cast java.lang.Object to int\". Both of these tables are one column. Passed on 1.42.0-SNAPSHOT. Re-enable when the snapshot carries a fix.")]
+        /// <remarks>
+        /// <para><b>Fails on calcite-core 1.43.0-SNAPSHOT, and the defect is upstream and one line.</b>
+        /// <c>EnumerableTableModify.deleteFromCollection</c> (CALCITE-7510, commit 5cdc09b8c) declares the
+        /// sink row as <c>Object</c> and then writes
+        /// <c>Expressions.convert_(sinkRow, tablePhysType.getJavaRowType())</c>. For a one-column table that
+        /// row type is a primitive — <c>deduceFormat</c> says ARRAY because the table's element type is
+        /// <c>Object[]</c>, and the optimising <c>PhysTypeImpl.of</c> turns ARRAY into SCALAR for one field —
+        /// so the generated source says <c>(int) sinkRow</c>.</para>
+        /// <para><c>(int) someObject</c> is legal Java: JLS 5.5 allows a narrowing reference conversion
+        /// followed by unboxing, and javac compiles it. <b>Janino does not implement it</b>, measured against
+        /// the Janino on this classpath: <c>(int) o</c> gives "Cannot cast "java.lang.Object" to "int"",
+        /// while <c>(java.lang.Integer) o</c> compiles. Calcite compiles with Janino, so it must not emit
+        /// the first form. The fix is to box the target type —
+        /// <c>Expressions.convert_(sinkRow, Primitive.box(tablePhysType.getJavaRowType()))</c> — which is a
+        /// no-op for the multi-column <c>Object[]</c> case and so changes nothing that works today.</para>
+        /// <para>Every test CALCITE-7510 added uses a two-column table, which is why this shape was never
+        /// seen. Both of these tables are one column. They pass on 1.42.0 — where four UPDATE tests fail
+        /// instead, because 1.42 is what CALCITE-7510 fixes. Not skipped: the suite should say what is
+        /// broken.</para>
+        /// </remarks>
+        [Fact]
         public void MultiRow_delete_should_return_correct_row_count_for_single_column_table()
         {
             using var c = new CalciteConnection(ServerDdlConnectionString);
