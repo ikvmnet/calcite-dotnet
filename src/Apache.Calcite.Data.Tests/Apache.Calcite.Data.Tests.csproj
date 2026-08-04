@@ -6,8 +6,10 @@
     </PropertyGroup>
 
     <PropertyGroup>
-        <CalciteLocalMavenRepo>$(MSBuildThisFileDirectory)..\..\ext\maven-repo</CalciteLocalMavenRepo>
-        <MavenAdditionalRepositories>$(MavenAdditionalRepositories);calcite-local=file:///$([MSBuild]::NormalizePath('$(CalciteLocalMavenRepo)').Replace('\','/'));</MavenAdditionalRepositories>
+        <!-- calcite-server and the EnumerableTableModify UPDATE fix (CALCITE-7510) are 1.43 only, and
+             1.43 is unreleased. Apache publishes it as a snapshot, so this reads it from there rather
+             than from a copy of the artifacts checked into this repository. -->
+        <MavenAdditionalRepositories>$(MavenAdditionalRepositories);apache-snapshots=https://repository.apache.org/content/repositories/snapshots/;</MavenAdditionalRepositories>
     </PropertyGroup>
 
     <ItemGroup>
@@ -27,8 +29,8 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.42.0-SNAPSHOT" />
-        <MavenReference Include="org.apache.calcite:calcite-server" Version="1.42.0-SNAPSHOT" />
+        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.43.0-SNAPSHOT" />
+        <MavenReference Include="org.apache.calcite:calcite-server" Version="1.43.0-SNAPSHOT" />
     </ItemGroup>
 
     <ItemGroup>

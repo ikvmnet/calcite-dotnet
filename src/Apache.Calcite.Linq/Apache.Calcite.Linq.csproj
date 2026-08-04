@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFrameworks>net10.0</TargetFrameworks>
@@ -25,7 +25,7 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.41.0" />
+        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.42.0" />
         <MavenReference Include="org.jooq:joou-java-6" Version="0.9.5" />
     </ItemGroup>
 

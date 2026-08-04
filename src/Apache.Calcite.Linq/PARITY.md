@@ -1,9 +1,16 @@
 # `ClrEnumerableConvention` against `EnumerableConvention`
 
-Class by class and member by member, against **Calcite 1.41.0** — the version the projects reference. The
-source read is `git archive calcite-1.41.0 core/src/main/java/org/apache/calcite/adapter/enumerable` out of
-`D:\calcite`, not that repository's working tree, which is 1.42.0-SNAPSHOT and differs. The package is 105
-files plus seven in `enumerable/impl`.
+Class by class and member by member, against **Calcite 1.41.0**. The source read is
+`git archive calcite-1.41.0 core/src/main/java/org/apache/calcite/adapter/enumerable` out of `D:\calcite`,
+not that repository's working tree, which is 1.43.0-SNAPSHOT and differs. The package is 105 files plus
+seven in `enumerable/impl`.
+
+> **⚠ This document is one release stale.** The projects reference **1.42.0** now, not 1.41.0. The port
+> compiles against it and all 197 tests pass, so nothing here is known to be wrong about *our* code — but
+> every column headed "Calcite" was derived from the 1.41 tag, and 1.42 changed 21 files in this package,
+> 985 insertions and 97 deletions. Three consequences are already known and are written into 3.3, §7 and
+> 9.20; the rest is unmeasured. **Rebuilding this file against `calcite-1.42.0` is the next parity task**
+> and `TODO.md` carries it. Until then, check any row you are about to rely on against the 1.42 tag.
 
 **Read the tag, then check the assembly.** They are not the same. `RelOptUtil.registerDefaultRules` registers
 `EnumerableRules.ENUMERABLE_RULES` in the compiled 1.41.0 — measured, by counting the planner's rules before
@@ -365,6 +372,12 @@ fields sit outside the list — `ENUMERABLE_LIMIT_SORT_RULE`, `ENUMERABLE_SORTED
 `ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE` — and nothing in core registers any of the three; a caller turns
 them on.
 
+**At 1.42, which is what the projects reference, it is 26**: the same 24 plus
+`ENUMERABLE_CONDITIONAL_CORRELATE_RULE` and `ENUMERABLE_COMBINE_RULE`. Both are for nodes this convention
+has not written, so the differential harness now gives Calcite's side two rules ours has no counterpart for.
+That is the same shape of asymmetry as the one 5.3 was, running the other way, and it is not a defect — it
+is what "nodes not written" costs, and it will stay until §5 names those two and they are ported.
+
 `ClrEnumerableRules.Rules()` is **24**: those 24 less match and table modify, which is 22, plus the two
 converters. The three rules Calcite leaves out of its list are left out of this one. There is no membership
 difference left; the limit-sort rule used to be in this list and 9.18 is why it is not.
@@ -601,14 +614,26 @@ ignored; taking it and refusing says which of the two conventions can honour it.
 
 ## 7. Not in 1.41, and correctly absent
 
-**7.1 Classes.** `EnumerableCombine`, `EnumerableCombineRule`, `EnumerableConditionalCorrelate`,
-`EnumerableConditionalCorrelateRule`, `FetchOffsetRoundingPolicy`, `RexImplementorTable`,
-`RexImplementorTables`. Do not port against `D:\calcite`'s working tree, which has all seven.
+This section said "not in 1.41, and correctly absent" and listed seven classes as one group. That was read
+off `D:\calcite`'s working tree and never checked against a tag, and it is wrong in two ways at once: the
+tree is 1.43.0-SNAPSHOT rather than 1.42.0-SNAPSHOT, and the seven do not belong to one release. Checked
+with `git cat-file -e calcite-1.42.0:<path>`:
 
-**7.2 Members, and the same trap one level down.** `EnumUtils.markJoinSelector` is 1.42 only, and so is
-every mark-join path that calls it — in `EnumerableHashJoin`, `EnumerableNestedLoopJoin` and
-`EnumerableConditionalCorrelate`. So are `PhysType.generateNullAwareAccessor` and
-`JoinInfo.nullExclusionFlags`. Nothing of ours is missing on their account.
+**7.1 In 1.42, which the projects now reference — so *not* correctly absent any more.**
+`EnumerableCombine`, `EnumerableCombineRule`, `EnumerableConditionalCorrelate`,
+`EnumerableConditionalCorrelateRule`; and, one level down, `EnumUtils.markJoinSelector` with every
+mark-join path that calls it — in `EnumerableHashJoin` and `EnumerableNestedLoopJoin` — plus
+`PhysType.generateNullAwareAccessor` and `JoinInfo.nullExclusionFlags`. **These are now gaps, not absences.**
+Their two rules are in `ENUMERABLE_RULES` at 1.42 (3.3). They belong in §5 once this file is rebuilt against
+1.42, and 9.20 says so.
+
+**7.2 In 1.43, which is unreleased, and correctly absent.** `FetchOffsetRoundingPolicy`,
+`RexImplementorTable`, `RexImplementorTables`, `org.apache.calcite.rel.core.Asof`, and
+`EnumerableTableModify`'s five private helpers — the UPDATE/DELETE/INSERT rewrite, CALCITE-7510. 1.42's copy
+of `EnumerableTableModify` is byte-identical to 1.41's, so nothing about that node changed between the
+version this file compares against and the version the projects reference.
+
+**`rel.core.Asof` is 1.43, not 1.42.** `rel.core.AsofJoin` — the one that matters — is 1.41 and always was.
 
 ---
 
@@ -723,6 +748,18 @@ planned the query itself. Five differential tests now run with the limit-sort ru
 which is the first time `EnumerableLimitSort` has ever been the oracle for `ClrEnumerableLimitSort` —
 before, Calcite could not plan the node at all. Two more assert which node each side chose, with and without
 the rule.
+
+**9.20 The whole file was pinned to the wrong baseline, and §7 to the wrong release.** This document opened
+with "against Calcite 1.41.0 — the version the projects reference". The projects reference 1.42.0 now, and
+§7's seven classes were called "not in 1.41" as though that made them future work: four of them are in 1.42
+and so are `markJoinSelector`, `generateNullAwareAccessor` and `nullExclusionFlags`. Both errors have the
+same cause as 9.2, which this file already records: the working tree was read instead of a tag, and the tree
+had moved to 1.43 without anyone noticing. `EnumerableTableModify`'s rewrite was called a 1.42 feature on
+the same evidence, and 1.42's copy of that file is byte-identical to 1.41's.
+
+The header now carries the warning, 3.3 carries the rule count that follows from it (26, not 24), and §7 is
+split by release. What is *not* done is re-deriving §1 to §4 against `calcite-1.42.0` — 21 files, 985
+insertions — and that is the next parity task rather than something this entry quietly implies.
 
 **9.19 `ImplementRoot` and `ToBindable` are Calcite's again.** 5.4 and 5.5 were both "copying is possible
 and we did not", which is the one thing §6 does not admit. `ImplementRoot` wraps a failing node, so the

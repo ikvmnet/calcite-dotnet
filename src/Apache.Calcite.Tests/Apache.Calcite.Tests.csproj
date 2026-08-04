@@ -1,4 +1,4 @@
-<Project Sdk="MSTest.Sdk">
+﻿<Project Sdk="MSTest.Sdk">
 
     <PropertyGroup>
         <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
@@ -20,7 +20,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.41.0" />
+        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.42.0" />
     </ItemGroup>
 
     <ItemGroup>

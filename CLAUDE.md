@@ -1,4 +1,4 @@
-# Apache.Calcite for .NET
+﻿# Apache.Calcite for .NET
 
 Apache Calcite under IKVM, with an ADO.NET adapter, an ADO.NET client surface, and `Apache.Calcite.Linq`
 — calling conventions that execute a plan as `System.Linq.Expressions` instead of Janino.
@@ -22,13 +22,24 @@ Apache Calcite under IKVM, with an ADO.NET adapter, an ADO.NET client surface, a
   convention and through `EnumerableConvention` and requires the same rows. Every defect worth having
   found in the Linq project was found by it, three of them in nodes already believed done. Add a query
   there rather than writing an assertion by hand: the expected answer is whatever Calcite says.
-- **Calcite is checked out at `D:\calcite` — but it is 1.42.0-SNAPSHOT and the projects reference
-  1.41.0.** Read that source, then check the member exists. `PhysType.generateNullAwareAccessor`,
-  `JoinInfo.nullExclusionFlags`, `org.apache.calcite.rel.core.Asof`, `Combine` and
-  `ConditionalCorrelate` are 1.42 only, and `EnumerableTableModify` is implemented there with private
-  helpers that are part of an UPDATE fix 1.41 does not have. **`AsofJoin` is not one of them** —
-  `rel.core.AsofJoin`, `EnumerableAsofJoin` and `ENUMERABLE_ASOFJOIN_RULE` are all in 1.41, and a claim
-  that it was 1.42 stood in this file for a while on the strength of the wrong class name.
+- **Calcite is checked out at `D:\calcite`, and it is 1.43.0-SNAPSHOT.** The projects reference **1.42.0**,
+  which is released; `Apache.Calcite.Data.Tests` alone references **1.43.0-SNAPSHOT**, from
+  `https://repository.apache.org/content/repositories/snapshots/`, for `calcite-server` and the
+  `EnumerableTableModify` rewrite. **Three versions, so "it is in the tree" settles nothing.** Read the
+  source, then check the member against the tag you actually reference:
+
+  | in | |
+  |---|---|
+  | 1.42 (referenced) | `EnumerableCombine`, `EnumerableConditionalCorrelate` and their rules, `EnumUtils.markJoinSelector` and the mark-join paths, `PhysType.generateNullAwareAccessor`, `JoinInfo.nullExclusionFlags` |
+  | 1.43 (unreleased) | `org.apache.calcite.rel.core.Asof`, `FetchOffsetRoundingPolicy`, `RexImplementorTable(s)`, and `EnumerableTableModify`'s five private helpers — the UPDATE/DELETE/INSERT rewrite, CALCITE-7510 |
+
+  **`AsofJoin` is neither** — `rel.core.AsofJoin`, `EnumerableAsofJoin` and `ENUMERABLE_ASOFJOIN_RULE` are
+  all in 1.41, and a claim that it was 1.42 stood in this file for a while on the strength of the wrong
+  class name. `rel.core.Asof` is a different class and is 1.43, not 1.42 as this file said.
+- **The version this file gives has been wrong twice, both times by reading the tree.** It said the tree was
+  1.42.0-SNAPSHOT after upstream had moved to 1.43, and called the TableModify rewrite a 1.42 feature when
+  1.42's copy of that file is byte-identical to 1.41's. `git tag --list` and `git cat-file -e <tag>:<path>`
+  settle it in one command each; the tree settles nothing.
 - **Read the tag, and then check the assembly, because they differ.** `git archive calcite-1.41.0 …` is the
   source; `calcite.core.dll` is what runs. `RelOptUtil.registerDefaultRules` registers
   `EnumerableRules.ENUMERABLE_RULES` in the assembly — measured by counting the planner's rules across the
