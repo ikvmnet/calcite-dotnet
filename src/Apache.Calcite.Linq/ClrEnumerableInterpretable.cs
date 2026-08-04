@@ -27,13 +27,29 @@ namespace Apache.Calcite.Linq
         /// Compiles a plan and returns it as a <see cref="Bindable"/>.
         /// </summary>
         /// <param name="internalParameters"></param>
+        /// <param name="spark">The Spark handler, or <c>null</c> where there is none.</param>
         /// <param name="rel"></param>
         /// <param name="prefer"></param>
         /// <returns></returns>
-        public static Bindable ToBindable(java.util.Map internalParameters, ClrEnumerableRel rel, ClrEnumerablePrefer prefer)
+        /// <remarks>
+        /// The four arguments <c>EnumerableInterpretable.toBindable</c> takes, in its order, so that a caller
+        /// holding one convention's compiler can hold the other's.
+        ///
+        /// <para><paramref name="spark"/> is taken and refused rather than dropped. Calcite hands the
+        /// generated <c>ClassDeclaration</c> and its source text to <c>SparkHandler.compile</c> when one is
+        /// enabled, and compiles with Janino otherwise. There is no generated class here and no source text —
+        /// the plan is an expression tree — so there is nothing this convention could hand it. Dropping the
+        /// parameter would have made a caller's Spark configuration silently ignored; refusing says which of
+        /// the two conventions can honour it.</para>
+        /// </remarks>
+        public static Bindable ToBindable(java.util.Map internalParameters, org.apache.calcite.jdbc.CalcitePrepare.SparkHandler? spark, ClrEnumerableRel rel, ClrEnumerablePrefer prefer)
         {
             ArgumentNullException.ThrowIfNull(internalParameters);
             ArgumentNullException.ThrowIfNull(rel);
+
+            if (spark != null && spark.enabled())
+                throw new java.lang.UnsupportedOperationException(
+                    "ClrEnumerableConvention cannot compile with a Spark handler: it has no generated class to hand one. Use EnumerableConvention for a Spark-enabled plan.");
 
             var implementor = new ClrEnumerableRelImplementor(rel.getCluster().getRexBuilder(), internalParameters);
             var lambda = implementor.ImplementRoot(rel, prefer);

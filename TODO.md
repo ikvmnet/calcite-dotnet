@@ -151,7 +151,7 @@ surface whether or not the operation succeeds.
 
 ## Apache.Calcite.Linq: where the CLR conventions stand
 
-`ClrEnumerableConvention` runs. 195 tests pass, measured 2026-08-04. `ClrAsyncEnumerableConvention` does not
+`ClrEnumerableConvention` runs. 197 tests pass, measured 2026-08-04. `ClrAsyncEnumerableConvention` does not
 exist yet — not one file of it, deferred deliberately until the sync side is finished.
 
 `PARITY.md` was rebuilt from the two sources on 2026-08-04 rather than carried forward, and §9 of it lists
@@ -213,20 +213,23 @@ not page references. `PARITY.md` §5 in full is item 1 below plus the four nodes
 4 and 5. Item 2 is not a difference from `EnumerableConvention` at all; it is the thing that would make this
 convention usable.
 
-**1. Three small differences from `EnumerableConvention` that nothing argues for** — `PARITY.md` 5.2, 5.4
-and 5.5. They were found by rebuilding that file against the source, which is to say they had been there
-unrecorded. Each is minutes of work or one decision, and none is blocked.
+**1. The small differences are closed.** `PARITY.md` 5.3, 5.4 and 5.5 were all "copying Calcite is possible
+and we did not", which is the one thing §6 does not admit, and all three were found by rebuilding that file
+against the source rather than by anything failing.
 
-- **5.4 — `ClrEnumerableRelImplementor.ImplementRoot` does not wrap a failing node.** Calcite catches a
-  `RuntimeException` out of `implement` and rethrows `IllegalStateException("Unable to implement " + <the
-  plan>)`, original suppressed. Ours lets the original out, so a node that cannot implement itself does not
-  name the plan that reached it. One `try`/`catch` — and it is the diagnostic that made the defect in
-  `PARITY.md` 6.11 legible in Calcite's own convention.
-- **5.5 — `ClrEnumerableInterpretable.ToBindable` drops the `CalcitePrepare.SparkHandler` parameter.** There
-  is no generated class for a spark handler to take, so the parameter has nothing to do — but dropping it
-  from the signature is a decision, and belongs in `PARITY.md` §6 or the parameter belongs back.
-- **5.2 — the window table function path is refused**, and that stays outstanding rather than justified
-  until one of the two failures under item 3 is understood.
+- **5.3 — resolved**, and 1a below is what it cost.
+- **5.4 — resolved.** `ImplementRoot` wraps a failing node now, so the failure names the plan that reached
+  it, as Calcite's does. It catches `System.Exception` where Calcite catches `RuntimeException`, because
+  .NET has no checked exceptions and that is the same set, and carries the original as the inner exception
+  because .NET has no suppressed one. `ClrEnumerableProject` refuses to implement itself by design, which is
+  what makes the wrap testable: one built by hand is the only way to reach that refusal, since the calc
+  rules rewrite every project the planner produces.
+- **5.5 — resolved.** `ToBindable` takes all four of Calcite's arguments in its order. The Spark branch is
+  the only part that could not be copied — it hands `SparkHandler.compile` the generated `ClassDeclaration`
+  and its source text, and there is neither here — so a handler that says it is enabled is refused rather
+  than ignored. `PARITY.md` 6.16.
+- **5.2 — still open**, and it belongs with item 3 rather than here: the window table function path is
+  refused because it fails two ways nobody has explained, not because a decision went unrecorded.
 
 **1a. 5.3 is resolved, and it was not free.** `Rules()` held the limit-sort rule that `ENUMERABLE_RULES`
 leaves out. Taking it out is one line — and `ShouldAgreeOnLimitAndOffset` then failed with
@@ -302,13 +305,13 @@ Scan, values, calc, project, filter, sort, limit, offset, limit-with-sort, union
 hash/semi/anti join, nested loop join, batch nested loop join, merge join, ASOF join, correlate, aggregate
 — ordered calls included — sorted aggregate, window, merge union, table function scan, collect and
 uncollect. Converters in both directions, so one plan can hold nodes of both conventions and the rows
-cross untouched. 195 tests pass.
+cross untouched. 197 tests pass.
 
 `PARITY.md` is the member-by-member comparison against 1.41, rebuilt from the source at the tag and checked
 against the assembly. Every point in it is numbered `section.item`, so a defect can be cited as 6.9 rather
-than described. What is left is **§5** — 5.1, 5.2, 5.4 and 5.5, which is items 1 and 3 to 5 of the list
-above; 5.3 is resolved. §6 is the differences that have an argument and nothing in it is work, except that
-6.9 wants the measurement item 1b describes.
+than described. What is left of **§5** is 5.1 and 5.2 — items 3 to 5 of the list above. 5.3, 5.4 and 5.5 are
+resolved. §6 is the differences that have an argument and nothing in it is work, except that 6.9 wants the
+measurement item 1b describes.
 
 ### Trait derivation, and the only thing that calls it
 

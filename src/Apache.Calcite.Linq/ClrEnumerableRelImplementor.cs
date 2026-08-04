@@ -113,9 +113,31 @@ namespace Apache.Calcite.Linq
         /// <param name="rootRel"></param>
         /// <param name="prefer"></param>
         /// <returns></returns>
+        /// <remarks>
+        /// A node that cannot implement itself is wrapped so that the failure names the plan that reached it,
+        /// as Calcite's <c>implementRoot</c> wraps one. Calcite catches <c>RuntimeException</c> — the
+        /// unchecked ones — and in .NET every exception is unchecked, so the counterpart of that set is
+        /// <see cref="System.Exception"/>. The original travels as the inner exception rather than a
+        /// suppressed one, which is what .NET has.
+        ///
+        /// <para>It is worth more than it looks. "Unable to implement EnumerableSortedAggregate(group=[{}] …)"
+        /// out of Calcite's own implementor is how the defect behind
+        /// <c>ClrEnumerableSortedAggregateRule</c>'s extra refusal was read at all; without this, the same
+        /// class of failure here arrives as a bare cast or argument error with no plan attached.</para>
+        /// </remarks>
         public LambdaExpression ImplementRoot(ClrEnumerableRel rootRel, ClrEnumerablePrefer prefer)
         {
-            var result = rootRel.Implement(this, prefer);
+            ClrEnumerableResult result;
+
+            try
+            {
+                result = rootRel.Implement(this, prefer);
+            }
+            catch (Exception e)
+            {
+                throw new java.lang.IllegalStateException(
+                    $"Unable to implement {org.apache.calcite.plan.RelOptUtil.toString(rootRel, org.apache.calcite.sql.SqlExplainLevel.ALL_ATTRIBUTES)}", e);
+            }
 
             // a one column result is the value, not a one element row, which is what every caller of a query
             // expects and what EnumerableRelImplementor arranges the same way

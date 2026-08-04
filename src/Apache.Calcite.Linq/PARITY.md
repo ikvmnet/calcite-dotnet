@@ -90,7 +90,7 @@ are that base's.
 | `stashedParameters` | **—** | nothing is stashed; see `Stash` |
 | ctor | ctor | |
 | `visitChild` | `VisitChild` | Calcite's asserts the child is the parent's input at that ordinal; a Java `assert` is off by default and ours omits it |
-| `implementRoot` | `ImplementRoot` | returns a `LambdaExpression`, not a `ClassDeclaration`. Two differences beyond that: it does not walk the block for the `GotoStatement` carrying the value, because the value is the expression; and **it does not wrap a failing node in `IllegalStateException("Unable to implement …")`**, which Calcite's does — 5.4 |
+| `implementRoot` | `ImplementRoot` | returns a `LambdaExpression`, not a `ClassDeclaration`, and does not walk the block for the `GotoStatement` carrying the value, because the value is the expression. It wraps a failing node in `IllegalStateException("Unable to implement " + <the plan>)` as Calcite's does, catching `System.Exception` where Calcite catches `RuntimeException` — .NET has no checked exceptions, so that is the same set — and carrying the original as the inner exception, .NET having no suppressed one |
 | `classDecl`, `TypeFinder`, `TypeRegistrar` | **—** | they exist to declare synthetic types as members of the generated class; `SyntheticRecordEmitter` emits them at runtime instead; 6.15 |
 | `stash` | `Stash` | ours returns a constant: an expression tree can hold the object Janino could not name |
 | `registerCorrelVariable` / `clearCorrelVariable` / `getCorrelVariableGetter` | `RegisterCorrelVariable` / `ClearCorrelVariable` / `GetCorrelVariableGetter` | |
@@ -107,7 +107,7 @@ are that base's.
 
 | Calcite | ours | |
 |---|---|---|
-| `toBindable(parameters, spark, rel, prefer)` | `ToBindable(parameters, rel, prefer)` | the `CalcitePrepare.SparkHandler` parameter is dropped; 5.5 |
+| `toBindable(parameters, spark, rel, prefer)` | `ToBindable(parameters, spark, rel, prefer)` | same four arguments in the same order; the Spark branch is refused rather than taken, 6.16 |
 | `getBindable`, `compileToBindable`, `StaticFieldDetector`, `BINDABLE_CACHE` | **—** | Janino compilation and its cache; there is nothing to port; 6.15 |
 | `box`, `BoxEnumerable`, `BoxEnumerator` | **—** | wraps each row in a one-element `Object[]` for the interpreter, which is not ported |
 | `EnumerableNode`, and the class being an `InterpretableRel` (ctor, `copy`, `implement(InterpreterImplementor)`) | **—** | the interpreter is not ported; ours is a static helper |
@@ -444,16 +444,16 @@ recorded in `TODO.md` and neither is understood; until one is, this is outstandi
 **5.3 — resolved.** `Rules()` registered the limit-sort rule and `ENUMERABLE_RULES` does not. The rule is
 out of the default list now, and 9.18 records what dropping it uncovered. The number is kept and not reused.
 
-**5.4 `ClrEnumerableRelImplementor.ImplementRoot` does not wrap a failing node.** Calcite catches a
-`RuntimeException` out of `implement` and rethrows `IllegalStateException("Unable to implement " + <the
-plan>)` with the original suppressed, so a node that cannot implement itself names the plan that reached it.
-Ours lets the original out. One `try`/`catch`, and the diagnostic is the reason the defect in 6.11 was
-legible at all.
+**5.4 — resolved.** `ImplementRoot` did not wrap a failing node. It does now, and 1.6 says how the two
+exception models line up. `ShouldNameThePlanWhenANodeCannotImplementItself` holds it.
 
-**5.5 `ClrEnumerableInterpretable.ToBindable` drops the `CalcitePrepare.SparkHandler` parameter.** Calcite's
-`toBindable` hands the generated class to the spark handler when one is enabled and compiles it with Janino
-otherwise. There is no generated class here, so the parameter has nothing to do — but dropping it from the
-signature is a decision, not a consequence, and the call sites would read the same if it were ignored.
+**5.5 — resolved.** `ToBindable` dropped the `CalcitePrepare.SparkHandler` parameter. It takes all four
+arguments in Calcite's order now, and refuses the Spark branch rather than ignoring it — 6.16.
+`ShouldRefuseASparkHandler` holds it.
+
+**Nothing else is outstanding.** §5 is 5.1 and 5.2, and both are larger than the section they sit in: 5.1 is
+four nodes, one of them blocked by 6.14 and two of them the whole interpreter and bindable conventions; 5.2
+waits on a failure nobody has explained. `TODO.md` carries them as items 3 to 5 rather than as rough edges.
 
 ---
 
@@ -584,6 +584,14 @@ whose right input projects nothing is one.
 translator casts to by name; IKVM compiles them internal, so C# can name them and cannot construct them.
 Reflection is not an acceptable way in. `TODO.md` has the three blockers in full.
 
+**6.16 A Spark handler is refused, not ignored.** *Calcite's branch cannot be copied.*
+`EnumerableInterpretable.toBindable` hands the generated `ClassDeclaration` and its source text to
+`SparkHandler.compile` when one is enabled, and compiles with Janino otherwise. There is no generated class
+here and no source text — the plan is an expression tree — so there is nothing to hand it. The parameter is
+taken anyway, in Calcite's position, and `ToBindable` throws where a handler says it is enabled. Dropping
+the parameter, which is what this used to do, would have made a caller's Spark configuration silently
+ignored; taking it and refusing says which of the two conventions can honour it.
+
 **6.15 The interpreter and bindable have nothing to port to.** *Calcite's member exists to feed Janino.*
 `EnumerableInterpretable.box`, `getBindable`, `compileToBindable`, and `EnumerableRelImplementor.classDecl`,
 `TypeFinder`, `TypeRegistrar` all serve a generated class. There is no generated class here;
@@ -606,10 +614,11 @@ every mark-join path that calls it — in `EnumerableHashJoin`, `EnumerableNeste
 
 ## 8. Measured on the way, and worth keeping
 
-**8.1 195 tests pass**, measured 2026-08-04: 120 differential, of which 87 compare rows with the default
+**8.1 197 tests pass**, measured 2026-08-04: 120 differential, of which 87 compare rows with the default
 planner, 11 with top-down optimisation on, 5 with the sorted aggregate rule on, 5 with the batch nested loop
 join rule on, 5 with the limit-sort rule on, 5 assert rows by hand because `EnumerableConvention` cannot run
-the query at all, and 2 assert which node the planner chose.
+the query at all, and 2 assert which node the planner chose. Two of the rest hold what a failure looks
+like — the plan named when a node cannot implement itself, and the Spark refusal.
 
 **8.2 Java specifies `String.hashCode`, and IKVM implements it.** Measured in `JavaHashingTests`, in two
 processes: the Java-side hash of `"EAST"` is 2120701 both times, the CLR's is a different number each time,
@@ -714,6 +723,13 @@ planned the query itself. Five differential tests now run with the limit-sort ru
 which is the first time `EnumerableLimitSort` has ever been the oracle for `ClrEnumerableLimitSort` —
 before, Calcite could not plan the node at all. Two more assert which node each side chose, with and without
 the rule.
+
+**9.19 `ImplementRoot` and `ToBindable` are Calcite's again.** 5.4 and 5.5 were both "copying is possible
+and we did not", which is the one thing §6 does not admit. `ImplementRoot` wraps a failing node, so the
+failure names the plan; `ToBindable` takes the Spark handler in Calcite's argument position and refuses it,
+so a caller's configuration is answered rather than dropped. The refusal is the only part that could not be
+copied, and it is 6.16. Two tests, one each: a `ClrEnumerableProject` built by hand is the node that refuses
+to implement itself by design, which is what makes the wrap testable at all.
 
 **9.17 "A pass-through node does not re-optimise its input's row format" was filed as demonstrated.** It is
 demonstrated in *this* convention only. Running Calcite's is blocked by the CLR table function Janino cannot

@@ -268,7 +268,7 @@ namespace Apache.Calcite.Linq.Tests
 
             var parameters = new java.util.HashMap();
             var bindable = physical is ClrEnumerableRel node
-                ? ClrEnumerableInterpretable.ToBindable(parameters, node, ClrEnumerablePrefer.Array)
+                ? ClrEnumerableInterpretable.ToBindable(parameters, null, node, ClrEnumerablePrefer.Array)
                 : EnumerableInterpretable.toBindable(parameters, null, (EnumerableRel)physical, EnumerableRel.Prefer.ARRAY);
 
             var rows = new List<string>();

@@ -120,7 +120,7 @@ namespace Apache.Calcite.Linq.Tests
 
             var parameters = new java.util.HashMap();
             var bindable = physical is ClrEnumerableRel clr
-                ? ClrEnumerableInterpretable.ToBindable(parameters, clr, ClrEnumerablePrefer.Array)
+                ? ClrEnumerableInterpretable.ToBindable(parameters, null, clr, ClrEnumerablePrefer.Array)
                 : EnumerableInterpretable.toBindable(parameters, null, (EnumerableRel)physical, EnumerableRel.Prefer.ARRAY);
 
             var rows = new List<object[]>();
@@ -184,7 +184,7 @@ namespace Apache.Calcite.Linq.Tests
             var physical = planner.transform(1, chosen.getTraitSet(), chosen);
 
             var rows = new List<object[]>();
-            var bindable = ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
+            var bindable = ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), null, (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
             var enumerator = bindable.bind(new TestDataContext(rootSchema)).enumerator();
 
             while (enumerator.moveNext())
