@@ -817,7 +817,13 @@ without running it.
   **The fix is one line, upstream**: `Expressions.convert_(sinkRow, Primitive.box(tablePhysType
   .getJavaRowType()))`. `Primitive.box` leaves `Object[]` alone, so the multi-column path — the only one
   CALCITE-7510 added tests for, all of them `create table t (i int not null, j int not null)` — generates
-  exactly what it does today. File it; it is not ours to work around.
+  exactly what it does today.
+
+  **Filed and submitted**: [CALCITE-7690](https://issues.apache.org/jira/browse/CALCITE-7690) and
+  [apache/calcite#5150](https://github.com/apache/calcite/pull/5150), with the fix and two `ServerTest`
+  cases, verified against Calcite's own build. **When it lands and reaches a snapshot these two tests go
+  green with no change here** — at that point delete the long `<remarks>` from both of them, since the
+  test names then say all that is left to say.
 
   **The version trade is measured**, and neither end is clean: on 1.43.0-SNAPSHOT these two one-column
   DELETE tests fail; on 1.42.0 they pass and *four* UPDATE tests fail instead, because fixing UPDATE is what
