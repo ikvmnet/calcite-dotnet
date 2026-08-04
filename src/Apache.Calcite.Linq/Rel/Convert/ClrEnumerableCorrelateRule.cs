@@ -40,64 +40,14 @@ namespace Apache.Calcite.Linq.Rel.Convert
         /// <inheritdoc />
         public override RelNode convert(RelNode rel)
         {
-            var correlate = (Correlate)rel;
-            var traitSet = correlate.getTraitSet().replace(ClrEnumerableConvention.Instance);
+            var c = (Correlate)rel;
 
-            return new ClrEnumerableCorrelate(
-                correlate.getCluster(),
-                traitSet,
-                RelOptRule.convert(correlate.getLeft(), traitSet),
-                RelOptRule.convert(correlate.getRight(), traitSet),
-                correlate.getCorrelationId(),
-                correlate.getRequiredColumns(),
-                correlate.getJoinType());
-        }
-
-    }
-
-    /// <summary>
-    /// Rule that converts a <see cref="LogicalJoin"/> with no equality to a
-    /// <see cref="ClrEnumerableNestedLoopJoin"/>.
-    /// </summary>
-    public class ClrEnumerableNestedLoopJoinRule : ConverterRule
-    {
-
-        /// <summary>
-        /// Creates a <see cref="ClrEnumerableNestedLoopJoinRule"/>.
-        /// </summary>
-        /// <returns></returns>
-        public static ClrEnumerableNestedLoopJoinRule Create()
-        {
-            return (ClrEnumerableNestedLoopJoinRule)Config.INSTANCE
-                .withConversion((java.lang.Class)typeof(LogicalJoin), Convention.NONE, ClrEnumerableConvention.Instance, "ClrEnumerableNestedLoopJoinRule")
-                .withRuleFactory(new DelegateFunction<Config, ClrEnumerableNestedLoopJoinRule>(c => new ClrEnumerableNestedLoopJoinRule(c)))
-                .toRule(typeof(ClrEnumerableNestedLoopJoinRule));
-        }
-
-        /// <summary>
-        /// Initializes a new instance.
-        /// </summary>
-        /// <param name="config"></param>
-        public ClrEnumerableNestedLoopJoinRule(Config config) :
-            base(config)
-        {
-
-        }
-
-        /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
-        {
-            var join = (Join)rel;
-            var traitSet = join.getTraitSet().replace(ClrEnumerableConvention.Instance);
-
-            return new ClrEnumerableNestedLoopJoin(
-                join.getCluster(),
-                traitSet,
-                RelOptRule.convert(join.getLeft(), traitSet),
-                RelOptRule.convert(join.getRight(), traitSet),
-                join.getCondition(),
-                join.getVariablesSet(),
-                join.getJoinType());
+            return ClrEnumerableCorrelate.Create(
+                convert(c.getLeft(), c.getLeft().getTraitSet().replace(ClrEnumerableConvention.Instance)),
+                convert(c.getRight(), c.getRight().getTraitSet().replace(ClrEnumerableConvention.Instance)),
+                c.getCorrelationId(),
+                c.getRequiredColumns(),
+                c.getJoinType());
         }
 
     }

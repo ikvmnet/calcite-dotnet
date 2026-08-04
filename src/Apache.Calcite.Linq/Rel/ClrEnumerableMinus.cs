@@ -37,7 +37,7 @@ namespace Apache.Calcite.Linq.Rel
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
+        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             Expression? minusExp = null;
 
@@ -61,7 +61,7 @@ namespace Apache.Calcite.Linq.Rel
                     Expression.Constant(all));
             }
 
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.prefer(JavaRowFormat.CUSTOM));
+            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
 
             return implementor.Result(physType, minusExp ?? throw new java.lang.IllegalStateException("minusExp"));
         }

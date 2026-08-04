@@ -59,11 +59,23 @@ namespace Apache.Calcite.Linq.Convert
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// The same multiplier the other direction applies, for the same reason: what a converter costs is
+        /// what the convention it produces costs against a typical one.
+        /// </remarks>
+        public override RelOptCost computeSelfCost(RelOptPlanner planner, org.apache.calcite.rel.metadata.RelMetadataQuery mq)
+        {
+            var cost = base.computeSelfCost(planner, mq);
+
+            return cost == null ? null! : cost.multiplyBy(EnumerableConvention.COST_MULTIPLIER);
+        }
+
+        /// <inheritdoc />
         public EnumerableRel.Result implement(EnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
         {
             // the same map, so what this side stashes reaches the DataContext the plan is bound with
             var clr = new ClrEnumerableRelImplementor(implementor.getRexBuilder(), implementor.map);
-            var result = clr.VisitChild(null, 0, (ClrEnumerableRel)getInput(), pref);
+            var result = clr.VisitChild(null, 0, (ClrEnumerableRel)getInput(), ClrEnumerablePrefers.FromCalcite(pref));
 
             var plan = Expression.Lambda<Func<DataContext, IEnumerable>>(
                 Expression.Convert(result.Expression, typeof(IEnumerable)),

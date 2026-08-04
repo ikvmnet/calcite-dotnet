@@ -64,11 +64,17 @@ namespace Apache.Calcite.Linq.Rel
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
+        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var child = (ClrEnumerableRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format);
+            // the rows here are the input's rows, so the format has to be the one they already have. The
+            // three-argument overload re-optimises it, and for a one-column row that turns ARRAY into SCALAR
+            // — a physical type saying the row *is* the value while the sequence still yields Object[]. A
+            // parent then reads field 0 as the row itself. Calcite writes the three-argument call and cannot
+            // see the difference, because Java erases the element type; ours is typed, and a merge join over
+            // a one-column table function is where it surfaced.
+            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format, false);
 
             var inputPhysType = result.PhysType;
             var pair = inputPhysType.generateCollationKey(collation.getFieldCollations());
@@ -85,28 +91,9 @@ namespace Apache.Calcite.Linq.Rel
                     result.Expression,
                     keySelector,
                     comparator,
-                    offset == null ? Expression.Constant(0) : Count(implementor, offset),
-                    fetch == null ? Expression.Constant(int.MaxValue) : Count(implementor, fetch)));
+                    offset == null ? Expression.Constant(0) : ClrEnumerableLimit.Count(implementor, offset),
+                    fetch == null ? Expression.Constant(int.MaxValue) : ClrEnumerableLimit.Count(implementor, fetch)));
         }
-
-        /// <summary>
-        /// Returns the expression giving a row count, which is a literal unless the query was prepared with a
-        /// parameter in its place.
-        /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="rexNode"></param>
-        /// <returns></returns>
-        static Expression Count(ClrEnumerableRelImplementor implementor, RexNode rexNode)
-        {
-            if (rexNode is RexDynamicParam param)
-                return JavaCast.To(
-                    Expression.Call(implementor.Root, DataContextGet, Expression.Constant("?" + param.getIndex())),
-                    typeof(int));
-
-            return Expression.Constant(RexLiteral.intValue(rexNode));
-        }
-
-        static readonly System.Reflection.MethodInfo DataContextGet = MethodResolver.Resolve(BuiltInMethod.DATA_CONTEXT_GET.method);
 
     }
 

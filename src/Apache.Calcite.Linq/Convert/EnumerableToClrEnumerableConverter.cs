@@ -54,11 +54,11 @@ namespace Apache.Calcite.Linq.Convert
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
+        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             // the same map, so a value Calcite stashes reaches the DataContext this plan is bound with
             var enumerable = new EnumerableRelImplementor(implementor.RexBuilder, implementor.Map);
-            var result = enumerable.visitChild(null, 0, (EnumerableRel)getInput(), pref);
+            var result = enumerable.visitChild(null, 0, (EnumerableRel)getInput(), pref.ToCalcite());
 
             var rowType = TypeResolver.Resolve(result.physType.getJavaRowType());
             var source = implementor.Translator.TranslateBody(result.block, typeof(Enumerable));

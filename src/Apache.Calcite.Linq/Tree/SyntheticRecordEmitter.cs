@@ -82,7 +82,11 @@ namespace Apache.Calcite.Linq.Tree
             }
 
             EmitConstructor(builder, [], fields);
-            EmitConstructor(builder, types, fields);
+
+            // a record of no fields has the same two constructors, and emitting both leaves the type with two
+            // that cannot be told apart. A semi join whose right input projects nothing is one
+            if (types.Length > 0)
+                EmitConstructor(builder, types, fields);
 
             return builder.CreateType();
         }

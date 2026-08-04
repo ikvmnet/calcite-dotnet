@@ -16,139 +16,154 @@ namespace Apache.Calcite.Linq.Runtime
     {
 
         /// <summary>
-        /// <see cref="ClrEnumerables.Slice0"/>.
+        /// <see cref="ClrEnumerableDefaults.Slice0"/>.
         /// </summary>
-        public static readonly MethodInfo Slice0 = Of(nameof(ClrEnumerables.Slice0));
+        public static readonly MethodInfo Slice0 = Of(nameof(ClrEnumerableDefaults.Slice0));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.Calc"/>.
+        /// <see cref="ClrEnumerableDefaults.Calc"/>.
         /// </summary>
-        public static readonly MethodInfo Calc = Of(nameof(ClrEnumerables.Calc));
+        public static readonly MethodInfo Calc = Of(nameof(ClrEnumerableDefaults.Calc));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.Where"/>.
+        /// <see cref="ClrEnumerableDefaults.Where"/>.
         /// </summary>
-        public static readonly MethodInfo Where = Of(nameof(ClrEnumerables.Where));
+        public static readonly MethodInfo Where = Of(nameof(ClrEnumerableDefaults.Where));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.Select{TSource, TResult}"/>.
+        /// <see cref="ClrEnumerableDefaults.Select{TSource, TResult}"/>.
         /// </summary>
-        public static readonly MethodInfo Select = Of(nameof(ClrEnumerables.Select));
+        public static readonly MethodInfo Select = Of(nameof(ClrEnumerableDefaults.Select));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.OrderBy"/>.
+        /// <see cref="ClrEnumerableDefaults.OrderBy"/>.
         /// </summary>
-        public static readonly MethodInfo OrderBy = Of(nameof(ClrEnumerables.OrderBy));
+        public static readonly MethodInfo OrderBy = Of(nameof(ClrEnumerableDefaults.OrderBy));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.Skip"/>.
+        /// <see cref="ClrEnumerableDefaults.Skip"/>.
         /// </summary>
-        public static readonly MethodInfo Skip = Of(nameof(ClrEnumerables.Skip));
+        public static readonly MethodInfo Skip = Of(nameof(ClrEnumerableDefaults.Skip));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.Take"/>.
+        /// <see cref="ClrEnumerableDefaults.Take"/>.
         /// </summary>
-        public static readonly MethodInfo Take = Of(nameof(ClrEnumerables.Take));
+        public static readonly MethodInfo Take = Of(nameof(ClrEnumerableDefaults.Take));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.Concat"/>.
+        /// <see cref="ClrEnumerableDefaults.Concat"/>.
         /// </summary>
-        public static readonly MethodInfo Concat = Of(nameof(ClrEnumerables.Concat));
+        public static readonly MethodInfo Concat = Of(nameof(ClrEnumerableDefaults.Concat));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.Union"/>.
+        /// <see cref="ClrEnumerableDefaults.Union"/>.
         /// </summary>
-        public static readonly MethodInfo Union = Of(nameof(ClrEnumerables.Union));
+        public static readonly MethodInfo Union = Of(nameof(ClrEnumerableDefaults.Union));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.Intersect"/>.
+        /// <see cref="ClrEnumerableDefaults.Intersect"/>.
         /// </summary>
-        public static readonly MethodInfo Intersect = Of(nameof(ClrEnumerables.Intersect));
+        public static readonly MethodInfo Intersect = Of(nameof(ClrEnumerableDefaults.Intersect));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.Except"/>.
+        /// <see cref="ClrEnumerableDefaults.Except"/>.
         /// </summary>
-        public static readonly MethodInfo Except = Of(nameof(ClrEnumerables.Except));
+        public static readonly MethodInfo Except = Of(nameof(ClrEnumerableDefaults.Except));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.Distinct"/>.
+        /// <see cref="ClrEnumerableDefaults.Distinct"/>.
         /// </summary>
-        public static readonly MethodInfo Distinct = Of(nameof(ClrEnumerables.Distinct));
+        public static readonly MethodInfo Distinct = Of(nameof(ClrEnumerableDefaults.Distinct));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.HashJoin"/>.
+        /// <see cref="ClrEnumerableDefaults.HashJoin"/>.
         /// </summary>
-        public static readonly MethodInfo HashJoin = Of(nameof(ClrEnumerables.HashJoin));
+        public static readonly MethodInfo HashJoin = Of(nameof(ClrEnumerableDefaults.HashJoin));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.SemiJoin"/>.
+        /// <see cref="ClrEnumerableDefaults.SemiJoin"/>.
         /// </summary>
-        public static readonly MethodInfo SemiJoin = Of(nameof(ClrEnumerables.SemiJoin));
+        public static readonly MethodInfo SemiJoin = Of(nameof(ClrEnumerableDefaults.SemiJoin));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.NestedLoopJoin"/>.
+        /// <see cref="ClrEnumerableDefaults.MergeJoin"/>.
         /// </summary>
-        public static readonly MethodInfo NestedLoopJoin = Of(nameof(ClrEnumerables.NestedLoopJoin));
+        public static readonly MethodInfo MergeJoin = Of(nameof(ClrEnumerableDefaults.MergeJoin));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.CorrelateJoin"/>.
+        /// <see cref="ClrEnumerableDefaults.AsofJoin"/>.
         /// </summary>
-        public static readonly MethodInfo CorrelateJoin = Of(nameof(ClrEnumerables.CorrelateJoin));
+        public static readonly MethodInfo AsofJoin = Of(nameof(ClrEnumerableDefaults.AsofJoin));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.GroupBy"/>.
+        /// <see cref="ClrEnumerableDefaults.NestedLoopJoin"/>.
         /// </summary>
-        public static readonly MethodInfo GroupBy = Of(nameof(ClrEnumerables.GroupBy));
+        public static readonly MethodInfo NestedLoopJoin = Of(nameof(ClrEnumerableDefaults.NestedLoopJoin));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.Aggregate"/>.
+        /// <see cref="ClrEnumerableDefaults.CorrelateJoin"/>.
         /// </summary>
-        public static readonly MethodInfo Aggregate = Of(nameof(ClrEnumerables.Aggregate));
+        public static readonly MethodInfo CorrelateJoin = Of(nameof(ClrEnumerableDefaults.CorrelateJoin));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.SelectMany"/>.
+        /// <see cref="ClrEnumerableDefaults.GroupBy"/>.
         /// </summary>
-        public static readonly MethodInfo SelectMany = Of(nameof(ClrEnumerables.SelectMany));
+        public static readonly MethodInfo GroupBy = Of(nameof(ClrEnumerableDefaults.GroupBy));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.OrderByWithFetchAndOffset"/>.
+        /// <see cref="ClrEnumerableDefaults.Aggregate"/>.
         /// </summary>
-        public static readonly MethodInfo OrderByWithFetchAndOffset = Of(nameof(ClrEnumerables.OrderByWithFetchAndOffset));
+        public static readonly MethodInfo Aggregate = Of(nameof(ClrEnumerableDefaults.Aggregate));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.ToJavaList"/>.
+        /// <see cref="ClrEnumerableDefaults.Window"/>.
         /// </summary>
-        public static readonly MethodInfo ToJavaList = Of(nameof(ClrEnumerables.ToJavaList));
+        public static readonly MethodInfo Window = Of(nameof(ClrEnumerableDefaults.Window));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.ToJavaMap"/>.
+        /// <see cref="ClrEnumerableDefaults.SelectMany"/>.
         /// </summary>
-        public static readonly MethodInfo ToJavaMap = Of(nameof(ClrEnumerables.ToJavaMap));
+        public static readonly MethodInfo SelectMany = Of(nameof(ClrEnumerableDefaults.SelectMany));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.LazyCollectionSpool"/>.
+        /// <see cref="ClrEnumerableDefaults.OrderByWithFetchAndOffset"/>.
         /// </summary>
-        public static readonly MethodInfo LazyCollectionSpool = Of(nameof(ClrEnumerables.LazyCollectionSpool));
+        public static readonly MethodInfo OrderByWithFetchAndOffset = Of(nameof(ClrEnumerableDefaults.OrderByWithFetchAndOffset));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.RepeatUnion"/>.
+        /// <see cref="ClrEnumerableDefaults.ToJavaList"/>.
         /// </summary>
-        public static readonly MethodInfo RepeatUnion = Of(nameof(ClrEnumerables.RepeatUnion));
+        public static readonly MethodInfo ToJavaList = Of(nameof(ClrEnumerableDefaults.ToJavaList));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.AsEnumerable"/>.
+        /// <see cref="ClrEnumerableDefaults.ToJavaMap"/>.
         /// </summary>
-        public static readonly MethodInfo AsEnumerable = Of(nameof(ClrEnumerables.AsEnumerable));
+        public static readonly MethodInfo ToJavaMap = Of(nameof(ClrEnumerableDefaults.ToJavaMap));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.Singleton"/>.
+        /// <see cref="ClrEnumerableDefaults.LazyCollectionSpool"/>.
         /// </summary>
-        public static readonly MethodInfo Singleton = Of(nameof(ClrEnumerables.Singleton));
+        public static readonly MethodInfo LazyCollectionSpool = Of(nameof(ClrEnumerableDefaults.LazyCollectionSpool));
 
         /// <summary>
-        /// <see cref="ClrEnumerables.Empty"/>.
+        /// <see cref="ClrEnumerableDefaults.RepeatUnion"/>.
         /// </summary>
-        public static readonly MethodInfo Empty = Of(nameof(ClrEnumerables.Empty));
+        public static readonly MethodInfo RepeatUnion = Of(nameof(ClrEnumerableDefaults.RepeatUnion));
+
+        /// <summary>
+        /// <see cref="ClrEnumerableDefaults.AsEnumerable"/>.
+        /// </summary>
+        public static readonly MethodInfo AsEnumerable = Of(nameof(ClrEnumerableDefaults.AsEnumerable));
+
+        /// <summary>
+        /// <see cref="ClrEnumerableDefaults.Singleton"/>.
+        /// </summary>
+        public static readonly MethodInfo Singleton = Of(nameof(ClrEnumerableDefaults.Singleton));
+
+        /// <summary>
+        /// <see cref="ClrEnumerableDefaults.Empty"/>.
+        /// </summary>
+        public static readonly MethodInfo Empty = Of(nameof(ClrEnumerableDefaults.Empty));
 
         /// <summary>
         /// <see cref="JavaSequences.FromJava"/>.
@@ -169,8 +184,8 @@ namespace Apache.Calcite.Linq.Runtime
         /// <returns></returns>
         static MethodInfo Of(string name)
         {
-            return typeof(ClrEnumerables).GetMethod(name, BindingFlags.Public | BindingFlags.Static)
-                ?? throw new InvalidOperationException($"'{name}' is missing from {nameof(ClrEnumerables)}.");
+            return typeof(ClrEnumerableDefaults).GetMethod(name, BindingFlags.Public | BindingFlags.Static)
+                ?? throw new InvalidOperationException($"'{name}' is missing from {nameof(ClrEnumerableDefaults)}.");
         }
 
     }

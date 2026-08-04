@@ -5,13 +5,20 @@ using org.apache.calcite.rel;
 using org.apache.calcite.rel.convert;
 using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.logical;
+using org.apache.calcite.rex;
 
 namespace Apache.Calcite.Linq.Rel.Convert
 {
 
     /// <summary>
-    /// Rule that converts a <see cref="LogicalJoin"/> to a <see cref="ClrEnumerableHashJoin"/>.
+    /// Rule that converts a <see cref="LogicalJoin"/> to a <see cref="ClrEnumerableHashJoin"/> or, where
+    /// there is no equality to build a lookup on, to a <see cref="ClrEnumerableNestedLoopJoin"/>.
     /// </summary>
+    /// <remarks>
+    /// One rule for both algorithms, as <c>EnumerableJoinRule</c> is. Two rules were tried, and the second
+    /// one was ours rather than Calcite's: the choice is made from one <c>JoinInfo</c>, so making it twice
+    /// means analysing the condition twice and agreeing about it by luck.
+    /// </remarks>
     public class ClrEnumerableJoinRule : ConverterRule
     {
 
@@ -41,21 +48,39 @@ namespace Apache.Calcite.Linq.Rel.Convert
         public override RelNode convert(RelNode rel)
         {
             var join = (Join)rel;
+            var newInputs = new java.util.ArrayList();
 
-            // a join with no equality to build a lookup on is not this rule's; it stays for the nested loop
-            if (join.analyzeCondition().leftKeys.isEmpty())
-                return null!;
+            for (int i = 0; i < join.getInputs().size(); i++)
+            {
+                var input = (RelNode)join.getInputs().get(i);
+                if (input.getConvention() is not ClrEnumerableConvention)
+                    input = convert(input, input.getTraitSet().replace(ClrEnumerableConvention.Instance));
 
-            var traitSet = join.getTraitSet().replace(ClrEnumerableConvention.Instance);
+                newInputs.add(input);
+            }
 
-            return new ClrEnumerableHashJoin(
-                join.getCluster(),
-                traitSet,
-                RelOptRule.convert(join.getLeft(), traitSet),
-                RelOptRule.convert(join.getRight(), traitSet),
-                join.getCondition(),
-                join.getVariablesSet(),
-                join.getJoinType());
+            var rexBuilder = join.getCluster().getRexBuilder();
+            var left = (RelNode)newInputs.get(0);
+            var right = (RelNode)newInputs.get(1);
+            var info = join.analyzeCondition();
+
+            // if the join has equi keys (a complete or a partial equi-join), a hash join takes it — it
+            // supports every join type, even where the condition also carries non-equi parts; a complete
+            // non-equi join goes to the nested loop, where hashing would buy nothing.
+            var hasEquiKeys = info.leftKeys.isEmpty() == false && info.rightKeys.isEmpty() == false;
+            if (hasEquiKeys)
+            {
+                // re-arrange the condition: the equi-join elements first, the non-equi ones after. Not
+                // strictly necessary, and it keeps a plan readable and stable.
+                var equi = info.getEquiCondition(left, right, rexBuilder);
+                var condition = info.isEqui()
+                    ? equi
+                    : RexUtil.composeConjunction(rexBuilder, java.util.Arrays.asList([equi, RexUtil.composeConjunction(rexBuilder, info.nonEquiConditions)]));
+
+                return ClrEnumerableHashJoin.Create(left, right, condition, join.getVariablesSet(), join.getJoinType());
+            }
+
+            return ClrEnumerableNestedLoopJoin.Create(left, right, join.getCondition(), join.getVariablesSet(), join.getJoinType());
         }
 
     }

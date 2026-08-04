@@ -59,12 +59,35 @@ namespace Apache.Calcite.Linq.Rel
         }
 
         /// <inheritdoc />
+        public org.apache.calcite.util.Pair passThroughTraits(RelTraitSet required)
+        {
+            return ClrEnumerableTraitsUtils.PassThroughTraitsForProject(
+                required,
+                getProjects(),
+                getInput().getRowType(),
+                getInput().getCluster().getTypeFactory(),
+                getTraitSet())!;
+        }
+
+        /// <inheritdoc />
+        public org.apache.calcite.util.Pair deriveTraits(RelTraitSet childTraits, int childId)
+        {
+            return ClrEnumerableTraitsUtils.DeriveTraitsForProject(
+                childTraits,
+                childId,
+                getProjects(),
+                getInput().getRowType(),
+                getInput().getCluster().getTypeFactory(),
+                getTraitSet())!;
+        }
+
+        /// <inheritdoc />
         /// <remarks>
         /// A calc is always better, exactly as for <c>EnumerableProject</c>, because it carries the filter and
         /// the projection in one pass. Reaching here means the calc rules were not registered: they are not
         /// part of a convention's rule set in Calcite either, but of <c>RelOptRules.CALC_RULES</c>.
         /// </remarks>
-        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
+        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             throw new java.lang.UnsupportedOperationException();
         }

@@ -42,12 +42,21 @@ namespace Apache.Calcite.Linq.Rel.Convert
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Two statements, exactly as <c>EnumerableValuesRule</c>: build the node, then copy it onto the
+        /// logical node's trait set with the convention swapped in. The copy is not redundant — the logical
+        /// node's traits are what the rest of the plan was matched against.
+        ///
+        /// <para>This was once cut down to the first statement, on a misreading of Calcite's rule, to explain
+        /// a <c>RelCompositeTrait to RelCollation</c> cast failure. That failure is
+        /// <see cref="ClrEnumerableValues.passThrough"/> having been missing, not this.</para>
+        /// </remarks>
         public override RelNode convert(RelNode rel)
         {
             var values = (Values)rel;
-            var clr = ClrEnumerableValues.Create(values.getCluster(), values.getRowType(), values.getTuples());
+            var enumerableValues = ClrEnumerableValues.Create(values.getCluster(), values.getRowType(), values.getTuples());
 
-            return clr.copy(values.getTraitSet().replace(ClrEnumerableConvention.Instance), clr.getInputs());
+            return enumerableValues.copy(values.getTraitSet().replace(ClrEnumerableConvention.Instance), enumerableValues.getInputs());
         }
 
     }

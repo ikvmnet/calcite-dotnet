@@ -3,6 +3,8 @@ using System.Linq.Expressions;
 using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
+using java.util.function;
+
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -28,7 +30,26 @@ namespace Apache.Calcite.Linq.Rel
     {
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Creates a <see cref="ClrEnumerableTableSpool"/>.
+        /// </summary>
+        /// <param name="input"></param>
+        /// <param name="readType"></param>
+        /// <param name="writeType"></param>
+        /// <param name="table"></param>
+        /// <returns></returns>
+        public static ClrEnumerableTableSpool Create(RelNode input, Spool.Type readType, Spool.Type writeType, RelOptTable table)
+        {
+            var cluster = input.getCluster();
+            var mq = cluster.getMetadataQuery();
+            var traitSet = cluster.traitSetOf(ClrEnumerableConvention.Instance)
+                .replaceIfs(RelCollationTraitDef.INSTANCE, new DelegateSupplier<object>(() => mq.collations(input)))
+                .replaceIf(RelDistributionTraitDef.INSTANCE, new DelegateSupplier<object>(() => mq.distribution(input)));
+
+            return new ClrEnumerableTableSpool(cluster, traitSet, input, readType, writeType, table);
+        }
+
+        /// <summary>
+        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
         /// </summary>
         /// <param name="cluster"></param>
         /// <param name="traitSet"></param>
@@ -49,13 +70,19 @@ namespace Apache.Calcite.Linq.Rel
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
+        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             if (readType.name() != nameof(Spool.Type.LAZY) || writeType.name() != nameof(Spool.Type.LAZY))
                 throw new java.lang.UnsupportedOperationException("only LAZY read and LAZY write are supported");
 
             var result = implementor.VisitChild(this, 0, (ClrEnumerableRel)getInput(), pref);
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.prefer(result.Format));
+            // the rows here are the input's rows, so the format has to be the one they already have. The
+            // three-argument overload re-optimises it, and for a one-column row that turns ARRAY into SCALAR
+            // — a physical type saying the row *is* the value while the sequence still yields Object[]. A
+            // parent then reads field 0 as the row itself. Calcite writes the three-argument call and cannot
+            // see the difference, because Java erases the element type; ours is typed, and a merge join over
+            // a one-column table function is where it surfaced.
+            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(result.Format), false);
 
             var table = (ModifiableTable)getTable().unwrap(typeof(ModifiableTable))
                 ?? throw new java.lang.IllegalStateException($"{getTable()} is not modifiable");

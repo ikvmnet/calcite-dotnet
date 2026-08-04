@@ -135,7 +135,7 @@ namespace Apache.Calcite.Linq.Tests
             org.apache.calcite.runtime.Bindable bindable;
             try
             {
-                bindable = ClrInterpretable.ToBindable(new java.util.HashMap(), physical, EnumerableRel.Prefer.ARRAY);
+                bindable = ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), physical, ClrEnumerablePrefer.Array);
             }
             catch (Exception e)
             {

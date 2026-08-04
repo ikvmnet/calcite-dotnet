@@ -41,9 +41,13 @@ namespace Apache.Calcite.Linq.Rel.Convert
         public override RelNode convert(RelNode rel)
         {
             var union = (Union)rel;
-            var traitSet = union.getTraitSet().replace(ClrEnumerableConvention.Instance);
+            var traitSet = rel.getCluster().traitSet().replace(ClrEnumerableConvention.Instance);
 
-            return new ClrEnumerableUnion(rel.getCluster(), traitSet, SetOps.Convert(this, union, traitSet), union.all);
+            var newInputs = new java.util.ArrayList();
+            for (int i = 0; i < union.getInputs().size(); i++)
+                newInputs.add(convert((RelNode)union.getInputs().get(i), traitSet));
+
+            return new ClrEnumerableUnion(rel.getCluster(), traitSet, newInputs, union.all);
         }
 
     }
@@ -82,7 +86,7 @@ namespace Apache.Calcite.Linq.Rel.Convert
             var intersect = (Intersect)rel;
             var traitSet = intersect.getTraitSet().replace(ClrEnumerableConvention.Instance);
 
-            return new ClrEnumerableIntersect(rel.getCluster(), traitSet, SetOps.Convert(this, intersect, traitSet), intersect.all);
+            return new ClrEnumerableIntersect(rel.getCluster(), traitSet, convertList(intersect.getInputs(), ClrEnumerableConvention.Instance), intersect.all);
         }
 
     }
@@ -119,33 +123,9 @@ namespace Apache.Calcite.Linq.Rel.Convert
         public override RelNode convert(RelNode rel)
         {
             var minus = (Minus)rel;
-            var traitSet = minus.getTraitSet().replace(ClrEnumerableConvention.Instance);
+            var traitSet = rel.getTraitSet().replace(ClrEnumerableConvention.Instance);
 
-            return new ClrEnumerableMinus(rel.getCluster(), traitSet, SetOps.Convert(this, minus, traitSet), minus.all);
-        }
-
-    }
-
-    /// <summary>
-    /// Brings the inputs of a set operation into this convention.
-    /// </summary>
-    static class SetOps
-    {
-
-        /// <summary>
-        /// Returns the inputs of a set operation, each converted.
-        /// </summary>
-        /// <param name="rule"></param>
-        /// <param name="setOp"></param>
-        /// <param name="traitSet"></param>
-        /// <returns></returns>
-        public static java.util.List Convert(ConverterRule rule, SetOp setOp, RelTraitSet traitSet)
-        {
-            var inputs = new java.util.ArrayList();
-            for (int i = 0; i < setOp.getInputs().size(); i++)
-                inputs.add(RelOptRule.convert((RelNode)setOp.getInputs().get(i), traitSet));
-
-            return inputs;
+            return new ClrEnumerableMinus(rel.getCluster(), traitSet, convertList(minus.getInputs(), ClrEnumerableConvention.Instance), minus.all);
         }
 
     }

@@ -44,12 +44,10 @@ namespace Apache.Calcite.Linq.Rel.Convert
         public override RelNode convert(RelNode rel)
         {
             var collect = (Collect)rel;
-            var traitSet = collect.getTraitSet().replace(ClrEnumerableConvention.Instance);
+            var input = collect.getInput();
 
-            return new ClrEnumerableCollect(
-                collect.getCluster(),
-                traitSet,
-                RelOptRule.convert(collect.getInput(), traitSet),
+            return ClrEnumerableCollect.Create(
+                convert(input, input.getTraitSet().replace(ClrEnumerableConvention.Instance)),
                 collect.getRowType());
         }
 
@@ -88,13 +86,10 @@ namespace Apache.Calcite.Linq.Rel.Convert
         {
             var uncollect = (Uncollect)rel;
             var traitSet = uncollect.getTraitSet().replace(ClrEnumerableConvention.Instance);
+            var input = uncollect.getInput();
+            var newInput = convert(input, input.getTraitSet().replace(ClrEnumerableConvention.Instance));
 
-            return new ClrEnumerableUncollect(
-                uncollect.getCluster(),
-                traitSet,
-                RelOptRule.convert(uncollect.getInput(), traitSet),
-                uncollect.withOrdinality,
-                com.google.common.collect.ImmutableList.of());
+            return ClrEnumerableUncollect.Create(traitSet, newInput, uncollect.withOrdinality);
         }
 
     }
@@ -135,11 +130,7 @@ namespace Apache.Calcite.Linq.Rel.Convert
         public override void onMatch(RelOptRuleCall call)
         {
             var sort = (Sort)call.rel(0);
-            if (sort.fetch == null)
-                return;
-
             var input = sort.getInput();
-            var traitSet = sort.getTraitSet().replace(ClrEnumerableConvention.Instance).replace(sort.getCollation());
 
             call.transformTo(
                 ClrEnumerableLimitSort.Create(

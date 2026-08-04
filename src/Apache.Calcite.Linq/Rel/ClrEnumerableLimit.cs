@@ -70,11 +70,17 @@ namespace Apache.Calcite.Linq.Rel
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
+        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var child = (ClrEnumerableRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format);
+            // the rows here are the input's rows, so the format has to be the one they already have. The
+            // three-argument overload re-optimises it, and for a one-column row that turns ARRAY into SCALAR
+            // — a physical type saying the row *is* the value while the sequence still yields Object[]. A
+            // parent then reads field 0 as the row itself. Calcite writes the three-argument call and cannot
+            // see the difference, because Java erases the element type; ours is typed, and a merge join over
+            // a one-column table function is where it surfaced.
+            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format, false);
 
             var rowType = TypeResolver.Resolve(result.PhysType.getJavaRowType());
             var v = result.Expression;
@@ -99,7 +105,7 @@ namespace Apache.Calcite.Linq.Rel
         /// Nothing of Calcite's generates this, so nothing here is linq4j. A linq4j tree belongs in a node only
         /// where a generator of Calcite's produced one or takes one.
         /// </remarks>
-        static Expression Count(ClrEnumerableRelImplementor implementor, RexNode rexNode)
+        internal static Expression Count(ClrEnumerableRelImplementor implementor, RexNode rexNode)
         {
             if (rexNode is RexDynamicParam param)
                 return JavaCast.To(

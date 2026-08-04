@@ -16,7 +16,7 @@ namespace Apache.Calcite.Linq.Runtime
     /// of these are what <see cref="Enumerable"/> already does and say so; the ones that are not are the ones
     /// SQL needs and .NET has no operator for.
     /// </remarks>
-    public static class ClrEnumerables
+    public static class ClrEnumerableDefaults
     {
 
         /// <summary>
@@ -402,6 +402,429 @@ namespace Apache.Calcite.Linq.Runtime
         }
 
         /// <summary>
+        /// Joins each row of the first sequence to the one row of the second that has the same key and the
+        /// nearest timestamp satisfying the match condition.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TInner"></typeparam>
+        /// <typeparam name="TKey"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="outer"></param>
+        /// <param name="inner"></param>
+        /// <param name="outerKeySelector"></param>
+        /// <param name="innerKeySelector"></param>
+        /// <param name="resultSelector"></param>
+        /// <param name="matchComparator"></param>
+        /// <param name="timestampComparator"></param>
+        /// <param name="emitNullsOnRight">Whether an outer row with no match is emitted against null.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.asofJoin</c>, and the same algorithm: index the left by
+        /// key, hold the best right row per left row, scan the right updating it, then emit.
+        ///
+        /// <para>The index is a <c>java.util.HashMap</c> rather than a <see cref="Dictionary{TKey, TValue}"/>
+        /// because the emitted order is that map's iteration order, and nothing else can agree with the map
+        /// linq4j walks. Same lesson as the partition order of a window.</para>
+        /// </remarks>
+        public static IEnumerable<TResult> AsofJoin<TSource, TInner, TKey, TResult>(
+            IEnumerable<TSource> outer,
+            IEnumerable<TInner> inner,
+            Func<TSource, TKey> outerKeySelector,
+            Func<TInner, TKey> innerKeySelector,
+            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource, TInner, bool> matchComparator,
+            java.util.Comparator timestampComparator,
+            bool emitNullsOnRight)
+        {
+            var leftIndex = new java.util.HashMap();
+            var rightIndex = new java.util.HashMap();
+            var outerWithNullKeys = new List<TSource>();
+
+            foreach (var row in outer)
+            {
+                var key = outerKeySelector(row);
+                if (key == null)
+                {
+                    // the key holds a null field, so it matches nothing
+                    if (emitNullsOnRight)
+                        outerWithNullKeys.Add(row);
+
+                    continue;
+                }
+
+                var boxed = JavaValues.From(key);
+                if (leftIndex.get(boxed) is not List<TSource> left)
+                {
+                    leftIndex.put(boxed, left = []);
+                    rightIndex.put(boxed, new List<TInner>());
+                }
+
+                left.Add(row);
+                ((List<TInner>)rightIndex.get(boxed)).Add(default!);
+            }
+
+            foreach (var row in inner)
+            {
+                var key = innerKeySelector(row);
+                if (key == null)
+                    continue;
+
+                var boxed = JavaValues.From(key);
+                if (leftIndex.get(boxed) is not List<TSource> left)
+                    continue;
+
+                var best = (List<TInner>)rightIndex.get(boxed);
+
+                for (int i = 0; i < left.Count; i++)
+                {
+                    if (matchComparator(left[i], row) == false)
+                        continue;
+
+                    if (best[i] == null || timestampComparator.compare(best[i], row) < 0)
+                        best[i] = row;
+                }
+            }
+
+            for (var i = leftIndex.entrySet().iterator(); i.hasNext();)
+            {
+                var entry = (java.util.Map.Entry)i.next();
+                var left = (List<TSource>)entry.getValue();
+                var best = (List<TInner>)rightIndex.get(entry.getKey());
+
+                for (int j = 0; j < left.Count; j++)
+                {
+                    if (best[j] == null && emitNullsOnRight == false)
+                        continue;
+
+                    yield return resultSelector(left[j], best[j]);
+                }
+            }
+
+            foreach (var row in outerWithNullKeys)
+                yield return resultSelector(row, default!);
+        }
+
+        /// <summary>
+        /// Returns whether a merge join can answer a join of this type.
+        /// </summary>
+        /// <param name="joinType"></param>
+        /// <returns></returns>
+        public static bool IsMergeJoinSupported(org.apache.calcite.linq4j.JoinType joinType)
+        {
+            return joinType.name() is nameof(org.apache.calcite.linq4j.JoinType.INNER)
+                or nameof(org.apache.calcite.linq4j.JoinType.SEMI)
+                or nameof(org.apache.calcite.linq4j.JoinType.ANTI)
+                or nameof(org.apache.calcite.linq4j.JoinType.LEFT);
+        }
+
+        /// <summary>
+        /// Joins two sequences that are already sorted on the key, ascending with nulls last.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TInner"></typeparam>
+        /// <typeparam name="TKey"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="outer"></param>
+        /// <param name="inner"></param>
+        /// <param name="outerKeySelector"></param>
+        /// <param name="innerKeySelector"></param>
+        /// <param name="predicate">The part of the condition that is not an equality, or null.</param>
+        /// <param name="resultSelector"></param>
+        /// <param name="joinType"></param>
+        /// <param name="comparator">Orders two keys; null means they compare themselves.</param>
+        /// <param name="comparer">Decides whether two keys of one input are the same; null means they do.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.mergeJoin</c>, statement for statement, as an iterator
+        /// rather than the enumerator with a state machine that Java needs. Both inputs are walked once and
+        /// only the rows of one key are held.
+        ///
+        /// <para>Two nulls must not compare equal, or a join of two null keys would return rows SQL says it
+        /// does not. Calcite signals that out of its comparator by throwing, and catches it to advance the
+        /// right side; the generated comparator this is called with is that comparator, so the same throw is
+        /// caught here — by name, since the exception class is package private.</para>
+        /// </remarks>
+        public static IEnumerable<TResult> MergeJoin<TSource, TInner, TKey, TResult>(
+            IEnumerable<TSource> outer,
+            IEnumerable<TInner> inner,
+            Func<TSource, TKey> outerKeySelector,
+            Func<TInner, TKey> innerKeySelector,
+            Func<TSource, TInner, bool>? predicate,
+            Func<TSource, TInner, TResult> resultSelector,
+            org.apache.calcite.linq4j.JoinType joinType,
+            java.util.Comparator? comparator,
+            EqualityComparer? comparer)
+        {
+            if (IsMergeJoinSupported(joinType) == false)
+                throw new java.lang.UnsupportedOperationException($"MergeJoin unsupported for join type {joinType}");
+
+            var name = joinType.name();
+            var isLeft = name == nameof(org.apache.calcite.linq4j.JoinType.LEFT);
+            var isAnti = name == nameof(org.apache.calcite.linq4j.JoinType.ANTI);
+            var isSemi = name == nameof(org.apache.calcite.linq4j.JoinType.SEMI);
+            var isLeftOrAnti = isLeft || isAnti;
+            var equality = JavaEqualityComparer<TKey>.Of(comparer);
+
+            var lefts = new List<TSource>();
+            var rights = new List<TInner>();
+            var done = false;
+            var remainingLeft = false;
+            IEnumerable<TResult>? results = null;
+
+            using var leftEnumerator = outer.GetEnumerator();
+            using var rightEnumerator = inner.GetEnumerator();
+
+            // the left enumerator advanced, and onto a row whose key is not null — a LEFT join reads its
+            // left input to the end whatever the keys are, because every row of it is a result
+            bool LeftMoveNext() => leftEnumerator.MoveNext() && (isLeft || outerKeySelector(leftEnumerator.Current) != null);
+            bool RightMoveNext() => rightEnumerator.MoveNext() && innerKeySelector(rightEnumerator.Current) != null;
+
+            int Compare(TKey a, TKey b)
+            {
+                if (comparator == null)
+                    return CompareNullsLastForMergeJoin(a, b);
+
+                try
+                {
+                    return comparator.compare(JavaValues.From(a), JavaValues.From(b));
+                }
+                catch (java.lang.RuntimeException e) when (e.GetType().Name.Contains("BothValuesAreNull"))
+                {
+                    // two nulls: take the left as the bigger, so the right advances and the algorithm goes on
+                    return 1;
+                }
+            }
+
+            // the rows of one key on the left, and whether the input has more after them
+            bool AdvanceLeft(TSource left, TKey leftKey)
+            {
+                lefts.Clear();
+                lefts.Add(left);
+
+                while (leftEnumerator.MoveNext())
+                {
+                    left = leftEnumerator.Current;
+                    var leftKey2 = outerKeySelector(left);
+                    if (leftKey2 == null && isLeft == false)
+                        break;
+                    if (equality.Equals(leftKey, leftKey2) == false)
+                        return true;
+
+                    lefts.Add(left);
+                }
+
+                return false;
+            }
+
+            bool AdvanceRight(TInner right, TKey rightKey)
+            {
+                rights.Clear();
+                rights.Add(right);
+
+                while (rightEnumerator.MoveNext())
+                {
+                    right = rightEnumerator.Current;
+                    var rightKey2 = innerKeySelector(right);
+                    if (rightKey2 == null)
+                        break;
+                    if (equality.Equals(rightKey, rightKey2) == false)
+                        return true;
+
+                    rights.Add(right);
+                }
+
+                return false;
+            }
+
+            // moves to the next key present on both sides, filling lefts and rights with its rows
+            bool Advance()
+            {
+                while (true)
+                {
+                    var left = leftEnumerator.Current;
+                    var leftKey = outerKeySelector(left);
+                    var right = rightEnumerator.Current;
+                    var rightKey = innerKeySelector(right);
+
+                    while (true)
+                    {
+                        // the inputs are sorted with nulls last, so a null key means there is no more to match
+                        if (leftKey == null || rightKey == null)
+                        {
+                            if (isLeft || (isAnti && leftKey != null))
+                            {
+                                remainingLeft = true;
+                                return true;
+                            }
+
+                            done = true;
+                            return false;
+                        }
+
+                        var c = Compare(leftKey, rightKey);
+                        if (c == 0)
+                            break;
+
+                        if (c < 0)
+                        {
+                            if (isLeftOrAnti)
+                            {
+                                // this row, and every other with the same key, is a result on its own
+                                if (AdvanceLeft(left, leftKey) == false)
+                                    done = true;
+
+                                results = Cartesian(lefts, [default(TInner)!], resultSelector);
+                                return true;
+                            }
+
+                            if (leftEnumerator.MoveNext() == false)
+                            {
+                                done = true;
+                                return false;
+                            }
+
+                            left = leftEnumerator.Current;
+                            leftKey = outerKeySelector(left);
+                        }
+                        else
+                        {
+                            if (rightEnumerator.MoveNext() == false)
+                            {
+                                if (isLeftOrAnti)
+                                {
+                                    remainingLeft = true;
+                                    return true;
+                                }
+
+                                done = true;
+                                return false;
+                            }
+
+                            right = rightEnumerator.Current;
+                            rightKey = innerKeySelector(right);
+                        }
+                    }
+
+                    if (AdvanceLeft(left, leftKey) == false)
+                        done = true;
+
+                    if (AdvanceRight(right, rightKey) == false)
+                    {
+                        if (done == false && isLeftOrAnti)
+                            remainingLeft = true;
+                        else
+                            done = true;
+                    }
+
+                    if (predicate == null)
+                    {
+                        if (isAnti)
+                        {
+                            // a key with a match on the right is not an anti join result
+                            if (done)
+                                return false;
+                            if (remainingLeft)
+                                return true;
+
+                            continue;
+                        }
+
+                        // a semi join must not repeat a left row, so one right row of the key is enough
+                        results = isSemi
+                            ? Cartesian(lefts, [rights[0]], resultSelector)
+                            : Cartesian(lefts, rights, resultSelector);
+                    }
+                    else
+                    {
+                        // the rest of the condition still has to hold, and a nested loop over the two runs is
+                        // what decides it
+                        results = NestedLoopJoin([.. lefts], [.. rights], resultSelector, predicate, joinType);
+                    }
+
+                    return true;
+                }
+            }
+
+            if (isLeftOrAnti)
+            {
+                if (LeftMoveNext() == false)
+                    done = true;
+                else if (RightMoveNext() == false)
+                    remainingLeft = true;
+                else if (Advance() == false)
+                    done = true;
+            }
+            else if (LeftMoveNext() == false || RightMoveNext() == false || Advance() == false)
+            {
+                done = true;
+            }
+
+            while (true)
+            {
+                if (results != null)
+                {
+                    foreach (var row in results)
+                        yield return row;
+
+                    results = null;
+                }
+
+                if (remainingLeft)
+                {
+                    yield return resultSelector(leftEnumerator.Current, default!);
+
+                    if (LeftMoveNext() == false)
+                    {
+                        remainingLeft = false;
+                        done = true;
+                    }
+
+                    continue;
+                }
+
+                if (done)
+                    yield break;
+
+                if (Advance() == false)
+                    yield break;
+            }
+        }
+
+        /// <summary>
+        /// Returns every pairing of two sequences, in order.
+        /// </summary>
+        static IEnumerable<TResult> Cartesian<TSource, TInner, TResult>(IReadOnlyList<TSource> outer, IReadOnlyList<TInner> inner, Func<TSource, TInner, TResult> resultSelector)
+        {
+            var rows = new List<TResult>(outer.Count * inner.Count);
+            foreach (var left in outer)
+                foreach (var right in inner)
+                    rows.Add(resultSelector(left, right));
+
+            return rows;
+        }
+
+        /// <summary>
+        /// Orders two keys with nulls last, refusing to call two nulls equal.
+        /// </summary>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.compareNullsLastForMergeJoin</c>, reached only where no
+        /// comparator was given. Two nulls are not equal, and the caller takes the left as the bigger.
+        /// </remarks>
+        static int CompareNullsLastForMergeJoin<TKey>(TKey a, TKey b)
+        {
+            if (a == null && b == null)
+                return 1;
+
+            if (a == null)
+                return 1;
+            if (b == null)
+                return -1;
+
+            // IKVM maps java.lang.Comparable onto IComparable, so this is the key's own compareTo
+            return ((IComparable)JavaValues.From(a)).CompareTo(JavaValues.From(b));
+        }
+
+        /// <summary>
         /// Joins two sequences on a condition, comparing every pair.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>
@@ -583,6 +1006,218 @@ namespace Apache.Calcite.Linq.Runtime
                 accumulator = accumulatorAdder.apply(accumulator, row);
 
             return JavaValues.As<TResult>(resultSelector.apply(accumulator));
+        }
+
+        /// <summary>
+        /// Evaluates a window's aggregates over every row of every partition.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TKey"></typeparam>
+        /// <typeparam name="TAccumulator"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="partitionSelector">Key of the PARTITION BY clause, or null where there is none.</param>
+        /// <param name="comparator">Orders the rows of one partition, and compares two of them for EXCLUDE and for RANK.</param>
+        /// <param name="exclude">Which rows of the frame the aggregates do not see.</param>
+        /// <param name="lowerBound">First index of the frame, before it is clamped to the partition.</param>
+        /// <param name="upperBound">Last index of the frame, before it is clamped to the partition.</param>
+        /// <param name="alwaysNonEmpty">Whether the bounds can be taken as they are, because the frame always holds the current row.</param>
+        /// <param name="clampStart">Whether the lower bound has to be brought back to the first row of the partition.</param>
+        /// <param name="clampEnd">Whether the upper bound has to be brought back to the last row of the partition.</param>
+        /// <param name="lowerBoundCanChange">Whether the frame's start moves at all, which UNBOUNDED PRECEDING settles.</param>
+        /// <param name="accumulatorInitializer"></param>
+        /// <param name="reset">Returns the accumulator to its starting value, or null where no aggregate has one.</param>
+        /// <param name="adder">Folds one row into the accumulator, or null where no aggregate reads the rows.</param>
+        /// <param name="cachedResult">Computes the results that only change when the frame does, or null where every aggregate is recomputed per row.</param>
+        /// <param name="uncachedResult">Computes the results that change on every row, or null where there are none.</param>
+        /// <param name="selector">Builds the output row from the input row and the results.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of the block <c>EnumerableWindow</c> generates. Everything an aggregate computes is
+        /// still Calcite's — the implementors' reset, add and result, and the two frame bounds — and arrives
+        /// here already translated; what is written once is the loop those pieces are called from, which
+        /// generated Java source is the only place Calcite can put.
+        ///
+        /// <para>The accumulator carries each aggregate's state and its last result, so a result that does not
+        /// change while the frame is intact is computed once and read again, which is the whole point of the
+        /// frame bookkeeping. It is made once for the whole window, as Calcite declares its variables once.</para>
+        /// </remarks>
+        public static IEnumerable<TResult> Window<TSource, TKey, TAccumulator, TResult>(
+            IEnumerable<TSource> source,
+            Func<TSource, TKey>? partitionSelector,
+            java.util.Comparator comparator,
+            org.apache.calcite.rex.RexWindowExclusion exclude,
+            Func<WindowFrame, int> lowerBound,
+            Func<WindowFrame, int> upperBound,
+            bool alwaysNonEmpty,
+            bool clampStart,
+            bool clampEnd,
+            bool lowerBoundCanChange,
+            Func<TAccumulator> accumulatorInitializer,
+            Func<WindowFrame, TAccumulator, TAccumulator>? reset,
+            Func<WindowFrame, TAccumulator, TAccumulator>? adder,
+            Func<WindowFrame, TAccumulator, TAccumulator>? cachedResult,
+            Func<WindowFrame, TAccumulator, TAccumulator>? uncachedResult,
+            Func<WindowFrame, TAccumulator, TResult> selector)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(comparator);
+            ArgumentNullException.ThrowIfNull(lowerBound);
+            ArgumentNullException.ThrowIfNull(upperBound);
+            ArgumentNullException.ThrowIfNull(accumulatorInitializer);
+            ArgumentNullException.ThrowIfNull(selector);
+
+            // an exclusion that is not "no other" makes every frame a fresh one, because the same bounds do not
+            // mean the same rows once the current row's peers are taken out of them
+            var excluding = exclude == null || exclude.name() != nameof(org.apache.calcite.rex.RexWindowExclusion.EXCLUDE_NO_OTHER);
+
+            var frame = new WindowFrame();
+            var accumulator = accumulatorInitializer();
+
+            foreach (var rows in Partitions(source, partitionSelector, comparator))
+            {
+                frame.Rows = rows;
+                frame.PartitionRowCount = rows.Length;
+
+                var previousStart = -1;
+                var previousEnd = int.MaxValue;
+
+                for (int i = 0; i < rows.Length; i++)
+                {
+                    frame.Index = i;
+
+                    var start = lowerBound(frame);
+                    var end = upperBound(frame);
+
+                    if (alwaysNonEmpty)
+                    {
+                        frame.HasRows = true;
+                        frame.Start = start;
+                        frame.End = end;
+                    }
+                    else
+                    {
+                        var startTmp = clampStart ? Math.Max(start, 0) : start;
+                        var endTmp = clampEnd ? Math.Min(end, rows.Length - 1) : end;
+
+                        frame.HasRows = startTmp <= endTmp;
+                        frame.Start = frame.HasRows ? startTmp : -1;
+                        frame.End = frame.HasRows ? endTmp : -1;
+                    }
+
+                    frame.FrameRowCount = frame.HasRows ? frame.End - frame.Start + 1 : 0;
+
+                    // no cached result is no frame to maintain: Calcite drops the whole block in that case,
+                    // because nothing would read what it kept
+                    if (cachedResult != null)
+                    {
+                        var lowerChanged = lowerBoundCanChange && frame.Start != previousStart;
+
+                        if (lowerChanged || frame.End != previousEnd)
+                        {
+                            var position = frame.Start;
+
+                            // a frame that only grew at its end is carried on with rather than started again
+                            if (excluding || lowerChanged || frame.End < previousEnd)
+                                accumulator = reset != null ? reset(frame, accumulator) : accumulator;
+                            else
+                                position = previousEnd + 1;
+
+                            if (lowerBoundCanChange)
+                                previousStart = frame.Start;
+
+                            previousEnd = frame.End;
+
+                            if (adder != null && frame.HasRows)
+                            {
+                                for (int j = position; j <= frame.End; j++)
+                                {
+                                    if (Excluded(exclude, comparator, rows, i, j))
+                                        continue;
+
+                                    frame.Position = j;
+                                    accumulator = adder(frame, accumulator);
+                                }
+                            }
+
+                            accumulator = cachedResult(frame, accumulator);
+                        }
+                    }
+
+                    if (uncachedResult != null)
+                        accumulator = uncachedResult(frame, accumulator);
+
+                    yield return selector(frame, accumulator);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Returns the rows of each partition, in the window's order.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TKey"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="partitionSelector"></param>
+        /// <param name="comparator"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>SortedMultiMap</c> itself, rather than a dictionary standing in for it. It is a runtime class of
+        /// Calcite's and not a generated tree, and it is what decides the order the partitions come out in —
+        /// a hash map's, which nothing else reproduces. Being feature compatible with
+        /// <c>EnumerableConvention</c> means a query with no ORDER BY gives the rows in the same order, so the
+        /// map is the one Calcite uses. It also settles the two questions underneath: a null key is a
+        /// partition of its own, and <c>arrays</c> sorts with <c>Arrays.sort</c>, which is stable, so rows the
+        /// collation does not separate stay in the order they arrived.
+        /// </remarks>
+        static IEnumerable<object[]> Partitions<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey>? partitionSelector, java.util.Comparator comparator)
+        {
+            java.util.Iterator iterator;
+
+            if (partitionSelector == null)
+            {
+                // one partition, which is yielded even when it is empty
+                var all = new java.util.ArrayList();
+                foreach (var row in source)
+                    all.add(row);
+
+                iterator = org.apache.calcite.runtime.SortedMultiMap.singletonArrayIterator(comparator, all);
+            }
+            else
+            {
+                var multiMap = new org.apache.calcite.runtime.SortedMultiMap();
+                foreach (var row in source)
+                    multiMap.putMulti(partitionSelector(row), row);
+
+                iterator = multiMap.arrays(comparator);
+            }
+
+            while (iterator.hasNext())
+                yield return (object[])iterator.next();
+        }
+
+        /// <summary>
+        /// Returns whether a row of the frame is one the aggregates do not see.
+        /// </summary>
+        /// <param name="exclude"></param>
+        /// <param name="comparator"></param>
+        /// <param name="rows"></param>
+        /// <param name="index">The row being evaluated.</param>
+        /// <param name="position">The row that would be folded in.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableWindow.buildExcludeGuard</c>. A peer is a row the window's ordering
+        /// does not separate from the current one, which is what the comparator answers.
+        /// </remarks>
+        static bool Excluded(org.apache.calcite.rex.RexWindowExclusion exclude, java.util.Comparator comparator, object[] rows, int index, int position)
+        {
+            return exclude?.name() switch
+            {
+                nameof(org.apache.calcite.rex.RexWindowExclusion.EXCLUDE_CURRENT_ROW) => index == position,
+                nameof(org.apache.calcite.rex.RexWindowExclusion.EXCLUDE_GROUP) => comparator.compare(rows[index], rows[position]) == 0,
+                nameof(org.apache.calcite.rex.RexWindowExclusion.EXCLUDE_TIES) => index != position && comparator.compare(rows[index], rows[position]) == 0,
+                _ => false,
+            };
         }
 
         /// <summary>

@@ -42,11 +42,30 @@ namespace Apache.Calcite.Linq.Tree
         /// <returns></returns>
         public static java.util.List FieldRowTypes(org.apache.calcite.rel.type.RelDataType inputRowType, java.util.List argList)
         {
+            return FieldRowTypes(inputRowType, null, argList);
+        }
+
+        /// <summary>
+        /// Returns the types of the fields an aggregate call reads, where an index past the input's own fields
+        /// names one of a window's constants.
+        /// </summary>
+        /// <param name="inputRowType"></param>
+        /// <param name="extraInputs">The constants, or null where the caller has none.</param>
+        /// <param name="argList"></param>
+        /// <returns></returns>
+        public static java.util.List FieldRowTypes(org.apache.calcite.rel.type.RelDataType inputRowType, java.util.List? extraInputs, java.util.List argList)
+        {
             var inputFields = inputRowType.getFieldList();
             var types = new java.util.ArrayList(argList.size());
 
             for (int i = 0; i < argList.size(); i++)
-                types.add(((org.apache.calcite.rel.type.RelDataTypeField)inputFields.get(((java.lang.Integer)argList.get(i)).intValue())).getType());
+            {
+                var arg = ((java.lang.Integer)argList.get(i)).intValue();
+
+                types.add(arg < inputFields.size()
+                    ? ((org.apache.calcite.rel.type.RelDataTypeField)inputFields.get(arg)).getType()
+                    : ((RexNode)(extraInputs ?? throw new ArgumentNullException(nameof(extraInputs))).get(arg - inputFields.size())).getType());
+            }
 
             return types;
         }
@@ -68,33 +87,28 @@ namespace Apache.Calcite.Linq.Tree
         }
 
         /// <summary>
-        /// Returns the physical type of an accumulator, whose Java type is a synthetic record rather than a
-        /// relational type.
+        /// Translates one row expression.
         /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <param name="javaRowClass"></param>
+        /// <param name="translator"></param>
+        /// <param name="node"></param>
+        /// <param name="storageType">The type the value is wanted as, or null for whatever it comes out as.</param>
         /// <returns></returns>
         /// <remarks>
-        /// PhysTypeImpl has this and keeps it package private. The row type is rebuilt from the fields of the
-        /// record and the format is left unoptimised, exactly as it does, because an accumulator of one field
-        /// is still a record.
+        /// Every <c>translate</c> of <c>RexToLixTranslator</c> is package private and only the list forms are
+        /// public. <c>translateList(operands, storageTypes)</c> is <c>translate(operand, storageType)</c> once
+        /// per element, so a list of one is the same call by a reachable name.
         /// </remarks>
-        public static PhysType AccumulatorPhysType(org.apache.calcite.adapter.java.JavaTypeFactory typeFactory, java.lang.reflect.Type javaRowClass)
+        public static J.Expression Translate(RexToLixTranslator translator, RexNode node, java.lang.reflect.Type? storageType)
         {
-            var builder = typeFactory.builder();
+            var nodes = new java.util.ArrayList(1);
+            nodes.add(node);
 
-            if (javaRowClass is J.Types.RecordType recordType)
-            {
-                var fields = recordType.getRecordFields();
-                for (int i = 0; i < fields.size(); i++)
-                {
-                    var field = (J.Types.RecordField)fields.get(i);
-                    builder.add(field.getName(), typeFactory.createType(field.getType()));
-                }
-            }
+            var storageTypes = new java.util.ArrayList(1);
+            storageTypes.add(storageType);
 
-            return PhysTypeImpl.of(typeFactory, builder.build(), JavaRowFormat.CUSTOM, false);
+            return (J.Expression)translator.translateList(nodes, storageTypes).get(0);
         }
+
 
         /// <summary>
         /// Boxes a sequence whose rows are a primitive, and returns it unchanged otherwise.

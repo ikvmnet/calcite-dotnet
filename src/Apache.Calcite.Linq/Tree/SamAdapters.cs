@@ -26,10 +26,71 @@ namespace Apache.Calcite.Linq.Tree
         static readonly Dictionary<Type, Type> Adapters = new()
         {
             [typeof(java.util.Comparator)] = typeof(ClrComparator<>),
+            [typeof(java.util.function.Predicate)] = typeof(DelegatePredicate<>),
+            [typeof(org.apache.calcite.runtime.Enumerables.Emitter)] = typeof(DelegateEmitter),
+            [typeof(org.apache.calcite.linq4j.AbstractEnumerable)] = typeof(DelegateEnumerable),
             [typeof(org.apache.calcite.linq4j.function.Function0)] = typeof(DelegateFunction0<>),
             [typeof(org.apache.calcite.linq4j.function.Function1)] = typeof(DelegateFunction1Of<,>),
             [typeof(org.apache.calcite.linq4j.function.Function2)] = typeof(DelegateFunction2<,,>),
         };
+
+        /// <summary>
+        /// The interfaces named by what they take rather than by what they take and return.
+        /// </summary>
+        /// <remarks>
+        /// A comparator compares two of one thing and answers an int; a predicate tests one thing and answers
+        /// a boolean. Neither has a result worth naming the adapter by.
+        /// </remarks>
+        static readonly HashSet<Type> ByArgument = [typeof(ClrComparator<>), typeof(DelegatePredicate<>)];
+
+        /// <summary>
+        /// The interfaces an anonymous class implements with more than one method, and the order its methods
+        /// are handed to the adapter in.
+        /// </summary>
+        /// <remarks>
+        /// An anonymous class of one method is a lambda. One of several is a thing: the methods share state,
+        /// so what stands in for it has to be an object holding a delegate each.
+        /// </remarks>
+        static readonly Dictionary<Type, (Type Adapter, string[] Methods)> Classes = new()
+        {
+            [typeof(org.apache.calcite.linq4j.Enumerator)] = (typeof(DelegateEnumerator), ["current", "moveNext", "reset", "close"]),
+        };
+
+        /// <summary>
+        /// Returns the methods an anonymous class of this type has to supply, or null where one of its
+        /// methods is the whole of it.
+        /// </summary>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        public static string[]? MethodsOf(Type type)
+        {
+            return Classes.TryGetValue(type, out var entry) ? entry.Methods : null;
+        }
+
+        /// <summary>
+        /// Returns an expression yielding an implementation of <paramref name="type"/> that calls one lambda
+        /// per method.
+        /// </summary>
+        /// <param name="type"></param>
+        /// <param name="methods"></param>
+        /// <returns></returns>
+        /// <exception cref="NotSupportedException"></exception>
+        public static Expression WrapClass(Type type, IReadOnlyDictionary<string, LambdaExpression> methods)
+        {
+            ArgumentNullException.ThrowIfNull(type);
+            ArgumentNullException.ThrowIfNull(methods);
+
+            if (Classes.TryGetValue(type, out var entry) == false)
+                throw new NotSupportedException($"There is no adapter for an anonymous '{type}'.");
+
+            var arguments = new Expression[entry.Methods.Length];
+            for (int i = 0; i < arguments.Length; i++)
+                arguments[i] = methods.TryGetValue(entry.Methods[i], out var lambda)
+                    ? lambda
+                    : throw new NotSupportedException($"An anonymous '{type}' does not declare '{entry.Methods[i]}'.");
+
+            return Expression.Convert(Expression.New(entry.Adapter.GetConstructors()[0], arguments), type);
+        }
 
         /// <summary>
         /// Returns whether a lambda declared against this type has to be wrapped to be used as one.
@@ -54,12 +115,10 @@ namespace Apache.Calcite.Linq.Tree
             if (Adapters.TryGetValue(type, out var adapter) == false)
                 throw new NotSupportedException($"There is no adapter for a lambda declared as '{type}'.");
 
-            // a comparator is named by what it compares; the rest by what they take and return
-            var arguments = adapter == typeof(ClrComparator<>)
-                ? [lambda.Parameters[0].Type]
-                : Arguments(lambda);
-
-            var closed = adapter.MakeGenericType(arguments);
+            // an adapter whose every parameter type is fixed has nothing to close over
+            var closed = adapter.IsGenericTypeDefinition == false
+                ? adapter
+                : adapter.MakeGenericType(ByArgument.Contains(adapter) ? [lambda.Parameters[0].Type] : Arguments(lambda));
             var constructor = closed.GetConstructor([lambda.Type])
                 ?? closed.GetConstructors()[0];
 

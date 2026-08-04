@@ -102,7 +102,7 @@ namespace Apache.Calcite.Linq
         /// <param name="child"></param>
         /// <param name="prefer"></param>
         /// <returns></returns>
-        public ClrEnumerableResult VisitChild(ClrEnumerableRel? parent, int ordinal, ClrEnumerableRel child, EnumerableRel.Prefer prefer)
+        public ClrEnumerableResult VisitChild(ClrEnumerableRel? parent, int ordinal, ClrEnumerableRel child, ClrEnumerablePrefer prefer)
         {
             return child.Implement(this, prefer);
         }
@@ -113,13 +113,13 @@ namespace Apache.Calcite.Linq
         /// <param name="rootRel"></param>
         /// <param name="prefer"></param>
         /// <returns></returns>
-        public LambdaExpression ImplementRoot(ClrEnumerableRel rootRel, EnumerableRel.Prefer prefer)
+        public LambdaExpression ImplementRoot(ClrEnumerableRel rootRel, ClrEnumerablePrefer prefer)
         {
             var result = rootRel.Implement(this, prefer);
 
             // a one column result is the value, not a one element row, which is what every caller of a query
             // expects and what EnumerableRelImplementor arranges the same way
-            if (prefer.name() == nameof(EnumerableRel.Prefer.ARRAY)
+            if (prefer == ClrEnumerablePrefer.Array
                 && result.Format == JavaRowFormat.ARRAY
                 && rootRel.getRowType().getFieldCount() == 1)
                 result = new ClrEnumerableResult(
@@ -128,7 +128,7 @@ namespace Apache.Calcite.Linq
                     JavaRowFormat.SCALAR);
 
             return Expression.Lambda<Func<DataContext, IEnumerable>>(
-                Expression.Convert(Box(result.Expression), typeof(IEnumerable)),
+                Expression.Convert(BoxScalars(result.Expression), typeof(IEnumerable)),
                 Root);
         }
 
@@ -138,12 +138,18 @@ namespace Apache.Calcite.Linq
         /// <param name="sequence"></param>
         /// <returns></returns>
         /// <remarks>
-        /// A single column result is the value, and where that value is a primitive the sequence is of a
+        /// A one column result is the value, and where that value is a primitive the sequence is of a
         /// primitive. Handing it out untyped boxes it, and the CLR would box it as its own, which is not the
         /// java.lang.Integer every reader of a Calcite result expects. The type factory decides what a value
         /// is, and it says Integer, so this is the same boxing every other conversion here does.
+        ///
+        /// <para>Not <c>EnumerableInterpretable.box</c>, which wraps each row in a one element
+        /// <c>Object[]</c> for the interpreter and has no counterpart here. This has no counterpart there
+        /// either: generated Java produces an <c>Enumerable</c> of objects and the question cannot arise.
+        /// It belongs with <see cref="ImplementRoot"/> because that is where a plan becomes the sequence a
+        /// caller reads.</para>
         /// </remarks>
-        static Expression Box(Expression sequence)
+        static Expression BoxScalars(Expression sequence)
         {
             if (sequence.Type.IsGenericType == false)
                 return sequence;

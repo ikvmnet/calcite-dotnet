@@ -52,6 +52,72 @@ namespace Apache.Calcite.Linq.Rel
             return new ClrEnumerableTableScan(cluster, traitSet, relOptTable, elementType);
         }
 
+        /// <summary>
+        /// Returns whether this convention can produce rows for a particular variant of the table SPI.
+        /// </summary>
+        /// <param name="table"></param>
+        /// <returns></returns>
+        public static bool CanHandle(Table table)
+        {
+            // CALCITE-3673: a TransientTable has no expression, so no plan of this convention can read one
+            if (table is TransientTable)
+                return false;
+
+            // see org.apache.calcite.prepare.RelOptTableImpl.getClassExpressionFunction
+            return table is QueryableTable
+                || table is FilterableTable
+                || table is ProjectableFilterableTable
+                || table is ScannableTable;
+        }
+
+        /// <summary>
+        /// Returns whether this convention can produce rows for a particular variant of the table SPI.
+        /// </summary>
+        /// <param name="relOptTable"></param>
+        /// <returns></returns>
+        public static bool CanHandle(RelOptTable relOptTable)
+        {
+            var table = (Table)relOptTable.unwrap(typeof(Table));
+            if (table != null && CanHandle(table) == false)
+                return false;
+
+            var supportArray = ((java.lang.Boolean)org.apache.calcite.config.CalciteSystemProperty.ENUMERABLE_ENABLE_TABLESCAN_ARRAY.value()).booleanValue();
+            var supportMap = ((java.lang.Boolean)org.apache.calcite.config.CalciteSystemProperty.ENUMERABLE_ENABLE_TABLESCAN_MAP.value()).booleanValue();
+            var supportMultiset = ((java.lang.Boolean)org.apache.calcite.config.CalciteSystemProperty.ENUMERABLE_ENABLE_TABLESCAN_MULTISET.value()).booleanValue();
+            if (supportArray && supportMap && supportMultiset)
+                return true;
+
+            // struct fields are not supported
+            for (int i = 0; i < relOptTable.getRowType().getFieldList().size(); i++)
+            {
+                var field = (RelDataTypeField)relOptTable.getRowType().getFieldList().get(i);
+                var unsupportedType = field.getType().getSqlTypeName().name() switch
+                {
+                    nameof(SqlTypeName.ARRAY) => supportArray,
+                    nameof(SqlTypeName.MAP) => supportMap,
+                    nameof(SqlTypeName.MULTISET) => supportMultiset,
+                    _ => false,
+                };
+
+                if (unsupportedType)
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Returns the row format a table's element type implies.
+        /// </summary>
+        /// <param name="table"></param>
+        /// <returns></returns>
+        public static JavaRowFormat DeduceFormat(RelOptTable table)
+        {
+            var elementType = EnumerableTableScan.deduceElementType((Table)table.unwrapOrThrow(typeof(Table)));
+
+            return elementType == (java.lang.Class)typeof(object[]) ? JavaRowFormat.ARRAY : JavaRowFormat.CUSTOM;
+        }
+
         readonly java.lang.Class elementType;
 
         /// <summary>
@@ -64,6 +130,11 @@ namespace Apache.Calcite.Linq.Rel
         public ClrEnumerableTableScan(RelOptCluster cluster, RelTraitSet traitSet, RelOptTable table, java.lang.Class elementType) :
             base(cluster, traitSet, com.google.common.collect.ImmutableList.of(), table)
         {
+            if (getConvention() is not ClrEnumerableConvention)
+                throw new java.lang.AssertionError();
+            if (CanHandle(table) == false)
+                throw new java.lang.AssertionError($"ClrEnumerableTableScan can't implement {table}, see ClrEnumerableTableScan.CanHandle");
+
             this.elementType = elementType;
         }
 
@@ -74,7 +145,23 @@ namespace Apache.Calcite.Linq.Rel
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
+        /// <remarks>
+        /// Where a table had an index on the required collation keys this is where an index scan would be
+        /// returned. There is none, and Calcite's own answer here is the same null.
+        /// </remarks>
+        public RelNode passThrough(RelTraitSet required)
+        {
+            return null!;
+        }
+
+        /// <inheritdoc />
+        public DeriveMode getDeriveMode()
+        {
+            return DeriveMode.PROHIBITED;
+        }
+
+        /// <inheritdoc />
+        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), Format());
 

@@ -714,6 +714,13 @@ namespace Apache.Calcite.Linq.Tree
         /// anonymous <c>Comparator</c>, which an expression tree cannot declare because it cannot declare a
         /// class at all. The class has one method that matters, so it becomes that method as a lambda; the
         /// bridge Java needs for erasure is dropped, since a delegate has no erasure to bridge.
+        ///
+        /// <para>A field is the other thing such a class can declare. linq4j puts one there itself:
+        /// <c>DeterministicCodeOptimizer</c> hoists a sub-expression it can prove constant into a field so the
+        /// generated class computes it once, which is how a MATCH_RECOGNIZE predicate ends up holding
+        /// <c>$L4J$C$0_1 = 0 * -1</c>. A lambda has no fields, so each becomes a variable of the block that
+        /// builds the lambda: assigned once where the class would have been constructed, and closed over.
+        /// </para>
         /// </remarks>
         Expression Anonymous(Type type, J.NewExpression expression)
         {
@@ -722,26 +729,74 @@ namespace Apache.Calcite.Linq.Tree
 
             var members = expression.memberDeclarations!;
             var methods = new List<J.MethodDeclaration>();
+            var fields = new List<J.FieldDeclaration>();
+
             for (int i = 0; i < members.size(); i++)
-                if (members.get(i) is J.MethodDeclaration method)
-                    methods.Add(method);
-                else
-                    throw new NotSupportedException($"An anonymous '{type}' declares a {members.get(i).GetType().Name}, which is not a method.");
+                switch (members.get(i))
+                {
+                    case J.MethodDeclaration method:
+                        methods.Add(method);
+                        break;
+                    case J.FieldDeclaration field:
+                        fields.Add(field);
+                        break;
+                    default:
+                        throw new NotSupportedException($"An anonymous '{type}' declares a {members.get(i).GetType().Name}, which is neither a method nor a field.");
+                }
 
             if (methods.Count == 0)
                 throw new NotSupportedException($"An anonymous '{type}' declares no method.");
 
-            var declaration = methods.Count == 1 ? methods[0] : Unbridged(type, methods);
+            Expression wrapped;
 
+            if (SamAdapters.MethodsOf(type) != null)
+            {
+                // several methods over shared state, so one lambda each rather than one for the class
+                var declared = new Dictionary<string, LambdaExpression>();
+                foreach (var method in methods)
+                    declared[method.name] = Lambda(method);
+
+                wrapped = SamAdapters.WrapClass(type, declared);
+            }
+            else
+            {
+                // the value still has to be the interface it was declared against, because the same operator
+                // takes one that never was an anonymous class
+                wrapped = SamAdapters.Wrap(type, Lambda(methods.Count == 1 ? methods[0] : Unbridged(type, methods)));
+            }
+
+            if (fields.Count == 0)
+                return wrapped;
+
+            var variables = new List<ParameterExpression>(fields.Count);
+            var body = new List<Expression>(fields.Count + 1);
+
+            foreach (var field in fields)
+            {
+                var variable = Variable(field.parameter);
+                variables.Add(variable);
+
+                if (field.initializer != null)
+                    body.Add(Expression.Assign(variable, JavaCast.To(Translate(field.initializer), variable.Type)));
+            }
+
+            body.Add(wrapped);
+
+            return Expression.Block(wrapped.Type, variables, body);
+        }
+
+        /// <summary>
+        /// Translates one method of an anonymous class into the lambda that stands for it.
+        /// </summary>
+        /// <param name="declaration"></param>
+        /// <returns></returns>
+        LambdaExpression Lambda(J.MethodDeclaration declaration)
+        {
             var parameters = new ParameterExpression[declaration.parameters.size()];
             for (int i = 0; i < parameters.Length; i++)
                 parameters[i] = Variable((J.ParameterExpression)declaration.parameters.get(i));
 
-            var lambda = Expression.Lambda(TranslateBody(declaration.body, TypeResolver.Resolve(declaration.resultType)), parameters);
-
-            // the value still has to be the interface it was declared against, because the same operator takes
-            // one that never was an anonymous class
-            return SamAdapters.Wrap(type, lambda);
+            return Expression.Lambda(TranslateBody(declaration.body, TypeResolver.Resolve(declaration.resultType)), parameters);
         }
 
         /// <summary>

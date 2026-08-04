@@ -37,7 +37,7 @@ namespace Apache.Calcite.Linq.Rel
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
+        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             Expression? unionExp = null;
             ClrEnumerableResult? last = null;
@@ -60,7 +60,7 @@ namespace Apache.Calcite.Linq.Rel
                     : Expression.Call(null, ClrBuiltInMethod.Union.MakeGenericMethod(rowType), unionExp, result.Expression, ClrPhysTypes.Comparer(implementor, result.PhysType));
             }
 
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.prefer(JavaRowFormat.CUSTOM));
+            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
 
             return implementor.Result(physType, unionExp ?? throw new java.lang.IllegalStateException("unionExp"));
         }

@@ -42,12 +42,14 @@ namespace Apache.Calcite.Linq.Rel.Convert
         {
             var union = (RepeatUnion)rel;
             var traitSet = union.getTraitSet().replace(ClrEnumerableConvention.Instance);
+            var seedRel = union.getSeedRel();
+            var iterativeRel = union.getIterativeRel();
 
             return new ClrEnumerableRepeatUnion(
                 union.getCluster(),
                 traitSet,
-                RelOptRule.convert(union.getSeedRel(), traitSet),
-                RelOptRule.convert(union.getIterativeRel(), traitSet),
+                convert(seedRel, seedRel.getTraitSet().replace(ClrEnumerableConvention.Instance)),
+                convert(iterativeRel, iterativeRel.getTraitSet().replace(ClrEnumerableConvention.Instance)),
                 union.all,
                 union.iterationLimit,
                 union.getTransientTable());
@@ -87,14 +89,11 @@ namespace Apache.Calcite.Linq.Rel.Convert
         public override RelNode convert(RelNode rel)
         {
             var spool = (TableSpool)rel;
-            var traitSet = spool.getTraitSet().replace(ClrEnumerableConvention.Instance);
 
-            return new ClrEnumerableTableSpool(
-                spool.getCluster(),
-                traitSet,
-                RelOptRule.convert(spool.getInput(), traitSet),
-                Spool.Type.LAZY,
-                Spool.Type.LAZY,
+            return ClrEnumerableTableSpool.Create(
+                convert(spool.getInput(), spool.getInput().getTraitSet().replace(ClrEnumerableConvention.Instance)),
+                spool.readType,
+                spool.writeType,
                 spool.getTable());
         }
 

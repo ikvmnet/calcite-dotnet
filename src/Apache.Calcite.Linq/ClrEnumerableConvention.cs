@@ -1,5 +1,6 @@
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
+using org.apache.calcite.rel.core;
 
 using Apache.Calcite.Linq.Rel;
 
@@ -66,6 +67,17 @@ namespace Apache.Calcite.Linq
         public override bool useAbstractConvertersForConversion(RelTraitSet fromTraits, RelTraitSet toTraits)
         {
             return true;
+        }
+
+        /// <inheritdoc />
+        public override RelFactories.Struct getRelFactories()
+        {
+            return RelFactories.Struct.fromContext(
+                Contexts.of([
+                    ClrEnumerableRelFactories.ClrEnumerableTableScanFactory,
+                    ClrEnumerableRelFactories.ClrEnumerableProjectFactory,
+                    ClrEnumerableRelFactories.ClrEnumerableFilterFactory,
+                    ClrEnumerableRelFactories.ClrEnumerableSortFactory]));
         }
 
     }

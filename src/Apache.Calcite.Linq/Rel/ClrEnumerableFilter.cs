@@ -55,11 +55,35 @@ namespace Apache.Calcite.Linq.Rel
         }
 
         /// <inheritdoc />
+        public org.apache.calcite.util.Pair passThroughTraits(RelTraitSet required)
+        {
+            var collation = required.getCollation();
+            if (collation == null || collation == RelCollations.EMPTY)
+                return null!;
+
+            var traits = getTraitSet().replace(collation);
+
+            return org.apache.calcite.util.Pair.of(traits, com.google.common.collect.ImmutableList.of(traits));
+        }
+
+        /// <inheritdoc />
+        public org.apache.calcite.util.Pair deriveTraits(RelTraitSet childTraits, int childId)
+        {
+            var collation = childTraits.getCollation();
+            if (collation == null || collation == RelCollations.EMPTY)
+                return null!;
+
+            var traits = getTraitSet().replace(collation);
+
+            return org.apache.calcite.util.Pair.of(traits, com.google.common.collect.ImmutableList.of(traits));
+        }
+
+        /// <inheritdoc />
         /// <remarks>
         /// A calc is always better, exactly as for <c>EnumerableFilter</c>. See
         /// <see cref="ClrEnumerableProject.Implement"/>.
         /// </remarks>
-        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
+        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             throw new java.lang.UnsupportedOperationException();
         }

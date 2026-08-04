@@ -24,9 +24,15 @@ Apache Calcite under IKVM, with an ADO.NET adapter, an ADO.NET client surface, a
   there rather than writing an assertion by hand: the expected answer is whatever Calcite says.
 - **Calcite is checked out at `D:\calcite` — but it is 1.42.0-SNAPSHOT and the projects reference
   1.41.0.** Read that source, then check the member exists. `PhysType.generateNullAwareAccessor`,
-  `JoinInfo.nullExclusionFlags` and `org.apache.calcite.rel.core.Asof` are 1.42 only, and
-  `EnumerableTableModify` is implemented there with private helpers that are part of an UPDATE fix 1.41
-  does not have.
+  `JoinInfo.nullExclusionFlags`, `org.apache.calcite.rel.core.Asof`, `Combine` and
+  `ConditionalCorrelate` are 1.42 only, and `EnumerableTableModify` is implemented there with private
+  helpers that are part of an UPDATE fix 1.41 does not have. **`AsofJoin` is not one of them** —
+  `rel.core.AsofJoin`, `EnumerableAsofJoin` and `ENUMERABLE_ASOFJOIN_RULE` are all in 1.41, and a claim
+  that it was 1.42 stood in this file for a while on the strength of the wrong class name.
+- **Read the tag, and then check the assembly, because they differ.** `git archive calcite-1.41.0 …` is the
+  source; `calcite.core.dll` is what runs. `RelOptUtil.registerDefaultRules` registers
+  `EnumerableRules.ENUMERABLE_RULES` in the assembly — measured by counting the planner's rules across the
+  call — and the tag's text of that method gives no sign of it until its last third.
 - `global.json` has `rollForward: latestMajor`, so builds pick the **.NET 11 preview SDK**, not 10.0.302.
   That SDK's `dotnet sln add` also rewrites every project with x64/x86 configurations — edit the solution
   by hand.
@@ -39,7 +45,7 @@ things: Rex (`translateCondition`, `translateProjects`, `translateLiteral`, ever
 reaches); `PhysType`'s expression members and `JavaRowFormat.field`; a table's own
 `getExpression(Queryable.class)`, which the schema SPI defines as linq4j; and the block Calcite's
 implementor produces for an `EnumerableConvention` sub-plan at a converter. Everything else is
-`System.Linq.Expressions` directly. **`ClrEnumerableWindow` violates this today — see `TODO.md`.**
+`System.Linq.Expressions` directly.
 
 **`JavaCast` is for what Java the language converts and an expression tree will not** — boxing, unboxing,
 numeric promotion, `byte` sign extension. It is not a way to make one type into another where they ought
@@ -78,9 +84,47 @@ a variable that no longer exists. `ClrEnumerableCorrelate` needs this.
 
 **Calcite keeps a lot of what a port needs package private** — `EnumUtils.joinSelector`,
 `generatePredicate`, `fieldTypes`, `fieldRowTypes`, `javaClass`, `EnumerableAggregateBase`'s four helpers,
-`PhysTypeImpl.of(typeFactory, javaRowType)`, `EnumerableWindow`'s constructor. Expect to port rather than
-reuse, or to find a public route: a `ConverterRule`'s `convert` is public even when its node's constructor
-is not.
+`PhysTypeImpl.of(typeFactory, javaRowType)`, `EnumerableWindow`'s five private helpers and its constructor,
+and **every `RexToLixTranslator.translate` overload** — only the `translateList` forms are public, and
+`translateList(operands, storageTypes)` is `translate(operand, storageType)` once per element, so a list of
+one is the same call by a reachable name. Expect to port rather than reuse, or to find a public route: a
+`ConverterRule`'s `convert` is public even when its node's constructor is not.
+
+**A Calcite `Pair`'s `left` and `right` are unreachable from C#** — the fields are shadowed by the static
+methods of the same name, and C# resolves the member to the method group. `Pair` is a `Map.Entry`, so
+`getKey()` and `getValue()` are the way in.
+
+**A package private *type* Calcite casts to cannot be ported at all.** The rule above is about members, and
+a member can be written again. `EnumerableMatch.PassedRowsInputGetter` and `PrevInputGetter` are types:
+`RexToLixTranslator.implementPrev` and `RexImpTable.LastImplementor` cast the input getter to them by name,
+and `RexToLixTranslator` suppresses its field-read cache for a `PrevInputGetter` specifically. A class of
+the same shape fails all three casts, and IKVM makes them `internal`, so C# can name them and cannot
+construct them. **Reflection is not the answer** — where this happens, either let Calcite build that part
+of the block, or accept that the node cannot be written. See `TODO.md` on Match.
+
+**An anonymous class of one method is a lambda; one of several is a thing.** `Anonymous` turns the first
+into a lambda and the second into an object holding a delegate per method — `DelegateEnumerator` for the
+four-method `Enumerator` a calc generates. Either way the class's fields become variables of the block that
+builds the lambdas, so what they share has the lifetime one instance would have had.
+
+**Do not claim a missing node "still runs because the converters carry it" without running it.** The
+converter only ever saw a bare scan for a long time, because every mixed-convention test leaves the calc on
+the Clr side; a whole class of generated block could not cross and nothing said so.
+`ShouldCarryACalcAcrossTheConverter` plans with Calcite's rules plus this convention's converter rule alone,
+which is the only way to make the converter meet a real generated block.
+
+**A block Calcite generates can rely on two Java facts an expression tree does not have**, and both are
+handled in `ExpressionTranslator` because both are general rather than one node's problem. linq4j hoists a
+sub-expression it can prove constant into a *field* of the anonymous class it is generating, so an
+anonymous class is not always a bare SAM; each field becomes a variable of the block that builds the
+lambda. And Java resolves a *name*, so a method's parameter shadows an outer variable Calcite deliberately
+gave the same name — `Anonymous` gives an anonymous method's parameters a lexical scope for exactly that.
+
+**A user-defined function written in .NET runs in this convention and in no plan Janino compiles.** IKVM
+names a CLR class `cli.Namespace.Type`; `EnumerableConvention` writes that name into generated Java source
+and Janino does not resolve a `cli.` name, so the plan fails to compile — for a grouped aggregate and a
+windowed one alike. A tree holds the method rather than its name. So a UDF is the one thing the
+differential tests cannot use Calcite as the oracle for.
 
 ## Traps
 

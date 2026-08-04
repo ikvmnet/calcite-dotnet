@@ -4,7 +4,9 @@ using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.convert;
+using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.logical;
+using org.apache.calcite.schema;
 
 namespace Apache.Calcite.Linq.Rel.Convert
 {
@@ -24,7 +26,7 @@ namespace Apache.Calcite.Linq.Rel.Convert
             return (ClrEnumerableTableScanRule)Config.INSTANCE
                 .withConversion(
                     (java.lang.Class)typeof(LogicalTableScan),
-                    new DelegatePredicate<LogicalTableScan>(r => EnumerableTableScan.canHandle(r.getTable())),
+                    new DelegatePredicate<LogicalTableScan>(r => ClrEnumerableTableScan.CanHandle(r.getTable())),
                     Convention.NONE,
                     ClrEnumerableConvention.Instance,
                     "ClrEnumerableTableScanRule")
@@ -43,11 +45,22 @@ namespace Apache.Calcite.Linq.Rel.Convert
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// A table with no expression cannot be read by any plan of this convention, and refusing it here is
+        /// the only place the refusal belongs: <c>Implement</c> runs after a plan has been chosen. A
+        /// <c>QueryableTable</c> passes regardless, because Calcite's own test tables leave
+        /// <c>getExpression</c> unimplemented and are still readable.
+        /// </remarks>
         public override RelNode convert(RelNode rel)
         {
-            var scan = (LogicalTableScan)rel;
+            var scan = (TableScan)rel;
+            var relOptTable = scan.getTable();
+            var table = (Table)relOptTable.unwrap(typeof(Table));
 
-            return ClrEnumerableTableScan.Create(scan.getCluster(), scan.getTable());
+            if (table is QueryableTable || relOptTable.getExpression(typeof(object)) != null)
+                return ClrEnumerableTableScan.Create(scan.getCluster(), relOptTable);
+
+            return null!;
         }
 
     }

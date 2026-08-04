@@ -26,7 +26,20 @@ namespace Apache.Calcite.Linq.Rel
     {
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Creates a <see cref="ClrEnumerableUncollect"/>. Each field of the input must be an array or a
+        /// multiset.
+        /// </summary>
+        /// <param name="traitSet"></param>
+        /// <param name="input"></param>
+        /// <param name="withOrdinality">whether the output carries an ORDINALITY column</param>
+        /// <returns></returns>
+        public static ClrEnumerableUncollect Create(RelTraitSet traitSet, RelNode input, bool withOrdinality)
+        {
+            return new ClrEnumerableUncollect(input.getCluster(), traitSet, input, withOrdinality, com.google.common.collect.ImmutableList.of());
+        }
+
+        /// <summary>
+        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
         /// </summary>
         /// <param name="cluster"></param>
         /// <param name="traitSet"></param>
@@ -46,7 +59,7 @@ namespace Apache.Calcite.Linq.Rel
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
+        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var child = (ClrEnumerableRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);

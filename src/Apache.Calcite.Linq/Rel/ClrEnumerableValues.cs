@@ -38,7 +38,8 @@ namespace Apache.Calcite.Linq.Rel
         {
             var mq = cluster.getMetadataQuery();
             var traitSet = cluster.traitSetOf(ClrEnumerableConvention.Instance)
-                .replaceIfs(RelCollationTraitDef.INSTANCE, new DelegateSupplier<object>(() => RelMdCollation.values(mq, rowType, tuples)));
+                .replaceIfs(RelCollationTraitDef.INSTANCE, new DelegateSupplier<object>(() => RelMdCollation.values(mq, rowType, tuples)))
+                .replaceIf(RelDistributionTraitDef.INSTANCE, new DelegateSupplier<object>(() => RelMdDistribution.values(rowType, tuples)));
 
             return new ClrEnumerableValues(cluster, rowType, tuples, traitSet);
         }
@@ -63,10 +64,44 @@ namespace Apache.Calcite.Linq.Rel
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
+        public RelNode passThrough(RelTraitSet required)
+        {
+            var collation = required.getCollation();
+            if (collation == null || collation.isDefault())
+                return null!;
+
+            // a VALUES of 0 or 1 rows can be ordered by any collation
+            if (tuples.size() > 1)
+            {
+                com.google.common.collect.Ordering? ordering = null;
+
+                // generate an ordering comparator according to the required collations
+                for (int i = 0; i < collation.getFieldCollations().size(); i++)
+                {
+                    var comparator = org.apache.calcite.rel.metadata.RelMdCollation.comparator((RelFieldCollation)collation.getFieldCollations().get(i));
+                    ordering = ordering == null ? comparator : ordering.compound(comparator);
+                }
+
+                // check whether the tuples are sorted by the required collations
+                if (ordering!.isOrdered(tuples) == false)
+                    return null!;
+            }
+
+            // the tuples' order satisfies the collation, so a node carrying it is all that is needed
+            return copy(getTraitSet().replace(collation), com.google.common.collect.ImmutableList.of());
+        }
+
+        /// <inheritdoc />
+        public DeriveMode getDeriveMode()
+        {
+            return DeriveMode.PROHIBITED;
+        }
+
+        /// <inheritdoc />
+        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var typeFactory = (JavaTypeFactory)getCluster().getTypeFactory();
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.preferCustom());
+            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.PreferCustom());
             var rowType = TypeResolver.Resolve(physType.getJavaRowType());
 
             var fields = getRowType().getFieldList();

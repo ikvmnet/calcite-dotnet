@@ -25,7 +25,21 @@ namespace Apache.Calcite.Linq.Rel
     {
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Creates a <see cref="ClrEnumerableCollect"/>.
+        /// </summary>
+        /// <param name="input"></param>
+        /// <param name="rowType"></param>
+        /// <returns></returns>
+        public static ClrEnumerableCollect Create(RelNode input, RelDataType rowType)
+        {
+            var cluster = input.getCluster();
+            var traitSet = cluster.traitSet().replace(ClrEnumerableConvention.Instance);
+
+            return new ClrEnumerableCollect(cluster, traitSet, input, rowType);
+        }
+
+        /// <summary>
+        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
         /// </summary>
         /// <param name="cluster"></param>
         /// <param name="traitSet"></param>
@@ -44,12 +58,12 @@ namespace Apache.Calcite.Linq.Rel
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
+        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var child = (ClrEnumerableRel)getInput();
 
             // rows are asked for as arrays, though as Calcite notes the child need not oblige
-            var result = implementor.VisitChild(this, 0, child, EnumerableRel.Prefer.ARRAY);
+            var result = implementor.VisitChild(this, 0, child, ClrEnumerablePrefer.Array);
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), JavaRowFormat.LIST);
 
             var collectionType = getCollectionType();

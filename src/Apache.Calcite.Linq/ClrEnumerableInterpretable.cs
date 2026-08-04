@@ -20,7 +20,7 @@ namespace Apache.Calcite.Linq
     /// expression tree is compiled directly, and the result is wrapped as a <see cref="Bindable"/> so that
     /// everything downstream of a prepared statement is unchanged.
     /// </remarks>
-    public static class ClrInterpretable
+    public static class ClrEnumerableInterpretable
     {
 
         /// <summary>
@@ -30,7 +30,7 @@ namespace Apache.Calcite.Linq
         /// <param name="rel"></param>
         /// <param name="prefer"></param>
         /// <returns></returns>
-        public static Bindable ToBindable(java.util.Map internalParameters, ClrEnumerableRel rel, EnumerableRel.Prefer prefer)
+        public static Bindable ToBindable(java.util.Map internalParameters, ClrEnumerableRel rel, ClrEnumerablePrefer prefer)
         {
             ArgumentNullException.ThrowIfNull(internalParameters);
             ArgumentNullException.ThrowIfNull(rel);
@@ -39,7 +39,7 @@ namespace Apache.Calcite.Linq
             var lambda = implementor.ImplementRoot(rel, prefer);
             var plan = (Func<DataContext, IEnumerable>)lambda.Compile();
 
-            return new ClrBindable(plan, PhysTypeImpl.of(implementor.TypeFactory, rel.getRowType(), prefer.preferArray()).getJavaRowType());
+            return new ClrBindable(plan, PhysTypeImpl.of(implementor.TypeFactory, rel.getRowType(), prefer.PreferArray()).getJavaRowType());
         }
 
         /// <summary>

@@ -24,7 +24,7 @@ namespace Apache.Calcite.Linq.Rel
     /// </summary>
     /// <remarks>
     /// Calcite fuses the filter and the projection into one anonymous <c>Enumerator</c>, because generated
-    /// Java source is the only place it can put a custom enumerator. <see cref="ClrEnumerables.Calc"/> is that
+    /// Java source is the only place it can put a custom enumerator. <see cref="ClrEnumerableDefaults.Calc"/> is that
     /// enumerator, written once as an ordinary iterator and called from the tree, so the plan is the same one
     /// pass over the input.
     /// </remarks>
@@ -68,13 +68,51 @@ namespace Apache.Calcite.Linq.Rel
             return new ClrEnumerableCalc(getCluster(), traitSet, child, program);
         }
 
+        /// <summary>
+        /// Returns the program's projections with their local references expanded, which is what a collation
+        /// is decided against.
+        /// </summary>
+        /// <returns></returns>
+        java.util.List Exps()
+        {
+            var program = getProgram();
+            var exps = new java.util.ArrayList();
+            for (int i = 0; i < program.getProjectList().size(); i++)
+                exps.add(program.expandLocalRef((RexLocalRef)program.getProjectList().get(i)));
+
+            return exps;
+        }
+
         /// <inheritdoc />
-        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
+        public org.apache.calcite.util.Pair passThroughTraits(RelTraitSet required)
+        {
+            return ClrEnumerableTraitsUtils.PassThroughTraitsForProject(
+                required,
+                Exps(),
+                getInput().getRowType(),
+                getInput().getCluster().getTypeFactory(),
+                getTraitSet())!;
+        }
+
+        /// <inheritdoc />
+        public org.apache.calcite.util.Pair deriveTraits(RelTraitSet childTraits, int childId)
+        {
+            return ClrEnumerableTraitsUtils.DeriveTraitsForProject(
+                childTraits,
+                childId,
+                Exps(),
+                getInput().getRowType(),
+                getInput().getCluster().getTypeFactory(),
+                getTraitSet())!;
+        }
+
+        /// <inheritdoc />
+        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var typeFactory = implementor.TypeFactory;
             var child = (ClrEnumerableRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);
-            var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.prefer(result.Format));
+            var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.Prefer(result.Format));
 
             var inputJavaType = result.PhysType.getJavaRowType();
             var inputType = TypeResolver.Resolve(inputJavaType);

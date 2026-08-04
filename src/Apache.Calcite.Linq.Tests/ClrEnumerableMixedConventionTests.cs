@@ -120,7 +120,7 @@ namespace Apache.Calcite.Linq.Tests
 
             var parameters = new java.util.HashMap();
             var bindable = physical is ClrEnumerableRel clr
-                ? ClrInterpretable.ToBindable(parameters, clr, EnumerableRel.Prefer.ARRAY)
+                ? ClrEnumerableInterpretable.ToBindable(parameters, clr, ClrEnumerablePrefer.Array)
                 : EnumerableInterpretable.toBindable(parameters, null, (EnumerableRel)physical, EnumerableRel.Prefer.ARRAY);
 
             var rows = new List<object[]>();
@@ -138,6 +138,68 @@ namespace Apache.Calcite.Linq.Tests
         public void ShouldEndInThisConvention()
         {
             var rows = Run("SELECT \"ID\", \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" > 1", ClrEnumerableConvention.Instance);
+
+            rows.Select(r => (string)r[1]).Should().BeEquivalentTo(["JONES", "BROWN"]);
+        }
+
+        /// <summary>
+        /// Plans a query with only Calcite's rules, so that the whole of it lands in
+        /// <c>EnumerableConvention</c> and the converter has to carry it.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <see cref="Run"/> gives the planner both rule sets, and this convention wins nearly everything, so
+        /// the converter only ever sees a bare scan there. What it actually has to survive is the block a
+        /// generated node produces, and a calc's holds an anonymous <c>Enumerator</c>: four methods over a
+        /// field, which is not a lambda and was refused outright until <c>DelegateEnumerator</c> existed.
+        /// </remarks>
+        static List<object[]> RunAcrossConverter(string sql)
+        {
+            var rootSchema = Frameworks.createRootSchema(true);
+            rootSchema.add("PEOPLE", new PeopleTable());
+
+            var rules = new java.util.ArrayList();
+            foreach (var rule in EnumerableRules.ENUMERABLE_RULES.toArray())
+                rules.add(rule);
+
+            // the one rule of this convention, so a plan of Calcite's can be read as one of ours and nothing
+            // else of ours can claim a node
+            rules.add(Convert.EnumerableToClrEnumerableConverterRule.Create());
+
+            var calcRules = new java.util.ArrayList();
+            foreach (var rule in RelOptRules.CALC_RULES.toArray())
+                calcRules.add(rule);
+
+            var config = Frameworks.newConfigBuilder()
+                .defaultSchema(rootSchema)
+                .programs(
+                    Programs.ofRules(rules),
+                    Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE))
+                .build();
+
+            var planner = Frameworks.getPlanner(config);
+            var logical = planner.rel(planner.validate(planner.parse(sql))).project();
+            var chosen = planner.transform(0, planner.getEmptyTraitSet().replace(ClrEnumerableConvention.Instance), logical);
+            var physical = planner.transform(1, chosen.getTraitSet(), chosen);
+
+            var rows = new List<object[]>();
+            var bindable = ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
+            var enumerator = bindable.bind(new TestDataContext(rootSchema)).enumerator();
+
+            while (enumerator.moveNext())
+            {
+                var current = enumerator.current();
+                rows.Add(current as object[] ?? [current]);
+            }
+
+            return rows;
+        }
+
+        [TestMethod]
+        public void ShouldCarryACalcAcrossTheConverter()
+        {
+            var rows = RunAcrossConverter("SELECT \"ID\", \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" > 1");
 
             rows.Select(r => (string)r[1]).Should().BeEquivalentTo(["JONES", "BROWN"]);
         }

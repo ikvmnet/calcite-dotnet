@@ -4,11 +4,14 @@ using System.Linq.Expressions;
 using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
+using java.util.function;
+
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.linq4j.function;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
+using org.apache.calcite.rel.metadata;
 using org.apache.calcite.rex;
 using org.apache.calcite.util;
 
@@ -34,7 +37,9 @@ namespace Apache.Calcite.Linq.Rel
         public static ClrEnumerableHashJoin Create(RelNode left, RelNode right, RexNode condition, java.util.Set variablesSet, JoinRelType joinType)
         {
             var cluster = left.getCluster();
-            var traitSet = cluster.traitSetOf(ClrEnumerableConvention.Instance);
+            var mq = cluster.getMetadataQuery();
+            var traitSet = cluster.traitSetOf(ClrEnumerableConvention.Instance)
+                .replaceIfs(RelCollationTraitDef.INSTANCE, new DelegateSupplier<object>(() => RelMdCollation.enumerableHashJoin(mq, left, right, joinType)));
 
             return new ClrEnumerableHashJoin(cluster, traitSet, left, right, condition, variablesSet, joinType);
         }
@@ -62,7 +67,71 @@ namespace Apache.Calcite.Linq.Rel
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
+        public org.apache.calcite.util.Pair passThroughTraits(RelTraitSet required)
+        {
+            return ClrEnumerableTraitsUtils.PassThroughTraitsForJoin(required, joinType, getLeft().getRowType().getFieldCount(), getTraitSet())!;
+        }
+
+        /// <inheritdoc />
+        public org.apache.calcite.util.Pair deriveTraits(RelTraitSet childTraits, int childId)
+        {
+            // should only derive traits (limited to collation for now) from the left join input
+            return ClrEnumerableTraitsUtils.DeriveTraitsForJoin(childTraits, childId, joinType, getTraitSet(), getRight().getTraitSet())!;
+        }
+
+        /// <inheritdoc />
+        public DeriveMode getDeriveMode()
+        {
+            if (joinType.name() == nameof(JoinRelType.FULL) || joinType.name() == nameof(JoinRelType.RIGHT))
+                return DeriveMode.PROHIBITED;
+
+            return DeriveMode.LEFT_FIRST;
+        }
+
+        /// <inheritdoc />
+        public override RelOptCost computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq)
+        {
+            var rowCount = mq.getRowCount(this).doubleValue();
+
+            // a join can be flipped, and for many algorithms both versions are viable and cost the same. To
+            // keep the answer stable from one version of the planner to the next, one of them is made
+            // slightly more expensive.
+            switch (joinType.name())
+            {
+                case nameof(JoinRelType.SEMI):
+                case nameof(JoinRelType.ANTI):
+                    // SEMI and ANTI cannot be flipped
+                    break;
+                case nameof(JoinRelType.RIGHT):
+                    rowCount = RelMdUtil.addEpsilon(rowCount);
+                    break;
+                default:
+                    if (RelNodes.COMPARATOR.compare(getLeft(), getRight()) > 0)
+                        rowCount = RelMdUtil.addEpsilon(rowCount);
+                    break;
+            }
+
+            // cheaper if the smaller number of rows is coming from the left, modelled by adding L log L
+            var rightRowCount = mq.getRowCount(getRight()).doubleValue();
+            var leftRowCount = mq.getRowCount(getLeft()).doubleValue();
+            if (double.IsInfinity(leftRowCount))
+                rowCount = leftRowCount;
+            else
+                rowCount += Util.nLogN(leftRowCount);
+
+            if (double.IsInfinity(rightRowCount))
+                rowCount = rightRowCount;
+            else
+                rowCount += rightRowCount;
+
+            if (isSemiJoin())
+                return planner.getCostFactory().makeCost(rowCount, 0, 0).multiplyBy(.01d);
+            else
+                return planner.getCostFactory().makeCost(rowCount, 0, 0);
+        }
+
+        /// <inheritdoc />
+        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             switch (joinType.name())
             {
@@ -80,12 +149,12 @@ namespace Apache.Calcite.Linq.Rel
         /// <param name="implementor"></param>
         /// <param name="pref"></param>
         /// <returns></returns>
-        ClrEnumerableResult ImplementHashJoin(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
+        ClrEnumerableResult ImplementHashJoin(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
 
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.preferArray());
+            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.PreferArray());
             var keyPhysType = leftResult.PhysType.project(analyzeCondition().leftKeys, JavaRowFormat.LIST);
 
             var leftSource = ClrEnumUtils.BoxRows(leftResult.PhysType, leftResult.Expression);
@@ -122,7 +191,7 @@ namespace Apache.Calcite.Linq.Rel
         /// <param name="implementor"></param>
         /// <param name="pref"></param>
         /// <returns></returns>
-        ClrEnumerableResult ImplementSemiJoin(ClrEnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
+        ClrEnumerableResult ImplementSemiJoin(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
