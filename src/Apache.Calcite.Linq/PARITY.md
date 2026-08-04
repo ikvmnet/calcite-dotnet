@@ -302,8 +302,11 @@ whole `enumerable.impl` package.
 | `convert`, `evaluate`, `call`, `numberToBigDecimal`, `generateCollatorExpression`, `toExternal`, `sessionize`, `hopping`, `tumbling` | public — reused as they are |
 | — | `BoxRows` |
 
-`ClrEnumerableDefaults` is the counterpart of linq4j's `EnumerableDefaults`, not of anything in this package: 29
-operators over typed delegates where linq4j's are over `Function1` and `Function2`. `ClrPhysTypes`,
+`ClrEnumerableDefaults` is the counterpart of linq4j's `EnumerableDefaults`, not of anything in this
+package: 30 operators over typed delegates where linq4j's are over `Function1` and `Function2`. Where an
+operator's output order is a collection's — group by, distinct, union, intersect, except, and the unmatched
+tail of a hash join — it holds the rows in the same Java collection linq4j does, because the order is part of
+the answer. `EnumerableDefaults.Wrapped` is ported as `JavaWrapped` for the same reason. `ClrPhysTypes`,
 `ExpressionTranslator`, `MethodResolver`, `TypeResolver`, `FieldResolver`, `JavaCast`, `SamAdapters`,
 `SyntheticRecordEmitter` and the `Delegate*` runtime types have no Calcite counterpart at all: they are what
 an expression tree costs where Calcite has Java source.
@@ -382,6 +385,14 @@ value while the sequence still yields `Object[]`, and a parent reads field 0 as 
 the element type and cannot see it; ours is typed, and a merge join over a one-column table function is
 where it came out. Those five nodes use the four-argument overload with optimisation off.
 
+**Six operators hold their rows in Calcite's collection, not the CLR's.** *A defect, demonstrated.* The
+order of a query that asks for none is the order of the collection the operator held its rows in. Group by,
+distinct, union, intersect, except and the unmatched tail of a hash join each held them in a `Dictionary` or
+a `HashSet`, and answered a query differently from `EnumerableConvention` for that reason alone. Each now
+holds them in the Java collection linq4j holds them in, and `JavaWrapped` — the port of
+`EnumerableDefaults.Wrapped` — is how a comparer reaches those collections. Nine unordered differential
+tests hold it.
+
 **A correlate boxes its rows.** *A defect, demonstrated.* `EnumUtils.joinSelector` boxes both of its
 parameter types, because linq4j's `Function2` erases to `Object`. Every other join here boxes its sequences
 to match; the correlate did not, and an EXISTS sub-query — whose right side is one primitive boolean column
@@ -417,6 +428,11 @@ Reflection is not an acceptable way in. `TODO.md` has the three blockers in full
 ---
 
 ## 8. Measured on the way, and worth keeping
+
+**Java specifies `String.hashCode`, and IKVM implements it.** Measured in `JavaHashingTests`, in two
+processes: the Java-side hash of `"EAST"` is 2120701 both times, the CLR's is a different number each time,
+and a `java.util.HashMap` iterates identically. So an order that comes from a Java collection is
+reproducible, and one that comes from a CLR collection keyed by strings is not comparable to Calcite's.
 
 **Trait derivation is dead unless the planner optimises top down.** `passThroughTraits`, `deriveTraits` and
 `getDeriveMode` are called only by `TopDownRuleDriver`, and `CalciteSystemProperty.TOPDOWN_OPT` is false by

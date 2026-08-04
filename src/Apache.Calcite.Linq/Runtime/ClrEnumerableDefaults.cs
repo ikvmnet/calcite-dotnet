@@ -153,7 +153,28 @@ namespace Apache.Calcite.Linq.Runtime
         /// <returns></returns>
         public static IEnumerable<TSource> Union<TSource>(IEnumerable<TSource> source, IEnumerable<TSource> other, EqualityComparer? comparer)
         {
-            return source.Union(other, JavaEqualityComparer<TSource>.Of(comparer));
+            // a java.util.HashSet, and not because the CLR has nothing to hold rows in: what a set operator
+            // yields a row in is the order of the collection it held them in, and Calcite's is this one. See
+            // JavaHashingTests for why that order is the same in every process.
+            var set = new java.util.HashSet();
+            foreach (var row in source)
+                set.add(JavaWrapped.Of(comparer, JavaValues.From(row)));
+            foreach (var row in other)
+                set.add(JavaWrapped.Of(comparer, JavaValues.From(row)));
+
+            return Unwrap<TSource>(set);
+        }
+
+        /// <summary>
+        /// Returns the values of a Java collection, in its order, each unwrapped and converted back.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="collection"></param>
+        /// <returns></returns>
+        static IEnumerable<TSource> Unwrap<TSource>(java.lang.Iterable collection)
+        {
+            for (var i = collection.iterator(); i.hasNext();)
+                yield return JavaValues.As<TSource>(JavaWrapped.Unwrap(i.next()));
         }
 
         /// <summary>
@@ -167,10 +188,28 @@ namespace Apache.Calcite.Linq.Runtime
         /// <returns></returns>
         public static IEnumerable<TSource> Intersect<TSource>(IEnumerable<TSource> source, IEnumerable<TSource> other, EqualityComparer? comparer, bool all)
         {
-            if (all == false)
-                return source.Intersect(other, JavaEqualityComparer<TSource>.Of(comparer));
+            // ALL keeps a row once per pairing, so the collection counts rather than merely holding
+            var set1 = Collection(all);
+            foreach (var row in other)
+                set1.add(JavaWrapped.Of(comparer, JavaValues.From(row)));
 
-            return IntersectAll(source, other, JavaEqualityComparer<TSource>.Of(comparer));
+            var result = Collection(all);
+            foreach (var row in source)
+                if (set1.remove(JavaWrapped.Of(comparer, JavaValues.From(row))))
+                    result.add(JavaWrapped.Of(comparer, JavaValues.From(row)));
+
+            return Unwrap<TSource>(result);
+        }
+
+        /// <summary>
+        /// Returns the collection a set operator holds its rows in: one that counts them where duplicates are
+        /// kept, and one that does not where they are not.
+        /// </summary>
+        /// <param name="all"></param>
+        /// <returns></returns>
+        static java.util.Collection Collection(bool all)
+        {
+            return all ? com.google.common.collect.HashMultiset.create() : new java.util.HashSet();
         }
 
         /// <summary>
@@ -206,10 +245,14 @@ namespace Apache.Calcite.Linq.Runtime
         /// <returns></returns>
         public static IEnumerable<TSource> Except<TSource>(IEnumerable<TSource> source, IEnumerable<TSource> other, EqualityComparer? comparer, bool all)
         {
-            if (all == false)
-                return source.Except(other, JavaEqualityComparer<TSource>.Of(comparer));
+            var collection = Collection(all);
+            foreach (var row in source)
+                collection.add(JavaWrapped.Of(comparer, JavaValues.From(row)));
 
-            return ExceptAll(source, other, JavaEqualityComparer<TSource>.Of(comparer));
+            foreach (var row in other)
+                collection.remove(JavaWrapped.Of(comparer, JavaValues.From(row)));
+
+            return Unwrap<TSource>(collection);
         }
 
         /// <summary>
@@ -262,7 +305,11 @@ namespace Apache.Calcite.Linq.Runtime
         /// <returns></returns>
         public static IEnumerable<TSource> Distinct<TSource>(IEnumerable<TSource> source, EqualityComparer? comparer)
         {
-            return source.Distinct(JavaEqualityComparer<TSource>.Of(comparer));
+            var set = new java.util.HashSet();
+            foreach (var row in source)
+                set.add(JavaWrapped.Of(comparer, JavaValues.From(row)));
+
+            return Unwrap<TSource>(set);
         }
 
         /// <summary>
@@ -298,9 +345,11 @@ namespace Apache.Calcite.Linq.Runtime
             bool generateNullsOnRight,
             Func<TSource, TInner, bool>? predicate)
         {
-            var equality = JavaEqualityComparer<TKey>.Of(comparer);
-            var lookup = new Dictionary<TKey, List<TInner>>(equality);
-            var matched = generateNullsOnLeft ? new HashSet<TKey>(equality) : null;
+            // the lookup is a java.util.HashMap, as linq4j's toLookup builds one: a right or a full join ends
+            // with the rows of the right input that matched nothing, and the order those come out in is this
+            // map's. See JavaHashingTests for why that order is the same in every process.
+            var lookup = new java.util.HashMap();
+            var matched = generateNullsOnLeft ? new java.util.HashSet() : null;
 
             foreach (var row in inner)
             {
@@ -308,8 +357,9 @@ namespace Apache.Calcite.Linq.Runtime
                 if (key == null)
                     continue;
 
-                if (lookup.TryGetValue(key, out var bucket) == false)
-                    lookup[key] = bucket = [];
+                var wrapped = JavaWrapped.Of(comparer, JavaValues.From(key));
+                if (lookup.get(wrapped) is not List<TInner> bucket)
+                    lookup.put(wrapped, bucket = []);
 
                 bucket.Add(row);
             }
@@ -319,7 +369,7 @@ namespace Apache.Calcite.Linq.Runtime
                 var key = outerKeySelector(row);
                 var any = false;
 
-                if (key != null && lookup.TryGetValue(key, out var bucket))
+                if (key != null && lookup.get(JavaWrapped.Of(comparer, JavaValues.From(key))) is List<TInner> bucket)
                 {
                     foreach (var other in bucket)
                     {
@@ -327,7 +377,7 @@ namespace Apache.Calcite.Linq.Runtime
                             continue;
 
                         any = true;
-                        matched?.Add(key);
+                        matched?.add(JavaWrapped.Of(comparer, JavaValues.From(key)));
                         yield return resultSelector(row, other);
                     }
                 }
@@ -339,10 +389,15 @@ namespace Apache.Calcite.Linq.Runtime
             if (matched == null)
                 yield break;
 
-            foreach (var pair in lookup)
-                if (matched.Contains(pair.Key) == false)
-                    foreach (var other in pair.Value)
-                        yield return resultSelector(default!, other);
+            for (var i = lookup.entrySet().iterator(); i.hasNext();)
+            {
+                var entry = (java.util.Map.Entry)i.next();
+                if (matched.contains(entry.getKey()))
+                    continue;
+
+                foreach (var other in (List<TInner>)entry.getValue())
+                    yield return resultSelector(default!, other);
+            }
         }
 
         /// <summary>
@@ -964,24 +1019,23 @@ namespace Apache.Calcite.Linq.Runtime
             Function2 resultSelector,
             EqualityComparer? comparer)
         {
-            var accumulators = new Dictionary<TKey, object>(JavaEqualityComparer<TKey>.Of(comparer));
-            var order = new List<TKey>();
+            // a java.util.HashMap, because the order the groups come out in is the map's and Calcite's is
+            // this one. Holding the insertion order instead gave a different answer to the same GROUP BY.
+            var accumulators = new java.util.HashMap();
 
             foreach (var row in source)
             {
-                var key = keySelector(row);
+                var key = JavaWrapped.Of(comparer, JavaValues.From(keySelector(row)));
+                var accumulator = accumulators.get(key) ?? accumulatorInitializer.apply();
 
-                if (accumulators.TryGetValue(key, out var accumulator) == false)
-                {
-                    accumulator = accumulatorInitializer.apply();
-                    order.Add(key);
-                }
-
-                accumulators[key] = accumulatorAdder.apply(accumulator, row);
+                accumulators.put(key, accumulatorAdder.apply(accumulator, row));
             }
 
-            foreach (var key in order)
-                yield return JavaValues.As<TResult>(resultSelector.apply(key, accumulators[key]));
+            for (var i = accumulators.entrySet().iterator(); i.hasNext();)
+            {
+                var entry = (java.util.Map.Entry)i.next();
+                yield return JavaValues.As<TResult>(resultSelector.apply(JavaWrapped.Unwrap(entry.getKey()), entry.getValue()));
+            }
         }
 
         /// <summary>

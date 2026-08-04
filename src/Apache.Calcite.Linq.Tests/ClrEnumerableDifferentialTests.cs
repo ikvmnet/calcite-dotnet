@@ -337,6 +337,14 @@ namespace Apache.Calcite.Linq.Tests
         [TestMethod]
         public void ShouldAgreeOnAGroupBy() => Same("SELECT \"REGION\", COUNT(*), SUM(\"AMOUNT\"), MIN(\"AMOUNT\"), MAX(\"AMOUNT\") FROM \"SALES\" GROUP BY \"REGION\" ORDER BY \"REGION\"");
 
+        /// <summary>
+        /// A GROUP BY with no ORDER BY, which is where the two conventions have to agree on an order neither
+        /// was asked for: ours groups in a <see cref="System.Collections.Generic.Dictionary{TKey, TValue}"/>
+        /// and Calcite's in a <c>java.util.HashMap</c>.
+        /// </summary>
+        [TestMethod]
+        public void ShouldAgreeOnAGroupBysOwnOrder() => Same("SELECT \"REGION\", COUNT(*) FROM \"SALES\" GROUP BY \"REGION\"");
+
         [TestMethod]
         public void ShouldAgreeOnAGlobalAggregate() => Same("SELECT COUNT(*), SUM(\"AMOUNT\"), AVG(\"AMOUNT\") FROM \"SALES\"");
 
@@ -386,6 +394,39 @@ namespace Apache.Calcite.Linq.Tests
         [TestMethod]
         public void ShouldAgreeOnALeftAsofJoinWithANullKey() =>
             Same("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a LEFT ASOF JOIN \"SALES\" b MATCH_CONDITION b.\"ID\" <= a.\"ID\" ON a.\"AMOUNT\" = b.\"AMOUNT\" ORDER BY a.\"ID\"");
+
+        // A right and a full join with no ORDER BY: the rows of the right input that matched nothing come out
+        // at the end, in the order of the lookup the join built.
+
+        [TestMethod]
+        public void ShouldAgreeOnARightJoinsOwnOrder() =>
+            Same("SELECT a.\"ID\", b.\"ID\" FROM (SELECT * FROM \"SALES\" WHERE \"ID\" < 3) a RIGHT JOIN \"SALES\" b ON a.\"REGION\" = b.\"REGION\" AND a.\"LABEL\" = b.\"LABEL\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnAFullJoinsOwnOrder() =>
+            Same("SELECT a.\"ID\", b.\"ID\" FROM (SELECT * FROM \"SALES\" WHERE \"ID\" < 3) a FULL JOIN (SELECT * FROM \"SALES\" WHERE \"ID\" > 1) b ON a.\"LABEL\" = b.\"LABEL\"");
+
+        // A set operation with no ORDER BY, which is the same question as the GROUP BY above: the rows come
+        // out in the order of the collection the operator held them in, and Calcite holds them in a
+        // java.util.HashSet or a HashMultiset.
+
+        [TestMethod]
+        public void ShouldAgreeOnUnionsOwnOrder() => Same("SELECT \"REGION\" FROM \"SALES\" UNION SELECT \"LABEL\" FROM \"SALES\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnIntersectsOwnOrder() => Same("SELECT \"LABEL\" FROM \"SALES\" INTERSECT SELECT \"LABEL\" FROM \"SALES\" WHERE \"ID\" < 5");
+
+        [TestMethod]
+        public void ShouldAgreeOnIntersectAllsOwnOrder() => Same("SELECT \"REGION\" FROM \"SALES\" INTERSECT ALL SELECT \"REGION\" FROM \"SALES\" WHERE \"ID\" < 5");
+
+        [TestMethod]
+        public void ShouldAgreeOnExceptsOwnOrder() => Same("SELECT \"LABEL\" FROM \"SALES\" EXCEPT SELECT \"LABEL\" FROM \"SALES\" WHERE \"ID\" > 4");
+
+        [TestMethod]
+        public void ShouldAgreeOnExceptAllsOwnOrder() => Same("SELECT \"REGION\" FROM \"SALES\" EXCEPT ALL SELECT \"REGION\" FROM \"SALES\" WHERE \"ID\" > 4");
+
+        [TestMethod]
+        public void ShouldAgreeOnDistinctsOwnOrder() => Same("SELECT DISTINCT \"REGION\" FROM \"SALES\"");
 
         [TestMethod]
         public void ShouldAgreeOnUnionAll() => Same("SELECT \"ID\" FROM \"SALES\" UNION ALL SELECT \"ID\" FROM \"SALES\" ORDER BY 1");

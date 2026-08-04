@@ -293,10 +293,11 @@ and unreached, and each is now covered by a test:
   are the same signature when there are no fields, and `Type.GetConstructor` cannot tell them apart. A semi
   join whose right input projects nothing is one.
 
-Worth knowing for the next node: **the chosen plan varies from run to run.** `VolcanoCost.isLt` compares
-the row count alone, so equal-cost plans are decided by which was seen first, and under IKVM a string hashes
-as .NET hashes it — randomised per process. Two of the three defects above appeared in one run and not the
-next. Run the suite more than once before believing it.
+A claim written here first and checked afterwards, which is the wrong order: that the chosen plan varies from
+run to run. It does not, and there was never evidence for it — the failures that looked like variation were
+the same plan meeting different code of mine, and a probe that fired on a different test than the one
+failing. `JavaHashingTests` settles the mechanism it was blamed on: Java specifies `String.hashCode`, IKVM
+implements it, and a `java.util.HashMap` iterates identically in every process.
 
 ### ASOF join: written, and on the chosen plan
 
@@ -328,6 +329,28 @@ making `Implement` throw and watching all six fail through it.
 **`ClrEnumerablePrefer` is this convention's own**, against `EnumerableRel.Prefer`. Same five values and the
 same three questions asked of them, plus `ToCalcite` and `FromCalcite`, which are called at the two
 converters and nowhere else. What a node asks its input for belongs to the convention asking.
+
+### The order of a query that asks for none is the collection's, and it has to be Calcite's collection
+
+A GROUP BY with no ORDER BY has an order, and it is the order of the map the operator grouped in. Ours
+grouped in a `Dictionary` and yielded the keys in the order first seen; Calcite groups in a
+`java.util.HashMap` and yields them in the map's. Both are defensible and they are not the same, so the two
+conventions answered the same query differently — found by asking the question the harness exists to ask,
+after the hashing measurement raised it.
+
+Six operators held rows in a CLR collection whose order then escaped, and each now holds them the way linq4j
+does: `GroupBy` in a `java.util.HashMap`, `Distinct` and `Union` in a `java.util.HashSet`, `Intersect` and
+`Except` in a `HashSet` or a Guava `HashMultiset` depending on ALL, and `HashJoin` in a `java.util.HashMap`
+— that last one because a right or full join ends with the right rows that matched nothing, in the lookup's
+order. `EnumerableDefaults.Wrapped` is ported as `JavaWrapped`, because a comparer has to reach a Java
+collection as the rows' own `hashCode` and `equals`.
+
+Nine differential tests hold it: an unordered GROUP BY, UNION, INTERSECT, INTERSECT ALL, EXCEPT, EXCEPT ALL,
+DISTINCT, RIGHT JOIN and FULL JOIN. Every one of them failed before the change or would have.
+
+**What makes this reproducible rather than lucky** is that Java specifies `String.hashCode` and IKVM
+implements it — `JavaHashingTests` measures both that and the map order that follows from it. The CLR's
+string hash is randomised per process; nothing here may depend on it.
 
 ### The rules that hold
 
@@ -421,10 +444,16 @@ Calcite's and takes a `java.lang.Integer`. The sequence is boxed before it reach
 boxed too, because what hashes it is a `java.util.HashMap`. **The partition order**: partitioning by hand
 gave the order the keys were first seen in, and Calcite's is a `HashMap`'s. `ClrEnumerableDefaults.Window` now
 partitions with `SortedMultiMap` itself — a runtime class of Calcite's, not a generated tree, so the rule
-about where linq4j may appear is untouched. Nothing else could have worked: under IKVM a String hashes as
-.NET hashes it, which is randomised per process, so the order is not the same from one run to the next and
-only reading the same map in the same process makes the two conventions agree. It settles the sort inside a
-partition as well — `arrays` uses `Arrays.sort`, which is stable.
+about where linq4j may appear is untouched. Nothing else could have worked, because the order *is* the map's
+and only the same map has it. It settles the sort inside a partition as well — `arrays` uses `Arrays.sort`,
+which is stable.
+
+The reason written here originally was wrong, and it is worth keeping the correction: it said that under
+IKVM a String hashes as .NET hashes it, randomised per process, so no two runs would agree. Measured in
+`JavaHashingTests`, in two processes: `java.util.Objects.hashCode("EAST")` is 2120701 both times — the value
+the Java language specifies — while `"EAST".GetHashCode()` differs every time. IKVM implements Java's hash,
+so a `java.util.HashMap` iterates identically in every run. The fix was right; the reason for it was not,
+and the true reason is the stronger one, because it means the agreement is reproducible rather than lucky.
 
 A user-defined aggregate is covered, and it is the one place the differential harness cannot be the oracle.
 A function written in C# is a class IKVM names `cli.Apache.Calcite.Linq.Tests.SumAggregate`;
