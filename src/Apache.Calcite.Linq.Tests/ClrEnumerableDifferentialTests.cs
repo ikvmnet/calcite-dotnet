@@ -193,7 +193,7 @@ namespace Apache.Calcite.Linq.Tests
         /// <param name="topDown">Whether the planner optimises top down, which is what asks a node to pass a
         /// trait down to its inputs or derive one from them.</param>
         /// <returns></returns>
-        static List<string> Run(string sql, bool clr, bool topDown = false, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false)
+        static List<string> Run(string sql, bool clr, bool topDown = false, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false)
         {
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add("SALES", new SalesTable());
@@ -225,6 +225,12 @@ namespace Apache.Calcite.Linq.Tests
 
             if (batchNestedLoopJoin)
                 rules.add(clr ? ClrEnumerableRules.ClrEnumerableBatchNestedLoopJoinRule : EnumerableRules.ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE);
+
+            // and the limit sort is the third of the three rules Calcite declares as fields and leaves out of
+            // ENUMERABLE_RULES. It was in this convention's default list once, which meant Calcite could
+            // never plan the node this one planned, so nothing here was comparing limit sorts at all
+            if (limitSort)
+                rules.add(clr ? ClrEnumerableRules.ClrEnumerableLimitSortRule : EnumerableRules.ENUMERABLE_LIMIT_SORT_RULE);
 
             // AVG has no implementor of its own; a real program reduces it to SUM over COUNT first, and this
             // rule lives in RelOptRules.BASE_RULES rather than in any convention's set
@@ -292,9 +298,9 @@ namespace Apache.Calcite.Linq.Tests
         /// <param name="sql"></param>
         /// <param name="clr"></param>
         /// <returns></returns>
-        internal static string PlanOf(string sql, bool clr, bool sortedAggregate = false, bool batchNestedLoopJoin = false)
+        internal static string PlanOf(string sql, bool clr, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false)
         {
-            return Run(sql, clr, false, true, sortedAggregate, batchNestedLoopJoin)[0];
+            return Run(sql, clr, false, true, sortedAggregate, batchNestedLoopJoin, limitSort)[0];
         }
 
         /// <summary>
@@ -338,6 +344,23 @@ namespace Apache.Calcite.Linq.Tests
         {
             var mine = Run(sql, true, false, false, false, true);
             var calcite = Run(sql, false, false, false, false, true);
+
+            mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
+        }
+
+        /// <summary>
+        /// Requires that a query gives the same rows in both conventions, with the limit sort rule on.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <remarks>
+        /// Neither convention registers that rule by default, because Calcite does not: it is a field of
+        /// <c>EnumerableRules</c> left out of <c>ENUMERABLE_RULES</c>, like the sorted aggregate and the
+        /// batch nested loop join. Each side gets its own.
+        /// </remarks>
+        static void SameLimitSort(string sql)
+        {
+            var mine = Run(sql, true, false, false, false, false, true);
+            var calcite = Run(sql, false, false, false, false, false, true);
 
             mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
         }
@@ -533,6 +556,53 @@ namespace Apache.Calcite.Linq.Tests
 
         [TestMethod]
         public void ShouldAgreeOnLimitAndOffset() => Same("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY");
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSort() =>
+            SameLimitSort("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" FETCH NEXT 3 ROWS ONLY");
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortWithAnOffset() =>
+            SameLimitSort("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY");
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortWithAnOffsetAndNoFetch() =>
+            SameLimitSort("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET 4 ROWS");
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortOverANullableKey() =>
+            SameLimitSort("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"AMOUNT\" FETCH NEXT 4 ROWS ONLY");
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortPastTheEnd() =>
+            SameLimitSort("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" DESC OFFSET 5 ROWS FETCH NEXT 10 ROWS ONLY");
+
+        /// <summary>
+        /// Both conventions plan a limit sort for the queries above, rather than one of them planning a limit
+        /// over a sort.
+        /// </summary>
+        /// <remarks>
+        /// Without this the five tests above would agree for the wrong reason. The rule was in this
+        /// convention's default set and never in Calcite's, so a limit sort was compared against a limit over
+        /// a sort and the node had no oracle at all.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldPlanALimitSortInBothConventions()
+        {
+            const string sql = "SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY";
+
+            PlanOf(sql, true, limitSort: true).Should().Contain("ClrEnumerableLimitSort");
+            PlanOf(sql, false, limitSort: true).Should().Contain("EnumerableLimitSort");
+        }
+
+        /// <summary>
+        /// With neither side given the rule, both plan a limit over a sort — which is what carried a
+        /// one-column primitive result across the converter and found the cast in <c>JavaSequences.FromJava</c>.
+        /// </summary>
+        [TestMethod]
+        public void ShouldPlanALimitOverASortWithoutTheRule() =>
+            PlanOf("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY", true)
+                .Should().NotContain("LimitSort");
 
         [TestMethod]
         public void ShouldAgreeOnValues() => Same("SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");

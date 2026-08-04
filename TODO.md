@@ -151,8 +151,14 @@ surface whether or not the operation succeeds.
 
 ## Apache.Calcite.Linq: where the CLR conventions stand
 
-`ClrEnumerableConvention` runs. 188 tests pass. `ClrAsyncEnumerableConvention` does not exist yet — not
-one file of it, deferred deliberately until the sync side is finished.
+`ClrEnumerableConvention` runs. 195 tests pass, measured 2026-08-04. `ClrAsyncEnumerableConvention` does not
+exist yet — not one file of it, deferred deliberately until the sync side is finished.
+
+`PARITY.md` was rebuilt from the two sources on 2026-08-04 rather than carried forward, and §9 of it lists
+the dozen rows that turned out to be wrong. Four of them were differences nothing had recorded, and they are
+in the list below. **The lesson is the one this file already states about Calcite: a row written from memory
+of the code reads exactly like a row written from the code, and hides a difference behind the appearance of
+having accounted for it.** Rebuild it against the source when it is next relied on.
 
 ### What this convention is for, and how it is built
 
@@ -168,6 +174,12 @@ included.
 that way, why this trait, why this order — the answer is to go and read Calcite's method and translate it
 statement by statement, not to reason out what it ought to be. That is the way to move forward whenever
 something is unclear, and it is faster than the alternative every time it has been tried.
+
+**The rule is to copy Calcite, and to invent only where copying cannot possibly be done.** Not "where ours
+would be better", not "where ours would be equivalent", not "where ours is simpler to write" — where it
+*cannot be done*. And the corollary, which is the one that catches things: **a defect we have that Calcite
+does not have means we copied Calcite wrongly.** It does not mean Calcite is wrong. Reach for "this is a
+Calcite defect" last, and only with a run behind it.
 
 **Divergence is a last resort, and it is always written down.** There are exactly three reasons to depart
 from Calcite's text, and each one has to be argued in this file:
@@ -195,14 +207,67 @@ statement by statement, and where does ours stop matching".
 
 ### What is left, in the order worth doing it
 
-The sections after this one are how each of these was arrived at. This is the list.
+The sections after this one are how each of these was arrived at. This is the list, and each item names the
+`PARITY.md` point it comes from — that file numbers every point `section.item`, so 5.3 and 6.9 are addresses,
+not page references. `PARITY.md` §5 in full is item 1 below plus the four nodes not written, which are items
+4 and 5. Item 2 is not a difference from `EnumerableConvention` at all; it is the thing that would make this
+convention usable.
 
-**1. Wire the convention up.** Nothing connects it to `Apache.Calcite.Data`, and nothing exposes the
-three-pass program — `Programs.subQuery`, then the rules, then the calc rules as a hep pass, and no
-decorrelation — as anything a caller can use; every test wires it by hand. This is worth more to anyone
-using the library than another join algorithm, and it is small.
+**1. Three small differences from `EnumerableConvention` that nothing argues for** — `PARITY.md` 5.2, 5.4
+and 5.5. They were found by rebuilding that file against the source, which is to say they had been there
+unrecorded. Each is minutes of work or one decision, and none is blocked.
 
-**2. Two open mysteries, either of which may stay open.**
+- **5.4 — `ClrEnumerableRelImplementor.ImplementRoot` does not wrap a failing node.** Calcite catches a
+  `RuntimeException` out of `implement` and rethrows `IllegalStateException("Unable to implement " + <the
+  plan>)`, original suppressed. Ours lets the original out, so a node that cannot implement itself does not
+  name the plan that reached it. One `try`/`catch` — and it is the diagnostic that made the defect in
+  `PARITY.md` 6.11 legible in Calcite's own convention.
+- **5.5 — `ClrEnumerableInterpretable.ToBindable` drops the `CalcitePrepare.SparkHandler` parameter.** There
+  is no generated class for a spark handler to take, so the parameter has nothing to do — but dropping it
+  from the signature is a decision, and belongs in `PARITY.md` §6 or the parameter belongs back.
+- **5.2 — the window table function path is refused**, and that stays outstanding rather than justified
+  until one of the two failures under item 3 is understood.
+
+**1a. 5.3 is resolved, and it was not free.** `Rules()` held the limit-sort rule that `ENUMERABLE_RULES`
+leaves out. Taking it out is one line — and `ShouldAgreeOnLimitAndOffset` then failed with
+`InvalidCastException: Unable to cast object of type 'java.lang.Integer' to type 'System.Int32'`. With the
+rule gone the whole plan lands in `EnumerableConvention` and `EnumerableToClrEnumerableConverter` carries a
+one-column `INTEGER NOT NULL` result: physical type SCALAR, Java row type `int`, linq4j yielding
+`java.lang.Integer`. **`JavaSequences.FromJava` cast where it had to convert**, and now goes through
+`JavaValues.As`. Two lessons, both of which this file already had in other words: an adapter converts, it
+never casts; and "the converters carry it" is a claim to run, not to assert — the converter had never met a
+one-column primitive because the extra rule meant this convention planned the query itself. Five
+differential tests now run with the limit-sort rule on **on both sides**, which is the first time
+`EnumerableLimitSort` has been the oracle for `ClrEnumerableLimitSort`; two more assert which node each side
+chose, with the rule and without it. `PARITY.md` 9.18.
+
+**The outbound half of that adapter is unfixed and unmeasured.** `JavaSequences.JavaEnumerator.current()`
+returns `source.Current` as it is, and `Bind` reaches it through `Cast<object>`, so a CLR sub-plan of one
+primitive column crossing `ClrEnumerableToEnumerableConverter` would hand Calcite a CLR-boxed int where the
+type factory says `java.lang.Integer` — the exact mirror of what 9.18 fixed, and the failure mode
+`ClrEnumerableRelImplementor.BoxScalars` exists to prevent at the root. It is **not** demonstrated: every
+`ToJava` call site today passes `TSource = object`, so the adapter is a no-op and nothing reaches it. Find
+the query that puts a one-column primitive CLR sub-plan under a Calcite node before changing anything —
+guessing at this is how the first half got written.
+
+**1b. `PARITY.md` 6.9 is argued and not measured.** Sort, limit, limit-sort, spool and
+repeat union turn off the row-format optimisation Calcite leaves on. The argument is from Calcite's source
+and it is a good one — `EnumerableTableScan.toRows` reshapes to match the optimised type, so a scan is
+consistent; `EnumerableTableFunctionScan` cannot reshape and so passes `optimize = false` to keep an honest
+ARRAY; a pass-through node above it then optimises that ARRAY away without touching the rows, and a parent
+reads field 0 as the row itself. What is missing is `EnumerableConvention` doing it. **The experiment is a
+one-column table function Janino can name** — ours is a CLR class, which is the same wall the whole
+table-function comparison hits. Until then this is reading, not measurement, and the file says so. Nothing
+about our code is suspected: it gives right answers and the tests hold it. What is suspected is the word
+"demonstrated".
+
+**2. Wire the convention up.** Nothing connects it to `Apache.Calcite.Data` — checked, and only the test
+project references `Apache.Calcite.Linq` at all — and nothing exposes the three-pass program
+(`Programs.subQuery`, then the rules, then the calc rules as a hep pass, and no decorrelation) as anything a
+caller can use; every test wires it by hand. This is worth more to anyone using the library than another
+join algorithm, and it is small.
+
+**3. Two open mysteries, either of which may stay open.**
 - A window table function does not run by either route: through the node, translating
   `EnumUtils.tumblingWindowSelector` leaves an `Object[] _input` referenced from no scope that declares
   it; through the converter, the same. Four explanations tried and disproved — they are listed so they
@@ -212,12 +277,19 @@ using the library than another join algorithm, and it is small.
   whose rows are objects rather than `Object[]` gives CUSTOM format, which is how Calcite's own
   MATCH_RECOGNIZE tests pass — that would give Match an oracle and might move the whole thing.
 
-**3. Nodes not started and not investigated.** Interpreter and Bindable.
+**4. Nodes not started and not investigated.** Interpreter and Bindable.
 
-**4. Blocked, and not by effort.** Match cannot be written as a node: `PassedRowsInputGetter` and
+**5. Blocked, and not by effort.** Match cannot be written as a node: `PassedRowsInputGetter` and
 `PrevInputGetter` are package private *types* that Calcite's own translator casts to, and reflection is
 not an acceptable way in. TableModify waits on the convention being more than read-only. A recursive CTE
 is refused by Calcite too, deliberately.
+
+**Not on this list, and worth saying so.** `EnumUtils.markJoinSelector` stood here and in `PARITY.md` §5 as
+a gap. It does not exist in 1.41 — it was read off `D:\calcite`'s 1.42 working tree, which is the trap the
+top of both files warns about, caught this time by checking the tag. Nor is `joinSelectorCompact` a gap:
+`ClrEnumUtils.JoinSelector` deliberately has one form where Calcite has two, because the second exists only
+to keep a generated method under the Java class-file size limit and an expression tree has none. That is now
+argued in `PARITY.md` 6.7 rather than simply absent, and the version mistake is `PARITY.md` 9.2.
 
 Out of scope: `Combine` and `ConditionalCorrelate`, neither of which exists in 1.41. **`AsofJoin` is not out
 of scope and never was** — `rel.core.AsofJoin`, `EnumerableAsofJoin` and `ENUMERABLE_ASOFJOIN_RULE` are all
@@ -230,10 +302,13 @@ Scan, values, calc, project, filter, sort, limit, offset, limit-with-sort, union
 hash/semi/anti join, nested loop join, batch nested loop join, merge join, ASOF join, correlate, aggregate
 — ordered calls included — sorted aggregate, window, merge union, table function scan, collect and
 uncollect. Converters in both directions, so one plan can hold nodes of both conventions and the rows
-cross untouched. 188 tests pass.
+cross untouched. 195 tests pass.
 
 `PARITY.md` is the member-by-member comparison against 1.41, rebuilt from the source at the tag and checked
-against the assembly. What is left is section 6 of it and the list above.
+against the assembly. Every point in it is numbered `section.item`, so a defect can be cited as 6.9 rather
+than described. What is left is **§5** — 5.1, 5.2, 5.4 and 5.5, which is items 1 and 3 to 5 of the list
+above; 5.3 is resolved. §6 is the differences that have an argument and nothing in it is work, except that
+6.9 wants the measurement item 1b describes.
 
 ### Trait derivation, and the only thing that calls it
 
@@ -264,7 +339,7 @@ equal keys on both sides, a key missing from one side, several keys, an extra co
 equality, and a nullable key, where the comparator refuses to call two nulls equal.
 
 The node is `EnumerableMergeJoin` member for member, including the three private helpers and the six cases
-of `passThroughTraits`. One line is not Calcite's and is argued in `PARITY.md` §6: a required trait set of
+of `passThroughTraits`. One line is not Calcite's and is argued in `PARITY.md` 6.8: a required trait set of
 another convention is refused rather than copied onto. `ClrEnumerableDefaults.MergeJoin` is
 `EnumerableDefaults.mergeJoin` as an iterator instead of an enumerator with a state machine — the same
 walk, the same runs of equal keys, the same nulls-last rule.
@@ -330,6 +405,14 @@ call in one aggregate, and an ordering on a nullable column. The node is reached
 `ClrEnumerableAggregate` holds the constructor, `copy` and `implement`. The accumulator helpers had been on
 `ClrEnumUtils`, which put them on a class Calcite has no counterpart of. They are static because
 `ClrEnumerableWindow` needs two of them and is not an aggregate; that is the whole reason.
+
+The reason written here first — that Calcite's four are instance methods that never read `this`, so making
+them static costs nothing — is true of three of them and **not of `createAggStateTypes`**, which constructs
+`AggContextImpl`. That is an inner class, and it reads `getInput().getRowType()`, `groupSet` and `groupSets`
+off the enclosing node. `CreateAggStateTypes` takes those three as parameters and hands them to
+`ClrAggContext`, and that is the whole of why its signature is longer than Calcite's. Nothing else about the
+port changes; it is worth having right because a signature that differs for a reason nobody wrote down is
+the next person's hour.
 
 **`ClrEnumerablePrefer` is this convention's own**, against `EnumerableRel.Prefer`. Same five values and the
 same three questions asked of them, plus `ToCalcite` and `FromCalcite`, which are called at the two
@@ -573,7 +656,7 @@ each side's own.
 **Turning that rule on found a defect in Calcite too.** For `GROUP BY ()` the collation the node would tell
 groups apart with is empty, and Calcite's rule builds the node anyway: `SELECT COUNT(*) FROM t` with the
 rule registered plans to `EnumerableSortedAggregate` and then fails with "Unable to implement". Ours refuses
-an empty group set, which is one line and is recorded in `PARITY.md` §6.
+an empty group set, which is one line and is recorded in `PARITY.md` 6.11.
 
 **BatchNestedLoopJoin is written, and it needed nothing but its rule.** The third question in a row whose
 answer was one plan dump away: register `ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE` and it is chosen at once,
@@ -586,6 +669,16 @@ declares those variables out of the list a batch arrives in; `ClrEnumerableDefau
 `correlateBatchJoin`. Five differential tests, three of which reach the node — the semi and anti ones plan to
 a correlate instead.
 
+**It read the right input eagerly for a while, and that was a defect of ours wearing a justification.** The
+note said "an expression tree cannot express it, narrowly", and nothing about an expression tree was
+involved: `ClrEnumerableDefaults` is hand-written C# and can do exactly what linq4j does. It now does —
+the batch's first left row pulls from the right input and caches as it goes, every row after it reads the
+cache, and a semi or anti join finishes reading before it stops, because the rest of the batch reads what
+the first row cached. That last clause is the whole reason Calcite's version looks convoluted, and it is
+`correlateBatchJoin` statement for statement. The cost the old note claimed for the divergence — a full pass
+where a batch of one matched early — was wrong in both directions, because Calcite drains there too; what
+laziness buys is a consumer that stops early, which is a LIMIT above the join.
+
 **It also found a defect in the translator, and a general one.** A condition over a nullable column is a
 `Boolean`, and a disjunction of a hundred of them is `||` over two boxed booleans. Java unboxes there and
 the CLR has no operator for two references, so `ExpressionTranslator.Binary` now writes the unboxing out for
@@ -595,6 +688,12 @@ Also: `ENUMERABLE_SORTED_AGGREGATE_RULE` and `ENUMERABLE_BATCH_NESTED_LOOP_JOIN_
 `EnumerableRules.ENUMERABLE_RULES`; Calcite turns them on by configuration. The harness does the same, per
 test and per side — registering the sorted aggregate rule for every query breaks queries that have nothing
 to do with it, because of the defect above.
+
+**There is a third such rule, and this convention does not treat it the same way.**
+`ENUMERABLE_LIMIT_SORT_RULE` is a field of `EnumerableRules` outside `ENUMERABLE_RULES` as well, and nothing
+in core registers it — but `ClrEnumerableRules.Rules()` holds ours. That is item 1 of the list at the top of
+this part of the file. `ENUMERABLE_RULES` is 24 and `Rules()` is 25, and this is the entire difference once
+match and table modify are set against the two converters.
 
 ### Match: not done, and here is exactly what stops it
 

@@ -66,7 +66,10 @@ where it is built; an operator of this convention takes the delegate and asks fo
 **An adapter converts values in both directions.** `JavaValues.As` / `From`. Taking a `java.lang.Integer`
 and casting it to a CLR `int`, or handing an `int` back boxed the CLR way, leaves two representations of
 one value in a plan and Calcite's own comparators fail on them. This is the invariant the whole port
-exists to keep, and it leaked through the adapters once already.
+exists to keep, and it has leaked twice: once through the SAM adapters, and once through
+`JavaSequences.FromJava`, which cast where it had to convert and so could not carry a one-column result of
+a primitive across the converter. **Every boundary where a value crosses between the two runtimes is an
+adapter**, a sequence included — if it casts, it is wrong.
 
 **`Rules()` and `CalcRules()` are two passes, not one.** `VolcanoCost.isLt` compares the row count and
 nothing else — cpu and io are dead code behind `if (true)` — so a project and a calc are never cheaper

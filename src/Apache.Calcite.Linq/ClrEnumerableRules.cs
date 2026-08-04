@@ -104,8 +104,16 @@ namespace Apache.Calcite.Linq
         public static readonly RelOptRule ClrEnumerableLimitRule = Rel.Convert.ClrEnumerableLimitRule.Create();
 
         /// <summary>
-        /// Rule that converts a sort carrying a fetch to a <see cref="Rel.ClrEnumerableLimitSort"/>.
+        /// Rule that converts a sort carrying an offset or a fetch to a
+        /// <see cref="Rel.ClrEnumerableLimitSort"/>.
         /// </summary>
+        /// <remarks>
+        /// Not in what <see cref="Rules"/> returns, because <c>ENUMERABLE_LIMIT_SORT_RULE</c> is not in
+        /// <c>ENUMERABLE_RULES</c>: it is one of the three rule fields Calcite declares and leaves out of
+        /// the list, with <c>ENUMERABLE_SORTED_AGGREGATE_RULE</c> and
+        /// <c>ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE</c>, and nothing in core turns any of them on. A caller
+        /// turns this on to sort only as far as the fetch requires rather than sorting and then discarding.
+        /// </remarks>
         public static readonly RelOptRule ClrEnumerableLimitSortRule = Rel.Convert.ClrEnumerableLimitSortRule.Create();
 
         /// <summary>
@@ -186,6 +194,13 @@ namespace Apache.Calcite.Linq
         /// The counterpart of <c>EnumerableRules.ENUMERABLE_RULES</c>, holding what that holds for the nodes
         /// this convention has, plus the two converters that let one plan hold both conventions. Read through
         /// <see cref="Rules"/>, as Calcite's is read through <c>rules()</c>.
+        ///
+        /// <para>Membership is Calcite's list, member for member: its 24 less the match and table modify
+        /// rules, which this convention has no node for, plus the two converters. The three rules Calcite
+        /// declares as fields and leaves out of the list — limit-sort, sorted aggregate and batch nested loop
+        /// join — are left out here too. The limit-sort rule was in this list once, which gave this
+        /// convention 25 rules against Calcite's 24 and offered it a plan the other side was never offered,
+        /// in the differential comparison this project is checked by.</para>
         /// </remarks>
         static readonly IReadOnlyList<RelOptRule> EnumerableRuleList =
         [
@@ -205,7 +220,6 @@ namespace Apache.Calcite.Linq
             ClrEnumerableMinusRule,
             ClrEnumerableSortRule,
             ClrEnumerableLimitRule,
-            ClrEnumerableLimitSortRule,
             ClrEnumerableRepeatUnionRule,
             ClrEnumerableTableSpoolRule,
             ClrEnumerableWindowRule,

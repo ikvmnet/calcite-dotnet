@@ -1074,13 +1074,15 @@ namespace Apache.Calcite.Linq.Runtime
         /// <returns></returns>
         /// <remarks>
         /// The counterpart of <c>EnumerableDefaults.correlateBatchJoin</c>. The right input is a filter over
-        /// a disjunction of the batch's conditions, so one pass of it serves every row of the batch; the
-        /// rows it yields are held for the batch and each left row is then compared against them.
+        /// a disjunction of the batch's conditions, so one pass of it serves every row of the batch.
         ///
-        /// <para>Calcite reads the right input lazily for the first left row of a batch and from the list
-        /// after that, which is the same rows in the same order by a longer road. Reading it once up front is
-        /// the one difference, and it costs a full pass of a filtered scan where a batch of one matched
-        /// early.</para>
+        /// <para>It is read the way Calcite reads it: the batch's <em>first</em> left row pulls from it and
+        /// caches each row as it goes, and every left row after that reads the cache. So the right input is
+        /// never enumerated further than the first left row needed — which is what a LIMIT above the join
+        /// asks for, and is the only thing this shape buys over materialising it up front. The one place the
+        /// first row would stop early is a semi or anti join finding its match, and there it finishes reading
+        /// first, because the rest of the batch reads what it cached. Calcite does exactly that, for exactly
+        /// that reason.</para>
         /// </remarks>
         public static IEnumerable<TResult> CorrelateBatchJoin<TSource, TInner, TResult>(
             org.apache.calcite.linq4j.JoinType joinType,
@@ -1096,50 +1098,92 @@ namespace Apache.Calcite.Linq.Runtime
             var isLeft = name == nameof(org.apache.calcite.linq4j.JoinType.LEFT);
 
             var batch = new List<TSource>(batchSize);
+            var rows = new List<TInner>();
+
             using var enumerator = outer.GetEnumerator();
 
-            while (true)
+            // the right rows of the batch being read, held across the batch's first left row because that is
+            // the only one that pulls from it
+            IEnumerator<TInner>? source = null;
+
+            try
             {
-                batch.Clear();
-                while (batch.Count < batchSize && enumerator.MoveNext())
-                    batch.Add(enumerator.Current);
-
-                if (batch.Count == 0)
-                    yield break;
-
-                // a short batch is padded by repeating its first row, as Calcite pads it: the condition is a
-                // disjunction, so a row that repeats adds nothing to it
-                var padded = new java.util.ArrayList(batchSize);
-                for (int i = 0; i < batchSize; i++)
-                    padded.add(JavaValues.From(batch[i < batch.Count ? i : 0]));
-
-                var rows = inner(padded) is IEnumerable<TInner> sequence ? new List<TInner>(sequence) : [];
-
-                foreach (var left in batch)
+                while (true)
                 {
-                    var any = false;
+                    batch.Clear();
+                    while (batch.Count < batchSize && enumerator.MoveNext())
+                        batch.Add(enumerator.Current);
 
-                    foreach (var right in rows)
+                    if (batch.Count == 0)
+                        yield break;
+
+                    // a short batch is padded by repeating its first row, as Calcite pads it: the condition
+                    // is a disjunction, so a row that repeats adds nothing to it
+                    var padded = new java.util.ArrayList(batchSize);
+                    for (int i = 0; i < batchSize; i++)
+                        padded.add(JavaValues.From(batch[i < batch.Count ? i : 0]));
+
+                    rows.Clear();
+                    source?.Dispose();
+                    source = (inner(padded) is IEnumerable<TInner> sequence ? sequence : []).GetEnumerator();
+
+                    for (int i = 0; i < batch.Count; i++)
                     {
-                        if (predicate(left, right) == false)
-                            continue;
+                        var left = batch[i];
+                        var any = false;
 
-                        any = true;
+                        for (int j = 0; ; j++)
+                        {
+                            TInner right;
 
-                        // an anti join wants the rows that match nothing, and a semi join wants each left
-                        // row once, so both stop at the first match
-                        if (isAnti)
-                            break;
+                            if (i == 0)
+                            {
+                                if (source.MoveNext() == false)
+                                    break;
 
-                        yield return resultSelector(left, right);
+                                right = source.Current;
+                                rows.Add(right);
+                            }
+                            else
+                            {
+                                if (j == rows.Count)
+                                    break;
 
-                        if (isSemi)
-                            break;
+                                right = rows[j];
+                            }
+
+                            if (predicate(left, right) == false)
+                                continue;
+
+                            any = true;
+
+                            // an anti join wants the rows that match nothing, and a semi join wants each
+                            // left row once, so both stop at the first match — but the first left row of a
+                            // batch reads the rest of the right input before it stops, because every row
+                            // after it reads what this one cached
+                            if (isSemi || isAnti)
+                            {
+                                if (i == 0)
+                                    while (source.MoveNext())
+                                        rows.Add(source.Current);
+
+                                if (isAnti == false)
+                                    yield return resultSelector(left, right);
+
+                                break;
+                            }
+
+                            yield return resultSelector(left, right);
+                        }
+
+                        if (any == false && (isLeft || isAnti))
+                            yield return resultSelector(left, default!);
                     }
-
-                    if (any == false && (isLeft || isAnti))
-                        yield return resultSelector(left, default!);
                 }
+            }
+            finally
+            {
+                source?.Dispose();
             }
         }
 
