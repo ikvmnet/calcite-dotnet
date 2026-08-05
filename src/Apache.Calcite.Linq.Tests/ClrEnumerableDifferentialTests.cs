@@ -354,7 +354,7 @@ namespace Apache.Calcite.Linq.Tests
         /// The merge join is what both planners choose for a join of two keys over <c>SALES</c> — the scans
         /// sort cheaply and it wins on cost — so a question about the hash join has to take it away, from
         /// both sides at once. Without this the rows agree and prove nothing about the node they were aimed
-        /// at, which is `PARITY.md` 8.6.
+        /// at.
         /// </remarks>
         /// <summary>
         /// Requires that a query gives the same rows in both conventions, with this convention's interpreter
@@ -810,10 +810,9 @@ namespace Apache.Calcite.Linq.Tests
         [TestMethod]
         public void ShouldAgreeOnValues() => Same("SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");
 
-        // The only query that reaches ClrEnumerableRepeatUnion and ClrEnumerableTableSpool. Both nodes were
-        // written, both rules were registered, and nothing ran either of them until this — PARITY.md 5.9. The
-        // transient table is scanned by neither convention: EnumerableTableScan refuses a TransientTable
-        // (CALCITE-3673) and so does ours, so both sides read it through the interpreter.
+        // The only query that reaches ClrEnumerableRepeatUnion and ClrEnumerableTableSpool. The transient
+        // table is scanned by neither convention — EnumerableTableScan refuses a TransientTable
+        // (CALCITE-3673) and so does ours — so both sides read it through the interpreter.
 
         [TestMethod]
         public void ShouldAgreeOnARecursiveQuery() =>
@@ -1092,8 +1091,8 @@ namespace Apache.Calcite.Linq.Tests
         // The two above join on a nullable key and neither reaches this: an INNER and a LEFT join never look
         // at the rows of the right input that matched nothing, and a plain equality never asks a null to
         // match. `ShouldAgreeOnARightJoinsOwnOrder` and `ShouldAgreeOnAFullJoinsOwnOrder` do look, and join
-        // on REGION and LABEL, which are not nullable. So 136 differential tests covered every part of this
-        // but the intersection, which is where both defects were — PARITY.md 5.7 and 5.8.
+        // on REGION and LABEL, which are not nullable. The intersection of a nullable key and an outer join
+        // on the build side is what these cover.
 
         [TestMethod]
         public void ShouldAgreeOnANullSafeJoinKey() =>
@@ -1110,7 +1109,7 @@ namespace Apache.Calcite.Linq.Tests
         // A hash join on a key of two fields, one of them nullable, which is the case the null-aware accessor
         // nulls the whole key for and the plain accessor leaves as a list holding a null that matches another
         // one. Both conventions plan a merge join for this query, so the merge join rule comes off both sides
-        // to reach the node the question is about — PARITY.md 8.6, and the reason it was recorded.
+        // to reach the node the question is about.
 
         [TestMethod]
         public void ShouldAgreeOnAHashJoinOnTwoKeysOneNullable() =>
@@ -1238,9 +1237,9 @@ namespace Apache.Calcite.Linq.Tests
         public void ShouldRunATableFunctionInAJoin() =>
             Gives("SELECT \"S\".\"ID\" FROM \"SALES\" AS \"S\", TABLE(NUMBERS(2)) AS \"N\" WHERE \"S\".\"ID\" = \"N\".\"N\" ORDER BY 1", "1", "2");
 
-        // The window table functions, which are the path RexImpTable implements rather than the schema. The
-        // rule refused them until the two `_input`s were understood — PARITY.md 5.2 — and what runs them is
-        // the same lexical scope by name that Janino gets for free.
+        // The window table functions, which are the path RexImpTable implements rather than the schema.
+        // TumbleImplementor and tumblingWindowSelector each name a parameter `_input`, and what lines the two
+        // up is the lexical scope by name that Janino gets for free.
 
         [TestMethod]
         public void ShouldAgreeOnTumble() =>
@@ -1271,24 +1270,14 @@ namespace Apache.Calcite.Linq.Tests
         public void ShouldRunATableFunctionUnderAnAggregate() =>
             Gives("SELECT COUNT(*), SUM(\"N\") FROM TABLE(NUMBERS(4))", "4|10");
 
-        // TUMBLE still has no test. The rule refuses it, and the converter now carries far more than it did
-        // but not this: translating EnumUtils.tumblingWindowSelector leaves an Object[] "_input" referenced
-        // from no scope that declares it, by whichever route the tree is built. See TODO.md. EVENTS stays
-        // because it is what a test needs the moment that is understood.
-
-        // MATCH_RECOGNIZE has no test because it does not run in either convention over this fixture. See
-        // TODO.md: EnumerableMatch builds the measures row with Expressions.new_ on the row's Java type, and
-        // where the input format is ARRAY that type is Object[], so it emits "new Object[]()" — which is not
-        // Java, and not something a translator can complete either, because the length is only implied by the
-        // assignments that follow.
 
 
-        // MATCH_RECOGNIZE, which runs for the first time — in a plan rooted in this convention, with the
-        // whole subtree in EnumerableConvention and one converter at the top. The node itself still cannot
-        // be written here (PARITY.md 6.14: Calcite casts its input getter to two package-private *types*),
-        // and it does not have to be for the query to answer.
+        // MATCH_RECOGNIZE, in a plan rooted in this convention: the whole subtree stays in
+        // EnumerableConvention with one converter at the top. The node itself cannot be written here —
+        // Calcite casts its input getter to two package-private *types* — and does not have to be for the
+        // query to answer.
         //
-        // Three things had to be true at once, and each was a blocker in its own right. The measures row is
+        // Three things have to be true at once for this to run. The measures row is
         // built with Expressions.new_ on the row's Java type, so an ARRAY-format input gives "new Object[]()"
         // — not Java, and not completable by a translator either; HR.emps is CUSTOM, so that line emits a
         // record constructor instead. The predicate's parameter is a Memory around the row and the condition

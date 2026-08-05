@@ -12,7 +12,8 @@ Apache Calcite under IKVM, with an ADO.NET adapter, an ADO.NET client surface, a
 | `Apache.Calcite.Extensions` | IKVM interop helpers |
 | `Apache.Calcite.Linq` | `ClrEnumerableConvention`; the async one is not written yet |
 
-`TODO.md` has the outstanding work, sized and reasoned. Read it before planning anything.
+`TODO.md` has the outstanding work on the ADO.NET adapter, sized and reasoned. The CLR convention is
+ported and has no list of its own.
 
 ## Building
 
@@ -35,7 +36,8 @@ Apache Calcite under IKVM, with an ADO.NET adapter, an ADO.NET client surface, a
 
   **1.43's DELETE cannot compile over a one-column table**, and two `CalciteDdlTests` are red for it
   rather than skipped. CALCITE-7510 emits `(int) sinkRow` from a `sinkRow` declared `Object`; javac
-  accepts that and **Janino does not** — measured. `TODO.md` has the one-line upstream fix.
+  accepts that and **Janino does not** — measured. The fix is upstream's: declare `sinkRow` as the row's
+  boxed type rather than `Object`.
 
   **`AsofJoin` is neither** — `rel.core.AsofJoin`, `EnumerableAsofJoin` and `ENUMERABLE_ASOFJOIN_RULE` are
   all in 1.41, and a claim that it was 1.42 stood in this file for a while on the strength of the wrong
@@ -130,7 +132,8 @@ a member can be written again. `EnumerableMatch.PassedRowsInputGetter` and `Prev
 and `RexToLixTranslator` suppresses its field-read cache for a `PrevInputGetter` specifically. A class of
 the same shape fails all three casts, and IKVM makes them `internal`, so C# can name them and cannot
 construct them. **Reflection is not the answer** — where this happens, either let Calcite build that part
-of the block, or accept that the node cannot be written. See `TODO.md` on Match.
+of the block, or accept that the node cannot be written. A MATCH_RECOGNIZE query still runs: the planner
+leaves the whole subtree in `EnumerableConvention` and one converter carries the rows.
 
 **An anonymous class of one method is a lambda; one of several is a thing.** `Anonymous` turns the first
 into a lambda and the second into an object holding a delegate per method — `DelegateEnumerator` for the

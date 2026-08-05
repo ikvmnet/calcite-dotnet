@@ -8,8 +8,8 @@ namespace Apache.Calcite.Linq.Tests
 {
 
     /// <summary>
-    /// Holds the one divergence in <c>PARITY.md</c> §6 that had been argued from Calcite's source and never
-    /// measured: a pass-through node re-optimising its input's row format.
+    /// Holds the one place this convention departs from Calcite deliberately: a pass-through node keeps its
+    /// input's row format rather than re-optimising it.
     /// </summary>
     /// <remarks>
     /// <para>Sort, limit, limit-sort, spool and repeat union yield their input's rows unchanged, and Calcite
