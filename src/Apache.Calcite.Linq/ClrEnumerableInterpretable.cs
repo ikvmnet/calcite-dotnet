@@ -16,9 +16,9 @@ namespace Apache.Calcite.Linq
     /// be bound and run.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <c>EnumerableInterpretable</c>, which hands a generated class to Janino. Here the
-    /// expression tree is compiled directly, and the result is wrapped as a <see cref="Bindable"/> so that
-    /// everything downstream of a prepared statement is unchanged.
+    /// The counterpart of <c>EnumerableInterpretable</c>. This is the last step of running a query in this
+    /// convention: give it the chosen plan and it returns a <see cref="Bindable"/> to bind to a
+    /// <see cref="DataContext"/> and enumerate.
     /// </remarks>
     public static class ClrEnumerableInterpretable
     {
@@ -26,21 +26,24 @@ namespace Apache.Calcite.Linq
         /// <summary>
         /// Compiles a plan and returns it as a <see cref="Bindable"/>.
         /// </summary>
-        /// <param name="internalParameters"></param>
-        /// <param name="spark">The Spark handler, or <c>null</c> where there is none.</param>
-        /// <param name="rel"></param>
-        /// <param name="prefer"></param>
-        /// <returns></returns>
+        /// <param name="internalParameters">Values the query reads through the <see cref="DataContext"/>
+        /// rather than from the plan. The same map must be served by the context it is bound with.</param>
+        /// <param name="spark">The Spark handler, or <see langword="null"/> where there is none. This
+        /// convention cannot use one — see the exception.</param>
+        /// <param name="rel">The chosen plan, whose root must be of this convention.</param>
+        /// <param name="prefer">How the caller wants rows represented. <see cref="ClrEnumerablePrefer.Array"/>
+        /// is what a prepared statement asks for.</param>
+        /// <returns>The compiled plan, to bind to a <see cref="DataContext"/> and enumerate.</returns>
+        /// <exception cref="java.lang.UnsupportedOperationException">
+        /// <paramref name="spark"/> is enabled. A Spark handler compiles generated Java source, and a plan of
+        /// this convention is an expression tree; use <c>EnumerableConvention</c> for such a query.
+        /// </exception>
+        /// <exception cref="java.lang.IllegalStateException">
+        /// A node of the plan could not be implemented. The message names the plan.
+        /// </exception>
         /// <remarks>
-        /// The four arguments <c>EnumerableInterpretable.toBindable</c> takes, in its order, so that a caller
-        /// holding one convention's compiler can hold the other's.
-        ///
-        /// <para><paramref name="spark"/> is taken and refused rather than dropped. Calcite hands the
-        /// generated <c>ClassDeclaration</c> and its source text to <c>SparkHandler.compile</c> when one is
-        /// enabled, and compiles with Janino otherwise. There is no generated class here and no source text —
-        /// the plan is an expression tree — so there is nothing this convention could hand it. Dropping the
-        /// parameter would have made a caller's Spark configuration silently ignored; refusing says which of
-        /// the two conventions can honour it.</para>
+        /// Takes what <c>EnumerableInterpretable.toBindable</c> takes, in its order, so a caller holding one
+        /// convention's compiler can hold the other's.
         /// </remarks>
         public static Bindable ToBindable(java.util.Map internalParameters, org.apache.calcite.jdbc.CalcitePrepare.SparkHandler? spark, ClrEnumerableRel rel, ClrEnumerablePrefer prefer)
         {

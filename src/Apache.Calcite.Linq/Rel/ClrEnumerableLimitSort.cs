@@ -68,9 +68,8 @@ namespace Apache.Calcite.Linq.Rel
         {
             var child = (ClrEnumerableRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);
-            // the input's own format, and not re-optimised: a pass-through node yields the rows it was
-            // given, so its physical type is theirs. PARITY.md 6.9 is why Calcite's own line cannot be
-            // copied here — Java erases the element type and this convention does not.
+            // the input's own format, and not re-optimised: the rows are the input's, so its physical type
+            // is theirs
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format, false);
 
             var inputPhysType = result.PhysType;

@@ -7,11 +7,9 @@ namespace Apache.Calcite.Linq
     /// The representation a consumer of a plan would prefer its rows to arrive in.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <c>EnumerableRel.Prefer</c>, with the same five values and the same three questions
-    /// asked of them. It is this convention's own type for the same reason every node here is: what a node
-    /// asks its input for is part of this convention, and borrowing Calcite's enum tied every signature to a
-    /// type that belongs to the other one. The two convert where a converter meets Calcite's implementor, and
-    /// nowhere else.
+    /// The counterpart of <c>EnumerableRel.Prefer</c>, with the same five values.
+    /// <see cref="ClrEnumerablePrefers"/> has the methods that answer what format a preference asks for, and
+    /// converts to and from Calcite's enum.
     /// </remarks>
     public enum ClrEnumerablePrefer
     {

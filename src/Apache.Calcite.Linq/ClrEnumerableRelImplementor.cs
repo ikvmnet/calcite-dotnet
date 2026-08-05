@@ -22,13 +22,12 @@ namespace Apache.Calcite.Linq
     /// Turns a tree of <see cref="ClrEnumerableRel"/> into the expression that runs it.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <c>EnumerableRelImplementor</c>. What it composes differs, but what it holds does
-    /// not: the <c>RexBuilder</c> a node translates its row expressions with, the correlation variables in
-    /// scope, and the root the <c>DataContext</c> arrives by.
+    /// The counterpart of Calcite's <c>EnumerableRelImplementor</c>, and used the same way: one instance
+    /// implements one plan. A node reaches its inputs through <see cref="VisitChild"/> and returns a
+    /// <see cref="ClrEnumerableResult"/>; <see cref="ImplementRoot"/> does the whole plan at once.
     ///
-    /// <para>One <see cref="ExpressionTranslator"/> serves the whole plan, so a linq4j variable means the same
-    /// CLR variable wherever it is mentioned. A correlated sub-query depends on exactly that: the outer row's
-    /// parameter is registered by one node and read by another.</para>
+    /// <para>Most callers do not use this directly — <see cref="ClrEnumerableInterpretable.ToBindable"/>
+    /// creates one, implements the plan and compiles it.</para>
     /// </remarks>
     public class ClrEnumerableRelImplementor
     {
@@ -40,8 +39,9 @@ namespace Apache.Calcite.Linq
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="rexBuilder"></param>
-        /// <param name="internalParameters"></param>
+        /// <param name="rexBuilder">The builder for row expressions, from the plan's cluster.</param>
+        /// <param name="internalParameters">The map values are stashed into, which must be the one the
+        /// <see cref="DataContext"/> will serve at run time.</param>
         public ClrEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters)
         {
             this.rexBuilder = rexBuilder ?? throw new ArgumentNullException(nameof(rexBuilder));
@@ -55,7 +55,7 @@ namespace Apache.Calcite.Linq
         }
 
         /// <summary>
-        /// Gets the builder a node translates its row expressions with.
+        /// Gets the builder for row expressions.
         /// </summary>
         public RexBuilder RexBuilder => rexBuilder;
 
@@ -70,61 +70,59 @@ namespace Apache.Calcite.Linq
         public ParameterExpression Root { get; }
 
         /// <summary>
-        /// Gets the expression used to access the <see cref="DataContext"/> in a linq4j tree.
+        /// Gets the linq4j expression standing for the <see cref="DataContext"/>, to hand to a generator of
+        /// Calcite's that needs one.
         /// </summary>
         /// <remarks>
-        /// This is what is handed to <c>RexToLixTranslator</c>, which reaches it for a dynamic parameter, for
-        /// <c>CURRENT_TIMESTAMP</c> and for <c>USER</c>. It is bound to <see cref="Root"/>, so what the
-        /// translated tree reads is the argument this plan was called with.
+        /// Bound to <see cref="Root"/>, so a translated tree reads the argument the plan was called with.
         /// </remarks>
         public J.ParameterExpression RootExpression => DataContext.ROOT;
 
         /// <summary>
-        /// Gets the translator carrying the scope every node's expressions are translated in.
+        /// Gets the translator that turns a linq4j expression into a CLR one. One serves the whole plan, so a
+        /// variable means the same thing wherever a node mentions it.
         /// </summary>
         public ExpressionTranslator Translator { get; }
 
         /// <summary>
-        /// Gets the values passed to the executor rather than written into the plan.
+        /// Gets the internal parameters, which reach the query through the <see cref="DataContext"/> it is
+        /// bound with rather than through the plan.
         /// </summary>
         public java.util.Map Map => map;
 
         /// <summary>
-        /// Gets a getter for every correlation variable in scope.
+        /// Gets the lookup from a correlation variable's name to its getter, to hand to a generator of
+        /// Calcite's that translates row expressions.
         /// </summary>
         public Function1 AllCorrelateVariables { get; }
 
         /// <summary>
-        /// Implements a child of a relational expression.
+        /// Implements one input of a node.
         /// </summary>
-        /// <param name="parent"></param>
-        /// <param name="ordinal"></param>
-        /// <param name="child"></param>
-        /// <param name="prefer"></param>
-        /// <returns></returns>
+        /// <param name="parent">The node being implemented, or <see langword="null"/> for a root.</param>
+        /// <param name="ordinal">Which input of <paramref name="parent"/> this is.</param>
+        /// <param name="child">The input to implement.</param>
+        /// <param name="prefer">How the parent wants the input's rows represented.</param>
+        /// <returns>The input's plan, physical type and row format.</returns>
         public ClrEnumerableResult VisitChild(ClrEnumerableRel? parent, int ordinal, ClrEnumerableRel child, ClrEnumerablePrefer prefer)
         {
             return child.Implement(this, prefer);
         }
 
         /// <summary>
-        /// Implements the root of a plan, as a function of the <see cref="DataContext"/> it is bound with.
+        /// Implements a whole plan as a function of the <see cref="DataContext"/> it will be bound with.
         /// </summary>
-        /// <param name="rootRel"></param>
-        /// <param name="prefer"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// A node that cannot implement itself is wrapped so that the failure names the plan that reached it,
-        /// as Calcite's <c>implementRoot</c> wraps one. Calcite catches <c>RuntimeException</c> — the
-        /// unchecked ones — and in .NET every exception is unchecked, so the counterpart of that set is
-        /// <see cref="System.Exception"/>. The original travels as the inner exception rather than a
-        /// suppressed one, which is what .NET has.
-        ///
-        /// <para>It is worth more than it looks. "Unable to implement EnumerableSortedAggregate(group=[{}] …)"
-        /// out of Calcite's own implementor is how the defect behind
-        /// <c>ClrEnumerableSortedAggregateRule</c>'s extra refusal was read at all; without this, the same
-        /// class of failure here arrives as a bare cast or argument error with no plan attached.</para>
-        /// </remarks>
+        /// <param name="rootRel">The root of the plan, which must be of this convention.</param>
+        /// <param name="prefer">How the caller wants rows represented.</param>
+        /// <returns>
+        /// A lambda of one <see cref="DataContext"/> parameter whose value is the rows.
+        /// <see cref="System.Linq.Expressions.LambdaExpression.Compile()"/> it, or hand the plan to
+        /// <see cref="ClrEnumerableInterpretable.ToBindable"/>, which does this and compiles it.
+        /// </returns>
+        /// <exception cref="java.lang.IllegalStateException">
+        /// A node of the plan could not be implemented. The message names the plan; the failure itself is the
+        /// inner exception.
+        /// </exception>
         public LambdaExpression ImplementRoot(ClrEnumerableRel rootRel, ClrEnumerablePrefer prefer)
         {
             ClrEnumerableResult result;
@@ -189,15 +187,14 @@ namespace Apache.Calcite.Linq
         }
 
         /// <summary>
-        /// Stashes a value for the executor.
+        /// Returns the expression by which a plan reaches an object that cannot be written into it.
         /// </summary>
-        /// <param name="input"></param>
-        /// <param name="clazz"></param>
-        /// <returns></returns>
+        /// <param name="input">The object.</param>
+        /// <param name="clazz">The type to give the expression.</param>
+        /// <returns>An expression whose value is <paramref name="input"/>.</returns>
         /// <remarks>
-        /// Calcite has to put the value on the <see cref="DataContext"/> and read it back, because Janino
-        /// compiles source text and source text cannot mention an object. An expression tree holds the object
-        /// itself, so this is a constant. The method stays because every call site of it does.
+        /// The counterpart of <c>EnumerableRelImplementor.stash</c>, which passes the object through the
+        /// <see cref="DataContext"/>; an expression tree can hold it, so this is a constant.
         /// </remarks>
         public Expression Stash(object? input, java.lang.Class clazz)
         {
@@ -205,12 +202,13 @@ namespace Apache.Calcite.Linq
         }
 
         /// <summary>
-        /// Registers the variable a correlated sub-query reads its outer row by.
+        /// Registers the variable a correlated sub-query reads its outer row by, for the length of that
+        /// sub-query.
         /// </summary>
-        /// <param name="name"></param>
-        /// <param name="pe"></param>
-        /// <param name="corrBlock"></param>
-        /// <param name="physType"></param>
+        /// <param name="name">The correlation variable's name.</param>
+        /// <param name="pe">The parameter holding the outer row.</param>
+        /// <param name="corrBlock">The block a field read is declared into.</param>
+        /// <param name="physType">The outer row's physical type.</param>
         public void RegisterCorrelVariable(string name, J.ParameterExpression pe, J.BlockBuilder corrBlock, PhysType physType)
         {
             corrVars[name] = new CorrelInputGetter(name, pe, corrBlock, physType);
@@ -219,7 +217,8 @@ namespace Apache.Calcite.Linq
         /// <summary>
         /// Forgets a correlation variable once its scope has ended.
         /// </summary>
-        /// <param name="name"></param>
+        /// <param name="name">The correlation variable's name.</param>
+        /// <exception cref="java.lang.IllegalStateException">No such variable is in scope.</exception>
         public void ClearCorrelVariable(string name)
         {
             if (corrVars.Remove(name) == false)
@@ -227,10 +226,11 @@ namespace Apache.Calcite.Linq
         }
 
         /// <summary>
-        /// Returns the getter for a correlation variable.
+        /// Returns the getter that reads a field of the row a correlation variable stands for.
         /// </summary>
-        /// <param name="name"></param>
+        /// <param name="name">The correlation variable's name.</param>
         /// <returns></returns>
+        /// <exception cref="java.lang.IllegalStateException">No such variable is in scope.</exception>
         public RexToLixTranslator.InputGetter GetCorrelVariableGetter(string name)
         {
             if (corrVars.TryGetValue(name, out var getter) == false)
@@ -240,10 +240,10 @@ namespace Apache.Calcite.Linq
         }
 
         /// <summary>
-        /// Creates the result of implementing a node.
+        /// Creates the result a node's <c>Implement</c> returns.
         /// </summary>
-        /// <param name="physType"></param>
-        /// <param name="expression"></param>
+        /// <param name="physType">How the rows are represented.</param>
+        /// <param name="expression">The plan, whose value is the rows.</param>
         /// <returns></returns>
         public ClrEnumerableResult Result(PhysType physType, Expression expression)
         {
@@ -252,7 +252,7 @@ namespace Apache.Calcite.Linq
         }
 
         /// <summary>
-        /// Gets the desired SQL conformance.
+        /// Gets the SQL conformance the query is being planned under.
         /// </summary>
         public SqlConformance Conformance => (SqlConformance)map.getOrDefault("_conformance", SqlConformanceEnum.DEFAULT);
 

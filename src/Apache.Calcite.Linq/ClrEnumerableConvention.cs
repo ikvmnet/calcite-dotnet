@@ -11,16 +11,19 @@ namespace Apache.Calcite.Linq
     /// Calling convention that returns results as an <see cref="System.Collections.Generic.IEnumerable{T}"/>.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <c>EnumerableConvention</c>, which returns a linq4j <c>Enumerable</c>. A plan may
-    /// hold both: converters exist in each direction, and a row crosses between them untouched, because both
-    /// ask the same <c>JavaTypeFactory</c> what a field is.
+    /// The counterpart of <c>EnumerableConvention</c>, which returns a linq4j <c>Enumerable</c>. A plan runs
+    /// as a compiled <see cref="System.Linq.Expressions"/> tree rather than as generated Java source.
+    ///
+    /// <para>Register <see cref="ClrEnumerableRules.Rules"/> with the planner and ask for this convention on
+    /// the root; <see cref="ClrEnumerablePrograms"/> has the passes that takes, and
+    /// <see cref="ClrEnumerablePrepare"/> wires the whole of it to a connection. A plan may hold nodes of
+    /// both conventions — converters exist in each direction and rows cross untouched.</para>
     /// </remarks>
     public sealed class ClrEnumerableConvention : Convention.Impl
     {
 
         /// <summary>
-        /// The single instance. A convention describes how rows are produced, and nothing about where from, so
-        /// there is nothing for a second instance to differ in.
+        /// The single instance.
         /// </summary>
         public static readonly ClrEnumerableConvention Instance = new();
 

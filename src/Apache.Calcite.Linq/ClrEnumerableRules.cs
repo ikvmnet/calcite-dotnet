@@ -218,13 +218,10 @@ namespace Apache.Calcite.Linq
         /// <see cref="Rules"/>, as Calcite's is read through <c>rules()</c>.
         ///
         /// <para>Membership is Calcite's list, member for member: its 26 less the match and table modify
-        /// rules, plus the two converters. Match cannot be written at all; modification is out of scope —
-        /// this convention reads, and a plan that writes is left to <c>EnumerableConvention</c>. The three
-        /// rules Calcite
-        /// declares as fields and leaves out of the list — limit-sort, sorted aggregate and batch nested loop
-        /// join — are left out here too. The limit-sort rule was in this list once, which gave this
-        /// convention 25 rules against Calcite's 24 and offered it a plan the other side was never offered,
-        /// in the differential comparison this project is checked by.</para>
+        /// rules, plus the two converters. Match cannot be written at all; modification is out of scope, so a
+        /// plan that writes is left to <c>EnumerableConvention</c>. The three rules Calcite declares as fields
+        /// and leaves out of the list — limit-sort, sorted aggregate and batch nested loop join — are left out
+        /// here too, and a caller who wants one adds it.</para>
         /// </remarks>
         static readonly IReadOnlyList<RelOptRule> EnumerableRuleList =
         [

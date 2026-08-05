@@ -10,37 +10,28 @@ namespace Apache.Calcite.Linq
     /// A relational expression of the <see cref="ClrEnumerableConvention"/> calling convention.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <see cref="EnumerableRel"/>. <see cref="Implement"/> returns a
-    /// <see cref="ClrEnumerableResult"/> against Calcite's <c>EnumerableRel.Result</c>, and the two carry the
-    /// same three things — the physical type, the row format, and the plan. Only the last differs, and only in
-    /// kind: a <see cref="System.Linq.Expressions.Expression"/> whose value is the sequence, against a linq4j
-    /// <c>BlockStatement</c> whose value comes from a <c>return</c> inside it.
+    /// The counterpart of <see cref="EnumerableRel"/>. Implement this to add a node to the convention:
+    /// <see cref="Implement"/> builds the plan, and the trait methods have the defaults Calcite gives them,
+    /// so a node overrides only what it does differently.
     ///
-    /// <para>That difference is forced, not chosen. Calcite generates one Java method per plan, so a node can
-    /// only contribute statements to it and the single way to give a value back is to return; a parent then
-    /// appends the child's statements to its own. An expression tree has no method to append to, and a parent
-    /// composes: the child's expression is an argument of the operator its own becomes. Where a node does need
-    /// statements it uses <c>Expression.Block</c>, whose value is its last expression — so a block is still a
-    /// block, it is just an expression as well, which is exactly what removes the need to flatten.</para>
-    ///
-    /// <para>Nothing here runs a query. The result is the plan, and it is a plan of an
-    /// <see cref="System.Collections.Generic.IEnumerable{T}"/> only in the sense that the expression's type is
-    /// one; there is no <c>DataContext</c> to enumerate against until <c>ClrEnumerableInterpretable</c> compiles the
-    /// whole thing and a caller binds it.</para>
-    ///
-    /// <para>The trait derivation Calcite gives <see cref="EnumerableRel"/> as interface defaults is repeated
-    /// here, because C# does not inherit the defaults of an interface IKVM compiled. Doing it once means a
-    /// node carries nothing but its own work.</para>
+    /// <para><see cref="Implement"/> returns an expression, where Calcite returns a block of generated Java.
+    /// A node composes its inputs' expressions into its own rather than appending statements to a method;
+    /// where a node needs statements it uses <c>Expression.Block</c>, whose value is its last expression.
+    /// Nothing here runs a query — the result is a plan, which
+    /// <see cref="ClrEnumerableInterpretable.ToBindable"/> compiles.</para>
     /// </remarks>
     public interface ClrEnumerableRel : PhysicalNode
     {
 
         /// <summary>
-        /// Creates a plan for this expression according to a calling convention.
+        /// Builds the plan for this node.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="pref">Preferred representation for rows in the result expression.</param>
-        /// <returns></returns>
+        /// <param name="implementor">Reach the inputs through
+        /// <see cref="ClrEnumerableRelImplementor.VisitChild"/>, and build the return value with
+        /// <see cref="ClrEnumerableRelImplementor.Result"/>.</param>
+        /// <param name="pref">How the parent would prefer this node's rows represented. A node may return
+        /// another format; the result says which it chose.</param>
+        /// <returns>The plan, the physical type of its rows, and their format.</returns>
         ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref);
 
         /// <inheritdoc cref="PhysicalNode.passThroughTraits" />

@@ -78,8 +78,7 @@ namespace Apache.Calcite.Linq.Rel
             var result = implementor.VisitChild(this, 0, (ClrEnumerableRel)getInput(), pref);
 
             // the input's own format, and not re-optimised: a spool writes its input's rows through and
-            // yields them, so its physical type is theirs. PARITY.md 6.9, and 5.9 for the recursive query
-            // that could not be implemented at all while this said otherwise.
+            // yields them, so its physical type is theirs
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format, false);
 
             // the table is looked up in the schema the plan is bound with, as Calcite looks it up, rather than

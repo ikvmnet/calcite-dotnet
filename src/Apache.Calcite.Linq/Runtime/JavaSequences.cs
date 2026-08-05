@@ -31,12 +31,7 @@ namespace Apache.Calcite.Linq.Runtime
         /// runtime; Java unboxes that at the use site and the CLR will not. A row that is an
         /// <c>Object[]</c> — which is nearly all of them — passes the type test in
         /// <see cref="JavaValues.As{T}"/> and costs nothing.
-        ///
-        /// <para>A cast was here instead, and it made a one-column result of a primitive fail the moment
-        /// <c>EnumerableToClrEnumerableConverter</c> carried it: the sub-plan's physical type is SCALAR for one
-        /// column and its Java row type is <c>int</c>. Nothing had reached it because the limit-sort rule was
-        /// in this convention's default rule set and Calcite's is not in its own, so a limit over a sort was
-        /// planned here rather than crossing the converter.</para>
+
         /// </remarks>
         public static IEnumerable<TSource> FromJava<TSource>(Enumerable source)
         {

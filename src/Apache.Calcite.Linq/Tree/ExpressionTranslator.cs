@@ -83,28 +83,19 @@ namespace Apache.Calcite.Linq.Tree
         }
 
         /// <summary>
-        /// Translates a node.
+        /// Translates a linq4j node into the CLR expression it means.
         /// </summary>
-        /// <param name="node"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
+        /// <param name="node">A linq4j expression or statement.</param>
+        /// <returns>The translated expression.</returns>
+        /// <exception cref="NotSupportedException">The node has no CLR counterpart.</exception>
         /// <remarks>
-        /// An expression arriving from outside is optimised first, because every tree Calcite gives Janino has
-        /// been: a node hands its tree to <c>BlockBuilder.append</c>, which runs <c>OptimizeShuttle</c> over
-        /// it. That shuttle's own class comment says why it is not a tweak — "without optimization,
-        /// expressions such as <c>false == null</c> will be left in, which are invalid to Janino (because it
-        /// does not automatically box primitives)".
+        /// An expression is run through <c>OptimizeShuttle</c> first, which is what
+        /// <c>BlockBuilder.append</c> does to everything Calcite compiles. That pass is required rather than
+        /// cosmetic: a generator may write <c>field == null</c> against a primitive field — Janino rejects it
+        /// and the CLR would convert a null to an <c>int</c> and throw — and the shuttle folds it away.
         ///
-        /// <para>An expression tree is stricter still. <c>PhysType.generateNullAwareAccessor</c> writes
-        /// <c>field == null ? null : List1(field)</c> for every key, and where the field is a primitive that
-        /// comparison is what the shuttle folds to <c>false</c>; left in, the CLR converts a null to an
-        /// <c>int</c> and throws. Translating what Janino would have been given rather than what the
-        /// generator wrote is the whole of it.</para>
-        ///
-        /// <para>Only an expression. A statement the shuttle rewrites away becomes
-        /// <c>OptimizeShuttle.EMPTY_STATEMENT</c>, which <c>BlockBuilder</c> filters and a bare block does
-        /// not, and the blocks translated here come from a <c>BlockBuilder</c> that has already run it — or
-        /// from one deliberately built not to.</para>
+        /// <para>Statements are translated as they arrive, because a statement the shuttle removes becomes
+        /// <c>OptimizeShuttle.EMPTY_STATEMENT</c>, which only a <c>BlockBuilder</c> filters out.</para>
         /// </remarks>
         public Expression Translate(J.Node node)
         {

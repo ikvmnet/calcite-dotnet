@@ -47,12 +47,10 @@ namespace Apache.Calcite.Linq.Rel.Convert
 
         /// <inheritdoc />
         /// <remarks>
-        /// One line is not Calcite's: an aggregate over no group set is refused. The node sorts its input by
-        /// the group key and tells one group from the next with a comparator built from the collation it
-        /// carries, and for an empty group set that collation is empty — Calcite builds the node anyway and
-        /// then cannot implement it. Registering <c>ENUMERABLE_SORTED_AGGREGATE_RULE</c> and running
-        /// <c>SELECT COUNT(*) FROM t</c> shows it: "Unable to implement EnumerableSortedAggregate(group=[{}]
-        /// …)". A global aggregate has nothing to sort by and belongs to <see cref="ClrEnumerableAggregate"/>.
+        /// One line is not Calcite's: an aggregate over no group set is refused. The node tells one group from
+        /// the next with a comparator built from the collation it carries, and for an empty group set that
+        /// collation is empty; Calcite's rule builds the node anyway and its <c>implement</c> then fails. A
+        /// global aggregate has nothing to sort by and belongs to <see cref="ClrEnumerableAggregate"/>.
         /// </remarks>
         public override RelNode convert(RelNode rel)
         {

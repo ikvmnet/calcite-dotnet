@@ -77,7 +77,7 @@ namespace Apache.Calcite.Linq.Rel
             var iterationResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)getIterativeRel(), pref);
 
             // the seed's own format, and not re-optimised: a repeat union yields the rows of its two inputs
-            // unchanged, so its physical type is theirs. PARITY.md 6.9.
+            // unchanged, so its physical type is theirs
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), seedResult.Format, false);
             var rowType = TypeResolver.Resolve(seedResult.PhysType.getJavaRowType());
 

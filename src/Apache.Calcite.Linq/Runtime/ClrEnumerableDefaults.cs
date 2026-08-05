@@ -512,11 +512,9 @@ namespace Apache.Calcite.Linq.Runtime
         /// matches nothing, which is what the null aware accessor of a physical type arranges by returning null
         /// for the whole key.
         ///
-        /// <para>Matching nothing is not the same as being thrown away. <c>toLookup</c> keeps a null-keyed row
-        /// under a null key — <c>java.util.HashMap</c> takes one — and nothing ever probes it, because the
-        /// outer side skips a null key too; but a right or a full join ends with the rows that matched
-        /// nothing, and those are among them. This dropped them, and a RIGHT JOIN on a nullable key lost a
-        /// row Calcite returns.</para>
+        /// <para>Matching nothing is not the same as being dropped: a null-keyed build row is kept under a
+        /// null key, which nothing probes, and a right or a full join ends by returning the rows that matched
+        /// nothing — those among them.</para>
         /// </remarks>
         public static IEnumerable<TResult> HashJoin<TSource, TInner, TKey, TResult>(
             IEnumerable<TSource> outer,

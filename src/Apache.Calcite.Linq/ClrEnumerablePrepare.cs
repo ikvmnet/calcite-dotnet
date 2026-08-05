@@ -56,12 +56,11 @@ namespace Apache.Calcite.Linq
             readonly ClrEnumerablePrefer prefer;
 
             /// <summary>
-            /// The values passed to the executor rather than written into the plan.
+            /// The values the query reads through the <c>DataContext</c> rather than from the plan.
             /// </summary>
             /// <remarks>
-            /// Ours, because <c>CalcitePreparingStmt.internalParameters</c> is private and has no accessor.
-            /// It carries the conformance, which is all this convention reads from it — see 5.6 in
-            /// <c>PARITY.md</c> for the one thing that costs.
+            /// Its own, because <c>CalcitePreparingStmt.internalParameters</c> is private with no accessor. It
+            /// carries the conformance, which is what this convention reads from it.
             /// </remarks>
             readonly java.util.Map parameters = new java.util.LinkedHashMap();
 
