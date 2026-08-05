@@ -114,22 +114,11 @@ namespace Apache.Calcite.Linq.Tests
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add("PEOPLE", new PeopleTable());
 
-            var rules = new java.util.ArrayList();
-            foreach (var rule in ClrEnumerableRules.Rules())
-                rules.add(rule);
-
-            var calcRules = new java.util.ArrayList();
-            foreach (var rule in ClrEnumerableRules.CalcRules())
-                calcRules.add(rule);
-
-            // the same two passes Programs.standard makes: the planner chooses a plan, and a hep pass then
-            // rewrites every project and filter in it into a calc
+            // the three passes this convention needs, which the library names now rather than every caller
+            // spelling them out
             var config = Frameworks.newConfigBuilder()
                 .defaultSchema(rootSchema)
-                .programs(
-                    Programs.subQuery(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE),
-                    Programs.ofRules(rules),
-                    Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE))
+                .programs(ClrEnumerablePrograms.Standard())
                 .build();
 
             var planner = Frameworks.getPlanner(config);
@@ -142,7 +131,7 @@ namespace Apache.Calcite.Linq.Tests
             // leaving the correlate in place is what puts ClrEnumerableCorrelate on the plan at all
             var expanded = planner.transform(0, logical.getTraitSet(), logical);
 
-            var traitSet = planner.getEmptyTraitSet().replace(ClrEnumerableConvention.Instance);
+            var traitSet = ClrEnumerablePrograms.DesiredRootTraitSet(planner.getEmptyTraitSet());
             var chosen = planner.transform(1, traitSet, expanded);
             var physical = (ClrEnumerableRel)planner.transform(2, chosen.getTraitSet(), chosen);
 
