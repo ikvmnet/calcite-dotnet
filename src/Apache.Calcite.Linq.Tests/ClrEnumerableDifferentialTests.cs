@@ -655,6 +655,31 @@ namespace Apache.Calcite.Linq.Tests
                 .Should().Contain("ClrEnumerableNestedLoopJoin").And.Contain("left_mark");
 
         [TestMethod]
+        public void ShouldAgreeOnAMarkJoinFromIn() =>
+            SameMarkJoin("SELECT \"ID\" FROM \"SALES\" WHERE \"AMOUNT\" IN (SELECT \"AMOUNT\" FROM \"SALES\" WHERE \"ID\" > 3) ORDER BY \"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnAMarkJoinFromInProjected() =>
+            SameMarkJoin("SELECT \"ID\", \"AMOUNT\" IN (SELECT \"AMOUNT\" FROM \"SALES\" WHERE \"ID\" > 3) AS \"M\" FROM \"SALES\" ORDER BY \"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnAMarkJoinOverANullKey() =>
+            SameMarkJoin("SELECT \"ID\", \"AMOUNT\" IN (SELECT \"AMOUNT\" FROM \"SALES\") AS \"M\" FROM \"SALES\" ORDER BY \"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnAMarkJoinOverAnEmptyRight() =>
+            SameMarkJoin("SELECT \"ID\", \"AMOUNT\" IN (SELECT \"AMOUNT\" FROM \"SALES\" WHERE \"ID\" > 99) AS \"M\" FROM \"SALES\" ORDER BY \"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnANotInMarkJoin() =>
+            SameMarkJoin("SELECT \"ID\" FROM \"SALES\" WHERE \"AMOUNT\" NOT IN (SELECT \"AMOUNT\" FROM \"SALES\" WHERE \"ID\" > 3) ORDER BY \"ID\"");
+
+        [TestMethod]
+        public void ShouldPlanAHashMarkJoin() =>
+            PlanOf("SELECT \"ID\" FROM \"SALES\" WHERE \"AMOUNT\" IN (SELECT \"AMOUNT\" FROM \"SALES\" WHERE \"ID\" > 3)", true, markJoin: true)
+                .Should().Contain("ClrEnumerableHashJoin").And.Contain("left_mark");
+
+        [TestMethod]
         public void ShouldAgreeOnValues() => Same("SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");
 
         [TestMethod]

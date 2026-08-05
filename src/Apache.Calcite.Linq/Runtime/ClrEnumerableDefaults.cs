@@ -313,6 +313,184 @@ namespace Apache.Calcite.Linq.Runtime
         }
 
         /// <summary>
+        /// Returns every left row with a marker saying whether the right side had a match, using a hash table.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TInner"></typeparam>
+        /// <typeparam name="TKey"></typeparam>
+        /// <typeparam name="TNsKey"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="outer"></param>
+        /// <param name="inner"></param>
+        /// <param name="outerKeyNullAwareSelector">Yields null where a not null-safe key is null.</param>
+        /// <param name="innerKeyNullAwareSelector">Yields null where a not null-safe key is null.</param>
+        /// <param name="outerNullSafeKeySelector">The IS NOT DISTINCT FROM keys, or null where there are none.</param>
+        /// <param name="innerNullSafeKeySelector">The IS NOT DISTINCT FROM keys, or null where there are none.</param>
+        /// <param name="atMostOneNotNullSafeKey">Whether at most one join key uses EQUALS.</param>
+        /// <param name="resultSelector"></param>
+        /// <param name="comparer"></param>
+        /// <param name="nullSafeComparer"></param>
+        /// <param name="nonEquiPredicate">Three-valued, or null where the condition is all equalities.</param>
+        /// <param name="equiPredicate">Three-valued.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.leftMarkHashJoin</c>, keeping the two algorithms behind
+        /// it. A hash table answers whether anything matched, but a mark join needs the third value as well,
+        /// and a lookup that finds nothing cannot tell FALSE from UNKNOWN on its own.
+        ///
+        /// <para>Where at most one key uses EQUALS, whether that key was ever null on the build side settles
+        /// it: a probe that finds no bucket is UNKNOWN if it was and FALSE if it was not. Where several do,
+        /// the equi-predicate has to be run against the rows whose key is null, because only it can say
+        /// whether a comparison came out unknown. That is the whole of the difference between the two.</para>
+        ///
+        /// <para>The lookup is a <c>java.util.HashMap</c>, as every other operator here holds its rows in
+        /// Calcite collection. None of this map order escapes — a mark join emits in the outer input order —
+        /// but the hashing has to be Java hashing, because the keys are Calcite values.</para>
+        /// </remarks>
+        public static IEnumerable<TResult> LeftMarkHashJoin<TSource, TInner, TKey, TNsKey, TResult>(
+            IEnumerable<TSource> outer,
+            IEnumerable<TInner> inner,
+            Func<TSource, TKey> outerKeyNullAwareSelector,
+            Func<TInner, TKey> innerKeyNullAwareSelector,
+            Func<TSource, TNsKey>? outerNullSafeKeySelector,
+            Func<TInner, TNsKey>? innerNullSafeKeySelector,
+            bool atMostOneNotNullSafeKey,
+            Func<TSource, java.lang.Boolean, TResult> resultSelector,
+            EqualityComparer? comparer,
+            EqualityComparer? nullSafeComparer,
+            Func<TSource, TInner, java.lang.Boolean>? nonEquiPredicate,
+            Func<TSource, TInner, java.lang.Boolean> equiPredicate)
+        {
+            ArgumentNullException.ThrowIfNull(outer);
+            ArgumentNullException.ThrowIfNull(inner);
+
+            // the build side: one bucket per key, plus the set of null-safe keys seen. A null key goes into
+            // the map under null rather than being dropped, because the rows behind it are what say UNKNOWN
+            var lookup = new java.util.HashMap();
+            var nullSafeKeys = new java.util.HashSet();
+
+            foreach (var row in inner)
+            {
+                var key = innerKeyNullAwareSelector(row);
+                var wrapped = key == null ? null : JavaWrapped.Of(comparer, JavaValues.From(key));
+
+                if (lookup.get(wrapped) is not List<TInner> bucket)
+                    lookup.put(wrapped, bucket = []);
+
+                bucket.Add(row);
+
+                if (innerNullSafeKeySelector != null)
+                    nullSafeKeys.add(JavaWrapped.Of(nullSafeComparer, JavaValues.From(innerNullSafeKeySelector(row))));
+            }
+
+            var buildSideIsEmpty = lookup.isEmpty();
+
+            foreach (var row in outer)
+            {
+                var marker = java.lang.Boolean.FALSE;
+
+                if (outerNullSafeKeySelector != null
+                    && nullSafeKeys.contains(JavaWrapped.Of(nullSafeComparer, JavaValues.From(outerNullSafeKeySelector(row)))) == false)
+                {
+                    // a null-safe key matching nothing settles it: two rows that disagree there are not equal,
+                    // whatever the rest of the condition says
+                    yield return resultSelector(row, marker);
+                    continue;
+                }
+
+                var key = outerKeyNullAwareSelector(row);
+
+                if (key == null)
+                {
+                    if (atMostOneNotNullSafeKey)
+                    {
+                        // the one EQUALS key is null on this row, so every comparison it makes is unknown
+                        marker = null!;
+                    }
+                    else
+                    {
+                        // several EQUALS keys and one of them null: only the predicate can say whether a
+                        // comparison came out unknown rather than false
+                        foreach (var bucket in Buckets<TInner>(lookup))
+                        {
+                            foreach (var other in bucket)
+                            {
+                                if (equiPredicate(row, other) == null)
+                                {
+                                    marker = null!;
+                                    break;
+                                }
+                            }
+
+                            if (marker == null)
+                                break;
+                        }
+                    }
+                }
+                else if (lookup.get(JavaWrapped.Of(comparer, JavaValues.From(key))) is List<TInner> matches)
+                {
+                    if (nonEquiPredicate == null)
+                    {
+                        marker = java.lang.Boolean.TRUE;
+                    }
+                    else
+                    {
+                        foreach (var other in matches)
+                        {
+                            var matched = nonEquiPredicate(row, other);
+
+                            if (matched == null)
+                                marker = null!;
+                            else if (matched.booleanValue())
+                            {
+                                marker = java.lang.Boolean.TRUE;
+                                break;
+                            }
+                        }
+                    }
+                }
+                else if (lookup.get(null) is List<TInner> nulls)
+                {
+                    // nothing hashed to this key, but the build side holds rows whose key is null
+                    if (atMostOneNotNullSafeKey)
+                    {
+                        marker = null!;
+                    }
+                    else
+                    {
+                        foreach (var other in nulls)
+                        {
+                            if (equiPredicate(row, other) == null)
+                            {
+                                marker = null!;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // an empty build side is FALSE and never UNKNOWN: there was nothing to be unknown about
+                if (marker == null && buildSideIsEmpty)
+                    marker = java.lang.Boolean.FALSE;
+
+                yield return resultSelector(row, marker);
+            }
+        }
+
+        /// <summary>
+        /// Returns each bucket of a lookup built by <see cref="LeftMarkHashJoin"/>.
+        /// </summary>
+        /// <typeparam name="TInner"></typeparam>
+        /// <param name="lookup"></param>
+        /// <returns></returns>
+        static IEnumerable<List<TInner>> Buckets<TInner>(java.util.HashMap lookup)
+        {
+            for (var i = lookup.values().iterator(); i.hasNext();)
+                if (i.next() is List<TInner> bucket)
+                    yield return bucket;
+        }
+
+        /// <summary>
         /// Joins two sequences on a key.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>

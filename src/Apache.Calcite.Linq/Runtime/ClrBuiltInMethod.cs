@@ -111,6 +111,11 @@ namespace Apache.Calcite.Linq.Runtime
         public static readonly MethodInfo LeftMarkNestedLoopJoin = Of(nameof(ClrEnumerableDefaults.LeftMarkNestedLoopJoin));
 
         /// <summary>
+        /// <see cref="ClrEnumerableDefaults.LeftMarkHashJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo LeftMarkHashJoin = Of(nameof(ClrEnumerableDefaults.LeftMarkHashJoin));
+
+        /// <summary>
         /// <see cref="ClrEnumerableDefaults.CorrelateBatchJoin"/>.
         /// </summary>
         public static readonly MethodInfo CorrelateBatchJoin = Of(nameof(ClrEnumerableDefaults.CorrelateBatchJoin));

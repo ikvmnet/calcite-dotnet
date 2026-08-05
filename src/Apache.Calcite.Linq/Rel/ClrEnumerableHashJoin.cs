@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq.Expressions;
 
 using Apache.Calcite.Linq.Runtime;
@@ -138,6 +138,8 @@ namespace Apache.Calcite.Linq.Rel
                 case nameof(JoinRelType.SEMI):
                 case nameof(JoinRelType.ANTI):
                     return ImplementSemiJoin(implementor, pref);
+                case nameof(JoinRelType.LEFT_MARK):
+                    return ImplementMarkJoin(implementor, pref);
                 default:
                     return ImplementHashJoin(implementor, pref);
             }
@@ -215,6 +217,109 @@ namespace Apache.Calcite.Linq.Rel
                     ClrPhysTypes.Comparer(implementor, keyPhysType),
                     Expression.Constant(joinType.name() == nameof(JoinRelType.ANTI)),
                     Predicate(implementor, leftResult.PhysType, rightResult.PhysType, leftType, rightType)));
+        }
+
+        /// <summary>
+        /// Implements a mark join, which returns every left row with a marker saying whether the right side
+        /// had a match.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <param name="pref"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>implementHashMarkJoin</c>, statement for statement. Both predicates are the
+        /// three-valued ones, because the marker is three-valued: a mark join has to tell FALSE from UNKNOWN,
+        /// which is what makes <c>x IN (…)</c> over a nullable column answer UNKNOWN.
+        ///
+        /// <para>The join keys split in two. A null-safe key is IS NOT DISTINCT FROM and answers only
+        /// TRUE or FALSE; a not null-safe one is EQUALS and answers three ways. The runtime takes both key
+        /// selectors and a flag saying whether at most one key is not null-safe, because that is the case a
+        /// hash lookup alone can decide.</para>
+        /// </remarks>
+        ClrEnumerableResult ImplementMarkJoin(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
+            var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
+
+            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.PreferArray());
+
+            var leftSource = ClrEnumUtils.BoxRows(leftResult.PhysType, leftResult.Expression);
+            var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
+            var leftType = leftSource.Type.GetGenericArguments()[0];
+            var rightType = rightSource.Type.GetGenericArguments()[0];
+            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+
+            var rexBuilder = getCluster().getRexBuilder();
+
+            LambdaExpression? nonEquiPredicate = null;
+            if (joinInfo.nonEquiConditions.isEmpty() == false)
+            {
+                var nonEquiCondition = RexUtil.composeConjunction(rexBuilder, joinInfo.nonEquiConditions, true);
+                if (nonEquiCondition != null)
+                    nonEquiPredicate = ClrEnumUtils.GeneratePredicate(implementor, rexBuilder, left, right, leftResult.PhysType, rightResult.PhysType, nonEquiCondition, true);
+            }
+
+            var equiCondition = joinInfo.getEquiCondition(left, right, rexBuilder);
+            var equiPredicate = ClrEnumUtils.GeneratePredicate(implementor, rexBuilder, left, right, leftResult.PhysType, rightResult.PhysType, equiCondition, true);
+
+            // the null-aware accessor yields null where a not null-safe key is null, which is how the runtime
+            // learns that a comparison is unknown rather than false
+            var leftKeySelector = implementor.Translator.TranslateSelector(
+                leftResult.PhysType.generateNullAwareAccessor(joinInfo.leftKeys, joinInfo.nullExclusionFlags), leftType);
+            var rightKeySelector = implementor.Translator.TranslateSelector(
+                rightResult.PhysType.generateNullAwareAccessor(joinInfo.rightKeys, joinInfo.nullExclusionFlags), rightType);
+
+            var notNullSafeKeyCount = 0;
+            var leftNullSafeKeys = new java.util.ArrayList();
+            var rightNullSafeKeys = new java.util.ArrayList();
+
+            for (int i = 0; i < joinInfo.nullExclusionFlags.size(); i++)
+            {
+                if (((java.lang.Boolean)joinInfo.nullExclusionFlags.get(i)).booleanValue())
+                {
+                    notNullSafeKeyCount++;
+                }
+                else
+                {
+                    leftNullSafeKeys.add(joinInfo.leftKeys.get(i));
+                    rightNullSafeKeys.add(joinInfo.rightKeys.get(i));
+                }
+            }
+
+            var leftNullSafeKeySelector = leftNullSafeKeys.isEmpty()
+                ? null
+                : Accessor(implementor, leftResult.PhysType, ImmutableIntList.copyOf(leftNullSafeKeys), leftType);
+            var rightNullSafeKeySelector = rightNullSafeKeys.isEmpty()
+                ? null
+                : Accessor(implementor, rightResult.PhysType, ImmutableIntList.copyOf(rightNullSafeKeys), rightType);
+
+            var atMostOneNotNullSafeKey = notNullSafeKeyCount <= 1;
+
+            var nullSafeKeyPhysType = leftResult.PhysType.project(leftNullSafeKeys, JavaRowFormat.LIST);
+            var nullSafeKeyComparer = ClrPhysTypes.Comparer(implementor, nullSafeKeyPhysType);
+            var keyPhysType = leftResult.PhysType.project(joinInfo.leftKeys, JavaRowFormat.LIST);
+            var keyComparer = ClrPhysTypes.Comparer(implementor, keyPhysType);
+
+            var selector = ClrEnumUtils.MarkJoinSelector(implementor, physType, leftResult.PhysType);
+
+            var keyType = leftKeySelector.ReturnType;
+            var nullSafeKeyType = leftNullSafeKeySelector?.ReturnType ?? typeof(object);
+
+            return implementor.Result(physType,
+                Expression.Call(null,
+                    ClrBuiltInMethod.LeftMarkHashJoin.MakeGenericMethod(leftType, rightType, keyType, nullSafeKeyType, rowType),
+                    leftSource,
+                    rightSource,
+                    leftKeySelector,
+                    rightKeySelector,
+                    (Expression?)leftNullSafeKeySelector ?? Expression.Constant(null, typeof(Func<,>).MakeGenericType(leftType, nullSafeKeyType)),
+                    (Expression?)rightNullSafeKeySelector ?? Expression.Constant(null, typeof(Func<,>).MakeGenericType(rightType, nullSafeKeyType)),
+                    Expression.Constant(atMostOneNotNullSafeKey),
+                    selector,
+                    keyComparer,
+                    nullSafeKeyComparer,
+                    (Expression?)nonEquiPredicate ?? Expression.Constant(null, typeof(Func<,,>).MakeGenericType(leftType, rightType, typeof(java.lang.Boolean))),
+                    equiPredicate));
         }
 
         /// <summary>
