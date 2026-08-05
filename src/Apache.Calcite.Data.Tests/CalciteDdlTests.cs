@@ -350,11 +350,16 @@ namespace Apache.Calcite.Data.Tests
         /// <para>Every test CALCITE-7510 added uses a two-column table, which is why this shape was never
         /// seen. Both of these tables are one column. They pass on 1.42.0 — where four UPDATE tests fail
         /// instead, because 1.42 is what CALCITE-7510 fixes.</para>
-        /// <para>Skipped, not deleted. The fix is CALCITE-7690, and it is in no published snapshot, so no
-        /// version this project can reference makes this pass; keeping it red only blocks every merge.
-        /// Remove the <c>Skip</c> when a 1.43 snapshot carries the fix — this test is how we will know.</para>
+        /// <para>That was the whole story while Janino compiled the plan, and it no longer does: the default
+        /// prepare is <c>ClrEnumerablePrepare</c>, which translates Calcite's tree rather than compiling it,
+        /// so the cast Janino refuses costs nothing here. Measured — what remains is a different defect, and
+        /// ours. A one-column table gives the scan a SCALAR physical type, because <c>PhysTypeImpl.of</c>
+        /// collapses ARRAY to SCALAR for a single field, while the table still yields <c>Object[]</c> rows;
+        /// an aggregate over it is built as <c>IEnumerable&lt;int&gt;</c> and handed
+        /// <c>IEnumerable&lt;object[]&gt;</c>.</para>
+        /// <para>Skipped, not deleted, and the skip message names the defect that holds it.</para>
         /// </remarks>
-        [Fact(Skip = "Blocked on CALCITE-7690: EnumerableTableModify emits (int) sinkRow, which Janino rejects. Not in any published 1.43 snapshot.")]
+        [Fact(Skip = "One-column table scan: physType is SCALAR while the table yields Object[] rows, so an aggregate over it is typed wrong. A defect in this convention, not CALCITE-7690.")]
         public void Delete_should_return_row_count()
         {
             using var c = new CalciteConnection(ServerDdlConnectionString);
@@ -453,11 +458,16 @@ namespace Apache.Calcite.Data.Tests
         /// <para>Every test CALCITE-7510 added uses a two-column table, which is why this shape was never
         /// seen. Both of these tables are one column. They pass on 1.42.0 — where four UPDATE tests fail
         /// instead, because 1.42 is what CALCITE-7510 fixes.</para>
-        /// <para>Skipped, not deleted. The fix is CALCITE-7690, and it is in no published snapshot, so no
-        /// version this project can reference makes this pass; keeping it red only blocks every merge.
-        /// Remove the <c>Skip</c> when a 1.43 snapshot carries the fix — this test is how we will know.</para>
+        /// <para>That was the whole story while Janino compiled the plan, and it no longer does: the default
+        /// prepare is <c>ClrEnumerablePrepare</c>, which translates Calcite's tree rather than compiling it,
+        /// so the cast Janino refuses costs nothing here. Measured — what remains is a different defect, and
+        /// ours. A one-column table gives the scan a SCALAR physical type, because <c>PhysTypeImpl.of</c>
+        /// collapses ARRAY to SCALAR for a single field, while the table still yields <c>Object[]</c> rows;
+        /// an aggregate over it is built as <c>IEnumerable&lt;int&gt;</c> and handed
+        /// <c>IEnumerable&lt;object[]&gt;</c>.</para>
+        /// <para>Skipped, not deleted, and the skip message names the defect that holds it.</para>
         /// </remarks>
-        [Fact(Skip = "Blocked on CALCITE-7690: EnumerableTableModify emits (int) sinkRow, which Janino rejects. Not in any published 1.43 snapshot.")]
+        [Fact(Skip = "One-column table scan: physType is SCALAR while the table yields Object[] rows, so an aggregate over it is typed wrong. A defect in this convention, not CALCITE-7690.")]
         public void MultiRow_delete_should_return_correct_row_count_for_single_column_table()
         {
             using var c = new CalciteConnection(ServerDdlConnectionString);

@@ -71,8 +71,10 @@ namespace Apache.Calcite.Data.Internal
         /// </summary>
         /// <param name="options">The connection string options.</param>
         /// <param name="prepareFactory">
-        /// Optional factory that produces the <see cref="CalcitePrepare"/> instance used for each
-        /// query. When <see langword="null"/>, <see cref="CalcitePrepare.DEFAULT_FACTORY"/> is used.
+        /// Optional factory that produces the <see cref="CalcitePrepare"/> instance used for each query.
+        /// When <see langword="null"/>, <c>ClrEnumerablePrepare</c> is used, which runs a plan as a compiled
+        /// expression tree. Pass <c>() =&gt; (CalcitePrepare)CalcitePrepare.DEFAULT_FACTORY.apply()</c> for
+        /// Calcite's own, which generates Java source and compiles it with Janino.
         /// </param>
         /// <exception cref="ArgumentNullException"></exception>
         /// <exception cref="CalciteException"></exception>
@@ -82,7 +84,7 @@ namespace Apache.Calcite.Data.Internal
 
             try
             {
-                _prepareFactory = prepareFactory ?? (() => (CalcitePrepare)CalcitePrepare.DEFAULT_FACTORY.apply());
+                _prepareFactory = prepareFactory ?? (() => new Apache.Calcite.Linq.ClrEnumerablePrepare());
                 _rootSchema = BuildRootSchema(options, out var modelDefaultSchema);
                 _rootSchemaPlus = _rootSchema.plus();
                 _config = new CalciteConnectionConfigImpl(BuildEngineProperties(options));

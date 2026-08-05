@@ -113,7 +113,7 @@ namespace Apache.Calcite.Linq
                 return Programs.sequence(
                     ClrEnumerablePrograms.SubQuery(),
                     ClrEnumerablePrograms.PlannerRules(),
-                    ClrEnumerablePrograms.CalcRules());
+                    ClrEnumerablePrograms.PlannerCalcRules());
             }
 
             /// <inheritdoc />

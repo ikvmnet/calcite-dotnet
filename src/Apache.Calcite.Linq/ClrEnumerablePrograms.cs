@@ -99,6 +99,33 @@ namespace Apache.Calcite.Linq
         }
 
         /// <summary>
+        /// Returns the calc pass for a plan that may hold nodes of either convention.
+        /// </summary>
+        /// <param name="metadataProvider">The provider to use, or <see langword="null"/> for Calcite's default.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <see cref="CalcRules"/> with <c>RelOptRules.CALC_RULES</c> added, which is what
+        /// <c>Programs.calc</c> runs on its own.
+        ///
+        /// <para>Both halves are needed for the same reason. A project or a filter refuses to implement
+        /// itself, in this convention and in Calcite's alike, because a calc carries both in one pass; the
+        /// calc pass is what makes that refusal safe. Running only this convention's calc rules leaves
+        /// Calcite's <c>EnumerableFilter</c> standing, and it throws when the plan is implemented.</para>
+        /// </remarks>
+        public static Program PlannerCalcRules(RelMetadataProvider? metadataProvider = null)
+        {
+            var rules = new java.util.ArrayList();
+
+            foreach (var rule in ClrEnumerableRules.CalcRules())
+                rules.add(rule);
+
+            for (var i = RelOptRules.CALC_RULES.iterator(); i.hasNext();)
+                rules.add(i.next());
+
+            return Programs.hep(rules, true, metadataProvider ?? DefaultRelMetadataProvider.INSTANCE);
+        }
+
+        /// <summary>
         /// Plans with the rules already on the planner.
         /// </summary>
         sealed class PlannerRulesProgram : Program

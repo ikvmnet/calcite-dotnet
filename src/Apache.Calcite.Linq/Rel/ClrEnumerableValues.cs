@@ -120,7 +120,9 @@ namespace Apache.Calcite.Linq.Rel
                             typeFactory,
                             RexImpTable.NullAs.NULL));
 
-                rows.Add(implementor.Translator.Translate(physType.record(literals)));
+                // a null literal translates to a constant of Object, and Java may assign that to a field of
+                // any reference type where an array initializer may not
+                rows.Add(JavaCast.To(implementor.Translator.Translate(physType.record(literals)), rowType));
             }
 
             return implementor.Result(physType,
