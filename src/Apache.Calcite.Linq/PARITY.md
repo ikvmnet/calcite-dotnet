@@ -1,20 +1,18 @@
 # `ClrEnumerableConvention` against `EnumerableConvention`
 
-Class by class and member by member, against **Calcite 1.41.0**. The source read is
-`git archive calcite-1.41.0 core/src/main/java/org/apache/calcite/adapter/enumerable` out of `D:\calcite`,
-not that repository's working tree, which is 1.43.0-SNAPSHOT and differs. The package is 105 files plus
-seven in `enumerable/impl`.
+Class by class and member by member, against **Calcite 1.42.0** — the version the projects reference. The
+source read is `git archive calcite-1.42.0 core/src/main/java/org/apache/calcite/adapter/enumerable` out of
+`D:\calcite`, not that repository's working tree, which is 1.43.0-SNAPSHOT and differs. The package is 109
+files plus seven in `enumerable/impl`.
 
-> **⚠ This document is one release stale.** The projects reference **1.42.0** now, not 1.41.0. The port
-> compiles against it and all 197 tests pass, so nothing here is known to be wrong about *our* code — but
-> every column headed "Calcite" was derived from the 1.41 tag, and 1.42 changed 21 files in this package,
-> 985 insertions and 97 deletions. Three consequences are already known and are written into 3.3, §7 and
-> 9.20; the rest is unmeasured. **Rebuilding this file against `calcite-1.42.0` is the next parity task**
-> and `TODO.md` carries it. Until then, check any row you are about to rely on against the 1.42 tag.
+**How this was moved from 1.41 to 1.42.** Not by re-reading 109 files: by diffing the two tags over the
+package — 21 files, 985 insertions, 97 deletions — and re-deriving only what that diff touched. Every row
+below whose class the diff did not touch stands as it was verified at 1.41. The four files 1.42 added and
+the seventeen it changed were each read and checked against the port. 9.21 records what that found.
 
 **Read the tag, then check the assembly.** They are not the same. `RelOptUtil.registerDefaultRules` registers
-`EnumerableRules.ENUMERABLE_RULES` in the compiled 1.41.0 — measured, by counting the planner's rules before
-and after the call — and the tag's text of that method gives no sign of it until its last third.
+`EnumerableRules.ENUMERABLE_RULES` in the compiled assembly — measured at 1.41.0 by counting the planner's
+rules before and after the call — and the tag's text of that method gives no sign of it until its last third.
 
 Three columns throughout: Calcite's member, ours, and what differs. `—` means nothing corresponds, and every
 one of those is accounted for in §5 — outstanding, nothing yet argues for it — or in §6, with the argument.
@@ -124,8 +122,8 @@ are that base's.
 
 ## 2. Nodes
 
-`EnumerableX` → `ClrEnumerableX` throughout. Calcite's 32 node classes are all accounted for: 27 in 2.1 to
-2.17, `EnumerableInterpretable` in 1.7, and `EnumerableMatch`, `EnumerableTableModify`,
+`EnumerableX` → `ClrEnumerableX` throughout. Calcite's 34 node classes are all accounted for: 29 in 2.1 to
+2.20, `EnumerableInterpretable` in 1.7, and `EnumerableMatch`, `EnumerableTableModify`,
 `EnumerableInterpreter` and `EnumerableBindable` in 5.1.
 
 ### Scan and values
@@ -177,7 +175,8 @@ run afterwards and a calc is never worse.
 | Calcite | ours | |
 |---|---|---|
 | 2 ctors, `create`, `copy`, `implement` | 1 ctor and the rest | |
-| `implementHashJoin`, `implementHashSemiJoin` | `ImplementHashJoin`, `ImplementSemiJoin` | 1.41 has these two and no more; the mark-join path is 1.42, 7.2 |
+| `implementHashJoin`, `implementHashSemiJoin`, `implementHashMarkJoin` | `ImplementHashJoin`, `ImplementSemiJoin`, `ImplementMarkJoin` | the mark-join path is 1.42; see 2.19 for what LEFT_MARK is |
+| `EnumerableDefaults.leftMarkHashJoin`, `leftMarkHashJoinOptimized`, `leftMarkHashJoinGeneral`, `HashTableWithNullSafeKeySet` | `ClrEnumerableDefaults.LeftMarkHashJoin` | both algorithms, in one method: the build side is the same table either way, and only the miss is decided differently |
 | `computeSelfCost`, `passThroughTraits`, `deriveTraits`, `getDeriveMode` | all four | |
 | — | `Accessor`, `Predicate` | ours, factored out of the two bodies |
 
@@ -186,12 +185,15 @@ run afterwards and a calc is never worse.
 | Calcite | ours | |
 |---|---|---|
 | 2 ctors, `create`, `copy`, `implement`, `computeSelfCost`, `passThroughTraits`, `deriveTraits`, `getDeriveMode` | 1 ctor and the rest | |
+| `implementNLJoin`, `implementNLMarkJoin` | `ImplementJoin`, `ImplementMarkJoin` | the mark-join path is 1.42 |
+| `EnumerableDefaults.leftMarkNestedLoopJoin` | `ClrEnumerableDefaults.LeftMarkNestedLoopJoin` | one entry point onto `LeftMarkJoin`, as Calcite writes it onto `leftMarkJoinInternal` |
 
 #### 2.7 `EnumerableMergeJoin`
 
 | Calcite | ours | |
 |---|---|---|
 | ctor, with both sanity checks and the join-type refusal | ctor, all three | |
+| `joinInfo`, hiding `Join.joinInfo`, built by `JoinInfo.createWithStrictEquality` | the same field, hidden with `new` | 1.42; the algorithm stops at a null, so IS NOT DISTINCT FROM cannot be a join key |
 | `isMergeJoinSupported`, `getCollation`, `getCollations` | `IsMergeJoinSupported`, `GetCollation`, `GetCollations` | |
 | `create`, `copy`, `implement`, `computeSelfCost`, `getDeriveMode` | all five | |
 | `passThroughTraits` (six cases), `deriveTraits` | both, and the six cases | one guard added; 6.8 |
@@ -227,7 +229,7 @@ run afterwards and a calc is never worse.
 | Calcite | ours | |
 |---|---|---|
 | `EnumerableUnion` / `EnumerableIntersect` / `EnumerableMinus`: ctor, `copy`, `implement` | the same three each | |
-| `EnumerableMergeUnion`: ctor (with both checks), `create`, `copy`, `implement` | all four | extends the union node, as Calcite's extends `EnumerableUnion` |
+| `EnumerableMergeUnion`: ctor (with both checks), `create`, `copy`, `implement` | all four | extends the union node, as Calcite's extends `EnumerableUnion`. The ctor checks `getCollations()` rather than `getCollation()`, which is 1.42: a slot may hold a `RelCompositeTrait`, and each required collation must be satisfied by at least one of the input's |
 | `EnumerableDefaults.mergeUnion`, `MergeUnionEnumerator` | `ClrEnumerableDefaults.MergeUnion` | the k-way merge as an iterator, duplicate set cleared per key as Calcite clears it |
 | `EnumerableRepeatUnion`: ctor, `copy`, `implement` | the same three | ours is public where Calcite's ctor is package private; one argument differs, 6.9 |
 | `EnumerableTableSpool`: ctor, `create`, `copy`, `implement` (refuses anything but LAZY) | all four, the refusal included | one argument differs; 6.9 |
@@ -315,6 +317,44 @@ Package private in Calcite, so ported — 6.5. One substitution: Calcite writes 
 whose implementation is `RexUtil.apply(mapping, this)`; the interface method is a generic default that IKVM
 erases, so the public static is called instead. It is the same call.
 
+### 2.19 `EnumerableConditionalCorrelate` → `ClrEnumerableConditionalCorrelate`
+
+New in 1.42, with `JoinRelType.LEFT_MARK`.
+
+| Calcite | ours | |
+|---|---|---|
+| ctor, `create`, `copy(… condition)`, `copy(…)` (throws), `implement` | all five, the refusal included | |
+| `passThroughTraits`, `deriveTraits`, `getDeriveMode` | all three | |
+| `EnumerableDefaults.correlateLeftMarkJoin` | `ClrEnumerableDefaults.CorrelateLeftMarkJoin` | the correlated entry point onto the one walk |
+
+A correlate carrying a condition, which is what a correlated IN, SOME or EXISTS becomes when the sub-query
+rules rewrite it to a mark join rather than to a plain correlate. Its join type is always LEFT_MARK; Calcite
+refuses every other and so does this.
+
+**A mark join returns every left row with one column appended, and that column is three-valued** — true
+where some right row matched, false where none did, null where a comparison was unknown. The third value is
+the point: it is what makes `x IN (…)` over a nullable column answer UNKNOWN rather than FALSE. So the
+predicate is `NullablePredicate2` rather than `Predicate2` in Calcite, and `java.lang.Boolean` rather than
+`bool` here, and `EnumUtils.generatePredicate` gained the `nullable` overload that produces it.
+
+### 2.20 `EnumerableCombine` → `ClrEnumerableCombine`
+
+New in 1.42.
+
+| Calcite | ours | |
+|---|---|---|
+| ctor, `copy`, `implement`, `computeSelfCost`, `explainTerms`, `deriveRowType` | ctor, `copy`, `Implement`; the rest are `Combine`'s either way | |
+
+Combines several query roots into one, for multi-root optimisation in the planner: one column per query,
+each row holding that query's values for that row index as a map, and the row count the largest of the
+inputs. Everything it calls is public Calcite runtime — `SqlFunctions.map`,
+`SqlFunctions.combineQueryResults` — so the node is the tree `EnumerableCombine` describes and nothing more.
+
+**No SQL statement produces a `Combine`.** A caller builds one with `RelBuilder.combine`, so the
+differential harness cannot reach this node by parsing a query, and `RelBuilder.create` wants a JDBC
+connection IKVM cannot give it in the test project. `ShouldCombineTwoQueries` builds the node by hand over
+an already planned input, which is the only way to run it — and it is run, not assumed.
+
 ### 2.18 Converters — ours only
 
 `ClrEnumerableToEnumerableConverter` and `EnumerableToClrEnumerableConverter`, with a rule each, are what
@@ -342,6 +382,8 @@ the multiplier of the convention they produce — `EnumerableConvention.COST_MUL
 | `EnumerableJoinRule` | `ClrEnumerableJoinRule` | identical: one rule, hash or nested loop, condition rearranged equi-first |
 | `EnumerableAsofJoinRule` | `ClrEnumerableAsofJoinRule` | identical |
 | `EnumerableCorrelateRule` | `ClrEnumerableCorrelateRule` | identical |
+| `EnumerableConditionalCorrelateRule` | `ClrEnumerableConditionalCorrelateRule` | identical; 1.42 |
+| `EnumerableCombineRule` | `ClrEnumerableCombineRule` | identical; 1.42 |
 | `EnumerableUnionRule` | `ClrEnumerableUnionRule` | identical, including the cluster's trait set rather than the union's |
 | `EnumerableIntersectRule` | `ClrEnumerableIntersectRule` | identical, `convertList` included |
 | `EnumerableMinusRule` | `ClrEnumerableMinusRule` | identical |
@@ -363,24 +405,19 @@ the multiplier of the convention they produce — `EnumerableConvention.COST_MUL
 
 ### 3.2 The rule classes are all accounted for
 
-All 31 rule classes 1.41 has in the package: 30 files plus the one nested in `EnumerableBindable`.
+All 33 rule classes 1.42 has in the package: 32 files plus the one nested in `EnumerableBindable`.
 
 ### 3.3 Rule sets
 
-`EnumerableRules.ENUMERABLE_RULES` is **24** at 1.41, and the merge union rule **is one of them**. Three rule
-fields sit outside the list — `ENUMERABLE_LIMIT_SORT_RULE`, `ENUMERABLE_SORTED_AGGREGATE_RULE` and
+`EnumerableRules.ENUMERABLE_RULES` is **26** at 1.42: the 24 of 1.41 — the merge union rule among them —
+plus `ENUMERABLE_CONDITIONAL_CORRELATE_RULE` and `ENUMERABLE_COMBINE_RULE`. Three rule fields sit outside
+the list — `ENUMERABLE_LIMIT_SORT_RULE`, `ENUMERABLE_SORTED_AGGREGATE_RULE` and
 `ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE` — and nothing in core registers any of the three; a caller turns
 them on.
 
-**At 1.42, which is what the projects reference, it is 26**: the same 24 plus
-`ENUMERABLE_CONDITIONAL_CORRELATE_RULE` and `ENUMERABLE_COMBINE_RULE`. Both are for nodes this convention
-has not written, so the differential harness now gives Calcite's side two rules ours has no counterpart for.
-That is the same shape of asymmetry as the one 5.3 was, running the other way, and it is not a defect — it
-is what "nodes not written" costs, and it will stay until §5 names those two and they are ported.
-
-`ClrEnumerableRules.Rules()` is **24**: those 24 less match and table modify, which is 22, plus the two
-converters. The three rules Calcite leaves out of its list are left out of this one. There is no membership
-difference left; the limit-sort rule used to be in this list and 9.18 is why it is not.
+`ClrEnumerableRules.Rules()` is **26** as well: those 26 less match and table modify, which is 24, plus the
+two converters. The three rules Calcite leaves out of its list are left out of this one. **There is no
+membership difference**; the limit-sort rule used to be in this list and 9.18 is why it is not.
 
 ### 3.4 Calc rules
 
@@ -418,7 +455,8 @@ what `RexImpTable` and the contexts are made of.
 | `EnumUtils` | `ClrEnumUtils` |
 |---|---|
 | `javaClass`, `fieldTypes`, `fieldRowTypes` ×2 | `JavaClass`, `FieldTypes`, `FieldRowTypes` ×2 |
-| `joinSelector`, `generatePredicate` | `JoinSelector`, `GeneratePredicate` |
+| `joinSelector`, `generatePredicate` ×2 | `JoinSelector`, `GeneratePredicate` ×2 |
+| `markJoinSelector` | `MarkJoinSelector` | 1.42 |
 | `toLinq4jJoinType` | `ToLinq4jJoinType` |
 | every `RexToLixTranslator.translate` overload | `Translate`, by way of the public `translateList` |
 | `joinSelectorCompact`, `shouldGenerateCompactCode` | **—** 6.7 |
@@ -430,7 +468,7 @@ what `RexImpTable` and the contexts are made of.
 ### 4.5 `ClrEnumerableDefaults`, and the types with no counterpart
 
 `ClrEnumerableDefaults` is the counterpart of linq4j's `EnumerableDefaults`, not of anything in this
-package: 34 public operators over typed delegates where linq4j's are over `Function1` and `Function2`. Where
+package: 39 public operators over typed delegates where linq4j's are over `Function1` and `Function2`. Where
 an operator's output order is a collection's — group by, distinct, union, intersect, except, and the
 unmatched tail of a hash join — it holds the rows in the same Java collection linq4j does, because the order
 is part of the answer (6.10). `EnumerableDefaults.Wrapped` is ported as `JavaWrapped` for the same reason.
@@ -615,17 +653,14 @@ ignored; taking it and refusing says which of the two conventions can honour it.
 ## 7. Not in 1.41, and correctly absent
 
 This section said "not in 1.41, and correctly absent" and listed seven classes as one group. That was read
-off `D:\calcite`'s working tree and never checked against a tag, and it is wrong in two ways at once: the
-tree is 1.43.0-SNAPSHOT rather than 1.42.0-SNAPSHOT, and the seven do not belong to one release. Checked
-with `git cat-file -e calcite-1.42.0:<path>`:
+off `D:\calcite`'s working tree and never checked against a tag, and it was wrong in two ways at once: the
+tree is 1.43.0-SNAPSHOT rather than 1.42.0-SNAPSHOT, and the seven do not belong to one release.
 
-**7.1 In 1.42, which the projects now reference — so *not* correctly absent any more.**
-`EnumerableCombine`, `EnumerableCombineRule`, `EnumerableConditionalCorrelate`,
-`EnumerableConditionalCorrelateRule`; and, one level down, `EnumUtils.markJoinSelector` with every
-mark-join path that calls it — in `EnumerableHashJoin` and `EnumerableNestedLoopJoin` — plus
-`PhysType.generateNullAwareAccessor` and `JoinInfo.nullExclusionFlags`. **These are now gaps, not absences.**
-Their two rules are in `ENUMERABLE_RULES` at 1.42 (3.3). They belong in §5 once this file is rebuilt against
-1.42, and 9.20 says so.
+**7.1 Was 1.42, and is now written.** `EnumerableCombine`, `EnumerableCombineRule`,
+`EnumerableConditionalCorrelate`, `EnumerableConditionalCorrelateRule`; and, one level down,
+`EnumUtils.markJoinSelector` with every mark-join path that calls it — in `EnumerableHashJoin` and
+`EnumerableNestedLoopJoin` — plus `PhysType.generateNullAwareAccessor` and `JoinInfo.nullExclusionFlags`.
+They were "correctly absent" only while 1.41 was the reference. They are 2.5, 2.6, 2.19 and 2.20 now.
 
 **7.2 In 1.43, which is unreleased, and correctly absent.** `FetchOffsetRoundingPolicy`,
 `RexImplementorTable`, `RexImplementorTables`, `org.apache.calcite.rel.core.Asof`, and
@@ -639,11 +674,12 @@ version this file compares against and the version the projects reference.
 
 ## 8. Measured on the way, and worth keeping
 
-**8.1 197 tests pass**, measured 2026-08-04: 120 differential, of which 87 compare rows with the default
-planner, 11 with top-down optimisation on, 5 with the sorted aggregate rule on, 5 with the batch nested loop
-join rule on, 5 with the limit-sort rule on, 5 assert rows by hand because `EnumerableConvention` cannot run
-the query at all, and 2 assert which node the planner chose. Two of the rest hold what a failure looks
-like — the plan named when a node cannot implement itself, and the Spark refusal.
+**8.1 211 tests pass**, measured 2026-08-04, against **calcite-core 1.42.0**: 133 differential, of which 87
+compare rows with the default planner, 11 with top-down optimisation on, 5 with the sorted aggregate rule
+on, 5 with the batch nested loop join rule on, 5 with the limit-sort rule on, 8 with the mark-join sub-query
+rules on, 5 assert rows by hand because `EnumerableConvention` cannot run the query at all, and 7 assert
+which node the planner chose. Two of the rest hold what a failure looks like — the plan named when a node
+cannot implement itself, and the Spark refusal.
 
 **8.2 Java specifies `String.hashCode`, and IKVM implements it.** Measured in `JavaHashingTests`, in two
 processes: the Java-side hash of `"EAST"` is 2120701 both times, the CLR's is a different number each time,
@@ -748,6 +784,18 @@ planned the query itself. Five differential tests now run with the limit-sort ru
 which is the first time `EnumerableLimitSort` has ever been the oracle for `ClrEnumerableLimitSort` —
 before, Calcite could not plan the node at all. Two more assert which node each side chose, with and without
 the rule.
+
+**9.21 Moving the baseline to 1.42 changed less than the size of the diff suggested.** 21 files, 985
+insertions — and of the seventeen changed files, eleven are classes this convention reuses rather than ports
+(`RexImpTable`, `RexToLixTranslator`, `NullPolicy`, `MatchUtils`, `PhysType`, `PhysTypeImpl` and the rest),
+so their changes arrived free with the assembly. Six ported nodes needed four deltas between them, and two
+of those nodes needed nothing: `EnumerableCollect`, `EnumerableIntersect` and `EnumerableMinus` had already
+been written against the 1.42 tree, which is why they carried the ARRAY/SCALAR branch and omitted the
+`pref = pref.of(result.format)` line 1.41 has. **That was an unrecorded deviation from the 1.41 baseline
+this file claimed** — correct against the version now referenced, and luck rather than judgement.
+
+The real work was the four files 1.42 added and the `LEFT_MARK` join type behind them, which is 2.5, 2.6,
+2.19 and 2.20 and about six hundred lines. `Combine` is the one node in this file that no query can reach.
 
 **9.20 The whole file was pinned to the wrong baseline, and §7 to the wrong release.** This document opened
 with "against Calcite 1.41.0 — the version the projects reference". The projects reference 1.42.0 now, and

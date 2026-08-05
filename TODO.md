@@ -151,7 +151,7 @@ surface whether or not the operation succeeds.
 
 ## Apache.Calcite.Linq: where the CLR conventions stand
 
-`ClrEnumerableConvention` runs. 197 tests pass, measured 2026-08-04. `ClrAsyncEnumerableConvention` does not
+`ClrEnumerableConvention` runs against **calcite-core 1.42.0**. 211 tests pass, measured 2026-08-04. `ClrAsyncEnumerableConvention` does not
 exist yet — not one file of it, deferred deliberately until the sync side is finished.
 
 `PARITY.md` was rebuilt from the two sources on 2026-08-04 rather than carried forward, and §9 of it lists
@@ -213,25 +213,25 @@ not page references. `PARITY.md` §5 in full is item 1 below plus the four nodes
 4 and 5. Item 2 is not a difference from `EnumerableConvention` at all; it is the thing that would make this
 convention usable.
 
-**0. Rebuild `PARITY.md` against `calcite-1.42.0`, because the projects reference 1.42.0 now.** Everything
-below this line was reasoned against 1.41. The port compiles against 1.42 and all 197 Linq tests pass, so
-nothing is known to be broken — but the comparison is one release stale and 1.42 changed 21 files in the
-enumerable package, 985 insertions and 97 deletions. Three consequences are already measured and written
-into `PARITY.md` 3.3, §7 and 9.20:
+**0. Done — the port is at 1.42.** `PARITY.md` is re-derived against `calcite-1.42.0`, and everything 1.42
+added is written and tested:
 
-- `ENUMERABLE_RULES` is **26** at 1.42, not 24: `ENUMERABLE_CONDITIONAL_CORRELATE_RULE` and
-  `ENUMERABLE_COMBINE_RULE` are in it. So the differential harness now gives Calcite's side two rules this
-  convention has no node for, which is the 5.3 asymmetry running the other way.
-- **`EnumerableCombine` and `EnumerableConditionalCorrelate` are two more nodes not written**, with their
-  rules. They were "correctly absent" only while 1.41 was the reference.
-- `EnumUtils.markJoinSelector` and the mark-join paths in `EnumerableHashJoin` and
-  `EnumerableNestedLoopJoin`, `PhysType.generateNullAwareAccessor` and `JoinInfo.nullExclusionFlags` are all
-  in 1.42. The hash join was written without the mark-join path *because* it was 1.42-only; that reason has
-  expired.
+- **`LEFT_MARK`**, the join type behind it all. A mark join returns every left row with one column appended
+  saying whether the right side matched, and that column is three-valued — true, false, or null where a
+  comparison was unknown. The third value is the point: it is what makes `IN` over a nullable column answer
+  UNKNOWN. `ClrEnumerableHashJoin` and `ClrEnumerableNestedLoopJoin` both have the path, over
+  `LeftMarkHashJoin` and `LeftMarkNestedLoopJoin`.
+- **`ClrEnumerableConditionalCorrelate`**, the correlated form of the same thing, and
+  **`ClrEnumerableCombine`**, for multi-root optimisation. Both rules are in `Rules()`, because both are in
+  `ENUMERABLE_RULES` at 1.42.
+- Four deltas to nodes already written: the merge join's strict-equality `joinInfo` and its rule's refusal
+  of IS NOT DISTINCT FROM, the merge union's collations check, and the merge union rule's BigDecimal fetch.
 
-The rest of the drift is unmeasured. `EnumUtils` (+81), `EnumerableHashJoin` (+112), `PhysTypeImpl` (+58),
-`RexImpTable`, `RexToLixTranslator`, `EnumerableMergeUnion`, `EnumerableNestedLoopJoin` and
-`EnumerableMergeJoin` all changed, and §1 to §4 have not been re-derived. Do that before trusting a row.
+`ENUMERABLE_RULES` is 26 at 1.42 and `Rules()` is 26, and the membership matches: Calcite's 26 less match
+and table modify, plus the two converters. **The rule sets agree exactly for the first time.**
+
+Eleven of the seventeen files 1.42 changed are classes this convention reuses rather than ports, so their
+changes arrived free with the assembly. `PARITY.md` 9.21 has the reckoning.
 
 **1. The small differences are closed.** `PARITY.md` 5.3, 5.4 and 5.5 were all "copying Calcite is possible
 and we did not", which is the one thing §6 does not admit, and all three were found by rebuilding that file
@@ -309,14 +309,14 @@ is refused by Calcite too, deliberately.
 
 **Not on this list, and worth saying so.** `EnumUtils.markJoinSelector` stood here and in `PARITY.md` §5 as
 a gap. It does not exist in 1.41 — it was read off `D:\calcite`'s working tree, which is the trap the top of
-both files warns about, caught this time by checking the tag. **It does exist in 1.42, which the projects
-now reference, so it is a gap after all** — see item 0. Nor is `joinSelectorCompact` a gap:
+both files warns about, caught this time by checking the tag. It does exist in 1.42, which the projects now
+reference, and `ClrEnumUtils.MarkJoinSelector` is written. Nor is `joinSelectorCompact` a gap:
 `ClrEnumUtils.JoinSelector` deliberately has one form where Calcite has two, because the second exists only
 to keep a generated method under the Java class-file size limit and an expression tree has none. That is now
 argued in `PARITY.md` 6.7 rather than simply absent, and the version mistake is `PARITY.md` 9.2.
 
-`Combine` and `ConditionalCorrelate` were out of scope because neither exists in 1.41. **Both are in 1.42,
-and both of their rules are in `ENUMERABLE_RULES` there**, so they are two more nodes not written — item 0.
+`Combine` and `ConditionalCorrelate` were out of scope because neither exists in 1.41. Both are in 1.42, and
+both are now written — item 0.
 **`AsofJoin` is not out of scope and never was** — `rel.core.AsofJoin`, `EnumerableAsofJoin` and `ENUMERABLE_ASOFJOIN_RULE` are all
 in 1.41 and in the referenced assembly. The line that said otherwise was written against the wrong class
 name (`rel.core.Asof`, which is really 1.43) and stood unchecked. The node is now written.
@@ -324,15 +324,15 @@ name (`rel.core.Asof`, which is really 1.43) and stood unchecked. The node is no
 ### Done
 
 Scan, values, calc, project, filter, sort, limit, offset, limit-with-sort, union, intersect, minus,
-hash/semi/anti join, nested loop join, batch nested loop join, merge join, ASOF join, correlate, aggregate
-— ordered calls included — sorted aggregate, window, merge union, table function scan, collect and
-uncollect. Converters in both directions, so one plan can hold nodes of both conventions and the rows
-cross untouched. 197 tests pass.
+hash/semi/anti join, nested loop join, batch nested loop join, merge join, ASOF join, mark join in both the
+hash and the nested loop form, correlate, conditional correlate, combine, aggregate — ordered calls included
+— sorted aggregate, window, merge union, table function scan, collect and uncollect. Converters in both directions, so one plan can hold nodes of both conventions and the rows
+cross untouched. 211 tests pass.
 
-`PARITY.md` is the member-by-member comparison against 1.41 — one release behind what the projects
-reference, which is item 0 — rebuilt from the source at the tag and checked against the assembly. Every point in it is numbered `section.item`, so a defect can be cited as 6.9 rather
-than described. What is left of **§5** is 5.1 and 5.2 — items 3 to 5 of the list above. 5.3, 5.4 and 5.5 are
-resolved. §6 is the differences that have an argument and nothing in it is work, except that 6.9 wants the
+`PARITY.md` is the member-by-member comparison against **1.42.0**, the version the projects reference,
+rebuilt from the source at the tag and checked against the assembly. Every point in it is numbered
+`section.item`, so a defect can be cited as 6.9 rather than described. What is left of **§5** is 5.1 and 5.2 — items 3 to 5 of the list above. 5.3,
+5.4 and 5.5 are resolved. §6 is the differences that have an argument and nothing in it is work, except that 6.9 wants the
 measurement item 1b describes.
 
 ### Trait derivation, and the only thing that calls it
@@ -799,7 +799,7 @@ without running it.
   **1.43.0-SNAPSHOT** from `https://repository.apache.org/content/repositories/snapshots/`, for
   `calcite-server` and the `EnumerableTableModify` rewrite. `PhysType.generateNullAwareAccessor` and
   `JoinInfo.nullExclusionFlags` were called 1.42-only and are — which now means *available*, because 1.42 is
-  what is referenced. The hash join was written without the mark-join path on the strength of that word.
+  what is referenced, and both are used by the mark join.
   Check a member with `git cat-file -e calcite-1.42.0:<path>`, never by reading the tree.
 - **The unreleased 1.43 cannot compile a DELETE over a one-column table, and two tests are red for it.**
   Root-caused, not worked around. `EnumerableTableModify.deleteFromCollection` (CALCITE-7510, `5cdc09b8c`,
