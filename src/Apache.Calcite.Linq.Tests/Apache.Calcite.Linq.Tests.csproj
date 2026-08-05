@@ -15,6 +15,10 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <PackageReference Include="FluentAssertions" Version="8.10.0" />
+        <!-- Smalls.fibonacciTableWithLimit100 is a one-column table function written in Java, which is the
+             only oracle PARITY.md 6.9 can have: Janino cannot name a CLR class, so a table function of ours
+             gives EnumerableConvention no plan to compare against. -->
+        <MavenReference Include="org.apache.calcite:calcite-testkit" Version="1.42.0" />
     </ItemGroup>
 
     <ItemGroup>

@@ -151,7 +151,7 @@ surface whether or not the operation succeeds.
 
 ## Apache.Calcite.Linq: where the CLR conventions stand
 
-`ClrEnumerableConvention` runs against **calcite-core 1.42.0**. 214 tests pass, measured 2026-08-04. `ClrAsyncEnumerableConvention` does not
+`ClrEnumerableConvention` runs against **calcite-core 1.42.0**. 217 tests pass, measured 2026-08-04. `ClrAsyncEnumerableConvention` does not
 exist yet — not one file of it, deferred deliberately until the sync side is finished.
 
 `PARITY.md` was rebuilt from the two sources on 2026-08-04 rather than carried forward, and §9 of it lists
@@ -273,16 +273,20 @@ type factory says `java.lang.Integer` — the exact mirror of what 9.18 fixed, a
 the query that puts a one-column primitive CLR sub-plan under a Calcite node before changing anything —
 guessing at this is how the first half got written.
 
-**1b. `PARITY.md` 6.9 is argued and not measured.** Sort, limit, limit-sort, spool and
-repeat union turn off the row-format optimisation Calcite leaves on. The argument is from Calcite's source
-and it is a good one — `EnumerableTableScan.toRows` reshapes to match the optimised type, so a scan is
-consistent; `EnumerableTableFunctionScan` cannot reshape and so passes `optimize = false` to keep an honest
-ARRAY; a pass-through node above it then optimises that ARRAY away without touching the rows, and a parent
-reads field 0 as the row itself. What is missing is `EnumerableConvention` doing it. **The experiment is a
-one-column table function Janino can name** — ours is a CLR class, which is the same wall the whole
-table-function comparison hits. Until then this is reading, not measurement, and the file says so. Nothing
-about our code is suspected: it gives right answers and the tests hold it. What is suspected is the word
-"demonstrated".
+**1b. Done — `PARITY.md` 6.9 is measured.** It said a pass-through node re-optimising its input's row format
+was a defect in Calcite, argued from the source and never run. It is run now, and it is.
+
+The oracle was the missing piece and it was sitting in `calcite-testkit`:
+**`Smalls.fibonacciTableWithLimit100`, a one-column table function written in Java**, so Janino can name it.
+Every table function of this project's own is a CLR class, which is exactly why this could not be measured.
+Join it to itself with the hash join rule removed — so the merge join is the only way to join and a sort
+lands over the table function — and both conventions choose the same plan, and then Calcite throws
+`Unable to cast object of type 'System.Object[]' to type 'java.lang.Long'` where this convention answers.
+
+Measured the other way as well: flipping the five nodes back to the optimising overload makes
+`ShouldRunATableFunctionInAJoin` fail. So the divergence is necessary, not preferred.
+`ShouldShowThatCalciteCannotRunTheSameQuery` is the canary — when it starts failing, Calcite has fixed this
+and the five nodes should go back.
 
 **2. Done — the convention is wired up.** `ClrEnumerablePrograms` names the three passes, and
 `ClrEnumerablePrepare` is a `CalcitePrepare` that plans into this convention and compiles with
@@ -341,7 +345,7 @@ Scan, values, calc, project, filter, sort, limit, offset, limit-with-sort, union
 hash/semi/anti join, nested loop join, batch nested loop join, merge join, ASOF join, mark join in both the
 hash and the nested loop form, correlate, conditional correlate, combine, aggregate — ordered calls included
 — sorted aggregate, window, merge union, table function scan, collect and uncollect. Converters in both directions, so one plan can hold nodes of both conventions and the rows
-cross untouched. 214 tests pass.
+cross untouched. 217 tests pass.
 
 `PARITY.md` is the member-by-member comparison against **1.42.0**, the version the projects reference,
 rebuilt from the source at the tag and checked against the assembly. Every point in it is numbered

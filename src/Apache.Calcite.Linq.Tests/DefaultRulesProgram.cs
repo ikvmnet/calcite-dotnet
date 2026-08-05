@@ -38,7 +38,7 @@ namespace Apache.Calcite.Linq.Tests
     /// do this — every trait method here builds from <c>getTraitSet()</c> — and a merge join written here
     /// must not follow Calcite's text on that line.</para>
     /// </remarks>
-    public sealed class DefaultRulesProgram(java.util.List extra, bool topDown = false, bool excludeMergeJoin = false) : Program
+    public sealed class DefaultRulesProgram(java.util.List extra, bool topDown = false, bool excludeMergeJoin = false, bool excludeHashJoin = false) : Program
     {
 
         /// <inheritdoc />
@@ -55,6 +55,11 @@ namespace Apache.Calcite.Linq.Tests
 
             if (excludeMergeJoin)
                 planner.removeRule(EnumerableRules.ENUMERABLE_MERGE_JOIN_RULE);
+
+            // leaves the merge join as the only way to join, which is how a sort is forced over an input the
+            // planner would otherwise hash
+            if (excludeHashJoin)
+                planner.removeRule(EnumerableRules.ENUMERABLE_JOIN_RULE);
 
             for (int i = 0; i < extra.size(); i++)
                 planner.addRule((RelOptRule)extra.get(i));

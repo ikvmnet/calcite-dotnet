@@ -34,6 +34,19 @@ namespace Apache.Calcite.Linq.Tests
     {
 
         /// <summary>
+        /// Initializes the static instance.
+        /// </summary>
+        /// <remarks>
+        /// Janino resolves the names in the source Calcite generates through its parent class loader, so an
+        /// assembly the generated code mentions has to be on IKVM's boot class path. FIB is
+        /// <c>Smalls.fibonacciTableWithLimit100</c>, which lives in calcite-testkit.
+        /// </remarks>
+        static ClrEnumerableDifferentialTests()
+        {
+            ikvm.runtime.Startup.addBootClassPathAssembly(typeof(org.apache.calcite.util.Smalls).Assembly);
+        }
+
+        /// <summary>
         /// A table with partitions, ties, nulls and an order, so that a window has something to disagree over.
         /// </summary>
         sealed class SalesTable : AbstractTable, ScannableTable
@@ -193,7 +206,7 @@ namespace Apache.Calcite.Linq.Tests
         /// <param name="topDown">Whether the planner optimises top down, which is what asks a node to pass a
         /// trait down to its inputs or derive one from them.</param>
         /// <returns></returns>
-        static List<string> Run(string sql, bool clr, bool topDown = false, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool markJoin = false)
+        static List<string> Run(string sql, bool clr, bool topDown = false, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool markJoin = false, bool excludeHashJoin = false)
         {
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add("SALES", new SalesTable());
@@ -201,6 +214,7 @@ namespace Apache.Calcite.Linq.Tests
             rootSchema.add("NUMBERS", TableFunctionImpl.create((java.lang.Class)typeof(NumbersTableFunction), "eval"));
             rootSchema.add("EVENTS", new EventsTable());
             rootSchema.add("SORTED", new SortedTable());
+            rootSchema.add("FIB", org.apache.calcite.schema.impl.TableFunctionImpl.create(org.apache.calcite.util.Smalls.FIBONACCI_LIMIT_100_TABLE_METHOD));
 
             var rules = new java.util.ArrayList();
             var calcRules = new java.util.ArrayList();
@@ -246,7 +260,7 @@ namespace Apache.Calcite.Linq.Tests
                 .defaultSchema(rootSchema)
                 .programs(
                     markJoin ? MarkJoinSubQueryProgram() : Programs.subQuery(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE),
-                    new DefaultRulesProgram(rules, topDown, clr && topDown),
+                    new DefaultRulesProgram(rules, topDown, clr && topDown, excludeHashJoin),
                     Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE))
                 .build();
 
@@ -307,6 +321,10 @@ namespace Apache.Calcite.Linq.Tests
         /// Requires that a query gives the same rows in both conventions.
         /// </summary>
         /// <param name="sql"></param>
+        internal static string PlanOfFib(string sql, bool clr, bool excludeHashJoin = false) => Run(sql, clr, false, true, false, false, false, false, excludeHashJoin)[0];
+
+        internal static List<string> RunFib(string sql, bool clr, bool excludeHashJoin = false) => Run(sql, clr, false, false, false, false, false, false, excludeHashJoin);
+
         static void Same(string sql)
         {
             var mine = Run(sql, true);

@@ -598,8 +598,8 @@ We run two, and copying the line literally gives a `ClrEnumerableMergeJoin` wear
 planner refuses to register. Ours returns null for a convention that is not its own, and every other line of
 both methods is the port. Measured again in 8.4.
 
-**6.9 A pass-through node does not re-optimise its input's row format.** *A defect in Calcite — argued from
-its source, and **not** demonstrated by running it. Read the argument before relying on it.* Sort, limit,
+**6.9 A pass-through node does not re-optimise its input's row format.** *A defect in Calcite,
+demonstrated — in Calcite's own convention, on the same plan.* Sort, limit,
 limit-sort, spool and repeat union yield their input's rows unchanged, and Calcite builds their physical
 type with `PhysTypeImpl.of(typeFactory, rowType, format)` — the overload that optimises, and
 `JavaRowFormat.optimize` returns SCALAR for any one-field row type. The rows keep their shape, so the
@@ -614,10 +614,23 @@ optimises that ARRAY away without touching the rows. A one-column non-queryable 
 producer of that shape in the package, and it is exactly what our fixture is; `IsQueryable` is a faithful
 port and returns false for it, as Calcite's would.
 
-**The demonstration in `EnumerableConvention` is missing, and is blocked by the thing that blocks every
-table-function comparison**: our table function is a CLR class, Janino cannot name it, so Calcite has no
-plan to run. Until a Java-visible one-column table function is put under a sort in Calcite's own convention,
-this is an argument from reading, not a measurement. `TODO.md` item 1b carries the experiment.
+**The demonstration.** `Smalls.fibonacciTableWithLimit100` is a one-column table function written in Java,
+so Janino can name it — every table function of this project's own is a CLR class, which is why this could
+not be measured before. `ClrEnumerableRowFormatTests` joins it to itself with the hash join rule removed, so
+the merge join is the only way to join and a sort lands over the table function. **Both conventions choose
+the same plan** — a merge join over two sorts over the table function scan — and then:
+
+- this convention answers the query;
+- `EnumerableConvention` throws `Unable to cast object of type 'System.Object[]' to type 'java.lang.Long'`.
+
+The sort declared its physical type SCALAR, so its Java row type is `long`, while yielding the table
+function's `Object[]` rows unchanged; the merge join's key accessor then read the row as the value. Calcite
+has not noticed because with the hash join rule in place the planner hashes and the shape never arises.
+
+**And the divergence is necessary, measured the other way round too**: flipping those five nodes back to the
+optimising overload makes `ShouldRunATableFunctionInAJoin` fail, in `ClrEnumUtils.BoxRows`. The test that
+shows Calcite failing is the canary — **when it starts passing, Calcite has fixed this and the divergence
+should go**.
 
 **6.10 Six operators hold their rows in Calcite's collection, not the CLR's.** *Not a divergence at all — the
 port of `EnumerableDefaults`, finished. Kept here as the record.* The order of a query that asks for none is
@@ -692,7 +705,7 @@ version this file compares against and the version the projects reference.
 
 ## 8. Measured on the way, and worth keeping
 
-**8.1 214 tests pass**, measured 2026-08-04, against **calcite-core 1.42.0**: 133 differential, of which 87
+**8.1 217 tests pass**, measured 2026-08-04, against **calcite-core 1.42.0**: 136 differential, of which 87
 compare rows with the default planner, 11 with top-down optimisation on, 5 with the sorted aggregate rule
 on, 5 with the batch nested loop join rule on, 5 with the limit-sort rule on, 8 with the mark-join sub-query
 rules on, 5 assert rows by hand because `EnumerableConvention` cannot run the query at all, and 7 assert
