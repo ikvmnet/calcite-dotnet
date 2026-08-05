@@ -23,7 +23,7 @@ A user-defined function written in .NET runs here and in no plan Janino compiles
 dotnet add package Apache.Calcite.Linq
 ```
 
-Targets **.NET 10**.
+Targets **.NET 8**, and is verified on **.NET 8** and **.NET 10**.
 
 ## Use
 

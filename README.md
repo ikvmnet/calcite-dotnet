@@ -30,7 +30,7 @@ dotnet add package Apache.Calcite.Adapter.AdoNet
 
 Because the plan holds a method rather than its name, a user-defined function written in .NET runs in this convention — Janino cannot resolve the `cli.`-prefixed class name IKVM gives a CLR type, so such a query has no plan under `EnumerableConvention`.
 
-Targets .NET 10.
+Targets .NET 8, and is verified on .NET 8 and .NET 10.
 
 ```sh
 dotnet add package Apache.Calcite.Linq

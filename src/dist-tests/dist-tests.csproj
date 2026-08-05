@@ -13,7 +13,7 @@
         <TestTarget Include="Apache.Calcite.Adapter.AdoNet.Tests|net10.0" ProjectName="Apache.Calcite.Adapter.AdoNet.Tests" TargetFramework="net10.0" />
         <TestTarget Include="Apache.Calcite.Data.Tests|net8.0" ProjectName="Apache.Calcite.Data.Tests" TargetFramework="net8.0" />
         <TestTarget Include="Apache.Calcite.Data.Tests|net10.0" ProjectName="Apache.Calcite.Data.Tests" TargetFramework="net10.0" />
-        <!-- Apache.Calcite.Linq targets net10.0 only, so there is no net8.0 row for it. -->
+        <TestTarget Include="Apache.Calcite.Linq.Tests|net8.0" ProjectName="Apache.Calcite.Linq.Tests" TargetFramework="net8.0" />
         <TestTarget Include="Apache.Calcite.Linq.Tests|net10.0" ProjectName="Apache.Calcite.Linq.Tests" TargetFramework="net10.0" />
     </ItemGroup>
 

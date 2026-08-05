@@ -29,7 +29,7 @@ namespace Apache.Calcite.Linq.Tree
     static class SyntheticRecordEmitter
     {
 
-        static readonly Lock sync = new();
+        static readonly object sync = new();
         static readonly Dictionary<JavaTypeFactoryImpl.SyntheticRecordType, Type> emitted = new(ReferenceEqualityComparer.Instance);
         static ModuleBuilder? module;
         static int count;

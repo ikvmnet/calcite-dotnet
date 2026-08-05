@@ -1,5 +1,3 @@
-#if NET10_0_OR_GREATER
-
 using Apache.Calcite.Linq;
 
 using Xunit;
@@ -82,5 +80,3 @@ namespace Apache.Calcite.Data.Tests
     }
 
 }
-
-#endif

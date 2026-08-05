@@ -35,8 +35,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Apache.Calcite.Data\Apache.Calcite.Data.csproj" />
-        <!-- Apache.Calcite.Linq targets net10.0 only, so it cannot be referenced from the net8.0 leg. -->
-        <ProjectReference Include="..\Apache.Calcite.Linq\Apache.Calcite.Linq.csproj" Condition=" '$(TargetFramework)' == 'net10.0' " />
+        <ProjectReference Include="..\Apache.Calcite.Linq\Apache.Calcite.Linq.csproj" />
     </ItemGroup>
 
 </Project>

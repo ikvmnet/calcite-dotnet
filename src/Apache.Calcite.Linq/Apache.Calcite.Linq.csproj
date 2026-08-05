@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFrameworks>net10.0</TargetFrameworks>
+        <TargetFrameworks>net8.0</TargetFrameworks>
         <LangVersion>latest</LangVersion>
         <Description>Calling conventions that execute an Apache Calcite plan as System.Linq.Expressions, yielding IEnumerable or IAsyncEnumerable.</Description>
         <PackageReadmeFile>README.md</PackageReadmeFile>
