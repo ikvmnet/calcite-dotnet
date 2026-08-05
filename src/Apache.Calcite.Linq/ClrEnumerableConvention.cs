@@ -15,9 +15,10 @@ namespace Apache.Calcite.Linq
     /// as a compiled <see cref="System.Linq.Expressions"/> tree rather than as generated Java source.
     ///
     /// <para>Register <see cref="ClrEnumerableRules.Rules"/> with the planner and ask for this convention on
-    /// the root; <see cref="ClrEnumerablePrograms"/> has the passes that takes, and
-    /// <see cref="ClrEnumerableInterpretable"/> compiles the plan that comes out. A plan may hold nodes of
-    /// both conventions — converters exist in each direction and rows cross untouched.</para>
+    /// the root; <see cref="ClrEnumerablePrograms"/> has the passes that takes. The root of the plan that
+    /// comes out is a <see cref="ClrEnumerableRel"/>, and
+    /// <see cref="ClrEnumerableRelImplementor.ImplementRoot"/> turns it into a lambda to compile. A plan may
+    /// hold nodes of both conventions — converters exist in each direction and rows cross untouched.</para>
     /// </remarks>
     public sealed class ClrEnumerableConvention : Convention.Impl
     {

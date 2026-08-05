@@ -26,8 +26,9 @@ namespace Apache.Calcite.Linq
     /// implements one plan. A node reaches its inputs through <see cref="VisitChild"/> and returns a
     /// <see cref="ClrEnumerableResult"/>; <see cref="ImplementRoot"/> does the whole plan at once.
     ///
-    /// <para>Most callers do not use this directly — <see cref="ClrEnumerableInterpretable.ToBindable"/>
-    /// creates one, implements the plan and compiles it.</para>
+    /// <para>This is how a plan of this convention is run: cast the planned root to
+    /// <see cref="ClrEnumerableRel"/>, pass it to <see cref="ImplementRoot"/>, and compile the lambda that
+    /// comes back into a <c>Func&lt;DataContext, IEnumerable&gt;</c>.</para>
     /// </remarks>
     public class ClrEnumerableRelImplementor
     {
@@ -116,8 +117,8 @@ namespace Apache.Calcite.Linq
         /// <param name="prefer">How the caller wants rows represented.</param>
         /// <returns>
         /// A lambda of one <see cref="DataContext"/> parameter whose value is the rows.
-        /// <see cref="System.Linq.Expressions.LambdaExpression.Compile()"/> it, or hand the plan to
-        /// <see cref="ClrEnumerableInterpretable.ToBindable"/>, which does this and compiles it.
+        /// <see cref="System.Linq.Expressions.LambdaExpression.Compile()"/> gives a
+        /// <c>Func&lt;DataContext, IEnumerable&gt;</c>.
         /// </returns>
         /// <exception cref="java.lang.IllegalStateException">
         /// A node of the plan could not be implemented. The message names the plan; the failure itself is the

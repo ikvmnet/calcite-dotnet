@@ -18,7 +18,7 @@ namespace Apache.Calcite.Linq
     /// A node composes its inputs' expressions into its own rather than appending statements to a method;
     /// where a node needs statements it uses <c>Expression.Block</c>, whose value is its last expression.
     /// Nothing here runs a query — the result is a plan, which
-    /// <see cref="ClrEnumerableInterpretable.ToBindable"/> compiles.</para>
+    /// <see cref="ClrEnumerableRelImplementor.ImplementRoot"/> turns into a lambda to compile.</para>
     /// </remarks>
     public interface ClrEnumerableRel : PhysicalNode
     {

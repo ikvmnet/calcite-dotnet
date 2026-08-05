@@ -96,14 +96,15 @@ namespace Apache.Calcite.Linq.Tests
             var chosen = planner.transform(1, traits, expanded);
             var physical = (ClrEnumerableRel)planner.transform(2, chosen.getTraitSet(), chosen);
 
-            var bindable = ClrEnumerableInterpretable.ToBindable(
-                new java.util.HashMap(), null, physical, ClrEnumerablePrefer.Array);
+            // the root is a node of this convention; build its plan and compile it
+            var implementor = new ClrEnumerableRelImplementor(
+                physical.getCluster().getRexBuilder(), new java.util.HashMap());
+            var lambda = implementor.ImplementRoot(physical, ClrEnumerablePrefer.Array);
+            var plan = (Func<DataContext, System.Collections.IEnumerable>)lambda.Compile();
 
-            var enumerator = bindable.bind(dataContext).enumerator();
-            while (enumerator.moveNext())
+            foreach (var current in plan(dataContext))
             {
                 // a one-column result is the value itself, not a row of one
-                var current = enumerator.current();
                 var row = current as object[] ?? [current];
                 Console.WriteLine(string.Join('\t', row));
             }
@@ -111,12 +112,8 @@ namespace Apache.Calcite.Linq.Tests
 
             // and again, collecting rather than printing, to assert what it produced
             var rows = new List<object[]>();
-            var e = bindable.bind(dataContext).enumerator();
-            while (e.moveNext())
-            {
-                var current = e.current();
+            foreach (var current in plan(dataContext))
                 rows.Add(current as object[] ?? [current]);
-            }
 
             rows.Should().HaveCount(1);
             rows[0].Should().HaveCount(1);

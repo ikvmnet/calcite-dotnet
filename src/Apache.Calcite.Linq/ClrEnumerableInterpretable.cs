@@ -16,11 +16,16 @@ namespace Apache.Calcite.Linq
     /// be bound and run.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <c>EnumerableInterpretable</c>. This is the last step of running a query in this
-    /// convention: give it the chosen plan and it returns a <see cref="Bindable"/> to bind to a
-    /// <see cref="DataContext"/> and enumerate.
+    /// Holds what Calcite's <c>EnumerableInterpretable.toBindable</c> does: the bridge from a plan of this
+    /// convention to the <see cref="Bindable"/> that Calcite's prepare framework runs. Calcite's class is
+    /// also a converter node into <c>InterpretableConvention</c>; that half is not ported, because nothing
+    /// runs a plan of this convention under Calcite's interpreter.
+    ///
+    /// <para>A caller that wants the plan itself, rather than a <see cref="Bindable"/> wrapping it in
+    /// linq4j, casts the root to <see cref="ClrEnumerableRel"/> and uses
+    /// <see cref="ClrEnumerableRelImplementor.ImplementRoot"/>.</para>
     /// </remarks>
-    public static class ClrEnumerableInterpretable
+    static class ClrEnumerableInterpretable
     {
 
         /// <summary>

@@ -30,8 +30,11 @@ Targets **.NET 10**.
 Give the planner this convention's programs, plan into it, then compile the plan:
 
 ```csharp
+using System.Collections;
+
 using Apache.Calcite.Linq;
 
+using org.apache.calcite;
 using org.apache.calcite.tools;
 
 var config = Frameworks.newConfigBuilder()
@@ -48,21 +51,22 @@ var traits = ClrEnumerablePrograms.DesiredRootTraitSet(planner.getEmptyTraitSet(
 var chosen = planner.transform(1, traits, expanded);
 var physical = (ClrEnumerableRel)planner.transform(2, chosen.getTraitSet(), chosen);
 
-var bindable = ClrEnumerableInterpretable.ToBindable(
-    new java.util.HashMap(), null, physical, ClrEnumerablePrefer.Array);
+// the root is a node of this convention; build its plan and compile it
+var implementor = new ClrEnumerableRelImplementor(
+    physical.getCluster().getRexBuilder(), new java.util.HashMap());
+var lambda = implementor.ImplementRoot(physical, ClrEnumerablePrefer.Array);
+var plan = (Func<DataContext, IEnumerable>)lambda.Compile();
 
-var enumerator = bindable.bind(dataContext).enumerator();
-while (enumerator.moveNext())
+foreach (var current in plan(dataContext))
 {
     // a one-column result is the value itself, not a row of one
-    var current = enumerator.current();
     var row = current as object[] ?? [current];
     Console.WriteLine(string.Join('\t', row));
 }
 ```
 
-`ToBindable` compiles the plan down to a `Func<DataContext, IEnumerable>` and returns it as Calcite's
-`Bindable`, so it drops into anything that already consumes a Calcite plan.
+The plan is a `Func<DataContext, IEnumerable>` and nothing else — a .NET delegate over .NET sequences,
+which is the point of the package. Bind it to a `DataContext` as often as you like.
 
 ## Key types
 
@@ -71,7 +75,8 @@ while (enumerator.moveNext())
 | `ClrEnumerableConvention` | the calling convention |
 | `ClrEnumerableRules` | the rules that plan a query into it |
 | `ClrEnumerablePrograms` | the planner passes those rules need |
-| `ClrEnumerableInterpretable` | compiles a chosen plan |
+| `ClrEnumerableRel` | the node interface; the planned root is one |
+| `ClrEnumerableRelImplementor` | builds the plan's expression tree |
 | `ClrEnumerablePrefer` | how rows are represented |
 
 ## License
