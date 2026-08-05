@@ -16,7 +16,7 @@ namespace Apache.Calcite.Linq.Runtime
     /// over one needs to be told how to compare. <c>PhysType.comparer</c> is what says so, and what it returns
     /// is Calcite's own comparer for that format.
     /// </remarks>
-    public sealed class JavaEqualityComparer<T>(EqualityComparer comparer) : IEqualityComparer<T>
+    sealed class JavaEqualityComparer<T>(EqualityComparer comparer) : IEqualityComparer<T>
     {
 
         readonly EqualityComparer comparer = comparer ?? throw new ArgumentNullException(nameof(comparer));

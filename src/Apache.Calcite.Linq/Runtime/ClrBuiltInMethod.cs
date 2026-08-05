@@ -12,7 +12,7 @@ namespace Apache.Calcite.Linq.Runtime
     /// original does. A generic one is the open definition, and a node closes it over the row type it is
     /// working with.
     /// </remarks>
-    public static class ClrBuiltInMethod
+    static class ClrBuiltInMethod
     {
 
         /// <summary>

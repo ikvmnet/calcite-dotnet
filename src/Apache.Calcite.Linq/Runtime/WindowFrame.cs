@@ -13,7 +13,7 @@ namespace Apache.Calcite.Linq.Runtime
     /// <para>Every index is into <see cref="Rows"/>, which is one partition sorted by the window's ordering.
     /// A start of -1 means the frame is empty, which is what <see cref="HasRows"/> says.</para>
     /// </remarks>
-    public sealed class WindowFrame
+    sealed class WindowFrame
     {
 
         /// <summary>

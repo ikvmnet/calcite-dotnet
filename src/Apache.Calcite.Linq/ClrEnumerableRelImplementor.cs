@@ -82,7 +82,7 @@ namespace Apache.Calcite.Linq
         /// Gets the translator that turns a linq4j expression into a CLR one. One serves the whole plan, so a
         /// variable means the same thing wherever a node mentions it.
         /// </summary>
-        public ExpressionTranslator Translator { get; }
+        internal ExpressionTranslator Translator { get; }
 
         /// <summary>
         /// Gets the internal parameters, which reach the query through the <see cref="DataContext"/> it is

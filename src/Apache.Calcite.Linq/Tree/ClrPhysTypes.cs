@@ -15,7 +15,7 @@ namespace Apache.Calcite.Linq.Tree
     /// because Calcite hands them to Janino. Each is translated where it is produced rather than composed into
     /// a larger linq4j tree first, so a node only ever holds one of these for as long as it takes to translate.
     /// </remarks>
-    public static class ClrPhysTypes
+    static class ClrPhysTypes
     {
 
         /// <summary>

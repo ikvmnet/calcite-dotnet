@@ -13,7 +13,7 @@ namespace Apache.Calcite.Linq.Runtime
     /// symbol, so the condition is compiled as a delegate and handed over as the interface Calcite's matcher
     /// asks for.
     /// </remarks>
-    public sealed class DelegatePredicate<T>(Func<T, bool> predicate) : java.util.function.Predicate
+    sealed class DelegatePredicate<T>(Func<T, bool> predicate) : java.util.function.Predicate
     {
 
         readonly Func<T, bool> predicate = predicate ?? throw new ArgumentNullException(nameof(predicate));

@@ -15,7 +15,7 @@ namespace Apache.Calcite.Linq.Runtime
     /// </remarks>
     /// <param name="comparer"></param>
     /// <param name="element"></param>
-    public sealed class JavaWrapped(EqualityComparer comparer, object element) : java.lang.Object
+    sealed class JavaWrapped(EqualityComparer comparer, object element) : java.lang.Object
     {
 
         /// <summary>

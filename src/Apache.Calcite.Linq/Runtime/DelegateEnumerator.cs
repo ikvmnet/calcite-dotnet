@@ -18,7 +18,7 @@ namespace Apache.Calcite.Linq.Runtime
     /// variables of the block that builds these delegates, and all four close over them, which is the same
     /// lifetime one instance of the anonymous class would have had.</para>
     /// </remarks>
-    public sealed class DelegateEnumerator : Enumerator
+    sealed class DelegateEnumerator : Enumerator
     {
 
         readonly Func<object> onCurrent;

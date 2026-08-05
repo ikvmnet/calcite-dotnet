@@ -14,7 +14,7 @@ namespace Apache.Calcite.Linq.Runtime
     /// An aggregate's lambdas go to <c>AggregateLambdaFactory</c>, which is Calcite's and takes Calcite's
     /// functional interfaces, so the lambda a tree yields is wrapped to be handed over.
     /// </remarks>
-    public sealed class DelegateFunction0<TResult>(Func<TResult> function) : Function0
+    sealed class DelegateFunction0<TResult>(Func<TResult> function) : Function0
     {
 
         readonly Func<TResult> function = function ?? throw new ArgumentNullException(nameof(function));
@@ -32,7 +32,7 @@ namespace Apache.Calcite.Linq.Runtime
     /// <typeparam name="TResult"></typeparam>
     /// <param name="function"></param>
     /// <inheritdoc cref="DelegateFunction0{TResult}" path="/remarks"/>
-    public sealed class DelegateFunction2<T0, T1, TResult>(Func<T0, T1, TResult> function) : Function2
+    sealed class DelegateFunction2<T0, T1, TResult>(Func<T0, T1, TResult> function) : Function2
     {
 
         readonly Func<T0, T1, TResult> function = function ?? throw new ArgumentNullException(nameof(function));
@@ -49,7 +49,7 @@ namespace Apache.Calcite.Linq.Runtime
     /// <typeparam name="TResult"></typeparam>
     /// <param name="function"></param>
     /// <inheritdoc cref="DelegateFunction0{TResult}" path="/remarks"/>
-    public sealed class DelegateFunction1Of<T0, TResult>(Func<T0, TResult> function) : Function1
+    sealed class DelegateFunction1Of<T0, TResult>(Func<T0, TResult> function) : Function1
     {
 
         readonly Func<T0, TResult> function = function ?? throw new ArgumentNullException(nameof(function));

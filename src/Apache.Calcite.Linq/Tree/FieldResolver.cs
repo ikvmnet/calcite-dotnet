@@ -14,7 +14,7 @@ namespace Apache.Calcite.Linq.Tree
     /// linq4j does not require a field to be a real one. It reads the length of an array as a field, and a
     /// synthetic record's fields belong to a type that has no reflection behind it until one is emitted.
     /// </remarks>
-    public static class FieldResolver
+    static class FieldResolver
     {
 
         const BindingFlags All = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;

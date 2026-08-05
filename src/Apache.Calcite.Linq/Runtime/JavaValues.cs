@@ -14,7 +14,7 @@ namespace Apache.Calcite.Linq.Runtime
     /// arriving is a <c>java.lang.Integer</c> rather than a boxed CLR int, and casting one to the other fails.
     /// The same unboxing every conversion in this port does is what is wanted.
     /// </remarks>
-    public static class JavaValues
+    static class JavaValues
     {
 
         /// <summary>

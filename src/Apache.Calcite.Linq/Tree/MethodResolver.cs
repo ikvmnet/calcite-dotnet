@@ -17,7 +17,7 @@ namespace Apache.Calcite.Linq.Tree
     /// <para>The exception is a class IKVM remaps onto a CLR type that already exists, such as
     /// <c>java.lang.String</c> onto <see cref="string"/>. See <see cref="FromRemappedClass"/>.</para>
     /// </remarks>
-    public static class MethodResolver
+    static class MethodResolver
     {
 
         const BindingFlags All = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;

@@ -31,7 +31,7 @@ namespace Apache.Calcite.Linq.Tree
     /// calls in the tree rather than leaning on autoboxing -- Calcite writes Java source that has to compile,
     /// and needs the null handling exact. Those paths are what Java means, but they are unproven here.</para>
     /// </remarks>
-    public static class JavaCast
+    static class JavaCast
     {
 
         /// <summary>

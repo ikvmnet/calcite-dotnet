@@ -18,7 +18,7 @@ namespace Apache.Calcite.Linq.Tree
     /// These two are ported rather than reused, because Calcite declares them package private and nothing
     /// outside its own package can call them. They are the same code against this convention's implementor.
     /// </remarks>
-    public static class ClrEnumUtils
+    static class ClrEnumUtils
     {
 
         /// <summary>

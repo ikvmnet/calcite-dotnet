@@ -26,7 +26,7 @@ namespace Apache.Calcite.Linq.Tree
     /// <see cref="SyntheticRecord"/> instead, built from the fields once per type, so what is emitted is the
     /// fields and the two constructors and nothing else.</para>
     /// </remarks>
-    public static class SyntheticRecordEmitter
+    static class SyntheticRecordEmitter
     {
 
         static readonly Lock sync = new();

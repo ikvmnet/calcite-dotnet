@@ -14,7 +14,7 @@ namespace Apache.Calcite.Linq.Runtime
     /// the lambda its compare method already was. Both have to arrive at an operator as the same thing, so the
     /// lambda is wrapped rather than the operator overloaded.
     /// </remarks>
-    public sealed class ClrComparator<T>(Func<T, T, int> comparison) : java.util.Comparator
+    sealed class ClrComparator<T>(Func<T, T, int> comparison) : java.util.Comparator
     {
 
         readonly Func<T, T, int> comparison = comparison ?? throw new ArgumentNullException(nameof(comparison));

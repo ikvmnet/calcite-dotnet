@@ -16,7 +16,7 @@ namespace Apache.Calcite.Linq.Runtime
     /// <see cref="ClrEnumerableConvention"/> does. The rows are not touched: both conventions ask the same
     /// <c>JavaTypeFactory</c> what a field is, so a row that crossed the boundary is the row that arrived.
     /// </remarks>
-    public static class JavaSequences
+    static class JavaSequences
     {
 
         /// <summary>

@@ -24,7 +24,7 @@ namespace Apache.Calcite.Linq.Tree
     ///
     /// <para>A translator carries the scope its tree is translated in, so one is used for one tree.</para>
     /// </remarks>
-    public sealed class ExpressionTranslator
+    sealed class ExpressionTranslator
     {
 
         /// <summary>

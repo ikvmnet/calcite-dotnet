@@ -12,7 +12,7 @@ namespace Apache.Calcite.Linq.Runtime
     /// plan that is a loop: it walks the rows of one match and hands each to the consumer. Every parameter
     /// type is fixed by the interface, so unlike the other adapters there is nothing to close over.
     /// </remarks>
-    public sealed class DelegateEmitter(Action<java.util.List, java.util.List, java.util.List, int, java.util.function.Consumer> emitter) :
+    sealed class DelegateEmitter(Action<java.util.List, java.util.List, java.util.List, int, java.util.function.Consumer> emitter) :
         org.apache.calcite.runtime.Enumerables.Emitter
     {
 

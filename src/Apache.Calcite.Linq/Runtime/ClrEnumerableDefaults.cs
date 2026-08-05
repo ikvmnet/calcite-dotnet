@@ -16,7 +16,7 @@ namespace Apache.Calcite.Linq.Runtime
     /// of these are what <see cref="Enumerable"/> already does and say so; the ones that are not are the ones
     /// SQL needs and .NET has no operator for.
     /// </remarks>
-    public static class ClrEnumerableDefaults
+    static class ClrEnumerableDefaults
     {
 
         /// <summary>

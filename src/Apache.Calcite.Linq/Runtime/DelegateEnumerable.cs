@@ -13,7 +13,7 @@ namespace Apache.Calcite.Linq.Runtime
     /// a fresh <see cref="DelegateEnumerator"/> each time it is asked. It is a class rather than an interface,
     /// so the adapter derives from it, but it has a single method and is otherwise an ordinary one.
     /// </remarks>
-    public sealed class DelegateEnumerable : AbstractEnumerable
+    sealed class DelegateEnumerable : AbstractEnumerable
     {
 
         readonly Func<Enumerator> onEnumerator;
