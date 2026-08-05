@@ -151,7 +151,7 @@ surface whether or not the operation succeeds.
 
 ## Apache.Calcite.Linq: where the CLR conventions stand
 
-`ClrEnumerableConvention` runs against **calcite-core 1.42.0**. 211 tests pass, measured 2026-08-04. `ClrAsyncEnumerableConvention` does not
+`ClrEnumerableConvention` runs against **calcite-core 1.42.0**. 214 tests pass, measured 2026-08-04. `ClrAsyncEnumerableConvention` does not
 exist yet — not one file of it, deferred deliberately until the sync side is finished.
 
 `PARITY.md` was rebuilt from the two sources on 2026-08-04 rather than carried forward, and §9 of it lists
@@ -284,11 +284,25 @@ table-function comparison hits. Until then this is reading, not measurement, and
 about our code is suspected: it gives right answers and the tests hold it. What is suspected is the word
 "demonstrated".
 
-**2. Wire the convention up.** Nothing connects it to `Apache.Calcite.Data` — checked, and only the test
-project references `Apache.Calcite.Linq` at all — and nothing exposes the three-pass program
-(`Programs.subQuery`, then the rules, then the calc rules as a hep pass, and no decorrelation) as anything a
-caller can use; every test wires it by hand. This is worth more to anyone using the library than another
-join algorithm, and it is small.
+**2. Done — the convention is wired up.** `ClrEnumerablePrograms` names the three passes, and
+`ClrEnumerablePrepare` is a `CalcitePrepare` that plans into this convention and compiles with
+`ClrEnumerableInterpretable`. Hand it to `CalciteConnection.PrepareFactory` and every statement on that
+connection runs here rather than through Janino:
+
+```csharp
+var c = new CalciteConnection(connectionString);
+c.PrepareFactory = () => new ClrEnumerablePrepare();
+c.Open();
+```
+
+Three ADO.NET tests run a VALUES, an aggregate and a join end to end. **They are checked to be going through
+this convention rather than falling back**, by making `ClrEnumerableCalc.Implement` throw and watching all
+three fail through it — the same technique every node claim here is held to, and the only thing that
+distinguishes a working seam from an ignored one.
+
+Parsing, validation and sql-to-rel are Calcite's, untouched; three things differ and nothing else does. One
+cost is recorded as `PARITY.md` 5.6: `CalcitePreparingStmt.internalParameters` is private, so ours uses its
+own map.
 
 **3. Two open mysteries, either of which may stay open.**
 - A window table function does not run by either route: through the node, translating
@@ -327,7 +341,7 @@ Scan, values, calc, project, filter, sort, limit, offset, limit-with-sort, union
 hash/semi/anti join, nested loop join, batch nested loop join, merge join, ASOF join, mark join in both the
 hash and the nested loop form, correlate, conditional correlate, combine, aggregate — ordered calls included
 — sorted aggregate, window, merge union, table function scan, collect and uncollect. Converters in both directions, so one plan can hold nodes of both conventions and the rows
-cross untouched. 211 tests pass.
+cross untouched. 214 tests pass.
 
 `PARITY.md` is the member-by-member comparison against **1.42.0**, the version the projects reference,
 rebuilt from the source at the tag and checked against the assembly. Every point in it is numbered

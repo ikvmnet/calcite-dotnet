@@ -514,6 +514,16 @@ arguments in Calcite's order now, and refuses the Spark branch rather than ignor
 four nodes, one of them blocked by 6.14 and two of them the whole interpreter and bindable conventions; 5.2
 waits on a failure nobody has explained. `TODO.md` carries them as items 3 to 5 rather than as rough edges.
 
+**5.6 `ClrEnumerablePrepare` cannot share Calcite's internal-parameter map.**
+`CalcitePreparingStmt.internalParameters` is private with no accessor, and it is the map
+`CalcitePrepareImpl` hands to the `CalciteSignature` and thence to the `DataContext` at bind time. Ours uses
+its own, which carries the conformance — all this convention reads from it — so code generation is right.
+What it cannot carry is a value *Calcite's* implementor stashes: `EnumerableRelImplementor.stash` writes
+into that map and the generated Java reads it back through `root.get(name)`. In a plan rooted in this
+convention that only arises where `ClrEnumerableToEnumerableConverter` appears, which is a sub-plan of
+Calcite's under one of ours. **Not demonstrated either way** — no test builds that shape through the ADO.NET
+path — so it is written here rather than argued in §6.
+
 ---
 
 ## 6. Differences with a justification
@@ -682,7 +692,7 @@ version this file compares against and the version the projects reference.
 
 ## 8. Measured on the way, and worth keeping
 
-**8.1 211 tests pass**, measured 2026-08-04, against **calcite-core 1.42.0**: 133 differential, of which 87
+**8.1 214 tests pass**, measured 2026-08-04, against **calcite-core 1.42.0**: 133 differential, of which 87
 compare rows with the default planner, 11 with top-down optimisation on, 5 with the sorted aggregate rule
 on, 5 with the batch nested loop join rule on, 5 with the limit-sort rule on, 8 with the mark-join sub-query
 rules on, 5 assert rows by hand because `EnumerableConvention` cannot run the query at all, and 7 assert
