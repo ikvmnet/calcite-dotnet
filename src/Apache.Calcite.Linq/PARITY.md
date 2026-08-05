@@ -351,9 +351,17 @@ inputs. Everything it calls is public Calcite runtime — `SqlFunctions.map`,
 `SqlFunctions.combineQueryResults` — so the node is the tree `EnumerableCombine` describes and nothing more.
 
 **No SQL statement produces a `Combine`.** A caller builds one with `RelBuilder.combine`, so the
-differential harness cannot reach this node by parsing a query, and `RelBuilder.create` wants a JDBC
-connection IKVM cannot give it in the test project. `ShouldCombineTwoQueries` builds the node by hand over
-an already planned input, which is the only way to run it — and it is run, not assumed.
+differential harness cannot reach this node by parsing a query. `ShouldCombineTwoQueries` builds one, and
+runs it: three names against two ids, so the shorter query runs out and the row that has nothing to hold is
+null.
+
+**`RelBuilder.create` opens a `jdbc:calcite:` connection, and that is not an obstacle.** A `RelBuilder`
+needs a `RelOptCluster` and a `RelOptSchema`, which it cannot invent; `Frameworks.withPrepare` produces them
+by standing up the prepare machinery, and that machinery is anchored on a `CalciteServerStatement`. The
+connection is not for I/O — it is the object that owns the root schema and the type factory. It failed here
+only because the test project had never put calcite-core on IKVM's boot class path, so the driver's
+reflective `Class.forName` could not find its factory; the AdoNet tests already do that in one line, and this
+one does now. `RelBuilder.proto(context).create(cluster, schema)` is the other way in, and takes neither.
 
 ### 2.18 Converters — ours only
 
@@ -784,6 +792,16 @@ planned the query itself. Five differential tests now run with the limit-sort ru
 which is the first time `EnumerableLimitSort` has ever been the oracle for `ClrEnumerableLimitSort` —
 before, Calcite could not plan the node at all. Two more assert which node each side chose, with and without
 the rule.
+
+**9.22 "RelBuilder.create wants a JDBC connection IKVM cannot give it" was an excuse, not a diagnosis.** It
+does open a `jdbc:calcite:` connection, for the reason 2.20 now gives. It failed in the Linq test project
+because that project had never registered calcite-core on IKVM's boot class path, so the driver's reflective
+`Class.forName` could not find `CalciteJdbc41Factory` — and `AdoQueryTests` had been doing exactly that, in
+one line, the whole time. The fix was that line. `ShouldCombineTwoQueries` builds a real two-query combine
+now rather than the same input twice, which is what made the "shorter query contributes null" behaviour
+testable at all — the weaker test could not have caught it.
+
+Cheapest-conclusion-first, again, and the third time in this file: 9.14, 9.15 and now this.
 
 **9.21 Moving the baseline to 1.42 changed less than the size of the diff suggested.** 21 files, 985
 insertions — and of the seventeen changed files, eleven are classes this convention reuses rather than ports

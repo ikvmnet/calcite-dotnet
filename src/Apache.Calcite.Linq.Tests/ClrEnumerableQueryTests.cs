@@ -30,6 +30,19 @@ namespace Apache.Calcite.Linq.Tests
     {
 
         /// <summary>
+        /// Initializes the static instance.
+        /// </summary>
+        /// <remarks>
+        /// <c>Frameworks.withPrepare</c> opens a <c>jdbc:calcite:</c> connection and reaches its factory
+        /// by name, so the assembly holding that factory has to be on IKVM's boot class path or
+        /// <c>Class.forName</c> cannot find it. The AdoNet tests do the same thing for the same reason.
+        /// </remarks>
+        static ClrEnumerableQueryTests()
+        {
+            ikvm.runtime.Startup.addBootClassPathAssembly(typeof(org.apache.calcite.jdbc.CalciteJdbc41Factory).Assembly);
+        }
+
+        /// <summary>
         /// A table of three rows, given to Calcite the way any table is.
         /// </summary>
         sealed class PeopleTable : AbstractTable, ScannableTable
@@ -235,32 +248,57 @@ namespace Apache.Calcite.Linq.Tests
         }
 
         /// <summary>
-        /// A combine gives one row per index, each column holding one query values as a map.
+        /// A combine gives one row per index, each column holding one query values as a map, and the row
+        /// count is the largest of the inputs.
         /// </summary>
         /// <remarks>
-        /// No SQL statement produces a <c>Combine</c>: it exists for multi-root optimisation in the planner
-        /// and a caller builds one with <c>RelBuilder.combine</c>. So the differential harness cannot reach
-        /// this node by parsing a query, and it is built here by hand over an already planned input, which is
-        /// the only way to run it at all.
+        /// No SQL statement produces a <c>Combine</c>: it exists for multi-root optimisation in the planner,
+        /// and a caller builds one with <c>RelBuilder.combine</c>. So this is built rather than parsed —
+        /// which is the only way to run the node at all, and is why it is run rather than assumed.
         /// </remarks>
         [TestMethod]
         public void ShouldCombineTwoQueries()
         {
-            var (input, rootSchema) = Plan("SELECT \"NAME\" FROM \"PEOPLE\"");
+            var rootSchema = Frameworks.createRootSchema(true);
+            rootSchema.add("PEOPLE", new PeopleTable());
 
-            var inputs = new java.util.ArrayList();
-            inputs.add(input);
-            inputs.add(input);
+            var config = Frameworks.newConfigBuilder().defaultSchema(rootSchema).build();
+            var builder = RelBuilder.create(config);
 
-            var combine = new Apache.Calcite.Linq.Rel.ClrEnumerableCombine(
-                ((RelNode)input).getCluster(),
-                ((RelNode)input).getTraitSet(),
-                inputs);
+            // three names against two ids, so the shorter query runs out and contributes null. The literal
+            // is a java.lang.Integer: RelBuilder.literal takes an Object, and a CLR-boxed int arrives as
+            // cli.System.Int32, which it refuses -- the same invariant JavaValues.From keeps everywhere else
+            var logical = builder
+                .scan("PEOPLE").project(builder.field("NAME"))
+                .scan("PEOPLE")
+                    .filter(builder.call(org.apache.calcite.sql.fun.SqlStdOperatorTable.LESS_THAN, builder.field("ID"), builder.literal(java.lang.Integer.valueOf(3))))
+                    .project(builder.field("ID"))
+                .combine()
+                .build();
 
-            // one column per query, named for its position
-            combine.getRowType().getFieldCount().Should().Be(2);
+            var planner = (org.apache.calcite.plan.volcano.VolcanoPlanner)logical.getCluster().getPlanner();
+            planner.addRelTraitDef(ConventionTraitDef.INSTANCE);
+            foreach (var rule in ClrEnumerableRules.Rules())
+                planner.addRule((RelOptRule)rule);
 
-            var bindable = ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), null, combine, ClrEnumerablePrefer.Array);
+            var traitSet = logical.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify();
+            planner.setRoot(planner.changeTraits(logical, traitSet));
+
+            var chosen = planner.findBestExp();
+
+            // the second pass Programs.standard makes: a project refuses to implement itself, and the calc
+            // rules are what rewrite every one of them into a calc
+            var calcRules = new java.util.ArrayList();
+            foreach (var rule in ClrEnumerableRules.CalcRules())
+                calcRules.add(rule);
+
+            var physical = (ClrEnumerableRel)Programs
+                .hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)
+                .run(planner, chosen, chosen.getTraitSet(), new java.util.ArrayList(), new java.util.ArrayList());
+
+            physical.Should().BeOfType<Apache.Calcite.Linq.Rel.ClrEnumerableCombine>();
+
+            var bindable = ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), null, physical, ClrEnumerablePrefer.Array);
 
             var rows = new List<object[]>();
             var enumerator = bindable.bind(new TestDataContext(rootSchema)).enumerator();
@@ -270,11 +308,13 @@ namespace Apache.Calcite.Linq.Tests
                 rows.Add(current as object[] ?? [current]);
             }
 
-            // three people, and both columns hold that query own row for the index
             rows.Should().HaveCount(3);
-            rows.Should().OnlyContain(r => r[0] is java.util.Map && r[1] is java.util.Map);
             ((java.util.Map)rows[0][0]).get("NAME").Should().Be("SMITH");
-            ((java.util.Map)rows[2][1]).get("NAME").Should().Be("BROWN");
+            ((java.util.Map)rows[0][1]).get("ID").Should().Be(java.lang.Integer.valueOf(1));
+
+            // the second query has two rows, so the third has nothing to hold
+            rows[2][0].Should().NotBeNull();
+            rows[2][1].Should().BeNull();
         }
 
         [TestMethod]
