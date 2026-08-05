@@ -680,6 +680,23 @@ namespace Apache.Calcite.Linq.Tests
                 .Should().Contain("ClrEnumerableHashJoin").And.Contain("left_mark");
 
         [TestMethod]
+        public void ShouldAgreeOnACorrelatedMarkJoinFromExists() =>
+            SameMarkJoin("SELECT \"ID\" FROM \"SALES\" \"S1\" WHERE EXISTS (SELECT 1 FROM \"SALES\" \"S2\" WHERE \"S2\".\"REGION\" = \"S1\".\"REGION\" AND \"S2\".\"ID\" > 3) ORDER BY \"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnACorrelatedMarkJoinFromIn() =>
+            SameMarkJoin("SELECT \"ID\" FROM \"SALES\" \"S1\" WHERE \"AMOUNT\" IN (SELECT \"AMOUNT\" FROM \"SALES\" \"S2\" WHERE \"S2\".\"REGION\" = \"S1\".\"REGION\") ORDER BY \"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnACorrelatedMarkJoinProjected() =>
+            SameMarkJoin("SELECT \"ID\", EXISTS (SELECT 1 FROM \"SALES\" \"S2\" WHERE \"S2\".\"REGION\" = \"S1\".\"REGION\" AND \"S2\".\"ID\" > 3) AS \"E\" FROM \"SALES\" \"S1\" ORDER BY \"ID\"");
+
+        [TestMethod]
+        public void ShouldPlanAConditionalCorrelate() =>
+            PlanOf("SELECT \"ID\" FROM \"SALES\" \"S1\" WHERE EXISTS (SELECT 1 FROM \"SALES\" \"S2\" WHERE \"S2\".\"REGION\" = \"S1\".\"REGION\" AND \"S2\".\"ID\" > 3)", true, markJoin: true)
+                .Should().Contain("ClrEnumerableConditionalCorrelate").And.Contain("left_mark");
+
+        [TestMethod]
         public void ShouldAgreeOnValues() => Same("SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");
 
         [TestMethod]

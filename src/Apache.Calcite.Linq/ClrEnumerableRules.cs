@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 using Apache.Calcite.Linq.Convert;
 using Apache.Calcite.Linq.Rel.Convert;
@@ -72,6 +72,12 @@ namespace Apache.Calcite.Linq
         /// Rule that converts a correlate to a <see cref="Rel.ClrEnumerableCorrelate"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableCorrelateRule = Rel.Convert.ClrEnumerableCorrelateRule.Create();
+
+        /// <summary>
+        /// Rule that converts a conditional correlate to a
+        /// <see cref="Rel.ClrEnumerableConditionalCorrelate"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrEnumerableConditionalCorrelateRule = Rel.Convert.ClrEnumerableConditionalCorrelateRule.Create();
 
         /// <summary>
         /// Rule that converts a union to a <see cref="Rel.ClrEnumerableUnion"/>.
@@ -214,6 +220,7 @@ namespace Apache.Calcite.Linq
             ClrEnumerableMergeJoinRule,
             ClrEnumerableAsofJoinRule,
             ClrEnumerableCorrelateRule,
+            ClrEnumerableConditionalCorrelateRule,
             ClrEnumerableUnionRule,
             ClrEnumerableMergeUnionRule,
             ClrEnumerableIntersectRule,

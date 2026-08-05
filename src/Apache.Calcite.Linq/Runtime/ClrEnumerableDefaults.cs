@@ -1390,6 +1390,56 @@ namespace Apache.Calcite.Linq.Runtime
             Func<TSource, TInner, java.lang.Boolean> predicate,
             Func<TSource, java.lang.Boolean, TResult> resultSelector)
         {
+            ArgumentNullException.ThrowIfNull(inner);
+
+            return LeftMarkJoin(outer, _ => inner, predicate, resultSelector);
+        }
+
+        /// <summary>
+        /// Returns every left row with a marker saying whether its own right side had a match.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TInner"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="outer"></param>
+        /// <param name="inner">Yields the right rows for one left row.</param>
+        /// <param name="predicate">Three-valued: null where the comparison is unknown.</param>
+        /// <param name="resultSelector"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.correlateLeftMarkJoin</c>: the correlated half of a mark
+        /// join, and the same walk as <see cref="LeftMarkNestedLoopJoin"/>. Calcite writes both against one
+        /// <c>leftMarkJoinInternal</c>, and so does this.
+        /// </remarks>
+        public static IEnumerable<TResult> CorrelateLeftMarkJoin<TSource, TInner, TResult>(
+            IEnumerable<TSource> outer,
+            Func<TSource, IEnumerable<TInner>> inner,
+            Func<TSource, TInner, java.lang.Boolean> predicate,
+            Func<TSource, java.lang.Boolean, TResult> resultSelector)
+        {
+            return LeftMarkJoin(outer, inner, predicate, resultSelector);
+        }
+
+        /// <summary>
+        /// The walk both mark joins over a nested loop make.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TInner"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="outer"></param>
+        /// <param name="inner"></param>
+        /// <param name="predicate"></param>
+        /// <param name="resultSelector"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.leftMarkJoinInternal</c>.
+        /// </remarks>
+        static IEnumerable<TResult> LeftMarkJoin<TSource, TInner, TResult>(
+            IEnumerable<TSource> outer,
+            Func<TSource, IEnumerable<TInner>> inner,
+            Func<TSource, TInner, java.lang.Boolean> predicate,
+            Func<TSource, java.lang.Boolean, TResult> resultSelector)
+        {
             ArgumentNullException.ThrowIfNull(outer);
             ArgumentNullException.ThrowIfNull(inner);
             ArgumentNullException.ThrowIfNull(predicate);
@@ -1398,17 +1448,21 @@ namespace Apache.Calcite.Linq.Runtime
             foreach (var left in outer)
             {
                 var marker = java.lang.Boolean.FALSE;
+                var rows = inner(left);
 
-                foreach (var right in inner)
+                if (rows != null)
                 {
-                    var matched = predicate(left, right);
-
-                    if (matched == null)
-                        marker = null!;
-                    else if (matched.booleanValue())
+                    foreach (var right in rows)
                     {
-                        marker = java.lang.Boolean.TRUE;
-                        break;
+                        var matched = predicate(left, right);
+
+                        if (matched == null)
+                            marker = null!;
+                        else if (matched.booleanValue())
+                        {
+                            marker = java.lang.Boolean.TRUE;
+                            break;
+                        }
                     }
                 }
 
