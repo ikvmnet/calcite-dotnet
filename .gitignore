@@ -243,3 +243,6 @@ ModelManifest.xml
 
 # Ignore build output
 build/
+
+# output of Apache.Calcite.dist.msbuildproj
+/dist/

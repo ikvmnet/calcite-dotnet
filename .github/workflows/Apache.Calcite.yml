@@ -89,6 +89,7 @@ jobs:
         - Apache.Calcite.Tests
         - Apache.Calcite.Adapter.AdoNet.Tests
         - Apache.Calcite.Data.Tests
+        - Apache.Calcite.Linq.Tests
         sys:
         - win-x64
         - linux-x64
@@ -98,6 +99,11 @@ jobs:
         tfm:
         - net8.0
         - net10.0
+        exclude:
+        # Apache.Calcite.Linq targets net10.0 only. Without this the net8.0 jobs find no assembly and
+        # report green having run nothing.
+        - run: Apache.Calcite.Linq.Tests
+          tfm: net8.0
     name: Test (${{ matrix.run }}:${{ matrix.tfm }}:${{ matrix.sys }})
     needs:
     - build
