@@ -20,10 +20,9 @@ namespace Apache.Calcite.Linq.Rel
     /// nothing. The iterative part reads what the spool beneath it left behind, so it is enumerated afresh each
     /// round rather than held.
     ///
-    /// <para>Calcite puts the transient table into the root schema before running and takes it out after,
-    /// because the Java it generates finds the table by name. Nothing of that is needed for the spool, which
-    /// captures its collection; it remains needed for a scan of the same table, whose expression the schema SPI
-    /// builds.</para>
+    /// <para>The transient table goes into the root schema before the query runs and comes out after, as
+    /// Calcite does it. That is not a Janino artefact: both the spool above it and the scan of the same table
+    /// find it by name in the schema the plan is bound with.</para>
     /// </remarks>
     public class ClrEnumerableRepeatUnion : RepeatUnion, ClrEnumerableRel
     {
@@ -56,15 +55,18 @@ namespace Apache.Calcite.Linq.Rel
             var body = new System.Collections.Generic.List<Expression>();
             Expression cleanUp = Expression.Constant(null, typeof(System.Action));
 
-            // a scan resolves its table through the schema at run time, because that is what the schema SPI
-            // builds its expression to do, so the scratch table has to be there while the query runs. This is
-            // the part of Calcite's arrangement that is not merely a Janino artefact.
+            // the scratch table has to be in the schema while the query runs, because everything that reads it
+            // resolves it there by name
             var transientTable = getTransientTable();
             if (transientTable != null)
             {
                 var name = (string)transientTable.getQualifiedName().get(transientTable.getQualifiedName().size() - 1);
                 var rootSchema = Expression.Call(implementor.Root, DataContextGetRootSchema);
-                var table = Expression.Constant(transientTable.unwrap(typeof(org.apache.calcite.schema.Table)), typeof(org.apache.calcite.schema.Table));
+                // a TransientTable, which is what Calcite unwraps and stashes, and refused rather than
+                // written into the plan as a null the schema would reject when the query runs
+                var scratch = (org.apache.calcite.schema.TransientTable)transientTable.unwrap((java.lang.Class)typeof(org.apache.calcite.schema.TransientTable))
+                    ?? throw new java.lang.IllegalStateException($"{transientTable} is not a TransientTable");
+                var table = Expression.Constant(scratch, typeof(org.apache.calcite.schema.TransientTable));
 
                 body.Add(Expression.Call(rootSchema, SchemaPlusAdd, Expression.Constant(name), table));
                 cleanUp = Expression.Lambda<System.Action>(
@@ -74,13 +76,9 @@ namespace Apache.Calcite.Linq.Rel
             var seedResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)getSeedRel(), pref);
             var iterationResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)getIterativeRel(), pref);
 
-            // the rows here are the input's rows, so the format has to be the one they already have. The
-            // three-argument overload re-optimises it, and for a one-column row that turns ARRAY into SCALAR
-            // — a physical type saying the row *is* the value while the sequence still yields Object[]. A
-            // parent then reads field 0 as the row itself. Calcite writes the three-argument call and cannot
-            // see the difference, because Java erases the element type; ours is typed, and a merge join over
-            // a one-column table function is where it surfaced.
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(seedResult.Format), false);
+            // the seed's own format, and not re-optimised: a repeat union yields the rows of its two inputs
+            // unchanged, so its physical type is theirs. PARITY.md 6.9.
+            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), seedResult.Format, false);
             var rowType = TypeResolver.Resolve(seedResult.PhysType.getJavaRowType());
 
             body.Add(

@@ -199,6 +199,17 @@ namespace Apache.Calcite.Linq
         public static readonly RelOptRule ClrEnumerableBatchNestedLoopJoinRule = Rel.Convert.ClrEnumerableBatchNestedLoopJoinRule.Create();
 
         /// <summary>
+        /// Rule that reads a plan of <c>BindableConvention</c> as one of this convention, by interpreting it.
+        /// </summary>
+        /// <remarks>
+        /// Not in what <see cref="Rules"/> returns, because <c>TO_INTERPRETER</c> is not in
+        /// <c>ENUMERABLE_RULES</c>: Calcite registers it from <c>RelOptUtil.registerDefaultRules</c>, which
+        /// registers Calcite's own. A caller adds this one to have an interpreted node land here rather than
+        /// in <c>EnumerableConvention</c> under a converter.
+        /// </remarks>
+        public static readonly RelOptRule ClrEnumerableInterpreterRule = Rel.Convert.ClrEnumerableInterpreterRule.Create();
+
+        /// <summary>
         /// The rules registered by default.
         /// </summary>
         /// <remarks>
@@ -206,8 +217,10 @@ namespace Apache.Calcite.Linq
         /// this convention has, plus the two converters that let one plan hold both conventions. Read through
         /// <see cref="Rules"/>, as Calcite's is read through <c>rules()</c>.
         ///
-        /// <para>Membership is Calcite's list, member for member: its 24 less the match and table modify
-        /// rules, which this convention has no node for, plus the two converters. The three rules Calcite
+        /// <para>Membership is Calcite's list, member for member: its 26 less the match and table modify
+        /// rules, plus the two converters. Match cannot be written at all; modification is out of scope —
+        /// this convention reads, and a plan that writes is left to <c>EnumerableConvention</c>. The three
+        /// rules Calcite
         /// declares as fields and leaves out of the list — limit-sort, sorted aggregate and batch nested loop
         /// join — are left out here too. The limit-sort rule was in this list once, which gave this
         /// convention 25 rules against Calcite's 24 and offered it a plan the other side was never offered,

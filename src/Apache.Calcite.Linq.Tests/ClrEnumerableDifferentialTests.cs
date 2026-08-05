@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -181,7 +181,14 @@ namespace Apache.Calcite.Linq.Tests
         /// The context a plan is bound with.
         /// </summary>
         /// <param name="rootSchema"></param>
-        sealed class TestDataContext(SchemaPlus rootSchema) : DataContext
+        /// <remarks>
+        /// <paramref name="parameters"/> is the map both implementors stash into, and <c>get</c> has to serve
+        /// it: Calcite's generated <c>bind</c> opens with a declaration per stashed value, reading each back
+        /// with <c>root.get(name)</c>. Answering null there is answering null to
+        /// <c>EnumerableRepeatUnion</c>'s scratch table, which is how a recursive query failed on
+        /// <c>EnumerableConvention</c>'s side of this harness — the side that is supposed to be the oracle.
+        /// </remarks>
+        sealed class TestDataContext(SchemaPlus rootSchema, java.util.Map parameters) : DataContext
         {
 
             /// <inheritdoc />
@@ -194,7 +201,7 @@ namespace Apache.Calcite.Linq.Tests
             public QueryProvider getQueryProvider() => null!;
 
             /// <inheritdoc />
-            public object get(string name) => null!;
+            public object get(string name) => parameters.get(name);
 
         }
 
@@ -206,7 +213,7 @@ namespace Apache.Calcite.Linq.Tests
         /// <param name="topDown">Whether the planner optimises top down, which is what asks a node to pass a
         /// trait down to its inputs or derive one from them.</param>
         /// <returns></returns>
-        static List<string> Run(string sql, bool clr, bool topDown = false, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool markJoin = false, bool excludeHashJoin = false)
+        static List<string> Run(string sql, bool clr, bool topDown = false, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool markJoin = false, bool excludeHashJoin = false, bool excludeMergeJoin = false, bool interpreter = false)
         {
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add("SALES", new SalesTable());
@@ -216,13 +223,29 @@ namespace Apache.Calcite.Linq.Tests
             rootSchema.add("SORTED", new SortedTable());
             rootSchema.add("FIB", org.apache.calcite.schema.impl.TableFunctionImpl.create(org.apache.calcite.util.Smalls.FIBONACCI_LIMIT_100_TABLE_METHOD));
 
+            // A CUSTOM-format fixture, which every other table here is not. HrSchema's rows are instances of
+            // a Java class, so a scan of it yields a synthetic record rather than an Object[] and
+            // PhysType.record, fieldReference and the join selector all take the other branch. It has to be
+            // Java rather than one of this project's own classes for the same reason MY_SUM does: Janino
+            // cannot name a CLR class, so a CLR-backed table would leave EnumerableConvention with no plan to
+            // compare against.
+            rootSchema.add("HR", new org.apache.calcite.adapter.java.ReflectiveSchema(new org.apache.calcite.test.schemata.hr.HrSchema()));
+
             var rules = new java.util.ArrayList();
             var calcRules = new java.util.ArrayList();
 
             if (clr)
             {
                 foreach (var rule in ClrEnumerableRules.Rules())
+                {
+                    // dropped on both sides together, or the comparison is between two different plans:
+                    // DefaultRulesProgram takes Calcite's out and this takes ours
+                    if (excludeMergeJoin && rule == ClrEnumerableRules.ClrEnumerableMergeJoinRule)
+                        continue;
+
                     rules.add(rule);
+                }
+
                 foreach (var rule in ClrEnumerableRules.CalcRules())
                     calcRules.add(rule);
             }
@@ -246,6 +269,11 @@ namespace Apache.Calcite.Linq.Tests
             if (limitSort)
                 rules.add(clr ? ClrEnumerableRules.ClrEnumerableLimitSortRule : EnumerableRules.ENUMERABLE_LIMIT_SORT_RULE);
 
+            // Calcite registers TO_INTERPRETER from RelOptUtil.registerDefaultRules, so its side always has
+            // one; this convention's counterpart is a field a caller adds, exactly as the sorted aggregate is
+            if (interpreter && clr)
+                rules.add(ClrEnumerableRules.ClrEnumerableInterpreterRule);
+
             // AVG has no implementor of its own; a real program reduces it to SUM over COUNT first, and this
             // rule lives in RelOptRules.BASE_RULES rather than in any convention's set
             rules.add(org.apache.calcite.rel.rules.CoreRules.AGGREGATE_REDUCE_FUNCTIONS);
@@ -260,7 +288,7 @@ namespace Apache.Calcite.Linq.Tests
                 .defaultSchema(rootSchema)
                 .programs(
                     markJoin ? MarkJoinSubQueryProgram() : Programs.subQuery(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE),
-                    new DefaultRulesProgram(rules, topDown, clr && topDown, excludeHashJoin),
+                    new DefaultRulesProgram(rules, topDown, (clr && topDown) || excludeMergeJoin, excludeHashJoin),
                     Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE))
                 .build();
 
@@ -286,7 +314,7 @@ namespace Apache.Calcite.Linq.Tests
                 : EnumerableInterpretable.toBindable(parameters, null, (EnumerableRel)physical, EnumerableRel.Prefer.ARRAY);
 
             var rows = new List<string>();
-            var enumerator = bindable.bind(new TestDataContext(rootSchema)).enumerator();
+            var enumerator = bindable.bind(new TestDataContext(rootSchema, parameters)).enumerator();
             while (enumerator.moveNext())
                 rows.Add(Render(enumerator.current()));
 
@@ -312,9 +340,46 @@ namespace Apache.Calcite.Linq.Tests
         /// <param name="sql"></param>
         /// <param name="clr"></param>
         /// <returns></returns>
-        internal static string PlanOf(string sql, bool clr, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool markJoin = false)
+        internal static string PlanOf(string sql, bool clr, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool markJoin = false, bool excludeMergeJoin = false, bool interpreter = false)
         {
-            return Run(sql, clr, false, true, sortedAggregate, batchNestedLoopJoin, limitSort, markJoin)[0];
+            return Run(sql, clr, false, true, sortedAggregate, batchNestedLoopJoin, limitSort, markJoin, false, excludeMergeJoin, interpreter)[0];
+        }
+
+        /// <summary>
+        /// Requires that a query gives the same rows in both conventions, with neither convention's merge
+        /// join rule registered.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <remarks>
+        /// The merge join is what both planners choose for a join of two keys over <c>SALES</c> — the scans
+        /// sort cheaply and it wins on cost — so a question about the hash join has to take it away, from
+        /// both sides at once. Without this the rows agree and prove nothing about the node they were aimed
+        /// at, which is `PARITY.md` 8.6.
+        /// </remarks>
+        /// <summary>
+        /// Requires that a query gives the same rows in both conventions, with this convention's interpreter
+        /// rule on.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <remarks>
+        /// Both sides can interpret either way — Calcite's <c>TO_INTERPRETER</c> is registered by
+        /// <c>registerDefaultRules</c> — so what this turns on is the *choice* of which convention hosts the
+        /// interpreted node, and the rows have to be the same whichever wins.
+        /// </remarks>
+        static void SameInterpreted(string sql)
+        {
+            var mine = Run(sql, true, false, false, false, false, false, false, false, false, true);
+            var calcite = Run(sql, false, false, false, false, false, false, false, false, false, true);
+
+            mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
+        }
+
+        static void SameHashJoin(string sql)
+        {
+            var mine = Run(sql, true, false, false, false, false, false, false, false, true);
+            var calcite = Run(sql, false, false, false, false, false, false, false, false, true);
+
+            mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
         }
 
         /// <summary>
@@ -487,6 +552,34 @@ namespace Apache.Calcite.Linq.Tests
         // call and a BasicLazyAccumulator per unordered one. The four cover: one ordered call, a global
         // aggregate with no GROUP BY, an ordered and an unordered call in one aggregate, and an ordering on a
         // nullable column.
+
+        // The three branches of the aggregate that are not a plain GROUP BY. A grouping set folds every row
+        // into one group per set in a single pass, and the group columns a set does not group by come out
+        // null however the row read — which is what the indicator field of the key decides.
+
+        [TestMethod]
+        public void ShouldAgreeOnGroupingSets() =>
+            Same("SELECT \"REGION\", COUNT(*) FROM \"SALES\" GROUP BY GROUPING SETS ((\"REGION\"), ()) ORDER BY 1, 2");
+
+        [TestMethod]
+        public void ShouldAgreeOnARollup() =>
+            Same("SELECT \"REGION\", \"LABEL\", COUNT(*) FROM \"SALES\" GROUP BY ROLLUP(\"REGION\", \"LABEL\") ORDER BY 1, 2, 3");
+
+        [TestMethod]
+        public void ShouldAgreeOnACube() =>
+            Same("SELECT \"REGION\", \"LABEL\", COUNT(*) FROM \"SALES\" GROUP BY CUBE(\"REGION\", \"LABEL\") ORDER BY 1, 2, 3");
+
+        [TestMethod]
+        public void ShouldAgreeOnGroupingSetsOwnOrder() =>
+            Same("SELECT \"REGION\", COUNT(*) FROM \"SALES\" GROUP BY GROUPING SETS ((\"REGION\"), ())");
+
+        [TestMethod]
+        public void ShouldAgreeOnTheGroupingFunction() =>
+            Same("SELECT \"REGION\", GROUPING(\"REGION\"), COUNT(*) FROM \"SALES\" GROUP BY ROLLUP(\"REGION\") ORDER BY 1, 2");
+
+        [TestMethod]
+        public void ShouldAgreeOnADistinctOverEveryColumn() =>
+            Same("SELECT DISTINCT \"ID\", \"REGION\", \"AMOUNT\", \"LABEL\" FROM \"SALES\" ORDER BY 1");
 
         [TestMethod]
         public void ShouldAgreeOnAnOrderedAggregateCall() =>
@@ -716,6 +809,40 @@ namespace Apache.Calcite.Linq.Tests
 
         [TestMethod]
         public void ShouldAgreeOnValues() => Same("SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");
+
+        // The only query that reaches ClrEnumerableRepeatUnion and ClrEnumerableTableSpool. Both nodes were
+        // written, both rules were registered, and nothing ran either of them until this — PARITY.md 5.9. The
+        // transient table is scanned by neither convention: EnumerableTableScan refuses a TransientTable
+        // (CALCITE-3673) and so does ours, so both sides read it through the interpreter.
+
+        [TestMethod]
+        public void ShouldAgreeOnARecursiveQuery() =>
+            Same("WITH RECURSIVE t(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 4) SELECT n FROM t ORDER BY 1");
+
+        [TestMethod]
+        public void ShouldAgreeOnARecursiveQueryOfSeveralColumns() =>
+            Same("WITH RECURSIVE t(n, m) AS (VALUES (1, 10) UNION ALL SELECT n + 1, m + 10 FROM t WHERE n < 4) SELECT n, m FROM t ORDER BY 1");
+
+        // The interpreter, which is the only way either convention reads a transient table. With the rule off
+        // the node is Calcite's under a converter; with it on it is this convention's and there is one
+        // convention boundary fewer. The rows are the same either way, which is what the first two assert.
+
+        [TestMethod]
+        public void ShouldAgreeOnARecursiveQueryInterpretedHere() =>
+            SameInterpreted("WITH RECURSIVE t(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 4) SELECT n FROM t ORDER BY 1");
+
+        [TestMethod]
+        public void ShouldAgreeOnARecursiveQueryOfSeveralColumnsInterpretedHere() =>
+            SameInterpreted("WITH RECURSIVE t(n, m) AS (VALUES (1, 10) UNION ALL SELECT n + 1, m + 10 FROM t WHERE n < 4) SELECT n, m FROM t ORDER BY 1");
+
+        [TestMethod]
+        public void ShouldPlanTheInterpreterInThisConvention()
+        {
+            var sql = "WITH RECURSIVE t(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 4) SELECT n FROM t ORDER BY 1";
+
+            PlanOf(sql, true).Should().Contain("EnumerableInterpreter");
+            PlanOf(sql, true, interpreter: true).Should().Contain("ClrEnumerableInterpreter");
+        }
 
         [TestMethod]
         public void ShouldAgreeOnACorrelatedSubQuery() => Same("SELECT \"ID\" FROM \"SALES\" a WHERE \"AMOUNT\" = (SELECT MAX(\"AMOUNT\") FROM \"SALES\" b WHERE b.\"REGION\" = a.\"REGION\") ORDER BY \"ID\"");
@@ -961,6 +1088,90 @@ namespace Apache.Calcite.Linq.Tests
         public void ShouldAgreeOnALeftJoinOnANullableKey() =>
             Same("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a LEFT JOIN \"SALES\" b ON a.\"AMOUNT\" = b.\"AMOUNT\" ORDER BY a.\"ID\", b.\"ID\"");
 
+        // A null key, on the side the hash join builds from and under the operator that has to answer for it.
+        // The two above join on a nullable key and neither reaches this: an INNER and a LEFT join never look
+        // at the rows of the right input that matched nothing, and a plain equality never asks a null to
+        // match. `ShouldAgreeOnARightJoinsOwnOrder` and `ShouldAgreeOnAFullJoinsOwnOrder` do look, and join
+        // on REGION and LABEL, which are not nullable. So 136 differential tests covered every part of this
+        // but the intersection, which is where both defects were — PARITY.md 5.7 and 5.8.
+
+        [TestMethod]
+        public void ShouldAgreeOnANullSafeJoinKey() =>
+            Same("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"AMOUNT\" IS NOT DISTINCT FROM b.\"AMOUNT\" ORDER BY a.\"ID\", b.\"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnARightJoinOnANullableKey() =>
+            Same("SELECT a.\"ID\", b.\"ID\" FROM (SELECT * FROM \"SALES\" WHERE \"ID\" < 3) a RIGHT JOIN \"SALES\" b ON a.\"AMOUNT\" = b.\"AMOUNT\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnAFullJoinOnANullableKey() =>
+            Same("SELECT a.\"ID\", b.\"ID\" FROM (SELECT * FROM \"SALES\" WHERE \"ID\" < 3) a FULL JOIN \"SALES\" b ON a.\"AMOUNT\" = b.\"AMOUNT\"");
+
+        // A hash join on a key of two fields, one of them nullable, which is the case the null-aware accessor
+        // nulls the whole key for and the plain accessor leaves as a list holding a null that matches another
+        // one. Both conventions plan a merge join for this query, so the merge join rule comes off both sides
+        // to reach the node the question is about — PARITY.md 8.6, and the reason it was recorded.
+
+        [TestMethod]
+        public void ShouldAgreeOnAHashJoinOnTwoKeysOneNullable() =>
+            SameHashJoin("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"REGION\" = b.\"REGION\" AND a.\"AMOUNT\" = b.\"AMOUNT\" ORDER BY a.\"ID\", b.\"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnARightHashJoinOnTwoKeysOneNullable() =>
+            SameHashJoin("SELECT a.\"ID\", b.\"ID\" FROM (SELECT * FROM \"SALES\" WHERE \"ID\" < 3) a RIGHT JOIN \"SALES\" b ON a.\"REGION\" = b.\"REGION\" AND a.\"AMOUNT\" = b.\"AMOUNT\"");
+
+        [TestMethod]
+        public void ShouldPlanAHashJoinWithoutTheMergeJoinRule()
+        {
+            var sql = "SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"REGION\" = b.\"REGION\" AND a.\"AMOUNT\" = b.\"AMOUNT\" ORDER BY a.\"ID\", b.\"ID\"";
+
+            PlanOf(sql, false, excludeMergeJoin: true).Should().Contain("EnumerableHashJoin");
+            PlanOf(sql, true, excludeMergeJoin: true).Should().Contain("ClrEnumerableHashJoin");
+        }
+
+        [TestMethod]
+        public void ShouldAgreeOnASemiJoinOnANullSafeKey() =>
+            Same("SELECT a.\"ID\" FROM \"SALES\" a WHERE EXISTS (SELECT 1 FROM \"SALES\" b WHERE a.\"AMOUNT\" IS NOT DISTINCT FROM b.\"AMOUNT\") ORDER BY 1");
+
+        [TestMethod]
+        public void ShouldAgreeOnAnAntiJoinOnANullSafeKey() =>
+            Same("SELECT a.\"ID\" FROM \"SALES\" a WHERE NOT EXISTS (SELECT 1 FROM \"SALES\" b WHERE a.\"AMOUNT\" IS NOT DISTINCT FROM b.\"AMOUNT\") ORDER BY 1");
+
+        // The CUSTOM row format, over HR.emps. Everything above runs over Object[] rows, so every one of
+        // these takes a branch of PhysType that 239 tests had not.
+
+        [TestMethod]
+        public void ShouldAgreeOnACustomFormatScan() =>
+            Same("SELECT \"empid\", \"name\" FROM \"HR\".\"emps\" ORDER BY \"empid\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnACustomFormatFilterAndProjection() =>
+            Same("SELECT \"empid\", \"salary\" + 1 FROM \"HR\".\"emps\" WHERE \"deptno\" = 10 ORDER BY \"empid\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnACustomFormatNullableColumn() =>
+            Same("SELECT \"empid\", \"commission\" FROM \"HR\".\"emps\" ORDER BY \"empid\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnACustomFormatAggregate() =>
+            Same("SELECT \"deptno\", COUNT(*), SUM(\"salary\"), MIN(\"commission\") FROM \"HR\".\"emps\" GROUP BY \"deptno\" ORDER BY \"deptno\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnACustomFormatJoin() =>
+            Same("SELECT a.\"empid\", b.\"empid\" FROM \"HR\".\"emps\" a JOIN \"HR\".\"emps\" b ON a.\"deptno\" = b.\"deptno\" ORDER BY a.\"empid\", b.\"empid\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnACustomFormatJoinOnANullableKey() =>
+            Same("SELECT a.\"empid\", b.\"empid\" FROM \"HR\".\"emps\" a JOIN \"HR\".\"emps\" b ON a.\"commission\" = b.\"commission\" ORDER BY a.\"empid\", b.\"empid\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnACustomFormatWindow() =>
+            Same("SELECT \"empid\", SUM(\"salary\") OVER (PARTITION BY \"deptno\" ORDER BY \"empid\") FROM \"HR\".\"emps\" ORDER BY \"empid\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnACustomFormatDistinct() =>
+            Same("SELECT DISTINCT \"deptno\" FROM \"HR\".\"emps\" ORDER BY 1");
+
         [TestMethod]
         public void ShouldAgreeOnStringFunctions() => Same("SELECT UPPER(\"LABEL\") || '-' || LOWER(\"REGION\") FROM \"SALES\" ORDER BY 1");
 
@@ -1027,6 +1238,35 @@ namespace Apache.Calcite.Linq.Tests
         public void ShouldRunATableFunctionInAJoin() =>
             Gives("SELECT \"S\".\"ID\" FROM \"SALES\" AS \"S\", TABLE(NUMBERS(2)) AS \"N\" WHERE \"S\".\"ID\" = \"N\".\"N\" ORDER BY 1", "1", "2");
 
+        // The window table functions, which are the path RexImpTable implements rather than the schema. The
+        // rule refused them until the two `_input`s were understood — PARITY.md 5.2 — and what runs them is
+        // the same lexical scope by name that Janino gets for free.
+
+        [TestMethod]
+        public void ShouldAgreeOnTumble() =>
+            Same("SELECT \"ROWTIME\", \"ID\", \"window_start\", \"window_end\" FROM TABLE(TUMBLE(TABLE \"EVENTS\", DESCRIPTOR(\"ROWTIME\"), INTERVAL '1' HOUR)) ORDER BY \"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnTumbleWithAnOffset() =>
+            Same("SELECT \"ID\", \"window_start\" FROM TABLE(TUMBLE(TABLE \"EVENTS\", DESCRIPTOR(\"ROWTIME\"), INTERVAL '1' HOUR, INTERVAL '10' MINUTE)) ORDER BY \"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnHop() =>
+            Same("SELECT \"ID\", \"window_start\", \"window_end\" FROM TABLE(HOP(TABLE \"EVENTS\", DESCRIPTOR(\"ROWTIME\"), INTERVAL '30' MINUTE, INTERVAL '1' HOUR)) ORDER BY \"ID\", \"window_start\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnSession() =>
+            Same("SELECT \"ID\", \"window_start\", \"window_end\" FROM TABLE(SESSION(TABLE \"EVENTS\", DESCRIPTOR(\"ROWTIME\"), DESCRIPTOR(\"ID\"), INTERVAL '1' HOUR)) ORDER BY \"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnAnAggregateOverTumble() =>
+            Same("SELECT \"window_start\", COUNT(*) FROM TABLE(TUMBLE(TABLE \"EVENTS\", DESCRIPTOR(\"ROWTIME\"), INTERVAL '1' HOUR)) GROUP BY \"window_start\" ORDER BY 1");
+
+        [TestMethod]
+        public void ShouldPlanTumbleInThisConvention() =>
+            PlanOf("SELECT \"ID\", \"window_start\" FROM TABLE(TUMBLE(TABLE \"EVENTS\", DESCRIPTOR(\"ROWTIME\"), INTERVAL '1' HOUR))", true)
+                .Should().Contain("ClrEnumerableTableFunctionScan");
+
         [TestMethod]
         public void ShouldRunATableFunctionUnderAnAggregate() =>
             Gives("SELECT COUNT(*), SUM(\"N\") FROM TABLE(NUMBERS(4))", "4|10");
@@ -1041,6 +1281,36 @@ namespace Apache.Calcite.Linq.Tests
         // where the input format is ARRAY that type is Object[], so it emits "new Object[]()" — which is not
         // Java, and not something a translator can complete either, because the length is only implied by the
         // assignments that follow.
+
+
+        // MATCH_RECOGNIZE, which runs for the first time — in a plan rooted in this convention, with the
+        // whole subtree in EnumerableConvention and one converter at the top. The node itself still cannot
+        // be written here (PARITY.md 6.14: Calcite casts its input getter to two package-private *types*),
+        // and it does not have to be for the query to answer.
+        //
+        // Three things had to be true at once, and each was a blocker in its own right. The measures row is
+        // built with Expressions.new_ on the row's Java type, so an ARRAY-format input gives "new Object[]()"
+        // — not Java, and not completable by a translator either; HR.emps is CUSTOM, so that line emits a
+        // record constructor instead. The predicate's parameter is a Memory around the row and the condition
+        // was translated against the row itself, both named row_, which is the lexical scope by name. And
+        // EnumerableMatch.implementPattern takes a symbol or a concatenation and nothing else, so PATTERN
+        // (STRT UP+) throws "unknown kind: PATTERN_QUANTIFIER" out of Calcite's own node, in either
+        // convention — a fixed pattern is what either side can run.
+
+        [TestMethod]
+        public void ShouldAgreeOnMatchRecognize() =>
+            Same("SELECT * FROM \"HR\".\"emps\" MATCH_RECOGNIZE (ORDER BY \"empid\" MEASURES STRT.\"empid\" AS \"s\", UP.\"empid\" AS \"e\" PATTERN (STRT UP) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\")) AS T");
+
+        // PARTITION BY has no test because it does not run in either convention. The partition key of one
+        // column has a SCALAR physical type, EnumerableMatch builds the key with Expressions.new_ on its Java
+        // row type, and that emits "new Integer()" — Janino: "No applicable constructor/method found for zero
+        // actual parameters". Measured on EnumerableConvention alone, so it is Calcite's defect, and it is the
+        // same one as "new Object[]()" a few lines further on in that node. See TODO.md.
+
+        [TestMethod]
+        public void ShouldPlanMatchRecognizeUnderAConverter() =>
+            PlanOf("SELECT * FROM \"HR\".\"emps\" MATCH_RECOGNIZE (ORDER BY \"empid\" MEASURES STRT.\"empid\" AS \"s\" PATTERN (STRT UP) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\")) AS T", true)
+                .Should().StartWith("EnumerableToClrEnumerableConverter");
 
     }
 

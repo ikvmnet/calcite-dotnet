@@ -68,6 +68,15 @@ already to agree; converting a value that already has the type wanted only absor
 not. Measured across every plan the tests run, what is actually asked for is four reference conversions
 and one boxing.
 
+**A linq4j tree means what it means after `OptimizeShuttle`.** Every tree Calcite compiles has been through
+it, because a node hands its tree to `BlockBuilder.append` and that runs it; a tree we translate directly has
+not. Its own class comment says the pass is not a tweak — "without optimization, expressions such as
+`false == null` will be left in, which are invalid to Janino". `generateNullAwareAccessor` writes
+`field == null ? null : List1(field)` for every key, and where the field is a primitive that comparison is
+not Java at all. Janino would reject it; the CLR converts a null to an `int` and throws at run time.
+`ExpressionTranslator` runs the shuttle over an expression arriving from outside — **expressions only**, since
+a statement it rewrites away becomes `EMPTY_STATEMENT`, which `BlockBuilder` filters and a bare block does not.
+
 **A linq4j call's recorded `Method` is advisory.** Janino writes the tree out as source and the *Java
 compiler* resolves both the overload and the receiver from that text. `Linq4j.asEnumerable` is named
 against the array overload and passed a list; `size()` on a `SortedMultiMap` is named on `Collection`.
@@ -81,9 +90,12 @@ where it is built; an operator of this convention takes the delegate and asks fo
 **An adapter converts values in both directions.** `JavaValues.As` / `From`. Taking a `java.lang.Integer`
 and casting it to a CLR `int`, or handing an `int` back boxed the CLR way, leaves two representations of
 one value in a plan and Calcite's own comparators fail on them. This is the invariant the whole port
-exists to keep, and it has leaked twice: once through the SAM adapters, and once through
+exists to keep, and it has leaked three times: once through the SAM adapters, once through
 `JavaSequences.FromJava`, which cast where it had to convert and so could not carry a one-column result of
-a primitive across the converter. **Every boundary where a value crosses between the two runtimes is an
+a primitive across the converter, and once through `ClrEnumerableDefaults.LazyCollectionSpool`, which wrote
+CLR rows into the table's `java.util.Collection` and left `SqlFunctions.toInt` refusing a `System.Int32` when
+the interpreter read them back — that one did not cast, it simply did not convert, and no test had ever
+written to a spool. **Every boundary where a value crosses between the two runtimes is an
 adapter**, a sequence included — if it casts, it is wrong.
 
 **`Rules()` and `CalcRules()` are two passes, not one.** `VolcanoCost.isLt` compares the row count and
@@ -135,8 +147,14 @@ which is the only way to make the converter meet a real generated block.
 handled in `ExpressionTranslator` because both are general rather than one node's problem. linq4j hoists a
 sub-expression it can prove constant into a *field* of the anonymous class it is generating, so an
 anonymous class is not always a bare SAM; each field becomes a variable of the block that builds the
-lambda. And Java resolves a *name*, so a method's parameter shadows an outer variable Calcite deliberately
-gave the same name — `Anonymous` gives an anonymous method's parameters a lexical scope for exactly that.
+lambda. And Java resolves a *name*, so a parameter shadows an outer variable Calcite deliberately gave the
+same name — `ExpressionTranslator` gives a lambda's parameters, and an anonymous method's, a lexical scope by
+name for exactly that, **consulted before what the object is already bound to**: a parameter does not
+outrank an outer variable of its name, it makes it unreachable, and Calcite relies on that both ways round.
+**Two generators, one name, is the normal case rather than the odd one**: a window table function is
+`_input` from `TumbleImplementor` and `_input` from `tumblingWindowSelector`; a MATCH_RECOGNIZE predicate is
+`row_` the input row and `row_` the `MemoryFactory.Memory` around it. Neither ran for want of that scope,
+and it was described in this file before it was in the code.
 
 **A user-defined function written in .NET runs in this convention and in no plan Janino compiles.** IKVM
 names a CLR class `cli.Namespace.Type`; `EnumerableConvention` writes that name into generated Java source

@@ -132,9 +132,9 @@ namespace Apache.Calcite.Linq.Rel
         public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             if (joinType.name() == nameof(JoinRelType.LEFT_MARK))
-                return ImplementMarkJoin(implementor, pref);
+                return ImplementNLMarkJoin(implementor, pref);
 
-            return ImplementJoin(implementor, pref);
+            return ImplementNLJoin(implementor, pref);
         }
 
         /// <summary>
@@ -149,7 +149,7 @@ namespace Apache.Calcite.Linq.Rel
         /// its non-equi part, and it is the three-valued one: a mark join's marker is null where a comparison
         /// was unknown, which is what makes <c>IN</c> over a nullable column answer UNKNOWN.
         /// </remarks>
-        ClrEnumerableResult ImplementMarkJoin(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrEnumerableResult ImplementNLMarkJoin(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
@@ -180,7 +180,7 @@ namespace Apache.Calcite.Linq.Rel
         /// <param name="implementor"></param>
         /// <param name="pref"></param>
         /// <returns></returns>
-        ClrEnumerableResult ImplementJoin(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrEnumerableResult ImplementNLJoin(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);

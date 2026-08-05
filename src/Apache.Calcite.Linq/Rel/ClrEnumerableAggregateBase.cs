@@ -142,6 +142,9 @@ namespace Apache.Calcite.Linq.Rel
         /// <param name="initBlock"></param>
         /// <param name="aggs"></param>
         /// <param name="typeFactory"></param>
+        /// <param name="inputRowType">What <c>AggContextImpl</c> reads off its enclosing node.</param>
+        /// <param name="groupSet"><inheritdoc cref="CreateAggStateTypes" path="/param[@name='inputRowType']" /></param>
+        /// <param name="groupSets"><inheritdoc cref="CreateAggStateTypes" path="/param[@name='inputRowType']" /></param>
         /// <returns></returns>
         protected static java.util.List CreateAggStateTypes(java.util.List initExpressions, J.BlockBuilder initBlock, java.util.List aggs, JavaTypeFactory typeFactory, RelDataType inputRowType, ImmutableBitSet groupSet, java.util.List groupSets)
         {
@@ -330,21 +333,52 @@ namespace Apache.Calcite.Linq.Rel
             return Expression.New(typeof(DelegateFunction2<,,>).MakeGenericType(arg0, arg1, result).GetConstructors()[0], lambda);
         }
 
+        /// <summary>
+        /// The members Calcite names through <c>BuiltInMethod</c>, which has no entry for any of them.
+        /// </summary>
+        /// <remarks>
+        /// Each is written into the tree by <see cref="ImplementLambdaFactory"/> or by an aggregate's
+        /// <c>Implement</c>, where Calcite writes the same one as a linq4j call. They are resolved once
+        /// because a plan mentions them once per aggregate call.
+        /// </remarks>
         protected static readonly System.Reflection.ConstructorInfo BasicFactory = typeof(BasicAggregateLambdaFactory).GetConstructors()[0];
+
+        /// <inheritdoc cref="BasicFactory" />
         protected static readonly System.Reflection.ConstructorInfo LazyFactory = typeof(LazyAggregateLambdaFactory).GetConstructors()[0];
+
+        /// <inheritdoc cref="BasicFactory" />
         protected static readonly System.Reflection.ConstructorInfo BasicLazyAccumulator = typeof(BasicLazyAccumulator).GetConstructors()[0];
+
+        /// <inheritdoc cref="BasicFactory" />
         protected static readonly System.Reflection.ConstructorInfo SourceSorter = typeof(SourceSorter).GetConstructors()[0];
+
+        /// <inheritdoc cref="BasicFactory" />
         protected static readonly System.Reflection.MethodInfo CollectionAdd = typeof(java.util.List).GetMethod("add", [typeof(object)])!;
+
+        /// <inheritdoc cref="BasicFactory" />
         protected static readonly System.Reflection.MethodInfo AccInitializer = typeof(AggregateLambdaFactory).GetMethod("accumulatorInitializer")!;
+
+        /// <inheritdoc cref="BasicFactory" />
         protected static readonly System.Reflection.MethodInfo AccAdder = typeof(AggregateLambdaFactory).GetMethod("accumulatorAdder")!;
+
+        /// <inheritdoc cref="BasicFactory" />
         protected static readonly System.Reflection.MethodInfo ResultSelector = typeof(AggregateLambdaFactory).GetMethod("resultSelector")!;
+
+        /// <inheritdoc cref="BasicFactory" />
         protected static readonly System.Reflection.MethodInfo SingleGroupResultSelector = typeof(AggregateLambdaFactory).GetMethod("singleGroupResultSelector")!;
+
+        /// <inheritdoc cref="BasicFactory" />
         protected static readonly System.Reflection.MethodInfo Function0Apply = typeof(Function0).GetMethod("apply")!;
+
         /// <summary>
         /// What an aggregate implementor is told about the call it is implementing.
         /// </summary>
         /// <param name="agg"></param>
         /// <param name="typeFactory"></param>
+        /// <param name="inputRowType">What Calcite's <c>AggContextImpl</c> reads off its enclosing node, and
+        /// this takes as a parameter because it is not an inner class.</param>
+        /// <param name="groupSet"><inheritdoc cref="ClrAggContext" path="/param[@name='inputRowType']" /></param>
+        /// <param name="sets"><inheritdoc cref="ClrAggContext" path="/param[@name='inputRowType']" /></param>
         protected sealed class ClrAggContext(AggImpState agg, JavaTypeFactory typeFactory, RelDataType inputRowType, ImmutableBitSet groupSet, java.util.List sets) : AggContext
         {
 

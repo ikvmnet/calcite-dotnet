@@ -48,7 +48,7 @@ namespace Apache.Calcite.Linq
             this.map = internalParameters ?? throw new ArgumentNullException(nameof(internalParameters));
 
             Root = Expression.Parameter(typeof(DataContext), "root");
-            Translator = new ExpressionTranslator();
+            Translator = new ExpressionTranslator(map);
             Translator.Bind(DataContext.ROOT, Root);
 
             AllCorrelateVariables = new DelegateFunction1<string, RexToLixTranslator.InputGetter>(GetCorrelVariableGetter);

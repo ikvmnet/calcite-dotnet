@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -511,6 +511,12 @@ namespace Apache.Calcite.Linq.Runtime
         /// The counterpart of <c>EnumerableDefaults.hashJoin</c>, taking the same arguments. A key that is null
         /// matches nothing, which is what the null aware accessor of a physical type arranges by returning null
         /// for the whole key.
+        ///
+        /// <para>Matching nothing is not the same as being thrown away. <c>toLookup</c> keeps a null-keyed row
+        /// under a null key — <c>java.util.HashMap</c> takes one — and nothing ever probes it, because the
+        /// outer side skips a null key too; but a right or a full join ends with the rows that matched
+        /// nothing, and those are among them. This dropped them, and a RIGHT JOIN on a nullable key lost a
+        /// row Calcite returns.</para>
         /// </remarks>
         public static IEnumerable<TResult> HashJoin<TSource, TInner, TKey, TResult>(
             IEnumerable<TSource> outer,
@@ -532,10 +538,9 @@ namespace Apache.Calcite.Linq.Runtime
             foreach (var row in inner)
             {
                 var key = innerKeySelector(row);
-                if (key == null)
-                    continue;
 
-                var wrapped = JavaWrapped.Of(comparer, JavaValues.From(key));
+                // a null key is kept under a null key, as toLookup keeps one, and nothing probes it
+                var wrapped = key == null ? null : JavaWrapped.Of(comparer, JavaValues.From(key));
                 if (lookup.get(wrapped) is not List<TInner> bucket)
                     lookup.put(wrapped, bucket = []);
 
@@ -1630,6 +1635,55 @@ namespace Apache.Calcite.Linq.Runtime
         }
 
         /// <summary>
+        /// Groups the rows by each of several keys at once, folding each group into an accumulator.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TKey"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="keySelectors">One selector per grouping set.</param>
+        /// <param name="accumulatorInitializer"></param>
+        /// <param name="accumulatorAdder"></param>
+        /// <param name="resultSelector"></param>
+        /// <param name="comparer"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.groupByMultiple</c>, which exists to support
+        /// <c>GROUPING SETS</c> and has no counterpart on <c>Enumerable</c>. Every row is offered to every
+        /// selector, so one pass folds it into one group per grouping set; the keys of two sets never collide
+        /// because each carries an indicator per field saying which set it came from.
+        /// </remarks>
+        public static IEnumerable<TResult> GroupByMultiple<TSource, TKey, TResult>(
+            IEnumerable<TSource> source,
+            Func<TSource, TKey>[] keySelectors,
+            Function0 accumulatorInitializer,
+            Function2 accumulatorAdder,
+            Function2 resultSelector,
+            EqualityComparer? comparer)
+        {
+            // a java.util.HashMap, for the reason GroupBy gives: the order the groups come out in is the
+            // map's, and Calcite's map is this one
+            var accumulators = new java.util.HashMap();
+
+            foreach (var row in source)
+            {
+                foreach (var keySelector in keySelectors)
+                {
+                    var key = JavaWrapped.Of(comparer, JavaValues.From(keySelector(row)));
+                    var accumulator = accumulators.get(key) ?? accumulatorInitializer.apply();
+
+                    accumulators.put(key, accumulatorAdder.apply(accumulator, row));
+                }
+            }
+
+            for (var i = accumulators.entrySet().iterator(); i.hasNext();)
+            {
+                var entry = (java.util.Map.Entry)i.next();
+                yield return JavaValues.As<TResult>(resultSelector.apply(JavaWrapped.Unwrap(entry.getKey()), entry.getValue()));
+            }
+        }
+
+        /// <summary>
         /// Folds every row into one.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>
@@ -1854,7 +1908,7 @@ namespace Apache.Calcite.Linq.Runtime
         /// The counterpart of <c>EnumerableWindow.buildExcludeGuard</c>. A peer is a row the window's ordering
         /// does not separate from the current one, which is what the comparator answers.
         /// </remarks>
-        static bool Excluded(org.apache.calcite.rex.RexWindowExclusion exclude, java.util.Comparator comparator, object[] rows, int index, int position)
+        static bool Excluded(org.apache.calcite.rex.RexWindowExclusion? exclude, java.util.Comparator comparator, object[] rows, int index, int position)
         {
             return exclude?.name() switch
             {
@@ -1993,9 +2047,11 @@ namespace Apache.Calcite.Linq.Runtime
                 yield return row;
             }
 
+            // the collection belongs to the table, and what reads it back is Java — the interpreter, for a
+            // transient table neither convention's scan will touch. So this is a boundary and it converts
             collection.clear();
             foreach (var row in buffer)
-                collection.add(row);
+                collection.add(JavaValues.From(row));
         }
 
         /// <summary>

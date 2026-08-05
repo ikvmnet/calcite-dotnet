@@ -53,7 +53,6 @@ namespace Apache.Calcite.Linq
         sealed class ClrEnumerablePreparingStmt : CalcitePrepareImpl.CalcitePreparingStmt
         {
 
-            readonly CalcitePrepare.Context context;
             readonly ClrEnumerablePrefer prefer;
 
             /// <summary>
@@ -77,7 +76,6 @@ namespace Apache.Calcite.Linq
                 org.apache.calcite.sql2rel.SqlRexConvertletTable convertletTable) :
                 base(prepare, context, catalogReader, typeFactory, schema, prefer.ToCalcite(), cluster, ClrEnumerableConvention.Instance, convertletTable)
             {
-                this.context = context;
                 this.prefer = prefer;
             }
 

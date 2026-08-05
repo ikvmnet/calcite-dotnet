@@ -74,12 +74,9 @@ namespace Apache.Calcite.Linq.Rel
         {
             var child = (ClrEnumerableRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);
-            // the rows here are the input's rows, so the format has to be the one they already have. The
-            // three-argument overload re-optimises it, and for a one-column row that turns ARRAY into SCALAR
-            // — a physical type saying the row *is* the value while the sequence still yields Object[]. A
-            // parent then reads field 0 as the row itself. Calcite writes the three-argument call and cannot
-            // see the difference, because Java erases the element type; ours is typed, and a merge join over
-            // a one-column table function is where it surfaced.
+            // the input's own format, and not re-optimised: a pass-through node yields the rows it was
+            // given, so its physical type is theirs. PARITY.md 6.9 is why Calcite's own line cannot be
+            // copied here — Java erases the element type and this convention does not.
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format, false);
 
             var rowType = TypeResolver.Resolve(result.PhysType.getJavaRowType());

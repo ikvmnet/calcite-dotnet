@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Reflection;
 
 namespace Apache.Calcite.Linq.Runtime
@@ -134,6 +134,11 @@ namespace Apache.Calcite.Linq.Runtime
         /// <see cref="ClrEnumerableDefaults.GroupBy"/>.
         /// </summary>
         public static readonly MethodInfo GroupBy = Of(nameof(ClrEnumerableDefaults.GroupBy));
+
+        /// <summary>
+        /// <see cref="ClrEnumerableDefaults.GroupByMultiple"/>.
+        /// </summary>
+        public static readonly MethodInfo GroupByMultiple = Of(nameof(ClrEnumerableDefaults.GroupByMultiple));
 
         /// <summary>
         /// <see cref="ClrEnumerableDefaults.SortedGroupBy"/>.

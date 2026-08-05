@@ -22,9 +22,9 @@ namespace Apache.Calcite.Linq.Rel
     /// A tee: every row passes through, and the rows of the round are left in the table's collection for
     /// whatever reads it next. That is what carries one round of a recursive query to the following one.
     ///
-    /// <para>Calcite reaches the collection by asking the root schema for the table by name, because the Java
-    /// it generates cannot mention an object. An expression tree can hold one, so the collection is taken at
-    /// planning time and captured.</para>
+    /// <para>The collection is reached by asking the root schema for the table by name, as Calcite reaches
+    /// it: it belongs to the <c>DataContext</c> a run is given, and a plan compiled once can be bound more
+    /// than once.</para>
     /// </remarks>
     public class ClrEnumerableTableSpool : TableSpool, ClrEnumerableRel
     {
@@ -76,25 +76,37 @@ namespace Apache.Calcite.Linq.Rel
                 throw new java.lang.UnsupportedOperationException("only LAZY read and LAZY write are supported");
 
             var result = implementor.VisitChild(this, 0, (ClrEnumerableRel)getInput(), pref);
-            // the rows here are the input's rows, so the format has to be the one they already have. The
-            // three-argument overload re-optimises it, and for a one-column row that turns ARRAY into SCALAR
-            // — a physical type saying the row *is* the value while the sequence still yields Object[]. A
-            // parent then reads field 0 as the row itself. Calcite writes the three-argument call and cannot
-            // see the difference, because Java erases the element type; ours is typed, and a merge join over
-            // a one-column table function is where it surfaced.
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(result.Format), false);
 
-            var table = (ModifiableTable)getTable().unwrap(typeof(ModifiableTable))
-                ?? throw new java.lang.IllegalStateException($"{getTable()} is not modifiable");
+            // the input's own format, and not re-optimised: a spool writes its input's rows through and
+            // yields them, so its physical type is theirs. PARITY.md 6.9, and 5.9 for the recursive query
+            // that could not be implemented at all while this said otherwise.
+            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format, false);
+
+            // the table is looked up in the schema the plan is bound with, as Calcite looks it up, rather than
+            // read here and held: the collection belongs to the DataContext a run is given, and a plan
+            // compiled once can be bound more than once
+            var name = (string)getTable().getQualifiedName().get(getTable().getQualifiedName().size() - 1);
+            var collection = Expression.Call(
+                Expression.Convert(
+                    Expression.Call(
+                        Expression.Call(implementor.Root, DataContextGetRootSchema),
+                        SchemaGetTable,
+                        Expression.Constant(name)),
+                    typeof(ModifiableTable)),
+                ModifiableTableGetModifiableCollection);
 
             var rowType = TypeResolver.Resolve(result.PhysType.getJavaRowType());
 
             return implementor.Result(physType,
                 Expression.Call(null,
                     ClrBuiltInMethod.LazyCollectionSpool.MakeGenericMethod(rowType),
-                    Expression.Constant(table.getModifiableCollection(), typeof(java.util.Collection)),
+                    collection,
                     result.Expression));
         }
+
+        static readonly System.Reflection.MethodInfo DataContextGetRootSchema = MethodResolver.Resolve(org.apache.calcite.util.BuiltInMethod.DATA_CONTEXT_GET_ROOT_SCHEMA.method);
+        static readonly System.Reflection.MethodInfo SchemaGetTable = MethodResolver.Resolve(org.apache.calcite.util.BuiltInMethod.SCHEMA_GET_TABLE.method);
+        static readonly System.Reflection.MethodInfo ModifiableTableGetModifiableCollection = MethodResolver.Resolve(org.apache.calcite.util.BuiltInMethod.MODIFIABLE_TABLE_GET_MODIFIABLE_COLLECTION.method);
 
     }
 

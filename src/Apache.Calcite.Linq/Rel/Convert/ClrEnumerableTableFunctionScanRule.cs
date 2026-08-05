@@ -40,31 +40,6 @@ namespace Apache.Calcite.Linq.Rel.Convert
         }
 
         /// <inheritdoc />
-        /// <remarks>
-        /// A window table function — TUMBLE, HOP, SESSION — is refused, so the planner leaves it in
-        /// <c>EnumerableConvention</c> and the converters carry the rows. That path works and this one does
-        /// not: see <c>TODO.md</c>. Refused here rather than in <c>Implement</c>, which runs after
-        /// <c>findBestExp</c> and so cannot decline anything.
-        /// </remarks>
-        public override bool matches(RelOptRuleCall call)
-        {
-            return call.rel(0) is TableFunctionScan scan
-                && scan.getCall() is RexCall rexCall
-                && IsWindowTableFunction(rexCall) == false;
-        }
-
-        /// <summary>
-        /// Returns whether the call is one <c>RexImpTable</c> generates rather than one the schema defines.
-        /// </summary>
-        /// <param name="call"></param>
-        /// <returns></returns>
-        static bool IsWindowTableFunction(RexCall call)
-        {
-            return call.getOperator() is org.apache.calcite.sql.SqlWindowTableFunction window
-                && org.apache.calcite.adapter.enumerable.RexImpTable.INSTANCE.get(window) != null;
-        }
-
-        /// <inheritdoc />
         public override RelNode convert(RelNode rel)
         {
             var scan = (TableFunctionScan)rel;

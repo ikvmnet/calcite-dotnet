@@ -151,7 +151,7 @@ surface whether or not the operation succeeds.
 
 ## Apache.Calcite.Linq: where the CLR conventions stand
 
-`ClrEnumerableConvention` runs against **calcite-core 1.42.0**. 217 tests pass, measured 2026-08-04. `ClrAsyncEnumerableConvention` does not
+`ClrEnumerableConvention` runs against **calcite-core 1.42.0**. 252 tests pass, measured 2026-08-05. `ClrAsyncEnumerableConvention` does not
 exist yet — not one file of it, deferred deliberately until the sync side is finished.
 
 `PARITY.md` was rebuilt from the two sources on 2026-08-04 rather than carried forward, and §9 of it lists
@@ -159,6 +159,12 @@ the dozen rows that turned out to be wrong. Four of them were differences nothin
 in the list below. **The lesson is the one this file already states about Calcite: a row written from memory
 of the code reads exactly like a row written from the code, and hides a difference behind the appearance of
 having accounted for it.** Rebuild it against the source when it is next relied on.
+
+**§1 to §4 were re-derived against `calcite-1.42.0` on 2026-08-05, and that is a stronger claim than the
+rebuild.** The rebuild compared this file against the code; this compared each Calcite `implement` against
+ours, body by body, and found five more — 9.25 is why the difference matters, and it is the one to remember:
+a row that names a member is not a row that has compared the two bodies. `implement` is one member on both
+sides and Calcite's aggregate has four branches in it.
 
 ### What this convention is for, and how it is built
 
@@ -209,9 +215,35 @@ statement by statement, and where does ours stop matching".
 
 The sections after this one are how each of these was arrived at. This is the list, and each item names the
 `PARITY.md` point it comes from — that file numbers every point `section.item`, so 5.3 and 6.9 are addresses,
-not page references. `PARITY.md` §5 in full is item 1 below plus the four nodes not written, which are items
-4 and 5. Item 2 is not a difference from `EnumerableConvention` at all; it is the thing that would make this
+not page references. `PARITY.md` §5 in full is item 1 below, item 00 for the five the
+re-derivation found, and the four nodes not written, which are items 4 and 5. Item 2 is not a difference from `EnumerableConvention` at all; it is the thing that would make this
 convention usable.
+
+**00. Done — §1 to §4 of `PARITY.md` are re-derived against `calcite-1.42.0`, and five defects came out.**
+Item 0 below moved the *baseline* to 1.42 by diffing the two tags and re-deriving what the diff touched;
+this read each Calcite `implement` against ours instead, and found five differences no row in that file
+recorded. Four were wrong answers in nodes marked as ported. All five are fixed, each with a differential
+test, and `PARITY.md` 5.7 to 5.11 keep the record:
+
+- **5.7** — the hash join, the semi join and the ASOF join keyed on `generateAccessor`, which no release of
+  Calcite uses in any of the three. `IS NOT DISTINCT FROM` lost its null-to-null match, and a hash join on
+  two keys matched two nulls that Calcite excludes.
+- **5.8** — `HashJoin` threw away a build-side row whose key was null, so a RIGHT or FULL join lost it from
+  the unmatched tail.
+- **5.9** — the recursion nodes had never run and did not: four things wrong at once, from the physical type
+  the spool declared to a CLR `int` written into a Java collection.
+- **5.10** — `GROUPING SETS`, `ROLLUP` and `CUBE` were neither implemented nor refused: a `ROLLUP` silently
+  dropped its roll-up rows.
+- **5.11** — the aggregate's distinct-only shortcut was missing, which cost no rows.
+
+**Two of them are rules rather than fixes**, and both are in `CLAUDE.md` now: a linq4j tree means what it
+means *after* `OptimizeShuttle`, which every tree Janino compiles has been through and no tree we translated
+had; and the adapter invariant leaked a third time, in a spool that did not convert at all rather than one
+that cast.
+
+**And the oracle was broken where it mattered.** `TestDataContext.get` answered null for every name, so
+Calcite's own generated `bind` read null back for a stashed table: a recursive query could not have run on
+*either* side of the harness. It serves the parameter map now.
 
 **0. Done — the port is at 1.42.** `PARITY.md` is re-derived against `calcite-1.42.0`, and everything 1.42
 added is written and tested:
@@ -308,17 +340,48 @@ Parsing, validation and sql-to-rel are Calcite's, untouched; three things differ
 cost is recorded as `PARITY.md` 5.6: `CalcitePreparingStmt.internalParameters` is private, so ours uses its
 own map.
 
-**3. Two open mysteries, either of which may stay open.**
-- A window table function does not run by either route: through the node, translating
-  `EnumUtils.tumblingWindowSelector` leaves an `Object[] _input` referenced from no scope that declares
-  it; through the converter, the same. Four explanations tried and disproved — they are listed so they
-  are not tried again.
-- `EnumerableMatch` emits `new Object[]()` when the input format is ARRAY, which is not Java and which a
-  translator cannot complete either. **One experiment is worth doing before concluding**: a fixture table
-  whose rows are objects rather than `Object[]` gives CUSTOM format, which is how Calcite's own
-  MATCH_RECOGNIZE tests pass — that would give Match an oracle and might move the whole thing.
+**3. Both mysteries closed.**
+- **Closed — the window table functions run.** TUMBLE, HOP and SESSION go through
+  `ClrEnumerableTableFunctionScan` now, and the rule no longer refuses them. The `Object[] _input`
+  referenced from no scope was the fifth explanation and the one this file already had a name for:
+  `TumbleImplementor` builds the watermark column against a `ParameterExpression` it makes itself and
+  `EnumUtils.tumblingWindowSelector` makes the lambda's parameter separately, both named `_input`, and
+  **Janino resolves the name** — the lambda's parameter shadows the local. `ExpressionTranslator` gives a
+  lambda's parameters a lexical scope by name now, which `CLAUDE.md` had said it did and it did not.
+  Six tests, one of which asserts the plan uses this convention's node rather than Calcite's under a
+  converter. `PARITY.md` 5.2 and 9.31.
+- **Closed — the experiment was right and a MATCH_RECOGNIZE runs.** A fixture whose rows are objects gives
+  CUSTOM format, so `Expressions.new_` on the row type emits a record constructor instead of
+  `new Object[]()`. `HR` is `ReflectiveSchema` over `calcite-testkit`'s `HrSchema` — Java classes, because
+  Janino cannot name a CLR one — and `ShouldAgreeOnMatchRecognize` compares this convention's answer against
+  Calcite's for the first time. The node is still unwritable (`PARITY.md` 6.14); the query does not need it.
+  One more thing of ours had to be fixed to get there, and it is `PARITY.md` 9.32: a lexical scope has to
+  beat the existing binding rather than follow it, because a parameter does not merely outrank an outer
+  variable of the same name — it makes it unreachable.
 
-**4. Nodes not started and not investigated.** Interpreter and Bindable.
+  **Two shapes still do not run and neither is ours**, both measured on `EnumerableConvention` alone:
+  `PATTERN (STRT UP+)` throws `unknown kind: PATTERN_QUANTIFIER` from `EnumerableMatch.implementPattern`,
+  which takes a symbol or a concatenation and nothing else; and `PARTITION BY` of one column gives the key a
+  SCALAR physical type, so `Expressions.new_` emits `new Integer()` and Janino answers "No applicable
+  constructor/method found for zero actual parameters". That is the same defect as `new Object[]()`, which
+  an ARRAY-format input still gives. **Three Calcite defects worth reporting upstream**, with the
+  CALCITE-7510 DELETE one already recorded.
+
+  And the CUSTOM fixture was worth having on its own: eight differential tests over it — scan, filter,
+  nullable column, aggregate, join, join on a nullable key, window, distinct — all passed the day they were
+  written, over a branch of `PhysType` that 239 tests had left to two hand-asserted ones. `PARITY.md` 8.7.
+
+**4. Done for one, and the other cannot be written.** `ClrEnumerableInterpreter` is written, with its rule —
+a field a caller registers, because Calcite's `TO_INTERPRETER` comes from `RelOptUtil.registerDefaultRules`
+rather than from `ENUMERABLE_RULES`. Registering it moves an interpreted scan out of `EnumerableConvention`
+and into this one, which `ShouldPlanTheInterpreterInThisConvention` asserts both ways round; the rows are
+the same either way, which is what the two differential tests beside it check.
+
+**Bindable cannot be written in C#, and the reason is exact.** `BindableRel` extends `ArrayBindable`, which
+narrows `Typed.getElementType()` from `Type` to `Class<Object[]>`; IKVM renders the covariant override as a
+bridge member named `<bridge>getElementType()`, and `<` and `>` are not valid in a C# identifier. Explicit
+interface implementation answers the two real members and leaves exactly that one error. Written out and
+measured before being concluded. `PARITY.md` 6.17 — the sibling of 6.14, and the cost is one converter.
 
 **4b. `PARITY.md` 5.6 is measured as far as it can be.** `ClrEnumerablePrepare` uses its own
 internal-parameter map, because `CalcitePreparingStmt.internalParameters` is private. That loses a value
@@ -332,10 +395,21 @@ One query is not a proof of unreachability, so 5.6 stays in §5. What would sett
 node genuinely sits under an Enumerable one — and finding out whether the cost model ever allows that is the
 next step, not more argument.
 
-**5. Blocked, and not by effort.** Match cannot be written as a node: `PassedRowsInputGetter` and
-`PrevInputGetter` are package private *types* that Calcite's own translator casts to, and reflection is
-not an acceptable way in. TableModify waits on the convention being more than read-only. A recursive CTE
-is refused by Calcite too, deliberately.
+**5. Blocked, and not by effort — and one that is not blocked at all.** Match cannot be written as a node:
+`PassedRowsInputGetter` and `PrevInputGetter` are package private *types* that Calcite's own translator casts
+to, and reflection is not an acceptable way in. Bindable cannot be written either, and the reason is exact:
+`BindableRel` extends `ArrayBindable`, which narrows `Typed.getElementType()` from `Type` to
+`Class<Object[]>`; IKVM renders the covariant override as a bridge member named `<bridge>getElementType()`,
+and `<` and `>` are not valid in a C# identifier. Explicit interface implementation answers the two real
+members and leaves exactly that one error. Written out and measured before being concluded. `PARITY.md` 6.17.
+
+**TableModify is out of scope by decision, not blocked.** It was written on 2026-08-05 — INSERT and DELETE
+against 1.42's node, UPDATE against 1.43's, twelve tests green — and taken out again the same day: this
+convention reads, and a plan that writes is left to `EnumerableConvention` with the converters carrying it,
+which is what the ADO.NET surface already relies on. `PARITY.md` 6.18 keeps the two facts that were expensive
+to establish: 1.43's UPDATE needs no API that 1.42 lacks, and a modifiable fixture has to be a
+`QueryableTable` whose element type is `Object[]`. Reopen it by reverting that entry, not by rediscovering
+them.
 
 **Not on this list, and worth saying so.** `EnumUtils.markJoinSelector` stood here and in `PARITY.md` §5 as
 a gap. It does not exist in 1.41 — it was read off `D:\calcite`'s working tree, which is the trap the top of
@@ -357,7 +431,7 @@ Scan, values, calc, project, filter, sort, limit, offset, limit-with-sort, union
 hash/semi/anti join, nested loop join, batch nested loop join, merge join, ASOF join, mark join in both the
 hash and the nested loop form, correlate, conditional correlate, combine, aggregate — ordered calls included
 — sorted aggregate, window, merge union, table function scan, collect and uncollect. Converters in both directions, so one plan can hold nodes of both conventions and the rows
-cross untouched. 217 tests pass.
+cross untouched. Recursive CTEs, grouping sets, rollup and cube, the window table functions, and a MATCH_RECOGNIZE carried across the converter. Interpreter. 252 tests pass.
 
 `PARITY.md` is the member-by-member comparison against **1.42.0**, the version the projects reference,
 rebuilt from the source at the tag and checked against the assembly. Every point in it is numbered
@@ -518,22 +592,36 @@ string hash is randomised per process; nothing here may depend on it.
   optimising one inlines a declaration used once, which leaves a reference already built into a
   translated sub-plan pointing at a variable that no longer exists. `ClrEnumerableCorrelate` needs this.
 
-### Recursive CTE: the nodes exist, and a scan of the scratch table does not convert
+### Recursive CTE: runs, and every one of the four things wrong was invisible until it did
 
-`ClrEnumerableRepeatUnion` and `ClrEnumerableTableSpool` exist and register the transient table in the
-runtime root schema exactly as Calcite does. Nothing about them is a write: a spool is a tee that
-passes rows through and leaves the round behind it, and `WITH RECURSIVE` is a read-only query.
+`ClrEnumerableRepeatUnion` and `ClrEnumerableTableSpool` register the transient table in the runtime root
+schema exactly as Calcite does. Nothing about them is a write: a spool is a tee that passes rows through and
+leaves the round behind it, and `WITH RECURSIVE` is a read-only query.
 
-They are not reachable, and the reason is deliberate on Calcite's side rather than an oversight to
-work around. `SpoolRelOptTable.getExpression` returns null on purpose — "so EnumerableTableScanRule
-won't try to convert spool table scans" — and `EnumerableTableScan.canHandle` refusing a
-`TransientTable` (CALCITE-3673) is the matching half. Dropping our half of that guard only moves the
-failure from planning to implementation, because there is still no expression for the table.
+**The scratch table is scanned by neither convention, and that is Calcite's design rather than a gap.**
+`SpoolRelOptTable.getExpression` returns null on purpose — "so EnumerableTableScanRule won't try to convert
+spool table scans" — and `EnumerableTableScan.canHandle` refusing a `TransientTable` (CALCITE-3673) is the
+matching half. Both sides therefore read it through `EnumerableInterpreter` over a `BindableTableScan`, and
+that is what a recursive query looks like in `EnumerableConvention` too. The old note here concluded from
+the refusal that the nodes were unreachable; the refusal is about the *scan*, and the query runs.
 
-So the behaviour here matches `EnumerableConvention`, refusal included, which is what being feature
-compatible with it means. Neither node has a test. Whatever makes a recursive query run in Calcite's
-own convention is what would make it run here, and finding that out is the next step, not a
-workaround in this rule.
+What running it cost, in the order the failures arrived — `PARITY.md` 5.9:
+
+1. **The declared format.** Both nodes declared `pref.Prefer(inputFormat)`, so a spool over a one-column
+   `VALUES` said `Object[]` while its sequence was `IEnumerable<int>`. They declare the input's format now,
+   as the sort and the limit already did. Same point as 6.9, in the two nodes it had not been applied to.
+2. **A stashed variable with nothing to bind it.** `EnumerableInterpreter` stashes its `RelNode`, and the
+   declaration that binds it is emitted by `implementRoot` — which a converted sub-plan never reaches. The
+   value is on the map both implementors share, so the translator answers with the object itself.
+3. **A CLR `int` in a Java collection.** `LazyCollectionSpool` wrote its rows into the table's collection as
+   they stood and `SqlFunctions.toInt` refused a `System.Int32` when the interpreter read them back. The
+   invariant this port exists to keep, broken for the third time and the first time by omission.
+4. **`unwrap(Table.class)` returning null**, so the plan added a null table to the schema. Calcite unwraps
+   `TransientTable` and `requireNonNull`s it; ours does both.
+
+`ShouldAgreeOnARecursiveQuery` and `ShouldAgreeOnARecursiveQueryOfSeveralColumns` hold it. The spool also
+looks its table up in the root schema of the `DataContext` the plan is bound with, as Calcite does, rather
+than reading the collection when the plan is built.
 
 ### Window: split, and holding the rule the rest of the port holds
 
@@ -614,40 +702,41 @@ Worth knowing about the fixture: over a frame that is the whole partition Calcit
 other's peer, so `EXCLUDE GROUP` behaves as `EXCLUDE CURRENT ROW` and `EXCLUDE TIES` excludes nothing. The
 three exclusion tests use a running frame, which is where they differ.
 
-### TableFunctionScan: done, with one of its two paths untested
+### TableFunctionScan: both paths done, and the second one took five explanations
 
 `ClrEnumerableTableFunctionScan` and its rule exist and are registered, and the node is on the chosen plan
 rather than the converter carrying it — checked by making `Implement` throw and watching the tests fail
-through it.
+through it, and, for the window path, by asserting the plan names this convention's node.
 
 It wears two different things, and both ends of both are linq4j because a table function returns Calcite's
 own `Enumerable`: a schema defines it that way, exactly as it defines a table's
 `getExpression(Queryable.class)`. A function the schema defines is a call that yields a sequence, and
 translating the call is the whole of it — no loop, nothing to compose. A window table function (TUMBLE,
 HOP, SESSION) is the other way round: a generator of Calcite's that *takes* the input sequence, so the
-child's goes out to linq4j and the result comes back.
+child's goes out to linq4j and the result comes back. `RexToLixTranslator.translateTableFunction` is public
+and does the work, down to the `TableFunctionCallImplementor` for the operator.
 
-Three tests, hand-asserted for the same reason `MY_SUM` is: a table function is a class, Janino cannot name
-a CLR class, so `EnumerableConvention` has no plan to compare against. They cover the function alone, under
-a join, and under an aggregate.
+Three tests for the first path, hand-asserted for the same reason `MY_SUM` is: a table function is a class,
+Janino cannot name a CLR class, so `EnumerableConvention` has no plan to compare against. They cover the
+function alone, under a join, and under an aggregate. **The window path has six, and they are differential**
+— its implementor is Calcite's own, so both conventions can run the same query.
 
-**The window table function path is refused, and does not run by the other route either.** It was written
-first and tested afterwards, which is the wrong way round and is how it came to be shipped broken for a
-turn. An `EVENTS` fixture with a `TIMESTAMP` column now exists, and `TUMBLE` fails two different ways:
+**The window path was refused for a turn, and the reason was one this file already had a name for.** It was
+written first and tested afterwards, which is the wrong way round. `TUMBLE` failed two ways:
 
-- Through this node, the translated tree ends with an `Object[] _input` referenced from no scope that
-  declares it. `EnumUtils.tumblingWindowSelector` names its selector's parameter `_input`, the same name
-  the node gives the input sequence, and one of the two escapes its lambda. Three explanations were tried
-  and each disproved by experiment: an optimising `BlockBuilder` lifting a shared sub-expression out (a
-  non-optimising one changes nothing), the two names colliding (renaming ours changes nothing), and linq4j
-  declaring the method with a different parameter object than the body was built against (resolving an
-  unbound parameter by name changes nothing). The cause is still unknown.
-- Through the converter, `ExpressionTranslator.Anonymous` refuses the anonymous `Enumerator` Calcite wraps
+- Through this node, the translated tree ended with an `Object[] _input` referenced from no scope that
+  declared it. Four explanations were tried and disproved by experiment: an optimising `BlockBuilder`
+  lifting a shared sub-expression out (a non-optimising one changed nothing), the two names colliding
+  (renaming ours changed nothing), linq4j declaring the method with a different parameter object than the
+  body was built against (resolving an unbound parameter by name changed nothing — it was tried on the
+  method, not the lambda), and the converter. **The fifth is the rule in `CLAUDE.md`**:
+  `RexImpTable.TumbleImplementor` builds the watermark column against a `ParameterExpression` it makes
+  itself, named `_input`, and `EnumUtils.tumblingWindowSelector` makes the lambda's parameter separately,
+  also `_input`. Java resolves the name and the lambda's parameter shadows the local. `ExpressionTranslator`
+  gives a lambda's parameters a lexical scope by name now — which that same sentence in `CLAUDE.md` claimed
+  it already did, and it did not.
+- Through the converter, `ExpressionTranslator.Anonymous` refused the anonymous `Enumerator` Calcite wraps
   the result in: four methods, no single one of which is the body.
-
-So the rule refuses a window table function — refused in `matches`, never in `Implement` — and the node
-carries only the path that works. `EVENTS` is left in the fixture because it is what a test needs the
-moment either route does.
 
 **That second failure was the general one, and fixing it was worth more than this node.** The converter was
 not the safety net it had been assumed to be: it could carry an `EnumerableConvention` sub-plan only when
@@ -780,10 +869,11 @@ returning `Object[]` — which is what this project's fixture is, and what an AD
 fails with `'{' expected instead of '('`. A translator cannot complete it either: the array's length is
 only implied by the field assignments that follow it.
 
-So there is no oracle for MATCH_RECOGNIZE over an ARRAY-format input, and no way to translate Calcite's
-block for one. The next step is to decide between giving the differential fixture a CUSTOM-format table, so
-that Calcite's own plan compiles and can be compared against, and treating the `Object[]` case as a Calcite
-defect to report upstream. That decision comes before any more code.
+**Decided, and both halves turned out to be true.** The differential fixture has a CUSTOM-format table now —
+`HR`, a `ReflectiveSchema` over `calcite-testkit`'s `HrSchema` — so Calcite's own plan compiles and is the
+oracle, and `ShouldAgreeOnMatchRecognize` passes. The `Object[]` case **is** a Calcite defect and stays one:
+so is `new Integer()` for a one-column `PARTITION BY`, and so is `PATTERN_QUANTIFIER`, and all three are
+worth reporting upstream. What was ours in all this was one line of ordering — `PARITY.md` 9.32.
 
 ### Why the node cannot simply be written, either
 

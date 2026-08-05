@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq.Expressions;
 
 using Apache.Calcite.Linq.Runtime;
@@ -137,9 +137,9 @@ namespace Apache.Calcite.Linq.Rel
             {
                 case nameof(JoinRelType.SEMI):
                 case nameof(JoinRelType.ANTI):
-                    return ImplementSemiJoin(implementor, pref);
+                    return ImplementHashSemiJoin(implementor, pref);
                 case nameof(JoinRelType.LEFT_MARK):
-                    return ImplementMarkJoin(implementor, pref);
+                    return ImplementHashMarkJoin(implementor, pref);
                 default:
                     return ImplementHashJoin(implementor, pref);
             }
@@ -157,7 +157,7 @@ namespace Apache.Calcite.Linq.Rel
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
 
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.PreferArray());
-            var keyPhysType = leftResult.PhysType.project(analyzeCondition().leftKeys, JavaRowFormat.LIST);
+            var keyPhysType = leftResult.PhysType.project(joinInfo.leftKeys, JavaRowFormat.LIST);
 
             var leftSource = ClrEnumUtils.BoxRows(leftResult.PhysType, leftResult.Expression);
             var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
@@ -165,9 +165,8 @@ namespace Apache.Calcite.Linq.Rel
             var rightType = rightSource.Type.GetGenericArguments()[0];
             var rowType = TypeResolver.Resolve(physType.getJavaRowType());
 
-            var info = analyzeCondition();
-            var leftKey = Accessor(implementor, leftResult.PhysType, info.leftKeys, leftType);
-            var rightKey = Accessor(implementor, rightResult.PhysType, info.rightKeys, rightType);
+            var leftKey = NullAwareAccessor(implementor, leftResult.PhysType, joinInfo.leftKeys, leftType);
+            var rightKey = NullAwareAccessor(implementor, rightResult.PhysType, joinInfo.rightKeys, rightType);
             var keyType = leftKey.ReturnType;
 
             var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);
@@ -193,7 +192,7 @@ namespace Apache.Calcite.Linq.Rel
         /// <param name="implementor"></param>
         /// <param name="pref"></param>
         /// <returns></returns>
-        ClrEnumerableResult ImplementSemiJoin(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrEnumerableResult ImplementHashSemiJoin(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
@@ -202,10 +201,9 @@ namespace Apache.Calcite.Linq.Rel
             var leftType = TypeResolver.Resolve(leftResult.PhysType.getJavaRowType());
             var rightType = TypeResolver.Resolve(rightResult.PhysType.getJavaRowType());
 
-            var info = analyzeCondition();
-            var keyPhysType = leftResult.PhysType.project(info.leftKeys, JavaRowFormat.LIST);
-            var leftKey = Accessor(implementor, leftResult.PhysType, info.leftKeys, leftType);
-            var rightKey = Accessor(implementor, rightResult.PhysType, info.rightKeys, rightType);
+            var keyPhysType = leftResult.PhysType.project(joinInfo.leftKeys, JavaRowFormat.LIST);
+            var leftKey = NullAwareAccessor(implementor, leftResult.PhysType, joinInfo.leftKeys, leftType);
+            var rightKey = NullAwareAccessor(implementor, rightResult.PhysType, joinInfo.rightKeys, rightType);
 
             return implementor.Result(physType,
                 Expression.Call(null,
@@ -236,7 +234,7 @@ namespace Apache.Calcite.Linq.Rel
         /// selectors and a flag saying whether at most one key is not null-safe, because that is the case a
         /// hash lookup alone can decide.</para>
         /// </remarks>
-        ClrEnumerableResult ImplementMarkJoin(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrEnumerableResult ImplementHashMarkJoin(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
@@ -264,10 +262,8 @@ namespace Apache.Calcite.Linq.Rel
 
             // the null-aware accessor yields null where a not null-safe key is null, which is how the runtime
             // learns that a comparison is unknown rather than false
-            var leftKeySelector = implementor.Translator.TranslateSelector(
-                leftResult.PhysType.generateNullAwareAccessor(joinInfo.leftKeys, joinInfo.nullExclusionFlags), leftType);
-            var rightKeySelector = implementor.Translator.TranslateSelector(
-                rightResult.PhysType.generateNullAwareAccessor(joinInfo.rightKeys, joinInfo.nullExclusionFlags), rightType);
+            var leftKeySelector = NullAwareAccessor(implementor, leftResult.PhysType, joinInfo.leftKeys, leftType);
+            var rightKeySelector = NullAwareAccessor(implementor, rightResult.PhysType, joinInfo.rightKeys, rightType);
 
             var notNullSafeKeyCount = 0;
             var leftNullSafeKeys = new java.util.ArrayList();
@@ -323,6 +319,26 @@ namespace Apache.Calcite.Linq.Rel
         }
 
         /// <summary>
+        /// Returns the lambda reading a join key from a row, yielding null for the whole key where a field
+        /// that excludes nulls is null.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <param name="physType"></param>
+        /// <param name="keys"></param>
+        /// <param name="rowType"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// What the hash join, the semi join and the mark join all key on. The key is a list even for one
+        /// field, so a null-safe key of one field is a list holding null — which is not null, and matches
+        /// another one. That is the whole difference from <see cref="Accessor"/>, and it is what makes
+        /// <c>IS NOT DISTINCT FROM</c> join a null to a null.
+        /// </remarks>
+        LambdaExpression NullAwareAccessor(ClrEnumerableRelImplementor implementor, PhysType physType, java.util.List keys, Type rowType)
+        {
+            return implementor.Translator.TranslateSelector(physType.generateNullAwareAccessor(keys, joinInfo.nullExclusionFlags), rowType);
+        }
+
+        /// <summary>
         /// Returns the lambda reading a join key from a row.
         /// </summary>
         /// <param name="implementor"></param>
@@ -331,9 +347,8 @@ namespace Apache.Calcite.Linq.Rel
         /// <param name="rowType"></param>
         /// <returns></returns>
         /// <remarks>
-        /// 1.41 has generateAccessor alone. The null aware variant, which yields null for the whole key when a
-        /// field of it is null, arrives in 1.42; until the reference moves, a null key is excluded by the join
-        /// itself rather than by the accessor.
+        /// The plain accessor, which yields the field itself for a key of one. A mark join keys its null-safe
+        /// lookup on this, as Calcite does; nothing else here does.
         /// </remarks>
         static LambdaExpression Accessor(ClrEnumerableRelImplementor implementor, PhysType physType, java.util.List keys, Type rowType)
         {

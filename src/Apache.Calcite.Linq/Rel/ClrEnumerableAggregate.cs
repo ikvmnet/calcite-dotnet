@@ -127,7 +127,23 @@ namespace Apache.Calcite.Linq.Rel
                 implementor.Translator.Bind(key_, keyParameter);
 
                 for (int j = 0; j < groupCount; j++)
-                    results.add(keyPhysType.fieldReference(key_, j));
+                {
+                    var reference = keyPhysType.fieldReference(key_, j);
+
+                    if (getGroupType() == Group.SIMPLE)
+                    {
+                        results.add(reference);
+                        continue;
+                    }
+
+                    // a key of a grouping set carries an indicator per field, set where the field is not one
+                    // this set groups by; the value is then null however the row read
+                    results.add(
+                        J.Expressions.condition(
+                            keyPhysType.fieldReference(key_, groupCount + j),
+                            J.Expressions.constant(null),
+                            J.Expressions.box(reference)));
+                }
             }
 
             for (int i = 0; i < aggs.size(); i++)
@@ -137,6 +153,46 @@ namespace Apache.Calcite.Linq.Rel
             }
 
             resultBlock.add(J.Expressions.return_(null, physType.record(results)));
+
+            if (getGroupType() != Group.SIMPLE)
+            {
+                // one key selector per grouping set, each keying on the fields that set groups by and marking
+                // the rest; every row is folded into one group per selector, which is what makes a ROLLUP or a
+                // CUBE one pass over the input
+                var sets = getGroupSets();
+                var selectors = new Expression[sets.size()];
+                Type? keyType = null;
+
+                for (int i = 0; i < sets.size(); i++)
+                {
+                    var set = (ImmutableBitSet)sets.get(i);
+                    var selector = implementor.Translator.TranslateSelector(
+                        inputPhysType.generateSelector(in_, groupSet.asList(), set.asList(), keyPhysType.getFormat()),
+                        sourceType);
+
+                    keyType ??= selector.ReturnType;
+                    if (selector.ReturnType != keyType)
+                        throw new java.lang.IllegalStateException($"grouping set key types differ: {selector.ReturnType} against {keyType}");
+
+                    selectors[i] = selector;
+                }
+
+                var setsResultSelector = Expression.Lambda(
+                    typeof(Func<,,>).MakeGenericType(keyParameter!.Type, accType, rowType),
+                    implementor.Translator.TranslateBody(resultBlock.toBlock(), rowType),
+                    keyParameter,
+                    accParameter);
+
+                return implementor.Result(physType,
+                    Expression.Call(null,
+                        ClrBuiltInMethod.GroupByMultiple.MakeGenericMethod(sourceType, keyType!, rowType),
+                        result.Expression,
+                        Expression.NewArrayInit(typeof(Func<,>).MakeGenericType(sourceType, keyType!), selectors),
+                        Expression.Call(lambdaFactory, AccInitializer),
+                        Expression.Call(lambdaFactory, AccAdder),
+                        Expression.Call(lambdaFactory, ResultSelector, Function2Of(setsResultSelector, keyParameter.Type, accType, rowType)),
+                        ClrPhysTypes.Comparer(implementor, keyPhysType)));
+            }
 
             if (groupCount == 0)
             {
@@ -154,6 +210,20 @@ namespace Apache.Calcite.Linq.Rel
                             Expression.Call(Expression.Call(lambdaFactory, AccInitializer), Function0Apply),
                             Expression.Call(lambdaFactory, AccAdder),
                             Expression.Call(lambdaFactory, SingleGroupResultSelector, Function1Of(resultSelector, accType, rowType)))));
+            }
+
+            // grouping by every field of the input with nothing to accumulate is a DISTINCT, and Calcite says
+            // so rather than grouping: the rows are the input's, so the accumulator machinery is skipped and
+            // the physical type is reached by conversion
+            if (getAggCallList().isEmpty() && groupSet.equals(ImmutableBitSet.range(getInput().getRowType().getFieldCount())))
+            {
+                var source = ClrPhysTypes.ConvertTo(implementor, inputPhysType, result.Expression, physType.getFormat());
+
+                return implementor.Result(physType,
+                    Expression.Call(null,
+                        ClrBuiltInMethod.Distinct.MakeGenericMethod(source.Type.GetGenericArguments()[0]),
+                        source,
+                        ClrPhysTypes.Comparer(implementor, physType)));
             }
 
             var keySelector = implementor.Translator.TranslateSelector(

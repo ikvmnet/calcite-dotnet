@@ -46,6 +46,24 @@ namespace Apache.Calcite.Linq.Tree
         readonly Stack<Frame> frames = new();
         readonly Stack<Loop> loops = new();
 
+        // Java resolves a name, and a lambda's parameter shadows anything outside it that shares one.
+        // Calcite relies on that: a generator builds part of a lambda's body against a ParameterExpression
+        // it made itself and another generator makes the lambda's parameter, both named the same thing, and
+        // the source Janino compiles says that name twice. Keyed by reference there are two variables, one
+        // of them free.
+        readonly Stack<Dictionary<string, ParameterExpression>> scopes = new();
+        readonly java.util.Map? stashed;
+
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        /// <param name="internalParameters">The values passed to the executor rather than written into the
+        /// plan, or <see langword="null"/> where the caller has none.</param>
+        public ExpressionTranslator(java.util.Map? internalParameters = null)
+        {
+            stashed = internalParameters;
+        }
+
         /// <summary>
         /// Binds a linq4j variable to the one the translated tree will use for it.
         /// </summary>
@@ -70,13 +88,49 @@ namespace Apache.Calcite.Linq.Tree
         /// <param name="node"></param>
         /// <returns></returns>
         /// <exception cref="NotSupportedException"></exception>
+        /// <remarks>
+        /// An expression arriving from outside is optimised first, because every tree Calcite gives Janino has
+        /// been: a node hands its tree to <c>BlockBuilder.append</c>, which runs <c>OptimizeShuttle</c> over
+        /// it. That shuttle's own class comment says why it is not a tweak — "without optimization,
+        /// expressions such as <c>false == null</c> will be left in, which are invalid to Janino (because it
+        /// does not automatically box primitives)".
+        ///
+        /// <para>An expression tree is stricter still. <c>PhysType.generateNullAwareAccessor</c> writes
+        /// <c>field == null ? null : List1(field)</c> for every key, and where the field is a primitive that
+        /// comparison is what the shuttle folds to <c>false</c>; left in, the CLR converts a null to an
+        /// <c>int</c> and throws. Translating what Janino would have been given rather than what the
+        /// generator wrote is the whole of it.</para>
+        ///
+        /// <para>Only an expression. A statement the shuttle rewrites away becomes
+        /// <c>OptimizeShuttle.EMPTY_STATEMENT</c>, which <c>BlockBuilder</c> filters and a bare block does
+        /// not, and the blocks translated here come from a <c>BlockBuilder</c> that has already run it — or
+        /// from one deliberately built not to.</para>
+        /// </remarks>
         public Expression Translate(J.Node node)
+        {
+            ArgumentNullException.ThrowIfNull(node);
+
+            return Visit(node is J.Expression e ? e.accept(Optimizer) : node);
+        }
+
+        /// <summary>
+        /// The shuttle <c>BlockBuilder</c> runs over everything Calcite compiles.
+        /// </summary>
+        static readonly J.Shuttle Optimizer = new J.OptimizeShuttle();
+
+        /// <summary>
+        /// Translates a node, which has already been optimised.
+        /// </summary>
+        /// <param name="node"></param>
+        /// <returns></returns>
+        /// <exception cref="NotSupportedException"></exception>
+        Expression Visit(J.Node node)
         {
             ArgumentNullException.ThrowIfNull(node);
 
             return node switch
             {
-                J.ParameterExpression e => Variable(e),
+                J.ParameterExpression e => Stashed(e) ?? Variable(e),
                 J.ConstantExpression e => Constant(e),
                 J.BinaryExpression e => Binary(e),
                 J.UnaryExpression e => Unary(e),
@@ -97,7 +151,7 @@ namespace Apache.Calcite.Linq.Tree
                 J.ForEachStatement s => ForEach(s),
                 J.WhileStatement s => While(s),
                 J.TryStatement s => Try(s),
-                J.ThrowStatement s => Expression.Throw(Translate(s.expression)),
+                J.ThrowStatement s => Expression.Throw(Visit(s.expression)),
                 _ => throw new NotSupportedException($"Cannot translate a linq4j {node.GetType().Name}.")
             };
         }
@@ -179,7 +233,7 @@ namespace Apache.Calcite.Linq.Tree
         /// <returns></returns>
         Expression Statement(J.Node node)
         {
-            return Void(Translate(node));
+            return Void(Visit(node));
         }
 
         /// <summary>
@@ -199,10 +253,73 @@ namespace Apache.Calcite.Linq.Tree
         /// <returns></returns>
         ParameterExpression Variable(J.ParameterExpression parameter)
         {
+            // by name first, innermost out, and ahead of what the object is already bound to: inside a lambda
+            // a mention of something named as one of its parameters *is* that parameter, whatever object it
+            // was built from and whatever that object means outside. Java has no way to say otherwise — the
+            // parameter shadows the outer variable and the name is all the generated source carries.
+            foreach (var scope in scopes)
+                if (scope.TryGetValue(parameter.name, out var shadowed))
+                    return shadowed;
+
             if (variables.TryGetValue(parameter, out var variable))
                 return variable;
 
             return variables[parameter] = Expression.Parameter(TypeResolver.Resolve(parameter.getType()), parameter.name);
+        }
+
+        /// <summary>
+        /// Translates the body of a lambda, with its parameters in scope by name.
+        /// </summary>
+        /// <param name="parameters"></param>
+        /// <param name="body"></param>
+        /// <param name="returnType"></param>
+        /// <returns></returns>
+        Expression Scoped(ParameterExpression[] parameters, J.BlockStatement body, Type returnType)
+        {
+            var scope = new Dictionary<string, ParameterExpression>(parameters.Length);
+            foreach (var parameter in parameters)
+                scope[parameter.Name!] = parameter;
+
+            scopes.Push(scope);
+
+            try
+            {
+                return TranslateBody(body, returnType);
+            }
+            finally
+            {
+                scopes.Pop();
+            }
+        }
+
+        /// <summary>
+        /// Returns the value a stashed variable stands for, or <see langword="null"/> where the variable is
+        /// an ordinary one.
+        /// </summary>
+        /// <param name="parameter"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>EnumerableRelImplementor.stash</c> puts an object on the internal-parameter map and returns a
+        /// variable named for it; <c>implementRoot</c> then declares that variable at the top of the method
+        /// it generates, reading the object back with <c>root.get(name)</c>. A sub-plan translated on its own
+        /// — which is what a converter hands over — never sees that declaration, so the variable arrives
+        /// free.
+        ///
+        /// <para>The object is on the map, and the map is shared with Calcite's implementor precisely so that
+        /// what one side stashes reaches the other. An expression tree can hold the object, so it does: the
+        /// same answer <c>ClrEnumerableRelImplementor.Stash</c> gives for a value stashed on this side.
+        /// A variable declared inside the block is not on the map and is unaffected.</para>
+        /// </remarks>
+        Expression? Stashed(J.ParameterExpression parameter)
+        {
+            if (stashed == null || variables.ContainsKey(parameter))
+                return null;
+
+            var value = stashed.get(parameter.name);
+            if (value == null)
+                return null;
+
+            return Expression.Constant(value, TypeResolver.Resolve(parameter.getType()));
         }
 
         /// <summary>
@@ -242,7 +359,7 @@ namespace Apache.Calcite.Linq.Tree
             if (statement.initializer == null)
                 return Expression.Empty();
 
-            return Expression.Assign(variable, JavaCast.To(Translate(statement.initializer), variable.Type));
+            return Expression.Assign(variable, JavaCast.To(Visit(statement.initializer), variable.Type));
         }
 
         /// <summary>
@@ -315,7 +432,7 @@ namespace Apache.Calcite.Linq.Tree
             while (i > 0)
             {
                 var then = Statement((J.Node)list.get(i - 1));
-                var test = JavaCast.To(Translate((J.Node)list.get(i - 2)), typeof(bool));
+                var test = JavaCast.To(Visit((J.Node)list.get(i - 2)), typeof(bool));
                 result = result == null ? Expression.IfThen(test, then) : Expression.IfThenElse(test, then, result);
                 i -= 2;
             }
@@ -335,7 +452,7 @@ namespace Apache.Calcite.Linq.Tree
             {
                 case nameof(J.GotoExpressionKind.Sequence):
                     // linq4j writes an expression used as a statement this way
-                    return statement.expression == null ? Expression.Empty() : Void(Translate(statement.expression));
+                    return statement.expression == null ? Expression.Empty() : Void(Visit(statement.expression));
 
                 case nameof(J.GotoExpressionKind.Return):
                     if (frames.Count == 0)
@@ -348,7 +465,7 @@ namespace Apache.Calcite.Linq.Tree
                     if (statement.expression == null)
                         throw new NotSupportedException($"A return with no value cannot yield '{label.Type}'.");
 
-                    return Expression.Return(label, JavaCast.To(Translate(statement.expression), label.Type));
+                    return Expression.Return(label, JavaCast.To(Visit(statement.expression), label.Type));
 
                 case nameof(J.GotoExpressionKind.Break):
                     if (loops.Count == 0)
@@ -409,7 +526,7 @@ namespace Apache.Calcite.Linq.Tree
             Expression iteration = statement.condition == null
                 ? Expression.Block(typeof(void), step)
                 : Expression.IfThenElse(
-                    JavaCast.To(Translate(statement.condition), typeof(bool)),
+                    JavaCast.To(Visit(statement.condition), typeof(bool)),
                     Expression.Block(typeof(void), step),
                     Expression.Break(loop.Break));
 
@@ -441,7 +558,7 @@ namespace Apache.Calcite.Linq.Tree
             // the continue label is the top of the loop, where the condition is tested again
             return Expression.Loop(
                 Expression.IfThenElse(
-                    JavaCast.To(Translate(statement.condition), typeof(bool)),
+                    JavaCast.To(Visit(statement.condition), typeof(bool)),
                     body,
                     Expression.Break(loop.Break)),
                 loop.Break,
@@ -456,7 +573,7 @@ namespace Apache.Calcite.Linq.Tree
         Expression ForEach(J.ForEachStatement statement)
         {
             var element = Variable(statement.parameter);
-            var source = Translate(statement.iterable);
+            var source = Visit(statement.iterable);
 
             var loop = new Loop(Expression.Label("break"), Expression.Label("continue"));
             loops.Push(loop);
@@ -540,9 +657,9 @@ namespace Apache.Calcite.Linq.Tree
             var type = TypeResolver.Resolve(expression.getType());
 
             return Expression.Condition(
-                JavaCast.To(Translate(expression.expression0), typeof(bool)),
-                JavaCast.To(Translate(expression.expression1), type),
-                JavaCast.To(Translate(expression.expression2), type),
+                JavaCast.To(Visit(expression.expression0), typeof(bool)),
+                JavaCast.To(Visit(expression.expression1), type),
+                JavaCast.To(Visit(expression.expression2), type),
                 type);
         }
 
@@ -553,7 +670,7 @@ namespace Apache.Calcite.Linq.Tree
         /// <returns></returns>
         Expression Member(J.MemberExpression expression)
         {
-            return FieldResolver.Resolve(expression.expression == null ? null : Translate(expression.expression), expression.field);
+            return FieldResolver.Resolve(expression.expression == null ? null : Visit(expression.expression), expression.field);
         }
 
         /// <summary>
@@ -563,12 +680,12 @@ namespace Apache.Calcite.Linq.Tree
         /// <returns></returns>
         Expression Index(J.IndexExpression expression)
         {
-            var array = Translate(expression.array);
+            var array = Visit(expression.array);
 
             var indexes = expression.indexExpressions;
             var resolved = new Expression[indexes.size()];
             for (int i = 0; i < indexes.size(); i++)
-                resolved[i] = JavaCast.To(Translate((J.Node)indexes.get(i)), typeof(int));
+                resolved[i] = JavaCast.To(Visit((J.Node)indexes.get(i)), typeof(int));
 
             // ArrayAccess rather than ArrayIndex, because linq4j assigns to one of these
             return Expression.ArrayAccess(array, resolved);
@@ -581,7 +698,7 @@ namespace Apache.Calcite.Linq.Tree
         /// <returns></returns>
         Expression TypeBinary(J.TypeBinaryExpression expression)
         {
-            return Expression.TypeIs(Translate(expression.expression), TypeResolver.Resolve(expression.type));
+            return Expression.TypeIs(Visit(expression.expression), TypeResolver.Resolve(expression.type));
         }
 
         /// <summary>
@@ -599,7 +716,7 @@ namespace Apache.Calcite.Linq.Tree
                 var items = expression.expressions;
                 var resolved = new Expression[items.size()];
                 for (int i = 0; i < items.size(); i++)
-                    resolved[i] = JavaCast.To(Translate((J.Node)items.get(i)), element);
+                    resolved[i] = JavaCast.To(Visit((J.Node)items.get(i)), element);
 
                 return Expression.NewArrayInit(element, resolved);
             }
@@ -607,7 +724,7 @@ namespace Apache.Calcite.Linq.Tree
             if (expression.bound == null)
                 throw new NotSupportedException("An array creation needs either its elements or a bound.");
 
-            return Expression.NewArrayBounds(element, JavaCast.To(Translate(expression.bound), typeof(int)));
+            return Expression.NewArrayBounds(element, JavaCast.To(Visit(expression.bound), typeof(int)));
         }
 
         /// <summary>
@@ -618,7 +735,7 @@ namespace Apache.Calcite.Linq.Tree
         Expression Call(J.MethodCallExpression expression)
         {
             var method = MethodResolver.Resolve(expression.method);
-            var target = expression.targetExpression == null ? null : Translate(expression.targetExpression);
+            var target = expression.targetExpression == null ? null : Visit(expression.targetExpression);
 
             var arguments = expression.expressions;
 
@@ -630,7 +747,7 @@ namespace Apache.Calcite.Linq.Tree
                 translated[0] = target!;
 
             for (int i = 0; i < arguments.size(); i++)
-                translated[i + offset] = Translate((J.Node)arguments.get(i));
+                translated[i + offset] = Visit((J.Node)arguments.get(i));
 
             // the overload is chosen by the receiver and by what is being passed, not by the method the tree
             // names: Janino resolves both from the source text and never looks at that method
@@ -680,7 +797,7 @@ namespace Apache.Calcite.Linq.Tree
         {
             var resolved = new Expression[arguments.size()];
             for (int i = 0; i < arguments.size(); i++)
-                resolved[i] = Translate((J.Node)arguments.get(i));
+                resolved[i] = Visit((J.Node)arguments.get(i));
 
             var constructor = type.GetConstructor(Array.ConvertAll(resolved, e => e.Type));
             if (constructor != null)
@@ -777,7 +894,7 @@ namespace Apache.Calcite.Linq.Tree
                 variables.Add(variable);
 
                 if (field.initializer != null)
-                    body.Add(Expression.Assign(variable, JavaCast.To(Translate(field.initializer), variable.Type)));
+                    body.Add(Expression.Assign(variable, JavaCast.To(Visit(field.initializer), variable.Type)));
             }
 
             body.Add(wrapped);
@@ -796,7 +913,7 @@ namespace Apache.Calcite.Linq.Tree
             for (int i = 0; i < parameters.Length; i++)
                 parameters[i] = Variable((J.ParameterExpression)declaration.parameters.get(i));
 
-            return Expression.Lambda(TranslateBody(declaration.body, TypeResolver.Resolve(declaration.resultType)), parameters);
+            return Expression.Lambda(Scoped(parameters, declaration.body, TypeResolver.Resolve(declaration.resultType)), parameters);
         }
 
         /// <summary>
@@ -866,8 +983,8 @@ namespace Apache.Calcite.Linq.Tree
         /// <exception cref="NotSupportedException"></exception>
         Expression Binary(J.BinaryExpression expression)
         {
-            var left = Translate(expression.expression0);
-            var right = Translate(expression.expression1);
+            var left = Visit(expression.expression0);
+            var right = Visit(expression.expression1);
             var op = Operator(expression.getNodeType());
 
             if (op == ExpressionType.Assign)
@@ -955,7 +1072,7 @@ namespace Apache.Calcite.Linq.Tree
         /// <exception cref="NotSupportedException"></exception>
         Expression Unary(J.UnaryExpression expression)
         {
-            var operand = Translate(expression.expression);
+            var operand = Visit(expression.expression);
 
             switch (expression.getNodeType().name())
             {
@@ -1028,7 +1145,7 @@ namespace Apache.Calcite.Linq.Tree
             for (int i = 0; i < parameters.Length; i++)
                 parameters[i] = Variable((J.ParameterExpression)expression.parameterList.get(i));
 
-            var lambda = Expression.Lambda(TranslateBody(body, TypeResolver.Resolve(body.getType())), parameters);
+            var lambda = Expression.Lambda(Scoped(parameters, body, TypeResolver.Resolve(body.getType())), parameters);
 
             // linq4j declares a lambda against one of its functional interfaces, and a block of Calcite's making
             // uses it as that interface, including where it is passed as an object. So it is one from here, and
