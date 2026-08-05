@@ -172,10 +172,8 @@ namespace Apache.Calcite.Linq.Rel
                 ?? throw new java.lang.IllegalStateException($"Unable to implement {RelOptUtil.toString(this, org.apache.calcite.sql.SqlExplainLevel.ALL_ATTRIBUTES)}: {table}.getExpression(Queryable.class) returned null");
 
             var source = ToEnumerable(implementor.Translator.Translate(expression));
-            var element = TypeResolver.FromClass(elementType);
 
-            return implementor.Result(physType,
-                ToRows(implementor, physType, Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(element), source), element));
+            return implementor.Result(physType, ToRows(implementor, physType, source));
         }
 
         /// <summary>
@@ -218,19 +216,25 @@ namespace Apache.Calcite.Linq.Rel
         /// <param name="source"></param>
         /// <param name="element"></param>
         /// <returns></returns>
-        Expression ToRows(ClrEnumerableRelImplementor implementor, PhysType physType, Expression source, Type element)
+        Expression ToRows(ClrEnumerableRelImplementor implementor, PhysType physType, Expression source)
         {
+            var element = TypeResolver.FromClass(elementType);
+
             if (physType.getFormat() == JavaRowFormat.SCALAR
                 && ((java.lang.Class)typeof(object[])).isAssignableFrom(elementType)
                 && getRowType().getFieldCount() == 1
                 && (table.unwrap(typeof(ScannableTable)) != null
                     || table.unwrap(typeof(FilterableTable)) != null
                     || table.unwrap(typeof(ProjectableFilterableTable)) != null))
-                return Expression.Call(null, ClrBuiltInMethod.Slice0, source);
+                return Expression.Call(null, ClrBuiltInMethod.Slice0, FromJava(element, source));
 
             var oldFormat = Format();
             if (physType.getFormat() == oldFormat && HasCollectionField(getRowType()) == false)
-                return source;
+                // the rows are of the physical row type, which is what every reader of this sequence expects.
+                // Calcite passes the table's own element type along here because a linq4j Enumerable erases
+                // it; a CLR sequence does not, and the two differ wherever a format was optimized away — a
+                // one column table declares Object[] and holds the value itself.
+                return FromJava(TypeResolver.Resolve(physType.getJavaRowType()), source);
 
             // the row shape is PhysType's, and record takes linq4j, so the field expressions are linq4j too.
             // That is the whole of it: one call feeding another, translated the moment it is built.
@@ -249,7 +253,18 @@ namespace Apache.Calcite.Linq.Rel
                 implementor.Translator.Translate(physType.record(expressionList)),
                 parameter);
 
-            return Expression.Call(null, ClrBuiltInMethod.Select.MakeGenericMethod(element, rowType), source, selector);
+            return Expression.Call(null, ClrBuiltInMethod.Select.MakeGenericMethod(element, rowType), FromJava(element, source), selector);
+        }
+
+        /// <summary>
+        /// Reads the table's linq4j sequence as a .NET one of the given row type.
+        /// </summary>
+        /// <param name="element"></param>
+        /// <param name="source"></param>
+        /// <returns></returns>
+        static Expression FromJava(Type element, Expression source)
+        {
+            return Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(element), source);
         }
 
         /// <summary>

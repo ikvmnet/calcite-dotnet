@@ -359,7 +359,7 @@ namespace Apache.Calcite.Data.Tests
         /// <c>IEnumerable&lt;object[]&gt;</c>.</para>
         /// <para>Skipped, not deleted, and the skip message names the defect that holds it.</para>
         /// </remarks>
-        [Fact(Skip = "One-column table scan: physType is SCALAR while the table yields Object[] rows, so an aggregate over it is typed wrong. A defect in this convention, not CALCITE-7690.")]
+        [Fact]
         public void Delete_should_return_row_count()
         {
             using var c = new CalciteConnection(ServerDdlConnectionString);
@@ -467,7 +467,7 @@ namespace Apache.Calcite.Data.Tests
         /// <c>IEnumerable&lt;object[]&gt;</c>.</para>
         /// <para>Skipped, not deleted, and the skip message names the defect that holds it.</para>
         /// </remarks>
-        [Fact(Skip = "One-column table scan: physType is SCALAR while the table yields Object[] rows, so an aggregate over it is typed wrong. A defect in this convention, not CALCITE-7690.")]
+        [Fact]
         public void MultiRow_delete_should_return_correct_row_count_for_single_column_table()
         {
             using var c = new CalciteConnection(ServerDdlConnectionString);
