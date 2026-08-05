@@ -25,7 +25,7 @@ namespace Apache.Calcite.Linq
     /// compiler at the end, which is <see cref="ClrEnumerableInterpretable"/>. Parsing, validation and
     /// sql-to-rel are Calcite's, untouched.</para>
     /// </remarks>
-    public class ClrEnumerablePrepare : CalcitePrepareImpl
+    class ClrEnumerablePrepare : CalcitePrepareImpl
     {
 
         /// <inheritdoc />

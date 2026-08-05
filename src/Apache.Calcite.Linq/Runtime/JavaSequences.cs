@@ -31,7 +31,6 @@ namespace Apache.Calcite.Linq.Runtime
         /// runtime; Java unboxes that at the use site and the CLR will not. A row that is an
         /// <c>Object[]</c> — which is nearly all of them — passes the type test in
         /// <see cref="JavaValues.As{T}"/> and costs nothing.
-
         /// </remarks>
         public static IEnumerable<TSource> FromJava<TSource>(Enumerable source)
         {

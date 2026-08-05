@@ -16,7 +16,7 @@ namespace Apache.Calcite.Linq
     ///
     /// <para>Register <see cref="ClrEnumerableRules.Rules"/> with the planner and ask for this convention on
     /// the root; <see cref="ClrEnumerablePrograms"/> has the passes that takes, and
-    /// <see cref="ClrEnumerablePrepare"/> wires the whole of it to a connection. A plan may hold nodes of
+    /// <see cref="ClrEnumerableInterpretable"/> compiles the plan that comes out. A plan may hold nodes of
     /// both conventions — converters exist in each direction and rows cross untouched.</para>
     /// </remarks>
     public sealed class ClrEnumerableConvention : Convention.Impl
