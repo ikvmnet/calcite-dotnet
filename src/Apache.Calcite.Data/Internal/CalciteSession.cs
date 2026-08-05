@@ -278,7 +278,7 @@ namespace Apache.Calcite.Data.Internal
                 var signature = Plan(request);
                 Bind(request, signature, out var dataContext, out _);
 
-                var statementType = (Meta.StatementType.__Enum)signature.statementType.ordinal();
+                var statementType = signature.statementType;
 
                 Enumerable? enumerable = null;
                 if (!IsDdl(statementType))
@@ -323,7 +323,7 @@ namespace Apache.Calcite.Data.Internal
                 var signature = Plan(request);
                 Bind(request, signature, out var dataContext, out var cancelFlag);
 
-                var statementType = (Meta.StatementType.__Enum)signature.statementType.ordinal();
+                var statementType = signature.statementType;
 
                 long recordsAffected;
                 if (IsDdl(statementType))
@@ -331,7 +331,7 @@ namespace Apache.Calcite.Data.Internal
                     // DDL: already executed as a side-effect of prepareSql; nothing to enumerate.
                     recordsAffected = 0;
                 }
-                else if (statementType == Meta.StatementType.__Enum.SELECT)
+                else if (statementType == Meta.StatementType.SELECT)
                 {
                     // SELECT has no affected row count by ADO.NET convention.
                     recordsAffected = -1;
@@ -376,12 +376,12 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>Returns <see langword="true"/> when <paramref name="t"/> represents a DDL statement type.</summary>
-        static bool IsDdl(Meta.StatementType.__Enum t) => t switch
+        static bool IsDdl(Meta.StatementType t) => t.name() switch
         {
-            Meta.StatementType.__Enum.CREATE => true,
-            Meta.StatementType.__Enum.ALTER => true,
-            Meta.StatementType.__Enum.DROP => true,
-            Meta.StatementType.__Enum.OTHER_DDL => true,
+            nameof(Meta.StatementType.CREATE) => true,
+            nameof(Meta.StatementType.ALTER) => true,
+            nameof(Meta.StatementType.DROP) => true,
+            nameof(Meta.StatementType.OTHER_DDL) => true,
             _ => false,
         };
 

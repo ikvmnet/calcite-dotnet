@@ -35,29 +35,29 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 
         static bool CanJoinOnCondition(RexNode node)
         {
-            switch ((SqlKind.__Enum)node.getKind().ordinal())
+            switch (node.getKind().name())
             {
-                case SqlKind.__Enum.DYNAMIC_PARAM:
-                case SqlKind.__Enum.INPUT_REF:
-                case SqlKind.__Enum.LITERAL:
+                case nameof(SqlKind.DYNAMIC_PARAM):
+                case nameof(SqlKind.INPUT_REF):
+                case nameof(SqlKind.LITERAL):
                     // literal on a join condition would be TRUE or FALSE
                     return true;
-                case SqlKind.__Enum.AND:
-                case SqlKind.__Enum.OR:
-                case SqlKind.__Enum.IS_NULL:
-                case SqlKind.__Enum.IS_NOT_NULL:
-                case SqlKind.__Enum.IS_TRUE:
-                case SqlKind.__Enum.IS_NOT_TRUE:
-                case SqlKind.__Enum.IS_FALSE:
-                case SqlKind.__Enum.IS_NOT_FALSE:
-                case SqlKind.__Enum.EQUALS:
-                case SqlKind.__Enum.NOT_EQUALS:
-                case SqlKind.__Enum.GREATER_THAN:
-                case SqlKind.__Enum.GREATER_THAN_OR_EQUAL:
-                case SqlKind.__Enum.LESS_THAN:
-                case SqlKind.__Enum.LESS_THAN_OR_EQUAL:
-                case SqlKind.__Enum.IS_NOT_DISTINCT_FROM:
-                case SqlKind.__Enum.CAST:
+                case nameof(SqlKind.AND):
+                case nameof(SqlKind.OR):
+                case nameof(SqlKind.IS_NULL):
+                case nameof(SqlKind.IS_NOT_NULL):
+                case nameof(SqlKind.IS_TRUE):
+                case nameof(SqlKind.IS_NOT_TRUE):
+                case nameof(SqlKind.IS_FALSE):
+                case nameof(SqlKind.IS_NOT_FALSE):
+                case nameof(SqlKind.EQUALS):
+                case nameof(SqlKind.NOT_EQUALS):
+                case nameof(SqlKind.GREATER_THAN):
+                case nameof(SqlKind.GREATER_THAN_OR_EQUAL):
+                case nameof(SqlKind.LESS_THAN):
+                case nameof(SqlKind.LESS_THAN_OR_EQUAL):
+                case nameof(SqlKind.IS_NOT_DISTINCT_FROM):
+                case nameof(SqlKind.CAST):
                     return ((RexCall)node).getOperands().AsEnumerable<RexNode>().All(CanJoinOnCondition);
                 default:
                     return false;
@@ -78,10 +78,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         public override RelNode? convert(RelNode rn)
         {
             var join = (Join)rn;
-            switch ((JoinRelType.__Enum)join.getJoinType().ordinal())
+            switch (join.getJoinType().name())
             {
-                case JoinRelType.__Enum.SEMI:
-                case JoinRelType.__Enum.ANTI:
+                case nameof(JoinRelType.SEMI):
+                case nameof(JoinRelType.ANTI):
                     return null;
                 default:
                     return Convert(join, true);
