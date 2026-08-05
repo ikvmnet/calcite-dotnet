@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -193,7 +193,7 @@ namespace Apache.Calcite.Linq.Tests
         /// <param name="topDown">Whether the planner optimises top down, which is what asks a node to pass a
         /// trait down to its inputs or derive one from them.</param>
         /// <returns></returns>
-        static List<string> Run(string sql, bool clr, bool topDown = false, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false)
+        static List<string> Run(string sql, bool clr, bool topDown = false, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool markJoin = false)
         {
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add("SALES", new SalesTable());
@@ -245,7 +245,7 @@ namespace Apache.Calcite.Linq.Tests
             var config = Frameworks.newConfigBuilder()
                 .defaultSchema(rootSchema)
                 .programs(
-                    Programs.subQuery(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE),
+                    markJoin ? MarkJoinSubQueryProgram() : Programs.subQuery(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE),
                     new DefaultRulesProgram(rules, topDown, clr && topDown),
                     Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE))
                 .build();
@@ -298,9 +298,9 @@ namespace Apache.Calcite.Linq.Tests
         /// <param name="sql"></param>
         /// <param name="clr"></param>
         /// <returns></returns>
-        internal static string PlanOf(string sql, bool clr, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false)
+        internal static string PlanOf(string sql, bool clr, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool markJoin = false)
         {
-            return Run(sql, clr, false, true, sortedAggregate, batchNestedLoopJoin, limitSort)[0];
+            return Run(sql, clr, false, true, sortedAggregate, batchNestedLoopJoin, limitSort, markJoin)[0];
         }
 
         /// <summary>
@@ -361,6 +361,43 @@ namespace Apache.Calcite.Linq.Tests
         {
             var mine = Run(sql, true, false, false, false, false, true);
             var calcite = Run(sql, false, false, false, false, false, true);
+
+            mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
+        }
+
+        /// <summary>
+        /// The sub-query pass that rewrites EXISTS/IN/SOME to a LEFT MARK join rather than to a correlate.
+        /// </summary>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>Programs.subQuery</c> chooses between two rule sets on
+        /// <c>CalciteConnectionConfig.topDownGeneralDecorrelationEnabled</c>, which is off by default, so the
+        /// mark-join rules are not reached through it. They have the same standing as the sorted aggregate
+        /// rule: Calcite ships them and a caller turns them on. This is that second set, spelled out.
+        /// </remarks>
+        static Program MarkJoinSubQueryProgram()
+        {
+            var rules = new java.util.ArrayList();
+            rules.add(org.apache.calcite.rel.rules.CoreRules.FILTER_SUB_QUERY_TO_MARK_CORRELATE);
+            rules.add(org.apache.calcite.rel.rules.CoreRules.PROJECT_SUB_QUERY_TO_MARK_CORRELATE);
+            rules.add(org.apache.calcite.rel.rules.CoreRules.JOIN_SUB_QUERY_TO_CORRELATE);
+            rules.add(org.apache.calcite.rel.rules.CoreRules.PROJECT_OVER_SUM_TO_SUM0_RULE);
+
+            var builder = org.apache.calcite.plan.hep.HepProgram.builder();
+            builder.addRuleCollection(rules);
+
+            return Programs.of(builder.build(), true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE);
+        }
+
+        /// <summary>
+        /// Requires that a query gives the same rows in both conventions, with the mark-join sub-query
+        /// rules on.
+        /// </summary>
+        /// <param name="sql"></param>
+        static void SameMarkJoin(string sql)
+        {
+            var mine = Run(sql, true, false, false, false, false, false, true);
+            var calcite = Run(sql, false, false, false, false, false, false, true);
 
             mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
         }
@@ -603,6 +640,19 @@ namespace Apache.Calcite.Linq.Tests
         public void ShouldPlanALimitOverASortWithoutTheRule() =>
             PlanOf("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY", true)
                 .Should().NotContain("LimitSort");
+
+        [TestMethod]
+        public void ShouldAgreeOnAMarkJoinFromExists() =>
+            SameMarkJoin("SELECT \"ID\" FROM \"SALES\" WHERE EXISTS (SELECT 1 FROM \"SALES\" \"S2\" WHERE \"S2\".\"ID\" > 4) ORDER BY \"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnAMarkJoinFromAnEmptyExists() =>
+            SameMarkJoin("SELECT \"ID\" FROM \"SALES\" WHERE EXISTS (SELECT 1 FROM \"SALES\" \"S2\" WHERE \"S2\".\"ID\" > 99) ORDER BY \"ID\"");
+
+        [TestMethod]
+        public void ShouldPlanANestedLoopMarkJoin() =>
+            PlanOf("SELECT \"ID\" FROM \"SALES\" WHERE EXISTS (SELECT 1 FROM \"SALES\" \"S2\" WHERE \"S2\".\"ID\" > 4)", true, markJoin: true)
+                .Should().Contain("ClrEnumerableNestedLoopJoin").And.Contain("left_mark");
 
         [TestMethod]
         public void ShouldAgreeOnValues() => Same("SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");

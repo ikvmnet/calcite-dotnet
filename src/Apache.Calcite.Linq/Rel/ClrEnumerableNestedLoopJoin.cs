@@ -131,6 +131,57 @@ namespace Apache.Calcite.Linq.Rel
         /// <inheritdoc />
         public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
+            if (joinType.name() == nameof(JoinRelType.LEFT_MARK))
+                return ImplementMarkJoin(implementor, pref);
+
+            return ImplementJoin(implementor, pref);
+        }
+
+        /// <summary>
+        /// Implements a mark join, which returns every left row with a marker saying whether the right side
+        /// had a match.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <param name="pref"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>implementNLMarkJoin</c>. The predicate is the whole condition rather than
+        /// its non-equi part, and it is the three-valued one: a mark join's marker is null where a comparison
+        /// was unknown, which is what makes <c>IN</c> over a nullable column answer UNKNOWN.
+        /// </remarks>
+        ClrEnumerableResult ImplementMarkJoin(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
+            var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
+
+            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.PreferArray());
+
+            var leftSource = ClrEnumUtils.BoxRows(leftResult.PhysType, leftResult.Expression);
+            var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
+            var leftType = leftSource.Type.GetGenericArguments()[0];
+            var rightType = rightSource.Type.GetGenericArguments()[0];
+            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+
+            var predicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), left, right, leftResult.PhysType, rightResult.PhysType, getCondition(), true);
+            var selector = ClrEnumUtils.MarkJoinSelector(implementor, physType, leftResult.PhysType);
+
+            return implementor.Result(physType,
+                Expression.Call(null,
+                    ClrBuiltInMethod.LeftMarkNestedLoopJoin.MakeGenericMethod(leftType, rightType, rowType),
+                    leftSource,
+                    rightSource,
+                    predicate,
+                    selector));
+        }
+
+        /// <summary>
+        /// Implements the join by comparing every pair.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <param name="pref"></param>
+        /// <returns></returns>
+        ClrEnumerableResult ImplementJoin(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
             var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
 

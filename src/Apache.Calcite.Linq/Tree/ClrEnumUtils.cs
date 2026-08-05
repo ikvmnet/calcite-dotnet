@@ -154,8 +154,49 @@ namespace Apache.Calcite.Linq.Tree
                 nameof(JoinRelType.FULL) => org.apache.calcite.linq4j.JoinType.FULL,
                 nameof(JoinRelType.SEMI) => org.apache.calcite.linq4j.JoinType.SEMI,
                 nameof(JoinRelType.ANTI) => org.apache.calcite.linq4j.JoinType.ANTI,
+                nameof(JoinRelType.LEFT_MARK) => org.apache.calcite.linq4j.JoinType.LEFT_MARK,
                 _ => throw new System.NotSupportedException($"There is no linq4j join type for {joinType.name()}.")
             };
+        }
+
+        /// <summary>
+        /// Returns the lambda that appends a mark join's marker to a row of its input.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <param name="resultPhysType"></param>
+        /// <param name="inputPhysType"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumUtils.markJoinSelector</c>. A mark join returns the left row with one
+        /// column added, and that column is three-valued: true where some right row matched, false where none
+        /// did, null where a comparison was unknown. So the marker is a <c>java.lang.Boolean</c> and not a
+        /// <see cref="bool"/>, and the row is boxed as every other join here boxes it.
+        /// </remarks>
+        public static LambdaExpression MarkJoinSelector(ClrEnumerableRelImplementor implementor, PhysType resultPhysType, PhysType inputPhysType)
+        {
+            var javaRowType = J.Primitive.box(inputPhysType.getJavaRowType());
+            var input_ = J.Expressions.parameter(javaRowType, "input");
+            var marker_ = J.Expressions.parameter((java.lang.Class)typeof(java.lang.Boolean), "marker");
+
+            var inputParameter = Expression.Parameter(TypeResolver.Resolve(javaRowType), "input");
+            var markerParameter = Expression.Parameter(typeof(java.lang.Boolean), "marker");
+            implementor.Translator.Bind(input_, inputParameter);
+            implementor.Translator.Bind(marker_, markerParameter);
+
+            var expressions = new java.util.ArrayList();
+            var inputFieldCount = inputPhysType.getRowType().getFieldCount();
+            for (int i = 0; i < inputFieldCount; i++)
+                expressions.add(inputPhysType.fieldReference(input_, i));
+
+            expressions.add(marker_);
+
+            var rowType = TypeResolver.Resolve(resultPhysType.getJavaRowType());
+
+            return Expression.Lambda(
+                typeof(Func<,,>).MakeGenericType(inputParameter.Type, markerParameter.Type, rowType),
+                implementor.Translator.Translate(resultPhysType.record(expressions)),
+                inputParameter,
+                markerParameter);
         }
 
         /// <summary>
@@ -231,6 +272,30 @@ namespace Apache.Calcite.Linq.Tree
         /// <returns></returns>
         public static LambdaExpression GeneratePredicate(ClrEnumerableRelImplementor implementor, RexBuilder rexBuilder, RelNode left, RelNode right, PhysType leftPhysType, PhysType rightPhysType, RexNode condition)
         {
+            return GeneratePredicate(implementor, rexBuilder, left, right, leftPhysType, rightPhysType, condition, false);
+        }
+
+        /// <summary>
+        /// Returns the lambda that tests a join condition, answering three-valued where
+        /// <paramref name="nullable"/> is set.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <param name="rexBuilder"></param>
+        /// <param name="left"></param>
+        /// <param name="right"></param>
+        /// <param name="leftPhysType"></param>
+        /// <param name="rightPhysType"></param>
+        /// <param name="condition"></param>
+        /// <param name="nullable">Whether an unknown comparison answers null rather than false.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A mark join needs the third value: its marker is null where a comparison was unknown, which is what
+        /// makes <c>x IN (…)</c> answer UNKNOWN rather than FALSE. Every other join here folds unknown into
+        /// false. That is <c>Predicate2</c> against <c>NullablePredicate2</c> in Calcite, and
+        /// <see cref="bool"/> against <c>java.lang.Boolean</c> here.
+        /// </remarks>
+        public static LambdaExpression GeneratePredicate(ClrEnumerableRelImplementor implementor, RexBuilder rexBuilder, RelNode left, RelNode right, PhysType leftPhysType, PhysType rightPhysType, RexNode condition, bool nullable)
+        {
             var left_ = J.Expressions.parameter(leftPhysType.getJavaRowType(), "left");
             var right_ = J.Expressions.parameter(rightPhysType.getJavaRowType(), "right");
 
@@ -265,14 +330,17 @@ namespace Apache.Calcite.Linq.Tree
                         builder,
                         new RexToLixTranslator.InputGetterImpl(inputs),
                         implementor.AllCorrelateVariables,
-                        implementor.Conformance)));
+                        implementor.Conformance,
+                        nullable)));
+
+            var resultType = nullable ? typeof(java.lang.Boolean) : typeof(bool);
 
             return Expression.Lambda(
-                typeof(Func<,,>).MakeGenericType(leftParameter.Type, rightParameter.Type, typeof(bool)),
-                Expression.Block(typeof(bool), [leftRow, rightRow],
+                typeof(Func<,,>).MakeGenericType(leftParameter.Type, rightParameter.Type, resultType),
+                Expression.Block(resultType, [leftRow, rightRow],
                     Expression.Assign(leftRow, JavaCast.To(leftParameter, leftRow.Type)),
                     Expression.Assign(rightRow, JavaCast.To(rightParameter, rightRow.Type)),
-                    implementor.Translator.TranslateBody(builder.toBlock(), typeof(bool))),
+                    implementor.Translator.TranslateBody(builder.toBlock(), resultType)),
                 leftParameter,
                 rightParameter);
         }

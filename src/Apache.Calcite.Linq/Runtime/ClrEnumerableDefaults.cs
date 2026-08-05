@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -1184,6 +1184,57 @@ namespace Apache.Calcite.Linq.Runtime
             finally
             {
                 source?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Returns every left row with a marker saying whether the right side had a match.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TInner"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="outer"></param>
+        /// <param name="inner"></param>
+        /// <param name="predicate">Three-valued: null where the comparison is unknown.</param>
+        /// <param name="resultSelector"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.leftMarkNestedLoopJoin</c>, which is
+        /// <c>leftMarkJoinInternal</c> with a constant inner. The marker is three-valued and the order it is
+        /// resolved in matters: false until something is found, null if any comparison was unknown, and true
+        /// on the first match, which stops the scan. So an unknown seen before a match is discarded, and one
+        /// seen when there is no match is kept — which is what makes <c>IN</c> over a nullable column answer
+        /// UNKNOWN rather than FALSE.
+        /// </remarks>
+        public static IEnumerable<TResult> LeftMarkNestedLoopJoin<TSource, TInner, TResult>(
+            IEnumerable<TSource> outer,
+            IEnumerable<TInner> inner,
+            Func<TSource, TInner, java.lang.Boolean> predicate,
+            Func<TSource, java.lang.Boolean, TResult> resultSelector)
+        {
+            ArgumentNullException.ThrowIfNull(outer);
+            ArgumentNullException.ThrowIfNull(inner);
+            ArgumentNullException.ThrowIfNull(predicate);
+            ArgumentNullException.ThrowIfNull(resultSelector);
+
+            foreach (var left in outer)
+            {
+                var marker = java.lang.Boolean.FALSE;
+
+                foreach (var right in inner)
+                {
+                    var matched = predicate(left, right);
+
+                    if (matched == null)
+                        marker = null!;
+                    else if (matched.booleanValue())
+                    {
+                        marker = java.lang.Boolean.TRUE;
+                        break;
+                    }
+                }
+
+                yield return resultSelector(left, marker);
             }
         }
 

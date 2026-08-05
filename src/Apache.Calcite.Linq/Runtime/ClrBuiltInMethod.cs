@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Reflection;
 
 namespace Apache.Calcite.Linq.Runtime
@@ -104,6 +104,11 @@ namespace Apache.Calcite.Linq.Runtime
         /// <see cref="ClrEnumerableDefaults.NestedLoopJoin"/>.
         /// </summary>
         public static readonly MethodInfo NestedLoopJoin = Of(nameof(ClrEnumerableDefaults.NestedLoopJoin));
+
+        /// <summary>
+        /// <see cref="ClrEnumerableDefaults.LeftMarkNestedLoopJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo LeftMarkNestedLoopJoin = Of(nameof(ClrEnumerableDefaults.LeftMarkNestedLoopJoin));
 
         /// <summary>
         /// <see cref="ClrEnumerableDefaults.CorrelateBatchJoin"/>.
