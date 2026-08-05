@@ -320,6 +320,18 @@ own map.
 
 **4. Nodes not started and not investigated.** Interpreter and Bindable.
 
+**4b. `PARITY.md` 5.6 is measured as far as it can be.** `ClrEnumerablePrepare` uses its own
+internal-parameter map, because `CalcitePreparingStmt.internalParameters` is private. That loses a value
+Calcite's own implementor stashes — but only on a plan carrying `ClrEnumerableToEnumerableConverter`, a
+sub-plan of ours under a node of Calcite's, **and the planner does not choose that shape**. Measured with a
+MATCH_RECOGNIZE, the one query that forces Calcite's convention into a plan rooted in this one: the planner
+put the whole subtree in `EnumerableConvention` and converted once at the top. Converting back and forth
+costs more than staying.
+
+One query is not a proof of unreachability, so 5.6 stays in §5. What would settle it is a plan where a Clr
+node genuinely sits under an Enumerable one — and finding out whether the cost model ever allows that is the
+next step, not more argument.
+
 **5. Blocked, and not by effort.** Match cannot be written as a node: `PassedRowsInputGetter` and
 `PrevInputGetter` are package private *types* that Calcite's own translator casts to, and reflection is
 not an acceptable way in. TableModify waits on the convention being more than read-only. A recursive CTE

@@ -519,10 +519,17 @@ waits on a failure nobody has explained. `TODO.md` carries them as items 3 to 5 
 `CalcitePrepareImpl` hands to the `CalciteSignature` and thence to the `DataContext` at bind time. Ours uses
 its own, which carries the conformance — all this convention reads from it — so code generation is right.
 What it cannot carry is a value *Calcite's* implementor stashes: `EnumerableRelImplementor.stash` writes
-into that map and the generated Java reads it back through `root.get(name)`. In a plan rooted in this
-convention that only arises where `ClrEnumerableToEnumerableConverter` appears, which is a sub-plan of
-Calcite's under one of ours. **Not demonstrated either way** — no test builds that shape through the ADO.NET
-path — so it is written here rather than argued in §6.
+into that map and the generated Java reads it back through `root.get(name)`, which would find nothing.
+
+**It needs `ClrEnumerableToEnumerableConverter` on the plan — a sub-plan of ours under a node of Calcite's —
+and the planner does not choose that shape.** Measured with the one query that forces Calcite's convention
+into a plan rooted in this one, a MATCH_RECOGNIZE: the planner put the *whole* subtree in
+`EnumerableConvention`, `EnumerableMatch` over `EnumerableTableScan`, and converted once at the top with
+`EnumerableToClrEnumerableConverter`. Converting back and forth costs more than staying, so it stays.
+
+So the loss is real but **not reachable through anything measured**, and one query is not a proof of
+unreachability. It stays here rather than moving to §6: an entry earns §6 by being forced, and this one is
+only unreached.
 
 ---
 
