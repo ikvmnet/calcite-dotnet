@@ -17,9 +17,13 @@ namespace Apache.Calcite.Linq
     /// </summary>
     /// <remarks>
     /// Holds what Calcite's <c>EnumerableInterpretable.toBindable</c> does: the bridge from a plan of this
-    /// convention to the <see cref="Bindable"/> that Calcite's prepare framework runs. Calcite's class is
-    /// also a converter node into <c>InterpretableConvention</c>; that half is not ported, because nothing
-    /// runs a plan of this convention under Calcite's interpreter.
+    /// convention to the <see cref="Bindable"/> that Calcite's prepare framework runs.
+    ///
+    /// <para>Calcite declares that class as a converter node into <c>InterpretableConvention</c> as well,
+    /// but nothing constructs one — the only <c>new EnumerableInterpretable</c> in 1.42 is inside its own
+    /// <c>copy</c>, which needs an instance to exist already, and its constructor is protected. Its
+    /// <c>implement</c> is unreachable, and <c>InterpretableConverter</c> is what actually wraps a subtree
+    /// for the interpreter. So the class is a static holder there too, and this is not a partial port.</para>
     ///
     /// <para>A caller that wants the plan itself, rather than a <see cref="Bindable"/> wrapping it in
     /// linq4j, casts the root to <see cref="ClrEnumerableRel"/> and uses
