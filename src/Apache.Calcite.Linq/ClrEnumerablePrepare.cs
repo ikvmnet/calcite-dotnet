@@ -20,12 +20,22 @@ namespace Apache.Calcite.Linq
     /// Hand this to <c>CalciteConnection.PrepareFactory</c> and every statement on that connection runs
     /// through this convention rather than through Janino.
     ///
-    /// <para>Three things differ from <c>CalcitePrepareImpl</c> and nothing else does: the convention a plan
-    /// is asked to end in, the program that gets it there — <see cref="ClrEnumerablePrograms"/> — and the
-    /// compiler at the end, which is <see cref="ClrEnumerableInterpretable"/>. Parsing, validation and
-    /// sql-to-rel are Calcite's, untouched.</para>
+    /// <code>
+    /// using var c = new CalciteConnection(connectionString);
+    /// c.PrepareFactory = () => new ClrEnumerablePrepare();
+    /// c.Open();
+    /// </code>
+    ///
+    /// <para>It must be set before the connection is opened. Three things differ from
+    /// <c>CalcitePrepareImpl</c> and nothing else does: the convention a plan is asked to end in, the program
+    /// that gets it there — <see cref="ClrEnumerablePrograms"/> — and the compiler at the end. Parsing,
+    /// validation and sql-to-rel are Calcite's, untouched.</para>
+    ///
+    /// <para>Calcite's own rules stay on the planner, so a statement this convention has no node for is
+    /// still planned and run — implemented in <c>EnumerableConvention</c>, with a converter carrying its
+    /// rows. That is how a table modification works here.</para>
     /// </remarks>
-    class ClrEnumerablePrepare : CalcitePrepareImpl
+    public class ClrEnumerablePrepare : CalcitePrepareImpl
     {
 
         /// <inheritdoc />
