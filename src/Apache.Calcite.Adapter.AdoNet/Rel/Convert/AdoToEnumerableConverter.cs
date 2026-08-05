@@ -34,8 +34,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 
         static readonly Method GetDbReaderValueMethod = ((Class)typeof(AdoReaderUtil)).getDeclaredMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(SqlTypeName)]);
         static readonly Method CreateReaderMethod = ((Class)typeof(AdoEnumerable)).getDeclaredMethod(nameof(AdoEnumerable.CreateReader), [typeof(AdoDataSource), typeof(string), typeof(Function1)]);
-        static readonly Method CreateReaderWithEnricherMethod = ((Class)typeof(AdoEnumerable)).getDeclaredMethod(nameof(AdoEnumerable.CreateReader), [typeof(AdoDataSource), typeof(string), typeof(Function1), typeof(DbCommandEnricher)]);
-        static readonly Method CreateEnricherMethod = ((Class)typeof(AdoEnumerable)).getDeclaredMethod(nameof(AdoEnumerable.CreateEnricher), [typeof(AdoDataSource), typeof(java.util.List), typeof(DataContext)]);
 
         /// <summary>
         /// Initializes a new instance.
@@ -76,15 +74,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             var dataContextBuilder =
                 new AdoCorrelationDataContextBuilderImpl(implementor, list, DataContext.ROOT);
 
-            // generate the SQL for the query, with every parameter already written as the name this
-            // provider binds by rather than the bare ? that JDBC would match by position
-            var writer = GenerateSql(convention, dataContextBuilder, self);
-            var dataSource = Schemas.unwrap(convention.Expression, typeof(AdoDataSource));
-
-            var parameters = writer.Indexes;
-            var hasParameters = parameters.isEmpty() == false;
-
-            var sql = writer.toSqlString().getSql();
+            // generate the SQL for the query
+            var sqlString = GenerateSql(convention.Dialect, dataContextBuilder, self);
+            var sql = sqlString.getSql();
             Hook.QUERY_PLAN.run(sql);
 
             // declare SQL string as a variable
@@ -104,47 +96,41 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                 (Class)typeof(DbDataReader),
                 rowBuilder.newName("reader"));
 
-            // the shape of a row is decided by how many fields it has, exactly as
-            // JdbcToEnumerableConverter decides it, because JavaRowFormat.optimize has already told the
-            // physical type the same thing: no field is a null, one field is the value itself, and only
-            // beyond that is a row an array. Returning an array for a single column leaves Avatica's
-            // accessor casting an Object[] to the column's type.
-            var fieldCount = getRowType().getFieldCount();
-            if (fieldCount == 0)
-            {
-                rowBuilder.add(
-                    Expressions.return_(null, Expressions.constant(null, (Class)typeof(object))));
-            }
-            else if (fieldCount == 1)
-            {
-                rowBuilder.add(
-                    Expressions.return_(null, ReadField(rowBuilder, reader_, physType, 0)));
-            }
-            else
-            {
-                // declare values array
-                var values_ = rowBuilder
-                    .append("values",
-                        Expressions.newArrayBounds(
-                            (Class)typeof(object),
-                            1,
-                            Expressions.constant(fieldCount)));
+            // declare values array
+            var values_ = rowBuilder
+                .append("values",
+                    Expressions.newArrayBounds(
+                        (Class)typeof(object),
+                        1,
+                        Expressions.constant(getRowType().getFieldCount())));
 
-                // generate a call to GetDbReaderValue for each field
-                for (int i = 0; i < fieldCount; i++)
-                {
-                    // assign value to array at specified field index
-                    rowBuilder.add(
-                        Expressions.statement(
-                            Expressions.assign(
-                                Expressions.arrayIndex(values_, Expressions.constant(i)),
-                                ReadField(rowBuilder, reader_, physType, i))));
-                }
+            // generate a call to GetDbReaderValue for each field
+            for (int i = 0; i < getRowType().getFieldCount(); i++)
+            {
+                var primitive = Primitive.ofBoxOr(physType.fieldClass(i));
+                var fieldType = ((RelDataTypeField)physType.getRowType().getFieldList().get(i)).getType();
 
-                // return values array
+                // extract value from DbReader
+                var value_ = rowBuilder
+                    .append("value",
+                        Expressions.call(
+                            null,
+                            GetDbReaderValueMethod,
+                            reader_,
+                            Expressions.constant(i),
+                            Expressions.constant(fieldType.getSqlTypeName())));
+
+                // assign value to array at specified field index
                 rowBuilder.add(
-                    Expressions.return_(null, values_));
+                    Expressions.statement(
+                        Expressions.assign(
+                            Expressions.arrayIndex(values_, Expressions.constant(i)),
+                            value_)));
             }
+
+            // return values array
+            rowBuilder.add(
+                Expressions.return_(null, values_));
 
             // generate row builder factory lambda
             var rowBuilderFactory_ = list
@@ -156,30 +142,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                                 Expressions.lambda(rowBuilder.toBlock()))),
                         reader_));
 
-            // a correlated sub-query leaves a parameter per correlation variable in the SQL, and the values
-            // live on the context the builder closed over the outer row. Without the enricher the command is
-            // handed to the provider unfilled. Calcite does the same at JdbcToEnumerableConverter:222.
-            var enumerable_ = hasParameters
-                ? list.append("enumerable",
-                    Expressions.call(
-                        null,
-                        CreateReaderWithEnricherMethod,
-                        dataSource,
-                        sql_,
-                        rowBuilderFactory_,
-                        list.append("enricher",
-                            Expressions.call(
-                                null,
-                                CreateEnricherMethod,
-                                dataSource,
-                                // the indexes are settled while planning, so they travel as a constant
-                                Expressions.constant(parameters),
-                                dataContextBuilder.Build()))))
-                : list.append("enumerable",
+            // call AdoEnumerable.CreateReader
+            var enumerable_ = list
+                .append("enumerable",
                     Expressions.call(
                         null,
                         CreateReaderMethod,
-                        dataSource,
+                        Schemas.unwrap(convention.Expression, typeof(AdoDataSource)),
                         sql_,
                         rowBuilderFactory_));
 
@@ -191,45 +160,17 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <summary>
-        /// Appends the read of one field and returns the expression holding it.
-        /// </summary>
-        /// <param name="rowBuilder"></param>
-        /// <param name="reader_"></param>
-        /// <param name="physType"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// The declared SQL type decides how the value is read, not whatever the provider chose to surface
-        /// it as, so the row holds what the plan was built against.
-        /// </remarks>
-        static Expression ReadField(BlockBuilder rowBuilder, ParameterExpression reader_, PhysType physType, int index)
-        {
-            var fieldType = ((RelDataTypeField)physType.getRowType().getFieldList().get(index)).getType();
-
-            return rowBuilder.append("value",
-                Expressions.call(
-                    null,
-                    GetDbReaderValueMethod,
-                    reader_,
-                    Expressions.constant(index),
-                    Expressions.constant(fieldType.getSqlTypeName())));
-        }
-
-        /// <summary>
         /// Generates the SQL string to implement the enumerable.
         /// </summary>
         /// <param name="dialect"></param>
         /// <param name="dataContextBuilder"></param>
         /// <param name="input"></param>
         /// <returns></returns>
-        AdoSqlWriter GenerateSql(AdoConvention convention, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input)
+        SqlString GenerateSql(SqlDialect dialect, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input)
         {
-            var implementor = new AdoImplementor(convention.Dialect, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder);
+            var implementor = new AdoImplementor(dialect, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder);
             var result = implementor.visitRoot(input);
-
-            var writer = new AdoSqlWriter(convention.Dialect, convention.Syntax);
-            result.asStatement().unparse(writer, 0, 0);
-            return writer;
+            return result.asStatement().toSqlString(dialect);
         }
 
         #region EnumerableRel

@@ -37,41 +37,34 @@ namespace Apache.Calcite.Adapter.AdoNet
         public const double CostMultiplier = .8d;
 
         /// <summary>
-        /// Creates a new <see cref="AdoConvention"/> for the given database, schema expression and name.
+        /// Creates a new <see cref="AdoConvention"/> for the given SQL dialect, schema expression, and display name.
         /// </summary>
         /// <param name="dialect">The SQL dialect used to generate SQL for the target database.</param>
-        /// <param name="syntax">How the target's driver names a query parameter.</param>
         /// <param name="expression">The LINQ expression that represents the schema root at planning time.</param>
-        /// <param name="name">A short display name appended to the convention identifier.</param>
+        /// <param name="name">A short display name appended to the convention identifier (e.g. the schema name).</param>
         /// <returns>A new <see cref="AdoConvention"/> instance.</returns>
-        public static AdoConvention Create(SqlDialect dialect, IAdoSqlSyntax syntax, Expression expression, string name)
+        public static AdoConvention Create(SqlDialect dialect, Expression expression, string name)
         {
-            return new AdoConvention(dialect, syntax, expression, name);
+            return new AdoConvention(dialect, expression, name);
         }
 
         readonly SqlDialect _dialect;
-        readonly IAdoSqlSyntax _syntax;
         readonly Expression _expression;
 
         /// <summary>
-        /// Initializes a new instance. Prefer <see cref="Create"/> over calling this constructor directly.
+        /// Initializes a new instance of <see cref="AdoConvention"/>.
+        /// Prefer <see cref="Create"/> over calling this constructor directly.
         /// </summary>
         /// <param name="dialect">The SQL dialect used to generate SQL for the target database.</param>
-        /// <param name="syntax">How the target's driver names a query parameter.</param>
         /// <param name="expression">The LINQ expression that represents the schema root at planning time.</param>
         /// <param name="name">A short display name appended to the convention identifier.</param>
-        /// <remarks>
-        /// Both are required. A convention holding a dialect alone could write SQL but could not issue a
-        /// plan carrying a parameter, which is a half-built object rather than a choice.
-        /// </remarks>
-        public AdoConvention(SqlDialect dialect, IAdoSqlSyntax syntax, Expression expression, string name) :
+        public AdoConvention(SqlDialect dialect, Expression expression, string name) :
             base("ADO." + name, typeof(AdoRel))
         {
             if (string.IsNullOrEmpty(name))
                 throw new ArgumentException($"'{nameof(name)}' cannot be null or empty.", nameof(name));
 
             _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
-            _syntax = syntax ?? throw new ArgumentNullException(nameof(syntax));
             _expression = expression ?? throw new ArgumentNullException(nameof(expression));
         }
 
@@ -84,16 +77,6 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// Gets the LINQ expression that represents the schema root for this convention at planning time.
         /// </summary>
         public Expression Expression => _expression;
-
-        /// <summary>
-        /// Gets how the target's driver names a query parameter.
-        /// </summary>
-        /// <remarks>
-        /// The convention carries this and not the whole <see cref="Metadata.AdoDatabaseMetadata"/>: writing
-        /// a statement needs the dialect and the driver's parameter naming, and nothing about which
-        /// databases, schemas or tables exist.
-        /// </remarks>
-        public IAdoSqlSyntax Syntax => _syntax;
 
         /// <inheritdoc />
         public override void register(RelOptPlanner planner)

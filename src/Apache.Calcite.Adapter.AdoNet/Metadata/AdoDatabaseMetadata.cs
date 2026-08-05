@@ -11,8 +11,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
     /// <remarks>
     /// Implement this class and provide an instance to your <see cref="AdoDataSource"/> so that
     /// the Calcite adapter can discover databases, schemas, tables, and columns at query-planning
-    /// time. The adapter uses <see cref="Syntax"/> to generate SQL that is syntactically correct for the
-    /// target database.
+    /// time. The adapter also uses <see cref="GetDialect"/> to generate SQL that is syntactically
+    /// correct for the target database.
     /// </remarks>
     public abstract class AdoDatabaseMetadata
     {
@@ -30,31 +30,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         public abstract string? GetDefaultSchema();
 
         /// <summary>
-        /// Gets the <see cref="SqlDialect"/> used to generate SQL for this target.
+        /// Returns the <see cref="SqlDialect"/> that the adapter uses to generate SQL for this data source.
         /// </summary>
-        public abstract SqlDialect Dialect { get; }
-
-        /// <summary>
-        /// Gets how this driver names a query parameter.
-        /// </summary>
-        /// <remarks>
-        /// Defaults to <c>@P0</c>, which SqlClient, MySql and several others accept. A driver that spells it
-        /// differently overrides this.
-        /// </remarks>
-        public virtual IAdoSqlSyntax Syntax => DefaultSyntax;
-
-        /// <summary>
-        /// The naming every driver that does not say otherwise gets.
-        /// </summary>
-        static readonly IAdoSqlSyntax DefaultSyntax = new AtPrefixed();
-
-        /// <summary>
-        /// Takes the interface's own default and adds nothing.
-        /// </summary>
-        sealed class AtPrefixed : IAdoSqlSyntax
-        {
-
-        }
+        public abstract SqlDialect GetDialect();
 
         /// <summary>
         /// Returns all schemas available in the specified database.
@@ -80,6 +58,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// <returns>A set of <see cref="AdoFieldMetadata"/> values describing each column.</returns>
         public abstract IReadOnlySet<AdoFieldMetadata> GetFields(string? databaseName, string? schemaName, string tableName);
 
+        /// <summary>
+        /// Returns the SQL parameter placeholder name to use for the parameter at the specified zero-based index.
+        /// </summary>
+        /// <param name="index">The zero-based ordinal of the parameter.</param>
+        /// <returns>A parameter name string suitable for inclusion in a SQL statement.</returns>
+        public abstract string GetParameterName(int index);
 
     }
 

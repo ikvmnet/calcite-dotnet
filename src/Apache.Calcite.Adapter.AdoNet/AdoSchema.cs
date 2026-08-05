@@ -144,7 +144,7 @@ namespace Apache.Calcite.Adapter.AdoNet
 
             // generate schema
             var expression = Schemas.subSchemaExpression(parentSchema, name, typeof(AdoSchema));
-            var convention = AdoConvention.Create(dataSource.Metadata.Dialect, dataSource.Metadata.Syntax, expression, name);
+            var convention = AdoConvention.Create(dataSource.Metadata.GetDialect(), expression, name);
             return new AdoSchema(dataSource, convention, databaseName, schemaName);
         }
 

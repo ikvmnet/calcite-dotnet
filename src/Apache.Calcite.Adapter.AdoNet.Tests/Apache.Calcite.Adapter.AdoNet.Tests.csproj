@@ -20,6 +20,11 @@
     </ItemGroup>
 
     <ItemGroup>
+        <MavenReference Include="org.apache.calcite.avatica:avatica-core" Version="1.26.0" />
+        <MavenReference Include="org.apache.calcite:calcite-csv" Version="1.41.0" />
+    </ItemGroup>
+
+    <ItemGroup>
         <ProjectReference Include="..\Apache.Calcite.Adapter.AdoNet\Apache.Calcite.Adapter.AdoNet.csproj" />
     </ItemGroup>
 

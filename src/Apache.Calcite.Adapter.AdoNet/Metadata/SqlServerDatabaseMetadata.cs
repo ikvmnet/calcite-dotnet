@@ -56,21 +56,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         }
 
         /// <inheritdoc />
-        /// <inheritdoc />
-        /// <remarks>
-        /// Worked out once and kept: deriving it asks the server for its version, and the convention reads
-        /// it for every rule that matches while planning. SqlClient binds the default parameter form, so
-        /// there is no syntax to state.
-        /// </remarks>
-        public override SqlDialect Dialect => _dialect ??= CreateDialect();
-
-        SqlDialect? _dialect;
-
-        /// <summary>
-        /// Asks the server what it is, and describes it to Calcite.
-        /// </summary>
-        /// <returns></returns>
-        SqlDialect CreateDialect()
+        public override SqlDialect GetDialect()
         {
             using var cnn = DbDataSource.OpenConnection();
 
@@ -132,6 +118,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             };
         }
 
+        /// <inheritdoc />
+        public override string GetParameterName(int index)
+        {
+            return $"@P{index}";
+        }
 
     }
 

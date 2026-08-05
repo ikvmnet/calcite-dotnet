@@ -130,83 +130,37 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Creates an enricher that fills the command's parameters from the context.
+        /// Creates an encricher that sets parameters from the context.
         /// </summary>
-        /// <param name="dataSource">The source whose syntax names a parameter for this provider.</param>
-        /// <param name="indexes">The variable index behind each parameter, in parameter order.</param>
-        /// <param name="context">The context the values are read from, one per correlation variable.</param>
-        /// <returns></returns>
-        /// <remarks>
-        /// Reached from the code the converter generates, once per execution of the inner side of a
-        /// correlated join. The context is an <see cref="AdoCorrelationDataContext"/> closed over the outer
-        /// row, so reading <c>?N</c> yields that row's value.
-        /// </remarks>
-        public static DbCommandEnricher CreateEnricher(AdoDataSource dataSource, java.util.List indexes, DataContext context)
-        {
-            return new ParameterEnricher(dataSource.Metadata.Syntax, indexes, context);
-        }
-
-        /// <summary>
-        /// Sets one parameter per correlation variable, reading each from the context.
-        /// </summary>
-        /// <param name="syntax"></param>
+        /// <param name="metadata"></param>
         /// <param name="indexes"></param>
         /// <param name="context"></param>
-        sealed class ParameterEnricher(IAdoSqlSyntax syntax, java.util.List indexes, DataContext context) : DbCommandEnricher
+        /// <returns></returns>
+        public static Action<DbCommand> CreateEnricher(AdoDatabaseMetadata metadata, int[] indexes, DataContext context)
         {
-
-            /// <inheritdoc />
-            public void Enrich(DbCommand command)
+            return command =>
             {
-                for (int i = 0; i < indexes.size(); i++)
-                    SetParameter(syntax, command, i, context.get("?" + ((java.lang.Number)indexes.get(i)).intValue()));
-            }
-
+                for (int i = 0; i < indexes.Length; i++)
+                {
+                    var index = indexes[i];
+                    SetParameter(metadata, command, i, context.get("?" + index));
+                }
+            };
         }
 
         /// <summary>
         /// Sets the given parameter to the given value.
         /// </summary>
-        /// <param name="syntax"></param>
+        /// <param name="metadata"></param>
         /// <param name="command"></param>
         /// <param name="i"></param>
         /// <param name="value"></param>
-        static void SetParameter(IAdoSqlSyntax syntax, DbCommand command, int i, object? value)
+        static void SetParameter(AdoDatabaseMetadata metadata, DbCommand command, int i, object? value)
         {
             var parameter = command.CreateParameter();
-            parameter.ParameterName = syntax.GetParameterName(i);
-            parameter.Value = ToProviderValue(value) ?? DBNull.Value;
+            parameter.ParameterName = metadata.GetParameterName(i);
+            parameter.Value = value ?? DBNull.Value;
             command.Parameters.Insert(i, parameter);
-        }
-
-        /// <summary>
-        /// Converts a value read from a <see cref="DataContext"/> into one a provider can bind.
-        /// </summary>
-        /// <param name="value"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// A correlation value comes out of the plan in Calcite's representation, which is a boxed Java
-        /// type. No ADO.NET provider knows what a <see cref="java.lang.Long"/> is, so it is unwrapped to
-        /// the .NET value it stands for. This is the inverse of what <see cref="AdoReaderUtil"/> does on
-        /// the way in.
-        /// </remarks>
-        static object? ToProviderValue(object? value)
-        {
-            return value switch
-            {
-                null => null,
-                java.lang.Boolean b => b.booleanValue(),
-                java.lang.Byte b => b.byteValue(),
-                java.lang.Short s => s.shortValue(),
-                java.lang.Integer i => i.intValue(),
-                java.lang.Long l => l.longValue(),
-                java.lang.Float f => f.floatValue(),
-                java.lang.Double d => d.doubleValue(),
-                java.lang.Character c => c.charValue(),
-                java.math.BigDecimal m => decimal.Parse(m.toString(), System.Globalization.CultureInfo.InvariantCulture),
-                org.apache.calcite.avatica.util.ByteString bs => bs.getBytes(),
-                _ => value,
-            };
         }
 
         readonly AdoDataSource _dataSource;

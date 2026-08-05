@@ -26,15 +26,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.RelFactories
             var cluster = input.getCluster();
             var traitSet = cluster.traitSetOf(input.getConvention() ?? throw new ArgumentNullException("input.getConvention()"));
 
-            // by name, never by ordinal: a Java enum's ordinals are an artefact of declaration order in the
-            // version compiled against, and nameof gives a compile-time constant the compiler still checks
-            switch (kind.name())
+            switch ((SqlKind.__Enum)kind.ordinal())
             {
-                case nameof(SqlKind.UNION):
+                case SqlKind.__Enum.UNION:
                     return new AdoUnion(cluster, traitSet, inputs, all);
-                case nameof(SqlKind.INTERSECT):
+                case SqlKind.__Enum.INTERSECT:
                     return new AdoIntersect(cluster, traitSet, inputs, all);
-                case nameof(SqlKind.EXCEPT):
+                case SqlKind.__Enum.EXCEPT:
                     return new AdoMinus(cluster, traitSet, inputs, all);
                 default:
                     throw new AssertionError("unknown: " + kind);

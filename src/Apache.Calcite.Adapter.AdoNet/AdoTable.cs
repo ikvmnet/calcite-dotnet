@@ -160,14 +160,13 @@ namespace Apache.Calcite.Adapter.AdoNet
                 case DbType.AnsiString:
                     return typeFactory.createSqlType(SqlTypeName.VARCHAR, size);
                 case DbType.Binary:
-                    return typeFactory.createSqlType(SqlTypeName.VARBINARY, size);
+                    break;
                 case DbType.Byte:
                     return typeFactory.createSqlType(SqlTypeName.TINYINT);
                 case DbType.Boolean:
                     return typeFactory.createSqlType(SqlTypeName.BOOLEAN);
-                // the scale money carries in every provider that has a distinct type for it
                 case DbType.Currency:
-                    return typeFactory.createSqlType(SqlTypeName.DECIMAL, 19, 4);
+                    break;
                 case DbType.Date:
                     return typeFactory.createSqlType(SqlTypeName.DATE);
                 case DbType.DateTime:
@@ -184,15 +183,12 @@ namespace Apache.Calcite.Adapter.AdoNet
                     return typeFactory.createSqlType(SqlTypeName.INTEGER);
                 case DbType.Int64:
                     return typeFactory.createSqlType(SqlTypeName.BIGINT);
-                // OTHER is the escape hatch the reader already understands: a column of unknown type is
-                // passed through rather than making the whole table unreadable
                 case DbType.Object:
-                    return typeFactory.createSqlType(SqlTypeName.OTHER);
+                    break;
                 case DbType.SByte:
                     return typeFactory.createSqlType(SqlTypeName.TINYINT);
-                // REAL is four bytes in Calcite, as it is in SQL; DOUBLE is eight
                 case DbType.Single:
-                    return typeFactory.createSqlType(SqlTypeName.REAL);
+                    break;
                 case DbType.String:
                     return typeFactory.createSqlType(SqlTypeName.VARCHAR, size);
                 case DbType.Time:
@@ -204,13 +200,13 @@ namespace Apache.Calcite.Adapter.AdoNet
                 case DbType.UInt64:
                     return typeFactory.createSqlType(SqlTypeName.UBIGINT);
                 case DbType.VarNumeric:
-                    return typeFactory.createSqlType(SqlTypeName.DECIMAL, precision, scale);
+                    break;
                 case DbType.AnsiStringFixedLength:
                     return typeFactory.createSqlType(SqlTypeName.CHAR, size);
                 case DbType.StringFixedLength:
                     return typeFactory.createSqlType(SqlTypeName.CHAR, size);
                 case DbType.Xml:
-                    return typeFactory.createSqlType(SqlTypeName.VARCHAR, size);
+                    break;
                 case DbType.DateTime2:
                     return typeFactory.createSqlType(SqlTypeName.TIMESTAMP);
                 case DbType.DateTimeOffset:

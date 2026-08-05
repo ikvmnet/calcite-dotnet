@@ -3,8 +3,6 @@ using org.apache.calcite.adapter.java;
 using org.apache.calcite.linq4j;
 using org.apache.calcite.schema;
 
-using System;
-
 namespace Apache.Calcite.Adapter.AdoNet
 {
 
@@ -60,17 +58,8 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <inheritdoc />
-        /// <remarks>
-        /// A correlation variable is named <c>?</c> followed by an index at or above <see cref="Offset"/>,
-        /// which is how the implementor numbers them so they cannot collide with an ordinary query
-        /// parameter. Anything else belongs to the context this one wraps.
-        /// </remarks>
         public object? get(string name)
         {
-            if (name.StartsWith('?') && int.TryParse(name.AsSpan(1), out var index))
-                if (index >= Offset && index < Offset + _parameters.Length)
-                    return _parameters[index - Offset];
-
             return _delegate.get(name);
         }
 

@@ -139,10 +139,10 @@ namespace Apache.Calcite.Data.Internal
         /// </summary>
         /// <param name="index"></param>
         /// <returns></returns>
-        public SqlTypeName GetSqlType(int index)
+        public SqlTypeName.__Enum GetSqlType(int index)
         {
             var field = (org.apache.calcite.rel.type.RelDataTypeField)_signature.rowType.getFieldList().get(index);
-            return field.getType().getSqlTypeName();
+            return (SqlTypeName.__Enum)field.getType().getSqlTypeName().ordinal();
         }
 
         /// <summary>

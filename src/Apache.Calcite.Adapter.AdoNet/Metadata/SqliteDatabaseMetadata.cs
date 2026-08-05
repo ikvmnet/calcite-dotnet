@@ -149,20 +149,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         }
 
         /// <inheritdoc />
-        public override SqlDialect Dialect => SqliteSqlDialect.DEFAULT;
-
-        /// <inheritdoc />
-        public override IAdoSqlSyntax Syntax { get; } = new SqliteSqlSyntax();
-
-        /// <summary>
-        /// Microsoft.Data.Sqlite binds the <c>$name</c> form rather than the default.
-        /// </summary>
-        sealed class SqliteSqlSyntax : IAdoSqlSyntax
+        public override SqlDialect GetDialect()
         {
-
-            /// <inheritdoc />
-            public string GetParameterName(int index) => $"$P{index}";
-
+            return SqliteSqlDialect.DEFAULT;
         }
 
         /// <inheritdoc />
@@ -219,6 +208,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             return list;
         }
 
+        /// <inheritdoc />
+        public override string GetParameterName(int index)
+        {
+            return $"$P{index}";
+        }
 
     }
 
