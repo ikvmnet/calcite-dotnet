@@ -1,4 +1,4 @@
-using java.util.function;
+﻿using java.util.function;
 
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -6,6 +6,7 @@ using org.apache.calcite.rel.convert;
 using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.logical;
 using org.apache.calcite.rex;
+using org.apache.calcite.sql.fun;
 
 namespace Apache.Calcite.Linq.Rel.Convert
 {
@@ -47,7 +48,13 @@ namespace Apache.Calcite.Linq.Rel.Convert
         public override RelNode convert(RelNode rel)
         {
             var join = (Join)rel;
-            var info = join.analyzeCondition();
+
+            // a merge join stops at a null, and IS NOT DISTINCT FROM says two nulls are equal, so a
+            // condition carrying one cannot be a merge join key
+            if (RexUtil.findOperatorCall(SqlStdOperatorTable.IS_NOT_DISTINCT_FROM, join.getCondition()) != null)
+                return null!;
+
+            var info = JoinInfo.createWithStrictEquality(join.getLeft(), join.getRight(), join.getCondition());
 
             // a merge join answers only some join types
             if (ClrEnumerableMergeJoin.IsMergeJoinSupported(join.getJoinType()) == false)

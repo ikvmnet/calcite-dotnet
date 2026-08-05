@@ -80,6 +80,15 @@ namespace Apache.Calcite.Linq.Rel
         }
 
         /// <summary>
+        /// The join keys, considering EQUALS alone.
+        /// </summary>
+        /// <remarks>
+        /// Hides <c>Join.joinInfo</c>, as Calcite's field of the same name does, so every use of the name in
+        /// this class is the strict-equality one.
+        /// </remarks>
+        new readonly JoinInfo joinInfo;
+
+        /// <summary>
         /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
         /// </summary>
         /// <param name="cluster"></param>
@@ -92,6 +101,10 @@ namespace Apache.Calcite.Linq.Rel
         public ClrEnumerableMergeJoin(RelOptCluster cluster, RelTraitSet traits, RelNode left, RelNode right, RexNode condition, java.util.Set variablesSet, JoinRelType joinType) :
             base(cluster, traits, com.google.common.collect.ImmutableList.of(), left, right, condition, variablesSet, joinType)
         {
+            // the algorithm stops when either key is null, and IS NOT DISTINCT FROM calls two nulls equal,
+            // so a condition carrying one must not become a join key
+            joinInfo = JoinInfo.createWithStrictEquality(left, right, condition);
+
             if (getConvention() is not ClrEnumerableConvention)
                 throw new java.lang.AssertionError();
 

@@ -47,16 +47,27 @@ namespace Apache.Calcite.Linq.Rel
         public ClrEnumerableMergeUnion(RelOptCluster cluster, RelTraitSet traitSet, java.util.List inputs, bool all) :
             base(cluster, traitSet, inputs, all)
         {
-            var collation = traitSet.getCollation();
-            if (collation == null || collation.getFieldCollations().isEmpty())
+            var collations = traitSet.getCollations();
+            if (collations.isEmpty() || ((RelCollation)collations.get(0)).getFieldCollations().isEmpty())
                 throw new java.lang.IllegalArgumentException("ClrEnumerableMergeUnion with no collation");
 
             for (int i = 0; i < inputs.size(); i++)
             {
-                var inputCollation = ((RelNode)inputs.get(i)).getTraitSet().getCollation();
-                if (inputCollation == null || inputCollation.satisfies(collation) == false)
-                    throw new java.lang.IllegalArgumentException(
-                        $"ClrEnumerableMergeUnion input does not satisfy collation. ClrEnumerableMergeUnion collation: {collation}. Input collation: {inputCollation}. Input: {inputs.get(i)}");
+                // getCollations rather than getCollation, because the slot may hold a RelCompositeTrait of
+                // several collations; each required one has to be satisfied by at least one of the input's
+                var inputCollations = ((RelNode)inputs.get(i)).getTraitSet().getCollations();
+
+                for (int j = 0; j < collations.size(); j++)
+                {
+                    var collation = (RelCollation)collations.get(j);
+                    var satisfied = false;
+                    for (int k = 0; k < inputCollations.size() && satisfied == false; k++)
+                        satisfied = ((RelCollation)inputCollations.get(k)).satisfies(collation);
+
+                    if (satisfied == false)
+                        throw new java.lang.IllegalArgumentException(
+                            $"ClrEnumerableMergeUnion input does not satisfy collation. ClrEnumerableMergeUnion collation: {collation}. Input collations: {inputCollations}. Input: {inputs.get(i)}");
+                }
             }
         }
 

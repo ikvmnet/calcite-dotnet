@@ -1,4 +1,4 @@
-using org.apache.calcite.plan;
+﻿using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.logical;
@@ -70,7 +70,7 @@ namespace Apache.Calcite.Linq.Rel.Convert
                 if (sort.offset == null)
                     inputFetch = sort.fetch;
                 else if (sort.fetch is RexLiteral fetch && sort.offset is RexLiteral offset)
-                    inputFetch = call.builder().literal(java.lang.Long.valueOf(RexLiteral.longValue(fetch) + RexLiteral.longValue(offset)));
+                    inputFetch = call.builder().literal(RexLiteral.bigDecimalValue(fetch)!.add(RexLiteral.bigDecimalValue(offset)));
             }
 
             var builder = call.builder();
