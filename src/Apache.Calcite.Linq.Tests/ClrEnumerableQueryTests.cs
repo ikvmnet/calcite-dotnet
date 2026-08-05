@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -232,6 +232,49 @@ namespace Apache.Calcite.Linq.Tests
             /// <inheritdoc />
             public object sparkContext() => throw new java.lang.UnsupportedOperationException();
 
+        }
+
+        /// <summary>
+        /// A combine gives one row per index, each column holding one query values as a map.
+        /// </summary>
+        /// <remarks>
+        /// No SQL statement produces a <c>Combine</c>: it exists for multi-root optimisation in the planner
+        /// and a caller builds one with <c>RelBuilder.combine</c>. So the differential harness cannot reach
+        /// this node by parsing a query, and it is built here by hand over an already planned input, which is
+        /// the only way to run it at all.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldCombineTwoQueries()
+        {
+            var (input, rootSchema) = Plan("SELECT \"NAME\" FROM \"PEOPLE\"");
+
+            var inputs = new java.util.ArrayList();
+            inputs.add(input);
+            inputs.add(input);
+
+            var combine = new Apache.Calcite.Linq.Rel.ClrEnumerableCombine(
+                ((RelNode)input).getCluster(),
+                ((RelNode)input).getTraitSet(),
+                inputs);
+
+            // one column per query, named for its position
+            combine.getRowType().getFieldCount().Should().Be(2);
+
+            var bindable = ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), null, combine, ClrEnumerablePrefer.Array);
+
+            var rows = new List<object[]>();
+            var enumerator = bindable.bind(new TestDataContext(rootSchema)).enumerator();
+            while (enumerator.moveNext())
+            {
+                var current = enumerator.current();
+                rows.Add(current as object[] ?? [current]);
+            }
+
+            // three people, and both columns hold that query own row for the index
+            rows.Should().HaveCount(3);
+            rows.Should().OnlyContain(r => r[0] is java.util.Map && r[1] is java.util.Map);
+            ((java.util.Map)rows[0][0]).get("NAME").Should().Be("SMITH");
+            ((java.util.Map)rows[2][1]).get("NAME").Should().Be("BROWN");
         }
 
         [TestMethod]

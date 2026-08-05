@@ -80,6 +80,11 @@ namespace Apache.Calcite.Linq
         public static readonly RelOptRule ClrEnumerableConditionalCorrelateRule = Rel.Convert.ClrEnumerableConditionalCorrelateRule.Create();
 
         /// <summary>
+        /// Rule that converts a combine to a <see cref="Rel.ClrEnumerableCombine"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrEnumerableCombineRule = Rel.Convert.ClrEnumerableCombineRule.Create();
+
+        /// <summary>
         /// Rule that converts a union to a <see cref="Rel.ClrEnumerableUnion"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableUnionRule = Rel.Convert.ClrEnumerableUnionRule.Create();
@@ -221,6 +226,7 @@ namespace Apache.Calcite.Linq
             ClrEnumerableAsofJoinRule,
             ClrEnumerableCorrelateRule,
             ClrEnumerableConditionalCorrelateRule,
+            ClrEnumerableCombineRule,
             ClrEnumerableUnionRule,
             ClrEnumerableMergeUnionRule,
             ClrEnumerableIntersectRule,

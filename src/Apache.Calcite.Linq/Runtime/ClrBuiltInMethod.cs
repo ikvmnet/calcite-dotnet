@@ -166,6 +166,11 @@ namespace Apache.Calcite.Linq.Runtime
         public static readonly MethodInfo ToJavaList = Of(nameof(ClrEnumerableDefaults.ToJavaList));
 
         /// <summary>
+        /// <see cref="ClrEnumerableDefaults.FromJavaList"/>.
+        /// </summary>
+        public static readonly MethodInfo FromJavaList = Of(nameof(ClrEnumerableDefaults.FromJavaList));
+
+        /// <summary>
         /// <see cref="ClrEnumerableDefaults.ToJavaMap"/>.
         /// </summary>
         public static readonly MethodInfo ToJavaMap = Of(nameof(ClrEnumerableDefaults.ToJavaMap));

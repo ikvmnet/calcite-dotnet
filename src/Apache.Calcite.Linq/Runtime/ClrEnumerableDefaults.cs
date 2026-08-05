@@ -1912,6 +1912,24 @@ namespace Apache.Calcite.Linq.Runtime
         }
 
         /// <summary>
+        /// Reads a Java list as a .NET sequence.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// An adapter boundary, so it converts rather than casts, for the reason
+        /// <see cref="JavaSequences.FromJava"/> gives.
+        /// </remarks>
+        public static IEnumerable<TSource> FromJavaList<TSource>(java.util.List source)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+
+            for (var i = source.iterator(); i.hasNext();)
+                yield return JavaValues.As<TSource>(i.next());
+        }
+
+        /// <summary>
         /// Reads every row into a list.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>
