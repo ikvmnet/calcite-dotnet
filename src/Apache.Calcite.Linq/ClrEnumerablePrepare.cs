@@ -29,6 +29,22 @@ namespace Apache.Calcite.Linq
     {
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Calcite's planner with this convention's rules added. Calcite's own stay on it, so a node this
+        /// convention has no rule for — a table modification, a MATCH_RECOGNIZE — is still implemented, in
+        /// <c>EnumerableConvention</c>, and a converter carries its rows.
+        /// </remarks>
+        protected override RelOptPlanner createPlanner(CalcitePrepare.Context prepareContext, org.apache.calcite.plan.Context externalContext, RelOptCostFactory costFactory)
+        {
+            var planner = base.createPlanner(prepareContext, externalContext, costFactory);
+
+            foreach (var rule in ClrEnumerableRules.Rules())
+                planner.addRule(rule);
+
+            return planner;
+        }
+
+        /// <inheritdoc />
         protected override CalcitePrepareImpl.CalcitePreparingStmt getPreparingStmt(CalcitePrepare.Context context, java.lang.reflect.Type elementType, CalciteCatalogReader catalogReader, RelOptPlanner planner)
         {
             var typeFactory = context.getTypeFactory();
@@ -84,12 +100,10 @@ namespace Apache.Calcite.Linq
             /// </remarks>
             protected override Program getProgram()
             {
-                var programs = ClrEnumerablePrograms.Standard();
-
                 return Programs.sequence(
-                    (Program)programs.get(0),
-                    (Program)programs.get(1),
-                    (Program)programs.get(2));
+                    ClrEnumerablePrograms.SubQuery(),
+                    ClrEnumerablePrograms.PlannerRules(),
+                    ClrEnumerablePrograms.CalcRules());
             }
 
             /// <inheritdoc />

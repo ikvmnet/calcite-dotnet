@@ -19,6 +19,7 @@
              oracle ClrEnumerableRowFormatTests can have: Janino cannot name a CLR class, so a table function
              of this project's own gives EnumerableConvention no plan to compare against. -->
         <MavenReference Include="org.apache.calcite:calcite-testkit" Version="1.42.0" />
+        <MavenReference Include="org.apache.calcite:calcite-server" Version="1.42.0" />
     </ItemGroup>
 
     <ItemGroup>
