@@ -1147,23 +1147,73 @@ namespace Apache.Calcite.Linq.Tree
         /// <returns></returns>
         /// <exception cref="NotSupportedException"></exception>
         /// <remarks>
-        /// linq4j took its operators from this enumeration, so the two agree by name. They are matched by
-        /// name rather than by ordinal, which is not stable across versions of either.
+        /// linq4j took this enumeration from the CLR's, so nearly every operator is the same word in both.
+        /// Nearly is the reason each is written out: <c>Mod</c> is <c>Modulo</c> here and linq4j has a
+        /// <c>Modulo</c> of its own besides, and there is no checked divide to be had. Parsing the name
+        /// into the CLR enumeration reads those two as a failure and anything the two runtimes happen to
+        /// spell alike as a success, which is a match by coincidence rather than by decision.
+        ///
+        /// <para>Dispatch is on the name and not the ordinal, which is not stable across versions of
+        /// either, and the labels are <c>nameof</c> so that an operator leaving linq4j stops compiling
+        /// here rather than throwing when some plan reaches it.</para>
         /// </remarks>
         static ExpressionType Operator(J.ExpressionType type)
         {
-            var name = type.name();
-
-            // the two linq4j spells differently, or has and the CLR does not
-            if (name == nameof(J.ExpressionType.Mod))
-                name = nameof(ExpressionType.Modulo);
-            else if (name == nameof(J.ExpressionType.DivideChecked))
-                name = nameof(ExpressionType.Divide);
-
-            if (Enum.TryParse<ExpressionType>(name, false, out var op) == false)
-                throw new NotSupportedException($"There is no CLR operator for a linq4j {name}.");
-
-            return op;
+            return type.name() switch
+            {
+                nameof(J.ExpressionType.Add) => ExpressionType.Add,
+                nameof(J.ExpressionType.AddChecked) => ExpressionType.AddChecked,
+                nameof(J.ExpressionType.And) => ExpressionType.And,
+                nameof(J.ExpressionType.AndAlso) => ExpressionType.AndAlso,
+                nameof(J.ExpressionType.Call) => ExpressionType.Call,
+                nameof(J.ExpressionType.Conditional) => ExpressionType.Conditional,
+                nameof(J.ExpressionType.Convert) => ExpressionType.Convert,
+                nameof(J.ExpressionType.Divide) => ExpressionType.Divide,
+                nameof(J.ExpressionType.DivideChecked) => ExpressionType.Divide,  // the CLR has no checked divide
+                nameof(J.ExpressionType.Mod) => ExpressionType.Modulo,  // linq4j has both Mod and Modulo
+                nameof(J.ExpressionType.Equal) => ExpressionType.Equal,
+                nameof(J.ExpressionType.ExclusiveOr) => ExpressionType.ExclusiveOr,
+                nameof(J.ExpressionType.GreaterThan) => ExpressionType.GreaterThan,
+                nameof(J.ExpressionType.GreaterThanOrEqual) => ExpressionType.GreaterThanOrEqual,
+                nameof(J.ExpressionType.LeftShift) => ExpressionType.LeftShift,
+                nameof(J.ExpressionType.LessThan) => ExpressionType.LessThan,
+                nameof(J.ExpressionType.LessThanOrEqual) => ExpressionType.LessThanOrEqual,
+                nameof(J.ExpressionType.MemberAccess) => ExpressionType.MemberAccess,
+                nameof(J.ExpressionType.Modulo) => ExpressionType.Modulo,
+                nameof(J.ExpressionType.Multiply) => ExpressionType.Multiply,
+                nameof(J.ExpressionType.MultiplyChecked) => ExpressionType.MultiplyChecked,
+                nameof(J.ExpressionType.Negate) => ExpressionType.Negate,
+                nameof(J.ExpressionType.UnaryPlus) => ExpressionType.UnaryPlus,
+                nameof(J.ExpressionType.NegateChecked) => ExpressionType.NegateChecked,
+                nameof(J.ExpressionType.Not) => ExpressionType.Not,
+                nameof(J.ExpressionType.NotEqual) => ExpressionType.NotEqual,
+                nameof(J.ExpressionType.Or) => ExpressionType.Or,
+                nameof(J.ExpressionType.OrElse) => ExpressionType.OrElse,
+                nameof(J.ExpressionType.RightShift) => ExpressionType.RightShift,
+                nameof(J.ExpressionType.Subtract) => ExpressionType.Subtract,
+                nameof(J.ExpressionType.SubtractChecked) => ExpressionType.SubtractChecked,
+                nameof(J.ExpressionType.TypeIs) => ExpressionType.TypeIs,
+                nameof(J.ExpressionType.Assign) => ExpressionType.Assign,
+                nameof(J.ExpressionType.AddAssign) => ExpressionType.AddAssign,
+                nameof(J.ExpressionType.AndAssign) => ExpressionType.AndAssign,
+                nameof(J.ExpressionType.DivideAssign) => ExpressionType.DivideAssign,
+                nameof(J.ExpressionType.ExclusiveOrAssign) => ExpressionType.ExclusiveOrAssign,
+                nameof(J.ExpressionType.LeftShiftAssign) => ExpressionType.LeftShiftAssign,
+                nameof(J.ExpressionType.ModuloAssign) => ExpressionType.ModuloAssign,
+                nameof(J.ExpressionType.MultiplyAssign) => ExpressionType.MultiplyAssign,
+                nameof(J.ExpressionType.OrAssign) => ExpressionType.OrAssign,
+                nameof(J.ExpressionType.RightShiftAssign) => ExpressionType.RightShiftAssign,
+                nameof(J.ExpressionType.SubtractAssign) => ExpressionType.SubtractAssign,
+                nameof(J.ExpressionType.AddAssignChecked) => ExpressionType.AddAssignChecked,
+                nameof(J.ExpressionType.MultiplyAssignChecked) => ExpressionType.MultiplyAssignChecked,
+                nameof(J.ExpressionType.SubtractAssignChecked) => ExpressionType.SubtractAssignChecked,
+                nameof(J.ExpressionType.PreIncrementAssign) => ExpressionType.PreIncrementAssign,
+                nameof(J.ExpressionType.PreDecrementAssign) => ExpressionType.PreDecrementAssign,
+                nameof(J.ExpressionType.PostIncrementAssign) => ExpressionType.PostIncrementAssign,
+                nameof(J.ExpressionType.PostDecrementAssign) => ExpressionType.PostDecrementAssign,
+                nameof(J.ExpressionType.OnesComplement) => ExpressionType.OnesComplement,
+                _ => throw new NotSupportedException($"There is no CLR operator for a linq4j {type.name()}."),
+            };
         }
 
         /// <summary>
