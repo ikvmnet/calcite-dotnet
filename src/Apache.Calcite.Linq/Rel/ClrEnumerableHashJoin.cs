@@ -1,8 +1,6 @@
 using System;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Tree;
-
 using java.util.function;
 
 using org.apache.calcite.adapter.enumerable;
@@ -161,7 +159,7 @@ namespace Apache.Calcite.Linq.Rel
             var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
             var leftType = leftSource.Type.GetGenericArguments()[0];
             var rightType = rightSource.Type.GetGenericArguments()[0];
-            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
+            var rowType = physType.RowType();
 
             var leftKey = NullAwareAccessor(implementor, leftResult.PhysType, joinInfo.leftKeys, leftType);
             var rightKey = NullAwareAccessor(implementor, rightResult.PhysType, joinInfo.rightKeys, rightType);
@@ -243,7 +241,7 @@ namespace Apache.Calcite.Linq.Rel
             var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
             var leftType = leftSource.Type.GetGenericArguments()[0];
             var rightType = rightSource.Type.GetGenericArguments()[0];
-            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
+            var rowType = physType.RowType();
 
             var rexBuilder = getCluster().getRexBuilder();
 

@@ -271,20 +271,42 @@ namespace Apache.Calcite.Linq
         /// plan right, at the cost of a delegate per row, and would hide the next node written that way — as
         /// it did: this method boxed for a while, and three nodes were wrong underneath it with every test
         /// passing.</para>
+        ///
+        /// <para>A result that is not an <see cref="IEnumerable{T}"/> at all is refused as well. Letting one
+        /// through was how seven more nodes would have escaped had any of them handed up an array or an
+        /// <c>IOrderedEnumerable</c>: a check with a way out is a check only for the shapes that already
+        /// pass.</para>
         /// </remarks>
         static void RequireRowType(PhysType physType, Expression expression)
         {
+            var expected = physType.RowType();
+
             if (expression.Type.IsGenericType == false || expression.Type.GetGenericTypeDefinition() != typeof(IEnumerable<>))
-                return;
+                throw new java.lang.IllegalStateException($"{Node()} handed up a {expression.Type} where a sequence of {expected} was wanted.");
 
             var actual = expression.Type.GetGenericArguments()[0];
-            var expected = physType.RowType();
             if (actual == expected)
                 return;
 
-            var node = new System.Diagnostics.StackTrace().GetFrame(2)?.GetMethod()?.DeclaringType?.Name ?? "?";
+            throw new java.lang.IllegalStateException($"{Node()} handed up a sequence of {actual} where its row type is {expected}.");
+        }
 
-            throw new java.lang.IllegalStateException($"{node} handed up a sequence of {actual} where its row type is {expected}.");
+        /// <summary>
+        /// Names the node whose <c>Implement</c> called <see cref="Result"/>, for a refusal's message.
+        /// </summary>
+        /// <returns></returns>
+        static string Node()
+        {
+            var trace = new System.Diagnostics.StackTrace();
+
+            for (int i = 1; i < trace.FrameCount; i++)
+            {
+                var type = trace.GetFrame(i)?.GetMethod()?.DeclaringType;
+                if (type != null && type != typeof(ClrEnumerableRelImplementor))
+                    return type.Name;
+            }
+
+            return "?";
         }
 
         /// <summary>

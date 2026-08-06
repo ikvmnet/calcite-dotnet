@@ -1,7 +1,5 @@
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Tree;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel.core;
@@ -50,7 +48,7 @@ namespace Apache.Calcite.Linq.Rel
                     continue;
                 }
 
-                var rowType = ClrTypes.Resolve(result.PhysType.getJavaRowType());
+                var rowType = result.PhysType.RowType();
 
                 intersectExp = Expression.Call(null,
                     ClrBuiltInMethod.Intersect.MakeGenericMethod(rowType),

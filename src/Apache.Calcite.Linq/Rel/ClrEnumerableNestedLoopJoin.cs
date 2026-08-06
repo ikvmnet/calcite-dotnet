@@ -1,7 +1,5 @@
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Tree;
-
 using java.util.function;
 
 using org.apache.calcite.adapter.enumerable;
@@ -158,7 +156,7 @@ namespace Apache.Calcite.Linq.Rel
             var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
             var leftType = leftSource.Type.GetGenericArguments()[0];
             var rightType = rightSource.Type.GetGenericArguments()[0];
-            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
+            var rowType = physType.RowType();
 
             var predicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), left, right, leftResult.PhysType, rightResult.PhysType, getCondition(), true);
             var selector = ClrEnumUtils.MarkJoinSelector(implementor, physType, leftResult.PhysType);
@@ -189,7 +187,7 @@ namespace Apache.Calcite.Linq.Rel
             var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
             var leftType = leftSource.Type.GetGenericArguments()[0];
             var rightType = rightSource.Type.GetGenericArguments()[0];
-            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
+            var rowType = physType.RowType();
 
             var predicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), left, right, leftResult.PhysType, rightResult.PhysType, getCondition());
             var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);

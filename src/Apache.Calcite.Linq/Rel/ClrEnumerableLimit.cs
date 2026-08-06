@@ -76,7 +76,7 @@ namespace Apache.Calcite.Linq.Rel
             // physical type is theirs
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format, false);
 
-            var rowType = ClrTypes.Resolve(result.PhysType.getJavaRowType());
+            var rowType = result.PhysType.RowType();
             var v = result.Expression;
 
             if (offset != null)

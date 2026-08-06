@@ -108,8 +108,8 @@ namespace Apache.Calcite.Linq.Rel
 
             var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.PreferCustom());
             var inputPhysType = result.PhysType;
-            var sourceType = ClrTypes.Resolve(inputPhysType.getJavaRowType());
-            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
+            var sourceType = inputPhysType.RowType();
+            var rowType = physType.RowType();
 
             var keyPhysType = inputPhysType.project(groupSet.asList(), getGroupType() != Group.SIMPLE, JavaRowFormat.LIST);
             var groupCount = getGroupCount();
