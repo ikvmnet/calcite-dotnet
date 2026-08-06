@@ -60,9 +60,8 @@ namespace Apache.Calcite.Linq.Rel
         /// <param name="aggs"></param>
         /// <returns></returns>
         /// <remarks>
-        /// Calcite answers a call that has one with <c>LazyAggregateLambdaFactory</c> and a
-        /// <c>SourceSorter</c> per call. Neither is written here, so such a call is refused where the node is
-        /// built rather than answered wrongly.
+        /// A call that has one is answered with <c>LazyAggregateLambdaFactory</c> and a <c>SourceSorter</c>
+        /// per call, as Calcite answers it. See <see cref="ImplementLambdaFactory"/>, which builds both.
         /// </remarks>
         protected static bool HasOrderedCall(java.util.List aggs)
         {
@@ -71,6 +70,26 @@ namespace Apache.Calcite.Linq.Rel
                     return true;
 
             return false;
+        }
+
+        /// <summary>
+        /// Returns the name the variables of one aggregate's state are built from.
+        /// </summary>
+        /// <param name="agg"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Under <c>CalciteSystemProperty.DEBUG</c> Calcite puts the function's own name in front, so that a
+        /// variable of the plan says which call it belongs to. There is no generated source to read here, but
+        /// the name reaches a debugger the same way.
+        /// </remarks>
+        internal static string AggName(AggImpState agg)
+        {
+            var name = $"a{agg.aggIdx}";
+
+            if (org.apache.calcite.config.CalciteSystemProperty.DEBUG.value() is java.lang.Boolean debug && debug.booleanValue())
+                name = Util.toJavaId(agg.call.getAggregation().getName(), 0).Substring("ID$0$".Length) + name;
+
+            return name;
         }
 
         /// <summary>
@@ -161,10 +180,11 @@ namespace Apache.Calcite.Linq.Rel
 
                 aggStateTypes.addAll(state);
 
+                var aggName = AggName(agg);
                 var decls = new java.util.ArrayList(state.size());
                 for (int j = 0; j < state.size(); j++)
                 {
-                    var pe = J.Expressions.parameter((java.lang.reflect.Type)state.get(j), initBlock.newName($"a{agg.aggIdx}s{j}"));
+                    var pe = J.Expressions.parameter((java.lang.reflect.Type)state.get(j), initBlock.newName($"{aggName}s{j}"));
                     initBlock.add(J.Expressions.declare(0, pe, null));
                     decls.add(pe);
                 }

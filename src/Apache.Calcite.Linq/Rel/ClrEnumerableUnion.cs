@@ -36,12 +36,10 @@ namespace Apache.Calcite.Linq.Rel
         public virtual ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             Expression? unionExp = null;
-            ClrEnumerableResult? last = null;
 
             for (int i = 0; i < getInputs().size(); i++)
             {
                 var result = implementor.VisitChild(this, i, (ClrEnumerableRel)getInputs().get(i), pref);
-                last = result;
 
                 if (unionExp == null)
                 {

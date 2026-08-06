@@ -60,9 +60,7 @@ namespace Apache.Calcite.Linq.Rel
         {
             var child = (ClrEnumerableRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);
-            // the input's own format, and not re-optimised: a sort yields the rows it was given, so its
-            // physical type is theirs
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format, false);
+            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format);
 
             var inputPhysType = result.PhysType;
             var pair = inputPhysType.generateCollationKey(collation.getFieldCollations());

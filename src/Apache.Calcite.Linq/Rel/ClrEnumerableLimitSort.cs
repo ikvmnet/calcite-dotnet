@@ -1,7 +1,5 @@
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Tree;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -66,13 +64,11 @@ namespace Apache.Calcite.Linq.Rel
         {
             var child = (ClrEnumerableRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);
-            // the input's own format, and not re-optimised: the rows are the input's, so its physical type
-            // is theirs
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format, false);
+            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format);
 
             var inputPhysType = result.PhysType;
             var pair = inputPhysType.generateCollationKey(collation.getFieldCollations());
-            var sourceType = ClrTypes.Resolve(inputPhysType.getJavaRowType());
+            var sourceType = inputPhysType.RowType();
 
             var keySelector = implementor.Translator.TranslateSelector((J.Expression)pair.getKey(), sourceType);
             var comparator = pair.getValue() == null

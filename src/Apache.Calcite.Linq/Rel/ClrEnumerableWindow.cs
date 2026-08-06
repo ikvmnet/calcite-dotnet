@@ -476,7 +476,7 @@ namespace Apache.Calcite.Linq.Rel
                 var agg = (AggImpState)aggs.get(i);
                 agg.context = new ClrWinAggContext(agg, typeFactory, result.PhysType.getRowType(), constants, exclusion);
 
-                var aggName = $"a{agg.aggIdx}";
+                var aggName = ClrEnumerableAggregateBase.AggName(agg);
                 var state = agg.implementor.getStateType(agg.context);
 
                 var decls = new java.util.ArrayList(state.size());

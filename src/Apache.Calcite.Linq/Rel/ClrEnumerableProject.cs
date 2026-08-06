@@ -28,8 +28,7 @@ namespace Apache.Calcite.Linq.Rel
             var mq = cluster.getMetadataQuery();
             var traitSet = cluster.traitSet()
                 .replace(ClrEnumerableConvention.Instance)
-                .replaceIfs(RelCollationTraitDef.INSTANCE, new DelegateSupplier<object>(() => RelMdCollation.project(mq, input, projects)))
-                .replaceIf(RelDistributionTraitDef.INSTANCE, new DelegateSupplier<object>(() => RelMdDistribution.project(mq, input, projects)));
+                .replaceIfs(RelCollationTraitDef.INSTANCE, new DelegateSupplier<object>(() => RelMdCollation.project(mq, input, projects)));
 
             return new ClrEnumerableProject(cluster, traitSet, input, projects, rowType);
         }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq.Expressions;
 
 using org.apache.calcite.adapter.enumerable;
@@ -34,22 +35,38 @@ namespace Apache.Calcite.Linq
         /// <remarks>
         /// What PhysType.convertTo does, which cannot be reused because it composes a linq4j select onto a
         /// linq4j sequence and the sequence here is not one. The selector is still PhysType's.
+        ///
+        /// <para>The rows come out boxed, as every sequence here carries them. PhysType's selector answers
+        /// with the physical field type — CALCITE-3364's one-column conversion ends in
+        /// <c>public int apply(Object[] o)</c> — and a caller of this hands what it gets back up to the node
+        /// above.</para>
         /// </remarks>
         public static System.Linq.Expressions.Expression ConvertTo(this PhysType physType, ClrEnumerableRelImplementor implementor, System.Linq.Expressions.Expression source, JavaRowFormat targetFormat)
         {
             if (physType.getFormat() == targetFormat)
                 return source;
 
-            var sourceType = ClrTypes.Resolve(physType.getJavaRowType());
+            var sourceType = physType.RowType();
             var row = org.apache.calcite.linq4j.tree.Expressions.parameter(physType.getJavaRowType(), "o");
             var fields = new java.util.ArrayList();
             for (int i = 0; i < physType.getRowType().getFieldCount(); i++)
                 fields.add(java.lang.Integer.valueOf(i));
 
             var selector = implementor.Translator.TranslateSelector(physType.generateSelector(row, fields, targetFormat), sourceType);
+            var rowType = PhysTypeImpl.of(implementor.TypeFactory, physType.getRowType(), targetFormat, false).RowType();
+
+            if (selector.ReturnType != rowType)
+            {
+                var parameter = Expression.Parameter(sourceType, "row");
+
+                selector = Expression.Lambda(
+                    typeof(Func<,>).MakeGenericType(sourceType, rowType),
+                    ClrEnumUtils.Convert(Expression.Invoke(selector, parameter), rowType),
+                    parameter);
+            }
 
             return System.Linq.Expressions.Expression.Call(null,
-                ClrBuiltInMethod.Select.MakeGenericMethod(sourceType, selector.ReturnType),
+                ClrBuiltInMethod.Select.MakeGenericMethod(sourceType, rowType),
                 source,
                 selector);
         }

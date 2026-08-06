@@ -1,7 +1,6 @@
 using System.Linq.Expressions;
 
 using Apache.Calcite.Linq.Runtime;
-using Apache.Calcite.Linq.Tree;
 
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.linq4j;
@@ -58,6 +57,11 @@ namespace Apache.Calcite.Linq.Convert
         {
             // the same map, so a value Calcite stashes reaches the DataContext this plan is bound with
             var enumerable = new EnumerableRelImplementor(implementor.RexBuilder, implementor.Map);
+
+            // and the same correlation variables, because a sub-plan of Calcite's under a correlate of this
+            // convention reads the outer row through them
+            implementor.ReplayCorrelVariables(enumerable);
+
             var result = enumerable.visitChild(null, 0, (EnumerableRel)getInput(), pref.ToCalcite());
 
             var rowType = result.physType.RowType();

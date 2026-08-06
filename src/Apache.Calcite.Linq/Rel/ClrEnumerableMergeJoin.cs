@@ -1,8 +1,6 @@
 using System;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Tree;
-
 using java.util.function;
 
 using org.apache.calcite.adapter.enumerable;
@@ -433,7 +431,7 @@ namespace Apache.Calcite.Linq.Rel
             var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
             var leftType_ = leftSource.Type.GetGenericArguments()[0];
             var rightType_ = rightSource.Type.GetGenericArguments()[0];
-            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
+            var rowType = physType.RowType();
 
             var leftKey = implementor.Translator.TranslateSelector(J.Expressions.lambda(leftKeyPhysType.record(leftExpressions), [left_]), leftType_);
             var rightKey = implementor.Translator.TranslateSelector(J.Expressions.lambda(rightKeyPhysType.record(rightExpressions), [right_]), rightType_);

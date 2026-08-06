@@ -76,9 +76,7 @@ namespace Apache.Calcite.Linq.Rel
 
             var result = implementor.VisitChild(this, 0, (ClrEnumerableRel)getInput(), pref);
 
-            // the input's own format, and not re-optimised: a spool writes its input's rows through and
-            // yields them, so its physical type is theirs
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format, false);
+            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(result.Format));
 
             // the table is looked up in the schema the plan is bound with, as Calcite looks it up, rather than
             // read here and held: the collection belongs to the DataContext a run is given, and a plan

@@ -1,8 +1,6 @@
 using System.Collections.Generic;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Tree;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -80,7 +78,7 @@ namespace Apache.Calcite.Linq.Rel
         public override ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
-            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
+            var rowType = physType.RowType();
 
             // the inputs go into a list, because the merge walks all of them at once rather than one after
             // the other; Calcite builds the same list into the block it generates

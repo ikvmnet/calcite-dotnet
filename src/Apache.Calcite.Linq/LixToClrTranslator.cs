@@ -618,6 +618,8 @@ namespace Apache.Calcite.Linq
                 var array = Expression.Variable(source.Type, "array");
                 var index = Expression.Variable(typeof(int), "index");
 
+                // the continue label sits before the step and not at the top of the loop, for the reason it
+                // does in For: a Java continue still advances the loop, and here the advance is the index
                 return Expression.Block(typeof(void), [array, index, element],
                     Expression.Assign(array, source),
                     Expression.Assign(index, Expression.Constant(0)),
@@ -627,10 +629,10 @@ namespace Apache.Calcite.Linq
                             Expression.Block(typeof(void),
                                 Expression.Assign(element, ClrEnumUtils.Convert(Expression.ArrayAccess(array, index), element.Type)),
                                 body,
+                                Expression.Label(loop.Continue),
                                 Expression.PostIncrementAssign(index)),
                             Expression.Break(loop.Break)),
-                        loop.Break,
-                        loop.Continue));
+                        loop.Break));
             }
 
             var iterator = Expression.Variable(typeof(java.util.Iterator), "iterator");
@@ -1015,7 +1017,7 @@ namespace Apache.Calcite.Linq
             if (op == ExpressionType.Assign)
                 return Expression.Assign(left, ClrEnumUtils.Convert(right, left.Type));
 
-            if (op.ToString().EndsWith("Assign", StringComparison.Ordinal))
+            if (CompoundAssignments.Contains(op))
                 return Expression.MakeBinary(op, left, ClrEnumUtils.Convert(right, left.Type));
 
             // a shift takes its distance as an int however wide the value being shifted is
@@ -1041,6 +1043,32 @@ namespace Apache.Calcite.Linq
         /// Concatenation, which is what Java's <c>+</c> means when either side is a string.
         /// </summary>
         static readonly MethodInfo Concat = typeof(string).GetMethod(nameof(string.Concat), [typeof(object), typeof(object)])!;
+
+        /// <summary>
+        /// The operators that assign to their left operand, which therefore must be left alone rather than
+        /// promoted.
+        /// </summary>
+        /// <remarks>
+        /// Written out rather than tested by the operator's name. Three of these end in <c>Checked</c> and not
+        /// in <c>Assign</c>, so a name test lets them fall through to <see cref="Promote"/>, which may wrap the
+        /// left operand in a conversion and leave nothing to assign to.
+        /// </remarks>
+        static readonly HashSet<ExpressionType> CompoundAssignments =
+        [
+            ExpressionType.AddAssign,
+            ExpressionType.AddAssignChecked,
+            ExpressionType.AndAssign,
+            ExpressionType.DivideAssign,
+            ExpressionType.ExclusiveOrAssign,
+            ExpressionType.LeftShiftAssign,
+            ExpressionType.ModuloAssign,
+            ExpressionType.MultiplyAssign,
+            ExpressionType.MultiplyAssignChecked,
+            ExpressionType.OrAssign,
+            ExpressionType.RightShiftAssign,
+            ExpressionType.SubtractAssign,
+            ExpressionType.SubtractAssignChecked,
+        ];
 
         /// <summary>
         /// Brings two operands to the type Java would evaluate them at.
