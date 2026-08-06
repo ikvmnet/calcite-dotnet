@@ -35,7 +35,7 @@ namespace Apache.Calcite.Linq
 
         readonly RexBuilder rexBuilder;
         readonly java.util.Map map;
-        readonly Dictionary<string, RexToLixTranslator.InputGetter> corrVars = [];
+        readonly Dictionary<string, CorrelInputGetter> corrVars = [];
 
         /// <summary>
         /// Initializes a new instance.
@@ -243,6 +243,28 @@ namespace Apache.Calcite.Linq
         }
 
         /// <summary>
+        /// Registers on Calcite's implementor every correlation variable in scope here.
+        /// </summary>
+        /// <param name="enumerable"></param>
+        /// <remarks>
+        /// A converter runs an <c>EnumerableConvention</c> sub-plan on an implementor of Calcite's, and that
+        /// implementor keeps its own correlation variables. So a sub-plan of Calcite's sitting under a
+        /// correlate of this convention finds none, and <c>RexToLixTranslator.visitFieldAccess</c> reads a
+        /// null getter — a recursive query whose step is a correlate over a transient table is one, because
+        /// the transient scan is interpreted and only Calcite has a node for that.
+        ///
+        /// <para>The registration is replayed rather than the getter handed over, because Calcite builds its
+        /// own getter and keeps the map private. It is the same registration: <c>registerCorrelVariable</c>
+        /// appends a field read to the block it is given, and the block is the one this convention's
+        /// correlate will translate.</para>
+        /// </remarks>
+        internal void ReplayCorrelVariables(EnumerableRelImplementor enumerable)
+        {
+            foreach (var pair in corrVars)
+                enumerable.registerCorrelVariable(pair.Key, pair.Value.Parameter, pair.Value.Block, pair.Value.PhysType);
+        }
+
+        /// <summary>
         /// Creates the result a node's <c>Implement</c> returns.
         /// </summary>
         /// <param name="physType">How the rows are represented.</param>
@@ -323,6 +345,21 @@ namespace Apache.Calcite.Linq
         /// <param name="physType"></param>
         sealed class CorrelInputGetter(string name, J.ParameterExpression pe, J.BlockBuilder corrBlock, PhysType physType) : RexToLixTranslator.InputGetter
         {
+
+            /// <summary>
+            /// Gets the parameter holding the outer row.
+            /// </summary>
+            public J.ParameterExpression Parameter => pe;
+
+            /// <summary>
+            /// Gets the block a field read is declared into.
+            /// </summary>
+            public J.BlockBuilder Block => corrBlock;
+
+            /// <summary>
+            /// Gets the outer row's physical type.
+            /// </summary>
+            public PhysType PhysType => physType;
 
             /// <inheritdoc />
             public J.Expression field(J.BlockBuilder list, int index, java.lang.reflect.Type storageType)
