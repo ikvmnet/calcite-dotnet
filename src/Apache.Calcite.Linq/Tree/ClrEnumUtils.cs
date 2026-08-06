@@ -10,6 +10,8 @@ using org.apache.calcite.rex;
 
 using J = org.apache.calcite.linq4j.tree;
 
+using Apache.Calcite.Linq;
+
 namespace Apache.Calcite.Linq.Tree
 {
 
@@ -139,7 +141,7 @@ namespace Apache.Calcite.Linq.Tree
             var row = System.Linq.Expressions.Expression.Parameter(rowType, "row");
 
             return System.Linq.Expressions.Expression.Call(null,
-                Runtime.ClrBuiltInMethod.Select.MakeGenericMethod(rowType, boxed),
+                ClrBuiltInMethod.Select.MakeGenericMethod(rowType, boxed),
                 source,
                 System.Linq.Expressions.Expression.Lambda(ClrEnumUtils.Convert(row, boxed), row));
         }

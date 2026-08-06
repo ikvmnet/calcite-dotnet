@@ -17,7 +17,7 @@ namespace Apache.Calcite.Linq.Tree
     /// same operator without having been an anonymous class at all — <c>PhysType</c> returns a comparator from
     /// a plain method call when there is only one collation.
     /// </remarks>
-    static class SamAdapters
+    static class AnonymousClasses
     {
 
         /// <summary>

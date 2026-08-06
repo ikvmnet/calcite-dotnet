@@ -4,7 +4,9 @@ using System.Linq;
 
 using org.apache.calcite.linq4j.function;
 
-namespace Apache.Calcite.Linq.Runtime
+using Apache.Calcite.Linq.Runtime;
+
+namespace Apache.Calcite.Linq
 {
 
     /// <summary>

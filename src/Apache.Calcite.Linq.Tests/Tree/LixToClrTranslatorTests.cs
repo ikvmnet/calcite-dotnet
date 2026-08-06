@@ -272,7 +272,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
                 v);
 
             // a lambda linq4j declared as a Function1 is one, so the delegate is asked for back
-            var translated = SamAdapters.Unwrap(new LixToClrTranslator().Translate(e))!;
+            var translated = AnonymousClasses.Unwrap(new LixToClrTranslator().Translate(e))!;
 
             translated.Should().NotBeNull();
             ((Func<int, int>)translated.Compile())(21).Should().Be(42);

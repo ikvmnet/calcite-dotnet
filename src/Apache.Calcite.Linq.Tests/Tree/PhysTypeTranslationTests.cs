@@ -98,7 +98,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
             var row = J.Expressions.parameter(physType.getJavaRowType(), "row");
             var selector = physType.generateSelector(row, java.util.Arrays.asList([Integer.valueOf(1)]));
 
-            var translated = SamAdapters.Unwrap(new LixToClrTranslator().Translate(selector))!;
+            var translated = AnonymousClasses.Unwrap(new LixToClrTranslator().Translate(selector))!;
             var apply = translated.Compile();
 
             apply.DynamicInvoke([new object[] { Integer.valueOf(7), "SMITH" }]).Should().Be("SMITH");
@@ -147,7 +147,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
         public void ShouldTranslateAccessor()
         {
             var accessor = physType.generateAccessor(java.util.Arrays.asList([Integer.valueOf(0)]));
-            var translated = SamAdapters.Unwrap(new LixToClrTranslator().Translate(accessor))!;
+            var translated = AnonymousClasses.Unwrap(new LixToClrTranslator().Translate(accessor))!;
 
             var apply = translated.Compile();
             var key = apply.DynamicInvoke([new object[] { Integer.valueOf(7), "SMITH" }]);

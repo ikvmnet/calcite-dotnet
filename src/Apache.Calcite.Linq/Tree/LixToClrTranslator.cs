@@ -205,7 +205,7 @@ namespace Apache.Calcite.Linq.Tree
 
             var translated = Translate(selector);
 
-            var lambda = SamAdapters.Unwrap(translated);
+            var lambda = AnonymousClasses.Unwrap(translated);
             if (lambda != null)
                 return Over(lambda, sourceType);
 
@@ -889,20 +889,20 @@ namespace Apache.Calcite.Linq.Tree
 
             Expression wrapped;
 
-            if (SamAdapters.MethodsOf(type) != null)
+            if (AnonymousClasses.MethodsOf(type) != null)
             {
                 // several methods over shared state, so one lambda each rather than one for the class
                 var declared = new Dictionary<string, LambdaExpression>();
                 foreach (var method in methods)
                     declared[method.name] = Lambda(method);
 
-                wrapped = SamAdapters.WrapClass(type, declared);
+                wrapped = AnonymousClasses.WrapClass(type, declared);
             }
             else
             {
                 // the value still has to be the interface it was declared against, because the same operator
                 // takes one that never was an anonymous class
-                wrapped = SamAdapters.Wrap(type, Lambda(methods.Count == 1 ? methods[0] : Unbridged(type, methods)));
+                wrapped = AnonymousClasses.Wrap(type, Lambda(methods.Count == 1 ? methods[0] : Unbridged(type, methods)));
             }
 
             if (fields.Count == 0)
@@ -1236,7 +1236,7 @@ namespace Apache.Calcite.Linq.Tree
             // a node of this convention that wants the delegate asks for it back through TranslateSelector.
             var declared = ClrTypes.Resolve(expression.getType());
 
-            return SamAdapters.Handles(declared) ? SamAdapters.Wrap(declared, lambda) : lambda;
+            return AnonymousClasses.Handles(declared) ? AnonymousClasses.Wrap(declared, lambda) : lambda;
         }
 
         /// <summary>
@@ -1252,8 +1252,8 @@ namespace Apache.Calcite.Linq.Tree
         /// </remarks>
         static Expression Coerce(Expression value, Type type)
         {
-            if (value is LambdaExpression lambda && SamAdapters.Handles(type))
-                return SamAdapters.Wrap(type, lambda);
+            if (value is LambdaExpression lambda && AnonymousClasses.Handles(type))
+                return AnonymousClasses.Wrap(type, lambda);
 
             return ClrEnumUtils.Convert(value, type);
         }
