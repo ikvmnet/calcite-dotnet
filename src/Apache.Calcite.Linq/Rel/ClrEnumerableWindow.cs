@@ -349,7 +349,7 @@ namespace Apache.Calcite.Linq.Rel
         /// <param name="expression"></param>
         /// <param name="type"></param>
         /// <returns></returns>
-        static ParameterExpression Hoist(ExpressionTranslator translator, List<ParameterExpression> variables, List<Expression> body, J.ParameterExpression parameter, J.Expression expression, Type type)
+        static ParameterExpression Hoist(LixToClrTranslator translator, List<ParameterExpression> variables, List<Expression> body, J.ParameterExpression parameter, J.Expression expression, Type type)
         {
             var variable = Expression.Variable(type, parameter.name);
             variables.Add(variable);
@@ -371,7 +371,7 @@ namespace Apache.Calcite.Linq.Rel
         /// The key <c>getPartitionIterator</c> builds, which is a synthetic record for several keys and the
         /// field itself for one.
         /// </remarks>
-        static LambdaExpression? PartitionSelector(ExpressionTranslator translator, PhysType inputPhysType, Group group, Type sourceType)
+        static LambdaExpression? PartitionSelector(LixToClrTranslator translator, PhysType inputPhysType, Group group, Type sourceType)
         {
             if (group.keys.isEmpty())
                 return null;
@@ -718,7 +718,7 @@ namespace Apache.Calcite.Linq.Rel
             /// <param name="returnType"></param>
             /// <param name="accumulatorType">The accumulator's type, or null where the lambda does not take one.</param>
             /// <returns></returns>
-            public LambdaExpression Lambda(ExpressionTranslator translator, J.BlockStatement block, Type returnType, Type? accumulatorType)
+            public LambdaExpression Lambda(LixToClrTranslator translator, J.BlockStatement block, Type returnType, Type? accumulatorType)
             {
                 var frame = Expression.Parameter(typeof(WindowFrame), "frame");
                 var rowType = ClrTypes.Resolve(inputPhysType.getJavaRowType());

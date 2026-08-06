@@ -49,7 +49,7 @@ namespace Apache.Calcite.Linq
             this.map = internalParameters ?? throw new ArgumentNullException(nameof(internalParameters));
 
             Root = Expression.Parameter(typeof(DataContext), "root");
-            Translator = new ExpressionTranslator(map);
+            Translator = new LixToClrTranslator(map);
             Translator.Bind(DataContext.ROOT, Root);
 
             AllCorrelateVariables = new DelegateFunction1<string, RexToLixTranslator.InputGetter>(GetCorrelVariableGetter);
@@ -83,7 +83,7 @@ namespace Apache.Calcite.Linq
         /// Gets the translator that turns a linq4j expression into a CLR one. One serves the whole plan, so a
         /// variable means the same thing wherever a node mentions it.
         /// </summary>
-        internal ExpressionTranslator Translator { get; }
+        internal LixToClrTranslator Translator { get; }
 
         /// <summary>
         /// Translates a linq4j expression into a CLR one.

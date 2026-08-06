@@ -102,7 +102,7 @@ namespace Apache.Calcite.Linq.Rel
         /// <para>The two <c>_input</c>s are not a mistake. Calcite's implementor builds the watermark column
         /// against a parameter it makes itself, and <c>EnumUtils.tumblingWindowSelector</c> makes the lambda's
         /// parameter separately; both are named <c>_input</c> and Janino resolves the name, so the lambda's
-        /// shadows the local. That is what <c>ExpressionTranslator</c>'s scope by name is for, and this is the
+        /// shadows the local. That is what <c>LixToClrTranslator</c>'s scope by name is for, and this is the
         /// node that needs it.</para>
         /// </remarks>
         ClrEnumerableResult TvfImplementorBasedImplement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)

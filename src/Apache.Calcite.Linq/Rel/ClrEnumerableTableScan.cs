@@ -214,7 +214,6 @@ namespace Apache.Calcite.Linq.Rel
         /// <param name="implementor"></param>
         /// <param name="physType"></param>
         /// <param name="source"></param>
-        /// <param name="element"></param>
         /// <returns></returns>
         Expression ToRows(ClrEnumerableRelImplementor implementor, PhysType physType, Expression source)
         {

@@ -14,10 +14,14 @@ namespace Apache.Calcite.Linq.Tree
     /// Translates a linq4j tree into a <see cref="System.Linq.Expressions"/> tree.
     /// </summary>
     /// <remarks>
-    /// Calcite generates code as linq4j trees and hands them to Janino. Everything that generates one is
+    /// Named as Calcite names the same kind of thing. <c>RexToLixTranslator</c> translates a Rex expression
+    /// into a linq4j one and <c>LixToRelTranslator</c> goes the other way, Lix being Calcite's word for a
+    /// linq4j expression; this carries one the last step, to the tree that runs here.
+    ///
+    /// <para>Calcite generates code as linq4j trees and hands them to Janino. Everything that generates one is
     /// reused here rather than rewritten — <c>RexToLixTranslator</c>, <c>RexImpTable</c> and every
     /// expression-producing member of <c>PhysType</c> — so this is the layer that has to exist for that reuse
-    /// to be possible, and the only place the two tree models are allowed to meet.
+    /// to be possible, and the only place the two tree models are allowed to meet.</para>
     ///
     /// <para>linq4j's model was taken from this one, so most of it is one node for one node. Three things are
     /// not: a Java cast is not a CLR conversion (see <see cref="ClrEnumUtils.Convert"/>), an anonymous class is not
@@ -26,7 +30,7 @@ namespace Apache.Calcite.Linq.Tree
     ///
     /// <para>A translator carries the scope its tree is translated in, so one is used for one tree.</para>
     /// </remarks>
-    sealed class ExpressionTranslator
+    sealed class LixToClrTranslator
     {
 
         /// <summary>
@@ -61,7 +65,7 @@ namespace Apache.Calcite.Linq.Tree
         /// </summary>
         /// <param name="internalParameters">The values passed to the executor rather than written into the
         /// plan, or <see langword="null"/> where the caller has none.</param>
-        public ExpressionTranslator(java.util.Map? internalParameters = null)
+        public LixToClrTranslator(java.util.Map? internalParameters = null)
         {
             stashed = internalParameters;
         }
