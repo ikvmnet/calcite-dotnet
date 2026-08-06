@@ -193,6 +193,33 @@ namespace Apache.Calcite.Linq.Tests.Tree
             translated.Type.Should().Be(typeof(org.apache.calcite.linq4j.function.Function1));
         }
 
+        /// <summary>
+        /// CALCITE-3364: a one-column row converted from an array to a scalar, which is what a table function
+        /// of one value needs before it can be grouped.
+        /// </summary>
+        /// <remarks>
+        /// The selector <c>PhysType</c> emits here ends in <c>public int apply(Object[] o)</c> — the physical
+        /// field type, not the box. A sequence carries the box, so the conversion has to end in one; this is
+        /// the shape of it, and the only one no plan reaches.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldConvertAOneColumnRowFromAnArrayToAScalar()
+        {
+            var oneColumn = typeFactory.builder().add("intField", typeFactory.createSqlType(SqlTypeName.INTEGER)).build();
+            var array = PhysTypeImpl.of(typeFactory, oneColumn, JavaRowFormat.ARRAY, false);
+
+            var implementor = new ClrEnumerableRelImplementor(new org.apache.calcite.rex.RexBuilder(typeFactory), new java.util.HashMap());
+            var rows = new object[][] { [Integer.valueOf(1)], [Integer.valueOf(2)] };
+
+            var converted = array.ConvertTo(implementor, Expression.Constant(rows, typeof(IEnumerable<object[]>)), JavaRowFormat.SCALAR);
+
+            converted.Type.Should().Be(typeof(IEnumerable<Integer>), "a sequence of a one-column scalar row carries the box");
+
+            var value = Expression.Lambda<Func<IEnumerable<Integer>>>(converted).Compile()();
+
+            value.Should().Equal([Integer.valueOf(1), Integer.valueOf(2)]);
+        }
+
     }
 
 }

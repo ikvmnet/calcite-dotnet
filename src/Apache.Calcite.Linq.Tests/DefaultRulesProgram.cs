@@ -14,6 +14,9 @@ namespace Apache.Calcite.Linq.Tests
     /// node's <c>passThroughTraits</c>, <c>deriveTraits</c> and <c>getDeriveMode</c>.</param>
     /// <param name="excludeMergeJoin">Whether to drop <c>EnumerableMergeJoinRule</c> after the default rules
     /// are registered. See the remarks.</param>
+    /// <param name="add">Rules to register alongside Calcite's, for a test that needs one Calcite ships but
+    /// does not register — <c>JOIN_TO_CORRELATE</c>, say.</param>
+    /// <param name="remove">Rules to take away once everything is registered, of either convention.</param>
     /// <remarks>
     /// Listing rules by hand is what the harness used to do, and it was not Calcite's planner but a fraction
     /// of one. <c>CalcitePrepareImpl</c> calls <c>RelOptUtil.registerDefaultRules</c>, which adds the
@@ -38,7 +41,7 @@ namespace Apache.Calcite.Linq.Tests
     /// do this — every trait method here builds from <c>getTraitSet()</c> — and a merge join written here
     /// must not follow Calcite's text on that line.</para>
     /// </remarks>
-    public sealed class DefaultRulesProgram(java.util.List extra, bool topDown = false, bool excludeMergeJoin = false, bool excludeHashJoin = false) : Program
+    public sealed class DefaultRulesProgram(java.util.List extra, bool topDown = false, bool excludeMergeJoin = false, bool excludeHashJoin = false, RelOptRule[]? add = null, RelOptRule[]? remove = null) : Program
     {
 
         /// <inheritdoc />
@@ -61,8 +64,18 @@ namespace Apache.Calcite.Linq.Tests
             if (excludeHashJoin)
                 planner.removeRule(EnumerableRules.ENUMERABLE_JOIN_RULE);
 
+            foreach (var rule in add ?? [])
+                planner.addRule(rule);
+
             for (int i = 0; i < extra.size(); i++)
                 planner.addRule((RelOptRule)extra.get(i));
+
+            // last, so that a caller can take away one of this convention's rules as well as one of
+            // Calcite's. Calcite's own tests do this from Hook.PLANNER, which likewise runs after
+            // registration: a node is only reached by taking away whatever the planner would otherwise
+            // prefer, and with two conventions in one planner that is sometimes a rule of ours
+            foreach (var rule in remove ?? [])
+                planner.removeRule(rule);
 
             for (int i = 0; i < materializations.size(); i++)
                 planner.addMaterialization((RelOptMaterialization)materializations.get(i));

@@ -44,6 +44,10 @@ namespace Apache.Calcite.Linq.Tests
         static ClrEnumerableDifferentialTests()
         {
             ikvm.runtime.Startup.addBootClassPathAssembly(typeof(org.apache.calcite.util.Smalls).Assembly);
+
+            // RelBuilder.create opens a Calcite connection to get a prepare context, and the driver loads its
+            // factory by name. Class.forName finds it only if calcite-core is on the boot class path.
+            ikvm.runtime.Startup.addBootClassPathAssembly(typeof(org.apache.calcite.jdbc.CalciteJdbc41Factory).Assembly);
         }
 
         /// <summary>
@@ -136,6 +140,53 @@ namespace Apache.Calcite.Linq.Tests
         }
 
         /// <summary>
+        /// A table of one NOT NULL INTEGER column, which is the row shape every other fixture here avoids.
+        /// </summary>
+        /// <remarks>
+        /// One column and NOT NULL is what makes <c>JavaRowFormat.optimize</c> answer <c>SCALAR</c>, and
+        /// <c>SCALAR.javaRowClass</c> then answers <c>int</c> rather than <c>java.lang.Integer</c>. A
+        /// sequence still carries the box — Java has no <c>Enumerable&lt;int&gt;</c> to carry anything else
+        /// — so a node that closes its operator over the physical row type instead of the boxed one builds a
+        /// tree that will not compile. Seven did, and no test had this shape: every set operation here is
+        /// over <c>REGION</c> or <c>LABEL</c>, and both are VARCHAR.
+        ///
+        /// <para>A collation, so that the merge union and the sorted aggregate can be reached over it as
+        /// well. <c>SALES</c> advertises none and <c>SORTED</c> has two columns.</para>
+        /// </remarks>
+        sealed class ScalarsTable : AbstractTable, ScannableTable
+        {
+
+            static readonly int[] Rows = [1, 2, 2, 4];
+
+            /// <inheritdoc />
+            public override RelDataType getRowType(RelDataTypeFactory typeFactory)
+            {
+                return typeFactory.builder()
+                    .add("N", typeFactory.createSqlType(SqlTypeName.INTEGER))
+                    .build();
+            }
+
+            /// <inheritdoc />
+            public override Statistic getStatistic()
+            {
+                return Statistics.of(Rows.Length,
+                    new java.util.ArrayList(),
+                    com.google.common.collect.ImmutableList.of(RelCollations.of(0)));
+            }
+
+            /// <inheritdoc />
+            public org.apache.calcite.linq4j.Enumerable scan(DataContext root)
+            {
+                var list = new java.util.ArrayList();
+                foreach (var n in Rows)
+                    list.add(new object[] { java.lang.Integer.valueOf(n) });
+
+                return Linq4j.asEnumerable(list);
+            }
+
+        }
+
+        /// <summary>
         /// A table with a timestamp, which is what a window table function needs and <c>SALES</c> has not.
         /// </summary>
         /// <remarks>
@@ -213,7 +264,11 @@ namespace Apache.Calcite.Linq.Tests
         /// <param name="topDown">Whether the planner optimises top down, which is what asks a node to pass a
         /// trait down to its inputs or derive one from them.</param>
         /// <returns></returns>
-        static List<string> Run(string sql, bool clr, bool topDown = false, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool markJoin = false, bool excludeHashJoin = false, bool excludeMergeJoin = false, bool interpreter = false)
+        /// <summary>
+        /// The schema every query here is planned against.
+        /// </summary>
+        /// <returns></returns>
+        internal static SchemaPlus Schema()
         {
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add("SALES", new SalesTable());
@@ -221,6 +276,7 @@ namespace Apache.Calcite.Linq.Tests
             rootSchema.add("NUMBERS", TableFunctionImpl.create((java.lang.Class)typeof(NumbersTableFunction), "eval"));
             rootSchema.add("EVENTS", new EventsTable());
             rootSchema.add("SORTED", new SortedTable());
+            rootSchema.add("SCALARS", new ScalarsTable());
             rootSchema.add("FIB", org.apache.calcite.schema.impl.TableFunctionImpl.create(org.apache.calcite.util.Smalls.FIBONACCI_LIMIT_100_TABLE_METHOD));
 
             // A CUSTOM-format fixture, which every other table here is not. HrSchema's rows are instances of
@@ -230,6 +286,22 @@ namespace Apache.Calcite.Linq.Tests
             // cannot name a CLR class, so a CLR-backed table would leave EnumerableConvention with no plan to
             // compare against.
             rootSchema.add("HR", new org.apache.calcite.adapter.java.ReflectiveSchema(new org.apache.calcite.test.schemata.hr.HrSchema()));
+
+            // the hierarchy CALCITE-4054 is about, which is a recursive query whose step is a correlate over
+            // the transient table. ReflectiveSchemaWithoutRowCount is Calcite's own wrapper and is what keeps
+            // the planner from costing the scan out of the plan.
+            rootSchema.add("HIER", new org.apache.calcite.test.ReflectiveSchemaWithoutRowCount(new org.apache.calcite.test.schemata.hr.HierarchySchema()));
+
+            // a column of every type Calcite has an implementor for, which is where IS EMPTY finds a list to
+            // ask about. Calcite's own EnumerableCalcTest uses it for the same reason.
+            rootSchema.add("CATCHALL", new org.apache.calcite.adapter.java.ReflectiveSchema(new org.apache.calcite.test.schemata.catchall.CatchallSchema()));
+
+            return rootSchema;
+        }
+
+        static List<string> Run(string sql, bool clr, bool topDown = false, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool markJoin = false, bool excludeHashJoin = false, bool excludeMergeJoin = false, bool interpreter = false, RelOptRule[]? add = null, RelOptRule[]? remove = null)
+        {
+            var rootSchema = Schema();
 
             var rules = new java.util.ArrayList();
             var calcRules = new java.util.ArrayList();
@@ -288,7 +360,7 @@ namespace Apache.Calcite.Linq.Tests
                 .defaultSchema(rootSchema)
                 .programs(
                     markJoin ? MarkJoinSubQueryProgram() : Programs.subQuery(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE),
-                    new DefaultRulesProgram(rules, topDown, (clr && topDown) || excludeMergeJoin, excludeHashJoin),
+                    new DefaultRulesProgram(rules, topDown, (clr && topDown) || excludeMergeJoin, excludeHashJoin, add, remove),
                     Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE))
                 .build();
 
@@ -332,6 +404,74 @@ namespace Apache.Calcite.Linq.Tests
                 return string.Join("|", array.Select(Render));
 
             return row?.ToString() ?? "<null>";
+        }
+
+        /// <summary>
+        /// Runs a plan built against a <see cref="RelBuilder"/> in one convention and returns its rows
+        /// rendered as text.
+        /// </summary>
+        /// <param name="build">Builds the logical plan.</param>
+        /// <param name="clr">Whether to plan into this convention or into Calcite's.</param>
+        /// <param name="planOnly"></param>
+        /// <param name="add">Rules to register alongside Calcite's.</param>
+        /// <param name="remove">Rules to take away once everything is registered.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Some of what <c>EnumerableConvention</c>'s own tests reach cannot be written as SQL:
+        /// <c>Combine</c> has no syntax at all, the POSIX regex operators are not in the core parser, and a
+        /// recursive query over a transient table is built with <c>transientScan</c> and <c>repeatUnion</c>.
+        /// Calcite tests all of those through <c>CalciteAssert.withRel</c>; this is that, against both
+        /// conventions.
+        ///
+        /// <para>The programs are the ones <see cref="Run"/> uses, less the sub-query pass, which has nothing
+        /// to rewrite in a plan that was never a query.</para>
+        /// </remarks>
+        internal static List<string> RunRel(Func<RelBuilder, RelNode> build, bool clr, bool planOnly = false, RelOptRule[]? add = null, RelOptRule[]? remove = null)
+        {
+            var rootSchema = Schema();
+
+            var rules = new java.util.ArrayList();
+            if (clr)
+                foreach (var rule in ClrEnumerableRules.Rules())
+                    rules.add(rule);
+
+            var calcRules = new java.util.ArrayList();
+            if (clr)
+                foreach (var rule in ClrEnumerableRules.CalcRules())
+                    calcRules.add(rule);
+            foreach (var rule in RelOptRules.CALC_RULES.toArray())
+                calcRules.add(rule);
+
+            var config = Frameworks.newConfigBuilder().defaultSchema(rootSchema).build();
+            var logical = build(RelBuilder.create(config));
+
+            var planner = (org.apache.calcite.plan.volcano.VolcanoPlanner)logical.getCluster().getPlanner();
+            planner.addRelTraitDef(ConventionTraitDef.INSTANCE);
+            planner.addRelTraitDef(RelCollationTraitDef.INSTANCE);
+
+            var convention = clr ? (Convention)ClrEnumerableConvention.Instance : EnumerableConvention.INSTANCE;
+            var empty = new java.util.ArrayList();
+
+            var chosen = new DefaultRulesProgram(rules, false, false, false, add, remove)
+                .run(planner, logical, logical.getTraitSet().replace(convention).simplify(), empty, empty);
+
+            var physical = Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)
+                .run(planner, chosen, chosen.getTraitSet(), empty, empty);
+
+            if (planOnly)
+                return [org.apache.calcite.plan.RelOptUtil.toString(physical)];
+
+            var parameters = new java.util.HashMap();
+            var bindable = physical is ClrEnumerableRel node
+                ? ClrEnumerableInterpretable.ToBindable(parameters, null, node, ClrEnumerablePrefer.Array)
+                : EnumerableInterpretable.toBindable(parameters, null, (EnumerableRel)physical, EnumerableRel.Prefer.ARRAY);
+
+            var rows = new List<string>();
+            var enumerator = bindable.bind(new TestDataContext(rootSchema, parameters)).enumerator();
+            while (enumerator.moveNext())
+                rows.Add(Render(enumerator.current()));
+
+            return rows;
         }
 
         /// <summary>
@@ -396,6 +536,70 @@ namespace Apache.Calcite.Linq.Tests
             var calcite = Run(sql, false);
 
             mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
+        }
+
+        /// <summary>
+        /// Requires that a query gives the same rows in both conventions, and that this convention really
+        /// planned the node it was aimed at.
+        /// </summary>
+        /// <param name="node">The node this convention must have chosen.</param>
+        /// <param name="sql"></param>
+        /// <param name="remove">Rules to take away from this convention's run alone, so that the planner has
+        /// nothing it prefers to <paramref name="node"/>.</param>
+        /// <remarks>
+        /// Both conventions' rules are in one planner and <c>VolcanoCost</c> compares the row count and
+        /// nothing else, so a node of Calcite's and the same node of this convention never differ in cost and
+        /// the planner keeps whichever it saw first — Calcite's, which <c>registerDefaultRules</c> registers.
+        /// A test that only compares rows can therefore be comparing Calcite against Calcite, and three of
+        /// the ones here were: <c>ClrEnumerableLimit</c> had never run at all. The plan assertion is what
+        /// makes the comparison mean something, and the rules taken away are what make the plan possible.
+        ///
+        /// <para>Only this convention's run loses them. Calcite's side is planned as it always is, and is the
+        /// oracle.</para>
+        /// </remarks>
+        static void SameThrough(string node, string sql, RelOptRule[]? remove = null, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, RelOptRule[]? add = null)
+        {
+            Run(sql, true, planOnly: true, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, add: add, remove: remove)[0]
+                .Should().Contain(node, "'{0}' should be planned through {1}", sql, node);
+
+            var mine = Run(sql, true, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, add: add, remove: remove);
+            var calcite = Run(sql, false, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, add: add);
+
+            mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
+        }
+
+        /// <summary>
+        /// Requires that a plan built against a <see cref="RelBuilder"/> gives the same rows in both
+        /// conventions.
+        /// </summary>
+        /// <param name="build"></param>
+        /// <param name="add"></param>
+        /// <param name="remove"></param>
+        internal static void SameRel(Func<RelBuilder, RelNode> build, RelOptRule[]? add = null, RelOptRule[]? remove = null)
+        {
+            var mine = RunRel(build, true, add: add, remove: remove);
+            var calcite = RunRel(build, false, add: add, remove: remove);
+
+            mine.Should().Equal(calcite, "the plan should give what EnumerableConvention gives");
+        }
+
+        /// <summary>
+        /// Requires that a plan built against a <see cref="RelBuilder"/> gives the same rows in both
+        /// conventions, and that this convention really planned the node it was aimed at.
+        /// </summary>
+        /// <param name="node"></param>
+        /// <param name="build"></param>
+        /// <param name="add"></param>
+        /// <param name="remove"></param>
+        internal static void SameRelThrough(string node, Func<RelBuilder, RelNode> build, RelOptRule[]? add = null, RelOptRule[]? remove = null)
+        {
+            RunRel(build, true, planOnly: true, add: add, remove: remove)[0]
+                .Should().Contain(node, "the plan should be planned through {0}", node);
+
+            var mine = RunRel(build, true, add: add, remove: remove);
+            var calcite = RunRel(build, false, add: add, remove: remove);
+
+            mine.Should().Equal(calcite, "the plan should give what EnumerableConvention gives");
         }
 
         /// <summary>
@@ -1300,6 +1504,288 @@ namespace Apache.Calcite.Linq.Tests
         public void ShouldPlanMatchRecognizeUnderAConverter() =>
             PlanOf("SELECT * FROM \"HR\".\"emps\" MATCH_RECOGNIZE (ORDER BY \"empid\" MEASURES STRT.\"empid\" AS \"s\" PATTERN (STRT UP) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\")) AS T", true)
                 .Should().StartWith("EnumerableToClrEnumerableConverter");
+
+        // ------------------------------------------------------------------ a row that is one primitive
+        //
+        // SCALARS is one NOT NULL INTEGER column, so its physical row type is int and its sequence carries
+        // java.lang.Integer. Every node below closes an operator over that row type, and seven of them used
+        // the physical one; each of these failed before the node was corrected, and every one names the node
+        // it is aimed at, because for four of them the planner would otherwise have chosen Calcite's.
+
+        [TestMethod]
+        public void ShouldAgreeOnAScalarRowScan() => Same("SELECT \"N\" FROM \"SCALARS\" ORDER BY 1");
+
+        [TestMethod]
+        public void ShouldAgreeOnAScalarRowProjection() => Same("SELECT \"N\" + 1 FROM \"SCALARS\" ORDER BY 1");
+
+        [TestMethod]
+        public void ShouldAgreeOnAScalarRowDistinct() => Same("SELECT DISTINCT \"N\" FROM \"SCALARS\" ORDER BY 1");
+
+        [TestMethod]
+        public void ShouldAgreeOnAScalarRowAggregate() => Same("SELECT \"N\" FROM \"SCALARS\" GROUP BY \"N\" ORDER BY 1");
+
+        [TestMethod]
+        public void ShouldAgreeOnAScalarRowUnionAll() =>
+            SameThrough("ClrEnumerableUnion", "SELECT \"N\" FROM \"SCALARS\" UNION ALL SELECT \"N\" FROM \"SCALARS\" WHERE \"N\" < 3 ORDER BY 1",
+                remove: [ClrEnumerableRules.ClrEnumerableMergeUnionRule]);
+
+        [TestMethod]
+        public void ShouldAgreeOnAScalarRowUnionDistinct() =>
+            SameThrough("ClrEnumerableUnion", "SELECT \"N\" FROM \"SCALARS\" UNION SELECT \"N\" FROM \"SCALARS\" WHERE \"N\" < 3 ORDER BY 1",
+                remove: [EnumerableRules.ENUMERABLE_MERGE_UNION_RULE, ClrEnumerableRules.ClrEnumerableMergeUnionRule]);
+
+        // INTERSECT without ALL is rewritten to an aggregate over a union and never reaches the node; only
+        // INTERSECT ALL does, which is why no set-operation test had ever built one over a primitive row
+        [TestMethod]
+        public void ShouldAgreeOnAScalarRowIntersectAll() =>
+            SameThrough("ClrEnumerableIntersect", "SELECT \"N\" FROM \"SCALARS\" INTERSECT ALL SELECT \"N\" FROM \"SCALARS\" WHERE \"N\" < 3 ORDER BY 1");
+
+        [TestMethod]
+        public void ShouldAgreeOnAScalarRowExceptAll() =>
+            SameThrough("ClrEnumerableMinus", "SELECT \"N\" FROM \"SCALARS\" EXCEPT ALL SELECT \"N\" FROM \"SCALARS\" WHERE \"N\" < 3 ORDER BY 1");
+
+        [TestMethod]
+        public void ShouldAgreeOnAScalarRowLimit() =>
+            SameThrough("ClrEnumerableLimit", "SELECT \"N\" FROM \"SCALARS\" ORDER BY \"N\" OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY",
+                remove: [EnumerableRules.ENUMERABLE_LIMIT_RULE]);
+
+        [TestMethod]
+        public void ShouldAgreeOnAScalarRowLimitSort() =>
+            SameThrough("ClrEnumerableLimitSort", "SELECT \"N\" FROM \"SCALARS\" ORDER BY \"N\" FETCH NEXT 2 ROWS ONLY",
+                remove: [EnumerableRules.ENUMERABLE_LIMIT_SORT_RULE, EnumerableRules.ENUMERABLE_LIMIT_RULE],
+                limitSort: true);
+
+        [TestMethod]
+        public void ShouldAgreeOnAScalarRowMergeUnion() =>
+            SameThrough("ClrEnumerableMergeUnion", "SELECT \"N\" FROM \"SCALARS\" UNION SELECT \"N\" FROM \"SCALARS\" ORDER BY 1",
+                remove: [EnumerableRules.ENUMERABLE_MERGE_UNION_RULE, EnumerableRules.ENUMERABLE_UNION_RULE, EnumerableRules.ENUMERABLE_SORT_RULE]);
+
+        [TestMethod]
+        public void ShouldAgreeOnAScalarRowSortedAggregate() =>
+            SameThrough("ClrEnumerableSortedAggregate", "SELECT \"N\" FROM \"SCALARS\" GROUP BY \"N\" ORDER BY 1",
+                remove: [EnumerableRules.ENUMERABLE_AGGREGATE_RULE, EnumerableRules.ENUMERABLE_SORTED_AGGREGATE_RULE, ClrEnumerableRules.ClrEnumerableAggregateRule],
+                sortedAggregate: true);
+
+        [TestMethod]
+        public void ShouldAgreeOnAScalarRowCollectedIntoAnArray() =>
+            SameThrough("ClrEnumerableCollect", "SELECT ARRAY(SELECT \"N\" FROM \"SCALARS\") FROM (VALUES (1))",
+                remove: [EnumerableRules.ENUMERABLE_COLLECT_RULE]);
+
+        [TestMethod]
+        public void ShouldAgreeOnAScalarRowCollectedIntoAMultiset() =>
+            SameThrough("ClrEnumerableCollect", "SELECT MULTISET(SELECT \"N\" FROM \"SCALARS\") FROM (VALUES (1))",
+                remove: [EnumerableRules.ENUMERABLE_COLLECT_RULE]);
+
+        [TestMethod]
+        public void ShouldAgreeOnAScalarRowUncollected() =>
+            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(ARRAY[1, 2, 3])",
+                remove: [EnumerableRules.ENUMERABLE_UNCOLLECT_RULE]);
+
+        // ------------------------------------------------------------------ EnumerableUncollectTest
+        //
+        // Every shape UNNEST can take, which is Calcite's own list. The node had one test before this, over an
+        // array of strings, and the branch CALCITE-4063 added — one field, itself a struct of one item —
+        // had never been entered. Each of these names the node, because the planner prefers Calcite's.
+
+        static readonly RelOptRule[] TheirUncollect = [EnumerableRules.ENUMERABLE_UNCOLLECT_RULE];
+
+        [TestMethod]
+        public void ShouldAgreeOnUnnestingAnArray() =>
+            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(ARRAY[3, 4]) AS T2(y)", remove: TheirUncollect);
+
+        [TestMethod]
+        public void ShouldAgreeOnUnnestingANullArray() =>
+            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(CAST(NULL AS INTEGER ARRAY))", remove: TheirUncollect);
+
+        [TestMethod]
+        public void ShouldAgreeOnUnnestingAnArrayOfArrays() =>
+            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(ARRAY[ARRAY[3], ARRAY[4]]) AS T2(y)", remove: TheirUncollect);
+
+        [TestMethod]
+        public void ShouldAgreeOnUnnestingAnArrayOfLongerArrays() =>
+            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(ARRAY[ARRAY[3, 4], ARRAY[4, 5]]) AS T2(y)", remove: TheirUncollect);
+
+        [TestMethod]
+        public void ShouldAgreeOnUnnestingAnArrayOfArraysOfArrays() =>
+            SameThrough("ClrEnumerableUncollect",
+                "SELECT * FROM UNNEST(ARRAY[ARRAY[ARRAY[3, 4], ARRAY[4, 5]], ARRAY[ARRAY[7, 8], ARRAY[9, 10]]]) AS T2(y)",
+                remove: TheirUncollect);
+
+        // CALCITE-4063: one field, a struct of one item, and no ordinality, so the result is the item itself
+        // rather than a list holding it. That is the one branch of the node a lambda of its own stands for.
+        [TestMethod]
+        public void ShouldAgreeOnUnnestingAnArrayOfOneFieldRows() =>
+            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(ARRAY[ROW(3), ROW(4)]) AS T2(y)", remove: TheirUncollect);
+
+        [TestMethod]
+        public void ShouldAgreeOnUnnestingAnArrayOfTwoFieldRows() =>
+            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(ARRAY[ROW(3, 5), ROW(4, 6)]) AS T2(y, z)", remove: TheirUncollect);
+
+        [TestMethod]
+        public void ShouldAgreeOnUnnestingWithOrdinality() =>
+            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(ARRAY[ROW(3), ROW(4)]) WITH ORDINALITY AS T2(y, o)", remove: TheirUncollect);
+
+        // UNNEST(ARRAY[ROW(1, ROW(5, 10)), ROW(2, ROW(6, 12))]) has no test, because it does not reach a
+        // convention at all: RelStructuredTypeFlattener throws NoSuchElementException out of
+        // SqlToRelConverter.flattenTypes, which PlannerImpl.rel calls before any planning. Measured on the
+        // Calcite side of this harness as well, and the two sides run the same converter, so it is Calcite's
+        // and it is about how this harness converts rather than about either convention. A row of one field
+        // holding a row is the next test and does run.
+
+        [TestMethod]
+        public void ShouldAgreeOnUnnestingAnArrayOfOneFieldRowsHoldingRows() =>
+            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(ARRAY[ROW(ROW(3)), ROW(ROW(4))]) AS T2(y)", remove: TheirUncollect);
+
+        [TestMethod]
+        public void ShouldAgreeOnUnnestingAlongsideAnotherInput() =>
+            SameThrough("ClrEnumerableUncollect",
+                "SELECT * FROM (VALUES (1), (2)) T1(x), UNNEST(ARRAY[3, 4]) AS T2(y) ORDER BY 1, 2",
+                remove: TheirUncollect);
+
+        [TestMethod]
+        public void ShouldAgreeOnUnnestingArraysAlongsideAnotherInput() =>
+            SameThrough("ClrEnumerableUncollect",
+                "SELECT * FROM (VALUES (1), (2)) T1(x), UNNEST(ARRAY[ARRAY[3, 4], ARRAY[4, 5]]) AS T2(y) ORDER BY 1",
+                remove: TheirUncollect);
+
+        [TestMethod]
+        public void ShouldAgreeOnUnnestingRowsAlongsideAnotherInput() =>
+            SameThrough("ClrEnumerableUncollect",
+                "SELECT * FROM (VALUES (1), (2)) T1(x), UNNEST(ARRAY[ROW(3, 5), ROW(4, 6)]) AS T2(y, z) ORDER BY 1, 2",
+                remove: TheirUncollect);
+
+        [TestMethod]
+        public void ShouldAgreeOnUnnestingWithOrdinalityAlongsideAnotherInput() =>
+            SameThrough("ClrEnumerableUncollect",
+                "SELECT * FROM (VALUES (1), (2)) T1(x), UNNEST(ARRAY[ROW(3), ROW(4)]) WITH ORDINALITY AS T2(y, o) ORDER BY 1, 2",
+                remove: TheirUncollect);
+
+        // ------------------------------------------------------------------ EnumerableBatchNestedLoopJoinTest
+
+        [TestMethod]
+        public void ShouldAgreeOnABatchNestedLoopJoinOnAStringKey() =>
+            SameBatchNestedLoopJoin("SELECT d.\"name\", e.\"salary\" FROM \"HR\".\"depts\" d JOIN \"HR\".\"emps\" e ON d.\"name\" = e.\"name\" ORDER BY 1, 2");
+
+        [TestMethod]
+        public void ShouldAgreeOnABatchNestedLoopJoinFromANotInSubQuery() =>
+            SameBatchNestedLoopJoin("SELECT COUNT(e.\"name\") FROM \"HR\".\"emps\" e WHERE e.\"deptno\" NOT IN (SELECT d.\"deptno\" FROM \"HR\".\"depts\" d WHERE d.\"name\" = 'Sales')");
+
+        [TestMethod]
+        public void ShouldAgreeOnABatchNestedLoopJoinOnTwoEqualities() =>
+            SameBatchNestedLoopJoin("SELECT COUNT(e.\"name\") FROM \"HR\".\"emps\" e JOIN \"HR\".\"depts\" d ON d.\"deptno\" = e.\"empid\" AND d.\"deptno\" = e.\"deptno\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnABatchNestedLoopJoinOnAMismatchedKey() =>
+            SameBatchNestedLoopJoin("SELECT COUNT(e.\"name\") FROM \"HR\".\"emps\" e JOIN \"HR\".\"depts\" d ON d.\"deptno\" = e.\"empid\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnABatchNestedLoopLeftJoinCount() =>
+            SameBatchNestedLoopJoin("SELECT COUNT(d.\"deptno\") FROM \"HR\".\"depts\" d LEFT JOIN \"HR\".\"emps\" e ON d.\"deptno\" = e.\"deptno\"");
+
+        // two batch joins in one plan, which is where Calcite's own node has to fall back to a compact row
+        // builder or exceed what a Java method may hold. An expression tree has no such limit and builds the
+        // one form, so this is the query that says the difference does not change the answer.
+        [TestMethod]
+        public void ShouldAgreeOnADoubleBatchNestedLoopJoin() =>
+            SameBatchNestedLoopJoin("SELECT e.\"name\", d.\"name\", l.\"name\" FROM \"HR\".\"emps\" e JOIN \"HR\".\"depts\" d ON d.\"deptno\" <> e.\"empid\" JOIN \"HR\".\"locations\" l ON e.\"empid\" <> l.\"empid\" AND d.\"deptno\" = l.\"empid\" ORDER BY 1, 2, 3");
+
+        // ------------------------------------------------------------------ EnumerableCorrelateTest, in SQL
+
+        [TestMethod]
+        public void ShouldAgreeOnACorrelateFromExists() =>
+            Same("SELECT e.\"empid\", e.\"name\" FROM \"HR\".\"emps\" e WHERE EXISTS (SELECT 1 FROM \"HR\".\"depts\" d WHERE d.\"deptno\" = e.\"deptno\") ORDER BY 1");
+
+        // CALCITE-2930's shape: the correlated condition compares against a nullable column, so the field the
+        // sub-query reads is a box rather than a primitive
+        [TestMethod]
+        public void ShouldAgreeOnACorrelateOverABoxedPrimitive() =>
+            Same("SELECT e.\"empid\" FROM \"HR\".\"emps\" e WHERE NOT EXISTS (SELECT 1 FROM \"HR\".\"depts\" d WHERE d.\"deptno\" = e.\"commission\") ORDER BY 1");
+
+        /// <summary>
+        /// CALCITE-5638: a scalar sub-query correlated on two columns at once, under a filter that is itself
+        /// correlated.
+        /// </summary>
+        [TestMethod]
+        public void ShouldAgreeOnAComplexNestedCorrelatedSubQuery() =>
+            Same("SELECT \"empid\", \"deptno\", (SELECT COUNT(*) FROM \"HR\".\"emps\" AS x WHERE x.\"salary\" > \"emps\".\"salary\" AND x.\"deptno\" < \"emps\".\"deptno\") FROM \"HR\".\"emps\" WHERE \"empid\" < \"salary\" ORDER BY 1, 2, 3");
+
+        // ------------------------------------------------------------------ EnumerableMergeUnionTest
+        //
+        // The order keys Calcite's own tests use and this convention had none of: a nullable column ordered
+        // with the nulls at either end, and a second key running the other way.
+
+        [TestMethod]
+        public void ShouldAgreeOnAMergeUnionAllOrderedByANullableKeyNullsFirst() =>
+            Same("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" UNION ALL SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" WHERE \"ID\" < 4 ORDER BY \"AMOUNT\" ASC NULLS FIRST, \"ID\" DESC");
+
+        [TestMethod]
+        public void ShouldAgreeOnAMergeUnionOrderedByANullableKeyNullsFirst() =>
+            Same("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" UNION SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" WHERE \"ID\" < 4 ORDER BY \"AMOUNT\" ASC NULLS FIRST, \"ID\" DESC");
+
+        [TestMethod]
+        public void ShouldAgreeOnAMergeUnionAllOrderedByANullableKeyNullsLast() =>
+            Same("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" UNION ALL SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" WHERE \"ID\" < 4 ORDER BY \"AMOUNT\" ASC NULLS LAST, \"ID\" DESC");
+
+        [TestMethod]
+        public void ShouldAgreeOnAMergeUnionOrderedByANullableKeyNullsLast() =>
+            Same("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" UNION SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" WHERE \"ID\" < 4 ORDER BY \"AMOUNT\" ASC NULLS LAST, \"ID\" DESC");
+
+        [TestMethod]
+        public void ShouldAgreeOnAMergeUnionOfOneColumnOrderedByIt() =>
+            Same("SELECT \"LABEL\" FROM \"SALES\" UNION SELECT \"LABEL\" FROM \"SALES\" WHERE \"ID\" < 4 ORDER BY 1");
+
+        // ------------------------------------------------------------------ EnumerableHashJoinTest
+
+        [TestMethod]
+        public void ShouldAgreeOnAFullJoinOnACompositeNullableKey() =>
+            SameHashJoin("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a FULL JOIN \"SALES\" b ON a.\"REGION\" = b.\"REGION\" AND a.\"AMOUNT\" = b.\"AMOUNT\" ORDER BY 1, 2");
+
+        [TestMethod]
+        public void ShouldAgreeOnASemiJoinOnACompositeNullableKey() =>
+            SameHashJoin("SELECT a.\"ID\" FROM \"SALES\" a WHERE (a.\"REGION\", a.\"AMOUNT\") IN (SELECT b.\"REGION\", b.\"AMOUNT\" FROM \"SALES\" b WHERE b.\"ID\" < 4) ORDER BY 1");
+
+        // an equality and something else besides, which the hash join tests on the pair it has already matched
+        [TestMethod]
+        public void ShouldAgreeOnAHashJoinWithAnExtraPredicate() =>
+            SameHashJoin("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"REGION\" = b.\"REGION\" AND a.\"ID\" < b.\"ID\" ORDER BY 1, 2");
+
+        [TestMethod]
+        public void ShouldAgreeOnALeftHashJoinWithAnExtraPredicate() =>
+            SameHashJoin("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a LEFT JOIN \"SALES\" b ON a.\"REGION\" = b.\"REGION\" AND a.\"ID\" < b.\"ID\" ORDER BY 1, 2");
+
+        [TestMethod]
+        public void ShouldAgreeOnARightHashJoinWithAnExtraPredicate() =>
+            SameHashJoin("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a RIGHT JOIN \"SALES\" b ON a.\"REGION\" = b.\"REGION\" AND a.\"ID\" < b.\"ID\" ORDER BY 1, 2");
+
+        [TestMethod]
+        public void ShouldAgreeOnASemiHashJoinWithAnExtraPredicate() =>
+            SameHashJoin("SELECT a.\"ID\" FROM \"SALES\" a WHERE EXISTS (SELECT 1 FROM \"SALES\" b WHERE a.\"REGION\" = b.\"REGION\" AND a.\"ID\" < b.\"ID\") ORDER BY 1");
+
+        // ------------------------------------------------------------------ EnumerableLimitSortTest
+        //
+        // The order keys Calcite's own limit-sort tests use: a nullable column with the nulls at either end,
+        // and a second key. This convention's five limit-sort tests were all one key with the default null
+        // ordering.
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortWithNullsFirst() =>
+            SameLimitSort("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"AMOUNT\" NULLS FIRST, \"ID\" FETCH NEXT 3 ROWS ONLY");
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortWithNullsLast() =>
+            SameLimitSort("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"AMOUNT\" NULLS LAST, \"ID\" FETCH NEXT 3 ROWS ONLY");
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortWithNullsFirstAndAnOffset() =>
+            SameLimitSort("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"AMOUNT\" NULLS FIRST, \"ID\" OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY");
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortWithNullsLastAndAnOffset() =>
+            SameLimitSort("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"AMOUNT\" NULLS LAST, \"ID\" OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY");
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortOverSeveralKeysRunningBothWays() =>
+            SameLimitSort("SELECT \"ID\", \"REGION\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"REGION\" DESC, \"AMOUNT\" NULLS LAST, \"ID\" OFFSET 1 ROWS FETCH NEXT 4 ROWS ONLY");
 
     }
 
