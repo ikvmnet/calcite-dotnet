@@ -394,10 +394,13 @@ namespace Apache.Calcite.Linq.Rel
 
             var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.PreferArray());
 
-            // boxed for the same reason the sequences below are, and it has to be the same decision: the key
-            // selector is a lambda over one row of the sequence handed to MergeJoin, so a parameter typed off
-            // the physical type reads int where the sequence holds Integer, and only a one-column input tells
-            // them apart
+            // Calcite types these off the physical type and does not box them. It cannot go wrong there:
+            // there is no Enumerable<int> in Java, so the sequence and a parameter typed int cannot disagree.
+            // Here they can. The sequences below are boxed because a join must box — the selector and
+            // predicate Calcite builds are against boxed rows, and an outer join hands the selector a null —
+            // and the key selector is a lambda over one row of the boxed sequence, so this has to be the same
+            // decision. Only a one-column input tells the two apart, every wider row being a reference
+            // already, which is why Primitive.box is a no-op for all of them.
             var left_ = J.Expressions.parameter(J.Primitive.box(leftResult.PhysType.getJavaRowType()), "left");
             var right_ = J.Expressions.parameter(J.Primitive.box(rightResult.PhysType.getJavaRowType()), "right");
 
