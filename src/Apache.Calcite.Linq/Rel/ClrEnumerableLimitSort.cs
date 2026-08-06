@@ -1,6 +1,5 @@
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using org.apache.calcite.adapter.enumerable;
@@ -8,7 +7,6 @@ using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
 using org.apache.calcite.rex;
-using org.apache.calcite.util;
 
 using J = org.apache.calcite.linq4j.tree;
 

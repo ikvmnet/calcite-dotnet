@@ -2,12 +2,10 @@ using System;
 using System.Linq.Expressions;
 
 using Apache.Calcite.Linq.Runtime;
-using Apache.Calcite.Linq.Tree;
 
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.adapter.enumerable.impl;
 using org.apache.calcite.adapter.java;
-using org.apache.calcite.linq4j;
 using org.apache.calcite.linq4j.function;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -18,7 +16,6 @@ using org.apache.calcite.sql;
 using org.apache.calcite.util;
 
 using J = org.apache.calcite.linq4j.tree;
-
 
 namespace Apache.Calcite.Linq.Rel
 {

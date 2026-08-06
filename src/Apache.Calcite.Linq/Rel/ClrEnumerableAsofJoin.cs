@@ -1,7 +1,5 @@
-using System;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using java.util.function;
@@ -13,7 +11,6 @@ using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.metadata;
 using org.apache.calcite.rex;
 using org.apache.calcite.sql;
-using org.apache.calcite.util;
 
 using J = org.apache.calcite.linq4j.tree;
 

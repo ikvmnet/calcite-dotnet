@@ -1,7 +1,6 @@
 using System;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using org.apache.calcite.adapter.enumerable;

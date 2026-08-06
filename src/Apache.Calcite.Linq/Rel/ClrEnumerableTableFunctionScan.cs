@@ -1,18 +1,15 @@
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using org.apache.calcite;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
-using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.rex;
 using org.apache.calcite.schema;
 using org.apache.calcite.schema.impl;
-using org.apache.calcite.sql.validate;
 
 using J = org.apache.calcite.linq4j.tree;
 

@@ -1,5 +1,3 @@
-using Apache.Calcite.Linq.Runtime;
-
 using java.util.function;
 
 using org.apache.calcite.adapter.enumerable;

@@ -1,13 +1,11 @@
 using System;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using java.util.function;
 
 using org.apache.calcite.adapter.enumerable;
-using org.apache.calcite.linq4j.function;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
