@@ -3,7 +3,7 @@
     <PropertyGroup>
         <TargetFrameworks>net8.0</TargetFrameworks>
         <LangVersion>latest</LangVersion>
-        <Description>Calling conventions that execute an Apache Calcite plan as System.Linq.Expressions, yielding IEnumerable or IAsyncEnumerable.</Description>
+        <Description>Runs Apache Calcite query plans as .NET code. Compiles a plan into a System.Linq.Expressions tree instead of generating Java source and compiling it at runtime, so no Java compiler runs when a statement is prepared and a .NET user-defined function can be called from SQL.</Description>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageIcon>icon.png</PackageIcon>
         <PackageTags>apache;calcite;linq;sql;ikvm</PackageTags>

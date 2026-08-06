@@ -13,6 +13,7 @@ The Calcite engine runs directly inside your .NET process via [IKVM](https://git
 - **Rich SQL** — standards-conformant SQL with window functions, lateral joins, `MATCH_RECOGNIZE`, and much more.
 - **Code-driven schemas** — register .NET objects as Calcite schemas, tables, and user-defined functions at runtime via the `SchemaPlus` API; no JSON model required.
 - **No external dependencies** — everything runs in-process; no server to provision or maintain.
+- **Queries run as .NET code** — a plan is compiled to a `System.Linq.Expressions` tree and executed as .NET, rather than generated as Java source and compiled at runtime.
 
 ## Supported platforms
 
@@ -178,6 +179,25 @@ Or switch to a case-insensitive lexer:
 await using var conn = new CalciteConnection("Model=inline:{...};Lex=MYSQL_ANSI");
 ```
 
+## How queries are executed
+
+Every plan is compiled into a `System.Linq.Expressions` tree and run as .NET code. Calcite's own engine
+generates Java source and compiles it at runtime with Janino; this provider does not, so no Java compiler
+runs when your query is prepared, and a user-defined function written in .NET can be called straight from
+a plan.
+
+There is nothing to configure — it is what a connection does by default. To use Calcite's own engine
+instead, set `PrepareFactory` before opening the connection:
+
+```csharp
+await using var conn = new CalciteConnection(connectionString);
+conn.PrepareFactory = () => (CalcitePrepare)CalcitePrepare.DEFAULT_FACTORY.apply();
+await conn.OpenAsync();
+```
+
+A single plan may use both. Anything the .NET convention has no implementation for is planned by Calcite
+as usual, and rows cross between the two untouched.
+
 ## Accessing the Calcite engine directly
 
 `CalciteConnection` exposes Calcite-native objects as typed .NET properties for advanced scenarios:
@@ -196,6 +216,7 @@ These properties are only valid while the connection is open.
 |---------|---------|
 | [`Apache.Calcite.Adapter.AdoNet`](https://www.nuget.org/packages/Apache.Calcite.Adapter.AdoNet) | Expose any ADO.NET data source as a federated Calcite schema with query pushdown. |
 | [`Apache.Calcite.Extensions`](https://www.nuget.org/packages/Apache.Calcite.Extensions) | .NET helper types for working with Calcite connection properties and IKVM interop. |
+| [`Apache.Calcite.Linq`](https://www.nuget.org/packages/Apache.Calcite.Linq) | The calling convention this provider executes plans with. Referenced for you. |
 
 ## Further reading
 
