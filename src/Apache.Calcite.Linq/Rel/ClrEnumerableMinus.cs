@@ -47,13 +47,13 @@ namespace Apache.Calcite.Linq.Rel
                     continue;
                 }
 
-                var rowType = ClrEnumerableRelImplementor.RowType(result.PhysType);
+                var rowType = result.PhysType.RowType();
 
                 minusExp = Expression.Call(null,
                     ClrBuiltInMethod.Except.MakeGenericMethod(rowType),
                     minusExp,
                     result.Expression,
-                    ClrPhysTypes.Comparer(implementor, result.PhysType),
+                    result.PhysType.Comparer(implementor),
                     Expression.Constant(all));
             }
 

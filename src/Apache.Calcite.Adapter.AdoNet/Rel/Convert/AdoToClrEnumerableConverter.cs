@@ -91,7 +91,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             // the schema SPI defines a convention's expression as linq4j, so this is the one thing here that
             // arrives as a linq4j tree, and it is translated where it is produced rather than composed into
             // anything first. Everything else this node builds is an expression tree from the start.
-            var dataSource = implementor.Translate(Schemas.unwrap(convention.Expression, typeof(AdoDataSource)));
+            var dataSource = implementor.Translator.Translate(Schemas.unwrap(convention.Expression, typeof(AdoDataSource)));
 
             // a correlated sub-query leaves a parameter per correlation variable in the SQL, and the values
             // live on the context the builder closed over the outer row. Without the enricher the command is

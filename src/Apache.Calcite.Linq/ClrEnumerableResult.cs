@@ -24,7 +24,15 @@ namespace Apache.Calcite.Linq
         /// <param name="expression">Expression yielding the sequence of rows.</param>
         /// <param name="physType">The Java type returned by this relational expression, and how it maps onto the fields of the logical row type.</param>
         /// <param name="format">How a row is represented.</param>
-        public ClrEnumerableResult(Expression expression, PhysType physType, JavaRowFormat format)
+        /// <remarks>
+        /// Internal, so that <see cref="ClrEnumerableRelImplementor.Result"/> is the only way a node has of
+        /// making one. That method is where a sequence is required to carry the rows its physical type says
+        /// it carries, and a node that built its own result would not be asked. One did, and was the last
+        /// node in the plan still handing up a CLR primitive where the row type was a Java box — correct
+        /// only because it had been fixed by hand, and silently wrong again the moment anything about it
+        /// changed.
+        /// </remarks>
+        internal ClrEnumerableResult(Expression expression, PhysType physType, JavaRowFormat format)
         {
             Expression = expression ?? throw new ArgumentNullException(nameof(expression));
             PhysType = physType ?? throw new ArgumentNullException(nameof(physType));

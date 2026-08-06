@@ -474,7 +474,7 @@ namespace Apache.Calcite.Linq.Rel
                     selector,
                     Expression.Constant(ClrEnumUtils.ToLinq4jJoinType(joinType)),
                     comparator,
-                    ClrPhysTypes.Comparer(implementor, leftKeyPhysType)));
+                    leftKeyPhysType.Comparer(implementor)));
         }
 
         /// <summary>

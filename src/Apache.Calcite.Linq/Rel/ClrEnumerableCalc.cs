@@ -112,8 +112,8 @@ namespace Apache.Calcite.Linq.Rel
             var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.Prefer(result.Format));
 
             var inputJavaType = result.PhysType.getJavaRowType();
-            var inputType = ClrEnumerableRelImplementor.RowType(result.PhysType);
-            var outputType = ClrEnumerableRelImplementor.RowType(physType);
+            var inputType = result.PhysType.RowType();
+            var outputType = physType.RowType();
 
             var rexBuilder = getCluster().getRexBuilder();
             var mq = getCluster().getMetadataQuery();

@@ -60,13 +60,11 @@ namespace Apache.Calcite.Linq.Convert
             var enumerable = new EnumerableRelImplementor(implementor.RexBuilder, implementor.Map);
             var result = enumerable.visitChild(null, 0, (EnumerableRel)getInput(), pref.ToCalcite());
 
-            var rowType = ClrEnumerableRelImplementor.RowType(result.physType);
+            var rowType = result.physType.RowType();
             var source = implementor.Translator.TranslateBody(result.block, typeof(Enumerable));
 
-            return new ClrEnumerableResult(
-                Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), source),
-                result.physType,
-                result.format);
+            return implementor.Result(result.physType,
+                Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), source));
         }
 
     }

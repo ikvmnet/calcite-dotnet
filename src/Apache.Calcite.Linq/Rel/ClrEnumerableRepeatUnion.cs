@@ -78,7 +78,7 @@ namespace Apache.Calcite.Linq.Rel
             // the seed's own format, and not re-optimised: a repeat union yields the rows of its two inputs
             // unchanged, so its physical type is theirs
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), seedResult.Format, false);
-            var rowType = ClrEnumerableRelImplementor.RowType(seedResult.PhysType);
+            var rowType = seedResult.PhysType.RowType();
 
             body.Add(
                 Expression.Call(null,
@@ -87,7 +87,7 @@ namespace Apache.Calcite.Linq.Rel
                     iterationResult.Expression,
                     Expression.Constant(iterationLimit),
                     Expression.Constant(all),
-                    ClrPhysTypes.Comparer(implementor, physType),
+                    physType.Comparer(implementor),
                     cleanUp));
 
             return implementor.Result(physType, body.Count == 1 ? body[0] : Expression.Block(body));

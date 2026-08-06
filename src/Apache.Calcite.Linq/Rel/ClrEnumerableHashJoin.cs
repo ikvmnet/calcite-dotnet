@@ -178,7 +178,7 @@ namespace Apache.Calcite.Linq.Rel
                     leftKey,
                     rightKey,
                     selector,
-                    ClrPhysTypes.Comparer(implementor, keyPhysType),
+                    keyPhysType.Comparer(implementor),
                     Expression.Constant(joinType.generatesNullsOnLeft()),
                     Expression.Constant(joinType.generatesNullsOnRight()),
                     predicate));
@@ -196,8 +196,8 @@ namespace Apache.Calcite.Linq.Rel
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
 
             var physType = leftResult.PhysType;
-            var leftType = ClrEnumerableRelImplementor.RowType(leftResult.PhysType);
-            var rightType = ClrEnumerableRelImplementor.RowType(rightResult.PhysType);
+            var leftType = leftResult.PhysType.RowType();
+            var rightType = rightResult.PhysType.RowType();
 
             var keyPhysType = leftResult.PhysType.project(joinInfo.leftKeys, JavaRowFormat.LIST);
             var leftKey = NullAwareAccessor(implementor, leftResult.PhysType, joinInfo.leftKeys, leftType);
@@ -210,7 +210,7 @@ namespace Apache.Calcite.Linq.Rel
                     rightResult.Expression,
                     leftKey,
                     rightKey,
-                    ClrPhysTypes.Comparer(implementor, keyPhysType),
+                    keyPhysType.Comparer(implementor),
                     Expression.Constant(joinType.name() == nameof(JoinRelType.ANTI)),
                     Predicate(implementor, leftResult.PhysType, rightResult.PhysType, leftType, rightType)));
         }
@@ -290,9 +290,9 @@ namespace Apache.Calcite.Linq.Rel
             var atMostOneNotNullSafeKey = notNullSafeKeyCount <= 1;
 
             var nullSafeKeyPhysType = leftResult.PhysType.project(leftNullSafeKeys, JavaRowFormat.LIST);
-            var nullSafeKeyComparer = ClrPhysTypes.Comparer(implementor, nullSafeKeyPhysType);
+            var nullSafeKeyComparer = nullSafeKeyPhysType.Comparer(implementor);
             var keyPhysType = leftResult.PhysType.project(joinInfo.leftKeys, JavaRowFormat.LIST);
-            var keyComparer = ClrPhysTypes.Comparer(implementor, keyPhysType);
+            var keyComparer = keyPhysType.Comparer(implementor);
 
             var selector = ClrEnumUtils.MarkJoinSelector(implementor, physType, leftResult.PhysType);
 

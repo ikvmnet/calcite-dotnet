@@ -49,11 +49,11 @@ namespace Apache.Calcite.Linq.Rel
                     continue;
                 }
 
-                var rowType = ClrEnumerableRelImplementor.RowType(result.PhysType);
+                var rowType = result.PhysType.RowType();
 
                 unionExp = all
                     ? Expression.Call(null, ClrBuiltInMethod.Concat.MakeGenericMethod(rowType), unionExp, result.Expression)
-                    : Expression.Call(null, ClrBuiltInMethod.Union.MakeGenericMethod(rowType), unionExp, result.Expression, ClrPhysTypes.Comparer(implementor, result.PhysType));
+                    : Expression.Call(null, ClrBuiltInMethod.Union.MakeGenericMethod(rowType), unionExp, result.Expression, result.PhysType.Comparer(implementor));
             }
 
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));

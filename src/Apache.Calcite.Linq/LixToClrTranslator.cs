@@ -32,7 +32,7 @@ namespace Apache.Calcite.Linq
     ///
     /// <para>A translator carries the scope its tree is translated in, so one is used for one tree.</para>
     /// </remarks>
-    sealed class LixToClrTranslator
+    public sealed class LixToClrTranslator
     {
 
         /// <summary>
