@@ -14,7 +14,7 @@ namespace Apache.Calcite.Data.Internal
 
         static readonly DateTime UnixEpoch = new(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-        readonly SqlTypeName.__Enum _sqlType;
+        readonly SqlTypeName _sqlType;
         readonly object? _value;
 
         /// <summary>
@@ -22,7 +22,7 @@ namespace Apache.Calcite.Data.Internal
         /// </summary>
         /// <param name="sqlType"></param>
         /// <param name="value"></param>
-        public CalciteResultValue(SqlTypeName.__Enum sqlType, object? value)
+        public CalciteResultValue(SqlTypeName sqlType, object? value)
         {
             _sqlType = sqlType;
             _value = value;
@@ -119,9 +119,9 @@ namespace Apache.Calcite.Data.Internal
             if (_value is null)
                 return DBNull.Value;
 
-            switch (_sqlType)
+            switch (_sqlType.name())
             {
-                case SqlTypeName.__Enum.DATE:
+                case nameof(SqlTypeName.DATE):
                     {
                         return _value switch
                         {
@@ -131,7 +131,7 @@ namespace Apache.Calcite.Data.Internal
                             _ => _value,
                         };
                     }
-                case SqlTypeName.__Enum.TIME:
+                case nameof(SqlTypeName.TIME):
                     {
                         return _value switch
                         {
@@ -141,8 +141,8 @@ namespace Apache.Calcite.Data.Internal
                             _ => _value,
                         };
                     }
-                case SqlTypeName.__Enum.TIME_WITH_LOCAL_TIME_ZONE:
-                case SqlTypeName.__Enum.TIME_TZ:
+                case nameof(SqlTypeName.TIME_WITH_LOCAL_TIME_ZONE):
+                case nameof(SqlTypeName.TIME_TZ):
                     {
                         // Calcite's wire form is a count of milliseconds-since-midnight; the offset is
                         // not carried per-row, so surface as DateTimeOffset at the epoch date with UTC offset
@@ -155,7 +155,7 @@ namespace Apache.Calcite.Data.Internal
                             _ => _value,
                         };
                     }
-                case SqlTypeName.__Enum.TIMESTAMP:
+                case nameof(SqlTypeName.TIMESTAMP):
                     {
                         return _value switch
                         {
@@ -164,8 +164,8 @@ namespace Apache.Calcite.Data.Internal
                             _ => _value,
                         };
                     }
-                case SqlTypeName.__Enum.TIMESTAMP_WITH_LOCAL_TIME_ZONE:
-                case SqlTypeName.__Enum.TIMESTAMP_TZ:
+                case nameof(SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE):
+                case nameof(SqlTypeName.TIMESTAMP_TZ):
                     {
                         // UTC instant; surface as DateTimeOffset with UTC offset.
                         return _value switch
@@ -175,8 +175,8 @@ namespace Apache.Calcite.Data.Internal
                             _ => _value,
                         };
                     }
-                case SqlTypeName.__Enum.BINARY:
-                case SqlTypeName.__Enum.VARBINARY:
+                case nameof(SqlTypeName.BINARY):
+                case nameof(SqlTypeName.VARBINARY):
                     {
                         return _value switch
                         {
@@ -322,10 +322,10 @@ namespace Apache.Calcite.Data.Internal
         {
             return _value switch
             {
-                java.lang.Integer i when _sqlType == SqlTypeName.__Enum.DATE => UnixEpoch.AddDays(i.intValue()),
-                java.sql.Date d when _sqlType == SqlTypeName.__Enum.DATE => UnixEpoch.AddMilliseconds(d.getTime()),
-                java.lang.Long l when _sqlType == SqlTypeName.__Enum.TIMESTAMP => UnixEpoch.AddMilliseconds(l.longValue()),
-                java.sql.Timestamp ts when _sqlType == SqlTypeName.__Enum.TIMESTAMP => UnixEpoch.AddMilliseconds(ts.getTime()),
+                java.lang.Integer i when _sqlType == SqlTypeName.DATE => UnixEpoch.AddDays(i.intValue()),
+                java.sql.Date d when _sqlType == SqlTypeName.DATE => UnixEpoch.AddMilliseconds(d.getTime()),
+                java.lang.Long l when _sqlType == SqlTypeName.TIMESTAMP => UnixEpoch.AddMilliseconds(l.longValue()),
+                java.sql.Timestamp ts when _sqlType == SqlTypeName.TIMESTAMP => UnixEpoch.AddMilliseconds(ts.getTime()),
                 _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'DateTime'"),
             };
         }
@@ -338,10 +338,10 @@ namespace Apache.Calcite.Data.Internal
         {
             return _value switch
             {
-                java.lang.Long l when _sqlType is SqlTypeName.__Enum.TIMESTAMP_WITH_LOCAL_TIME_ZONE or SqlTypeName.__Enum.TIMESTAMP_TZ => new DateTimeOffset(UnixEpoch.AddMilliseconds(l.longValue()), TimeSpan.Zero),
-                java.sql.Timestamp ts when _sqlType is SqlTypeName.__Enum.TIMESTAMP_WITH_LOCAL_TIME_ZONE or SqlTypeName.__Enum.TIMESTAMP_TZ => new DateTimeOffset(UnixEpoch.AddMilliseconds(ts.getTime()), TimeSpan.Zero),
-                java.lang.Integer i when _sqlType is SqlTypeName.__Enum.TIME_WITH_LOCAL_TIME_ZONE or SqlTypeName.__Enum.TIME_TZ => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(i.intValue())),
-                java.sql.Time t when _sqlType is SqlTypeName.__Enum.TIME_WITH_LOCAL_TIME_ZONE or SqlTypeName.__Enum.TIME_TZ => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(t.getTime())),
+                java.lang.Long l when (_sqlType == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE || _sqlType == SqlTypeName.TIMESTAMP_TZ) => new DateTimeOffset(UnixEpoch.AddMilliseconds(l.longValue()), TimeSpan.Zero),
+                java.sql.Timestamp ts when (_sqlType == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE || _sqlType == SqlTypeName.TIMESTAMP_TZ) => new DateTimeOffset(UnixEpoch.AddMilliseconds(ts.getTime()), TimeSpan.Zero),
+                java.lang.Integer i when (_sqlType == SqlTypeName.TIME_WITH_LOCAL_TIME_ZONE || _sqlType == SqlTypeName.TIME_TZ) => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(i.intValue())),
+                java.sql.Time t when (_sqlType == SqlTypeName.TIME_WITH_LOCAL_TIME_ZONE || _sqlType == SqlTypeName.TIME_TZ) => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(t.getTime())),
                 _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'DateTimeOffset'"),
             };
         }
@@ -354,8 +354,8 @@ namespace Apache.Calcite.Data.Internal
         {
             return _value switch
             {
-                java.lang.Integer i when _sqlType == SqlTypeName.__Enum.TIME => TimeSpan.FromMilliseconds(i.intValue()),
-                java.sql.Time t when _sqlType == SqlTypeName.__Enum.TIME => TimeSpan.FromMilliseconds(t.getTime()),
+                java.lang.Integer i when _sqlType == SqlTypeName.TIME => TimeSpan.FromMilliseconds(i.intValue()),
+                java.sql.Time t when _sqlType == SqlTypeName.TIME => TimeSpan.FromMilliseconds(t.getTime()),
                 _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'TimeSpan'"),
             };
         }
@@ -526,8 +526,8 @@ namespace Apache.Calcite.Data.Internal
         {
             return _value switch
             {
-                java.lang.Integer i when _sqlType == SqlTypeName.__Enum.DATE => DateOnly.FromDateTime(UnixEpoch.AddDays(i.intValue())),
-                java.sql.Date d when _sqlType == SqlTypeName.__Enum.DATE => DateOnly.FromDateTime(UnixEpoch.AddMilliseconds(d.getTime())),
+                java.lang.Integer i when _sqlType == SqlTypeName.DATE => DateOnly.FromDateTime(UnixEpoch.AddDays(i.intValue())),
+                java.sql.Date d when _sqlType == SqlTypeName.DATE => DateOnly.FromDateTime(UnixEpoch.AddMilliseconds(d.getTime())),
                 _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'DateOnly'"),
             };
         }
@@ -540,8 +540,8 @@ namespace Apache.Calcite.Data.Internal
         {
             return _value switch
             {
-                java.lang.Integer i when _sqlType == SqlTypeName.__Enum.TIME => TimeOnly.FromTimeSpan(TimeSpan.FromMilliseconds(i.intValue())),
-                java.sql.Time t when _sqlType == SqlTypeName.__Enum.TIME => TimeOnly.FromTimeSpan(TimeSpan.FromMilliseconds(t.getTime())),
+                java.lang.Integer i when _sqlType == SqlTypeName.TIME => TimeOnly.FromTimeSpan(TimeSpan.FromMilliseconds(i.intValue())),
+                java.sql.Time t when _sqlType == SqlTypeName.TIME => TimeOnly.FromTimeSpan(TimeSpan.FromMilliseconds(t.getTime())),
                 _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'TimeOnly'"),
             };
         }

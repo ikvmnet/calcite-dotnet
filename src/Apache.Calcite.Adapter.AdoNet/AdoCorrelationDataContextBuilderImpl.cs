@@ -17,7 +17,11 @@ namespace Apache.Calcite.Adapter.AdoNet
     public class AdoCorrelationDataContextBuilderImpl : IAdoCorrelationDataContextBuilder
     {
 
-        static readonly java.lang.reflect.Constructor NEW = Types.lookupConstructor((java.lang.reflect.Type)typeof(AdoCorrelationDataContext), typeof(DataContext), typeof(object[]));
+        // (Class) and not (java.lang.reflect.Type): IKVM converts a System.Type to a java.lang.Class, but a
+        // cast to the interface Class implements is a plain runtime cast, and a System.RuntimeType does not
+        // implement it. This threw for as long as it existed, unnoticed because C# defers a static field
+        // until it is first read and only Build below reads this one.
+        static readonly java.lang.reflect.Constructor NEW = Types.lookupConstructor((java.lang.Class)typeof(AdoCorrelationDataContext), typeof(DataContext), typeof(object[]));
 
         readonly ImmutableList.Builder _parameters = ImmutableList.builder();
         readonly EnumerableRelImplementor _implementor;
@@ -49,7 +53,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <inheritdoc />
         public Expression Build()
         {
-            return Expressions.new_(NEW, _dataContext, Expressions.newArrayInit((java.lang.reflect.Type)typeof(object), 1, _parameters.build()));
+            return Expressions.new_(NEW, _dataContext, Expressions.newArrayInit((java.lang.Class)typeof(object), 1, _parameters.build()));
         }
 
     }

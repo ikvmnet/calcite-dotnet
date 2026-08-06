@@ -28,17 +28,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             throw new System.NotImplementedException();
         }
 
-        public override SqlDialect GetDialect()
-        {
-            throw new System.NotImplementedException();
-        }
+        public override SqlDialect Dialect => throw new System.NotImplementedException();
 
         protected override DbType ParseDbType(string typeName)
-        {
-            throw new System.NotImplementedException();
-        }
-
-        public override string GetParameterName(int index)
         {
             throw new System.NotImplementedException();
         }
