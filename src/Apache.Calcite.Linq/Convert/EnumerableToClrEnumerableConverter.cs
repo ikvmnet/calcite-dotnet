@@ -63,10 +63,8 @@ namespace Apache.Calcite.Linq.Convert
             var rowType = ClrEnumerableRelImplementor.RowType(result.physType);
             var source = implementor.Translator.TranslateBody(result.block, typeof(Enumerable));
 
-            return new ClrEnumerableResult(
-                Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), source),
-                result.physType,
-                result.format);
+            return implementor.Result(result.physType,
+                Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), source));
         }
 
     }
