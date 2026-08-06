@@ -122,7 +122,7 @@ namespace Apache.Calcite.Linq.Rel
 
                 // a null literal translates to a constant of Object, and Java may assign that to a field of
                 // any reference type where an array initializer may not
-                rows.Add(JavaCast.To(implementor.Translator.Translate(physType.record(literals)), rowType));
+                rows.Add(ClrEnumUtils.Convert(implementor.Translator.Translate(physType.record(literals)), rowType));
             }
 
             return implementor.Result(physType,

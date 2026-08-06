@@ -13,6 +13,8 @@ using org.apache.calcite.runtime;
 
 using J = org.apache.calcite.linq4j.tree;
 
+using Apache.Calcite.Linq.Runtime;
+
 namespace Apache.Calcite.Linq.Tests.Tree
 {
 
@@ -30,7 +32,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
         {
             var translated = new ExpressionTranslator().Translate(expression);
 
-            return Expression.Lambda<Func<T>>(JavaCast.To(translated, typeof(T))).Compile()();
+            return Expression.Lambda<Func<T>>(ClrEnumUtils.Convert(translated, typeof(T))).Compile()();
         }
 
         /// <summary>
@@ -163,7 +165,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
             var result = Expression.Lambda<Func<object>>(Expression.Convert(translated, typeof(object))).Compile()();
 
             result.Should().NotBeNull();
-            JavaCast.Unwrap(value, ClrTypes.FromClass(primitive)).Should().Be(result);
+            JavaValues.Unwrap(value, ClrTypes.FromClass(primitive)).Should().Be(result);
         }
 
         [TestMethod]

@@ -23,7 +23,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
         {
             ClrTypes.FromClass(java.lang.Boolean.TYPE).Should().Be(typeof(bool));
             // IKVM stores Java's signed byte in a CLR byte, which is not signed. Widening one has to go by way
-            // of an sbyte, which is what JavaCast does.
+            // of an sbyte, which is what ClrEnumUtils does.
             ClrTypes.FromClass(java.lang.Byte.TYPE).Should().Be(typeof(byte));
             ClrTypes.FromClass(Character.TYPE).Should().Be(typeof(char));
             ClrTypes.FromClass(Short.TYPE).Should().Be(typeof(short));

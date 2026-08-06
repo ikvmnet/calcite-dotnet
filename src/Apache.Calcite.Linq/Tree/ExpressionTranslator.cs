@@ -5,6 +5,8 @@ using System.Reflection;
 
 using J = org.apache.calcite.linq4j.tree;
 
+using Apache.Calcite.Linq.Runtime;
+
 namespace Apache.Calcite.Linq.Tree
 {
 
@@ -18,7 +20,7 @@ namespace Apache.Calcite.Linq.Tree
     /// to be possible, and the only place the two tree models are allowed to meet.
     ///
     /// <para>linq4j's model was taken from this one, so most of it is one node for one node. Three things are
-    /// not: a Java cast is not a CLR conversion (see <see cref="JavaCast"/>), an anonymous class is not
+    /// not: a Java cast is not a CLR conversion (see <see cref="ClrEnumUtils.Convert"/>), an anonymous class is not
     /// something an expression tree can declare (see <see cref="New"/>), and a variable declared part way
     /// through a block has to be hoisted to the block that will hold it.</para>
     ///
@@ -223,7 +225,7 @@ namespace Apache.Calcite.Linq.Tree
         /// row is as a field — <c>int</c> for one column of a NOT NULL integer. Java reconciles the two
         /// without saying so, its lambda taking the erased row and unboxing where the body reads it; a CLR
         /// lambda has to say it, so where the two differ the parameter is the sequence's and the body reads
-        /// it through <see cref="JavaCast"/>, which is the unboxing Java left implicit.
+        /// it through <see cref="ClrEnumUtils.Convert"/>, which is the unboxing Java left implicit.
         /// </remarks>
         static LambdaExpression Over(LambdaExpression lambda, Type sourceType)
         {
@@ -234,7 +236,7 @@ namespace Apache.Calcite.Linq.Tree
 
             return Expression.Lambda(
                 typeof(Func<,>).MakeGenericType(sourceType, lambda.ReturnType),
-                Expression.Invoke(lambda, JavaCast.To(row, lambda.Parameters[0].Type)),
+                Expression.Invoke(lambda, ClrEnumUtils.Convert(row, lambda.Parameters[0].Type)),
                 row);
         }
 
@@ -360,7 +362,7 @@ namespace Apache.Calcite.Linq.Tree
             // QueryableTable to Schemas.queryable, which takes a Class, so turning it into a System.Type here
             // leaves the call unable to be built.
             if (type.IsValueType && value.GetType() != type)
-                return Expression.Constant(JavaCast.Unwrap(value, type), type);
+                return Expression.Constant(JavaValues.Unwrap(value, type), type);
 
             return Expression.Constant(value, type);
         }
@@ -376,7 +378,7 @@ namespace Apache.Calcite.Linq.Tree
             if (statement.initializer == null)
                 return Expression.Empty();
 
-            return Expression.Assign(variable, JavaCast.To(Visit(statement.initializer), variable.Type));
+            return Expression.Assign(variable, ClrEnumUtils.Convert(Visit(statement.initializer), variable.Type));
         }
 
         /// <summary>
@@ -449,7 +451,7 @@ namespace Apache.Calcite.Linq.Tree
             while (i > 0)
             {
                 var then = Statement((J.Node)list.get(i - 1));
-                var test = JavaCast.To(Visit((J.Node)list.get(i - 2)), typeof(bool));
+                var test = ClrEnumUtils.Convert(Visit((J.Node)list.get(i - 2)), typeof(bool));
                 result = result == null ? Expression.IfThen(test, then) : Expression.IfThenElse(test, then, result);
                 i -= 2;
             }
@@ -482,7 +484,7 @@ namespace Apache.Calcite.Linq.Tree
                     if (statement.expression == null)
                         throw new NotSupportedException($"A return with no value cannot yield '{label.Type}'.");
 
-                    return Expression.Return(label, JavaCast.To(Visit(statement.expression), label.Type));
+                    return Expression.Return(label, ClrEnumUtils.Convert(Visit(statement.expression), label.Type));
 
                 case nameof(J.GotoExpressionKind.Break):
                     if (loops.Count == 0)
@@ -543,7 +545,7 @@ namespace Apache.Calcite.Linq.Tree
             Expression iteration = statement.condition == null
                 ? Expression.Block(typeof(void), step)
                 : Expression.IfThenElse(
-                    JavaCast.To(Visit(statement.condition), typeof(bool)),
+                    ClrEnumUtils.Convert(Visit(statement.condition), typeof(bool)),
                     Expression.Block(typeof(void), step),
                     Expression.Break(loop.Break));
 
@@ -575,7 +577,7 @@ namespace Apache.Calcite.Linq.Tree
             // the continue label is the top of the loop, where the condition is tested again
             return Expression.Loop(
                 Expression.IfThenElse(
-                    JavaCast.To(Visit(statement.condition), typeof(bool)),
+                    ClrEnumUtils.Convert(Visit(statement.condition), typeof(bool)),
                     body,
                     Expression.Break(loop.Break)),
                 loop.Break,
@@ -617,7 +619,7 @@ namespace Apache.Calcite.Linq.Tree
                         Expression.IfThenElse(
                             Expression.LessThan(index, Expression.ArrayLength(array)),
                             Expression.Block(typeof(void),
-                                Expression.Assign(element, JavaCast.To(Expression.ArrayAccess(array, index), element.Type)),
+                                Expression.Assign(element, ClrEnumUtils.Convert(Expression.ArrayAccess(array, index), element.Type)),
                                 body,
                                 Expression.PostIncrementAssign(index)),
                             Expression.Break(loop.Break)),
@@ -629,13 +631,13 @@ namespace Apache.Calcite.Linq.Tree
 
             return Expression.Block(typeof(void), [iterator, element],
                 Expression.Assign(iterator,
-                    Expression.Call(JavaCast.To(source, typeof(java.lang.Iterable)), typeof(java.lang.Iterable).GetMethod("iterator")!)),
+                    Expression.Call(ClrEnumUtils.Convert(source, typeof(java.lang.Iterable)), typeof(java.lang.Iterable).GetMethod("iterator")!)),
                 Expression.Loop(
                     Expression.IfThenElse(
                         Expression.Call(iterator, typeof(java.util.Iterator).GetMethod("hasNext")!),
                         Expression.Block(typeof(void),
                             Expression.Assign(element,
-                                JavaCast.To(Expression.Call(iterator, typeof(java.util.Iterator).GetMethod("next")!), element.Type)),
+                                ClrEnumUtils.Convert(Expression.Call(iterator, typeof(java.util.Iterator).GetMethod("next")!), element.Type)),
                             body),
                         Expression.Break(loop.Break)),
                     loop.Break,
@@ -674,9 +676,9 @@ namespace Apache.Calcite.Linq.Tree
             var type = ClrTypes.Resolve(expression.getType());
 
             return Expression.Condition(
-                JavaCast.To(Visit(expression.expression0), typeof(bool)),
-                JavaCast.To(Visit(expression.expression1), type),
-                JavaCast.To(Visit(expression.expression2), type),
+                ClrEnumUtils.Convert(Visit(expression.expression0), typeof(bool)),
+                ClrEnumUtils.Convert(Visit(expression.expression1), type),
+                ClrEnumUtils.Convert(Visit(expression.expression2), type),
                 type);
         }
 
@@ -702,7 +704,7 @@ namespace Apache.Calcite.Linq.Tree
             var indexes = expression.indexExpressions;
             var resolved = new Expression[indexes.size()];
             for (int i = 0; i < indexes.size(); i++)
-                resolved[i] = JavaCast.To(Visit((J.Node)indexes.get(i)), typeof(int));
+                resolved[i] = ClrEnumUtils.Convert(Visit((J.Node)indexes.get(i)), typeof(int));
 
             // ArrayAccess rather than ArrayIndex, because linq4j assigns to one of these
             return Expression.ArrayAccess(array, resolved);
@@ -733,7 +735,7 @@ namespace Apache.Calcite.Linq.Tree
                 var items = expression.expressions;
                 var resolved = new Expression[items.size()];
                 for (int i = 0; i < items.size(); i++)
-                    resolved[i] = JavaCast.To(Visit((J.Node)items.get(i)), element);
+                    resolved[i] = ClrEnumUtils.Convert(Visit((J.Node)items.get(i)), element);
 
                 return Expression.NewArrayInit(element, resolved);
             }
@@ -741,7 +743,7 @@ namespace Apache.Calcite.Linq.Tree
             if (expression.bound == null)
                 throw new NotSupportedException("An array creation needs either its elements or a bound.");
 
-            return Expression.NewArrayBounds(element, JavaCast.To(Visit(expression.bound), typeof(int)));
+            return Expression.NewArrayBounds(element, ClrEnumUtils.Convert(Visit(expression.bound), typeof(int)));
         }
 
         /// <summary>
@@ -785,7 +787,7 @@ namespace Apache.Calcite.Linq.Tree
             if (method.IsStatic)
                 return Expression.Call(null, method, resolved);
 
-            return Expression.Call(JavaCast.To(target!, method.DeclaringType!), method, resolved);
+            return Expression.Call(ClrEnumUtils.Convert(target!, method.DeclaringType!), method, resolved);
         }
 
         /// <summary>
@@ -911,7 +913,7 @@ namespace Apache.Calcite.Linq.Tree
                 variables.Add(variable);
 
                 if (field.initializer != null)
-                    body.Add(Expression.Assign(variable, JavaCast.To(Visit(field.initializer), variable.Type)));
+                    body.Add(Expression.Assign(variable, ClrEnumUtils.Convert(Visit(field.initializer), variable.Type)));
             }
 
             body.Add(wrapped);
@@ -1005,24 +1007,24 @@ namespace Apache.Calcite.Linq.Tree
             var op = Operator(expression.getNodeType());
 
             if (op == ExpressionType.Assign)
-                return Expression.Assign(left, JavaCast.To(right, left.Type));
+                return Expression.Assign(left, ClrEnumUtils.Convert(right, left.Type));
 
             if (op.ToString().EndsWith("Assign", StringComparison.Ordinal))
-                return Expression.MakeBinary(op, left, JavaCast.To(right, left.Type));
+                return Expression.MakeBinary(op, left, ClrEnumUtils.Convert(right, left.Type));
 
             // a shift takes its distance as an int however wide the value being shifted is
             if (op is ExpressionType.LeftShift or ExpressionType.RightShift)
-                return Expression.MakeBinary(op, left, JavaCast.To(right, typeof(int)));
+                return Expression.MakeBinary(op, left, ClrEnumUtils.Convert(right, typeof(int)));
 
             if (op == ExpressionType.Add && ClrTypes.Resolve(expression.getType()) == typeof(string))
-                return Expression.Call(Concat, JavaCast.To(left, typeof(object)), JavaCast.To(right, typeof(object)));
+                return Expression.Call(Concat, ClrEnumUtils.Convert(left, typeof(object)), ClrEnumUtils.Convert(right, typeof(object)));
 
             // Java's && and || take booleans and unbox a Boolean to get one; the CLR has no operator for two
             // references, so the unboxing that Java leaves implicit is written out. A condition over a
             // nullable column is a Boolean, and a disjunction of a hundred of them is what a batch nested
             // loop join builds.
             if (op is ExpressionType.AndAlso or ExpressionType.OrElse)
-                return Expression.MakeBinary(op, JavaCast.To(left, typeof(bool)), JavaCast.To(right, typeof(bool)));
+                return Expression.MakeBinary(op, ClrEnumUtils.Convert(left, typeof(bool)), ClrEnumUtils.Convert(right, typeof(bool)));
 
             Promote(ref left, ref right, op);
 
@@ -1047,10 +1049,10 @@ namespace Apache.Calcite.Linq.Tree
                 // two boxes of one type, which Java unboxes for anything but == and !=: those compare
                 // references, and the CLR does the same, so they are left as they are. Everything else needs
                 // a primitive and has none, which is the unboxing Java left implicit
-                if (op is not (ExpressionType.Equal or ExpressionType.NotEqual) && JavaCast.PrimitiveOf(left.Type) is Type primitive)
+                if (op is not (ExpressionType.Equal or ExpressionType.NotEqual) && ClrEnumUtils.PrimitiveOf(left.Type) is Type primitive)
                 {
-                    left = JavaCast.To(left, primitive);
-                    right = JavaCast.To(right, primitive);
+                    left = ClrEnumUtils.Convert(left, primitive);
+                    right = ClrEnumUtils.Convert(right, primitive);
                 }
 
                 return;
@@ -1062,21 +1064,21 @@ namespace Apache.Calcite.Linq.Tree
             if (l >= 0 && r >= 0)
             {
                 var type = Promoted[Math.Max(l, r)];
-                left = JavaCast.To(left, type);
-                right = JavaCast.To(right, type);
+                left = ClrEnumUtils.Convert(left, type);
+                right = ClrEnumUtils.Convert(right, type);
                 return;
             }
 
             // Java unboxes the other side when one is a primitive, whatever the operator
             if (l >= 0)
             {
-                right = JavaCast.To(right, left.Type);
+                right = ClrEnumUtils.Convert(right, left.Type);
                 return;
             }
 
             if (r >= 0)
             {
-                left = JavaCast.To(left, right.Type);
+                left = ClrEnumUtils.Convert(left, right.Type);
                 return;
             }
 
@@ -1104,16 +1106,16 @@ namespace Apache.Calcite.Linq.Tree
 
             switch (expression.getNodeType().name())
             {
-                // Java has no checked conversion: a narrowing cast truncates, which is what JavaCast does.
+                // Java has no checked conversion: a narrowing cast truncates, which is what ClrEnumUtils does.
                 // Expression.ConvertChecked would throw on overflow, and also demands a type where the
                 // arithmetic operators take none.
                 case nameof(J.ExpressionType.Convert):
                 case nameof(J.ExpressionType.ConvertChecked):
-                    return JavaCast.To(operand, ClrTypes.Resolve(expression.getType()));
+                    return ClrEnumUtils.Convert(operand, ClrTypes.Resolve(expression.getType()));
 
                 // Java's ! is only ever applied to a boolean; its bitwise complement is a separate operator
                 case nameof(J.ExpressionType.Not):
-                    return Expression.Not(JavaCast.To(operand, typeof(bool)));
+                    return Expression.Not(ClrEnumUtils.Convert(operand, typeof(bool)));
 
                 default:
                     var op = Operator(expression.getNodeType());
@@ -1131,7 +1133,7 @@ namespace Apache.Calcite.Linq.Tree
             if (Ranks.TryGetValue(operand.Type, out var rank) == false)
                 return operand;
 
-            return JavaCast.To(operand, Promoted[rank]);
+            return ClrEnumUtils.Convert(operand, Promoted[rank]);
         }
 
         /// <summary>
@@ -1199,7 +1201,7 @@ namespace Apache.Calcite.Linq.Tree
             if (value is LambdaExpression lambda && SamAdapters.Handles(type))
                 return SamAdapters.Wrap(type, lambda);
 
-            return JavaCast.To(value, type);
+            return ClrEnumUtils.Convert(value, type);
         }
 
     }

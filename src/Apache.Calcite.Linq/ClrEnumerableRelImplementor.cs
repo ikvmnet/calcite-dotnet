@@ -220,7 +220,7 @@ namespace Apache.Calcite.Linq
             return Expression.Call(null,
                 ClrBuiltInMethod.Select.MakeGenericMethod(elementType, typeof(object)),
                 sequence,
-                Expression.Lambda(JavaCast.To(row, typeof(object)), row));
+                Expression.Lambda(ClrEnumUtils.Convert(row, typeof(object)), row));
         }
 
         /// <summary>
@@ -355,7 +355,7 @@ namespace Apache.Calcite.Linq
             return Expression.Call(null,
                 ClrBuiltInMethod.Select.MakeGenericMethod(actual, expected),
                 expression,
-                Expression.Lambda(typeof(Func<,>).MakeGenericType(actual, expected), JavaCast.To(row, expected), row));
+                Expression.Lambda(typeof(Func<,>).MakeGenericType(actual, expected), ClrEnumUtils.Convert(row, expected), row));
         }
 
         /// <summary>

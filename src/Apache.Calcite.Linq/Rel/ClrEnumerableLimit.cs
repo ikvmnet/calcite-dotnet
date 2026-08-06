@@ -104,7 +104,7 @@ namespace Apache.Calcite.Linq.Rel
         internal static Expression Count(ClrEnumerableRelImplementor implementor, RexNode rexNode)
         {
             if (rexNode is RexDynamicParam param)
-                return JavaCast.To(
+                return ClrEnumUtils.Convert(
                     Expression.Call(implementor.Root, DataContextGet, Expression.Constant("?" + param.getIndex())),
                     typeof(int));
 

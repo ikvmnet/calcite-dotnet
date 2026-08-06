@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Linq.Expressions;
+using System.Reflection;
 
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.rel;
@@ -139,7 +141,7 @@ namespace Apache.Calcite.Linq.Tree
             return System.Linq.Expressions.Expression.Call(null,
                 Runtime.ClrBuiltInMethod.Select.MakeGenericMethod(rowType, boxed),
                 source,
-                System.Linq.Expressions.Expression.Lambda(JavaCast.To(row, boxed), row));
+                System.Linq.Expressions.Expression.Lambda(ClrEnumUtils.Convert(row, boxed), row));
         }
 
         /// <summary>
@@ -344,13 +346,162 @@ namespace Apache.Calcite.Linq.Tree
             return Expression.Lambda(
                 typeof(Func<,,>).MakeGenericType(leftParameter.Type, rightParameter.Type, resultType),
                 Expression.Block(resultType, [leftRow, rightRow],
-                    Expression.Assign(leftRow, JavaCast.To(leftParameter, leftRow.Type)),
-                    Expression.Assign(rightRow, JavaCast.To(rightParameter, rightRow.Type)),
+                    Expression.Assign(leftRow, ClrEnumUtils.Convert(leftParameter, leftRow.Type)),
+                    Expression.Assign(rightRow, ClrEnumUtils.Convert(rightParameter, rightRow.Type)),
                     implementor.Translator.TranslateBody(builder.toBlock(), resultType)),
                 leftParameter,
                 rightParameter);
         }
 
+
+        /// <summary>
+        /// CLR type of each Java primitive, against the <see cref="J.Primitive"/> that describes it.
+        /// </summary>
+        static readonly Dictionary<Type, J.Primitive> Primitives = [];
+
+        /// <summary>
+        /// CLR type of each Java box class, against the <see cref="J.Primitive"/> it boxes.
+        /// </summary>
+        static readonly Dictionary<Type, J.Primitive> Boxes = [];
+
+        /// <summary>
+        /// Initializes the static instance.
+        /// </summary>
+        static ClrEnumUtils()
+        {
+            // taken from linq4j rather than written out, so the pairing of a primitive with its box is the
+            // one Calcite itself uses, and the CLR types are whichever ones IKVM actually chose
+            foreach (J.Primitive primitive in J.Primitive.values())
+            {
+                if (primitive.primitiveClass == null || primitive.boxClass == null)
+                    continue;
+                if (primitive.primitiveName == "void")
+                    continue;
+
+                Primitives[ClrTypes.FromClass(primitive.primitiveClass)] = primitive;
+                Boxes[ClrTypes.FromClass(primitive.boxClass)] = primitive;
+            }
+        }
+
+        /// <summary>
+        /// Returns an expression yielding <paramref name="expression"/> as <paramref name="type"/>.
+        /// </summary>
+        /// <param name="expression"></param>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        public static Expression Convert(Expression expression, Type type)
+        {
+            ArgumentNullException.ThrowIfNull(expression);
+            ArgumentNullException.ThrowIfNull(type);
+
+            if (expression.Type == type)
+                return expression;
+
+            if (type == typeof(void))
+                return expression;
+
+            var fromPrimitive = Primitives.GetValueOrDefault(expression.Type);
+            var toPrimitive = Primitives.GetValueOrDefault(type);
+            var fromBox = Boxes.GetValueOrDefault(expression.Type);
+
+            // int to Integer, and int to Long by way of long, exactly as Java widens before it boxes
+            if (fromPrimitive != null && Boxes.TryGetValue(type, out var toBox))
+                return Box(Number(expression, toBox), toBox);
+
+            // Integer to int, and Integer to long by way of int
+            if (fromBox != null && toPrimitive != null)
+                return Number(Unbox(expression, fromBox), toPrimitive);
+
+            // int to Object, Number, Comparable: box first, then the reference conversion is ordinary
+            if (fromPrimitive != null && type.IsValueType == false)
+                return Expression.Convert(Box(expression, fromPrimitive), type);
+
+            // Object to int, which Java reads as a cast to the box class followed by an unboxing call. A
+            // straight Convert would emit unbox.any and demand a boxed CLR int that is never the value here.
+            if (expression.Type.IsValueType == false && toPrimitive != null)
+                return Unbox(Expression.Convert(expression, ClrTypes.FromClass(toPrimitive.boxClass)), toPrimitive);
+
+            if (fromPrimitive != null && toPrimitive != null)
+                return Widen(expression, type);
+
+            return Expression.Convert(expression, type);
+        }
+        /// <summary>
+        /// Converts between two primitives, and returns <paramref name="expression"/> when they agree.
+        /// </summary>
+        /// <param name="expression"></param>
+        /// <param name="primitive"></param>
+        /// <returns></returns>
+        static Expression Number(Expression expression, J.Primitive primitive)
+        {
+            return Widen(expression, ClrTypes.FromClass(primitive.primitiveClass));
+        }
+
+        /// <summary>
+        /// Converts between two primitives.
+        /// </summary>
+        /// <param name="expression"></param>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Java's byte is signed and IKVM stores it in a CLR byte, which is not. Widening one therefore has to
+        /// go by way of an sbyte, or -1 becomes 255 the moment it is promoted to an int.
+        /// </remarks>
+        static Expression Widen(Expression expression, Type type)
+        {
+            if (expression.Type == type)
+                return expression;
+
+            if (expression.Type == typeof(byte))
+                expression = Expression.Convert(expression, typeof(sbyte));
+
+            return expression.Type == type ? expression : Expression.Convert(expression, type);
+        }
+
+        /// <summary>
+        /// Boxes a primitive into its Java box class.
+        /// </summary>
+        /// <param name="expression"></param>
+        /// <param name="primitive"></param>
+        /// <returns></returns>
+        static Expression Box(Expression expression, J.Primitive primitive)
+        {
+            var box = ClrTypes.FromClass(primitive.boxClass);
+            var valueOf = box.GetMethod("valueOf", BindingFlags.Public | BindingFlags.Static, null, [expression.Type], null)
+                ?? throw new NotSupportedException($"'{box}' has no valueOf for '{expression.Type}'.");
+
+            return Expression.Call(null, valueOf, expression);
+        }
+
+        /// <summary>
+        /// Returns the primitive a Java box holds, or <see langword="null"/> where the type is not one.
+        /// </summary>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        public static Type? PrimitiveOf(Type type)
+        {
+            ArgumentNullException.ThrowIfNull(type);
+
+            return Boxes.TryGetValue(type, out var primitive)
+                ? ClrTypes.FromClass(primitive.primitiveClass)
+                : null;
+        }
+
+        /// <summary>
+        /// Unboxes a Java box class into its primitive.
+        /// </summary>
+        /// <param name="expression"></param>
+        /// <param name="primitive"></param>
+        /// <returns></returns>
+        static Expression Unbox(Expression expression, J.Primitive primitive)
+        {
+            // intValue, booleanValue, charValue, and so on for each of the eight
+            var name = primitive.primitiveName + "Value";
+            var value = expression.Type.GetMethod(name, BindingFlags.Public | BindingFlags.Instance, null, [], null)
+                ?? throw new NotSupportedException($"'{expression.Type}' has no {name}().");
+
+            return Expression.Call(expression, value);
+        }
     }
 
 }

@@ -122,7 +122,7 @@ namespace Apache.Calcite.Linq.Rel
                 Expression.Call(null,
                     ClrBuiltInMethod.SelectMany.MakeGenericMethod(sourceType, rowType),
                     result.Expression,
-                    JavaCast.To(implementor.Translator.Translate(lambda), typeof(org.apache.calcite.linq4j.function.Function1))));
+                    ClrEnumUtils.Convert(implementor.Translator.Translate(lambda), typeof(org.apache.calcite.linq4j.function.Function1))));
         }
 
     }

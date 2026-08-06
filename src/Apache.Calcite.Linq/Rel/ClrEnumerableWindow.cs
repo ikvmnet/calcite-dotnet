@@ -353,7 +353,7 @@ namespace Apache.Calcite.Linq.Rel
         {
             var variable = Expression.Variable(type, parameter.name);
             variables.Add(variable);
-            body.Add(Expression.Assign(variable, JavaCast.To(translator.Translate(expression), type)));
+            body.Add(Expression.Assign(variable, ClrEnumUtils.Convert(translator.Translate(expression), type)));
             translator.Bind(parameter, variable);
 
             return variable;
@@ -415,7 +415,7 @@ namespace Apache.Calcite.Linq.Rel
             return Expression.Lambda(
                 typeof(Func<,>).MakeGenericType(sourceType, keyType),
                 Expression.Block(keyType, [row],
-                    Expression.Assign(row, JavaCast.To(parameter, row.Type)),
+                    Expression.Assign(row, ClrEnumUtils.Convert(parameter, row.Type)),
                     translator.TranslateBody(builder.toBlock(), keyType)),
                 parameter);
         }
@@ -764,7 +764,7 @@ namespace Apache.Calcite.Linq.Rel
                     Expression.Assign(partitionRowCount, Expression.Property(frame, nameof(WindowFrame.PartitionRowCount))),
                     Expression.Assign(maxX, Expression.Subtract(partitionRowCount, Expression.Constant(1))),
                     Expression.Assign(position, Expression.Property(frame, nameof(WindowFrame.Position))),
-                    Expression.Assign(row, JavaCast.To(Expression.ArrayAccess(rows, index), rowType)),
+                    Expression.Assign(row, ClrEnumUtils.Convert(Expression.ArrayAccess(rows, index), rowType)),
                     translator.TranslateBody(block, returnType),
                 };
 

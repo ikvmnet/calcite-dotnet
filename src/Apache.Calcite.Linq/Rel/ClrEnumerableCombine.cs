@@ -74,7 +74,7 @@ namespace Apache.Calcite.Linq.Rel
                     args[i * 2] = Expression.Constant(((RelDataTypeField)fields.get(i)).getName(), typeof(object));
                     args[i * 2 + 1] = fieldCount > 1
                         ? Expression.ArrayIndex(Expression.Convert(row, typeof(object[])), Expression.Constant(i))
-                        : JavaCast.To(row, typeof(object));
+                        : ClrEnumUtils.Convert(row, typeof(object));
                 }
 
                 var selector = Expression.Lambda(
