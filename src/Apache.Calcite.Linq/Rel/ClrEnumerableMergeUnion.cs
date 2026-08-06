@@ -113,7 +113,7 @@ namespace Apache.Calcite.Linq.Rel
                     sortKeySelector,
                     sortComparator,
                     Expression.Constant(all),
-                    ClrPhysTypes.Comparer(implementor, physType)));
+                    physType.Comparer(implementor)));
 
             return implementor.Result(physType, Expression.Block(body[^1].Type, [sources], body));
         }

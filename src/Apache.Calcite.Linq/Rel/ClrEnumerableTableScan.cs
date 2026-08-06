@@ -225,7 +225,7 @@ namespace Apache.Calcite.Linq.Rel
                     || table.unwrap(typeof(FilterableTable)) != null
                     || table.unwrap(typeof(ProjectableFilterableTable)) != null))
                 return Expression.Call(null,
-                    ClrBuiltInMethod.Slice0.MakeGenericMethod(ClrEnumerableRelImplementor.RowType(physType)),
+                    ClrBuiltInMethod.Slice0.MakeGenericMethod(physType.RowType()),
                     FromJava(element, source));
 
             var oldFormat = Format();
@@ -234,7 +234,7 @@ namespace Apache.Calcite.Linq.Rel
                 // Calcite passes the table's own element type along here because a linq4j Enumerable erases
                 // it; a CLR sequence does not, and the two differ wherever a format was optimized away — a
                 // one column table declares Object[] and holds the value itself.
-                return FromJava(ClrEnumerableRelImplementor.RowType(physType), source);
+                return FromJava(physType.RowType(), source);
 
             // the row shape is PhysType's, and record takes linq4j, so the field expressions are linq4j too.
             // That is the whole of it: one call feeding another, translated the moment it is built.
@@ -247,7 +247,7 @@ namespace Apache.Calcite.Linq.Rel
             for (int i = 0; i < fieldCount; i++)
                 expressionList.add(FieldExpression(row, i, physType, oldFormat));
 
-            var rowType = ClrEnumerableRelImplementor.RowType(physType);
+            var rowType = physType.RowType();
             var selector = Expression.Lambda(
                 typeof(Func<,>).MakeGenericType(element, rowType),
                 implementor.Translator.Translate(physType.record(expressionList)),

@@ -71,8 +71,8 @@ namespace Apache.Calcite.Linq.Rel
 
             var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.PreferCustom());
             var inputPhysType = result.PhysType;
-            var sourceType = ClrEnumerableRelImplementor.RowType(inputPhysType);
-            var rowType = ClrEnumerableRelImplementor.RowType(physType);
+            var sourceType = inputPhysType.RowType();
+            var rowType = physType.RowType();
 
             var keyPhysType = inputPhysType.project(groupSet.asList(), getGroupType() != Group.SIMPLE, JavaRowFormat.LIST);
             var groupCount = getGroupCount();
@@ -183,7 +183,7 @@ namespace Apache.Calcite.Linq.Rel
                         Expression.Call(lambdaFactory, AccInitializer),
                         Expression.Call(lambdaFactory, AccAdder),
                         Expression.Call(lambdaFactory, ResultSelector, Function2Of(setsResultSelector, keyParameter.Type, accType, rowType)),
-                        ClrPhysTypes.Comparer(implementor, keyPhysType)));
+                        keyPhysType.Comparer(implementor)));
             }
 
             if (groupCount == 0)
@@ -209,13 +209,13 @@ namespace Apache.Calcite.Linq.Rel
             // the physical type is reached by conversion
             if (getAggCallList().isEmpty() && groupSet.equals(ImmutableBitSet.range(getInput().getRowType().getFieldCount())))
             {
-                var source = ClrPhysTypes.ConvertTo(implementor, inputPhysType, result.Expression, physType.getFormat());
+                var source = inputPhysType.ConvertTo(implementor, result.Expression, physType.getFormat());
 
                 return implementor.Result(physType,
                     Expression.Call(null,
                         ClrBuiltInMethod.Distinct.MakeGenericMethod(source.Type.GetGenericArguments()[0]),
                         source,
-                        ClrPhysTypes.Comparer(implementor, physType)));
+                        physType.Comparer(implementor)));
             }
 
             var keySelector = implementor.Translator.TranslateSelector(
@@ -236,7 +236,7 @@ namespace Apache.Calcite.Linq.Rel
                     Expression.Call(lambdaFactory, AccInitializer),
                     Expression.Call(lambdaFactory, AccAdder),
                     Expression.Call(lambdaFactory, ResultSelector, Function2Of(groupResultSelector, keyParameter.Type, accType, rowType)),
-                    ClrPhysTypes.Comparer(implementor, keyPhysType)));
+                    keyPhysType.Comparer(implementor)));
         }
     }
 

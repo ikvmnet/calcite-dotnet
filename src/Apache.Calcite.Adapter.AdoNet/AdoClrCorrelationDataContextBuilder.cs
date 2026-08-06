@@ -53,7 +53,11 @@ namespace Apache.Calcite.Adapter.AdoNet
         {
             ArgumentNullException.ThrowIfNull(id);
 
-            _parameters.Add(_implementor.CorrelVariableField(id.getName(), ordinal, type));
+            // the getter reads the field as linq4j and declares into the block it was created with, not one
+            // passed to it, so there is nothing for a block of this builder's to receive
+            var field = _implementor.GetCorrelVariableGetter(id.getName()).field(null, ordinal, type);
+
+            _parameters.Add(_implementor.Translator.Translate(field));
             return offset++;
         }
 

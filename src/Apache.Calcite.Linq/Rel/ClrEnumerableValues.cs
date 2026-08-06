@@ -98,7 +98,8 @@ namespace Apache.Calcite.Linq.Rel
         {
             var typeFactory = (JavaTypeFactory)getCluster().getTypeFactory();
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.PreferCustom());
-            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
+            // Calcite boxes here too, EnumerableValues building its array with Primitive.box(rowClass)
+            var rowType = physType.RowType();
 
             var fields = getRowType().getFieldList();
             var rows = new List<Expression>();

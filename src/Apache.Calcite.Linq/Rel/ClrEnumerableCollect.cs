@@ -88,7 +88,7 @@ namespace Apache.Calcite.Linq.Rel
                             ? JavaRowFormat.SCALAR
                             : JavaRowFormat.ARRAY;
 
-                        source = ClrPhysTypes.ConvertTo(implementor, result.PhysType, source, targetFormat);
+                        source = result.PhysType.ConvertTo(implementor, source, targetFormat);
                         sourceType = source.Type.GetGenericArguments()[0];
                     }
 

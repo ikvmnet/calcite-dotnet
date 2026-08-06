@@ -56,7 +56,7 @@ namespace Apache.Calcite.Linq.Rel
                     ClrBuiltInMethod.Intersect.MakeGenericMethod(rowType),
                     intersectExp,
                     result.Expression,
-                    ClrPhysTypes.Comparer(implementor, result.PhysType),
+                    result.PhysType.Comparer(implementor),
                     Expression.Constant(all));
             }
 

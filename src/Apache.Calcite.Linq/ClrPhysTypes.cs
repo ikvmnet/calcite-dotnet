@@ -1,9 +1,12 @@
+using System;
 using System.Linq.Expressions;
 
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.linq4j.function;
 
 using Apache.Calcite.Linq.Tree;
+
+using J = org.apache.calcite.linq4j.tree;
 
 namespace Apache.Calcite.Linq
 {
@@ -32,7 +35,7 @@ namespace Apache.Calcite.Linq
         /// What PhysType.convertTo does, which cannot be reused because it composes a linq4j select onto a
         /// linq4j sequence and the sequence here is not one. The selector is still PhysType's.
         /// </remarks>
-        public static System.Linq.Expressions.Expression ConvertTo(ClrEnumerableRelImplementor implementor, PhysType physType, System.Linq.Expressions.Expression source, JavaRowFormat targetFormat)
+        public static System.Linq.Expressions.Expression ConvertTo(this PhysType physType, ClrEnumerableRelImplementor implementor, System.Linq.Expressions.Expression source, JavaRowFormat targetFormat)
         {
             if (physType.getFormat() == targetFormat)
                 return source;
@@ -62,13 +65,36 @@ namespace Apache.Calcite.Linq
         /// A row of <c>JavaRowFormat.ARRAY</c> is an array, whose own equality is by reference, so a set
         /// operation over one is wrong without this.
         /// </remarks>
-        public static Expression Comparer(ClrEnumerableRelImplementor implementor, PhysType physType)
+        public static Expression Comparer(this PhysType physType, ClrEnumerableRelImplementor implementor)
         {
             var comparer = physType.comparer();
 
             return comparer == null
                 ? Expression.Constant(null, typeof(EqualityComparer))
                 : implementor.Translator.Translate(comparer);
+        }
+
+        /// <summary>
+        /// Returns the CLR type of one row of a sequence of the given physical type.
+        /// </summary>
+        /// <param name="physType"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The row type, boxed. A row of a plan holds Java's values and keeps holding them: a field inside an
+        /// <c>Object[]</c> row is a <c>java.lang.Integer</c> from the table to the converter that hands it
+        /// out, and a one column row is that same value with no array around it. A node may unbox inside
+        /// itself, where the values never leave the expression it is building, but what it hands to the node
+        /// above has to be what the row type says.
+        ///
+        /// <para>Calcite has nothing to decide here: there is no <c>Enumerable&lt;int&gt;</c> in Java, so its
+        /// sequences carry the box whatever the physical type says, and its element type is erased besides. A
+        /// CLR sequence says its element type out loud, so every node has to say the same thing.</para>
+        /// </remarks>
+        public static Type RowType(this PhysType physType)
+        {
+            ArgumentNullException.ThrowIfNull(physType);
+
+            return ClrTypes.Resolve(J.Primitive.box(physType.getJavaRowType()));
         }
 
     }
