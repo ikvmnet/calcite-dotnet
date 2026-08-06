@@ -28,12 +28,16 @@ namespace Apache.Calcite.Linq.Runtime
         /// A one column result is the value, not a one element row. Calcite ends a plan the same way, with
         /// <c>Enumerables.slice0</c>.
         /// </remarks>
-        public static IEnumerable<object> Slice0(IEnumerable<object[]> source)
+        public static IEnumerable<TRow> Slice0<TRow>(IEnumerable<object[]> source)
         {
             ArgumentNullException.ThrowIfNull(source);
 
+            // the row came from a table and its fields are still Java's, so the field taken out of it is
+            // converted rather than cast. Calcite's slice0 is Enumerable<E[]> to Enumerable<E> and needs
+            // neither: a linq4j Enumerable erases its element type, so nothing downstream can tell what came
+            // out, and a CLR sequence says so in its own type.
             foreach (var row in source)
-                yield return row[0];
+                yield return JavaValues.As<TRow>(row[0]);
         }
 
         /// <summary>

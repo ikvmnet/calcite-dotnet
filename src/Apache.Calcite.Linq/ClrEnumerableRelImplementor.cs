@@ -178,7 +178,9 @@ namespace Apache.Calcite.Linq
                 && result.Format == JavaRowFormat.ARRAY
                 && rootRel.getRowType().getFieldCount() == 1)
                 result = new ClrEnumerableResult(
-                    Expression.Call(null, ClrBuiltInMethod.Slice0, result.Expression),
+                    // object, because nothing reads this but the caller of the query, and it is handed out as
+                    // a bare IEnumerable
+                    Expression.Call(null, ClrBuiltInMethod.Slice0.MakeGenericMethod(typeof(object)), result.Expression),
                     result.PhysType,
                     JavaRowFormat.SCALAR);
 

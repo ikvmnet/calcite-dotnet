@@ -226,7 +226,9 @@ namespace Apache.Calcite.Linq.Rel
                 && (table.unwrap(typeof(ScannableTable)) != null
                     || table.unwrap(typeof(FilterableTable)) != null
                     || table.unwrap(typeof(ProjectableFilterableTable)) != null))
-                return Expression.Call(null, ClrBuiltInMethod.Slice0, FromJava(element, source));
+                return Expression.Call(null,
+                    ClrBuiltInMethod.Slice0.MakeGenericMethod(TypeResolver.Resolve(physType.getJavaRowType())),
+                    FromJava(element, source));
 
             var oldFormat = Format();
             if (physType.getFormat() == oldFormat && HasCollectionField(getRowType()) == false)
