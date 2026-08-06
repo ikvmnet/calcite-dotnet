@@ -51,7 +51,7 @@ namespace Apache.Calcite.Linq.Rel
                     continue;
                 }
 
-                var rowType = TypeResolver.Resolve(result.PhysType.getJavaRowType());
+                var rowType = ClrEnumerableRelImplementor.RowType(result.PhysType);
 
                 minusExp = Expression.Call(null,
                     ClrBuiltInMethod.Except.MakeGenericMethod(rowType),

@@ -71,7 +71,7 @@ namespace Apache.Calcite.Linq.Rel
             var inputPhysType = result.PhysType;
             var pair = inputPhysType.generateCollationKey(collation.getFieldCollations());
 
-            var sourceType = TypeResolver.Resolve(inputPhysType.getJavaRowType());
+            var sourceType = ClrEnumerableRelImplementor.RowType(inputPhysType);
 
             // Pair carries left and right as fields and declares static methods of the same names, which C#
             // cannot tell apart; Map.Entry gives the same two values under names that are not overloaded

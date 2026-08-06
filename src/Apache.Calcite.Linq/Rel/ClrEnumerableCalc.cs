@@ -4,9 +4,9 @@ using System.Linq.Expressions;
 using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
-using org.apache.calcite;
 using java.util.function;
 
+using org.apache.calcite;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -115,8 +115,8 @@ namespace Apache.Calcite.Linq.Rel
             var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.Prefer(result.Format));
 
             var inputJavaType = result.PhysType.getJavaRowType();
-            var inputType = TypeResolver.Resolve(inputJavaType);
-            var outputType = TypeResolver.Resolve(physType.getJavaRowType());
+            var inputType = ClrEnumerableRelImplementor.RowType(result.PhysType);
+            var outputType = ClrEnumerableRelImplementor.RowType(physType);
 
             var rexBuilder = getCluster().getRexBuilder();
             var mq = getCluster().getMetadataQuery();

@@ -94,7 +94,7 @@ namespace Apache.Calcite.Linq.Rel
                     typeof(ModifiableTable)),
                 ModifiableTableGetModifiableCollection);
 
-            var rowType = TypeResolver.Resolve(result.PhysType.getJavaRowType());
+            var rowType = ClrEnumerableRelImplementor.RowType(result.PhysType);
 
             return implementor.Result(physType,
                 Expression.Call(null,

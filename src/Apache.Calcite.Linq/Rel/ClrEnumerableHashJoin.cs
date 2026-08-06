@@ -198,8 +198,8 @@ namespace Apache.Calcite.Linq.Rel
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
 
             var physType = leftResult.PhysType;
-            var leftType = TypeResolver.Resolve(leftResult.PhysType.getJavaRowType());
-            var rightType = TypeResolver.Resolve(rightResult.PhysType.getJavaRowType());
+            var leftType = ClrEnumerableRelImplementor.RowType(leftResult.PhysType);
+            var rightType = ClrEnumerableRelImplementor.RowType(rightResult.PhysType);
 
             var keyPhysType = leftResult.PhysType.project(joinInfo.leftKeys, JavaRowFormat.LIST);
             var leftKey = NullAwareAccessor(implementor, leftResult.PhysType, joinInfo.leftKeys, leftType);

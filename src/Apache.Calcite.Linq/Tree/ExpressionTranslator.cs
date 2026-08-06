@@ -201,7 +201,7 @@ namespace Apache.Calcite.Linq.Tree
 
             var lambda = SamAdapters.Unwrap(translated);
             if (lambda != null)
-                return lambda;
+                return Over(lambda, sourceType);
 
             if (translated is MethodCallExpression call && call.Method == IdentitySelector)
             {
@@ -210,6 +210,32 @@ namespace Apache.Calcite.Linq.Tree
             }
 
             throw new NotSupportedException($"A selector of '{translated.Type}' is neither a lambda nor the identity.");
+        }
+
+        /// <summary>
+        /// Returns the lambda taking a row of the sequence it will run over.
+        /// </summary>
+        /// <param name="lambda"></param>
+        /// <param name="sourceType"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A sequence carries boxed rows, and the physical type a selector was generated against says what a
+        /// row is as a field — <c>int</c> for one column of a NOT NULL integer. Java reconciles the two
+        /// without saying so, its lambda taking the erased row and unboxing where the body reads it; a CLR
+        /// lambda has to say it, so where the two differ the parameter is the sequence's and the body reads
+        /// it through <see cref="JavaCast"/>, which is the unboxing Java left implicit.
+        /// </remarks>
+        static LambdaExpression Over(LambdaExpression lambda, Type sourceType)
+        {
+            if (lambda.Parameters.Count != 1 || lambda.Parameters[0].Type == sourceType)
+                return lambda;
+
+            var row = Expression.Parameter(sourceType, lambda.Parameters[0].Name);
+
+            return Expression.Lambda(
+                typeof(Func<,>).MakeGenericType(sourceType, lambda.ReturnType),
+                Expression.Invoke(lambda, JavaCast.To(row, lambda.Parameters[0].Type)),
+                row);
         }
 
         /// <summary>
@@ -1017,7 +1043,18 @@ namespace Apache.Calcite.Linq.Tree
         static void Promote(ref Expression left, ref Expression right, ExpressionType op)
         {
             if (left.Type == right.Type)
+            {
+                // two boxes of one type, which Java unboxes for anything but == and !=: those compare
+                // references, and the CLR does the same, so they are left as they are. Everything else needs
+                // a primitive and has none, which is the unboxing Java left implicit
+                if (op is not (ExpressionType.Equal or ExpressionType.NotEqual) && JavaCast.PrimitiveOf(left.Type) is Type primitive)
+                {
+                    left = JavaCast.To(left, primitive);
+                    right = JavaCast.To(right, primitive);
+                }
+
                 return;
+            }
 
             var l = Ranks.TryGetValue(left.Type, out var lr) ? lr : -1;
             var r = Ranks.TryGetValue(right.Type, out var rr) ? rr : -1;

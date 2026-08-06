@@ -53,7 +53,7 @@ namespace Apache.Calcite.Linq.Rel
                     continue;
                 }
 
-                var rowType = TypeResolver.Resolve(result.PhysType.getJavaRowType());
+                var rowType = ClrEnumerableRelImplementor.RowType(result.PhysType);
 
                 unionExp = all
                     ? Expression.Call(null, ClrBuiltInMethod.Concat.MakeGenericMethod(rowType), unionExp, result.Expression)

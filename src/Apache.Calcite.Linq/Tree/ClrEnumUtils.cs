@@ -123,11 +123,17 @@ namespace Apache.Calcite.Linq.Tree
         /// </remarks>
         public static System.Linq.Expressions.Expression BoxRows(PhysType physType, System.Linq.Expressions.Expression source)
         {
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
-            if (rowType.IsValueType == false)
+            var boxed = TypeResolver.Resolve(J.Primitive.box(physType.getJavaRowType()));
+
+            // what the sequence holds, not what the physical type calls a field: a node hands its rows up
+            // boxed already, and only a sequence built inside this one can still be carrying a primitive
+            var rowType = source.Type.IsGenericType && source.Type.GetGenericTypeDefinition() == typeof(System.Collections.Generic.IEnumerable<>)
+                ? source.Type.GetGenericArguments()[0]
+                : boxed;
+
+            if (rowType == boxed || rowType.IsValueType == false)
                 return source;
 
-            var boxed = TypeResolver.Resolve(J.Primitive.box(physType.getJavaRowType()));
             var row = System.Linq.Expressions.Expression.Parameter(rowType, "row");
 
             return System.Linq.Expressions.Expression.Call(null,

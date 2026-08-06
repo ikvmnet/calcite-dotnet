@@ -96,7 +96,7 @@ namespace Apache.Calcite.Linq.Rel
             if (getRowType().getFieldCount() == 1)
                 source = Expression.Call(null, Slice0, source);
 
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrEnumerableRelImplementor.RowType(physType);
 
             return implementor.Result(physType,
                 Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), source));

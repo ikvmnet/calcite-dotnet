@@ -308,7 +308,54 @@ namespace Apache.Calcite.Linq
         public ClrEnumerableResult Result(PhysType physType, Expression expression)
         {
             // PhysTypeImpl keeps its format package-private, and getFormat is the same value in public
-            return new ClrEnumerableResult(expression, physType, physType.getFormat());
+            return new ClrEnumerableResult(Boxed(physType, expression), physType, physType.getFormat());
+        }
+
+        /// <summary>
+        /// Returns the CLR type of one row of a sequence of the given physical type.
+        /// </summary>
+        /// <param name="physType"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The row type, boxed. A row of a plan holds Java's values and keeps holding them: a field inside an
+        /// <c>Object[]</c> row is a <c>java.lang.Integer</c> from the table to the converter that hands it
+        /// out, and a one column row is that same value with no array around it. A node may unbox inside
+        /// itself, where the values never leave the expression it is building, but what it hands to the node
+        /// above has to be what the row type says.
+        ///
+        /// <para>Calcite has nothing to decide here: there is no <c>Enumerable&lt;int&gt;</c> in Java, so its
+        /// sequences carry the box whatever the physical type says, and its element type is erased besides. A
+        /// CLR sequence says its element type out loud, so every node has to say the same thing.</para>
+        /// </remarks>
+        public static Type RowType(PhysType physType)
+        {
+            ArgumentNullException.ThrowIfNull(physType);
+
+            return TypeResolver.Resolve(J.Primitive.box(physType.getJavaRowType()));
+        }
+
+        /// <summary>
+        /// Returns the sequence with its rows of the type the physical type says they are.
+        /// </summary>
+        /// <param name="physType"></param>
+        /// <param name="expression"></param>
+        /// <returns></returns>
+        static Expression Boxed(PhysType physType, Expression expression)
+        {
+            if (expression.Type.IsGenericType == false || expression.Type.GetGenericTypeDefinition() != typeof(IEnumerable<>))
+                return expression;
+
+            var actual = expression.Type.GetGenericArguments()[0];
+            var expected = RowType(physType);
+            if (actual == expected)
+                return expression;
+
+            var row = Expression.Parameter(actual, "row");
+
+            return Expression.Call(null,
+                ClrBuiltInMethod.Select.MakeGenericMethod(actual, expected),
+                expression,
+                Expression.Lambda(typeof(Func<,>).MakeGenericType(actual, expected), JavaCast.To(row, expected), row));
         }
 
         /// <summary>

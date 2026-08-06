@@ -31,6 +31,12 @@ namespace Apache.Calcite.Linq.Runtime
             if (value != null && typeof(T).IsValueType)
                 return (T)JavaCast.Unwrap(value, typeof(T));
 
+            // the other way round, and the case a table of this runtime makes: its rows hold a CLR int where
+            // the plan's row type is java.lang.Integer, and a cast between those two is not a conversion any
+            // more than the one above is
+            if (value != null && value.GetType().IsValueType && JavaCast.PrimitiveOf(typeof(T)) is Type primitive)
+                return (T)JavaCast.Box(value, primitive);
+
             return (T)value!;
         }
 

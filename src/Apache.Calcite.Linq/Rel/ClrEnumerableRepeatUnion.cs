@@ -79,7 +79,7 @@ namespace Apache.Calcite.Linq.Rel
             // the seed's own format, and not re-optimised: a repeat union yields the rows of its two inputs
             // unchanged, so its physical type is theirs
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), seedResult.Format, false);
-            var rowType = TypeResolver.Resolve(seedResult.PhysType.getJavaRowType());
+            var rowType = ClrEnumerableRelImplementor.RowType(seedResult.PhysType);
 
             body.Add(
                 Expression.Call(null,

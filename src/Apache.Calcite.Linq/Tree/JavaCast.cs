@@ -210,6 +210,20 @@ namespace Apache.Calcite.Linq.Tree
         }
 
         /// <summary>
+        /// Returns the primitive a Java box holds, or <see langword="null"/> where the type is not one.
+        /// </summary>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        public static Type? PrimitiveOf(Type type)
+        {
+            ArgumentNullException.ThrowIfNull(type);
+
+            return Boxes.TryGetValue(type, out var primitive)
+                ? TypeResolver.FromClass(primitive.primitiveClass)
+                : null;
+        }
+
+        /// <summary>
         /// Unboxes a Java box class into its primitive.
         /// </summary>
         /// <param name="expression"></param>
