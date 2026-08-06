@@ -521,6 +521,11 @@ namespace Apache.Calcite.Linq
         /// <para>Matching nothing is not the same as being dropped: a null-keyed build row is kept under a
         /// null key, which nothing probes, and a right or a full join ends by returning the rows that matched
         /// nothing — those among them.</para>
+        ///
+        /// <para>Calcite has two of these and so does this: <c>hashEquiJoin_</c> where the condition is an
+        /// equality alone, and <c>hashJoinWithPredicate_</c> where it is not. They differ in more than the
+        /// extra test — what "matched nothing" means is a key in one and a row in the other — so they are
+        /// two methods rather than one with a null check inside the loop.</para>
         /// </remarks>
         public static IEnumerable<TResult> HashJoin<TSource, TInner, TKey, TResult>(
             IEnumerable<TSource> outer,
@@ -533,11 +538,32 @@ namespace Apache.Calcite.Linq
             bool generateNullsOnRight,
             Func<TSource, TInner, bool>? predicate)
         {
+            return predicate == null
+                ? HashEquiJoin(outer, inner, outerKeySelector, innerKeySelector, resultSelector, comparer, generateNullsOnLeft, generateNullsOnRight)
+                : HashJoinWithPredicate(outer, inner, outerKeySelector, innerKeySelector, resultSelector, comparer, generateNullsOnLeft, generateNullsOnRight, predicate);
+        }
+
+        /// <summary>
+        /// Joins two sequences on a key alone.
+        /// </summary>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.hashEquiJoin_</c>. What is left over at the end is a
+        /// <em>key</em> no outer row carried, and every build row under it comes out together.
+        /// </remarks>
+        static IEnumerable<TResult> HashEquiJoin<TSource, TInner, TKey, TResult>(
+            IEnumerable<TSource> outer,
+            IEnumerable<TInner> inner,
+            Func<TSource, TKey> outerKeySelector,
+            Func<TInner, TKey> innerKeySelector,
+            Func<TSource, TInner, TResult> resultSelector,
+            EqualityComparer? comparer,
+            bool generateNullsOnLeft,
+            bool generateNullsOnRight)
+        {
             // the lookup is a java.util.HashMap, as linq4j's toLookup builds one: a right or a full join ends
             // with the rows of the right input that matched nothing, and the order those come out in is this
             // map's. See JavaHashingTests for why that order is the same in every process.
             var lookup = new java.util.HashMap();
-            var matched = generateNullsOnLeft ? new java.util.HashSet() : null;
 
             foreach (var row in inner)
             {
@@ -551,6 +577,90 @@ namespace Apache.Calcite.Linq
                 bucket.Add(row);
             }
 
+            // every key the build side has, less the ones an outer row carries. Calcite keeps it this way
+            // round, and it matters where the lookup holds a key nothing probes: that key's rows are what a
+            // right or a full join owes against a null left.
+            var unmatched = generateNullsOnLeft ? new java.util.HashSet(lookup.keySet()) : null;
+
+            foreach (var row in outer)
+            {
+                var key = outerKeySelector(row);
+                var any = false;
+
+                if (key != null)
+                {
+                    var wrapped = JavaWrapped.Of(comparer, JavaValues.From(key));
+                    unmatched?.remove(wrapped);
+
+                    if (lookup.get(wrapped) is List<TInner> bucket)
+                    {
+                        foreach (var other in bucket)
+                        {
+                            any = true;
+                            yield return resultSelector(row, other);
+                        }
+                    }
+                }
+
+                if (any == false && generateNullsOnRight)
+                    yield return resultSelector(row, default!);
+            }
+
+            if (unmatched == null)
+                yield break;
+
+            for (var i = lookup.entrySet().iterator(); i.hasNext();)
+            {
+                var entry = (java.util.Map.Entry)i.next();
+                if (unmatched.contains(entry.getKey()) == false)
+                    continue;
+
+                foreach (var other in (List<TInner>)entry.getValue())
+                    yield return resultSelector(default!, other);
+            }
+        }
+
+        /// <summary>
+        /// Joins two sequences on a key and something else besides.
+        /// </summary>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.hashJoinWithPredicate_</c>. What is left over at the end
+        /// is a <em>row</em> the predicate rejected or the key never reached, and the leftovers come out in
+        /// the build input's own order rather than the lookup's.
+        ///
+        /// <para>Per row and not per key, which is the whole difference. A build row whose key matched but
+        /// whose predicate did not has matched nothing, and a right join owes it a row against a null left.
+        /// Tracking the key instead lost it, because some other row under that key had passed.</para>
+        /// </remarks>
+        static IEnumerable<TResult> HashJoinWithPredicate<TSource, TInner, TKey, TResult>(
+            IEnumerable<TSource> outer,
+            IEnumerable<TInner> inner,
+            Func<TSource, TKey> outerKeySelector,
+            Func<TInner, TKey> innerKeySelector,
+            Func<TSource, TInner, TResult> resultSelector,
+            EqualityComparer? comparer,
+            bool generateNullsOnLeft,
+            bool generateNullsOnRight,
+            Func<TSource, TInner, bool> predicate)
+        {
+            // read once, because a right or a full join walks it twice
+            IEnumerable<TInner> innerToLookUp = generateNullsOnLeft ? new List<TInner>(inner) : inner;
+
+            var lookup = new java.util.HashMap();
+
+            foreach (var row in innerToLookUp)
+            {
+                var key = innerKeySelector(row);
+
+                var wrapped = key == null ? null : JavaWrapped.Of(comparer, JavaValues.From(key));
+                if (lookup.get(wrapped) is not List<TInner> bucket)
+                    lookup.put(wrapped, bucket = []);
+
+                bucket.Add(row);
+            }
+
+            var unmatched = generateNullsOnLeft ? new List<TInner>(innerToLookUp) : null;
+
             foreach (var row in outer)
             {
                 var key = outerKeySelector(row);
@@ -558,13 +668,16 @@ namespace Apache.Calcite.Linq
 
                 if (key != null && lookup.get(JavaWrapped.Of(comparer, JavaValues.From(key))) is List<TInner> bucket)
                 {
+                    var accepted = new List<TInner>();
                     foreach (var other in bucket)
-                    {
-                        if (predicate != null && predicate(row, other) == false)
-                            continue;
+                        if (predicate(row, other))
+                            accepted.Add(other);
 
+                    unmatched?.RemoveAll(accepted.Contains);
+
+                    foreach (var other in accepted)
+                    {
                         any = true;
-                        matched?.add(JavaWrapped.Of(comparer, JavaValues.From(key)));
                         yield return resultSelector(row, other);
                     }
                 }
@@ -573,18 +686,11 @@ namespace Apache.Calcite.Linq
                     yield return resultSelector(row, default!);
             }
 
-            if (matched == null)
+            if (unmatched == null)
                 yield break;
 
-            for (var i = lookup.entrySet().iterator(); i.hasNext();)
-            {
-                var entry = (java.util.Map.Entry)i.next();
-                if (matched.contains(entry.getKey()))
-                    continue;
-
-                foreach (var other in (List<TInner>)entry.getValue())
-                    yield return resultSelector(default!, other);
-            }
+            foreach (var other in unmatched)
+                yield return resultSelector(default!, other);
         }
 
         /// <summary>
