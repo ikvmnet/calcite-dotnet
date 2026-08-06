@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 
 using org.apache.calcite;
 using org.apache.calcite.adapter.enumerable;
+using org.apache.calcite.adapter.java;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.type;
@@ -163,7 +164,7 @@ namespace Apache.Calcite.Linq.Rel
 
             var block = new J.BlockBuilder();
             var translator = RexToLixTranslator
-                .forAggregation(typeFactory, block, null, implementor.Conformance)
+                .forAggregation((JavaTypeFactory)getCluster().getTypeFactory(), block, null, implementor.Conformance)
                 .setCorrelates(implementor.AllCorrelateVariables);
 
             block.add(ClrEnumUtils.Translate(translator, getCall(), null));

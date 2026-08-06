@@ -73,12 +73,11 @@ namespace Apache.Calcite.Linq.Rel
             {
                 case nameof(SqlTypeName.ARRAY):
                 case nameof(SqlTypeName.MULTISET):
-                    var componentType = getRowType().getFieldList().get(0) is RelDataTypeField field
-                        ? field.getType().getComponentType()
-                        : null;
+                    var componentType = ((RelDataTypeField)getRowType().getFieldList().get(0)).getType().getComponentType()
+                        ?? throw new java.lang.NullPointerException();
                     var childRecordType = ((RelDataTypeField)result.PhysType.getRowType().getFieldList().get(0)).getType();
 
-                    if (componentType != null && SqlTypeUtil.sameNamedType(componentType, childRecordType) == false)
+                    if (SqlTypeUtil.sameNamedType(componentType, childRecordType) == false)
                     {
                         // every element of a multiset is a record, so a scalar is wrapped in something that can
                         // hold one; an array of a single field stays scalar so it still compares correctly

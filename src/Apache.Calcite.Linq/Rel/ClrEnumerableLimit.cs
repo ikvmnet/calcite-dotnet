@@ -7,6 +7,7 @@ using java.util.function;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
+using org.apache.calcite.rel.metadata;
 using org.apache.calcite.rex;
 using org.apache.calcite.util;
 
@@ -31,8 +32,10 @@ namespace Apache.Calcite.Linq.Rel
         public static ClrEnumerableLimit Create(RelNode input, RexNode? offset, RexNode? fetch)
         {
             var cluster = input.getCluster();
+            var mq = cluster.getMetadataQuery();
             var traitSet = cluster.traitSetOf(ClrEnumerableConvention.Instance)
-                .replaceIfs(RelCollationTraitDef.INSTANCE, new DelegateSupplier<object>(() => cluster.getMetadataQuery().collations(input)));
+                .replaceIfs(RelCollationTraitDef.INSTANCE, new DelegateSupplier<object>(() => RelMdCollation.limit(mq, input)))
+                .replaceIf(RelDistributionTraitDef.INSTANCE, new DelegateSupplier<object>(() => RelMdDistribution.limit(mq, input)));
 
             return new ClrEnumerableLimit(cluster, traitSet, input, offset, fetch);
         }
@@ -72,9 +75,7 @@ namespace Apache.Calcite.Linq.Rel
         {
             var child = (ClrEnumerableRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);
-            // the input's own format, and not re-optimised: a limit yields the rows it was given, so its
-            // physical type is theirs
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format, false);
+            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format);
 
             var rowType = result.PhysType.RowType();
             var v = result.Expression;
