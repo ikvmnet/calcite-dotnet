@@ -6,6 +6,8 @@
 
 This package is used internally by [`Apache.Calcite.Data`](https://www.nuget.org/packages/Apache.Calcite.Data) and [`Apache.Calcite.Adapter.AdoNet`](https://www.nuget.org/packages/Apache.Calcite.Adapter.AdoNet). Reference it directly when you need typed access to Calcite connection properties from your own code.
 
+Targets **.NET 8**, and is verified on **.NET 8** and **.NET 10**.
+
 ## Install
 
 ```sh

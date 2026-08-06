@@ -1,5 +1,4 @@
 using org.apache.calcite.plan;
-using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.logical;
 using org.apache.calcite.rex;

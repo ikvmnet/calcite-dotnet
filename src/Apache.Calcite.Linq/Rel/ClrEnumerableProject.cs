@@ -1,14 +1,10 @@
-using Apache.Calcite.Linq.Runtime;
-
 using java.util.function;
 
-using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.metadata;
 using org.apache.calcite.rel.type;
-using org.apache.calcite.rex;
 
 namespace Apache.Calcite.Linq.Rel
 {

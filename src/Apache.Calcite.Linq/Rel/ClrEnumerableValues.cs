@@ -1,8 +1,6 @@
-using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using java.util.function;
@@ -15,8 +13,6 @@ using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.metadata;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.rex;
-
-using J = org.apache.calcite.linq4j.tree;
 
 namespace Apache.Calcite.Linq.Rel
 {
@@ -102,7 +98,7 @@ namespace Apache.Calcite.Linq.Rel
         {
             var typeFactory = (JavaTypeFactory)getCluster().getTypeFactory();
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.PreferCustom());
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             var fields = getRowType().getFieldList();
             var rows = new List<Expression>();
@@ -120,7 +116,9 @@ namespace Apache.Calcite.Linq.Rel
                             typeFactory,
                             RexImpTable.NullAs.NULL));
 
-                rows.Add(implementor.Translator.Translate(physType.record(literals)));
+                // a null literal translates to a constant of Object, and Java may assign that to a field of
+                // any reference type where an array initializer may not
+                rows.Add(ClrEnumUtils.Convert(implementor.Translator.Translate(physType.record(literals)), rowType));
             }
 
             return implementor.Result(physType,

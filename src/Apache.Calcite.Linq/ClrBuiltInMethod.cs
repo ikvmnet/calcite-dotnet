@@ -1,7 +1,9 @@
 using System;
 using System.Reflection;
 
-namespace Apache.Calcite.Linq.Runtime
+using Apache.Calcite.Linq.Runtime;
+
+namespace Apache.Calcite.Linq
 {
 
     /// <summary>

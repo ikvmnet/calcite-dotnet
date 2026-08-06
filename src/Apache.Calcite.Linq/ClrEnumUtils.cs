@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Linq.Expressions;
+using System.Reflection;
 
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.rel;
@@ -8,7 +10,9 @@ using org.apache.calcite.rex;
 
 using J = org.apache.calcite.linq4j.tree;
 
-namespace Apache.Calcite.Linq.Tree
+using Apache.Calcite.Linq.Tree;
+
+namespace Apache.Calcite.Linq
 {
 
     /// <summary>
@@ -123,17 +127,23 @@ namespace Apache.Calcite.Linq.Tree
         /// </remarks>
         public static System.Linq.Expressions.Expression BoxRows(PhysType physType, System.Linq.Expressions.Expression source)
         {
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
-            if (rowType.IsValueType == false)
+            var boxed = ClrTypes.Resolve(J.Primitive.box(physType.getJavaRowType()));
+
+            // what the sequence holds, not what the physical type calls a field: a node hands its rows up
+            // boxed already, and only a sequence built inside this one can still be carrying a primitive
+            var rowType = source.Type.IsGenericType && source.Type.GetGenericTypeDefinition() == typeof(System.Collections.Generic.IEnumerable<>)
+                ? source.Type.GetGenericArguments()[0]
+                : boxed;
+
+            if (rowType == boxed || rowType.IsValueType == false)
                 return source;
 
-            var boxed = TypeResolver.Resolve(J.Primitive.box(physType.getJavaRowType()));
             var row = System.Linq.Expressions.Expression.Parameter(rowType, "row");
 
             return System.Linq.Expressions.Expression.Call(null,
-                Runtime.ClrBuiltInMethod.Select.MakeGenericMethod(rowType, boxed),
+                ClrBuiltInMethod.Select.MakeGenericMethod(rowType, boxed),
                 source,
-                System.Linq.Expressions.Expression.Lambda(JavaCast.To(row, boxed), row));
+                System.Linq.Expressions.Expression.Lambda(ClrEnumUtils.Convert(row, boxed), row));
         }
 
         /// <summary>
@@ -178,7 +188,7 @@ namespace Apache.Calcite.Linq.Tree
             var input_ = J.Expressions.parameter(javaRowType, "input");
             var marker_ = J.Expressions.parameter((java.lang.Class)typeof(java.lang.Boolean), "marker");
 
-            var inputParameter = Expression.Parameter(TypeResolver.Resolve(javaRowType), "input");
+            var inputParameter = Expression.Parameter(ClrTypes.Resolve(javaRowType), "input");
             var markerParameter = Expression.Parameter(typeof(java.lang.Boolean), "marker");
             implementor.Translator.Bind(input_, inputParameter);
             implementor.Translator.Bind(marker_, markerParameter);
@@ -190,7 +200,7 @@ namespace Apache.Calcite.Linq.Tree
 
             expressions.add(marker_);
 
-            var rowType = TypeResolver.Resolve(resultPhysType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(resultPhysType.getJavaRowType());
 
             return Expression.Lambda(
                 typeof(Func<,,>).MakeGenericType(inputParameter.Type, markerParameter.Type, rowType),
@@ -229,7 +239,7 @@ namespace Apache.Calcite.Linq.Tree
                 var javaRowType = J.Primitive.box(inputPhysType.getJavaRowType());
                 var row = J.Expressions.parameter(javaRowType, ord == 0 ? "left" : "right");
 
-                parameters[ord] = Expression.Parameter(TypeResolver.Resolve(javaRowType), ord == 0 ? "left" : "right");
+                parameters[ord] = Expression.Parameter(ClrTypes.Resolve(javaRowType), ord == 0 ? "left" : "right");
                 implementor.Translator.Bind(row, parameters[ord]);
 
                 // a semi join returns the left input alone, so the fields run out before the inputs do
@@ -251,7 +261,7 @@ namespace Apache.Calcite.Linq.Tree
                 }
             }
 
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             return Expression.Lambda(
                 typeof(Func<,,>).MakeGenericType(parameters[0].Type, parameters[1].Type, rowType),
@@ -301,11 +311,11 @@ namespace Apache.Calcite.Linq.Tree
 
             // the rows arrive boxed, because the sequence a join runs over is boxed for the selector, so the
             // predicate takes them boxed and unboxes on the way in
-            var leftParameter = Expression.Parameter(TypeResolver.Resolve(J.Primitive.box(leftPhysType.getJavaRowType())), "left");
-            var rightParameter = Expression.Parameter(TypeResolver.Resolve(J.Primitive.box(rightPhysType.getJavaRowType())), "right");
+            var leftParameter = Expression.Parameter(ClrTypes.Resolve(J.Primitive.box(leftPhysType.getJavaRowType())), "left");
+            var rightParameter = Expression.Parameter(ClrTypes.Resolve(J.Primitive.box(rightPhysType.getJavaRowType())), "right");
 
-            var leftRow = Expression.Variable(TypeResolver.Resolve(leftPhysType.getJavaRowType()), "leftRow");
-            var rightRow = Expression.Variable(TypeResolver.Resolve(rightPhysType.getJavaRowType()), "rightRow");
+            var leftRow = Expression.Variable(ClrTypes.Resolve(leftPhysType.getJavaRowType()), "leftRow");
+            var rightRow = Expression.Variable(ClrTypes.Resolve(rightPhysType.getJavaRowType()), "rightRow");
             implementor.Translator.Bind(left_, leftRow);
             implementor.Translator.Bind(right_, rightRow);
 
@@ -338,13 +348,162 @@ namespace Apache.Calcite.Linq.Tree
             return Expression.Lambda(
                 typeof(Func<,,>).MakeGenericType(leftParameter.Type, rightParameter.Type, resultType),
                 Expression.Block(resultType, [leftRow, rightRow],
-                    Expression.Assign(leftRow, JavaCast.To(leftParameter, leftRow.Type)),
-                    Expression.Assign(rightRow, JavaCast.To(rightParameter, rightRow.Type)),
+                    Expression.Assign(leftRow, ClrEnumUtils.Convert(leftParameter, leftRow.Type)),
+                    Expression.Assign(rightRow, ClrEnumUtils.Convert(rightParameter, rightRow.Type)),
                     implementor.Translator.TranslateBody(builder.toBlock(), resultType)),
                 leftParameter,
                 rightParameter);
         }
 
+
+        /// <summary>
+        /// CLR type of each Java primitive, against the <see cref="J.Primitive"/> that describes it.
+        /// </summary>
+        static readonly Dictionary<Type, J.Primitive> Primitives = [];
+
+        /// <summary>
+        /// CLR type of each Java box class, against the <see cref="J.Primitive"/> it boxes.
+        /// </summary>
+        static readonly Dictionary<Type, J.Primitive> Boxes = [];
+
+        /// <summary>
+        /// Initializes the static instance.
+        /// </summary>
+        static ClrEnumUtils()
+        {
+            // taken from linq4j rather than written out, so the pairing of a primitive with its box is the
+            // one Calcite itself uses, and the CLR types are whichever ones IKVM actually chose
+            foreach (J.Primitive primitive in J.Primitive.values())
+            {
+                if (primitive.primitiveClass == null || primitive.boxClass == null)
+                    continue;
+                if (primitive.primitiveName == "void")
+                    continue;
+
+                Primitives[ClrTypes.FromClass(primitive.primitiveClass)] = primitive;
+                Boxes[ClrTypes.FromClass(primitive.boxClass)] = primitive;
+            }
+        }
+
+        /// <summary>
+        /// Returns an expression yielding <paramref name="expression"/> as <paramref name="type"/>.
+        /// </summary>
+        /// <param name="expression"></param>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        public static Expression Convert(Expression expression, Type type)
+        {
+            ArgumentNullException.ThrowIfNull(expression);
+            ArgumentNullException.ThrowIfNull(type);
+
+            if (expression.Type == type)
+                return expression;
+
+            if (type == typeof(void))
+                return expression;
+
+            var fromPrimitive = Primitives.GetValueOrDefault(expression.Type);
+            var toPrimitive = Primitives.GetValueOrDefault(type);
+            var fromBox = Boxes.GetValueOrDefault(expression.Type);
+
+            // int to Integer, and int to Long by way of long, exactly as Java widens before it boxes
+            if (fromPrimitive != null && Boxes.TryGetValue(type, out var toBox))
+                return Box(Number(expression, toBox), toBox);
+
+            // Integer to int, and Integer to long by way of int
+            if (fromBox != null && toPrimitive != null)
+                return Number(Unbox(expression, fromBox), toPrimitive);
+
+            // int to Object, Number, Comparable: box first, then the reference conversion is ordinary
+            if (fromPrimitive != null && type.IsValueType == false)
+                return Expression.Convert(Box(expression, fromPrimitive), type);
+
+            // Object to int, which Java reads as a cast to the box class followed by an unboxing call. A
+            // straight Convert would emit unbox.any and demand a boxed CLR int that is never the value here.
+            if (expression.Type.IsValueType == false && toPrimitive != null)
+                return Unbox(Expression.Convert(expression, ClrTypes.FromClass(toPrimitive.boxClass)), toPrimitive);
+
+            if (fromPrimitive != null && toPrimitive != null)
+                return Widen(expression, type);
+
+            return Expression.Convert(expression, type);
+        }
+        /// <summary>
+        /// Converts between two primitives, and returns <paramref name="expression"/> when they agree.
+        /// </summary>
+        /// <param name="expression"></param>
+        /// <param name="primitive"></param>
+        /// <returns></returns>
+        static Expression Number(Expression expression, J.Primitive primitive)
+        {
+            return Widen(expression, ClrTypes.FromClass(primitive.primitiveClass));
+        }
+
+        /// <summary>
+        /// Converts between two primitives.
+        /// </summary>
+        /// <param name="expression"></param>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Java's byte is signed and IKVM stores it in a CLR byte, which is not. Widening one therefore has to
+        /// go by way of an sbyte, or -1 becomes 255 the moment it is promoted to an int.
+        /// </remarks>
+        static Expression Widen(Expression expression, Type type)
+        {
+            if (expression.Type == type)
+                return expression;
+
+            if (expression.Type == typeof(byte))
+                expression = Expression.Convert(expression, typeof(sbyte));
+
+            return expression.Type == type ? expression : Expression.Convert(expression, type);
+        }
+
+        /// <summary>
+        /// Boxes a primitive into its Java box class.
+        /// </summary>
+        /// <param name="expression"></param>
+        /// <param name="primitive"></param>
+        /// <returns></returns>
+        static Expression Box(Expression expression, J.Primitive primitive)
+        {
+            var box = ClrTypes.FromClass(primitive.boxClass);
+            var valueOf = box.GetMethod("valueOf", BindingFlags.Public | BindingFlags.Static, null, [expression.Type], null)
+                ?? throw new NotSupportedException($"'{box}' has no valueOf for '{expression.Type}'.");
+
+            return Expression.Call(null, valueOf, expression);
+        }
+
+        /// <summary>
+        /// Returns the primitive a Java box holds, or <see langword="null"/> where the type is not one.
+        /// </summary>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        public static Type? PrimitiveOf(Type type)
+        {
+            ArgumentNullException.ThrowIfNull(type);
+
+            return Boxes.TryGetValue(type, out var primitive)
+                ? ClrTypes.FromClass(primitive.primitiveClass)
+                : null;
+        }
+
+        /// <summary>
+        /// Unboxes a Java box class into its primitive.
+        /// </summary>
+        /// <param name="expression"></param>
+        /// <param name="primitive"></param>
+        /// <returns></returns>
+        static Expression Unbox(Expression expression, J.Primitive primitive)
+        {
+            // intValue, booleanValue, charValue, and so on for each of the eight
+            var name = primitive.primitiveName + "Value";
+            var value = expression.Type.GetMethod(name, BindingFlags.Public | BindingFlags.Instance, null, [], null)
+                ?? throw new NotSupportedException($"'{expression.Type}' has no {name}().");
+
+            return Expression.Call(expression, value);
+        }
     }
 
 }

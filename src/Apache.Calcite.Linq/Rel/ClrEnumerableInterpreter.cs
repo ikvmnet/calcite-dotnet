@@ -1,6 +1,5 @@
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using org.apache.calcite.adapter.enumerable;
@@ -96,7 +95,7 @@ namespace Apache.Calcite.Linq.Rel
             if (getRowType().getFieldCount() == 1)
                 source = Expression.Call(null, Slice0, source);
 
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrEnumerableRelImplementor.RowType(physType);
 
             return implementor.Result(physType,
                 Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), source));
@@ -111,7 +110,7 @@ namespace Apache.Calcite.Linq.Rel
         /// <summary>
         /// <c>Linq4j.slice0</c>, which reads a sequence of one-column rows as a sequence of their values.
         /// </summary>
-        static readonly System.Reflection.MethodInfo Slice0 = MethodResolver.Resolve(org.apache.calcite.util.BuiltInMethod.SLICE0.method);
+        static readonly System.Reflection.MethodInfo Slice0 = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.SLICE0.method);
 
     }
 

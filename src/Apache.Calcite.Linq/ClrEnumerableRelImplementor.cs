@@ -49,7 +49,7 @@ namespace Apache.Calcite.Linq
             this.map = internalParameters ?? throw new ArgumentNullException(nameof(internalParameters));
 
             Root = Expression.Parameter(typeof(DataContext), "root");
-            Translator = new ExpressionTranslator(map);
+            Translator = new LixToClrTranslator(map);
             Translator.Bind(DataContext.ROOT, Root);
 
             AllCorrelateVariables = new DelegateFunction1<string, RexToLixTranslator.InputGetter>(GetCorrelVariableGetter);
@@ -83,7 +83,41 @@ namespace Apache.Calcite.Linq
         /// Gets the translator that turns a linq4j expression into a CLR one. One serves the whole plan, so a
         /// variable means the same thing wherever a node mentions it.
         /// </summary>
-        internal ExpressionTranslator Translator { get; }
+        internal LixToClrTranslator Translator { get; }
+
+        /// <summary>
+        /// Translates a linq4j expression into a CLR one.
+        /// </summary>
+        /// <param name="node">The expression to translate.</param>
+        /// <returns>The same expression, as a <see cref="System.Linq.Expressions"/> tree.</returns>
+        /// <remarks>
+        /// A node of this convention builds expressions directly and has no need of this. It is here for the
+        /// node that cannot: one whose expression comes from a generator of Calcite's, which produces linq4j
+        /// and nothing else. Translate such an expression where it is produced rather than composing it into
+        /// a larger tree first.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException"></exception>
+        public Expression Translate(J.Node node)
+        {
+            ArgumentNullException.ThrowIfNull(node);
+
+            return Translator.Translate(node);
+        }
+
+        /// <summary>
+        /// Translates a linq4j block, and the declarations it carries, into one CLR expression.
+        /// </summary>
+        /// <param name="body">The block to translate, whose last statement is its value.</param>
+        /// <param name="returnType">The type the block yields.</param>
+        /// <returns>The block, as a <see cref="System.Linq.Expressions"/> tree.</returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        public Expression TranslateBody(J.BlockStatement body, Type returnType)
+        {
+            ArgumentNullException.ThrowIfNull(body);
+            ArgumentNullException.ThrowIfNull(returnType);
+
+            return Translator.TranslateBody(body, returnType);
+        }
 
         /// <summary>
         /// Gets the internal parameters, which reach the query through the <see cref="DataContext"/> it is
@@ -144,7 +178,9 @@ namespace Apache.Calcite.Linq
                 && result.Format == JavaRowFormat.ARRAY
                 && rootRel.getRowType().getFieldCount() == 1)
                 result = new ClrEnumerableResult(
-                    Expression.Call(null, ClrBuiltInMethod.Slice0, result.Expression),
+                    // object, because nothing reads this but the caller of the query, and it is handed out as
+                    // a bare IEnumerable
+                    Expression.Call(null, ClrBuiltInMethod.Slice0.MakeGenericMethod(typeof(object)), result.Expression),
                     result.PhysType,
                     JavaRowFormat.SCALAR);
 
@@ -184,7 +220,7 @@ namespace Apache.Calcite.Linq
             return Expression.Call(null,
                 ClrBuiltInMethod.Select.MakeGenericMethod(elementType, typeof(object)),
                 sequence,
-                Expression.Lambda(JavaCast.To(row, typeof(object)), row));
+                Expression.Lambda(ClrEnumUtils.Convert(row, typeof(object)), row));
         }
 
         /// <summary>
@@ -199,7 +235,7 @@ namespace Apache.Calcite.Linq
         /// </remarks>
         public Expression Stash(object? input, java.lang.Class clazz)
         {
-            return Expression.Constant(input, TypeResolver.FromClass(clazz));
+            return Expression.Constant(input, ClrTypes.FromClass(clazz));
         }
 
         /// <summary>
@@ -241,6 +277,29 @@ namespace Apache.Calcite.Linq
         }
 
         /// <summary>
+        /// Reads one field of the outer row a correlated sub-query was entered with.
+        /// </summary>
+        /// <param name="name">The correlation variable's name.</param>
+        /// <param name="ordinal">The field's position in the outer row.</param>
+        /// <param name="storageType">The type to read the field as, or <see langword="null"/> for the
+        /// field's own.</param>
+        /// <returns>The field's value.</returns>
+        /// <exception cref="java.lang.IllegalStateException">No such variable is in scope.</exception>
+        /// <remarks>
+        /// <see cref="GetCorrelVariableGetter"/> answers with Calcite's <c>InputGetter</c>, which reads a
+        /// field as linq4j and takes a linq4j block to declare into. This is that, translated, so a node
+        /// outside this assembly can read a correlated field without holding a linq4j tree of its own.
+        /// </remarks>
+        public Expression CorrelVariableField(string name, int ordinal, java.lang.reflect.Type? storageType = null)
+        {
+            ArgumentNullException.ThrowIfNull(name);
+
+            // the getter declares into the block it was created with, not one passed to it, so there is
+            // nothing here for a caller's block to receive
+            return Translate(GetCorrelVariableGetter(name).field(null, ordinal, storageType));
+        }
+
+        /// <summary>
         /// Creates the result a node's <c>Implement</c> returns.
         /// </summary>
         /// <param name="physType">How the rows are represented.</param>
@@ -249,7 +308,54 @@ namespace Apache.Calcite.Linq
         public ClrEnumerableResult Result(PhysType physType, Expression expression)
         {
             // PhysTypeImpl keeps its format package-private, and getFormat is the same value in public
-            return new ClrEnumerableResult(expression, physType, physType.getFormat());
+            return new ClrEnumerableResult(Boxed(physType, expression), physType, physType.getFormat());
+        }
+
+        /// <summary>
+        /// Returns the CLR type of one row of a sequence of the given physical type.
+        /// </summary>
+        /// <param name="physType"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The row type, boxed. A row of a plan holds Java's values and keeps holding them: a field inside an
+        /// <c>Object[]</c> row is a <c>java.lang.Integer</c> from the table to the converter that hands it
+        /// out, and a one column row is that same value with no array around it. A node may unbox inside
+        /// itself, where the values never leave the expression it is building, but what it hands to the node
+        /// above has to be what the row type says.
+        ///
+        /// <para>Calcite has nothing to decide here: there is no <c>Enumerable&lt;int&gt;</c> in Java, so its
+        /// sequences carry the box whatever the physical type says, and its element type is erased besides. A
+        /// CLR sequence says its element type out loud, so every node has to say the same thing.</para>
+        /// </remarks>
+        public static Type RowType(PhysType physType)
+        {
+            ArgumentNullException.ThrowIfNull(physType);
+
+            return ClrTypes.Resolve(J.Primitive.box(physType.getJavaRowType()));
+        }
+
+        /// <summary>
+        /// Returns the sequence with its rows of the type the physical type says they are.
+        /// </summary>
+        /// <param name="physType"></param>
+        /// <param name="expression"></param>
+        /// <returns></returns>
+        static Expression Boxed(PhysType physType, Expression expression)
+        {
+            if (expression.Type.IsGenericType == false || expression.Type.GetGenericTypeDefinition() != typeof(IEnumerable<>))
+                return expression;
+
+            var actual = expression.Type.GetGenericArguments()[0];
+            var expected = RowType(physType);
+            if (actual == expected)
+                return expression;
+
+            var row = Expression.Parameter(actual, "row");
+
+            return Expression.Call(null,
+                ClrBuiltInMethod.Select.MakeGenericMethod(actual, expected),
+                expression,
+                Expression.Lambda(typeof(Func<,>).MakeGenericType(actual, expected), ClrEnumUtils.Convert(row, expected), row));
         }
 
         /// <summary>

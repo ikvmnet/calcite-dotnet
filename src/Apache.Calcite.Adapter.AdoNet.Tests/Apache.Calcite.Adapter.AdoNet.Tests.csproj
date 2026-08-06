@@ -21,6 +21,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Apache.Calcite.Adapter.AdoNet\Apache.Calcite.Adapter.AdoNet.csproj" />
+        <ProjectReference Include="..\Apache.Calcite.Data\Apache.Calcite.Data.csproj" />
     </ItemGroup>
 
     <ItemGroup>

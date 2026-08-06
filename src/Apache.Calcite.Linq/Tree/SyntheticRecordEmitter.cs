@@ -29,7 +29,7 @@ namespace Apache.Calcite.Linq.Tree
     static class SyntheticRecordEmitter
     {
 
-        static readonly Lock sync = new();
+        static readonly object sync = new();
         static readonly Dictionary<JavaTypeFactoryImpl.SyntheticRecordType, Type> emitted = new(ReferenceEqualityComparer.Instance);
         static ModuleBuilder? module;
         static int count;
@@ -77,7 +77,7 @@ namespace Apache.Calcite.Linq.Tree
             for (int i = 0; i < fields.Length; i++)
             {
                 var field = (J.Types.RecordField)recordFields.get(i);
-                types[i] = TypeResolver.Resolve(field.getType());
+                types[i] = ClrTypes.Resolve(field.getType());
                 fields[i] = builder.DefineField(field.getName(), types[i], FieldAttributes.Public);
             }
 

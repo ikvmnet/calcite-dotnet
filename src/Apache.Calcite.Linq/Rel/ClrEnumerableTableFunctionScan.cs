@@ -1,18 +1,15 @@
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using org.apache.calcite;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
-using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.rex;
 using org.apache.calcite.schema;
 using org.apache.calcite.schema.impl;
-using org.apache.calcite.sql.validate;
 
 using J = org.apache.calcite.linq4j.tree;
 
@@ -102,7 +99,7 @@ namespace Apache.Calcite.Linq.Rel
         /// <para>The two <c>_input</c>s are not a mistake. Calcite's implementor builds the watermark column
         /// against a parameter it makes itself, and <c>EnumUtils.tumblingWindowSelector</c> makes the lambda's
         /// parameter separately; both are named <c>_input</c> and Janino resolves the name, so the lambda's
-        /// shadows the local. That is what <c>ExpressionTranslator</c>'s scope by name is for, and this is the
+        /// shadows the local. That is what <c>LixToClrTranslator</c>'s scope by name is for, and this is the
         /// node that needs it.</para>
         /// </remarks>
         ClrEnumerableResult TvfImplementorBasedImplement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
@@ -112,7 +109,7 @@ namespace Apache.Calcite.Linq.Rel
             var result = implementor.VisitChild(this, 0, child, pref);
             var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.Prefer(result.Format));
 
-            var sourceType = TypeResolver.Resolve(result.PhysType.getJavaRowType());
+            var sourceType = ClrTypes.Resolve(result.PhysType.getJavaRowType());
             var source = Expression.Call(null, ClrBuiltInMethod.ToJava.MakeGenericMethod(sourceType), result.Expression);
 
             var input_ = J.Expressions.parameter((java.lang.Class)typeof(org.apache.calcite.linq4j.Enumerable), "_input");
@@ -137,7 +134,7 @@ namespace Apache.Calcite.Linq.Rel
                 Expression.Assign(inputParameter, source),
                 implementor.Translator.TranslateBody(block.toBlock(), typeof(org.apache.calcite.linq4j.Enumerable)));
 
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             return implementor.Result(physType,
                 Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), windowed));
@@ -173,7 +170,7 @@ namespace Apache.Calcite.Linq.Rel
 
             block.add(ClrEnumUtils.Translate(translator, getCall(), null));
 
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             return implementor.Result(physType,
                 Expression.Call(null,

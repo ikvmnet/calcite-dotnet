@@ -1,7 +1,6 @@
 using System;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using java.util.function;
@@ -394,8 +393,15 @@ namespace Apache.Calcite.Linq.Rel
 
             var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.PreferArray());
 
-            var left_ = J.Expressions.parameter(leftResult.PhysType.getJavaRowType(), "left");
-            var right_ = J.Expressions.parameter(rightResult.PhysType.getJavaRowType(), "right");
+            // Calcite types these off the physical type and does not box them. It cannot go wrong there:
+            // there is no Enumerable<int> in Java, so the sequence and a parameter typed int cannot disagree.
+            // Here they can. The sequences below are boxed because a join must box — the selector and
+            // predicate Calcite builds are against boxed rows, and an outer join hands the selector a null —
+            // and the key selector is a lambda over one row of the boxed sequence, so this has to be the same
+            // decision. Only a one-column input tells the two apart, every wider row being a reference
+            // already, which is why Primitive.box is a no-op for all of them.
+            var left_ = J.Expressions.parameter(J.Primitive.box(leftResult.PhysType.getJavaRowType()), "left");
+            var right_ = J.Expressions.parameter(J.Primitive.box(rightResult.PhysType.getJavaRowType()), "right");
 
             // each key field is read at the type the two sides have in common, so that one comparator can
             // order both inputs
@@ -427,7 +433,7 @@ namespace Apache.Calcite.Linq.Rel
             var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
             var leftType_ = leftSource.Type.GetGenericArguments()[0];
             var rightType_ = rightSource.Type.GetGenericArguments()[0];
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             var leftKey = implementor.Translator.TranslateSelector(J.Expressions.lambda(leftKeyPhysType.record(leftExpressions), [left_]), leftType_);
             var rightKey = implementor.Translator.TranslateSelector(J.Expressions.lambda(rightKeyPhysType.record(rightExpressions), [right_]), rightType_);

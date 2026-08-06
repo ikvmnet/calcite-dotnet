@@ -1,7 +1,5 @@
-using System;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using java.util.function;
@@ -13,7 +11,6 @@ using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.metadata;
 using org.apache.calcite.rex;
 using org.apache.calcite.sql;
-using org.apache.calcite.util;
 
 using J = org.apache.calcite.linq4j.tree;
 
@@ -171,7 +168,7 @@ namespace Apache.Calcite.Linq.Rel
             var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
             var leftType = leftSource.Type.GetGenericArguments()[0];
             var rightType = rightSource.Type.GetGenericArguments()[0];
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             // without nulls, as Calcite keys an ASOF join and has since 1.41: a key of two or more fields is
             // null as a whole where any field of it is null, so a row with a null in its key matches nothing

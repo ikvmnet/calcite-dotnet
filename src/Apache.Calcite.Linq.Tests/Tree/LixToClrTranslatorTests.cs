@@ -13,11 +13,13 @@ using org.apache.calcite.runtime;
 
 using J = org.apache.calcite.linq4j.tree;
 
+using Apache.Calcite.Linq.Runtime;
+
 namespace Apache.Calcite.Linq.Tests.Tree
 {
 
     [TestClass]
-    public class ExpressionTranslatorTests
+    public class LixToClrTranslatorTests
     {
 
         /// <summary>
@@ -28,9 +30,9 @@ namespace Apache.Calcite.Linq.Tests.Tree
         /// <returns></returns>
         static T Run<T>(J.Expression expression)
         {
-            var translated = new ExpressionTranslator().Translate(expression);
+            var translated = new LixToClrTranslator().Translate(expression);
 
-            return Expression.Lambda<Func<T>>(JavaCast.To(translated, typeof(T))).Compile()();
+            return Expression.Lambda<Func<T>>(ClrEnumUtils.Convert(translated, typeof(T))).Compile()();
         }
 
         /// <summary>
@@ -41,7 +43,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
         /// <returns></returns>
         static T RunBody<T>(J.BlockStatement block)
         {
-            var translated = new ExpressionTranslator().TranslateBody(block, typeof(T));
+            var translated = new LixToClrTranslator().TranslateBody(block, typeof(T));
 
             return Expression.Lambda<Func<T>>(translated).Compile()();
         }
@@ -159,11 +161,11 @@ namespace Apache.Calcite.Linq.Tests.Tree
         {
             var e = J.Expressions.convert_(J.Expressions.convert_(J.Expressions.constant(value), box), primitive);
 
-            var translated = new ExpressionTranslator().Translate(e);
+            var translated = new LixToClrTranslator().Translate(e);
             var result = Expression.Lambda<Func<object>>(Expression.Convert(translated, typeof(object))).Compile()();
 
             result.Should().NotBeNull();
-            JavaCast.Unwrap(value, TypeResolver.FromClass(primitive)).Should().Be(result);
+            JavaValues.Unwrap(value, ClrTypes.FromClass(primitive)).Should().Be(result);
         }
 
         [TestMethod]
@@ -270,7 +272,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
                 v);
 
             // a lambda linq4j declared as a Function1 is one, so the delegate is asked for back
-            var translated = SamAdapters.Unwrap(new ExpressionTranslator().Translate(e))!;
+            var translated = AnonymousClasses.Unwrap(new LixToClrTranslator().Translate(e))!;
 
             translated.Should().NotBeNull();
             ((Func<int, int>)translated.Compile())(21).Should().Be(42);
@@ -297,7 +299,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
                         java.util.Arrays.asList([v0, v1]),
                         body.toBlock())));
 
-            var translated = new ExpressionTranslator().Translate(e);
+            var translated = new LixToClrTranslator().Translate(e);
 
             // the lambda is wrapped back into the interface the class was declared against, because the same
             // operator takes a comparator that never was an anonymous class
@@ -316,7 +318,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
             var row = J.Expressions.parameter((Class)typeof(object[]), "row");
             var target = Expression.Parameter(typeof(object[]), "row");
 
-            var translator = new ExpressionTranslator();
+            var translator = new LixToClrTranslator();
             translator.Bind(row, target);
 
             var translated = translator.Translate(J.Expressions.arrayIndex(row, J.Expressions.constant(Integer.valueOf(1))));

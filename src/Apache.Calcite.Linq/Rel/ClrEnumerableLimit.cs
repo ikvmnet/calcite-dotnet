@@ -1,6 +1,5 @@
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using java.util.function;
@@ -8,7 +7,6 @@ using java.util.function;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
-using org.apache.calcite.rel.metadata;
 using org.apache.calcite.rex;
 using org.apache.calcite.util;
 
@@ -78,7 +76,7 @@ namespace Apache.Calcite.Linq.Rel
             // physical type is theirs
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format, false);
 
-            var rowType = TypeResolver.Resolve(result.PhysType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(result.PhysType.getJavaRowType());
             var v = result.Expression;
 
             if (offset != null)
@@ -104,7 +102,7 @@ namespace Apache.Calcite.Linq.Rel
         internal static Expression Count(ClrEnumerableRelImplementor implementor, RexNode rexNode)
         {
             if (rexNode is RexDynamicParam param)
-                return JavaCast.To(
+                return ClrEnumUtils.Convert(
                     Expression.Call(implementor.Root, DataContextGet, Expression.Constant("?" + param.getIndex())),
                     typeof(int));
 
@@ -114,7 +112,7 @@ namespace Apache.Calcite.Linq.Rel
         /// <summary>
         /// <c>DataContext.get</c>, which a value prepared as a parameter arrives by.
         /// </summary>
-        static readonly System.Reflection.MethodInfo DataContextGet = MethodResolver.Resolve(BuiltInMethod.DATA_CONTEXT_GET.method);
+        static readonly System.Reflection.MethodInfo DataContextGet = ClrTypes.Resolve(BuiltInMethod.DATA_CONTEXT_GET.method);
 
     }
 

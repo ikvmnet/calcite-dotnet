@@ -1,17 +1,12 @@
 using System;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
-using Apache.Calcite.Linq.Tree;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.runtime;
-
-using J = org.apache.calcite.linq4j.tree;
 
 namespace Apache.Calcite.Linq.Rel
 {
@@ -74,7 +69,7 @@ namespace Apache.Calcite.Linq.Rel
                     args[i * 2] = Expression.Constant(((RelDataTypeField)fields.get(i)).getName(), typeof(object));
                     args[i * 2 + 1] = fieldCount > 1
                         ? Expression.ArrayIndex(Expression.Convert(row, typeof(object[])), Expression.Constant(i))
-                        : JavaCast.To(row, typeof(object));
+                        : ClrEnumUtils.Convert(row, typeof(object));
                 }
 
                 var selector = Expression.Lambda(

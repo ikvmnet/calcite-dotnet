@@ -1,4 +1,5 @@
 using org.apache.calcite.plan;
+using org.apache.calcite.rel;
 using org.apache.calcite.rel.metadata;
 using org.apache.calcite.tools;
 
@@ -74,6 +75,78 @@ namespace Apache.Calcite.Linq
                 rules.add(rule);
 
             return Programs.ofRules(rules);
+        }
+
+        /// <summary>
+        /// Returns the pass that plans with the rules the planner already carries, adding none and removing
+        /// none.
+        /// </summary>
+        /// <returns></returns>
+        /// <remarks>
+        /// What <see cref="Rules"/> does to a planner that holds nothing else, this does to one that has been
+        /// set up already — <c>CalcitePrepare</c>'s, which has Calcite's own rules on it. It is the shape of
+        /// the first program in <c>Programs.standard</c>, which likewise installs no rules and plans with
+        /// what is there.
+        ///
+        /// <para>The difference is what a query can fall back to. <see cref="Rules"/> is
+        /// <c>Programs.ofRules</c>, and that clears the planner before adding its own, so a node this
+        /// convention has no rule for has nowhere to go. Here Calcite's rules survive, and anything unported
+        /// is implemented in <c>EnumerableConvention</c> and carried across a converter.</para>
+        /// </remarks>
+        public static Program PlannerRules()
+        {
+            return new PlannerRulesProgram();
+        }
+
+        /// <summary>
+        /// Returns the calc pass for a plan that may hold nodes of either convention.
+        /// </summary>
+        /// <param name="metadataProvider">The provider to use, or <see langword="null"/> for Calcite's default.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <see cref="CalcRules"/> with <c>RelOptRules.CALC_RULES</c> added, which is what
+        /// <c>Programs.calc</c> runs on its own.
+        ///
+        /// <para>Both halves are needed for the same reason. A project or a filter refuses to implement
+        /// itself, in this convention and in Calcite's alike, because a calc carries both in one pass; the
+        /// calc pass is what makes that refusal safe. Running only this convention's calc rules leaves
+        /// Calcite's <c>EnumerableFilter</c> standing, and it throws when the plan is implemented.</para>
+        /// </remarks>
+        public static Program PlannerCalcRules(RelMetadataProvider? metadataProvider = null)
+        {
+            var rules = new java.util.ArrayList();
+
+            foreach (var rule in ClrEnumerableRules.CalcRules())
+                rules.add(rule);
+
+            for (var i = RelOptRules.CALC_RULES.iterator(); i.hasNext();)
+                rules.add(i.next());
+
+            return Programs.hep(rules, true, metadataProvider ?? DefaultRelMetadataProvider.INSTANCE);
+        }
+
+        /// <summary>
+        /// Plans with the rules already on the planner.
+        /// </summary>
+        sealed class PlannerRulesProgram : Program
+        {
+
+            /// <inheritdoc />
+            public RelNode run(RelOptPlanner planner, RelNode rel, RelTraitSet requiredOutputTraits, java.util.List materializations, java.util.List lattices)
+            {
+                for (var i = materializations.iterator(); i.hasNext();)
+                    planner.addMaterialization((RelOptMaterialization)i.next());
+
+                for (var i = lattices.iterator(); i.hasNext();)
+                    planner.addLattice((RelOptLattice)i.next());
+
+                planner.setRoot(rel);
+                var root = rel.getTraitSet().equals(requiredOutputTraits) ? rel : planner.changeTraits(rel, requiredOutputTraits);
+                planner.setRoot(root);
+
+                return planner.chooseDelegate().findBestExp();
+            }
+
         }
 
         /// <summary>

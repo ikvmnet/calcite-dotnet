@@ -159,7 +159,7 @@ namespace Apache.Calcite.Linq.Rel
             // a partition is an Object[], as Calcite's is, so a row that is a primitive is boxed to go in it —
             // and boxed the way the type factory says, because the comparator ordering the partition is
             // Calcite's and takes a java.lang.Integer where the row type is an int
-            var sourceType = TypeResolver.Resolve(J.Primitive.box(inputPhysType.getJavaRowType()));
+            var sourceType = ClrTypes.Resolve(J.Primitive.box(inputPhysType.getJavaRowType()));
             source = ClrEnumUtils.BoxRows(inputPhysType, source);
 
             // orders the rows of a partition, and is what EXCLUDE and RANK ask whether two rows are peers
@@ -224,7 +224,7 @@ namespace Apache.Calcite.Linq.Rel
             var accPhysType = ClrEnumerableAggregateBase.AccumulatorPhysType(typeFactory, typeFactory.createSyntheticType(stateTypes));
             ClrEnumerableAggregateBase.DeclareParentAccumulator(initExpressions, initBlock, accPhysType);
 
-            var accType = TypeResolver.Resolve(accPhysType.getJavaRowType());
+            var accType = ClrTypes.Resolve(accPhysType.getJavaRowType());
             var acc_ = J.Expressions.parameter(accPhysType.getJavaRowType(), "acc");
             loop.Accumulator = acc_;
 
@@ -311,7 +311,7 @@ namespace Apache.Calcite.Linq.Rel
             var selectorBuilder = new J.BlockBuilder();
             selectorBuilder.add(J.Expressions.return_(null, outputPhysType.record(outputRow)));
 
-            var outputType = TypeResolver.Resolve(outputPhysType.getJavaRowType());
+            var outputType = ClrTypes.Resolve(outputPhysType.getJavaRowType());
             var selector = loop.Lambda(translator, selectorBuilder.toBlock(), outputType, accType);
 
             // the partition key, which is the one thing here that reads a row outside the loop
@@ -349,11 +349,11 @@ namespace Apache.Calcite.Linq.Rel
         /// <param name="expression"></param>
         /// <param name="type"></param>
         /// <returns></returns>
-        static ParameterExpression Hoist(ExpressionTranslator translator, List<ParameterExpression> variables, List<Expression> body, J.ParameterExpression parameter, J.Expression expression, Type type)
+        static ParameterExpression Hoist(LixToClrTranslator translator, List<ParameterExpression> variables, List<Expression> body, J.ParameterExpression parameter, J.Expression expression, Type type)
         {
             var variable = Expression.Variable(type, parameter.name);
             variables.Add(variable);
-            body.Add(Expression.Assign(variable, JavaCast.To(translator.Translate(expression), type)));
+            body.Add(Expression.Assign(variable, ClrEnumUtils.Convert(translator.Translate(expression), type)));
             translator.Bind(parameter, variable);
 
             return variable;
@@ -371,7 +371,7 @@ namespace Apache.Calcite.Linq.Rel
         /// The key <c>getPartitionIterator</c> builds, which is a synthetic record for several keys and the
         /// field itself for one.
         /// </remarks>
-        static LambdaExpression? PartitionSelector(ExpressionTranslator translator, PhysType inputPhysType, Group group, Type sourceType)
+        static LambdaExpression? PartitionSelector(LixToClrTranslator translator, PhysType inputPhysType, Group group, Type sourceType)
         {
             if (group.keys.isEmpty())
                 return null;
@@ -405,17 +405,17 @@ namespace Apache.Calcite.Linq.Rel
             // the rows arrive boxed, because the partition they go into is an Object[], so the row is unboxed
             // on the way in exactly as a join's predicate unboxes its two
             var parameter = Expression.Parameter(sourceType, "v");
-            var row = Expression.Variable(TypeResolver.Resolve(inputPhysType.getJavaRowType()), "v");
+            var row = Expression.Variable(ClrTypes.Resolve(inputPhysType.getJavaRowType()), "v");
             translator.Bind(v_, row);
 
             // the key is a map's, so a key that is a primitive is boxed the way the type factory says: what
             // hashes it is a java.util.HashMap, and a boxed CLR int is not the same object as a java.lang.Integer
-            var keyType = TypeResolver.Resolve(J.Primitive.box(key_.getType()));
+            var keyType = ClrTypes.Resolve(J.Primitive.box(key_.getType()));
 
             return Expression.Lambda(
                 typeof(Func<,>).MakeGenericType(sourceType, keyType),
                 Expression.Block(keyType, [row],
-                    Expression.Assign(row, JavaCast.To(parameter, row.Type)),
+                    Expression.Assign(row, ClrEnumUtils.Convert(parameter, row.Type)),
                     translator.TranslateBody(builder.toBlock(), keyType)),
                 parameter);
         }
@@ -718,10 +718,10 @@ namespace Apache.Calcite.Linq.Rel
             /// <param name="returnType"></param>
             /// <param name="accumulatorType">The accumulator's type, or null where the lambda does not take one.</param>
             /// <returns></returns>
-            public LambdaExpression Lambda(ExpressionTranslator translator, J.BlockStatement block, Type returnType, Type? accumulatorType)
+            public LambdaExpression Lambda(LixToClrTranslator translator, J.BlockStatement block, Type returnType, Type? accumulatorType)
             {
                 var frame = Expression.Parameter(typeof(WindowFrame), "frame");
-                var rowType = TypeResolver.Resolve(inputPhysType.getJavaRowType());
+                var rowType = ClrTypes.Resolve(inputPhysType.getJavaRowType());
 
                 // fresh variables each time, because a lambda declares its own and two of them are siblings
                 var rows = Expression.Variable(typeof(object[]), "rows");
@@ -764,7 +764,7 @@ namespace Apache.Calcite.Linq.Rel
                     Expression.Assign(partitionRowCount, Expression.Property(frame, nameof(WindowFrame.PartitionRowCount))),
                     Expression.Assign(maxX, Expression.Subtract(partitionRowCount, Expression.Constant(1))),
                     Expression.Assign(position, Expression.Property(frame, nameof(WindowFrame.Position))),
-                    Expression.Assign(row, JavaCast.To(Expression.ArrayAccess(rows, index), rowType)),
+                    Expression.Assign(row, ClrEnumUtils.Convert(Expression.ArrayAccess(rows, index), rowType)),
                     translator.TranslateBody(block, returnType),
                 };
 

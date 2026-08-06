@@ -20,6 +20,8 @@ dotnet add package Apache.Calcite.Adapter.AdoNet
 dotnet add package Apache.Calcite.Data
 ```
 
+Targets **.NET 8**, and is verified on **.NET 8** and **.NET 10**.
+
 ## Quick start — JSON model
 
 Wire up a SQL Server database as a Calcite schema using the JSON model:

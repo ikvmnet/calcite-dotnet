@@ -1,13 +1,11 @@
 using System;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using java.util.function;
 
 using org.apache.calcite.adapter.enumerable;
-using org.apache.calcite.linq4j.function;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
@@ -163,7 +161,7 @@ namespace Apache.Calcite.Linq.Rel
             var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
             var leftType = leftSource.Type.GetGenericArguments()[0];
             var rightType = rightSource.Type.GetGenericArguments()[0];
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             var leftKey = NullAwareAccessor(implementor, leftResult.PhysType, joinInfo.leftKeys, leftType);
             var rightKey = NullAwareAccessor(implementor, rightResult.PhysType, joinInfo.rightKeys, rightType);
@@ -198,8 +196,8 @@ namespace Apache.Calcite.Linq.Rel
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
 
             var physType = leftResult.PhysType;
-            var leftType = TypeResolver.Resolve(leftResult.PhysType.getJavaRowType());
-            var rightType = TypeResolver.Resolve(rightResult.PhysType.getJavaRowType());
+            var leftType = ClrEnumerableRelImplementor.RowType(leftResult.PhysType);
+            var rightType = ClrEnumerableRelImplementor.RowType(rightResult.PhysType);
 
             var keyPhysType = leftResult.PhysType.project(joinInfo.leftKeys, JavaRowFormat.LIST);
             var leftKey = NullAwareAccessor(implementor, leftResult.PhysType, joinInfo.leftKeys, leftType);
@@ -245,7 +243,7 @@ namespace Apache.Calcite.Linq.Rel
             var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
             var leftType = leftSource.Type.GetGenericArguments()[0];
             var rightType = rightSource.Type.GetGenericArguments()[0];
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             var rexBuilder = getCluster().getRexBuilder();
 

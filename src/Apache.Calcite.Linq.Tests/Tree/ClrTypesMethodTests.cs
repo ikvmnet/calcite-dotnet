@@ -18,7 +18,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
 {
 
     [TestClass]
-    public class MethodResolverTests
+    public class ClrTypesMethodTests
     {
 
         /// <summary>
@@ -33,7 +33,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
         public void ShouldResolveInstanceMethodOnInterface()
         {
             // ExtendedEnumerable.where(Predicate1), which every filter in the port calls
-            var m = MethodResolver.Resolve(BuiltInMethod.WHERE.method);
+            var m = ClrTypes.Resolve(BuiltInMethod.WHERE.method);
 
             m.Name.Should().Be("where");
             m.DeclaringType.Should().Be(typeof(ExtendedEnumerable));
@@ -46,7 +46,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
         {
             // Utilities.compare is overloaded for every primitive and for Comparable, so this fails if the
             // parameter types are not being matched
-            var m = MethodResolver.Resolve(((Class)typeof(Utilities)).getDeclaredMethod("compare", [Integer.TYPE, Integer.TYPE]));
+            var m = ClrTypes.Resolve(((Class)typeof(Utilities)).getDeclaredMethod("compare", [Integer.TYPE, Integer.TYPE]));
 
             m.Name.Should().Be("compare");
             m.GetParameters().Should().HaveCount(2);
@@ -58,7 +58,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
         public void ShouldResolveBoxingMethod()
         {
             // the translator emits this in place of a convert from int to Integer, which is not a CLR conversion
-            var m = MethodResolver.Resolve(((Class)typeof(Integer)).getDeclaredMethod("valueOf", [Integer.TYPE]));
+            var m = ClrTypes.Resolve(((Class)typeof(Integer)).getDeclaredMethod("valueOf", [Integer.TYPE]));
 
             m.IsStatic.Should().BeTrue();
             m.ReturnType.Should().Be(typeof(Integer));
@@ -70,7 +70,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
         {
             // java.lang.String is System.String, which has no toUpperCase, so the method is static on a helper
             // and takes the receiver first. A translated call has to pass the target as argument zero.
-            var m = MethodResolver.Resolve(((Class)typeof(java.lang.String)).getDeclaredMethod("toUpperCase", []));
+            var m = ClrTypes.Resolve(((Class)typeof(java.lang.String)).getDeclaredMethod("toUpperCase", []));
 
             m.IsStatic.Should().BeTrue();
             m.GetParameters().Should().ContainSingle()
@@ -83,7 +83,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
         {
             // IKVM leaves java.lang.Comparable empty and extends System.IComparable, and an interface does not
             // report what it inherits, so this only resolves if the base interfaces are walked
-            var m = MethodResolver.Resolve(((Class)typeof(java.lang.Comparable)).getDeclaredMethod("compareTo", [typeof(object)]));
+            var m = ClrTypes.Resolve(((Class)typeof(java.lang.Comparable)).getDeclaredMethod("compareTo", [typeof(object)]));
 
             m.Name.Should().Be("CompareTo");
             m.DeclaringType.Should().Be(typeof(IComparable));
@@ -92,16 +92,16 @@ namespace Apache.Calcite.Linq.Tests.Tree
         [TestMethod]
         public void ShouldResolveClrMethodDeclaredToJava()
         {
-            var m = MethodResolver.Resolve(((Class)typeof(MethodResolverTests)).getDeclaredMethod(nameof(Twice), [typeof(int)]));
+            var m = ClrTypes.Resolve(((Class)typeof(ClrTypesMethodTests)).getDeclaredMethod(nameof(Twice), [typeof(int)]));
 
-            m.Should().BeSameAs(typeof(MethodResolverTests).GetMethod(nameof(Twice)));
+            m.Should().BeSameAs(typeof(ClrTypesMethodTests).GetMethod(nameof(Twice)));
             m.Invoke(null, [21]).Should().Be(42);
         }
 
         [TestMethod]
         public void ShouldResolveClrMethodWithReferenceParameters()
         {
-            var m = MethodResolver.Resolve(((Class)typeof(MethodResolverTests)).getDeclaredMethod(nameof(Describe), [typeof(DbConnection), typeof(string)]));
+            var m = ClrTypes.Resolve(((Class)typeof(ClrTypesMethodTests)).getDeclaredMethod(nameof(Describe), [typeof(DbConnection), typeof(string)]));
 
             m.GetParameters()[0].ParameterType.Should().Be(typeof(DbConnection));
             m.GetParameters()[1].ParameterType.Should().Be(typeof(string));
@@ -137,7 +137,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
 
                 try
                 {
-                    MethodResolver.Resolve(method);
+                    ClrTypes.Resolve(method);
                     resolved++;
                 }
                 catch (System.Exception e)

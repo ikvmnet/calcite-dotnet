@@ -1,8 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using java.util.function;
@@ -11,7 +9,6 @@ using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
-using org.apache.calcite.sql;
 using org.apache.calcite.util;
 
 using J = org.apache.calcite.linq4j.tree;
@@ -108,7 +105,7 @@ namespace Apache.Calcite.Linq.Rel
             // which boxes both of its parameter types. Every other join here boxes its sequences for that
             // reason; this one did not, and a correlate whose sub-plan yields one primitive column — an
             // EXISTS, whose right side is a bare boolean — is where the two types met and disagreed.
-            var corrParameter = Expression.Parameter(TypeResolver.Resolve(J.Primitive.box(corrVarType)), getCorrelVariable());
+            var corrParameter = Expression.Parameter(ClrTypes.Resolve(J.Primitive.box(corrVarType)), getCorrelVariable());
             implementor.Translator.Bind(corrArg, corrParameter);
 
             implementor.RegisterCorrelVariable(getCorrelVariable(), corrArg, corrBlock, leftResult.PhysType);
@@ -124,7 +121,7 @@ namespace Apache.Calcite.Linq.Rel
             var leftType = leftSource.Type.GetGenericArguments()[0];
             var rightType = rightSource.Type.GetGenericArguments()[0];
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             var inner = Expression.Lambda(
                 typeof(Func<,>).MakeGenericType(leftType, rightSource.Type),

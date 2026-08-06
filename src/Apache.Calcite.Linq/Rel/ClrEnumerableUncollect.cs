@@ -1,6 +1,5 @@
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using org.apache.calcite.adapter.enumerable;
@@ -115,14 +114,14 @@ namespace Apache.Calcite.Linq.Rel
                     org.apache.calcite.linq4j.tree.Expressions.constant(java.lang.Boolean.valueOf(withOrdinality)),
                     org.apache.calcite.linq4j.tree.Expressions.constant(types));
 
-            var sourceType = TypeResolver.Resolve(result.PhysType.getJavaRowType());
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var sourceType = ClrTypes.Resolve(result.PhysType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             return implementor.Result(physType,
                 Expression.Call(null,
                     ClrBuiltInMethod.SelectMany.MakeGenericMethod(sourceType, rowType),
                     result.Expression,
-                    JavaCast.To(implementor.Translator.Translate(lambda), typeof(org.apache.calcite.linq4j.function.Function1))));
+                    ClrEnumUtils.Convert(implementor.Translator.Translate(lambda), typeof(org.apache.calcite.linq4j.function.Function1))));
         }
 
     }

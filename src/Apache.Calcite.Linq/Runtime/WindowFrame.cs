@@ -5,7 +5,12 @@ namespace Apache.Calcite.Linq.Runtime
     /// What the pieces of a window aggregate read about the row they are being evaluated for.
     /// </summary>
     /// <remarks>
-    /// Calcite's <c>EnumerableWindow</c> declares these as local variables of the generated method and the
+    /// The values <c>WinAggFrameContext</c> describes -- index, startIndex, endIndex, hasRows and the two row
+    /// counts -- held rather than described. That interface is Calcite's at generation time, its members
+    /// answering with an <c>Expression</c> standing for each; there is no runtime counterpart to mirror,
+    /// because Janino writes them into the generated method as plain locals.
+    ///
+    /// <para>Calcite's <c>EnumerableWindow</c> declares these as local variables of the generated method and the
     /// aggregate implementors write expressions naming them. <see cref="ClrEnumerableDefaults.Window"/> owns the loop
     /// instead, so they are values it hands to the lambdas; one instance is reused for every row, exactly as
     /// one set of variables is.

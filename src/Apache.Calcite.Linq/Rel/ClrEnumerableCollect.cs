@@ -1,7 +1,6 @@
 using System;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using org.apache.calcite.adapter.enumerable;
@@ -68,7 +67,7 @@ namespace Apache.Calcite.Linq.Rel
 
             var collectionType = getCollectionType();
             var source = result.Expression;
-            var sourceType = TypeResolver.Resolve(result.PhysType.getJavaRowType());
+            var sourceType = ClrTypes.Resolve(result.PhysType.getJavaRowType());
 
             Expression collection;
 

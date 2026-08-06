@@ -1,6 +1,5 @@
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using org.apache.calcite.adapter.enumerable;
@@ -79,7 +78,7 @@ namespace Apache.Calcite.Linq.Rel
             // the seed's own format, and not re-optimised: a repeat union yields the rows of its two inputs
             // unchanged, so its physical type is theirs
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), seedResult.Format, false);
-            var rowType = TypeResolver.Resolve(seedResult.PhysType.getJavaRowType());
+            var rowType = ClrEnumerableRelImplementor.RowType(seedResult.PhysType);
 
             body.Add(
                 Expression.Call(null,
@@ -94,9 +93,9 @@ namespace Apache.Calcite.Linq.Rel
             return implementor.Result(physType, body.Count == 1 ? body[0] : Expression.Block(body));
         }
 
-        static readonly System.Reflection.MethodInfo DataContextGetRootSchema = MethodResolver.Resolve(org.apache.calcite.util.BuiltInMethod.DATA_CONTEXT_GET_ROOT_SCHEMA.method);
-        static readonly System.Reflection.MethodInfo SchemaPlusAdd = MethodResolver.Resolve(org.apache.calcite.util.BuiltInMethod.SCHEMA_PLUS_ADD_TABLE.method);
-        static readonly System.Reflection.MethodInfo SchemaPlusRemoveTable = MethodResolver.Resolve(org.apache.calcite.util.BuiltInMethod.SCHEMA_PLUS_REMOVE_TABLE.method);
+        static readonly System.Reflection.MethodInfo DataContextGetRootSchema = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.DATA_CONTEXT_GET_ROOT_SCHEMA.method);
+        static readonly System.Reflection.MethodInfo SchemaPlusAdd = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.SCHEMA_PLUS_ADD_TABLE.method);
+        static readonly System.Reflection.MethodInfo SchemaPlusRemoveTable = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.SCHEMA_PLUS_REMOVE_TABLE.method);
 
     }
 

@@ -1,6 +1,9 @@
 using System;
+using System.Reflection;
 
 using Apache.Calcite.Linq.Tree;
+
+using J = org.apache.calcite.linq4j.tree;
 
 namespace Apache.Calcite.Linq.Runtime
 {
@@ -29,7 +32,13 @@ namespace Apache.Calcite.Linq.Runtime
                 return typed;
 
             if (value != null && typeof(T).IsValueType)
-                return (T)JavaCast.Unwrap(value, typeof(T));
+                return (T)JavaValues.Unwrap(value, typeof(T));
+
+            // the other way round, and the case a table of this runtime makes: its rows hold a CLR int where
+            // the plan's row type is java.lang.Integer, and a cast between those two is not a conversion any
+            // more than the one above is
+            if (value != null && value.GetType().IsValueType && ClrEnumUtils.PrimitiveOf(typeof(T)) is Type primitive)
+                return (T)JavaValues.Box(value, primitive);
 
             return (T)value!;
         }
@@ -50,9 +59,65 @@ namespace Apache.Calcite.Linq.Runtime
             if (value == null)
                 return null!;
 
-            return typeof(T).IsValueType ? JavaCast.Box(value, typeof(T)) : value;
+            return typeof(T).IsValueType ? JavaValues.Box(value, typeof(T)) : value;
         }
 
+
+
+        /// <summary>
+        /// Returns <paramref name="value"/> as the CLR primitive <paramref name="type"/>.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        /// <exception cref="NotSupportedException"></exception>
+        /// <remarks>
+        /// A linq4j constant holds its value boxed even where its type is a primitive, because Java has
+        /// nowhere else to put it. The unboxing that a tree would do at runtime is done here instead, once.
+        /// </remarks>
+        public static object Unwrap(object value, Type type)
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            ArgumentNullException.ThrowIfNull(type);
+
+            if (J.Primitive.of((java.lang.Class)type) is not J.Primitive primitive)
+                throw new NotSupportedException($"'{type}' is not a Java primitive.");
+
+            var name = primitive.primitiveName + "Value";
+            var method = value.GetType().GetMethod(name, BindingFlags.Public | BindingFlags.Instance, null, [], null)
+                ?? throw new NotSupportedException($"'{value.GetType()}' has no {name}().");
+
+            return method.Invoke(value, [])
+                ?? throw new NotSupportedException($"{name}() on '{value.GetType()}' gave nothing.");
+        }
+
+        /// <summary>
+        /// Returns <paramref name="value"/> boxed as Java boxes it.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        /// <exception cref="NotSupportedException"></exception>
+        /// <remarks>
+        /// The counterpart of <see cref="Unwrap"/>, and needed for the same reason: a value handed back to
+        /// Calcite as an object has to be a java.lang.Integer rather than a boxed CLR int, because that is what
+        /// the type factory says the value is and what everything reading it expects.
+        /// </remarks>
+        public static object Box(object value, Type type)
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            ArgumentNullException.ThrowIfNull(type);
+
+            if (J.Primitive.of((java.lang.Class)type) is not J.Primitive primitive)
+                return value;
+
+            var box = ClrTypes.FromClass(primitive.boxClass);
+            var valueOf = box.GetMethod("valueOf", BindingFlags.Public | BindingFlags.Static, null, [type], null)
+                ?? throw new NotSupportedException($"'{box}' has no valueOf for '{type}'.");
+
+            return valueOf.Invoke(null, [value])
+                ?? throw new NotSupportedException($"valueOf on '{box}' gave nothing.");
+        }
     }
 
 }

@@ -1,11 +1,7 @@
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
-using Apache.Calcite.Linq.Tree;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
-using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
 
 namespace Apache.Calcite.Linq.Rel
@@ -53,7 +49,7 @@ namespace Apache.Calcite.Linq.Rel
                     continue;
                 }
 
-                var rowType = TypeResolver.Resolve(result.PhysType.getJavaRowType());
+                var rowType = ClrEnumerableRelImplementor.RowType(result.PhysType);
 
                 unionExp = all
                     ? Expression.Call(null, ClrBuiltInMethod.Concat.MakeGenericMethod(rowType), unionExp, result.Expression)

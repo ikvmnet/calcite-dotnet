@@ -1,6 +1,5 @@
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using org.apache.calcite.adapter.enumerable;
@@ -8,7 +7,6 @@ using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
 using org.apache.calcite.rex;
-using org.apache.calcite.util;
 
 using J = org.apache.calcite.linq4j.tree;
 
@@ -74,7 +72,7 @@ namespace Apache.Calcite.Linq.Rel
 
             var inputPhysType = result.PhysType;
             var pair = inputPhysType.generateCollationKey(collation.getFieldCollations());
-            var sourceType = TypeResolver.Resolve(inputPhysType.getJavaRowType());
+            var sourceType = ClrTypes.Resolve(inputPhysType.getJavaRowType());
 
             var keySelector = implementor.Translator.TranslateSelector((J.Expression)pair.getKey(), sourceType);
             var comparator = pair.getValue() == null

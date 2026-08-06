@@ -35,6 +35,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Apache.Calcite.Data\Apache.Calcite.Data.csproj" />
+        <ProjectReference Include="..\Apache.Calcite.Linq\Apache.Calcite.Linq.csproj" />
     </ItemGroup>
 
 </Project>

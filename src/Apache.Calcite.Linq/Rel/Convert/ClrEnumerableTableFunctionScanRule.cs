@@ -5,7 +5,6 @@ using org.apache.calcite.rel;
 using org.apache.calcite.rel.convert;
 using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.logical;
-using org.apache.calcite.rex;
 
 namespace Apache.Calcite.Linq.Rel.Convert
 {

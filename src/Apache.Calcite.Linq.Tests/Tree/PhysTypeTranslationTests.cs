@@ -54,7 +54,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
         /// <returns></returns>
         static Func<object[], object[], int> Comparator(J.Expression expression)
         {
-            var translated = new ExpressionTranslator().Translate(expression);
+            var translated = new LixToClrTranslator().Translate(expression);
 
             translated.Type.Should().Be(typeof(java.util.Comparator), "an anonymous class is wrapped back into its interface");
 
@@ -69,7 +69,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
             var row = J.Expressions.parameter(physType.getJavaRowType(), "row");
             var target = Expression.Parameter(typeof(object[]), "row");
 
-            var translator = new ExpressionTranslator();
+            var translator = new LixToClrTranslator();
             translator.Bind(row, target);
 
             var name = translator.Translate(physType.fieldReference(row, 1));
@@ -81,7 +81,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
         [TestMethod]
         public void ShouldTranslateRecord()
         {
-            var translator = new ExpressionTranslator();
+            var translator = new LixToClrTranslator();
             var record = translator.Translate(
                 physType.record(java.util.Arrays.asList([
                     J.Expressions.constant(Integer.valueOf(7)),
@@ -98,7 +98,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
             var row = J.Expressions.parameter(physType.getJavaRowType(), "row");
             var selector = physType.generateSelector(row, java.util.Arrays.asList([Integer.valueOf(1)]));
 
-            var translated = SamAdapters.Unwrap(new ExpressionTranslator().Translate(selector))!;
+            var translated = AnonymousClasses.Unwrap(new LixToClrTranslator().Translate(selector))!;
             var apply = translated.Compile();
 
             apply.DynamicInvoke([new object[] { Integer.valueOf(7), "SMITH" }]).Should().Be("SMITH");
@@ -147,7 +147,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
         public void ShouldTranslateAccessor()
         {
             var accessor = physType.generateAccessor(java.util.Arrays.asList([Integer.valueOf(0)]));
-            var translated = SamAdapters.Unwrap(new ExpressionTranslator().Translate(accessor))!;
+            var translated = AnonymousClasses.Unwrap(new LixToClrTranslator().Translate(accessor))!;
 
             var apply = translated.Compile();
             var key = apply.DynamicInvoke([new object[] { Integer.valueOf(7), "SMITH" }]);
@@ -187,7 +187,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
                 java.util.Arrays.asList([Integer.valueOf(0)]),
                 JavaRowFormat.ARRAY);
 
-            var translated = new ExpressionTranslator().Translate(selector);
+            var translated = new LixToClrTranslator().Translate(selector);
 
             translated.Should().NotBeAssignableTo<LambdaExpression>();
             translated.Type.Should().Be(typeof(org.apache.calcite.linq4j.function.Function1));

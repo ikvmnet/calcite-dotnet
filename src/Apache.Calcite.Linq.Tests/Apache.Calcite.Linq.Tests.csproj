@@ -1,7 +1,7 @@
 ﻿<Project Sdk="MSTest.Sdk/3.10.4">
 
     <PropertyGroup>
-        <TargetFrameworks>net10.0</TargetFrameworks>
+        <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
         <LangVersion>latest</LangVersion>
         <Nullable>enable</Nullable>
         <TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
@@ -19,6 +19,7 @@
              oracle ClrEnumerableRowFormatTests can have: Janino cannot name a CLR class, so a table function
              of this project's own gives EnumerableConvention no plan to compare against. -->
         <MavenReference Include="org.apache.calcite:calcite-testkit" Version="1.42.0" />
+        <MavenReference Include="org.apache.calcite:calcite-server" Version="1.42.0" />
     </ItemGroup>
 
     <ItemGroup>

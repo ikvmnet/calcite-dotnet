@@ -1,24 +1,16 @@
 using System;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq.Runtime;
 using Apache.Calcite.Linq.Tree;
 
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.adapter.enumerable.impl;
-using org.apache.calcite.adapter.java;
-using org.apache.calcite.linq4j;
-using org.apache.calcite.linq4j.function;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.core;
-using org.apache.calcite.rel.type;
-using org.apache.calcite.rex;
-using org.apache.calcite.sql;
 using org.apache.calcite.util;
 
 using J = org.apache.calcite.linq4j.tree;
-
 
 namespace Apache.Calcite.Linq.Rel
 {
@@ -79,8 +71,8 @@ namespace Apache.Calcite.Linq.Rel
 
             var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.PreferCustom());
             var inputPhysType = result.PhysType;
-            var sourceType = TypeResolver.Resolve(inputPhysType.getJavaRowType());
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var sourceType = ClrEnumerableRelImplementor.RowType(inputPhysType);
+            var rowType = ClrEnumerableRelImplementor.RowType(physType);
 
             var keyPhysType = inputPhysType.project(groupSet.asList(), getGroupType() != Group.SIMPLE, JavaRowFormat.LIST);
             var groupCount = getGroupCount();
@@ -97,7 +89,7 @@ namespace Apache.Calcite.Linq.Rel
             var accPhysType = AccumulatorPhysType(typeFactory, typeFactory.createSyntheticType(aggStateTypes));
             DeclareParentAccumulator(initExpressions, initBlock, accPhysType);
 
-            var accType = TypeResolver.Resolve(accPhysType.getJavaRowType());
+            var accType = ClrTypes.Resolve(accPhysType.getJavaRowType());
             var accumulatorInitializer = Function0Of(
                 Expression.Lambda(
                     typeof(Func<>).MakeGenericType(accType),
@@ -123,7 +115,7 @@ namespace Apache.Calcite.Linq.Rel
             if (groupCount > 0)
             {
                 key_ = J.Expressions.parameter(keyPhysType.getJavaRowType(), "key");
-                keyParameter = Expression.Parameter(TypeResolver.Resolve(keyPhysType.getJavaRowType()), "key");
+                keyParameter = Expression.Parameter(ClrTypes.Resolve(keyPhysType.getJavaRowType()), "key");
                 implementor.Translator.Bind(key_, keyParameter);
 
                 for (int j = 0; j < groupCount; j++)

@@ -3,7 +3,9 @@ using System.Linq.Expressions;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.linq4j.function;
 
-namespace Apache.Calcite.Linq.Tree
+using Apache.Calcite.Linq.Tree;
+
+namespace Apache.Calcite.Linq
 {
 
     /// <summary>
@@ -35,7 +37,7 @@ namespace Apache.Calcite.Linq.Tree
             if (physType.getFormat() == targetFormat)
                 return source;
 
-            var sourceType = TypeResolver.Resolve(physType.getJavaRowType());
+            var sourceType = ClrTypes.Resolve(physType.getJavaRowType());
             var row = org.apache.calcite.linq4j.tree.Expressions.parameter(physType.getJavaRowType(), "o");
             var fields = new java.util.ArrayList();
             for (int i = 0; i < physType.getRowType().getFieldCount(); i++)
@@ -44,7 +46,7 @@ namespace Apache.Calcite.Linq.Tree
             var selector = implementor.Translator.TranslateSelector(physType.generateSelector(row, fields, targetFormat), sourceType);
 
             return System.Linq.Expressions.Expression.Call(null,
-                Runtime.ClrBuiltInMethod.Select.MakeGenericMethod(sourceType, selector.ReturnType),
+                ClrBuiltInMethod.Select.MakeGenericMethod(sourceType, selector.ReturnType),
                 source,
                 selector);
         }
