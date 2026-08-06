@@ -7,7 +7,9 @@ using J = org.apache.calcite.linq4j.tree;
 
 using Apache.Calcite.Linq.Runtime;
 
-namespace Apache.Calcite.Linq.Tree
+using Apache.Calcite.Linq.Tree;
+
+namespace Apache.Calcite.Linq
 {
 
     /// <summary>

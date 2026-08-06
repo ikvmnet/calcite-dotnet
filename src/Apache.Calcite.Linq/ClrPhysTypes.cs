@@ -3,9 +3,9 @@ using System.Linq.Expressions;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.linq4j.function;
 
-using Apache.Calcite.Linq;
+using Apache.Calcite.Linq.Tree;
 
-namespace Apache.Calcite.Linq.Tree
+namespace Apache.Calcite.Linq
 {
 
     /// <summary>

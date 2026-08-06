@@ -10,9 +10,9 @@ using org.apache.calcite.rex;
 
 using J = org.apache.calcite.linq4j.tree;
 
-using Apache.Calcite.Linq;
+using Apache.Calcite.Linq.Tree;
 
-namespace Apache.Calcite.Linq.Tree
+namespace Apache.Calcite.Linq
 {
 
     /// <summary>
