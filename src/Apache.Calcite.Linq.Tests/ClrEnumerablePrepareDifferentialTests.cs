@@ -195,7 +195,7 @@ namespace Apache.Calcite.Linq.Tests
         [DataRow("SELECT SUM(N) FROM NUMS")]
         [DataRow("SELECT N FROM NUMS WHERE N > 1 ORDER BY N")]
         [DataRow("SELECT DISTINCT N FROM NUMS ORDER BY N")]
-        [DataRow("SELECT a.N, b.N FROM NUMS a JOIN ONE b ON a.N = b.N ORDER BY a.N")]
+        [DataRow("SELECT a.N, b.N FROM NUMS a JOIN NUMS b ON a.N = b.N ORDER BY a.N")]
         [DataRow("SELECT `name` FROM HR.`emps` ORDER BY `empid`")]
         [DataRow("SELECT `deptno`, COUNT(*) FROM HR.`emps` GROUP BY `deptno` ORDER BY `deptno`")]
         [DataRow("SELECT e.`name`, d.`name` FROM HR.`emps` e JOIN HR.`depts` d ON e.`deptno` = d.`deptno` ORDER BY e.`name`")]

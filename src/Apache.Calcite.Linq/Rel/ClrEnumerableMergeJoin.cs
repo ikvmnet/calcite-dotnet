@@ -394,8 +394,12 @@ namespace Apache.Calcite.Linq.Rel
 
             var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.PreferArray());
 
-            var left_ = J.Expressions.parameter(leftResult.PhysType.getJavaRowType(), "left");
-            var right_ = J.Expressions.parameter(rightResult.PhysType.getJavaRowType(), "right");
+            // boxed for the same reason the sequences below are, and it has to be the same decision: the key
+            // selector is a lambda over one row of the sequence handed to MergeJoin, so a parameter typed off
+            // the physical type reads int where the sequence holds Integer, and only a one-column input tells
+            // them apart
+            var left_ = J.Expressions.parameter(J.Primitive.box(leftResult.PhysType.getJavaRowType()), "left");
+            var right_ = J.Expressions.parameter(J.Primitive.box(rightResult.PhysType.getJavaRowType()), "right");
 
             // each key field is read at the type the two sides have in common, so that one comparator can
             // order both inputs
