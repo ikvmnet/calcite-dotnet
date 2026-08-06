@@ -35,7 +35,7 @@ namespace Apache.Calcite.Linq.Tree
             if (physType.getFormat() == targetFormat)
                 return source;
 
-            var sourceType = TypeResolver.Resolve(physType.getJavaRowType());
+            var sourceType = ClrTypes.Resolve(physType.getJavaRowType());
             var row = org.apache.calcite.linq4j.tree.Expressions.parameter(physType.getJavaRowType(), "o");
             var fields = new java.util.ArrayList();
             for (int i = 0; i < physType.getRowType().getFieldCount(); i++)

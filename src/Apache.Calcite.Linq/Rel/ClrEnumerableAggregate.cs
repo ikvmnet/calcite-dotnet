@@ -97,7 +97,7 @@ namespace Apache.Calcite.Linq.Rel
             var accPhysType = AccumulatorPhysType(typeFactory, typeFactory.createSyntheticType(aggStateTypes));
             DeclareParentAccumulator(initExpressions, initBlock, accPhysType);
 
-            var accType = TypeResolver.Resolve(accPhysType.getJavaRowType());
+            var accType = ClrTypes.Resolve(accPhysType.getJavaRowType());
             var accumulatorInitializer = Function0Of(
                 Expression.Lambda(
                     typeof(Func<>).MakeGenericType(accType),
@@ -123,7 +123,7 @@ namespace Apache.Calcite.Linq.Rel
             if (groupCount > 0)
             {
                 key_ = J.Expressions.parameter(keyPhysType.getJavaRowType(), "key");
-                keyParameter = Expression.Parameter(TypeResolver.Resolve(keyPhysType.getJavaRowType()), "key");
+                keyParameter = Expression.Parameter(ClrTypes.Resolve(keyPhysType.getJavaRowType()), "key");
                 implementor.Translator.Bind(key_, keyParameter);
 
                 for (int j = 0; j < groupCount; j++)

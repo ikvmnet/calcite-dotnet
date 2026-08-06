@@ -77,7 +77,7 @@ namespace Apache.Calcite.Linq.Tree
             for (int i = 0; i < fields.Length; i++)
             {
                 var field = (J.Types.RecordField)recordFields.get(i);
-                types[i] = TypeResolver.Resolve(field.getType());
+                types[i] = ClrTypes.Resolve(field.getType());
                 fields[i] = builder.DefineField(field.getName(), types[i], FieldAttributes.Public);
             }
 

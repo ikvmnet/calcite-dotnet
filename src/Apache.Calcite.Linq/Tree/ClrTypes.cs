@@ -1,24 +1,95 @@
 using System;
+using System.Linq.Expressions;
 using System.Reflection;
+
+using J = org.apache.calcite.linq4j.tree;
+using JavaType = java.lang.reflect.Type;
 
 namespace Apache.Calcite.Linq.Tree
 {
 
     /// <summary>
-    /// Resolves the <see cref="java.lang.reflect.Method"/> that a linq4j call carries to the
-    /// <see cref="MethodInfo"/> the translated <see cref="System.Linq.Expressions.Expression"/> calls.
+    /// Reflection over the types, methods and fields a linq4j tree names, answered for the CLR.
     /// </summary>
     /// <remarks>
-    /// The other direction of this is already established: <c>AdoToEnumerableConverter</c> reaches a .NET
-    /// method from a linq4j tree with <c>((Class)typeof(X)).getDeclaredMethod(...)</c>. Both directions work
-    /// because IKVM compiles a Java class to a CLR type whose methods keep their Java names and parameter
-    /// types, so a method is found by the name and signature it already has.
+    /// What <c>Types</c> is in linq4j, for a tree that will run here rather than be compiled as Java.
+    /// Calcite asks it what runtime class a <c>Type</c> stands for, and which method or field a name and a
+    /// signature resolve to; the answers are the same questions, and the runtime is the difference.
     ///
-    /// <para>The exception is a class IKVM remaps onto a CLR type that already exists, such as
-    /// <c>java.lang.String</c> onto <see cref="string"/>. See <see cref="FromRemappedClass"/>.</para>
+    /// <para><c>Types.toClass</c> can answer with the class it was handed, a Java type already being a
+    /// Java runtime type. Nothing here can: every answer crosses from what Calcite described to what IKVM
+    /// compiled, and a linq4j call's recorded method is advisory besides — Janino resolves the overload
+    /// from the source it writes, so an overload named against one signature and passed another has to be
+    /// resolved again here.</para>
     /// </remarks>
-    static class MethodResolver
+    public static class ClrTypes
     {
+        /// <summary>
+        /// Resolves a Java reflection type to its CLR type.
+        /// </summary>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        /// <exception cref="NotSupportedException"></exception>
+        public static Type Resolve(JavaType type)
+        {
+            ArgumentNullException.ThrowIfNull(type);
+
+            return type switch
+            {
+                java.lang.Class c => FromClass(c),
+                org.apache.calcite.jdbc.JavaTypeFactoryImpl.SyntheticRecordType r => SyntheticRecordEmitter.Emit(r),
+                java.lang.reflect.ParameterizedType p => FromParameterizedType(p),
+                java.lang.reflect.GenericArrayType g => Resolve(g.getGenericComponentType()).MakeArrayType(),
+                _ => throw new NotSupportedException($"Cannot resolve a CLR type for '{type}' ({type.GetType()}).")
+            };
+        }
+
+        /// <summary>
+        /// Resolves a Java class to its CLR type.
+        /// </summary>
+        /// <param name="clazz"></param>
+        /// <returns></returns>
+        /// <exception cref="NotSupportedException"></exception>
+        public static Type FromClass(java.lang.Class clazz)
+        {
+            ArgumentNullException.ThrowIfNull(clazz);
+
+            // IKVM keeps a java.lang.Object of its own for the class object and for `new Object()`, but every
+            // signature it compiles uses System.Object -- java.util.Objects.equals takes two of those, and
+            // java.util.List.get returns one. A tree naming Object means the one in the signatures.
+            if (clazz == ObjectClass)
+                return typeof(object);
+
+            return ikvm.runtime.Util.getInstanceTypeFromClass(clazz)
+                ?? throw new NotSupportedException($"No CLR type backs the Java class '{clazz.getName()}'.");
+        }
+
+        /// <summary>
+        /// <c>java.lang.Object</c>, which does not resolve the way every other class does.
+        /// </summary>
+        static readonly java.lang.Class ObjectClass = (java.lang.Class)typeof(java.lang.Object);
+
+        /// <summary>
+        /// Resolves a parameterized Java type to a closed CLR generic type.
+        /// </summary>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        static Type FromParameterizedType(java.lang.reflect.ParameterizedType type)
+        {
+            var raw = Resolve(type.getRawType());
+
+            // Java erases its generics and IKVM compiles what is left, so Enumerable<Employee> is Enumerable.
+            // linq4j still carries the arguments, and they have nowhere to go.
+            if (raw.IsGenericTypeDefinition == false)
+                return raw;
+
+            var args = type.getActualTypeArguments();
+            var resolved = new Type[args.Length];
+            for (int i = 0; i < args.Length; i++)
+                resolved[i] = Resolve(args[i]);
+
+            return raw.MakeGenericType(resolved);
+        }
 
         const BindingFlags All = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
 
@@ -38,13 +109,13 @@ namespace Apache.Calcite.Linq.Tree
         {
             ArgumentNullException.ThrowIfNull(method);
 
-            var declaring = TypeResolver.FromClass(method.getDeclaringClass());
+            var declaring = ClrTypes.FromClass(method.getDeclaringClass());
             var name = method.getName();
 
             var parameterTypes = method.getParameterTypes();
             var parameters = new Type[parameterTypes.Length];
             for (int i = 0; i < parameterTypes.Length; i++)
-                parameters[i] = TypeResolver.FromClass(parameterTypes[i]);
+                parameters[i] = ClrTypes.FromClass(parameterTypes[i]);
 
             return declaring.GetMethod(name, All, null, parameters, null)
                 ?? Search(declaring, name, parameters, StringComparison.Ordinal)
@@ -252,6 +323,38 @@ namespace Apache.Calcite.Linq.Tree
             }
 
             return found;
+        }
+
+        /// <summary>
+        /// Returns an expression reading <paramref name="field"/> of <paramref name="target"/>, which is null
+        /// for a static field.
+        /// </summary>
+        /// <param name="target"></param>
+        /// <param name="field"></param>
+        /// <returns></returns>
+        /// <exception cref="NotSupportedException"></exception>
+        public static Expression Resolve(Expression? target, J.PseudoField field)
+        {
+            ArgumentNullException.ThrowIfNull(field);
+
+            // an array's length is a field in Java and a property in the CLR
+            if (field is J.ArrayLengthRecordField)
+                return Expression.ArrayLength(target ?? throw new NotSupportedException("An array length needs an array."));
+
+            var declaring = ClrTypes.Resolve(field.getDeclaringClass());
+            var name = field.getName();
+
+            var info = declaring.GetField(name, All);
+            if (info != null)
+                return Expression.Field(info.IsStatic ? null : target, info);
+
+            // IKVM exposes a .NET property to Java as a field of the same name, so a linq4j tree reaching one
+            // of ours reads it the same way it reads a Java field
+            var property = declaring.GetProperty(name, All);
+            if (property != null)
+                return Expression.Property(property.GetMethod?.IsStatic == true ? null : target, property);
+
+            throw new NotSupportedException($"'{declaring}' has no field or property '{name}'.");
         }
 
     }

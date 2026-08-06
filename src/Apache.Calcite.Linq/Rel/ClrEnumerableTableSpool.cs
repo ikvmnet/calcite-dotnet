@@ -103,9 +103,9 @@ namespace Apache.Calcite.Linq.Rel
                     result.Expression));
         }
 
-        static readonly System.Reflection.MethodInfo DataContextGetRootSchema = MethodResolver.Resolve(org.apache.calcite.util.BuiltInMethod.DATA_CONTEXT_GET_ROOT_SCHEMA.method);
-        static readonly System.Reflection.MethodInfo SchemaGetTable = MethodResolver.Resolve(org.apache.calcite.util.BuiltInMethod.SCHEMA_GET_TABLE.method);
-        static readonly System.Reflection.MethodInfo ModifiableTableGetModifiableCollection = MethodResolver.Resolve(org.apache.calcite.util.BuiltInMethod.MODIFIABLE_TABLE_GET_MODIFIABLE_COLLECTION.method);
+        static readonly System.Reflection.MethodInfo DataContextGetRootSchema = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.DATA_CONTEXT_GET_ROOT_SCHEMA.method);
+        static readonly System.Reflection.MethodInfo SchemaGetTable = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.SCHEMA_GET_TABLE.method);
+        static readonly System.Reflection.MethodInfo ModifiableTableGetModifiableCollection = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.MODIFIABLE_TABLE_GET_MODIFIABLE_COLLECTION.method);
 
     }
 

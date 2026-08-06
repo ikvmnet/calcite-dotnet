@@ -434,7 +434,7 @@ namespace Apache.Calcite.Linq.Rel
             var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
             var leftType_ = leftSource.Type.GetGenericArguments()[0];
             var rightType_ = rightSource.Type.GetGenericArguments()[0];
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             var leftKey = implementor.Translator.TranslateSelector(J.Expressions.lambda(leftKeyPhysType.record(leftExpressions), [left_]), leftType_);
             var rightKey = implementor.Translator.TranslateSelector(J.Expressions.lambda(rightKeyPhysType.record(rightExpressions), [right_]), rightType_);

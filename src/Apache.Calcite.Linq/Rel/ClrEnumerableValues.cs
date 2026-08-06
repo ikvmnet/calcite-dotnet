@@ -102,7 +102,7 @@ namespace Apache.Calcite.Linq.Rel
         {
             var typeFactory = (JavaTypeFactory)getCluster().getTypeFactory();
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.PreferCustom());
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             var fields = getRowType().getFieldList();
             var rows = new List<Expression>();

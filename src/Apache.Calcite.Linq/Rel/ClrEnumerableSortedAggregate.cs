@@ -109,8 +109,8 @@ namespace Apache.Calcite.Linq.Rel
 
             var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.PreferCustom());
             var inputPhysType = result.PhysType;
-            var sourceType = TypeResolver.Resolve(inputPhysType.getJavaRowType());
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var sourceType = ClrTypes.Resolve(inputPhysType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             var keyPhysType = inputPhysType.project(groupSet.asList(), getGroupType() != Group.SIMPLE, JavaRowFormat.LIST);
             var groupCount = getGroupCount();
@@ -126,7 +126,7 @@ namespace Apache.Calcite.Linq.Rel
             var accPhysType = AccumulatorPhysType(typeFactory, typeFactory.createSyntheticType(aggStateTypes));
             DeclareParentAccumulator(initExpressions, initBlock, accPhysType);
 
-            var accType = TypeResolver.Resolve(accPhysType.getJavaRowType());
+            var accType = ClrTypes.Resolve(accPhysType.getJavaRowType());
             var accumulatorInitializer = Function0Of(
                 Expression.Lambda(
                     typeof(Func<>).MakeGenericType(accType),
@@ -149,7 +149,7 @@ namespace Apache.Calcite.Linq.Rel
             var results = new java.util.ArrayList();
 
             var key_ = J.Expressions.parameter(keyPhysType.getJavaRowType(), "key");
-            var keyParameter = Expression.Parameter(TypeResolver.Resolve(keyPhysType.getJavaRowType()), "key");
+            var keyParameter = Expression.Parameter(ClrTypes.Resolve(keyPhysType.getJavaRowType()), "key");
             implementor.Translator.Bind(key_, keyParameter);
 
             for (int j = 0; j < groupCount; j++)

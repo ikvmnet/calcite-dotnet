@@ -163,7 +163,7 @@ namespace Apache.Calcite.Linq.Tests.Tree
             var result = Expression.Lambda<Func<object>>(Expression.Convert(translated, typeof(object))).Compile()();
 
             result.Should().NotBeNull();
-            JavaCast.Unwrap(value, TypeResolver.FromClass(primitive)).Should().Be(result);
+            JavaCast.Unwrap(value, ClrTypes.FromClass(primitive)).Should().Be(result);
         }
 
         [TestMethod]

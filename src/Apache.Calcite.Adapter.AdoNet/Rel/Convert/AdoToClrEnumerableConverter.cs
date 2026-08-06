@@ -75,7 +75,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                 throw new AdoCalciteException("Unsupported input type.");
 
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.PreferArray());
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             if (self.getConvention() is not AdoConvention convention)
                 throw new AdoCalciteException($"getConvention() is null for {self}.");

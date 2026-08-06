@@ -94,9 +94,9 @@ namespace Apache.Calcite.Linq.Rel
             return implementor.Result(physType, body.Count == 1 ? body[0] : Expression.Block(body));
         }
 
-        static readonly System.Reflection.MethodInfo DataContextGetRootSchema = MethodResolver.Resolve(org.apache.calcite.util.BuiltInMethod.DATA_CONTEXT_GET_ROOT_SCHEMA.method);
-        static readonly System.Reflection.MethodInfo SchemaPlusAdd = MethodResolver.Resolve(org.apache.calcite.util.BuiltInMethod.SCHEMA_PLUS_ADD_TABLE.method);
-        static readonly System.Reflection.MethodInfo SchemaPlusRemoveTable = MethodResolver.Resolve(org.apache.calcite.util.BuiltInMethod.SCHEMA_PLUS_REMOVE_TABLE.method);
+        static readonly System.Reflection.MethodInfo DataContextGetRootSchema = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.DATA_CONTEXT_GET_ROOT_SCHEMA.method);
+        static readonly System.Reflection.MethodInfo SchemaPlusAdd = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.SCHEMA_PLUS_ADD_TABLE.method);
+        static readonly System.Reflection.MethodInfo SchemaPlusRemoveTable = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.SCHEMA_PLUS_REMOVE_TABLE.method);
 
     }
 

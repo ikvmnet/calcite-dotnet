@@ -111,7 +111,7 @@ namespace Apache.Calcite.Linq.Rel
         /// <summary>
         /// <c>Linq4j.slice0</c>, which reads a sequence of one-column rows as a sequence of their values.
         /// </summary>
-        static readonly System.Reflection.MethodInfo Slice0 = MethodResolver.Resolve(org.apache.calcite.util.BuiltInMethod.SLICE0.method);
+        static readonly System.Reflection.MethodInfo Slice0 = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.SLICE0.method);
 
     }
 

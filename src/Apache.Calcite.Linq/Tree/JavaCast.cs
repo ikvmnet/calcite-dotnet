@@ -58,8 +58,8 @@ namespace Apache.Calcite.Linq.Tree
                 if (primitive.primitiveName == "void")
                     continue;
 
-                Primitives[TypeResolver.FromClass(primitive.primitiveClass)] = primitive;
-                Boxes[TypeResolver.FromClass(primitive.boxClass)] = primitive;
+                Primitives[ClrTypes.FromClass(primitive.primitiveClass)] = primitive;
+                Boxes[ClrTypes.FromClass(primitive.boxClass)] = primitive;
             }
         }
 
@@ -99,7 +99,7 @@ namespace Apache.Calcite.Linq.Tree
             // Object to int, which Java reads as a cast to the box class followed by an unboxing call. A
             // straight Convert would emit unbox.any and demand a boxed CLR int that is never the value here.
             if (expression.Type.IsValueType == false && toPrimitive != null)
-                return Unbox(Expression.Convert(expression, TypeResolver.FromClass(toPrimitive.boxClass)), toPrimitive);
+                return Unbox(Expression.Convert(expression, ClrTypes.FromClass(toPrimitive.boxClass)), toPrimitive);
 
             if (fromPrimitive != null && toPrimitive != null)
                 return Widen(expression, type);
@@ -154,7 +154,7 @@ namespace Apache.Calcite.Linq.Tree
             if (Primitives.TryGetValue(type, out var primitive) == false)
                 return value;
 
-            var box = TypeResolver.FromClass(primitive.boxClass);
+            var box = ClrTypes.FromClass(primitive.boxClass);
             var valueOf = box.GetMethod("valueOf", BindingFlags.Public | BindingFlags.Static, null, [type], null)
                 ?? throw new NotSupportedException($"'{box}' has no valueOf for '{type}'.");
 
@@ -170,7 +170,7 @@ namespace Apache.Calcite.Linq.Tree
         /// <returns></returns>
         static Expression Number(Expression expression, J.Primitive primitive)
         {
-            return Widen(expression, TypeResolver.FromClass(primitive.primitiveClass));
+            return Widen(expression, ClrTypes.FromClass(primitive.primitiveClass));
         }
 
         /// <summary>
@@ -202,7 +202,7 @@ namespace Apache.Calcite.Linq.Tree
         /// <returns></returns>
         static Expression Box(Expression expression, J.Primitive primitive)
         {
-            var box = TypeResolver.FromClass(primitive.boxClass);
+            var box = ClrTypes.FromClass(primitive.boxClass);
             var valueOf = box.GetMethod("valueOf", BindingFlags.Public | BindingFlags.Static, null, [expression.Type], null)
                 ?? throw new NotSupportedException($"'{box}' has no valueOf for '{expression.Type}'.");
 
@@ -219,7 +219,7 @@ namespace Apache.Calcite.Linq.Tree
             ArgumentNullException.ThrowIfNull(type);
 
             return Boxes.TryGetValue(type, out var primitive)
-                ? TypeResolver.FromClass(primitive.primitiveClass)
+                ? ClrTypes.FromClass(primitive.primitiveClass)
                 : null;
         }
 

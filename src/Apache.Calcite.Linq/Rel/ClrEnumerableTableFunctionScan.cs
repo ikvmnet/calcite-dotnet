@@ -112,7 +112,7 @@ namespace Apache.Calcite.Linq.Rel
             var result = implementor.VisitChild(this, 0, child, pref);
             var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.Prefer(result.Format));
 
-            var sourceType = TypeResolver.Resolve(result.PhysType.getJavaRowType());
+            var sourceType = ClrTypes.Resolve(result.PhysType.getJavaRowType());
             var source = Expression.Call(null, ClrBuiltInMethod.ToJava.MakeGenericMethod(sourceType), result.Expression);
 
             var input_ = J.Expressions.parameter((java.lang.Class)typeof(org.apache.calcite.linq4j.Enumerable), "_input");
@@ -137,7 +137,7 @@ namespace Apache.Calcite.Linq.Rel
                 Expression.Assign(inputParameter, source),
                 implementor.Translator.TranslateBody(block.toBlock(), typeof(org.apache.calcite.linq4j.Enumerable)));
 
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             return implementor.Result(physType,
                 Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), windowed));
@@ -173,7 +173,7 @@ namespace Apache.Calcite.Linq.Rel
 
             block.add(ClrEnumUtils.Translate(translator, getCall(), null));
 
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             return implementor.Result(physType,
                 Expression.Call(null,

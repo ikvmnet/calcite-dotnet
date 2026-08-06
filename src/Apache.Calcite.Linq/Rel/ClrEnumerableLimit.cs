@@ -78,7 +78,7 @@ namespace Apache.Calcite.Linq.Rel
             // physical type is theirs
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format, false);
 
-            var rowType = TypeResolver.Resolve(result.PhysType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(result.PhysType.getJavaRowType());
             var v = result.Expression;
 
             if (offset != null)
@@ -114,7 +114,7 @@ namespace Apache.Calcite.Linq.Rel
         /// <summary>
         /// <c>DataContext.get</c>, which a value prepared as a parameter arrives by.
         /// </summary>
-        static readonly System.Reflection.MethodInfo DataContextGet = MethodResolver.Resolve(BuiltInMethod.DATA_CONTEXT_GET.method);
+        static readonly System.Reflection.MethodInfo DataContextGet = ClrTypes.Resolve(BuiltInMethod.DATA_CONTEXT_GET.method);
 
     }
 

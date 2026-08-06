@@ -159,7 +159,7 @@ namespace Apache.Calcite.Linq.Rel
             // a partition is an Object[], as Calcite's is, so a row that is a primitive is boxed to go in it —
             // and boxed the way the type factory says, because the comparator ordering the partition is
             // Calcite's and takes a java.lang.Integer where the row type is an int
-            var sourceType = TypeResolver.Resolve(J.Primitive.box(inputPhysType.getJavaRowType()));
+            var sourceType = ClrTypes.Resolve(J.Primitive.box(inputPhysType.getJavaRowType()));
             source = ClrEnumUtils.BoxRows(inputPhysType, source);
 
             // orders the rows of a partition, and is what EXCLUDE and RANK ask whether two rows are peers
@@ -224,7 +224,7 @@ namespace Apache.Calcite.Linq.Rel
             var accPhysType = ClrEnumerableAggregateBase.AccumulatorPhysType(typeFactory, typeFactory.createSyntheticType(stateTypes));
             ClrEnumerableAggregateBase.DeclareParentAccumulator(initExpressions, initBlock, accPhysType);
 
-            var accType = TypeResolver.Resolve(accPhysType.getJavaRowType());
+            var accType = ClrTypes.Resolve(accPhysType.getJavaRowType());
             var acc_ = J.Expressions.parameter(accPhysType.getJavaRowType(), "acc");
             loop.Accumulator = acc_;
 
@@ -311,7 +311,7 @@ namespace Apache.Calcite.Linq.Rel
             var selectorBuilder = new J.BlockBuilder();
             selectorBuilder.add(J.Expressions.return_(null, outputPhysType.record(outputRow)));
 
-            var outputType = TypeResolver.Resolve(outputPhysType.getJavaRowType());
+            var outputType = ClrTypes.Resolve(outputPhysType.getJavaRowType());
             var selector = loop.Lambda(translator, selectorBuilder.toBlock(), outputType, accType);
 
             // the partition key, which is the one thing here that reads a row outside the loop
@@ -405,12 +405,12 @@ namespace Apache.Calcite.Linq.Rel
             // the rows arrive boxed, because the partition they go into is an Object[], so the row is unboxed
             // on the way in exactly as a join's predicate unboxes its two
             var parameter = Expression.Parameter(sourceType, "v");
-            var row = Expression.Variable(TypeResolver.Resolve(inputPhysType.getJavaRowType()), "v");
+            var row = Expression.Variable(ClrTypes.Resolve(inputPhysType.getJavaRowType()), "v");
             translator.Bind(v_, row);
 
             // the key is a map's, so a key that is a primitive is boxed the way the type factory says: what
             // hashes it is a java.util.HashMap, and a boxed CLR int is not the same object as a java.lang.Integer
-            var keyType = TypeResolver.Resolve(J.Primitive.box(key_.getType()));
+            var keyType = ClrTypes.Resolve(J.Primitive.box(key_.getType()));
 
             return Expression.Lambda(
                 typeof(Func<,>).MakeGenericType(sourceType, keyType),
@@ -721,7 +721,7 @@ namespace Apache.Calcite.Linq.Rel
             public LambdaExpression Lambda(ExpressionTranslator translator, J.BlockStatement block, Type returnType, Type? accumulatorType)
             {
                 var frame = Expression.Parameter(typeof(WindowFrame), "frame");
-                var rowType = TypeResolver.Resolve(inputPhysType.getJavaRowType());
+                var rowType = ClrTypes.Resolve(inputPhysType.getJavaRowType());
 
                 // fresh variables each time, because a lambda declares its own and two of them are siblings
                 var rows = Expression.Variable(typeof(object[]), "rows");

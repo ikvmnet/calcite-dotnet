@@ -166,7 +166,7 @@ namespace Apache.Calcite.Linq.Rel
             var leftType = leftSource.Type.GetGenericArguments()[0];
             var rightType = rightSource.Type.GetGenericArguments()[0];
             var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             var inner = Expression.Lambda(
                 typeof(Func<,>).MakeGenericType(typeof(java.util.List), rightSource.Type),

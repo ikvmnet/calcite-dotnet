@@ -115,8 +115,8 @@ namespace Apache.Calcite.Linq.Rel
                     org.apache.calcite.linq4j.tree.Expressions.constant(java.lang.Boolean.valueOf(withOrdinality)),
                     org.apache.calcite.linq4j.tree.Expressions.constant(types));
 
-            var sourceType = TypeResolver.Resolve(result.PhysType.getJavaRowType());
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var sourceType = ClrTypes.Resolve(result.PhysType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             return implementor.Result(physType,
                 Expression.Call(null,

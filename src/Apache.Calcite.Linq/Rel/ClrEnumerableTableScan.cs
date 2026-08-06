@@ -203,10 +203,10 @@ namespace Apache.Calcite.Linq.Rel
             return expression;
         }
 
-        static readonly System.Reflection.MethodInfo AsList = MethodResolver.Resolve(BuiltInMethod.AS_LIST.method);
-        static readonly System.Reflection.MethodInfo AsEnumerable = MethodResolver.Resolve(BuiltInMethod.AS_ENUMERABLE.method);
-        static readonly System.Reflection.MethodInfo AsEnumerable2 = MethodResolver.Resolve(BuiltInMethod.AS_ENUMERABLE2.method);
-        static readonly System.Reflection.MethodInfo QueryableAsEnumerable = MethodResolver.Resolve(BuiltInMethod.QUERYABLE_AS_ENUMERABLE.method);
+        static readonly System.Reflection.MethodInfo AsList = ClrTypes.Resolve(BuiltInMethod.AS_LIST.method);
+        static readonly System.Reflection.MethodInfo AsEnumerable = ClrTypes.Resolve(BuiltInMethod.AS_ENUMERABLE.method);
+        static readonly System.Reflection.MethodInfo AsEnumerable2 = ClrTypes.Resolve(BuiltInMethod.AS_ENUMERABLE2.method);
+        static readonly System.Reflection.MethodInfo QueryableAsEnumerable = ClrTypes.Resolve(BuiltInMethod.QUERYABLE_AS_ENUMERABLE.method);
 
         /// <summary>
         /// Brings the table's rows into the physical type asked for.
@@ -218,7 +218,7 @@ namespace Apache.Calcite.Linq.Rel
         /// <returns></returns>
         Expression ToRows(ClrEnumerableRelImplementor implementor, PhysType physType, Expression source)
         {
-            var element = TypeResolver.FromClass(elementType);
+            var element = ClrTypes.FromClass(elementType);
 
             if (physType.getFormat() == JavaRowFormat.SCALAR
                 && ((java.lang.Class)typeof(object[])).isAssignableFrom(elementType)

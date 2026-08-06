@@ -68,7 +68,7 @@ namespace Apache.Calcite.Linq.Rel
 
             var collectionType = getCollectionType();
             var source = result.Expression;
-            var sourceType = TypeResolver.Resolve(result.PhysType.getJavaRowType());
+            var sourceType = ClrTypes.Resolve(result.PhysType.getJavaRowType());
 
             Expression collection;
 

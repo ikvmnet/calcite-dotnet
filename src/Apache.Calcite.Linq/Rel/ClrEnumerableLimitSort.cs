@@ -74,7 +74,7 @@ namespace Apache.Calcite.Linq.Rel
 
             var inputPhysType = result.PhysType;
             var pair = inputPhysType.generateCollationKey(collation.getFieldCollations());
-            var sourceType = TypeResolver.Resolve(inputPhysType.getJavaRowType());
+            var sourceType = ClrTypes.Resolve(inputPhysType.getJavaRowType());
 
             var keySelector = implementor.Translator.TranslateSelector((J.Expression)pair.getKey(), sourceType);
             var comparator = pair.getValue() == null

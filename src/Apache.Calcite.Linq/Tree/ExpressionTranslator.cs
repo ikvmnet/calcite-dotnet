@@ -133,7 +133,7 @@ namespace Apache.Calcite.Linq.Tree
                 J.IndexExpression e => Index(e),
                 J.TypeBinaryExpression e => TypeBinary(e),
                 J.FunctionExpression e => Function(e),
-                J.DefaultExpression e => Expression.Default(TypeResolver.Resolve(e.getType())),
+                J.DefaultExpression e => Expression.Default(ClrTypes.Resolve(e.getType())),
                 J.BlockStatement s => Block(s),
                 J.DeclarationStatement s => Declaration(s),
                 J.ConditionalStatement s => Conditional(s),
@@ -241,7 +241,7 @@ namespace Apache.Calcite.Linq.Tree
         /// <summary>
         /// <c>Functions.identitySelector</c>, which is what a projection that changes nothing comes back as.
         /// </summary>
-        static readonly MethodInfo IdentitySelector = MethodResolver.Resolve(org.apache.calcite.util.BuiltInMethod.IDENTITY_SELECTOR.method);
+        static readonly MethodInfo IdentitySelector = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.IDENTITY_SELECTOR.method);
 
         /// <summary>
         /// Translates a node in a position that takes a statement rather than a value.
@@ -281,7 +281,7 @@ namespace Apache.Calcite.Linq.Tree
             if (variables.TryGetValue(parameter, out var variable))
                 return variable;
 
-            return variables[parameter] = Expression.Parameter(TypeResolver.Resolve(parameter.getType()), parameter.name);
+            return variables[parameter] = Expression.Parameter(ClrTypes.Resolve(parameter.getType()), parameter.name);
         }
 
         /// <summary>
@@ -336,7 +336,7 @@ namespace Apache.Calcite.Linq.Tree
             if (value == null)
                 return null;
 
-            return Expression.Constant(value, TypeResolver.Resolve(parameter.getType()));
+            return Expression.Constant(value, ClrTypes.Resolve(parameter.getType()));
         }
 
         /// <summary>
@@ -350,7 +350,7 @@ namespace Apache.Calcite.Linq.Tree
         /// </remarks>
         Expression Constant(J.ConstantExpression expression)
         {
-            var type = TypeResolver.Resolve(expression.getType());
+            var type = ClrTypes.Resolve(expression.getType());
             var value = expression.value;
 
             if (value == null)
@@ -671,7 +671,7 @@ namespace Apache.Calcite.Linq.Tree
         /// <returns></returns>
         Expression Ternary(J.TernaryExpression expression)
         {
-            var type = TypeResolver.Resolve(expression.getType());
+            var type = ClrTypes.Resolve(expression.getType());
 
             return Expression.Condition(
                 JavaCast.To(Visit(expression.expression0), typeof(bool)),
@@ -687,7 +687,7 @@ namespace Apache.Calcite.Linq.Tree
         /// <returns></returns>
         Expression Member(J.MemberExpression expression)
         {
-            return FieldResolver.Resolve(expression.expression == null ? null : Visit(expression.expression), expression.field);
+            return ClrTypes.Resolve(expression.expression == null ? null : Visit(expression.expression), expression.field);
         }
 
         /// <summary>
@@ -715,7 +715,7 @@ namespace Apache.Calcite.Linq.Tree
         /// <returns></returns>
         Expression TypeBinary(J.TypeBinaryExpression expression)
         {
-            return Expression.TypeIs(Visit(expression.expression), TypeResolver.Resolve(expression.type));
+            return Expression.TypeIs(Visit(expression.expression), ClrTypes.Resolve(expression.type));
         }
 
         /// <summary>
@@ -725,7 +725,7 @@ namespace Apache.Calcite.Linq.Tree
         /// <returns></returns>
         Expression NewArray(J.NewArrayExpression expression)
         {
-            var type = TypeResolver.Resolve(expression.getType());
+            var type = ClrTypes.Resolve(expression.getType());
             var element = type.GetElementType() ?? throw new NotSupportedException($"'{type}' is not an array.");
 
             if (expression.expressions != null)
@@ -751,7 +751,7 @@ namespace Apache.Calcite.Linq.Tree
         /// <returns></returns>
         Expression Call(J.MethodCallExpression expression)
         {
-            var method = MethodResolver.Resolve(expression.method);
+            var method = ClrTypes.Resolve(expression.method);
             var target = expression.targetExpression == null ? null : Visit(expression.targetExpression);
 
             var arguments = expression.expressions;
@@ -773,9 +773,9 @@ namespace Apache.Calcite.Linq.Tree
                 argumentTypes[i] = translated[i + offset].Type;
 
             if (target != null && method.IsStatic == false)
-                method = MethodResolver.RebindReceiver(method, target.Type, argumentTypes);
+                method = ClrTypes.RebindReceiver(method, target.Type, argumentTypes);
 
-            method = MethodResolver.Rebind(method, Array.ConvertAll(translated, e => e.Type));
+            method = ClrTypes.Rebind(method, Array.ConvertAll(translated, e => e.Type));
 
             var parameters = method.GetParameters();
             var resolved = new Expression[translated.Length];
@@ -796,7 +796,7 @@ namespace Apache.Calcite.Linq.Tree
         /// <exception cref="NotSupportedException"></exception>
         Expression New(J.NewExpression expression)
         {
-            var type = TypeResolver.Resolve(expression.type);
+            var type = ClrTypes.Resolve(expression.type);
 
             if (expression.memberDeclarations == null)
                 return Construct(type, expression.arguments);
@@ -930,7 +930,7 @@ namespace Apache.Calcite.Linq.Tree
             for (int i = 0; i < parameters.Length; i++)
                 parameters[i] = Variable((J.ParameterExpression)declaration.parameters.get(i));
 
-            return Expression.Lambda(Scoped(parameters, declaration.body, TypeResolver.Resolve(declaration.resultType)), parameters);
+            return Expression.Lambda(Scoped(parameters, declaration.body, ClrTypes.Resolve(declaration.resultType)), parameters);
         }
 
         /// <summary>
@@ -962,7 +962,7 @@ namespace Apache.Calcite.Linq.Tree
                 return false;
 
             for (int i = 0; i < method.parameters.size(); i++)
-                if (TypeResolver.Resolve(((J.ParameterExpression)method.parameters.get(i)).getType()) != typeof(object))
+                if (ClrTypes.Resolve(((J.ParameterExpression)method.parameters.get(i)).getType()) != typeof(object))
                     return false;
 
             return true;
@@ -1014,7 +1014,7 @@ namespace Apache.Calcite.Linq.Tree
             if (op is ExpressionType.LeftShift or ExpressionType.RightShift)
                 return Expression.MakeBinary(op, left, JavaCast.To(right, typeof(int)));
 
-            if (op == ExpressionType.Add && TypeResolver.Resolve(expression.getType()) == typeof(string))
+            if (op == ExpressionType.Add && ClrTypes.Resolve(expression.getType()) == typeof(string))
                 return Expression.Call(Concat, JavaCast.To(left, typeof(object)), JavaCast.To(right, typeof(object)));
 
             // Java's && and || take booleans and unbox a Boolean to get one; the CLR has no operator for two
@@ -1109,7 +1109,7 @@ namespace Apache.Calcite.Linq.Tree
                 // arithmetic operators take none.
                 case nameof(J.ExpressionType.Convert):
                 case nameof(J.ExpressionType.ConvertChecked):
-                    return JavaCast.To(operand, TypeResolver.Resolve(expression.getType()));
+                    return JavaCast.To(operand, ClrTypes.Resolve(expression.getType()));
 
                 // Java's ! is only ever applied to a boolean; its bitwise complement is a separate operator
                 case nameof(J.ExpressionType.Not):
@@ -1173,12 +1173,12 @@ namespace Apache.Calcite.Linq.Tree
             for (int i = 0; i < parameters.Length; i++)
                 parameters[i] = Variable((J.ParameterExpression)expression.parameterList.get(i));
 
-            var lambda = Expression.Lambda(Scoped(parameters, body, TypeResolver.Resolve(body.getType())), parameters);
+            var lambda = Expression.Lambda(Scoped(parameters, body, ClrTypes.Resolve(body.getType())), parameters);
 
             // linq4j declares a lambda against one of its functional interfaces, and a block of Calcite's making
             // uses it as that interface, including where it is passed as an object. So it is one from here, and
             // a node of this convention that wants the delegate asks for it back through TranslateSelector.
-            var declared = TypeResolver.Resolve(expression.getType());
+            var declared = ClrTypes.Resolve(expression.getType());
 
             return SamAdapters.Handles(declared) ? SamAdapters.Wrap(declared, lambda) : lambda;
         }

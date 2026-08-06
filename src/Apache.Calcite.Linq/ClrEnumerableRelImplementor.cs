@@ -235,7 +235,7 @@ namespace Apache.Calcite.Linq
         /// </remarks>
         public Expression Stash(object? input, java.lang.Class clazz)
         {
-            return Expression.Constant(input, TypeResolver.FromClass(clazz));
+            return Expression.Constant(input, ClrTypes.FromClass(clazz));
         }
 
         /// <summary>
@@ -331,7 +331,7 @@ namespace Apache.Calcite.Linq
         {
             ArgumentNullException.ThrowIfNull(physType);
 
-            return TypeResolver.Resolve(J.Primitive.box(physType.getJavaRowType()));
+            return ClrTypes.Resolve(J.Primitive.box(physType.getJavaRowType()));
         }
 
         /// <summary>

@@ -123,7 +123,7 @@ namespace Apache.Calcite.Linq.Tree
         /// </remarks>
         public static System.Linq.Expressions.Expression BoxRows(PhysType physType, System.Linq.Expressions.Expression source)
         {
-            var boxed = TypeResolver.Resolve(J.Primitive.box(physType.getJavaRowType()));
+            var boxed = ClrTypes.Resolve(J.Primitive.box(physType.getJavaRowType()));
 
             // what the sequence holds, not what the physical type calls a field: a node hands its rows up
             // boxed already, and only a sequence built inside this one can still be carrying a primitive
@@ -184,7 +184,7 @@ namespace Apache.Calcite.Linq.Tree
             var input_ = J.Expressions.parameter(javaRowType, "input");
             var marker_ = J.Expressions.parameter((java.lang.Class)typeof(java.lang.Boolean), "marker");
 
-            var inputParameter = Expression.Parameter(TypeResolver.Resolve(javaRowType), "input");
+            var inputParameter = Expression.Parameter(ClrTypes.Resolve(javaRowType), "input");
             var markerParameter = Expression.Parameter(typeof(java.lang.Boolean), "marker");
             implementor.Translator.Bind(input_, inputParameter);
             implementor.Translator.Bind(marker_, markerParameter);
@@ -196,7 +196,7 @@ namespace Apache.Calcite.Linq.Tree
 
             expressions.add(marker_);
 
-            var rowType = TypeResolver.Resolve(resultPhysType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(resultPhysType.getJavaRowType());
 
             return Expression.Lambda(
                 typeof(Func<,,>).MakeGenericType(inputParameter.Type, markerParameter.Type, rowType),
@@ -235,7 +235,7 @@ namespace Apache.Calcite.Linq.Tree
                 var javaRowType = J.Primitive.box(inputPhysType.getJavaRowType());
                 var row = J.Expressions.parameter(javaRowType, ord == 0 ? "left" : "right");
 
-                parameters[ord] = Expression.Parameter(TypeResolver.Resolve(javaRowType), ord == 0 ? "left" : "right");
+                parameters[ord] = Expression.Parameter(ClrTypes.Resolve(javaRowType), ord == 0 ? "left" : "right");
                 implementor.Translator.Bind(row, parameters[ord]);
 
                 // a semi join returns the left input alone, so the fields run out before the inputs do
@@ -257,7 +257,7 @@ namespace Apache.Calcite.Linq.Tree
                 }
             }
 
-            var rowType = TypeResolver.Resolve(physType.getJavaRowType());
+            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
 
             return Expression.Lambda(
                 typeof(Func<,,>).MakeGenericType(parameters[0].Type, parameters[1].Type, rowType),
@@ -307,11 +307,11 @@ namespace Apache.Calcite.Linq.Tree
 
             // the rows arrive boxed, because the sequence a join runs over is boxed for the selector, so the
             // predicate takes them boxed and unboxes on the way in
-            var leftParameter = Expression.Parameter(TypeResolver.Resolve(J.Primitive.box(leftPhysType.getJavaRowType())), "left");
-            var rightParameter = Expression.Parameter(TypeResolver.Resolve(J.Primitive.box(rightPhysType.getJavaRowType())), "right");
+            var leftParameter = Expression.Parameter(ClrTypes.Resolve(J.Primitive.box(leftPhysType.getJavaRowType())), "left");
+            var rightParameter = Expression.Parameter(ClrTypes.Resolve(J.Primitive.box(rightPhysType.getJavaRowType())), "right");
 
-            var leftRow = Expression.Variable(TypeResolver.Resolve(leftPhysType.getJavaRowType()), "leftRow");
-            var rightRow = Expression.Variable(TypeResolver.Resolve(rightPhysType.getJavaRowType()), "rightRow");
+            var leftRow = Expression.Variable(ClrTypes.Resolve(leftPhysType.getJavaRowType()), "leftRow");
+            var rightRow = Expression.Variable(ClrTypes.Resolve(rightPhysType.getJavaRowType()), "rightRow");
             implementor.Translator.Bind(left_, leftRow);
             implementor.Translator.Bind(right_, rightRow);
 
