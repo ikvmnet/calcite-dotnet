@@ -75,6 +75,23 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         [TestMethod]
+        public void ShouldConvertStraightIntoThisConvention()
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = "EXPLAIN PLAN FOR SELECT empno, name FROM ADO.emps WHERE deptno = 10";
+
+            var plan = new System.Text.StringBuilder();
+            using (var r = cmd.ExecuteReader())
+                while (r.Read())
+                    plan.AppendLine(r.GetValue(0)?.ToString());
+
+            // one converter, and it is this convention's. Reaching AdoToEnumerableConverter instead would
+            // still answer correctly, by way of a second converter, and no other assertion here would notice.
+            StringAssert.Contains(plan.ToString(), "AdoToClrEnumerableConverter");
+            Assert.IsFalse(plan.ToString().Contains("AdoToEnumerableConverter"), plan.ToString());
+        }
+
+        [TestMethod]
         public void ShouldScanAnAdoTable()
         {
             CollectionAssert.AreEquivalent(

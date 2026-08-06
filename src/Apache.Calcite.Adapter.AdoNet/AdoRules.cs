@@ -55,6 +55,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         public static IEnumerable<RelOptRule> GetRules(AdoConvention convention)
         {
             yield return AdoToEnumerableConverterRule.Create(convention);
+            yield return AdoToClrEnumerableConverterRule.Create(convention);
             yield return AdoJoinRule.Create(convention);
             yield return AdoProjectRule.Create(convention);
             yield return AdoFilterRule.Create(convention);
@@ -75,6 +76,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         public static IEnumerable<RelOptRule> GetRules(AdoConvention convention, RelBuilderFactory relBuilderFactory)
         {
             yield return AdoToEnumerableConverterRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
+            yield return AdoToClrEnumerableConverterRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
             yield return AdoJoinRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
             yield return AdoProjectRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
             yield return AdoFilterRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();

@@ -15,6 +15,10 @@
     </ItemGroup>
 
     <ItemGroup>
+        <ProjectReference Include="..\Apache.Calcite.Linq\Apache.Calcite.Linq.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
         <PackageReference Include="IKVM" Version="8.15.0" />
         <PackageReference Include="IKVM.Java.Extensions" Version="8.15.0" />
         <PackageReference Include="IKVM.Maven.Sdk" Version="1.11.0">

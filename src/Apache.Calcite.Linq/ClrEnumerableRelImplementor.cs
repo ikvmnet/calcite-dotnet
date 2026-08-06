@@ -86,6 +86,40 @@ namespace Apache.Calcite.Linq
         internal ExpressionTranslator Translator { get; }
 
         /// <summary>
+        /// Translates a linq4j expression into a CLR one.
+        /// </summary>
+        /// <param name="node">The expression to translate.</param>
+        /// <returns>The same expression, as a <see cref="System.Linq.Expressions"/> tree.</returns>
+        /// <remarks>
+        /// A node of this convention builds expressions directly and has no need of this. It is here for the
+        /// node that cannot: one whose expression comes from a generator of Calcite's, which produces linq4j
+        /// and nothing else. Translate such an expression where it is produced rather than composing it into
+        /// a larger tree first.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException"></exception>
+        public Expression Translate(J.Node node)
+        {
+            ArgumentNullException.ThrowIfNull(node);
+
+            return Translator.Translate(node);
+        }
+
+        /// <summary>
+        /// Translates a linq4j block, and the declarations it carries, into one CLR expression.
+        /// </summary>
+        /// <param name="body">The block to translate, whose last statement is its value.</param>
+        /// <param name="returnType">The type the block yields.</param>
+        /// <returns>The block, as a <see cref="System.Linq.Expressions"/> tree.</returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        public Expression TranslateBody(J.BlockStatement body, Type returnType)
+        {
+            ArgumentNullException.ThrowIfNull(body);
+            ArgumentNullException.ThrowIfNull(returnType);
+
+            return Translator.TranslateBody(body, returnType);
+        }
+
+        /// <summary>
         /// Gets the internal parameters, which reach the query through the <see cref="DataContext"/> it is
         /// bound with rather than through the plan.
         /// </summary>
@@ -238,6 +272,29 @@ namespace Apache.Calcite.Linq
                 throw new java.lang.IllegalStateException($"Correlation variable {name} should be defined");
 
             return getter;
+        }
+
+        /// <summary>
+        /// Reads one field of the outer row a correlated sub-query was entered with.
+        /// </summary>
+        /// <param name="name">The correlation variable's name.</param>
+        /// <param name="ordinal">The field's position in the outer row.</param>
+        /// <param name="storageType">The type to read the field as, or <see langword="null"/> for the
+        /// field's own.</param>
+        /// <returns>The field's value.</returns>
+        /// <exception cref="java.lang.IllegalStateException">No such variable is in scope.</exception>
+        /// <remarks>
+        /// <see cref="GetCorrelVariableGetter"/> answers with Calcite's <c>InputGetter</c>, which reads a
+        /// field as linq4j and takes a linq4j block to declare into. This is that, translated, so a node
+        /// outside this assembly can read a correlated field without holding a linq4j tree of its own.
+        /// </remarks>
+        public Expression CorrelVariableField(string name, int ordinal, java.lang.reflect.Type? storageType = null)
+        {
+            ArgumentNullException.ThrowIfNull(name);
+
+            // the getter declares into the block it was created with, not one passed to it, so there is
+            // nothing here for a caller's block to receive
+            return Translate(GetCorrelVariableGetter(name).field(null, ordinal, storageType));
         }
 
         /// <summary>

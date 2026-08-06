@@ -14,7 +14,7 @@ namespace Apache.Calcite.Linq.Tree
     /// Under IKVM every one of those types is a real CLR type, so this is a lookup rather than a mapping:
     /// nothing here decides what a value is, it only says which CLR type already holds it.
     /// </remarks>
-    static class TypeResolver
+    public static class TypeResolver
     {
 
         /// <summary>
