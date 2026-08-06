@@ -2088,14 +2088,20 @@ namespace Apache.Calcite.Linq
 
                 for (int i = 0; iterationLimit < 0 || i < iterationLimit; i++)
                 {
+                    // a round that returned no row this sequence had not already returned is the end of it,
+                    // and not a round that read no rows. Calcite's own enumerator says the same thing by
+                    // setting `current` only where `checkValue` passed and stopping where it is still DUMMY.
+                    // Counting what was read instead is an infinite loop for every UNION rather than UNION
+                    // ALL: the iterative part re-reads the whole spool each round and so never runs dry.
                     var any = false;
 
                     foreach (var row in iteration)
                     {
-                        any = true;
-
                         if (processed == null || processed.Add(row))
+                        {
+                            any = true;
                             yield return row;
+                        }
                     }
 
                     if (any == false)
