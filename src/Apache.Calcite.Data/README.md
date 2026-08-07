@@ -186,17 +186,12 @@ generates Java source and compiles it at runtime with Janino; this provider does
 runs when your query is prepared, and a user-defined function written in .NET can be called straight from
 a plan.
 
-There is nothing to configure — it is what a connection does by default. To use Calcite's own engine
-instead, set `PrepareFactory` before opening the connection:
+There is nothing to configure, and nothing to switch off — this provider owns the prepare pipeline rather
+than subclassing Calcite's, so a statement never goes through `CalcitePrepare` and never produces a
+`Bindable`.
 
-```csharp
-await using var conn = new CalciteConnection(connectionString);
-conn.PrepareFactory = () => (CalcitePrepare)CalcitePrepare.DEFAULT_FACTORY.apply();
-await conn.OpenAsync();
-```
-
-A single plan may use both. Anything the .NET convention has no implementation for is planned by Calcite
-as usual, and rows cross between the two untouched.
+A single plan may still use both engines. Anything the .NET convention has no implementation for is
+planned by Calcite as usual, and rows cross between the two untouched.
 
 ## Accessing the Calcite engine directly
 
@@ -215,8 +210,7 @@ These properties are only valid while the connection is open.
 | Package | Purpose |
 |---------|---------|
 | [`Apache.Calcite.Adapter.AdoNet`](https://www.nuget.org/packages/Apache.Calcite.Adapter.AdoNet) | Expose any ADO.NET data source as a federated Calcite schema with query pushdown. |
-| [`Apache.Calcite.Extensions`](https://www.nuget.org/packages/Apache.Calcite.Extensions) | .NET helper types for working with Calcite connection properties and IKVM interop. |
-| [`Apache.Calcite.Linq`](https://www.nuget.org/packages/Apache.Calcite.Linq) | The calling convention this provider executes plans with. Referenced for you. |
+| [`Apache.Calcite.Extensions`](https://www.nuget.org/packages/Apache.Calcite.Extensions) | The calling convention this provider executes plans with, the prepare pipeline behind it, and the IKVM interop and connection-property helpers. Referenced for you. |
 
 ## Further reading
 

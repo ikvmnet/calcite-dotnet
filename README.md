@@ -24,21 +24,15 @@ Ships built-in metadata for SQL Server, SQLite, ODBC, OLE DB, and any `INFORMATI
 dotnet add package Apache.Calcite.Adapter.AdoNet
 ```
 
-### [`Apache.Calcite.Linq`](https://www.nuget.org/packages/Apache.Calcite.Linq) · `src/Apache.Calcite.Linq`
+### [`Apache.Calcite.Extensions`](https://www.nuget.org/packages/Apache.Calcite.Extensions) · `src/Apache.Calcite.Extensions`
 
 `ClrEnumerableConvention` — a calling convention that runs a query plan as a compiled `System.Linq.Expressions` tree instead of generating Java source and compiling it with Janino. It mirrors Calcite's own `EnumerableConvention` node for node and uses the same row types, and converters exist in both directions, so a plan can mix the two.
+
+With it, the prepare pipeline that takes a statement from SQL text to such a plan, and the interop helpers both need — including `CalciteConnectionProperties`, a strongly-typed wrapper over Calcite's `java.util.Properties`, so you can configure the engine with compile-time-safe .NET properties instead of raw string keys.
 
 Because the plan holds a method rather than its name, a user-defined function written in .NET runs in this convention — Janino cannot resolve the `cli.`-prefixed class name IKVM gives a CLR type, so such a query has no plan under `EnumerableConvention`.
 
 Targets .NET 8, and is verified on .NET 8 and .NET 10.
-
-```sh
-dotnet add package Apache.Calcite.Linq
-```
-
-### [`Apache.Calcite.Extensions`](https://www.nuget.org/packages/Apache.Calcite.Extensions) · `src/Apache.Calcite.Extensions`
-
-.NET-friendly interop helpers. Provides `CalciteConnectionProperties` — a strongly-typed wrapper over Calcite's `java.util.Properties` — so you can configure the engine with compile-time-safe .NET properties instead of raw string keys.
 
 ```sh
 dotnet add package Apache.Calcite.Extensions
@@ -48,10 +42,9 @@ dotnet add package Apache.Calcite.Extensions
 
 | Project | Purpose |
 |---------|---------|
-| `Apache.Calcite.Tests` | Core engine integration tests |
+| `Apache.Calcite.Tests` | Core engine integration tests, and the convention and prepare pipeline tests — including the differential suites that run the same SQL through `ClrEnumerableConvention` and `EnumerableConvention` and require the same rows |
 | `Apache.Calcite.Data.Tests` | Provider integration tests |
 | `Apache.Calcite.Adapter.AdoNet.Tests` | Adapter integration tests |
-| `Apache.Calcite.Linq.Tests` | Convention tests, including the differential suite that runs the same SQL through `ClrEnumerableConvention` and `EnumerableConvention` and requires the same rows |
 | `dist-nuget` | Packages NuGet artifacts |
 | `dist-tests` | Packages test artifacts for CI |
 
