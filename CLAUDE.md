@@ -190,3 +190,7 @@ conclusion.
 
 Do not report scope reductions as findings. Do not turn remaining work into questions. Say plainly what is
 done, what is not, and what is unproven.
+
+**Never credit Claude as a contributor.** No `Co-Authored-By` trailer, no "generated with" line, no bot
+attribution — not in a commit message, not in a pull request body, not anywhere in the history. The commit
+message says what changed and why; who typed it is not part of the record.
