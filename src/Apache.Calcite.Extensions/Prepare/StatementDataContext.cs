@@ -6,6 +6,7 @@ using org.apache.calcite;
 using org.apache.calcite.adapter.java;
 using org.apache.calcite.linq4j;
 using org.apache.calcite.schema;
+using System;
 
 namespace Apache.Calcite.Extensions.Prepare
 {
@@ -108,7 +109,7 @@ namespace Apache.Calcite.Extensions.Prepare
             // Calcite addresses positional dynamic parameters as "?0", "?1", ...
             if (name is { Length: > 1 } && name[0] == '?')
             {
-                if (int.TryParse(name.Substring(1), out var idx) && idx >= 0 && idx < _parameters.Count)
+                if (int.TryParse(name.AsSpan(1), out var idx) && idx >= 0 && idx < _parameters.Count)
                     return _parameters[idx];
             }
 

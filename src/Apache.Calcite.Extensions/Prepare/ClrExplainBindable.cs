@@ -1,13 +1,10 @@
 using System;
 using System.Collections.Generic;
 
-using Apache.Calcite.Extensions;
+using Apache.Calcite.Extensions.Runtime;
 
 using org.apache.calcite;
 using org.apache.calcite.avatica;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
-
-using Apache.Calcite.Extensions.Runtime;
 
 namespace Apache.Calcite.Extensions.Prepare
 {
