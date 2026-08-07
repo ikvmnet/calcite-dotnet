@@ -2,8 +2,8 @@ using System;
 using System.Data.Common;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq;
-using Apache.Calcite.Linq.Tree;
+using Apache.Calcite.Extensions;
+using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using org.apache.calcite;
 using org.apache.calcite.adapter.enumerable;
@@ -17,6 +17,7 @@ using org.apache.calcite.schema;
 using org.apache.calcite.sql.type;
 
 using J = org.apache.calcite.linq4j.tree;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {

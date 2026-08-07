@@ -4,10 +4,10 @@
         <TargetFramework>net8.0</TargetFramework>
         <LangVersion>Preview</LangVersion>
         <Nullable>enable</Nullable>
-        <Description>Shared .NET extension helpers for Apache Calcite IKVM interop.</Description>
+        <Description>What .NET adds on top of Apache Calcite. A calling convention that runs a query plan as a compiled System.Linq.Expressions tree rather than as generated Java source, the prepare pipeline that takes a statement from SQL text to that plan, and the interop helpers both need. No Java compiler runs when a statement is prepared, and a .NET user-defined function can be called from SQL.</Description>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageIcon>icon.png</PackageIcon>
-        <PackageTags>apache;calcite;ado.net;ikvm;extensions</PackageTags>
+        <PackageTags>apache;calcite;sql;query;linq;expressions;ikvm</PackageTags>
     </PropertyGroup>
 
     <ItemGroup>
@@ -17,6 +17,8 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="Apache.Calcite.Data" />
+        <InternalsVisibleTo Include="Apache.Calcite.Adapter.AdoNet" />
+        <InternalsVisibleTo Include="Apache.Calcite.Tests" />
     </ItemGroup>
 
     <ItemGroup>
@@ -27,8 +29,12 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
+        <!-- calcite-linq4j is deliberately not named. It arrives transitively from calcite-core, at whatever
+             version core resolves to. Pinning it here pins linq4j to 1.42 while a consumer that asks for
+             1.43 — Apache.Calcite.Data.Tests does, for calcite-server — resolves core to 1.43, and 1.43's
+             BuiltInMethod initializer looks for ExtendedEnumerable.update, which 1.42's linq4j does not
+             have. Every test in that project then fails in a type initializer. -->
         <MavenReference Include="org.apache.calcite:calcite-core" Version="1.42.0" />
-        <MavenReference Include="org.apache.calcite:calcite-linq4j" Version="1.42.0" />
         <MavenReference Include="org.jooq:joou-java-6" Version="0.9.5" />
     </ItemGroup>
 

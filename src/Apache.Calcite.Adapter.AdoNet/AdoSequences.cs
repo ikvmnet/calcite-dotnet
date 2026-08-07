@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Adapter.AdoNet
 {

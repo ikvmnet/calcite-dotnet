@@ -1,15 +1,21 @@
-﻿using System;
+using System;
 
 using org.apache.calcite.avatica;
 using org.apache.calcite.jdbc;
 using org.apache.calcite.sql.type;
 
+using Apache.Calcite.Extensions.Prepare;
+
 namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Provides a wrapper around a <see cref="CalcitePrepare.CalciteSignature"/> that returns column information.
+    /// Reads a prepared <see cref="ClrSignature"/>'s columns as an ADO.NET caller expects them.
     /// </summary>
+    /// <remarks>
+    /// The columns are Avatica's <see cref="ColumnMetaData"/>, which is what the metadata port produces;
+    /// <see cref="MapClrType(ColumnMetaData.AvaticaType)"/> is where that becomes a CLR type.
+    /// </remarks>
     internal readonly struct CalciteResultColumns
     {
 
@@ -78,13 +84,13 @@ namespace Apache.Calcite.Data.Internal
             return typeof(object);
         }
 
-        readonly CalcitePrepare.CalciteSignature _signature;
+        readonly ClrSignature _signature;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
         /// <param name="signature"></param>
-        public CalciteResultColumns(CalcitePrepare.CalciteSignature signature)
+        public CalciteResultColumns(ClrSignature signature)
         {
             _signature = signature ?? throw new ArgumentNullException(nameof(signature));
         }
@@ -92,7 +98,7 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Gets the count of columns in the result set.
         /// </summary>
-        public int Count => _signature.columns.size();
+        public int Count => _signature.Columns.size();
 
         /// <summary>
         /// Gets the column at the specified index.
@@ -101,7 +107,7 @@ namespace Apache.Calcite.Data.Internal
         /// <returns></returns>
         ColumnMetaData GetColumn(int index)
         {
-            return (ColumnMetaData)_signature.columns.get(index);
+            return (ColumnMetaData)_signature.Columns.get(index);
         }
 
         /// <summary>
@@ -141,7 +147,8 @@ namespace Apache.Calcite.Data.Internal
         /// <returns></returns>
         public SqlTypeName GetSqlType(int index)
         {
-            var field = (org.apache.calcite.rel.type.RelDataTypeField)_signature.rowType.getFieldList().get(index);
+            var rowType = _signature.RowType ?? throw new InvalidOperationException($"{_signature.Sql} has no row type.");
+            var field = (org.apache.calcite.rel.type.RelDataTypeField)rowType.getFieldList().get(index);
             return field.getType().getSqlTypeName();
         }
 

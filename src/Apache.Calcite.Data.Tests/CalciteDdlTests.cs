@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Apache.Calcite.Data.Internal;
 
 using Xunit;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Data.Tests
 {

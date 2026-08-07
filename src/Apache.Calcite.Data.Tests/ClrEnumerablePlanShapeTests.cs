@@ -1,6 +1,7 @@
 using System.Text;
 
 using Xunit;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Data.Tests
 {

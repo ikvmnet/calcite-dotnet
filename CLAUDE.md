@@ -1,7 +1,8 @@
 ﻿# Apache.Calcite for .NET
 
-Apache Calcite under IKVM, with an ADO.NET adapter, an ADO.NET client surface, and `Apache.Calcite.Linq`
-— calling conventions that execute a plan as `System.Linq.Expressions` instead of Janino.
+Apache Calcite under IKVM, with an ADO.NET adapter, an ADO.NET client surface, and
+`Apache.Calcite.Extensions` — calling conventions that execute a plan as `System.Linq.Expressions`
+instead of Janino, and the prepare pipeline that gets a statement to one.
 
 ## Projects
 
@@ -9,8 +10,7 @@ Apache Calcite under IKVM, with an ADO.NET adapter, an ADO.NET client surface, a
 |---|---|
 | `Apache.Calcite.Adapter.AdoNet` | pushes a plan down to an ADO.NET provider |
 | `Apache.Calcite.Data` | the `DbConnection` / `DbCommand` surface |
-| `Apache.Calcite.Extensions` | IKVM interop helpers |
-| `Apache.Calcite.Linq` | `ClrEnumerableConvention`; the async one is not written yet |
+| `Apache.Calcite.Extensions` | `ClrEnumerableConvention` (the async one is not written yet), the prepare pipeline, and the IKVM interop helpers |
 
 `TODO.md` has the outstanding work on the ADO.NET adapter, sized and reasoned. The CLR convention is
 ported and has no list of its own.
@@ -21,8 +21,9 @@ ported and has no list of its own.
   project in the root.
 - **The check that matters is `ClrEnumerableDifferentialTests`.** It runs the same SQL through this
   convention and through `EnumerableConvention` and requires the same rows. Every defect worth having
-  found in the Linq project was found by it, three of them in nodes already believed done. Add a query
-  there rather than writing an assertion by hand: the expected answer is whatever Calcite says.
+  found in the convention was found by it, three of them in nodes already believed done. Add a query
+  there rather than writing an assertion by hand: the expected answer is whatever Calcite says. It lives
+  in `Apache.Calcite.Tests`, with the rest of the convention and prepare tests.
 - **Calcite is checked out at `D:\calcite`, and it is 1.43.0-SNAPSHOT.** The projects reference **1.42.0**,
   which is released; `Apache.Calcite.Data.Tests` alone references **1.43.0-SNAPSHOT**, from
   `https://repository.apache.org/content/repositories/snapshots/`, for `calcite-server` and the
@@ -54,7 +55,7 @@ ported and has no list of its own.
   That SDK's `dotnet sln add` also rewrites every project with x64/x86 configurations — edit the solution
   by hand.
 
-## Apache.Calcite.Linq: the rules that hold
+## Apache.Calcite.Extensions: the rules that hold
 
 **Where linq4j may appear.** A node holds linq4j only where a generator of Calcite's produced one or takes
 one, and it is translated where it is produced rather than composed into a larger tree first. That is four

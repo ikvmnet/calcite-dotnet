@@ -1,18 +1,19 @@
-using Apache.Calcite.Linq;
+using Apache.Calcite.Extensions;
 
 using Xunit;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Data.Tests
 {
 
     /// <summary>
     /// The ADO.NET surface driven by the CLR calling convention, from an assembly that sees only the public
-    /// API of <c>Apache.Calcite.Linq</c>.
+    /// API of <c>Apache.Calcite.Extensions</c>.
     /// </summary>
     /// <remarks>
-    /// This project has no <c>InternalsVisibleTo</c> from the Linq assembly, so it reaches
-    /// <see cref="ClrEnumerablePrepare"/> exactly as a consumer of the two packages would. That is the point
-    /// of the tests as much as the queries are.
+    /// This project has no <c>InternalsVisibleTo</c> from <c>Apache.Calcite.Extensions</c>, so it reaches
+    /// the engine exactly as a consumer of the two packages would — through <c>CalciteConnection</c> and
+    /// nothing else. That is the point of the tests as much as the queries are.
     /// </remarks>
     public class ClrEnumerablePrepareTests
     {
@@ -26,7 +27,6 @@ namespace Apache.Calcite.Data.Tests
         static CalciteConnection Open()
         {
             var c = new CalciteConnection(ConnectionString);
-            c.PrepareFactory = () => new ClrEnumerablePrepare();
             c.Open();
             return c;
         }

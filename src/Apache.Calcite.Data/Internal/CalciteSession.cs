@@ -17,6 +17,9 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Apache.Calcite.Extensions.Prepare;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
+
 namespace Apache.Calcite.Data.Internal
 {
 
@@ -83,28 +86,26 @@ namespace Apache.Calcite.Data.Internal
         readonly JavaTypeFactory _typeFactory;
         readonly CalciteConnectionConfig _config;
         readonly IReadOnlyList<string> _defaultSchemaPath;
-        readonly Func<CalcitePrepare> _prepareFactory;
         bool _disposed;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
         /// <param name="options">The connection string options.</param>
-        /// <param name="prepareFactory">
-        /// Optional factory that produces the <see cref="CalcitePrepare"/> instance used for each query.
-        /// When <see langword="null"/>, <c>ClrEnumerablePrepare</c> is used, which runs a plan as a compiled
-        /// expression tree. Pass <c>() =&gt; (CalcitePrepare)CalcitePrepare.DEFAULT_FACTORY.apply()</c> for
-        /// Calcite's own, which generates Java source and compiles it with Janino.
-        /// </param>
         /// <exception cref="ArgumentNullException"></exception>
         /// <exception cref="CalciteException"></exception>
-        public CalciteSession(CalciteConnectionStringBuilder options, Func<CalcitePrepare>? prepareFactory = null)
+        /// <remarks>
+        /// Every statement is planned into <c>ClrEnumerableConvention</c> and run as a compiled expression
+        /// tree. Calcite's own rules stay on the planner, so a statement that convention has no node for is
+        /// still planned and run — implemented in <c>EnumerableConvention</c>, with a converter carrying its
+        /// rows.
+        /// </remarks>
+        public CalciteSession(CalciteConnectionStringBuilder options)
         {
             ArgumentNullException.ThrowIfNull(options);
 
             try
             {
-                _prepareFactory = prepareFactory ?? (() => new Apache.Calcite.Linq.ClrEnumerablePrepare());
                 _rootSchema = BuildRootSchema(options, out var modelDefaultSchema);
                 _rootSchemaPlus = _rootSchema.plus();
                 _config = new CalciteConnectionConfigImpl(BuildEngineProperties(options));
@@ -208,24 +209,21 @@ namespace Apache.Calcite.Data.Internal
         public CalciteConnectionConfig Config => _config;
 
         /// <summary>
-        /// Builds the <see cref="PrepareContext"/> and <see cref="StatementDataContext"/> for the
-        /// request, calls <c>prepareSql</c> to produce a <see cref="CalcitePrepare.CalciteSignature"/>,
-        /// and registers the cancellation callback.
+        /// Parses and plans <paramref name="request"/>, returning the compiled <see cref="ClrSignature"/>.
+        /// No execution state is created here.
         /// </summary>
-        /// <summary>
-        /// Parses and plans <paramref name="request"/>, returning the compiled
-        /// <see cref="CalcitePrepare.CalciteSignature"/>. No execution state is created here.
-        /// </summary>
-        CalcitePrepare.CalciteSignature Plan(CalciteExecuteRequest request)
+        /// <remarks>
+        /// The context is still pushed onto <c>CalcitePrepare.Dummy</c>'s thread-local stack, because
+        /// Calcite's own parse-to-rel reads it from there.
+        /// </remarks>
+        ClrSignature Plan(CalciteExecuteRequest request)
         {
             var ctx = new PrepareContext(_typeFactory, _rootSchema, _config, _defaultSchemaPath);
-            var prepare = _prepareFactory();
-            var query = CalcitePrepare.Query.of(request.Sql);
 
             CalcitePrepare.Dummy.push(ctx);
             try
             {
-                return prepare.prepareSql(ctx, query, (java.lang.Class)typeof(java.lang.Object[]), -1);
+                return new ClrPrepareImpl().Prepare(ctx, request.Sql, (java.lang.Class)typeof(java.lang.Object[]), -1);
             }
             finally
             {
@@ -240,11 +238,11 @@ namespace Apache.Calcite.Data.Internal
         /// from <c>signature.internalParameters</c>, cancel flag, and timeout are assembled into a
         /// single <see cref="StatementDataContext"/>.
         /// </summary>
-        void Bind(CalciteExecuteRequest request, CalcitePrepare.CalciteSignature signature, out DataContext dataContext, out AtomicBoolean cancelFlag)
+        void Bind(CalciteExecuteRequest request, ClrSignature signature, out DataContext dataContext, out AtomicBoolean cancelFlag)
         {
             cancelFlag = new AtomicBoolean(false);
             var boundParameters = ParameterBinder.Bind(request.Parameters);
-            dataContext = new StatementDataContext(_rootSchema.plus(), _typeFactory, cancelFlag, request.CommandTimeoutSeconds * 1000L, boundParameters, signature.internalParameters);
+            dataContext = new StatementDataContext(_rootSchema.plus(), _typeFactory, cancelFlag, request.CommandTimeoutSeconds * 1000L, boundParameters, signature.InternalParameters);
         }
 
         /// <summary>
@@ -300,13 +298,13 @@ namespace Apache.Calcite.Data.Internal
                 var signature = Plan(request);
                 Bind(request, signature, out var dataContext, out _);
 
-                var statementType = signature.statementType;
+                var statementType = signature.StatementType;
 
-                Enumerable? enumerable = null;
+                IEnumerator<object>? enumerator = null;
                 if (!IsDdl(statementType))
-                    enumerable = signature.enumerable(dataContext);
+                    enumerator = signature.Bind(dataContext).GetEnumerator();
 
-                return Task.FromResult(new CalciteResult(signature, enumerable?.enumerator(), 0));
+                return Task.FromResult(new CalciteResult(signature, enumerator, 0));
             }
             catch (CalciteException)
             {
@@ -345,7 +343,7 @@ namespace Apache.Calcite.Data.Internal
                 var signature = Plan(request);
                 Bind(request, signature, out var dataContext, out var cancelFlag);
 
-                var statementType = signature.statementType;
+                var statementType = signature.StatementType;
 
                 long recordsAffected;
                 if (IsDdl(statementType))
@@ -370,10 +368,10 @@ namespace Apache.Calcite.Data.Internal
                     // defined by RelOptUtil.createDmlRowType.
                     recordsAffected = 0;
                     using var _ = cancellationToken.Register(() => cancelFlag.set(true));
-                    using var e = signature.enumerable(dataContext).enumerator();
-                    if (e.moveNext())
+                    using var e = signature.Bind(dataContext).GetEnumerator();
+                    if (e.MoveNext())
                     {
-                        var cur = e.current();
+                        var cur = e.Current;
                         if (cur is object[] row && row.Length > 0)
                             recordsAffected = ToInt64(row[0]);
                         else if (cur != null)

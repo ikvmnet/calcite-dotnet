@@ -5,6 +5,7 @@ using org.apache.calcite.avatica;
 using org.apache.calcite.rel.core;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.type;
+using Apache.Calcite.Extensions;
 
 namespace Apache.Calcite.Data.Tests
 {

@@ -85,14 +85,13 @@ jobs:
   test:
     strategy:
       # One suite failing says nothing about the others, and the default cancels them: the two DELETE
-      # tests red against the 1.43 snapshot were taking down all fifty jobs, so no Linq test ever ran.
+      # tests red against the 1.43 snapshot were taking down all fifty jobs, so no convention test ever ran.
       fail-fast: false
       matrix:
         run:
         - Apache.Calcite.Tests
         - Apache.Calcite.Adapter.AdoNet.Tests
         - Apache.Calcite.Data.Tests
-        - Apache.Calcite.Linq.Tests
         sys:
         - win-x64
         - linux-x64

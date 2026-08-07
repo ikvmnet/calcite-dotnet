@@ -4,6 +4,9 @@
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <ImplicitUsings>disable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <!-- IDE0008 is "use explicit type instead of var". This codebase uses var throughout and is not
+             going to stop, so the suggestion is noise rather than a rule anyone will act on. -->
+        <NoWarn>$(NoWarn);IDE0008</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
