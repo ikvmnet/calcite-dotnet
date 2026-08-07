@@ -10,8 +10,12 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Provides a wrapper around a <see cref="CalcitePrepare.CalciteSignature"/> that returns column information.
+    /// Reads a prepared <see cref="ClrSignature"/>'s columns as an ADO.NET caller expects them.
     /// </summary>
+    /// <remarks>
+    /// The columns are Avatica's <see cref="ColumnMetaData"/>, which is what the metadata port produces;
+    /// <see cref="MapClrType(ColumnMetaData.AvaticaType)"/> is where that becomes a CLR type.
+    /// </remarks>
     internal readonly struct CalciteResultColumns
     {
 

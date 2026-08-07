@@ -20,7 +20,7 @@ namespace Apache.Calcite.Adapter.AdoNet
     /// lazily discovers its tables on demand.
     /// </para>
     /// <para>
-    /// Schema names are resolved from <see cref="AdoDatabaseMetadata.GetSchemas"/> and cached after
+    /// Schema names are resolved from <c>AdoDatabaseMetadata.GetSchemas</c> and cached after
     /// the first lookup. Tables within each child schema are populated on first access.
     /// </para>
     /// </remarks>

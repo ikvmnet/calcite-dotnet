@@ -32,7 +32,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     {
 
         /// <summary>
-        /// Compiles a plan and returns it as a <see cref="Bindable"/>.
+        /// Compiles a plan and returns it as an <see cref="IClrBindable"/>.
         /// </summary>
         /// <param name="internalParameters">Values the query reads through the <see cref="DataContext"/>
         /// rather than from the plan. The same map must be served by the context it is bound with.</param>

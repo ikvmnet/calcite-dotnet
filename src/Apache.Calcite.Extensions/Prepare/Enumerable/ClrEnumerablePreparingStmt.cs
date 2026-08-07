@@ -35,13 +35,10 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable
             RelOptCluster cluster,
             SqlRexConvertletTable convertletTable,
             ClrEnumerablePrefer prefer) :
-            base(context, catalogReader, schema, cluster, convertletTable)
+            base(context, catalogReader, schema, cluster, ClrEnumerableConvention.Instance, convertletTable)
         {
             this.prefer = prefer;
         }
-
-        /// <inheritdoc />
-        protected override Convention ResultConvention => ClrEnumerableConvention.Instance;
 
         /// <inheritdoc />
         /// <remarks>
@@ -102,30 +99,6 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable
                 MapTableModOp(isDml, root.kind),
                 isDml,
                 bindable);
-        }
-
-        /// <summary>
-        /// Returns which modification a DML statement performs.
-        /// </summary>
-        /// <param name="isDml"></param>
-        /// <param name="sqlKind"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// <c>Prepare.mapTableModOp</c>.
-        /// </remarks>
-        static org.apache.calcite.rel.core.TableModify.Operation? MapTableModOp(bool isDml, SqlKind sqlKind)
-        {
-            if (isDml == false)
-                return null;
-
-            return sqlKind.name() switch
-            {
-                nameof(SqlKind.INSERT) => org.apache.calcite.rel.core.TableModify.Operation.INSERT,
-                nameof(SqlKind.DELETE) => org.apache.calcite.rel.core.TableModify.Operation.DELETE,
-                nameof(SqlKind.MERGE) => org.apache.calcite.rel.core.TableModify.Operation.MERGE,
-                nameof(SqlKind.UPDATE) => org.apache.calcite.rel.core.TableModify.Operation.UPDATE,
-                _ => null,
-            };
         }
 
     }

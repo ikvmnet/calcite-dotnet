@@ -82,7 +82,7 @@ namespace Apache.Calcite.Tests
         {
             return ClrPrepareFixture.WithContext(sql, (context, _) =>
             {
-                var signature = new ClrPrepare().Prepare(context, sql, (java.lang.Class)typeof(object[]), -1);
+                var signature = new ClrPrepareImpl().Prepare(context, sql, (java.lang.Class)typeof(object[]), -1);
 
                 var columns = new List<string>();
                 for (int i = 0; i < signature.Columns.size(); i++)
@@ -164,7 +164,7 @@ namespace Apache.Calcite.Tests
         public void Cursor_factory_should_match_calcite(string sql)
         {
             var clr = ClrPrepareFixture.WithContext(sql, (context, _) =>
-                new ClrPrepare().Prepare(context, sql, (java.lang.Class)typeof(object[]), -1).CursorFactory.style.name());
+                new ClrPrepareImpl().Prepare(context, sql, (java.lang.Class)typeof(object[]), -1).CursorFactory.style.name());
 
             var calcite = ClrPrepareFixture.WithContext(sql, (context, _) =>
             {

@@ -11,9 +11,9 @@ namespace Apache.Calcite.Data.Tests
     /// API of <c>Apache.Calcite.Extensions</c>.
     /// </summary>
     /// <remarks>
-    /// This project has no <c>InternalsVisibleTo</c> from the Linq assembly, so it reaches
-    /// <see cref="ClrEnumerablePrepare"/> exactly as a consumer of the two packages would. That is the point
-    /// of the tests as much as the queries are.
+    /// This project has no <c>InternalsVisibleTo</c> from <c>Apache.Calcite.Extensions</c>, so it reaches
+    /// the engine exactly as a consumer of the two packages would — through <c>CalciteConnection</c> and
+    /// nothing else. That is the point of the tests as much as the queries are.
     /// </remarks>
     public class ClrEnumerablePrepareTests
     {

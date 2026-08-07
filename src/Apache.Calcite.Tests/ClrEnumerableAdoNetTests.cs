@@ -15,8 +15,9 @@ namespace Apache.Calcite.Tests
     /// Runs a query through the ADO.NET surface with this convention doing the work.
     /// </summary>
     /// <remarks>
-    /// The end this convention was written for. <c>CalciteConnection.PrepareFactory</c> is the seam, and
-    /// <see cref="ClrEnumerablePrepare"/> is what goes in it; nothing else about the connection changes.
+    /// The end this convention was written for. A connection plans every statement into it — there is no
+    /// seam to set and no other engine to choose, since <c>CalciteSession</c> prepares through
+    /// <c>ClrPrepareImpl</c> and nothing else.
     /// </remarks>
     [TestClass]
     public class ClrEnumerableAdoNetTests

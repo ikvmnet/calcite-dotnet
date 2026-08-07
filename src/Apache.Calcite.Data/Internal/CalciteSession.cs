@@ -209,11 +209,6 @@ namespace Apache.Calcite.Data.Internal
         public CalciteConnectionConfig Config => _config;
 
         /// <summary>
-        /// Builds the <see cref="PrepareContext"/> and <see cref="StatementDataContext"/> for the
-        /// request, calls <c>prepareSql</c> to produce a <see cref="CalcitePrepare.CalciteSignature"/>,
-        /// and registers the cancellation callback.
-        /// </summary>
-        /// <summary>
         /// Parses and plans <paramref name="request"/>, returning the compiled <see cref="ClrSignature"/>.
         /// No execution state is created here.
         /// </summary>
@@ -228,7 +223,7 @@ namespace Apache.Calcite.Data.Internal
             CalcitePrepare.Dummy.push(ctx);
             try
             {
-                return new ClrPrepare().Prepare(ctx, request.Sql, (java.lang.Class)typeof(java.lang.Object[]), -1);
+                return new ClrPrepareImpl().Prepare(ctx, request.Sql, (java.lang.Class)typeof(java.lang.Object[]), -1);
             }
             finally
             {

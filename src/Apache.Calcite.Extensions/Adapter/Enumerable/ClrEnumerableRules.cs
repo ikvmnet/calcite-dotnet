@@ -21,100 +21,100 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     {
 
         /// <summary>
-        /// Rule that converts a table scan to a <see cref="Rel.ClrEnumerableTableScan"/>.
+        /// Rule that converts a table scan to a <see cref="ClrEnumerableTableScan"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableTableScanRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableTableScanRule.Create();
 
         /// <summary>
-        /// Rule that converts a VALUES to a <see cref="Rel.ClrEnumerableValues"/>.
+        /// Rule that converts a VALUES to a <see cref="ClrEnumerableValues"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableValuesRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableValuesRule.Create();
 
         /// <summary>
-        /// Rule that converts a project to a <see cref="Rel.ClrEnumerableProject"/>.
+        /// Rule that converts a project to a <see cref="ClrEnumerableProject"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableProjectRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableProjectRule.Create();
 
         /// <summary>
-        /// Rule that converts a filter to a <see cref="Rel.ClrEnumerableFilter"/>.
+        /// Rule that converts a filter to a <see cref="ClrEnumerableFilter"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableFilterRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableFilterRule.Create();
 
         /// <summary>
-        /// Rule that converts a calc to a <see cref="Rel.ClrEnumerableCalc"/>.
+        /// Rule that converts a calc to a <see cref="ClrEnumerableCalc"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableCalcRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableCalcRule.Create();
 
         /// <summary>
-        /// Rule that converts an aggregate to a <see cref="Rel.ClrEnumerableAggregate"/>.
+        /// Rule that converts an aggregate to a <see cref="ClrEnumerableAggregate"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableAggregateRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableAggregateRule.Create();
 
         /// <summary>
-        /// Rule that converts a join to a <see cref="Rel.ClrEnumerableHashJoin"/> or a
-        /// <see cref="Rel.ClrEnumerableNestedLoopJoin"/>.
+        /// Rule that converts a join to a <see cref="ClrEnumerableHashJoin"/> or a
+        /// <see cref="ClrEnumerableNestedLoopJoin"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableJoinRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableJoinRule.Create();
 
         /// <summary>
-        /// Rule that converts a join to a <see cref="Rel.ClrEnumerableMergeJoin"/>.
+        /// Rule that converts a join to a <see cref="ClrEnumerableMergeJoin"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableMergeJoinRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableMergeJoinRule.Create();
 
         /// <summary>
-        /// Rule that converts an ASOF join to a <see cref="Rel.ClrEnumerableAsofJoin"/>.
+        /// Rule that converts an ASOF join to a <see cref="ClrEnumerableAsofJoin"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableAsofJoinRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableAsofJoinRule.Create();
 
         /// <summary>
-        /// Rule that converts a correlate to a <see cref="Rel.ClrEnumerableCorrelate"/>.
+        /// Rule that converts a correlate to a <see cref="ClrEnumerableCorrelate"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableCorrelateRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableCorrelateRule.Create();
 
         /// <summary>
         /// Rule that converts a conditional correlate to a
-        /// <see cref="Rel.ClrEnumerableConditionalCorrelate"/>.
+        /// <see cref="ClrEnumerableConditionalCorrelate"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableConditionalCorrelateRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableConditionalCorrelateRule.Create();
 
         /// <summary>
-        /// Rule that converts a combine to a <see cref="Rel.ClrEnumerableCombine"/>.
+        /// Rule that converts a combine to a <see cref="ClrEnumerableCombine"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableCombineRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableCombineRule.Create();
 
         /// <summary>
-        /// Rule that converts a union to a <see cref="Rel.ClrEnumerableUnion"/>.
+        /// Rule that converts a union to a <see cref="ClrEnumerableUnion"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableUnionRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableUnionRule.Create();
 
         /// <summary>
-        /// Rule that converts a sort over a union to a <see cref="Rel.ClrEnumerableMergeUnion"/>.
+        /// Rule that converts a sort over a union to a <see cref="ClrEnumerableMergeUnion"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableMergeUnionRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableMergeUnionRule.Create();
 
         /// <summary>
-        /// Rule that converts an intersect to a <see cref="Rel.ClrEnumerableIntersect"/>.
+        /// Rule that converts an intersect to a <see cref="ClrEnumerableIntersect"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableIntersectRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableIntersectRule.Create();
 
         /// <summary>
-        /// Rule that converts a minus to a <see cref="Rel.ClrEnumerableMinus"/>.
+        /// Rule that converts a minus to a <see cref="ClrEnumerableMinus"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableMinusRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableMinusRule.Create();
 
         /// <summary>
-        /// Rule that converts a sort to a <see cref="Rel.ClrEnumerableSort"/>.
+        /// Rule that converts a sort to a <see cref="ClrEnumerableSort"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableSortRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableSortRule.Create();
 
         /// <summary>
-        /// Rule that converts a sort carrying an offset or a fetch to a <see cref="Rel.ClrEnumerableLimit"/>.
+        /// Rule that converts a sort carrying an offset or a fetch to a <see cref="ClrEnumerableLimit"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableLimitRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableLimitRule.Create();
 
         /// <summary>
         /// Rule that converts a sort carrying an offset or a fetch to a
-        /// <see cref="Rel.ClrEnumerableLimitSort"/>.
+        /// <see cref="ClrEnumerableLimitSort"/>.
         /// </summary>
         /// <remarks>
         /// Not in what <see cref="Rules"/> returns, because <c>ENUMERABLE_LIMIT_SORT_RULE</c> is not in
@@ -126,32 +126,32 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         public static readonly RelOptRule ClrEnumerableLimitSortRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableLimitSortRule.Create();
 
         /// <summary>
-        /// Rule that converts a repeat union to a <see cref="Rel.ClrEnumerableRepeatUnion"/>.
+        /// Rule that converts a repeat union to a <see cref="ClrEnumerableRepeatUnion"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableRepeatUnionRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableRepeatUnionRule.Create();
 
         /// <summary>
-        /// Rule that converts a table spool to a <see cref="Rel.ClrEnumerableTableSpool"/>.
+        /// Rule that converts a table spool to a <see cref="ClrEnumerableTableSpool"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableTableSpoolRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableTableSpoolRule.Create();
 
         /// <summary>
-        /// Rule that converts a window to a <see cref="Rel.ClrEnumerableWindow"/>.
+        /// Rule that converts a window to a <see cref="ClrEnumerableWindow"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableWindowRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableWindowRule.Create();
 
         /// <summary>
-        /// Rule that converts a table function scan to a <see cref="Rel.ClrEnumerableTableFunctionScan"/>.
+        /// Rule that converts a table function scan to a <see cref="ClrEnumerableTableFunctionScan"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableTableFunctionScanRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableTableFunctionScanRule.Create();
 
         /// <summary>
-        /// Rule that converts a collect to a <see cref="Rel.ClrEnumerableCollect"/>.
+        /// Rule that converts a collect to a <see cref="ClrEnumerableCollect"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableCollectRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableCollectRule.Create();
 
         /// <summary>
-        /// Rule that converts an uncollect to a <see cref="Rel.ClrEnumerableUncollect"/>.
+        /// Rule that converts an uncollect to a <see cref="ClrEnumerableUncollect"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableUncollectRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableUncollectRule.Create();
 
@@ -177,7 +177,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
         /// <summary>
         /// Rule that converts an aggregate over a sorted input to a
-        /// <see cref="Rel.ClrEnumerableSortedAggregate"/>.
+        /// <see cref="ClrEnumerableSortedAggregate"/>.
         /// </summary>
         /// <remarks>
         /// Not in what <see cref="Rules"/> returns, because <c>ENUMERABLE_SORTED_AGGREGATE_RULE</c> is not
@@ -187,7 +187,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         public static readonly RelOptRule ClrEnumerableSortedAggregateRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableSortedAggregateRule.Create();
 
         /// <summary>
-        /// Rule that converts a join to a <see cref="Rel.ClrEnumerableBatchNestedLoopJoin"/>.
+        /// Rule that converts a join to a <see cref="ClrEnumerableBatchNestedLoopJoin"/>.
         /// </summary>
         /// <remarks>
         /// Not in what <see cref="Rules"/> returns, because <c>ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE</c> is

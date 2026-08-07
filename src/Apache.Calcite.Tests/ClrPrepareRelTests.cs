@@ -43,7 +43,7 @@ namespace Apache.Calcite.Tests
                     .build();
 
                 var rel = build(RelBuilder.create(config));
-                var signature = new ClrPrepare().PrepareRel(context, rel, -1);
+                var signature = new ClrPrepareImpl().PrepareRel(context, rel, -1);
 
                 var rows = new List<string>();
                 foreach (var row in signature.Bind(context.getDataContext()))
@@ -113,7 +113,7 @@ namespace Apache.Calcite.Tests
                 var config = Frameworks.newConfigBuilder().defaultSchema(rootSchema.plus()).build();
                 var rel = RelBuilder.create(config).scan("SALES").build();
 
-                var signature = new ClrPrepare().PrepareRel(context, rel, -1);
+                var signature = new ClrPrepareImpl().PrepareRel(context, rel, -1);
 
                 Assert.AreEqual(0, signature.Parameters.size());
                 Assert.AreEqual(nameof(org.apache.calcite.avatica.Meta.StatementType.SELECT), signature.StatementType.name());
@@ -135,7 +135,7 @@ namespace Apache.Calcite.Tests
                 var config = Frameworks.newConfigBuilder().defaultSchema(rootSchema.plus()).build();
                 var rel = RelBuilder.create(config).scan("SALES").build();
 
-                var signature = new ClrPrepare().PrepareRel(context, rel, 2);
+                var signature = new ClrPrepareImpl().PrepareRel(context, rel, 2);
 
                 var list = new List<object>();
                 foreach (var row in signature.Bind(context.getDataContext()))

@@ -23,7 +23,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     ///
     /// <para><b>There is no decorrelation.</b> <c>Programs.standard</c> runs one, and it rewrites a
     /// correlated sub-query into a join before the planner sees it — which is exactly the node
-    /// <see cref="Rel.ClrEnumerableCorrelate"/> exists to implement. Leaving it out is what puts a correlate
+    /// <see cref="ClrEnumerableCorrelate"/> exists to implement. Leaving it out is what puts a correlate
     /// on a plan at all.</para>
     ///
     /// <para>A caller who wants something else builds its own list; this is the one that matches what the

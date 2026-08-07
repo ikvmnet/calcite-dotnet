@@ -25,7 +25,7 @@ namespace Apache.Calcite.Tests
     /// <remarks>
     /// <see cref="ClrEnumerableDifferentialTests"/> plans with <c>Programs.ofRules</c>, which clears the
     /// planner, so every plan it compares is built wholly in this convention. That is what proves a node is
-    /// this convention's own, and it is not what a prepared statement does: <see cref="ClrPrepare"/> leaves
+    /// this convention's own, and it is not what a prepared statement does: <see cref="ClrPrepareImpl"/> leaves
     /// Calcite's rules on the planner, so a real plan is whichever mixture of the two conventions the
     /// planner costed cheapest, with converters where they meet. Nothing else measures that mixture.
     ///
@@ -47,7 +47,7 @@ namespace Apache.Calcite.Tests
         {
             return ClrPrepareFixture.WithContext(sql, (context, _) =>
             {
-                var signature = new ClrPrepare().Prepare(context, sql, (java.lang.Class)typeof(object[]), maxRowCount);
+                var signature = new ClrPrepareImpl().Prepare(context, sql, (java.lang.Class)typeof(object[]), maxRowCount);
 
                 var rows = new List<string>();
                 foreach (var row in signature.Bind(context.getDataContext()))

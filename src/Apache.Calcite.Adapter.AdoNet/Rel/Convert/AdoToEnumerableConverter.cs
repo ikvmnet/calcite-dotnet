@@ -218,7 +218,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// <summary>
         /// Generates the SQL string to implement the enumerable.
         /// </summary>
-        /// <param name="dialect"></param>
+        /// <param name="convention">The convention whose dialect and parameter syntax the statement is
+        /// written in.</param>
         /// <param name="dataContextBuilder"></param>
         /// <param name="input"></param>
         /// <returns></returns>

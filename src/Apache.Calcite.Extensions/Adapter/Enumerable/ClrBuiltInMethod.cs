@@ -1,7 +1,6 @@
 using System;
 using System.Reflection;
 
-using Apache.Calcite.Extensions.Runtime;
 using Apache.Calcite.Extensions.Interop;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable

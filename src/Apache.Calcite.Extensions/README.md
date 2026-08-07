@@ -2,9 +2,11 @@
 
 [![NuGet](https://img.shields.io/nuget/v/Apache.Calcite.Extensions)](https://www.nuget.org/packages/Apache.Calcite.Extensions)
 
-**Apache.Calcite.Extensions** provides .NET-friendly helper and interop types for working with Apache Calcite via [IKVM](https://github.com/ikvmnet/ikvm). It bridges the gap between the Java-oriented Calcite configuration API and idiomatic .NET code.
+**Apache.Calcite.Extensions** is what .NET adds on top of Apache Calcite running under [IKVM](https://github.com/ikvmnet/ikvm): a calling convention that runs a query plan as compiled .NET code, the prepare pipeline that takes a statement from SQL text to such a plan, and the interop types both need.
 
-This package is used internally by [`Apache.Calcite.Data`](https://www.nuget.org/packages/Apache.Calcite.Data) and [`Apache.Calcite.Adapter.AdoNet`](https://www.nuget.org/packages/Apache.Calcite.Adapter.AdoNet). Reference it directly when you need typed access to Calcite connection properties from your own code.
+No Java compiler runs when a statement is prepared, and a .NET user-defined function can be called from SQL.
+
+It is used by [`Apache.Calcite.Data`](https://www.nuget.org/packages/Apache.Calcite.Data) and [`Apache.Calcite.Adapter.AdoNet`](https://www.nuget.org/packages/Apache.Calcite.Adapter.AdoNet). Reference it directly to plan and run statements without an ADO.NET connection.
 
 Targets **.NET 8**, and is verified on **.NET 8** and **.NET 10**.
 
@@ -14,6 +16,19 @@ Targets **.NET 8**, and is verified on **.NET 8** and **.NET 10**.
 dotnet add package Apache.Calcite.Extensions
 ```
 
+## Why you might want it
+
+Calcite normally executes a query by generating Java source and compiling it at runtime with Janino. Under IKVM that works, but a Java compiler runs every time you prepare a statement, and any function you call from SQL has to be reachable by a Java class name.
+
+This package replaces that step. A query plan is compiled into a `System.Linq.Expressions` tree and turned into a delegate, so:
+
+- **No Java compiler runs when you prepare a statement.**
+- **A .NET method can be a SQL function.** Janino cannot resolve the `cli.`-prefixed name IKVM gives a CLR class, so a .NET user-defined function does not work under Calcite's own engine. It works here.
+
+If you are using [`Apache.Calcite.Data`](https://www.nuget.org/packages/Apache.Calcite.Data) you already have this — every statement on a `CalciteConnection` is planned and run this way, with no code change and nothing to configure.
+
+Reference this package directly when you want typed access to Calcite's connection properties, or to plan and run a statement without an ADO.NET connection.
+
 ## Key types
 
 ### `CalciteConnectionProperties`
@@ -21,7 +36,7 @@ dotnet add package Apache.Calcite.Extensions
 Provides strongly-typed .NET properties over a Calcite `java.util.Properties` map. Instead of reading and writing raw string keys, you get compile-time-checked access to every Calcite connection option:
 
 ```csharp
-using Apache.Calcite.Data;
+using Apache.Calcite.Extensions.Config;
 using java.util;
 using org.apache.calcite.avatica.util;
 

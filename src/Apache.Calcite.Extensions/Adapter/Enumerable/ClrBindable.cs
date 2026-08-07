@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 
-using org.apache.calcite;
-
 using Apache.Calcite.Extensions.Runtime;
+
+using org.apache.calcite;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable
 {
@@ -14,9 +14,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// <param name="plan">The compiled plan.</param>
     /// <param name="elementType">The Java type of one row.</param>
     /// <remarks>
-    /// What Calcite's Janino-generated class is: <c>bind</c> is the plan's root block, and
-    /// <c>getElementType</c> returns a constant. Here the block is a lambda that has already been
-    /// compiled, so this holds it and answers both.
+    /// What Calcite's Janino-generated class is, and produced at the same point. <c>toBindable</c> compiles
+    /// there too — <c>compileToBindable</c> cooks the source, loads the class and calls
+    /// <c>newInstance</c> — so what it hands back is already compiled, exactly as this is. The artifact is
+    /// what differs: a class whose <c>bind</c> holds the plan's root block, against a delegate the same
+    /// block compiled to.
     /// </remarks>
     sealed class ClrBindable(Func<DataContext, IEnumerable<object>> plan, java.lang.reflect.Type elementType) : IClrBindable
     {

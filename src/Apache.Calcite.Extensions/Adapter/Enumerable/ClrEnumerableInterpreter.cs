@@ -7,7 +7,6 @@ using org.apache.calcite.interpreter;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.metadata;
-using Apache.Calcite.Extensions.Interop;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable
 {

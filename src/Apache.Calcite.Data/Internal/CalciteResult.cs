@@ -12,8 +12,12 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Adapts a Calcite <see cref="Enumerator"/> over a prepared <see cref="CalcitePrepare.CalciteSignature"/>.
+    /// Reads the rows of a prepared <see cref="ClrSignature"/>.
     /// </summary>
+    /// <remarks>
+    /// The enumerator is the plan's own — a compiled delegate hands back an
+    /// <see cref="IEnumerator{T}"/> of objects — so nothing stands between a row and the reader.
+    /// </remarks>
     internal sealed record CalciteResult : IDisposable
     {
 

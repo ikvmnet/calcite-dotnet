@@ -29,7 +29,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     ///
     /// <para>This is how a plan of this convention is run: cast the planned root to
     /// <see cref="ClrEnumerableRel"/>, pass it to <see cref="ImplementRoot"/>, and compile the lambda that
-    /// comes back into a <c>Func&lt;DataContext, IEnumerable&gt;</c>.</para>
+    /// comes back into a <c>Func&lt;DataContext, IEnumerable&lt;object&gt;&gt;</c>.</para>
     /// </remarks>
     public class ClrEnumerableRelImplementor
     {

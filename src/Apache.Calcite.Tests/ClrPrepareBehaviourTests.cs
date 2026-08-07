@@ -39,7 +39,7 @@ namespace Apache.Calcite.Tests
         {
             return ClrPrepareFixture.WithContext(sql, (context, _) =>
             {
-                var signature = new ClrPrepare().Prepare(context, sql, (java.lang.Class)typeof(object[]), -1);
+                var signature = new ClrPrepareImpl().Prepare(context, sql, (java.lang.Class)typeof(object[]), -1);
                 return (ColumnMetaData)signature.Columns.get(ordinal);
             });
         }
@@ -148,7 +148,7 @@ namespace Apache.Calcite.Tests
         public void Statement_type_should_be_what_calcite_reports(string sql, string expected)
         {
             var actual = ClrPrepareFixture.WithContext(sql, (context, _) =>
-                new ClrPrepare().Prepare(context, sql, (java.lang.Class)typeof(object[]), -1).StatementType.name());
+                new ClrPrepareImpl().Prepare(context, sql, (java.lang.Class)typeof(object[]), -1).StatementType.name());
 
             Assert.AreEqual(expected, actual, sql);
         }
@@ -195,7 +195,7 @@ namespace Apache.Calcite.Tests
         public void Explain_should_report_one_column_and_no_collations()
         {
             var signature = ClrPrepareFixture.WithContext("EXPLAIN PLAN FOR SELECT ID FROM SALES", (context, _) =>
-                new ClrPrepare().Prepare(context, "EXPLAIN PLAN FOR SELECT ID FROM SALES", (java.lang.Class)typeof(object[]), -1));
+                new ClrPrepareImpl().Prepare(context, "EXPLAIN PLAN FOR SELECT ID FROM SALES", (java.lang.Class)typeof(object[]), -1));
 
             Assert.AreEqual(1, signature.Columns.size());
             Assert.AreEqual(0, signature.Collations.size());
@@ -231,7 +231,7 @@ namespace Apache.Calcite.Tests
         public void Cursor_factory_should_agree_with_calcite(string sql)
         {
             var clr = ClrPrepareFixture.WithContext(sql, (context, _) =>
-                new ClrPrepare().Prepare(context, sql, (java.lang.Class)typeof(object[]), -1).CursorFactory.style.name());
+                new ClrPrepareImpl().Prepare(context, sql, (java.lang.Class)typeof(object[]), -1).CursorFactory.style.name());
 
             var calcite = ClrPrepareFixture.WithContext(sql, (context, _) =>
             {
@@ -254,7 +254,7 @@ namespace Apache.Calcite.Tests
         public void Parameters_should_be_described_per_marker()
         {
             var signature = ClrPrepareFixture.WithContext("", (context, _) =>
-                new ClrPrepare().Prepare(context, "SELECT ID FROM SALES WHERE ID > ? AND REGION = ?", (java.lang.Class)typeof(object[]), -1));
+                new ClrPrepareImpl().Prepare(context, "SELECT ID FROM SALES WHERE ID > ? AND REGION = ?", (java.lang.Class)typeof(object[]), -1));
 
             Assert.AreEqual(2, signature.Parameters.size());
 
@@ -275,7 +275,7 @@ namespace Apache.Calcite.Tests
         public void Internal_parameters_should_carry_the_conformance()
         {
             var signature = ClrPrepareFixture.WithContext("", (context, _) =>
-                new ClrPrepare().Prepare(context, "SELECT ID FROM SALES", (java.lang.Class)typeof(object[]), -1));
+                new ClrPrepareImpl().Prepare(context, "SELECT ID FROM SALES", (java.lang.Class)typeof(object[]), -1));
 
             Assert.IsTrue(signature.InternalParameters.containsKey("_conformance"),
                 "the map the plan was built against reaches the caller");

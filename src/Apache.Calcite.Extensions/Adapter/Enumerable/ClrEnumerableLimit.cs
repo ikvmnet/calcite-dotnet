@@ -11,7 +11,6 @@ using org.apache.calcite.rel.metadata;
 using org.apache.calcite.rex;
 using org.apache.calcite.util;
 
-
 namespace Apache.Calcite.Extensions.Adapter.Enumerable
 {
 
