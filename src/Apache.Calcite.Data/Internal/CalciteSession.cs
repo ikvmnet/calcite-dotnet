@@ -27,6 +27,26 @@ namespace Apache.Calcite.Data.Internal
     {
 
         /// <summary>
+        /// Registers Calcite's JDBC driver, which a view needs and nothing else does.
+        /// </summary>
+        /// <remarks>
+        /// <c>ViewTableMacro.apply</c> reads <c>MaterializedViewTable.MATERIALIZATION_CONNECTION</c>, and
+        /// that field's initializer is <c>DriverManager.getConnection("jdbc:calcite:")</c> — so expanding
+        /// any view, however it was declared, goes through the JDBC driver. Under IKVM nothing had
+        /// registered one, and every view failed at validation.
+        ///
+        /// <para>Both halves are needed. Constructing the <c>Driver</c> runs its static initializer, which
+        /// is what calls <c>register()</c>; and the assembly has to be on the boot class path first,
+        /// because <c>UnregisteredDriver</c> resolves its factory by name through <c>Class.forName</c> and
+        /// cannot see a class that is only in a referenced assembly.</para>
+        /// </remarks>
+        static CalciteSession()
+        {
+            ikvm.runtime.Startup.addBootClassPathAssembly(typeof(org.apache.calcite.jdbc.Driver).Assembly);
+            new org.apache.calcite.jdbc.Driver();
+        }
+
+        /// <summary>
         /// Maps each <see cref="CalciteConnectionStringBuilder"/> key constant to the
         /// corresponding <see cref="CalciteConnectionProperty"/>, which is the authoritative
         /// source of the camelCase property name Calcite expects.
