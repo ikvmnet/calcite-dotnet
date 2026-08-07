@@ -18,7 +18,7 @@ using org.apache.calcite.sql.type;
 using org.apache.calcite.sql2rel;
 using org.apache.calcite.util;
 
-namespace Apache.Calcite.Data.Internal
+namespace Apache.Calcite.Data.Prepare
 {
 
     /// <summary>
@@ -36,18 +36,16 @@ namespace Apache.Calcite.Data.Internal
     /// whose only row-producing member binds it to a linq4j <c>Enumerable</c>. A plan of this convention is
     /// a compiled delegate, so it leaves through <see cref="ClrSignature"/> instead.</para>
     ///
-    /// <para>It extends <c>CalcitePrepareImpl</c> rather than standing beside it. Only the driver is
-    /// replaced, and the class's other services are wanted as they are — <c>createParser</c>,
-    /// <c>parserConfig</c>, <c>createCluster</c>, <c>createConvertletTable</c>, <c>createPlanner</c>,
-    /// <c>executeDdl</c> and <c>populateMaterializations</c>. The preparing statement holds its prepare and
-    /// calls three of them: <c>expandView</c> parses through <c>createParser</c>, which is why a view could
-    /// not be expanded without one. The private state that made inheriting awkward is
-    /// <c>CalcitePreparingStmt.internalParameters</c>, and that class is replaced.</para>
+    /// <para>Nothing of Calcite's prepare is inherited. <c>Prepare.implement</c> is declared to return a
+    /// <c>PreparedResult</c>, whose reason for existing is <c>getBindable</c> — a linq4j <c>Enumerable</c> —
+    /// and these conventions compile to a delegate. So the pipeline is <see cref="ClrPreparingStmt"/> and
+    /// the factory methods below are ours, which is also what lets a second convention reuse them:
+    /// everything here is the same for both, and only the preparing statement differs.</para>
     ///
     /// <para>The type-and-column metadata below is ported rather than reused: every piece of it is a
     /// private static of <c>CalcitePrepareImpl</c>.</para>
     /// </remarks>
-    sealed class ClrPrepare : CalcitePrepareImpl
+    sealed class ClrPrepare
     {
 
         /// <summary>
@@ -95,12 +93,62 @@ namespace Apache.Calcite.Data.Internal
         /// </remarks>
         RelOptPlanner CreatePlanner(CalcitePrepare.Context context)
         {
-            var planner = createPlanner(context, null, null);
+            var planner = new org.apache.calcite.plan.volcano.VolcanoPlanner(null, Contexts.of(context.config()));
+            planner.setExecutor(new RexExecutorImpl(DataContexts.EMPTY));
+            planner.addRelTraitDef(ConventionTraitDef.INSTANCE);
+
+            if (((java.lang.Boolean)CalciteSystemProperty.ENABLE_COLLATION_TRAIT.value()).booleanValue())
+                planner.addRelTraitDef(org.apache.calcite.rel.RelCollationTraitDef.INSTANCE);
+
+            planner.setTopDownOpt(context.config().topDownOpt());
+
+            // enableBindable is false, as it is on a connection that has not asked for the interpreter.
+            // Calcite reads that flag only to choose BindableConvention as its own result convention, which
+            // is not a choice available here
+            RelOptUtil.registerDefaultRules(planner, context.config().materializationsEnabled(), false);
 
             foreach (var rule in ClrEnumerableRules.Rules())
                 planner.addRule(rule);
 
             return planner;
+        }
+
+        /// <summary>
+        /// Factory method for default convertlet table.
+        /// </summary>
+        SqlRexConvertletTable CreateConvertletTable()
+        {
+            return StandardConvertletTable.INSTANCE;
+        }
+
+        /// <summary>
+        /// Factory method for cluster.
+        /// </summary>
+        RelOptCluster CreateCluster(RelOptPlanner planner, RexBuilder rexBuilder)
+        {
+            return RelOptCluster.create(planner, rexBuilder);
+        }
+
+        /// <summary>
+        /// Factory method for SQL parser configuration.
+        /// </summary>
+        SqlParser.Config ParserConfig()
+        {
+            return SqlParser.config();
+        }
+
+        /// <summary>
+        /// Executes a DDL statement.
+        /// </summary>
+        /// <remarks>
+        /// <c>CalcitePrepareImpl.executeDdl</c>: the parser factory off the configuration, then its
+        /// executor. It reads nothing else of the prepare.
+        /// </remarks>
+        void ExecuteDdl(CalcitePrepare.Context context, SqlNode node)
+        {
+            var config = context.config();
+            var parserFactory = (SqlParserImplFactory)config.parserFactory((java.lang.Class)typeof(SqlParserImplFactory), org.apache.calcite.sql.parser.impl.SqlParserImpl.FACTORY);
+            parserFactory.getDdlExecutor().executeDdl(context, node);
         }
 
         /// <summary>
@@ -122,18 +170,13 @@ namespace Apache.Calcite.Data.Internal
                 ? ClrEnumerablePrefer.Array
                 : ClrEnumerablePrefer.Custom;
 
-            // this, not null: the preparing statement holds its prepare and reaches back through it for
-            // createParser, createCluster and populateMaterializations. Expanding a view is the first of
-            // those, so a null prepare fails on any view and on nothing else
             return new ClrEnumerablePreparingStmt(
-                this,
                 context,
                 catalogReader,
-                typeFactory,
                 context.getRootSchema(),
-                prefer,
-                createCluster(planner, new RexBuilder(typeFactory)),
-                createConvertletTable());
+                CreateCluster(planner, new RexBuilder(typeFactory)),
+                CreateConvertletTable(),
+                prefer);
         }
 
         /// <summary>
@@ -148,7 +191,7 @@ namespace Apache.Calcite.Data.Internal
             var typeFactory = context.getTypeFactory();
             var config = context.config();
 
-            var parseConfig = parserConfig()
+            var parseConfig = ParserConfig()
                 .withQuotedCasing(config.quotedCasing())
                 .withUnquotedCasing(config.unquotedCasing())
                 .withQuoting(config.quoting())
@@ -162,7 +205,7 @@ namespace Apache.Calcite.Data.Internal
             SqlNode sqlNode;
             try
             {
-                sqlNode = createParser(sql, parseConfig).parseStmt();
+                sqlNode = SqlParser.create(sql, parseConfig).parseStmt();
             }
             catch (SqlParseException e)
             {
@@ -177,7 +220,7 @@ namespace Apache.Calcite.Data.Internal
             // planned, exactly as Calcite does, and there is nothing left to bind
             if (sqlNode.getKind().belongsTo(SqlKind.DDL))
             {
-                executeDdl(context, sqlNode);
+                ExecuteDdl(context, sqlNode);
 
                 return new ClrSignature(
                     sql,
@@ -193,7 +236,7 @@ namespace Apache.Calcite.Data.Internal
                     Meta.StatementType.OTHER_DDL);
             }
 
-            var preparedResult = preparingStmt.prepareSql(sqlNode, (java.lang.Class)typeof(java.lang.Object), preparingStmt.Validator, true);
+            var preparedResult = preparingStmt.PrepareSql(sqlNode, sqlNode, true);
 
             RelDataType x;
             switch (sqlNode.getKind().name())
@@ -212,7 +255,7 @@ namespace Apache.Calcite.Data.Internal
             }
 
             var parameters = new java.util.ArrayList();
-            var parameterRowType = preparedResult.getParameterRowType();
+            var parameterRowType = preparedResult.ParameterRowType;
             for (var i = parameterRowType.getFieldList().iterator(); i.hasNext();)
             {
                 var field = (RelDataTypeField)i.next();
@@ -229,28 +272,17 @@ namespace Apache.Calcite.Data.Internal
             }
 
             var jdbcType = MakeStruct(typeFactory, x);
-            var originList = preparedResult.getFieldOrigins();
-            var columns = GetColumnMetaDataList((JavaTypeFactory)typeFactory, x, jdbcType, originList);
+            var columns = GetColumnMetaDataList((JavaTypeFactory)typeFactory, x, jdbcType, preparedResult.FieldOrigins);
+            var cursorFactory = Meta.CursorFactory.deduce(columns, preparedResult.ElementType as java.lang.Class);
 
-            java.lang.Class? resultClazz = null;
-            if (preparedResult is org.apache.calcite.runtime.Typed typed)
-                resultClazz = typed.getElementType() as java.lang.Class;
-
-            var cursorFactory = Meta.CursorFactory.deduce(columns, resultClazz);
-
-            // an EXPLAIN never reaches implement, so there is no plan of this convention behind it — the
-            // rendered text is the result. Everything else is ours.
-            var clrResult = preparedResult as ClrEnumerablePreparedResult;
-            var bindable = clrResult is not null
-                ? clrResult.Bindable
-                : new ClrExplainBindable(preparedResult.getCode(), cursorFactory);
-
-            // Calcite reads collations off any PreparedResultImpl, and PreparedExplain is one. The field is
-            // protected, so it is reachable through our own subclass and no other; an EXPLAIN therefore
-            // reports no collations here where Calcite would report the explained plan's. Nothing consumes
-            // the collations of an EXPLAIN — its result is one row of text — but the narrowing is ours, not
-            // Calcite's.
-            var collations = clrResult?.Collations ?? (java.util.List)com.google.common.collect.ImmutableList.of();
+            // an EXPLAIN never reaches Implement, so there is no plan behind it — the rendered text is the
+            // result, and the cursor factory decides whether the one row is an array or the text itself
+            var bindable = preparedResult switch
+            {
+                ClrEnumerablePrepareResult clr => clr.Bindable,
+                ClrExplainResult explain => new ClrExplainBindable(explain.Explanation, cursorFactory),
+                _ => throw new java.lang.IllegalStateException($"{preparedResult.GetType()} has no plan."),
+            };
 
             return new ClrSignature(
                 sql,
@@ -260,7 +292,7 @@ namespace Apache.Calcite.Data.Internal
                 columns,
                 cursorFactory,
                 context.getRootSchema(),
-                collations,
+                preparedResult.Collations,
                 maxRowCount,
                 bindable,
                 statementType);

@@ -8,7 +8,7 @@ using org.apache.calcite.avatica;
 using org.apache.calcite.jdbc;
 using org.apache.calcite.rel.type;
 
-namespace Apache.Calcite.Data.Internal
+namespace Apache.Calcite.Data.Prepare
 {
 
     /// <summary>

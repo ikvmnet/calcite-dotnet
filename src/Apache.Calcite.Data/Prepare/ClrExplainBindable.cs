@@ -6,7 +6,7 @@ using Apache.Calcite.Linq;
 using org.apache.calcite;
 using org.apache.calcite.avatica;
 
-namespace Apache.Calcite.Data.Internal
+namespace Apache.Calcite.Data.Prepare
 {
 
     /// <summary>
