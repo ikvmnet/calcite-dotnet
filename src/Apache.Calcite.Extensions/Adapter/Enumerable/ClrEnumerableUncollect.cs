@@ -60,7 +60,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         {
             var child = (ClrEnumerableRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), JavaRowFormat.LIST);
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), JavaRowFormat.LIST);
 
             var fieldCounts = new java.util.ArrayList();
             var inputTypes = new java.util.ArrayList();
@@ -112,8 +112,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     org.apache.calcite.linq4j.tree.Expressions.constant(java.lang.Boolean.valueOf(withOrdinality)),
                     org.apache.calcite.linq4j.tree.Expressions.constant(types));
 
-            var sourceType = result.PhysType.RowType();
-            var rowType = physType.RowType();
+            var sourceType = result.PhysType.RowType;
+            var rowType = physType.RowType;
 
             return implementor.Result(physType,
                 Expression.Call(null,

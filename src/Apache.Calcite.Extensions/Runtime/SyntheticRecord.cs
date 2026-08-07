@@ -224,6 +224,12 @@ namespace Apache.Calcite.Extensions.Runtime
             }
 
             /// <summary>
+            /// <c>Utilities.compare(Comparable, Comparable)</c>, reached by a method taking objects.
+            /// </summary>
+            static readonly MethodInfo ComparableCompare = typeof(Apache.Calcite.Extensions.Interop.JavaComparisons)
+                .GetMethod(nameof(Apache.Calcite.Extensions.Interop.JavaComparisons.Compare), [typeof(object), typeof(object)])!;
+
+            /// <summary>
             /// Brings a field to the type the comparison takes.
             /// </summary>
             /// <param name="field"></param>
@@ -263,7 +269,11 @@ namespace Apache.Calcite.Extensions.Runtime
                         general = candidate;
                 }
 
-                return general;
+                // the general overload takes a java.lang.Comparable, which IKVM gives a string as a ghost
+                // interface: the CLR type system does not see it, so an Expression.Convert to it throws where
+                // Java's cast would have passed. The same call reached through a method taking an object does
+                // the conversion in compiled C#, where IKVM emits the check.
+                return general == null ? null : ComparableCompare;
             }
 
             /// <summary>

@@ -3,7 +3,6 @@ using System.Linq.Expressions;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using java.util.function;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -74,9 +73,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         {
             var child = (ClrEnumerableRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format);
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), result.Format);
 
-            var rowType = result.PhysType.RowType();
+            var rowType = result.PhysType.RowType;
             var v = result.Expression;
 
             if (offset != null)

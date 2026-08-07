@@ -4,7 +4,6 @@ using System.Linq.Expressions;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using java.util.function;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.adapter.java;
 using org.apache.calcite.interpreter;
@@ -162,7 +161,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <inheritdoc />
         public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), Format());
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), Format());
 
             // the only linq4j here is the table's own expression, which the schema SPI defines as one, and the
             // row shape below. It is translated as soon as it is in hand; what a sequence is made to do after
@@ -214,30 +213,33 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="physType"></param>
         /// <param name="source"></param>
         /// <returns></returns>
-        Expression ToRows(ClrEnumerableRelImplementor implementor, PhysType physType, Expression source)
+        Expression ToRows(ClrEnumerableRelImplementor implementor, ClrPhysType physType, Expression source)
         {
             var element = ClrTypes.FromClass(elementType);
 
-            if (physType.getFormat() == JavaRowFormat.SCALAR
+            if (physType.Format == JavaRowFormat.SCALAR
                 && ((java.lang.Class)typeof(object[])).isAssignableFrom(elementType)
                 && getRowType().getFieldCount() == 1
                 && (table.unwrap(typeof(ScannableTable)) != null
                     || table.unwrap(typeof(FilterableTable)) != null
                     || table.unwrap(typeof(ProjectableFilterableTable)) != null))
                 return Expression.Call(null,
-                    ClrBuiltInMethod.Slice0.MakeGenericMethod(physType.RowType()),
+                    ClrBuiltInMethod.Slice0.MakeGenericMethod(physType.RowType),
                     FromJava(element, source));
 
             var oldFormat = Format();
-            if (physType.getFormat() == oldFormat && HasCollectionField(getRowType()) == false)
+            if (physType.Format == oldFormat && HasCollectionField(getRowType()) == false)
                 // the rows are of the physical row type, which is what every reader of this sequence expects.
                 // Calcite passes the table's own element type along here because a linq4j Enumerable erases
                 // it; a CLR sequence does not, and the two differ wherever a format was optimized away — a
                 // one column table declares Object[] and holds the value itself.
-                return FromJava(physType.RowType(), source);
+                return FromJava(physType.RowType, source);
 
-            // the row shape is PhysType's, and record takes linq4j, so the field expressions are linq4j too.
-            // That is the whole of it: one call feeding another, translated the moment it is built.
+            // the row shape is PhysType's, and one field of it can be a multiset that has to be reformatted
+            // through linq4j's own select -- an Enumerable of Java's, not a sequence of this convention's. So
+            // the selector is the one Calcite writes, built against their physical type and translated whole.
+            var calcite = PhysTypeImpl.of(implementor.TypeFactory, physType.RelRowType, physType.Format, false);
+
             var row = J.Expressions.parameter(elementType, "row");
             var parameter = Expression.Parameter(element, "row");
             implementor.Translator.Bind(row, parameter);
@@ -245,12 +247,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var fieldCount = table.getRowType().getFieldCount();
             var expressionList = new java.util.ArrayList(fieldCount);
             for (int i = 0; i < fieldCount; i++)
-                expressionList.add(FieldExpression(row, i, physType, oldFormat));
+                expressionList.add(FieldExpression(row, i, calcite, oldFormat));
 
-            var rowType = physType.RowType();
+            var rowType = physType.RowType;
             var selector = Expression.Lambda(
                 typeof(Func<,>).MakeGenericType(element, rowType),
-                implementor.Translator.Translate(physType.record(expressionList)),
+                implementor.Translator.Translate(calcite.record(expressionList)),
                 parameter);
 
             return Expression.Call(null, ClrBuiltInMethod.Select.MakeGenericMethod(element, rowType), FromJava(element, source), selector);

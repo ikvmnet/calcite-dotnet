@@ -1,5 +1,7 @@
 using System.Linq.Expressions;
 
+using Apache.Calcite.Extensions.Linq4j.Tree;
+
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -60,19 +62,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         {
             var child = (ClrEnumerableRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format);
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), result.Format);
 
             var inputPhysType = result.PhysType;
-            var pair = inputPhysType.generateCollationKey(collation.getFieldCollations());
+            var (keySelector, collationComparator) = inputPhysType.GenerateCollationKey(collation.getFieldCollations());
 
-            var sourceType = inputPhysType.RowType();
+            var sourceType = inputPhysType.RowType;
 
-            // Pair carries left and right as fields and declares static methods of the same names, which C#
-            // cannot tell apart; Map.Entry gives the same two values under names that are not overloaded
-            var keySelector = implementor.Translator.TranslateSelector((J.Expression)pair.getKey(), sourceType);
-            var comparator = pair.getValue() == null
-                ? Expression.Constant(null, typeof(java.util.Comparator))
-                : implementor.Translator.Translate((J.Expression)pair.getValue());
+            var comparator = collationComparator ?? Expression.Constant(null, typeof(java.util.Comparator));
 
             var keyType = keySelector.ReturnType;
 

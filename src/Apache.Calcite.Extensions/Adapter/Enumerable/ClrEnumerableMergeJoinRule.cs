@@ -1,5 +1,4 @@
 using java.util.function;
-
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.convert;

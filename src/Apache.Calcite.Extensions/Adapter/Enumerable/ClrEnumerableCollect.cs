@@ -1,6 +1,8 @@
 using System;
 using System.Linq.Expressions;
 
+using Apache.Calcite.Extensions.Linq4j.Tree;
+
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -61,11 +63,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             // rows are asked for as arrays, though as Calcite notes the child need not oblige
             var result = implementor.VisitChild(this, 0, child, ClrEnumerablePrefer.Array);
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), JavaRowFormat.LIST);
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), JavaRowFormat.LIST);
 
             var collectionType = getCollectionType();
             var source = result.Expression;
-            var sourceType = result.PhysType.RowType();
+            var sourceType = result.PhysType.RowType;
 
             Expression collection;
 
@@ -75,7 +77,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 case nameof(SqlTypeName.MULTISET):
                     var componentType = ((RelDataTypeField)getRowType().getFieldList().get(0)).getType().getComponentType()
                         ?? throw new java.lang.NullPointerException();
-                    var childRecordType = ((RelDataTypeField)result.PhysType.getRowType().getFieldList().get(0)).getType();
+                    var childRecordType = ((RelDataTypeField)result.PhysType.RelRowType.getFieldList().get(0)).getType();
 
                     if (SqlTypeUtil.sameNamedType(componentType, childRecordType) == false)
                     {
@@ -85,7 +87,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                             ? JavaRowFormat.SCALAR
                             : JavaRowFormat.ARRAY;
 
-                        source = result.PhysType.ConvertTo(implementor, source, targetFormat);
+                        source = result.PhysType.ConvertTo(source, targetFormat);
                         sourceType = source.Type.GetGenericArguments()[0];
                     }
 

@@ -77,8 +77,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <inheritdoc />
         public override ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
-            var rowType = physType.RowType();
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
+            var rowType = physType.RowType;
 
             // the inputs go into a list, because the merge walks all of them at once rather than one after
             // the other; Calcite builds the same list into the block it generates
@@ -98,11 +98,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (collation == null || collation.getFieldCollations().isEmpty())
                 throw new java.lang.IllegalStateException("ClrEnumerableMergeUnion with no collation");
 
-            var pair = physType.generateCollationKey(collation.getFieldCollations());
-            var sortKeySelector = implementor.Translator.TranslateSelector((org.apache.calcite.linq4j.tree.Expression)pair.getKey(), rowType);
-            var sortComparator = pair.getValue() == null
+            var (sortKeySelector, collationComparator) = physType.GenerateCollationKey(collation.getFieldCollations());
+            var sortComparator = collationComparator == null
                 ? Expression.Constant(null, typeof(java.util.Comparator))
-                : implementor.Translator.Translate((org.apache.calcite.linq4j.tree.Expression)pair.getValue());
+                : collationComparator;
 
             body.Add(
                 Expression.Call(null,
@@ -111,7 +110,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     sortKeySelector,
                     sortComparator,
                     Expression.Constant(all),
-                    physType.Comparer(implementor)));
+                    physType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer))));
 
             return implementor.Result(physType, Expression.Block(body[^1].Type, [sources], body));
         }

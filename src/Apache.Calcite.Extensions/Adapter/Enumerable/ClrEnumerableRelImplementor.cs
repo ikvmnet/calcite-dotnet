@@ -3,8 +3,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Extensions.Runtime;
+using Apache.Calcite.Extensions.Linq4j.Function;
 using Apache.Calcite.Extensions.Linq4j.Tree;
+using Apache.Calcite.Extensions.Runtime;
 
 using org.apache.calcite;
 using org.apache.calcite.adapter.enumerable;
@@ -14,7 +15,6 @@ using org.apache.calcite.rex;
 using org.apache.calcite.sql.validate;
 
 using J = org.apache.calcite.linq4j.tree;
-using Apache.Calcite.Extensions.Linq4j.Function;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable
 {
@@ -274,12 +274,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="physType">How the rows are represented.</param>
         /// <param name="expression">The plan, whose value is the rows.</param>
         /// <returns></returns>
-        public ClrEnumerableResult Result(PhysType physType, Expression expression)
+        public ClrEnumerableResult Result(ClrPhysType physType, Expression expression)
         {
             RequireRowType(physType, expression);
 
             // PhysTypeImpl keeps its format package-private, and getFormat is the same value in public
-            return new ClrEnumerableResult(expression, physType, physType.getFormat());
+            return new ClrEnumerableResult(expression, physType, physType.Format);
         }
 
         /// <summary>
@@ -303,9 +303,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <c>IOrderedEnumerable</c>: a check with a way out is a check only for the shapes that already
         /// pass.</para>
         /// </remarks>
-        static void RequireRowType(PhysType physType, Expression expression)
+        static void RequireRowType(ClrPhysType physType, Expression expression)
         {
-            var expected = physType.RowType();
+            var expected = physType.RowType;
 
             if (expression.Type.IsGenericType == false || expression.Type.GetGenericTypeDefinition() != typeof(IEnumerable<>))
                 throw new java.lang.IllegalStateException($"{Node()} handed up a {expression.Type} where a sequence of {expected} was wanted.");

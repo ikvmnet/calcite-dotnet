@@ -69,12 +69,22 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var child = (ClrEnumerableRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);
 
-            var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.PreferCustom());
+            var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.PreferCustom());
             var inputPhysType = result.PhysType;
-            var sourceType = inputPhysType.RowType();
-            var rowType = physType.RowType();
+            var sourceType = inputPhysType.RowType;
+            var rowType = physType.RowType;
 
-            var keyPhysType = inputPhysType.project(groupSet.asList(), getGroupType() != Group.SIMPLE, JavaRowFormat.LIST);
+            // the accumulator, the group key and the output row are all written by Calcite's aggregate
+            // implementors, into blocks of Calcite's, so each of those takes a physical type of Calcite's.
+            // Only the sorter's key selector below is a delegate, and only that one is ours.
+            var inputCalcite = PhysTypeImpl.of(typeFactory, inputPhysType.RelRowType, inputPhysType.Format, false);
+            var outputCalcite = PhysTypeImpl.of(typeFactory, physType.RelRowType, physType.Format, false);
+
+            var keyPhysType = inputCalcite.project(groupSet.asList(), getGroupType() != Group.SIMPLE, JavaRowFormat.LIST);
+            // the same key twice over: Calcite's, because its aggregate implementors read the key through
+            // AggResultContextImpl, and ours, because the selector and the comparer are delegates
+            var keyClr = ClrPhysTypeImpl.Of(typeFactory, keyPhysType.getRowType(), keyPhysType.getFormat(), false);
+
             var groupCount = getGroupCount();
 
             var aggs = new java.util.ArrayList();
@@ -86,7 +96,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var initBlock = new J.BlockBuilder();
             var aggStateTypes = CreateAggStateTypes(initExpressions, initBlock, aggs, typeFactory, getInput().getRowType(), groupSet, getGroupSets());
 
-            var accPhysType = AccumulatorPhysType(typeFactory, typeFactory.createSyntheticType(aggStateTypes));
+            var accPhysType = PhysTypeImplWorkaround.Of(typeFactory, typeFactory.createSyntheticType(aggStateTypes));
             DeclareParentAccumulator(initExpressions, initBlock, accPhysType);
 
             var accType = ClrTypes.Resolve(accPhysType.getJavaRowType());
@@ -96,14 +106,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     implementor.Translator.TranslateBody(initBlock.toBlock(), accType)),
                 accType);
 
-            var in_ = J.Expressions.parameter(inputPhysType.getJavaRowType(), "in");
+            var in_ = J.Expressions.parameter(inputCalcite.getJavaRowType(), "in");
             var acc_ = J.Expressions.parameter(accPhysType.getJavaRowType(), "acc");
             var inParameter = Expression.Parameter(sourceType, "in");
             var accParameter = Expression.Parameter(accType, "acc");
             implementor.Translator.Bind(in_, inParameter);
             implementor.Translator.Bind(acc_, accParameter);
 
-            var adders = CreateAccumulatorAdders(implementor, in_, inParameter, aggs, accPhysType, acc_, accParameter, inputPhysType, typeFactory, accType, sourceType);
+            var adders = CreateAccumulatorAdders(implementor, in_, inParameter, aggs, accPhysType, acc_, accParameter, inputCalcite, typeFactory, accType, sourceType);
             var lambdaFactory = ImplementLambdaFactory(implementor, inputPhysType, aggs, adders, accumulatorInitializer, HasOrderedCall(aggs), sourceType);
 
             // the block that turns a key and a finished accumulator into an output row
@@ -144,7 +154,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 results.add(agg.implementor.implementResult(agg.context, new AggResultContextImpl(resultBlock, agg.call, agg.state, key_, keyPhysType)));
             }
 
-            resultBlock.add(J.Expressions.return_(null, physType.record(results)));
+            resultBlock.add(J.Expressions.return_(null, outputCalcite.record(results)));
 
             if (getGroupType() != Group.SIMPLE)
             {
@@ -158,9 +168,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 for (int i = 0; i < sets.size(); i++)
                 {
                     var set = (ImmutableBitSet)sets.get(i);
-                    var selector = implementor.Translator.TranslateSelector(
-                        inputPhysType.generateSelector(in_, groupSet.asList(), set.asList(), keyPhysType.getFormat()),
-                        sourceType);
+                    var selector = inputPhysType.GenerateSelector(inParameter, groupSet.asList(), set.asList(), keyClr.Format);
 
                     keyType ??= selector.ReturnType;
                     if (selector.ReturnType != keyType)
@@ -183,7 +191,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                         Expression.Call(lambdaFactory, AccInitializer),
                         Expression.Call(lambdaFactory, AccAdder),
                         Expression.Call(lambdaFactory, ResultSelector, Function2Of(setsResultSelector, keyParameter.Type, accType, rowType)),
-                        keyPhysType.Comparer(implementor)));
+                        keyClr.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer))));
             }
 
             if (groupCount == 0)
@@ -209,18 +217,16 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // the physical type is reached by conversion
             if (getAggCallList().isEmpty() && groupSet.equals(ImmutableBitSet.range(getInput().getRowType().getFieldCount())))
             {
-                var source = inputPhysType.ConvertTo(implementor, result.Expression, physType.getFormat());
+                var source = inputPhysType.ConvertTo(result.Expression, physType.Format);
 
                 return implementor.Result(physType,
                     Expression.Call(null,
                         ClrBuiltInMethod.Distinct.MakeGenericMethod(source.Type.GetGenericArguments()[0]),
                         source,
-                        physType.Comparer(implementor)));
+                        physType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer))));
             }
 
-            var keySelector = implementor.Translator.TranslateSelector(
-                inputPhysType.generateSelector(in_, groupSet.asList(), keyPhysType.getFormat()),
-                sourceType);
+            var keySelector = inputPhysType.GenerateSelector(inParameter, groupSet.asList(), keyClr.Format);
 
             var groupResultSelector = Expression.Lambda(
                 typeof(Func<,,>).MakeGenericType(keyParameter!.Type, accType, rowType),
@@ -236,7 +242,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     Expression.Call(lambdaFactory, AccInitializer),
                     Expression.Call(lambdaFactory, AccAdder),
                     Expression.Call(lambdaFactory, ResultSelector, Function2Of(groupResultSelector, keyParameter.Type, accType, rowType)),
-                    keyPhysType.Comparer(implementor)));
+                    keyClr.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer))));
         }
     }
 

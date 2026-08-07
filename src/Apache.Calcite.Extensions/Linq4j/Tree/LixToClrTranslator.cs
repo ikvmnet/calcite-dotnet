@@ -4,10 +4,10 @@ using System.Linq.Expressions;
 using System.Reflection;
 
 using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Interop;
 using Apache.Calcite.Extensions.Runtime;
 
 using J = org.apache.calcite.linq4j.tree;
-using Apache.Calcite.Extensions.Interop;
 
 namespace Apache.Calcite.Extensions.Linq4j.Tree
 {
@@ -187,69 +187,6 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 frames.Pop();
             }
         }
-
-        /// <summary>
-        /// Translates a selector, which <c>PhysType</c> does not always give as a lambda.
-        /// </summary>
-        /// <param name="selector"></param>
-        /// <param name="sourceType"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
-        /// <remarks>
-        /// Where a projection is the identity, <c>PhysType.generateSelector</c> returns a call to
-        /// <c>Functions.identitySelector</c> rather than a lambda, and its value is a linq4j <c>Function1</c>
-        /// that no delegate can be made from. The identity is the one thing a caller can supply for itself.
-        /// </remarks>
-        public LambdaExpression TranslateSelector(J.Expression selector, Type sourceType)
-        {
-            ArgumentNullException.ThrowIfNull(selector);
-            ArgumentNullException.ThrowIfNull(sourceType);
-
-            var translated = Translate(selector);
-
-            var lambda = AnonymousClasses.Unwrap(translated);
-            if (lambda != null)
-                return Over(lambda, sourceType);
-
-            if (translated is MethodCallExpression call && call.Method == IdentitySelector)
-            {
-                var row = Expression.Parameter(sourceType, "row");
-                return Expression.Lambda(row, row);
-            }
-
-            throw new NotSupportedException($"A selector of '{translated.Type}' is neither a lambda nor the identity.");
-        }
-
-        /// <summary>
-        /// Returns the lambda taking a row of the sequence it will run over.
-        /// </summary>
-        /// <param name="lambda"></param>
-        /// <param name="sourceType"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// A sequence carries boxed rows, and the physical type a selector was generated against says what a
-        /// row is as a field — <c>int</c> for one column of a NOT NULL integer. Java reconciles the two
-        /// without saying so, its lambda taking the erased row and unboxing where the body reads it; a CLR
-        /// lambda has to say it, so where the two differ the parameter is the sequence's and the body reads
-        /// it through <see cref="ClrEnumUtils.Convert"/>, which is the unboxing Java left implicit.
-        /// </remarks>
-        static LambdaExpression Over(LambdaExpression lambda, Type sourceType)
-        {
-            if (lambda.Parameters.Count != 1 || lambda.Parameters[0].Type == sourceType)
-                return lambda;
-
-            var row = Expression.Parameter(sourceType, lambda.Parameters[0].Name);
-
-            return Expression.Lambda(
-                typeof(Func<,>).MakeGenericType(sourceType, lambda.ReturnType),
-                Expression.Invoke(lambda, ClrEnumUtils.Convert(row, lambda.Parameters[0].Type)),
-                row);
-        }
-
-        /// <summary>
-        /// <c>Functions.identitySelector</c>, which is what a projection that changes nothing comes back as.
-        /// </summary>
-        static readonly MethodInfo IdentitySelector = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.IDENTITY_SELECTOR.method);
 
         /// <summary>
         /// Translates a node in a position that takes a statement rather than a value.
@@ -1083,7 +1020,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 // two boxes of one type, which Java unboxes for anything but == and !=: those compare
                 // references, and the CLR does the same, so they are left as they are. Everything else needs
                 // a primitive and has none, which is the unboxing Java left implicit
-                if (op is not (ExpressionType.Equal or ExpressionType.NotEqual) && ClrEnumUtils.PrimitiveOf(left.Type) is Type primitive)
+                if (op is not (ExpressionType.Equal or ExpressionType.NotEqual) && ClrPrimitive.PrimitiveClass(left.Type) is Type primitive)
                 {
                     left = ClrEnumUtils.Convert(left, primitive);
                     right = ClrEnumUtils.Convert(right, primitive);

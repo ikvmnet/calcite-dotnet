@@ -4,7 +4,6 @@ using System.Linq.Expressions;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using java.util.function;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -98,34 +97,34 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // variables, and an optimising builder would inline a declaration used once, leaving the
             // reference already built into that sub-plan pointing at nothing
             var corrBlock = new J.BlockBuilder(false);
-            var corrVarType = leftResult.PhysType.getJavaRowType();
-            var corrArg = J.Expressions.parameter(java.lang.reflect.Modifier.FINAL, corrVarType, getCorrelVariable());
+            // the getter registered below is one Calcite's Rex translation reads the outer row through,
+            // so it is given their physical type, built here from the three values ours carries
+            var leftCalcite = PhysTypeImpl.of(implementor.TypeFactory, leftResult.PhysType.RelRowType, leftResult.PhysType.Format, false);
+            var corrArg = J.Expressions.parameter(java.lang.reflect.Modifier.FINAL, leftCalcite.getJavaRowType(), getCorrelVariable());
 
             // boxed, because the selector Calcite's join builds always takes boxed rows — see JoinSelector,
             // which boxes both of its parameter types. Every other join here boxes its sequences for that
             // reason; this one did not, and a correlate whose sub-plan yields one primitive column — an
             // EXISTS, whose right side is a bare boolean — is where the two types met and disagreed.
-            var corrParameter = Expression.Parameter(ClrTypes.Resolve(J.Primitive.box(corrVarType)), getCorrelVariable());
+            var corrParameter = Expression.Parameter(leftResult.PhysType.RowType, getCorrelVariable());
             implementor.Translator.Bind(corrArg, corrParameter);
 
-            implementor.RegisterCorrelVariable(getCorrelVariable(), corrArg, corrBlock, leftResult.PhysType);
+            implementor.RegisterCorrelVariable(getCorrelVariable(), corrArg, corrBlock, leftCalcite);
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)getRight(), pref);
             implementor.ClearCorrelVariable(getCorrelVariable());
 
-            var leftSource = ClrEnumUtils.BoxRows(leftResult.PhysType, leftResult.Expression);
-            var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
 
             implementor.Translator.TranslateStatements(corrBlock.toBlock(), out var declared, out var body);
-            body.Add(rightSource);
+            body.Add(rightResult.Expression);
 
-            var leftType = leftSource.Type.GetGenericArguments()[0];
-            var rightType = rightSource.Type.GetGenericArguments()[0];
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
-            var rowType = physType.RowType();
+            var leftType = leftResult.PhysType.RowType;
+            var rightType = rightResult.PhysType.RowType;
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
+            var rowType = physType.RowType;
 
             var inner = Expression.Lambda(
-                typeof(Func<,>).MakeGenericType(leftType, rightSource.Type),
-                Expression.Block(rightSource.Type, declared, body),
+                typeof(Func<,>).MakeGenericType(leftType, rightResult.Expression.Type),
+                Expression.Block(rightResult.Expression.Type, declared, body),
                 corrParameter);
 
             var selector = ClrEnumUtils.JoinSelector(implementor, getJoinType(), physType, leftResult.PhysType, rightResult.PhysType);
@@ -133,7 +132,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return implementor.Result(physType,
                 Expression.Call(null,
                     ClrBuiltInMethod.CorrelateJoin.MakeGenericMethod(leftType, rightType, rowType),
-                    leftSource,
+                    leftResult.Expression,
                     inner,
                     selector,
                     Expression.Constant(ClrEnumUtils.ToLinq4jJoinType(getJoinType()))));

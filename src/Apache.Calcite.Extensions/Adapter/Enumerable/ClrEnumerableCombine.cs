@@ -54,7 +54,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 var input = (ClrEnumerableRel)getInputs().get(ord);
                 var result = implementor.VisitChild(this, ord, input, pref);
 
-                var source = ClrEnumUtils.BoxRows(result.PhysType, result.Expression);
+                var source = result.Expression;
                 var sourceType = source.Type.GetGenericArguments()[0];
                 var row = Expression.Parameter(sourceType, $"row{ord}");
 
@@ -85,7 +85,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 lists.add(Expression.Call(null, ClrBuiltInMethod.ToJavaList.MakeGenericMethod(typeof(java.util.Map)), mapped));
             }
 
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.ARRAY));
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.ARRAY));
 
             var arguments = new Expression[lists.size()];
             for (int i = 0; i < lists.size(); i++)

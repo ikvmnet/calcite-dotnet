@@ -3,7 +3,6 @@ using System.Linq.Expressions;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using java.util.function;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -76,7 +75,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var result = implementor.VisitChild(this, 0, (ClrEnumerableRel)getInput(), pref);
 
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(result.Format));
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(result.Format));
 
             // the table is looked up in the schema the plan is bound with, as Calcite looks it up, rather than
             // read here and held: the collection belongs to the DataContext a run is given, and a plan
@@ -91,7 +90,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     typeof(ModifiableTable)),
                 ModifiableTableGetModifiableCollection);
 
-            var rowType = result.PhysType.RowType();
+            var rowType = result.PhysType.RowType;
 
             return implementor.Result(physType,
                 Expression.Call(null,

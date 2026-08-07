@@ -1,5 +1,7 @@
 using System.Linq.Expressions;
 
+using Apache.Calcite.Extensions.Linq4j.Tree;
+
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel.core;
@@ -47,14 +49,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     continue;
                 }
 
-                var rowType = result.PhysType.RowType();
+                var rowType = result.PhysType.RowType;
 
                 unionExp = all
                     ? Expression.Call(null, ClrBuiltInMethod.Concat.MakeGenericMethod(rowType), unionExp, result.Expression)
-                    : Expression.Call(null, ClrBuiltInMethod.Union.MakeGenericMethod(rowType), unionExp, result.Expression, result.PhysType.Comparer(implementor));
+                    : Expression.Call(null, ClrBuiltInMethod.Union.MakeGenericMethod(rowType), unionExp, result.Expression, result.PhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)));
             }
 
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
 
             return implementor.Result(physType, unionExp ?? throw new java.lang.IllegalStateException("unionExp"));
         }

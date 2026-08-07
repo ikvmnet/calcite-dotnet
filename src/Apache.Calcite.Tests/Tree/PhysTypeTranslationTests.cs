@@ -2,14 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 
+using Apache.Calcite.Extensions;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using FluentAssertions;
-
 using java.lang;
-
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.jdbc;
 using org.apache.calcite.rel;
@@ -17,8 +16,6 @@ using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
 
 using J = org.apache.calcite.linq4j.tree;
-using Apache.Calcite.Extensions;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Tests.Tree
 {
@@ -208,12 +205,12 @@ namespace Apache.Calcite.Tests.Tree
         public void ShouldConvertAOneColumnRowFromAnArrayToAScalar()
         {
             var oneColumn = typeFactory.builder().add("intField", typeFactory.createSqlType(SqlTypeName.INTEGER)).build();
-            var array = PhysTypeImpl.of(typeFactory, oneColumn, JavaRowFormat.ARRAY, false);
+            var array = ClrPhysTypeImpl.Of(typeFactory, oneColumn, JavaRowFormat.ARRAY, false);
 
             var implementor = new ClrEnumerableRelImplementor(new org.apache.calcite.rex.RexBuilder(typeFactory), new java.util.HashMap());
             var rows = new object[][] { [Integer.valueOf(1)], [Integer.valueOf(2)] };
 
-            var converted = array.ConvertTo(implementor, Expression.Constant(rows, typeof(IEnumerable<object[]>)), JavaRowFormat.SCALAR);
+            var converted = array.ConvertTo(Expression.Constant(rows, typeof(IEnumerable<object[]>)), JavaRowFormat.SCALAR);
 
             converted.Type.Should().Be(typeof(IEnumerable<Integer>), "a sequence of a one-column scalar row carries the box");
 

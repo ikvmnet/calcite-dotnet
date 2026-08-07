@@ -1,6 +1,7 @@
 using System;
 using System.Linq.Expressions;
 
+using Apache.Calcite.Extensions.Linq4j.Function;
 using Apache.Calcite.Extensions.Runtime;
 
 using org.apache.calcite.adapter.enumerable;
@@ -16,7 +17,6 @@ using org.apache.calcite.sql;
 using org.apache.calcite.util;
 
 using J = org.apache.calcite.linq4j.tree;
-using Apache.Calcite.Extensions.Linq4j.Function;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable
 {
@@ -91,35 +91,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 name = Util.toJavaId(agg.call.getAggregation().getName(), 0).Substring("ID$0$".Length) + name;
 
             return name;
-        }
-
-        /// <summary>
-        /// Returns the physical type of an accumulator, whose Java type is a synthetic record rather than a
-        /// relational type.
-        /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <param name="javaRowClass"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// PhysTypeImpl has this and keeps it package private. The row type is rebuilt from the fields of the
-        /// record and the format is left unoptimised, exactly as it does, because an accumulator of one field
-        /// is still a record.
-        /// </remarks>
-        internal static PhysType AccumulatorPhysType(JavaTypeFactory typeFactory, java.lang.reflect.Type javaRowClass)
-        {
-            var builder = typeFactory.builder();
-
-            if (javaRowClass is J.Types.RecordType recordType)
-            {
-                var fields = recordType.getRecordFields();
-                for (int i = 0; i < fields.size(); i++)
-                {
-                    var field = (J.Types.RecordField)fields.get(i);
-                    builder.add(field.getName(), typeFactory.createType(field.getType()));
-                }
-            }
-
-            return PhysTypeImpl.of(typeFactory, builder.build(), JavaRowFormat.CUSTOM, false);
         }
 
         /// <summary>
@@ -267,7 +238,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </remarks>
         protected static Expression ImplementLambdaFactory(
             ClrEnumerableRelImplementor implementor,
-            PhysType inputPhysType,
+            ClrPhysType inputPhysType,
             java.util.List aggs,
             java.util.List adders,
             Expression accumulatorInitializer,
@@ -310,11 +281,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     continue;
                 }
 
-                var pair = inputPhysType.generateCollationKey(agg.call.collation.getFieldCollations());
-                var keySelector = implementor.Translator.TranslateSelector((J.Expression)pair.getKey(), sourceType);
-                var comparator = pair.getValue() == null
-                    ? Expression.Constant(null, typeof(java.util.Comparator))
-                    : implementor.Translator.Translate((J.Expression)pair.getValue());
+                var (keySelector, collationComparator) = inputPhysType.GenerateCollationKey(agg.call.collation.getFieldCollations());
+                var comparator = collationComparator ?? Expression.Constant(null, typeof(java.util.Comparator));
 
                 body.Add(Expression.Call(lazyList, CollectionAdd,
                     Expression.Convert(

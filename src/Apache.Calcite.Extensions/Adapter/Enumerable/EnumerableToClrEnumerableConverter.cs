@@ -1,5 +1,7 @@
 using System.Linq.Expressions;
 
+using Apache.Calcite.Extensions.Linq4j.Tree;
+
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -61,10 +63,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var result = enumerable.visitChild(null, 0, (EnumerableRel)getInput(), pref.ToCalcite());
 
-            var rowType = result.physType.RowType();
+            // a physical type is a type factory, a row type and a format, and theirs answers all three
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, result.physType.getRowType(), result.physType.getFormat(), false);
+            var rowType = physType.RowType;
             var source = implementor.Translator.TranslateBody(result.block, typeof(org.apache.calcite.linq4j.Enumerable));
 
-            return implementor.Result(result.physType,
+            return implementor.Result(physType,
                 Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), source));
         }
 

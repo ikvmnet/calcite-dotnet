@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 
+using Apache.Calcite.Extensions.Runtime;
+
 using org.apache.calcite;
 using org.apache.calcite.adapter.enumerable;
-
-using Apache.Calcite.Extensions.Runtime;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable
 {

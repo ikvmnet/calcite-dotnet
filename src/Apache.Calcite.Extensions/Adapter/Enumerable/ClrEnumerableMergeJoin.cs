@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Linq.Expressions;
 
-using java.util.function;
+using Apache.Calcite.Extensions.Linq4j.Tree;
 
+using java.util.function;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -389,7 +391,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)getLeft(), pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)getRight(), pref);
 
-            var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.PreferArray());
+            var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.PreferArray());
 
             // Calcite types these off the physical type and does not box them. It cannot go wrong there:
             // there is no Enumerable<int> in Java, so the sequence and a parameter typed int cannot disagree.
@@ -398,13 +400,21 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // and the key selector is a lambda over one row of the boxed sequence, so this has to be the same
             // decision. Only a one-column input tells the two apart, every wider row being a reference
             // already, which is why Primitive.box is a no-op for all of them.
-            var left_ = J.Expressions.parameter(J.Primitive.box(leftResult.PhysType.getJavaRowType()), "left");
-            var right_ = J.Expressions.parameter(J.Primitive.box(rightResult.PhysType.getJavaRowType()), "right");
+            // the rows are boxed for the two reasons a hash join boxes them: the selector and the predicate
+            // are built against boxed rows, and a LEFT join hands the selector a null right row, which a
+            // primitive cannot be. The element type is read off the sequence rather than off the physical
+            // type, because those two part company where a one-column input is a scalar.
+            var leftType_ = leftResult.PhysType.RowType;
+            var rightType_ = rightResult.PhysType.RowType;
+            var rowType = physType.RowType;
+
+            var left_ = Expression.Parameter(leftType_, "left");
+            var right_ = Expression.Parameter(rightType_, "right");
 
             // each key field is read at the type the two sides have in common, so that one comparator can
             // order both inputs
-            var leftExpressions = new java.util.ArrayList();
-            var rightExpressions = new java.util.ArrayList();
+            var leftExpressions = new List<Expression>();
+            var rightExpressions = new List<Expression>();
             for (int i = 0; i < joinInfo.leftKeys.size(); i++)
             {
                 var leftIndex = ((java.lang.Integer)joinInfo.leftKeys.get(i)).intValue();
@@ -414,27 +424,17 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 var rightType = ((RelDataTypeField)getRight().getRowType().getFieldList().get(rightIndex)).getType();
                 var keyType = typeFactory.leastRestrictive(com.google.common.collect.ImmutableList.of(leftType, rightType))
                     ?? throw new java.lang.NullPointerException($"leastRestrictive returns null for {leftType} and {rightType}");
-                var keyClass = typeFactory.getJavaClass(keyType);
+                var keyClass = ClrTypes.Resolve(typeFactory.getJavaClass(keyType));
 
-                leftExpressions.add(EnumUtils.convert(leftResult.PhysType.fieldReference(left_, leftIndex), keyClass));
-                rightExpressions.add(EnumUtils.convert(rightResult.PhysType.fieldReference(right_, rightIndex), keyClass));
+                leftExpressions.Add(ClrEnumUtils.Convert(leftResult.PhysType.FieldReference(left_, leftIndex), keyClass));
+                rightExpressions.Add(ClrEnumUtils.Convert(rightResult.PhysType.FieldReference(right_, rightIndex), keyClass));
             }
 
-            var leftKeyPhysType = leftResult.PhysType.project(joinInfo.leftKeys, JavaRowFormat.LIST);
-            var rightKeyPhysType = rightResult.PhysType.project(joinInfo.rightKeys, JavaRowFormat.LIST);
+            var leftKeyPhysType = leftResult.PhysType.Project(joinInfo.leftKeys, JavaRowFormat.LIST);
+            var rightKeyPhysType = rightResult.PhysType.Project(joinInfo.rightKeys, JavaRowFormat.LIST);
 
-            // the rows are boxed for the two reasons a hash join boxes them: the selector and the predicate
-            // Calcite builds are against boxed rows, and a LEFT join hands the selector a null right row,
-            // which a primitive cannot be. The element type is read off the sequence rather than off the
-            // physical type, because those two part company where a one-column input is a scalar.
-            var leftSource = ClrEnumUtils.BoxRows(leftResult.PhysType, leftResult.Expression);
-            var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
-            var leftType_ = leftSource.Type.GetGenericArguments()[0];
-            var rightType_ = rightSource.Type.GetGenericArguments()[0];
-            var rowType = physType.RowType();
-
-            var leftKey = implementor.Translator.TranslateSelector(J.Expressions.lambda(leftKeyPhysType.record(leftExpressions), [left_]), leftType_);
-            var rightKey = implementor.Translator.TranslateSelector(J.Expressions.lambda(rightKeyPhysType.record(rightExpressions), [right_]), rightType_);
+            var leftKey = Expression.Lambda(leftKeyPhysType.Record(leftExpressions), left_);
+            var rightKey = Expression.Lambda(rightKeyPhysType.Record(rightExpressions), right_);
 
             var predicate = Predicate(implementor, leftResult.PhysType, rightResult.PhysType, leftType_, rightType_);
             var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);
@@ -448,8 +448,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // the comparator's key is nullable where either side's is, so that a null from one input is
             // ordered against a value from the other
             var typeBuilder = typeFactory.builder();
-            var leftFields = leftKeyPhysType.getRowType().getFieldList();
-            var rightFields = rightKeyPhysType.getRowType().getFieldList();
+            var leftFields = leftKeyPhysType.RelRowType.getFieldList();
+            var rightFields = rightKeyPhysType.RelRowType.getFieldList();
             for (int i = 0; i < leftFields.size(); i++)
             {
                 var leftField = (RelDataTypeField)leftFields.get(i);
@@ -458,21 +458,21 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     typeFactory.createTypeWithNullability(leftField.getType(), leftField.getType().isNullable() || rightField.getType().isNullable()));
             }
 
-            var comparatorPhysType = PhysTypeImpl.of(typeFactory, typeBuilder.build(), JavaRowFormat.LIST);
-            var comparator = implementor.Translator.Translate(comparatorPhysType.generateMergeJoinComparator(RelCollations.of(fieldCollations)));
+            var comparatorPhysType = ClrPhysTypeImpl.Of(typeFactory, typeBuilder.build(), JavaRowFormat.LIST);
+            var comparator = comparatorPhysType.GenerateMergeJoinComparator(RelCollations.of(fieldCollations));
 
             return implementor.Result(physType,
                 Expression.Call(null,
                     ClrBuiltInMethod.MergeJoin.MakeGenericMethod(leftType_, rightType_, leftKey.ReturnType, rowType),
-                    leftSource,
-                    rightSource,
+                    leftResult.Expression,
+                    rightResult.Expression,
                     leftKey,
                     rightKey,
                     predicate,
                     selector,
                     Expression.Constant(ClrEnumUtils.ToLinq4jJoinType(joinType)),
                     comparator,
-                    leftKeyPhysType.Comparer(implementor)));
+                    leftKeyPhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer))));
         }
 
         /// <summary>
@@ -485,7 +485,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="leftType"></param>
         /// <param name="rightType"></param>
         /// <returns></returns>
-        Expression Predicate(ClrEnumerableRelImplementor implementor, PhysType leftPhysType, PhysType rightPhysType, Type leftType, Type rightType)
+        Expression Predicate(ClrEnumerableRelImplementor implementor, ClrPhysType leftPhysType, ClrPhysType rightPhysType, Type leftType, Type rightType)
         {
             var type = typeof(Func<,,>).MakeGenericType(leftType, rightType, typeof(bool));
 

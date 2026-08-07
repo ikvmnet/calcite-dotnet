@@ -1,7 +1,6 @@
 using System.Linq.Expressions;
 
 using java.util.function;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -150,13 +149,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
 
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.PreferArray());
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
 
-            var leftSource = ClrEnumUtils.BoxRows(leftResult.PhysType, leftResult.Expression);
-            var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
-            var leftType = leftSource.Type.GetGenericArguments()[0];
-            var rightType = rightSource.Type.GetGenericArguments()[0];
-            var rowType = physType.RowType();
+            var leftType = leftResult.PhysType.RowType;
+            var rightType = rightResult.PhysType.RowType;
+            var rowType = physType.RowType;
 
             var predicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), left, right, leftResult.PhysType, rightResult.PhysType, getCondition(), true);
             var selector = ClrEnumUtils.MarkJoinSelector(implementor, physType, leftResult.PhysType);
@@ -164,8 +161,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return implementor.Result(physType,
                 Expression.Call(null,
                     ClrBuiltInMethod.LeftMarkNestedLoopJoin.MakeGenericMethod(leftType, rightType, rowType),
-                    leftSource,
-                    rightSource,
+                    leftResult.Expression,
+                    rightResult.Expression,
                     predicate,
                     selector));
         }
@@ -181,13 +178,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
 
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.PreferArray());
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
 
-            var leftSource = ClrEnumUtils.BoxRows(leftResult.PhysType, leftResult.Expression);
-            var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
-            var leftType = leftSource.Type.GetGenericArguments()[0];
-            var rightType = rightSource.Type.GetGenericArguments()[0];
-            var rowType = physType.RowType();
+            var leftType = leftResult.PhysType.RowType;
+            var rightType = rightResult.PhysType.RowType;
+            var rowType = physType.RowType;
 
             var predicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), left, right, leftResult.PhysType, rightResult.PhysType, getCondition());
             var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);
@@ -195,8 +190,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return implementor.Result(physType,
                 Expression.Call(null,
                     ClrBuiltInMethod.NestedLoopJoin.MakeGenericMethod(leftType, rightType, rowType),
-                    leftSource,
-                    rightSource,
+                    leftResult.Expression,
+                    rightResult.Expression,
                     selector,
                     predicate,
                     Expression.Constant(ClrEnumUtils.ToLinq4jJoinType(joinType))));
