@@ -1,187 +1,310 @@
 # Apache.Calcite.Data — Design
 
 `Apache.Calcite.Data` is an ADO.NET provider for Apache Calcite. It exposes Calcite to .NET
-applications through the standard `System.Data.Common` abstractions while running Calcite's
-planner and runtime in-process via IKVM.
+applications through the standard `System.Data.Common` abstractions while running Calcite's parser,
+validator and planner in-process via IKVM.
 
-This document describes how the provider is structured and how a request flows from a .NET
-caller into the Calcite engine and back.
+A statement is not handed to Calcite's own prepare framework. `Apache.Calcite.Extensions` owns the
+pipeline that takes SQL text to a chosen plan and compiles that plan into a
+`System.Linq.Expressions` tree; this project drives that pipeline and adapts what comes back to
+`DbDataReader`. Janino never runs.
+
+This document describes how the provider is structured and how a statement flows from a .NET caller
+into Calcite and back.
 
 ---
 
 ## Scope
 
-- **Driver/provider**, not an adapter. The provider is the consumer's entry point into Calcite,
-  not a way to expose ADO.NET data sources to Calcite.
-- **Native in-process engine.** Calcite's Java code is loaded through IKVM and called directly.
-  The provider does **not** wrap Calcite's JDBC driver, Avatica, or any remote protocol.
-- **JDBC parity at the behavior level.** Connection properties, model handling, SQL execution,
-  and metadata semantics aim to match the Calcite JDBC driver, but the public surface is
-  idiomatic .NET (`Db*` base classes, PascalCase, `IDisposable`).
+- **Driver/provider**, not an adapter. The provider is the consumer's entry point into Calcite, not
+  a way to expose ADO.NET data sources to Calcite. (`Apache.Calcite.Adapter.AdoNet` is the other
+  direction.)
+- **Native in-process engine.** Calcite's Java code is loaded through IKVM and called directly. The
+  provider does not go through Calcite's JDBC driver on the statement path and speaks no Avatica
+  wire protocol.
+- **JDBC parity at the behavior level.** Connection properties, model handling, SQL execution and
+  metadata semantics aim to match the Calcite JDBC driver, but the public surface is idiomatic .NET
+  (`Db*` base classes, PascalCase, `IDisposable`).
+
+### What is still Calcite's, and named honestly
+
+Three things carry Java names through this design and are not going away:
+
+- **Avatica's metadata value types.** `ColumnMetaData`, `AvaticaParameter`, `Meta.CursorFactory` and
+  `Meta.StatementType` come from `org.apache.calcite.avatica`, and the prepare pipeline produces
+  them because that is what Calcite's own prepare produces. They are plain descriptors. Nothing here
+  constructs an Avatica `Meta`, a service, or a connection.
+- **`CalcitePrepare.Context` and `CalcitePrepare.Dummy`.** `PrepareContext` implements the former —
+  it is the interface Calcite's validator, catalog reader and `SqlToRelConverter` read the schema,
+  type factory and configuration from. The latter is a thread-local stack Calcite's own parse-to-rel
+  reads the context off, so `CalciteSession.Plan` pushes onto it for the duration of a prepare.
+  `CalcitePrepare.DEFAULT_FACTORY` and `prepareSql` are never called.
+- **Calcite's JDBC driver, registered once, for views.** `CalciteSession`'s static constructor puts
+  `org.apache.calcite.jdbc.Driver`'s assembly on IKVM's boot class path and constructs one.
+  `ViewTableMacro.apply` reads `MaterializedViewTable.MATERIALIZATION_CONNECTION`, whose initializer
+  is `DriverManager.getConnection("jdbc:calcite:")` — so expanding any view, however declared, goes
+  through the driver. Without the registration every view fails at validation. No statement executed
+  by this provider goes through it.
 
 ---
 
 ## Layered Architecture
 
-The implementation is organized as a small set of layers with clear responsibilities. The
-public ADO.NET surface only sees the engine through an interface; the engine is the only thing
-that touches Calcite's Java types directly.
-
 ### 1. ADO.NET Surface
 
-Public, consumer-facing classes that implement the `System.Data.Common` contracts.
+Public, consumer-facing classes implementing the `System.Data.Common` contracts.
 
 | Class | Base | Role |
 | --- | --- | --- |
-| `CalciteConnection` | `DbConnection` | Owns connection state, opens/closes the engine session, exposes Calcite-native accessors. |
-| `CalciteCommand` | `DbCommand` | Holds SQL text and parameters, executes against the connection's session. |
-| `CalciteDataReader` | `DbDataReader` | Streams rows produced by an `ICalciteResult`. |
-| `CalciteParameter` / `CalciteParameterCollection` | `DbParameter` / `DbParameterCollection` | Provider parameter model. |
-| `CalciteTransaction` | `DbTransaction` | Transaction handle (semantics bounded by Calcite). |
+| `CalciteConnection` | `DbConnection` | Owns connection state and the `CalciteSession`; exposes Calcite-native accessors and hook registration. |
+| `CalciteCommand` | `DbCommand` | Holds SQL text and parameters; builds a `CalciteExecuteRequest` and calls the session. |
+| `CalciteDataReader` | `DbDataReader` | Streams rows out of one or more `CalciteResult`s; `NextResult` walks a batch's results. |
+| `CalciteBatch` / `CalciteBatchCommand` / `CalciteBatchCommandCollection` | `DbBatch` / `DbBatchCommand` / `DbBatchCommandCollection` | Runs several statements sequentially on one session. |
+| `CalciteParameter` / `CalciteParameterCollection` | `DbParameter` / `DbParameterCollection` | Provider parameter model. Placeholders are positional `?`; `ParameterName` is informational. |
+| `CalciteTransaction` | `DbTransaction` | Exists to satisfy frameworks that require a non-null transaction. `Commit` and `Rollback` throw `NotSupportedException`, and `BeginDbTransaction` throws before one is ever handed out. |
+| `CalciteDataSource` | `DbDataSource` | The `DbDataSource` entry point. |
 | `CalciteProviderFactory` | `DbProviderFactory` | Standard ADO.NET factory registration. |
-| `CalciteConnectionStringBuilder` | `DbConnectionStringBuilder` | Strongly typed connection string keys (`Model`, `Schema`, `CaseSensitive`, `Conformance`, …). |
-| `CalciteException` | `DbException` | Provider-specific failures, including engine errors. |
+| `CalciteConnectionStringBuilder` | `DbConnectionStringBuilder` | Typed connection-string keys (`Model`, `Schema`, `CaseSensitive`, `Conformance`, …). Unknown keys are preserved and forwarded. |
+| `CalciteException` | `DbException` | Provider failures, including planning and execution errors. |
 
-`CalciteConnection` also exposes Calcite-native accessors directly so consumers can interact
-with the engine without an `Unwrap`-style escape hatch:
+`CalciteConnection` also exposes Calcite-native objects directly, so there is no `Unwrap`-style
+escape hatch:
 
 - `RootSchema` → `org.apache.calcite.schema.SchemaPlus`
 - `TypeFactory` → `org.apache.calcite.adapter.java.JavaTypeFactory`
 - `Config` → `org.apache.calcite.config.CalciteConnectionConfig`
 
-These properties throw `InvalidOperationException` if the connection is not open.
+All three go through `RequireSession()` and throw `InvalidOperationException` when the connection is
+not open.
 
-### 2. Session Boundary
+`CalciteConnection` and `CalciteCommand` each carry `RegisterHook` overloads — for a Java
+`Consumer`, for an `Action<object>`, and for each primitive, which are wrapped in `Hook.propertyJ`.
+The connection's hooks and the command's are concatenated per request, connection first.
 
-`CalciteSession` is the per-connection runtime state created when `CalciteConnection.Open()`
-succeeds. It is the boundary between the public ADO.NET surface and the internal Calcite
-engine.
+### 2. Session (`Internal/CalciteSession`)
 
-- Holds the resolved `CalciteConnectionStringBuilder` and the `ICalciteClient` for the open
-  connection.
-- Owns the engine client lifetime; disposing the session disposes the client.
-- Accessed internally through `CalciteConnection.RequireSession()`, which enforces that the
-  connection is open.
+`CalciteSession` is the per-connection engine state, created on the first `CalciteConnection.Open()`
+and kept alive across `Close`/`Open` cycles — a schema registered on `RootSchema` or a table created
+by DDL survives a close. `Dispose` is what ends it, and only marks the session disposed so later
+execute calls throw `ObjectDisposedException`.
 
-### 3. Engine Abstraction (`ICalciteClient`)
+Construction, from the `CalciteConnectionStringBuilder`:
 
-`ICalciteClient` is the internal contract between the ADO.NET surface and the Calcite engine.
-It hides the concrete implementation so the surface layer never references Calcite Java types
-directly through internal flows (it only does so when the public connection deliberately
-re-exposes them).
+- Builds the root schema with `CalciteSchema.createRootSchema(addMetadataSchema: true)`, then
+  applies the `Model` key through Calcite's `ModelHandler` — either `inline:`-prefixed (or
+  brace-leading) JSON, or a file path, which must exist. The handler's `defaultSchemaName()` wins
+  over the `Schema` key.
+- Builds a `java.util.Properties` from every remaining key, translating each to the camelCase name
+  Calcite expects via a static map from connection-string key to `CalciteConnectionProperty`, and
+  wraps it in a `CalciteConnectionConfigImpl`.
+- Creates a `JavaTypeFactoryImpl`, and resolves the default schema path to zero or one name.
 
-The interface exposes:
+Anything thrown here that is not already a `CalciteException` is wrapped in one.
 
-- `RootSchema`, `TypeFactory`, `Config` — engine state surfaced upward to `CalciteConnection`.
-- `ExecuteAsync(CalciteExecuteRequest, CancellationToken)` — executes a prepared SQL request
-  and returns an `ICalciteResult` row stream.
+The session exposes three private steps and two public entry points.
 
-### 4. Engine Implementation (`CalciteEngineClient`)
+**`Plan`** constructs a `PrepareContext`, pushes it onto `CalcitePrepare.Dummy`, and calls
+`ClrPrepareImpl.Prepare(ctx, sql, Object[], -1)`, returning a `ClrSignature`. The element type is
+what makes the pipeline ask for array-shaped rows; `-1` means no row limit. Nothing is executed and
+no per-statement state is created.
 
-`CalciteEngineClient` is the only component that drives Calcite directly. It takes the place
-of `CalciteConnectionImpl`, `CalciteStatement`, and `CalciteResultSet` from the JDBC driver,
-but it does so without depending on Avatica or any JDBC plumbing.
+**`Bind`** builds the execution-time `DataContext`: a fresh `AtomicBoolean` cancel flag, the
+positional parameters converted by `ParameterBinder`, the command timeout in milliseconds, and
+`signature.InternalParameters` — assembled into one `StatementDataContext`. This mirrors what
+`CalciteConnectionImpl.enumerable()` does immediately before `signature.enumerable(dataContext)`.
 
-Construction:
+**`ActivateHooks` / `DeactivateHooks`** bind each `CalciteHookEntry` to the current thread with
+`Hook.addThread` for the duration of one request and close the handles in a `finally`.
 
-- Builds the root schema from the connection options via `RootSchemaBuilder`.
-- Creates a `CalciteConnectionConfigImpl` from engine properties produced by the same builder.
-- Creates a `JavaTypeFactoryImpl`.
-- Resolves the default schema path from the `Schema` connection option.
+**`ExecuteReaderAsync`** plans, binds, and — unless the statement is DDL — takes
+`signature.Bind(dataContext).GetEnumerator()`. It returns a `CalciteResult` holding the signature,
+that enumerator, and a records-affected count of `0`. The cancel flag is discarded on this path:
+`cancellationToken` is only checked before planning, and cancelling it afterwards does not interrupt
+enumeration.
 
-Execution:
+**`ExecuteNonQueryAsync`** plans and binds, then branches on `signature.StatementType`:
 
-1. Validates the request and cancellation token.
-2. Constructs a `StatementDataContext` and a `PrepareContext` that mirror what the JDBC driver
-   builds internally (root schema, type factory, config, default schema path, cancel flag, and
-   command timeout).
-3. Calls `CalcitePrepare.DEFAULT_FACTORY` to obtain a prepare instance and invokes
-   `prepareSql(...)` while the prepare context is pushed onto Calcite's thread-local stack.
-4. Materializes the result `Enumerable`, registers cancellation against the cancel flag, and
-   wraps the `Enumerator`, signature, and column mapping in a `CalciteEngineResult`.
-5. Surfaces engine errors as `CalciteException`, leaving cancellation/disposal exceptions
-   unwrapped.
+- DDL (`CREATE`, `ALTER`, `DROP`, `OTHER_DDL`, dispatched on `name()`) has already taken effect
+  during prepare, so there is nothing to enumerate and the count is `0`.
+- `SELECT` reports `-1`, by ADO.NET convention.
+- DML drains the enumerator. Here — and only here, where the enumeration is synchronous and
+  Calcite's check-points can see it — the cancellation token is registered against the cancel flag,
+  scoped to the drain. Because the plan was prepared for `Object[]` rows, the single row's element
+  `[0]` is the `ROWCOUNT BIGINT` column of `RelOptUtil.createDmlRowType`, read through a `ToInt64`
+  that accepts a Java boxed number or a CLR primitive.
 
-### 5. Result Stream (`ICalciteResult` / `CalciteEngineResult`)
+Both entry points wrap any non-`CalciteException` failure in a `CalciteException`.
 
-`ICalciteResult` represents an active row stream. `CalciteEngineResult` adapts Calcite's
-`Enumerator`, the prepared signature, and the column metadata into something the ADO.NET
-reader can consume. It also owns the cancellation registration produced during execution and
-disposes it with the result.
+### 3. Prepare pipeline (`Apache.Calcite.Extensions/Prepare`)
 
-### 6. Type Mapping & Materialization
+This is where a statement becomes a plan. It replaces `CalcitePrepareImpl`'s driver and nothing
+below it: validation, sql-to-rel, view expansion, field trimming and `optimize` are Calcite's own,
+reused as they stand. The driver had to be replaced because its one exit is a `Bindable` — a linq4j
+`Enumerable` — and a plan of `ClrEnumerableConvention` is a compiled delegate.
 
-- `ColumnAdapter` translates the columns described by a `CalcitePrepare.CalciteSignature` into
-  `CalciteColumn` descriptors (name, ordinal, Calcite/CLR types).
-- `CalciteTypeMap` centralizes the mapping between Calcite SQL types and CLR types, including
-  nullability, precision/scale, temporal types, and binary data.
-- `RowMaterializer` converts a single Calcite row (typically `Object[]`) into the values
-  surfaced by `CalciteDataReader`'s typed getters.
+| Type | Counterpart in Calcite | Role |
+| --- | --- | --- |
+| `ClrPrepareImpl` | `CalcitePrepareImpl.prepare_` / `prepare2_` | The driver. Builds the catalog reader, the planner and the preparing statement; parses; executes DDL; describes the result. |
+| `ClrPrepare` | `Prepare` | The algorithm: convert, checked arithmetic, flatten, decorrelate, trim, optimize, implement — with `EXPLAIN`'s two exits where Calcite has them. Knows nothing of a cluster or a schema. |
+| `ClrPreparingStmt` | `CalcitePrepareImpl.CalcitePreparingStmt` | The wiring: cluster, convertlet table, schema, validator, view expansion. Also the `RelOptTable.ViewExpander` given to `SqlToRelConverter`. |
+| `ClrEnumerablePreparingStmt` | — | What one convention adds: the result convention, the program, the root trait set, and the compiler. A second convention writes only these four. |
+| `ClrPrepareResult` | `Prepare.PreparedResult` | What preparing produces, less `getBindable`. |
+| `ClrEnumerablePrepareResult` | `PreparedResultImpl` (anonymous, in `implement`) | Carries an `IClrBindable`. |
+| `ClrExplainResult` / `ClrExplainBindable` | `Prepare.PreparedExplain` / `CalcitePreparedExplain.getBindable` | An `EXPLAIN`: the text is rendered at prepare time and yielded as one row. |
+| `ClrSignature` | `CalcitePrepare.CalciteSignature` | The planned statement, member for member, with `Bindable` swapped for `IClrBindable` and `enumerable` for `Bind`. |
 
-### 7. Parameters
+`ClrPrepareImpl.Prepare` is the entry point this provider uses. It creates a `VolcanoPlanner` with
+`RelOptUtil.registerDefaultRules` **plus** `ClrEnumerableRules.Rules()` — Calcite's own rules stay
+on the planner, so a statement this convention has no node for is still planned and run in
+`EnumerableConvention`, with a converter carrying its rows. That is how a table modification works
+here. `PrepareRel`, the second entry point, plans a `RelNode` that was built rather than parsed; it
+is exercised by tests and not reached from this project.
 
-- `CalciteParameter` / `CalciteParameterCollection` implement the standard ADO.NET parameter
-  model.
-- `CalciteParameterValue` normalizes parameter values for the engine prior to execution.
-- `CalciteExecuteRequest` is the payload consumed by `ICalciteClient.ExecuteAsync`, capturing
-  the SQL text, parameter values, and command-level options such as the timeout.
+A DDL statement is executed inside `Prepare2` rather than planned, exactly as Calcite does. The
+`ClrSignature` it returns has no row type, no columns, a null bindable, `CursorFactory.OBJECT` and
+`StatementType.OTHER_DDL`.
 
-### 8. Configuration
+`Describe` builds one `AvaticaParameter` per dynamic parameter and one `ColumnMetaData` per result
+column, deduces the `CursorFactory` from the columns and the compiled plan's element type, and
+assembles the `ClrSignature`. All of that metadata is ported rather than reused: every piece of it
+is a private static of `CalcitePrepareImpl`.
 
-- `CalciteConnectionStringBuilder` defines the supported keys and provides typed accessors
-  while preserving any unknown keys for the engine.
-- `RootSchemaBuilder` (engine-internal) consumes the builder to produce both the
-  `CalciteSchema` and the engine properties used to build `CalciteConnectionConfigImpl`.
+`ClrSignature.Bind(DataContext)` runs the plan and returns `IEnumerable<object>`, applying the row
+limit when `MaxRowCount` is not negative — the limit lives on the signature, not on the bindable, so
+a caller reaching past it would silently lose it. This provider always passes `-1`.
 
-### 9. Diagnostics & Errors
+`IClrBindable` (in `Apache.Calcite.Extensions/Runtime`) is the compiled plan: `Bind(DataContext)`
+returning rows, plus the `ElementType` the cursor factory is deduced from. It merges Calcite's
+`Bindable` and `Typed`.
 
-- `CalciteException` is the provider-specific exception type. The engine wraps non-cancellation
-  failures in `CalciteException` so callers see a single, consistent error type from the
-  provider.
-- Cancellation surfaces as `OperationCanceledException` propagated from the cancel flag.
-- `ObjectDisposedException` is thrown if the engine client is used after disposal.
+### 4. Execution contexts (`Apache.Calcite.Extensions/Prepare`)
+
+- **`PrepareContext`** implements `CalcitePrepare.Context` over the session's type factory, root
+  schema, config and default schema path. `getDataContext()` returns a throwaway
+  `StatementDataContext` with only the timestamp variables, which is what backs `RexExecutorImpl`
+  for constant folding during optimisation — the same thing `CalciteConnectionImpl.ContextImpl`
+  does. `getRelRunner()` throws `UnsupportedOperationException`.
+- **`StatementDataContext`** implements `DataContext` for execution. It holds the root schema, the
+  type factory, the well-known per-statement variables (`utcTimestamp`, `currentTimestamp`,
+  `localTimestamp`, `sysTimestamp`, `cancelFlag`, `queryTimeout`), the values stashed at plan time
+  through `signature.InternalParameters`, and the bound positional parameters, which Calcite
+  addresses as `?0`, `?1`, …. `getQueryProvider()` returns `Linq4j.DEFAULT_PROVIDER`, the non-JDBC
+  equivalent of the delegation `CalciteConnectionImpl` performs.
+
+### 5. Result stream (`Internal/CalciteResult` and friends)
+
+`CalciteResult` is what an execute call hands back: the `ClrSignature`, a
+`CalciteResultColumns` built from it, an `IEnumerator<object>?`, and a records-affected count. The
+enumerator is the plan's own — a compiled delegate returns it — so nothing stands between a row and
+the reader. `ReadAsync` advances it and wraps the current row in a `CalciteResultRow`; a null
+enumerator (DDL, or a non-query) reads as an empty result. `Dispose` disposes the enumerator, and
+holds nothing else.
+
+`CalciteResultColumns` reads the signature's Avatica `ColumnMetaData` list — name, nullability,
+provider type name — and maps each to a CLR type. The SQL type name takes precedence over the
+runtime representation for date, time and binary columns, because Calcite's `rep` there is the
+internal storage form (`int` days, `long` millis, `ByteString`) rather than what an ADO.NET consumer
+expects. Unsigned SQL types map to the unsigned CLR types. `GetSqlType` reads the signature's
+`RelDataType` instead, and throws where there is none.
+
+`CalciteResultRow` addresses a column within one row without copying it, dispatching on the cursor
+factory's style: `OBJECT` (a one-column result is the value, so only ordinal `0` is valid), `ARRAY`,
+or `LIST`. Any other style throws `NotSupportedException`.
+
+`CalciteResultValue` is the final conversion, from what Calcite produced to what the caller asked
+for: `GetValue` for the reader's untyped path, `GetFieldValue<T>` for the generic one, and a typed
+getter per ADO.NET accessor. Each typed getter is strict — it accepts the representations Calcite
+actually produces for that SQL type and throws `InvalidCastException` otherwise, naming the runtime
+type, the value and the SQL type. `BigDecimalConverter` carries `java.math.BigDecimal` to and from
+`decimal`.
+
+`CalciteDataReader` holds an array of `CalciteResult`s and delegates every accessor to
+`ActiveResult.Current.GetValue(ordinal)`. `NextResult` disposes the result it leaves and advances.
+
+### 6. Parameters
+
+- `CalciteParameter` / `CalciteParameterCollection` implement the ADO.NET parameter model. Where
+  `DbType` was not set explicitly it is inferred from the value's CLR type by `CalciteTypeMap`.
+- `CalciteParameterValue` is the `(DbType, object?)` pair carried into the request.
+- `CalciteExecuteRequest` is the payload the session executes: SQL text, an
+  `ImmutableArray<CalciteParameterValue>` in placeholder order, the command timeout in seconds, and
+  the request's hooks. It also carries `ClampToInt32`, which the `ExecuteNonQuery` surfaces use to
+  narrow a `long` row count.
+- `ParameterBinder` converts each value to the representation Calcite's runtime expects — Java boxed
+  primitives, `BigDecimal`, `ByteString`, `joou` unsigned types, and the internal forms for
+  temporals: days since epoch for `DATE`, milliseconds since epoch for `TIMESTAMP`, milliseconds
+  since midnight for `TIME`. Where the `DbType` is `Object` or unrecognised it infers from the CLR
+  type instead.
+
+### 7. Metadata and configuration
+
+- `CalciteConnectionStringBuilder` defines the supported keys and preserves unknown ones;
+  `CalciteSession` is what turns it into a `Properties` and a `CalciteConnectionConfigImpl`.
+- `CalciteSchemaInfo` builds the `DataTable`s behind `DbConnection.GetSchema` —
+  `MetaDataCollections` and `Restrictions` without a session, and `DataSourceInformation`,
+  `DataTypes`, `ReservedWords`, `Tables` and `Columns` from an open one.
+- `CalciteTypeMap` maps between `DbType` and CLR types for the parameter surface. Result columns do
+  not go through it; `CalciteResultColumns` maps those from the Avatica metadata.
+
+### 8. Diagnostics and errors
+
+- `CalciteException` is the provider's exception type. The session wraps every non-`CalciteException`
+  planning or execution failure in one, so a caller sees a single error type.
+- `ObjectDisposedException` is thrown when a disposed session or result is used.
+- Cancellation is honoured before planning on both paths, and during the drain of a DML statement.
+  It is not wired to a reader's enumeration.
 
 ---
 
 ## End-to-End Execution Flow
 
-A typical query traverses the layers in the following order:
+**A query.**
 
-1. **Construct.** Caller creates a `CalciteConnection` (directly or through
-   `CalciteProviderFactory`) with a connection string.
-2. **Open.** `CalciteConnection.Open()` parses the connection string into a
-   `CalciteConnectionStringBuilder`, asks `CalciteClientFactory` to create an `ICalciteClient`
-   (a `CalciteEngineClient` today), and stores both in a new `CalciteSession`.
-3. **Build command.** Caller creates a `CalciteCommand`, sets `CommandText`, and adds
-   parameters. The command is bound to the connection.
-4. **Execute.** `ExecuteReader` / `ExecuteScalar` / `ExecuteNonQuery` builds a
-   `CalciteExecuteRequest` (SQL, parameters, timeout) and calls
-   `RequireSession().Client.ExecuteAsync(...)`.
-5. **Engine prepare.** `CalciteEngineClient` builds the prepare/data contexts and invokes
-   `CalcitePrepare.prepareSql` to obtain a `CalciteSignature`.
-6. **Engine execute.** The signature's `Enumerable` is materialized into an `Enumerator`,
-   cancellation is wired to the cancel flag, and the enumerator is returned inside a
-   `CalciteEngineResult`.
-7. **Read.** `CalciteDataReader` wraps the result and exposes rows through typed getters,
-   using `ColumnAdapter`/`CalciteTypeMap`/`RowMaterializer` to convert values to CLR types.
-8. **Dispose.** Disposing the reader releases the engine result (and its cancellation
-   registration). Closing/disposing the connection disposes the session, which disposes the
-   engine client.
+1. **Construct.** The caller creates a `CalciteConnection` (directly, through
+   `CalciteProviderFactory`, or from a `CalciteDataSource`) with a connection string.
+2. **Open.** `Open()` creates the `CalciteSession` on first call: root schema, model, config, type
+   factory, default schema path.
+3. **Build command.** The caller sets `CommandText` and adds parameters to a `CalciteCommand`.
+4. **Request.** `ExecuteReader` builds a `CalciteExecuteRequest` from the text, the parameters, the
+   timeout and the resolved hooks, and calls `CalciteSession.ExecuteReaderAsync`.
+5. **Plan.** The session pushes a `PrepareContext` onto `CalcitePrepare.Dummy` and calls
+   `ClrPrepareImpl.Prepare`, which parses, validates, converts to relational algebra, optimises into
+   `ClrEnumerableConvention`, and compiles the chosen plan to a delegate. The result is a
+   `ClrSignature`.
+6. **Bind.** Parameters are converted and assembled with the cancel flag, the timeout and the
+   signature's internal parameters into a `StatementDataContext`.
+7. **Execute.** `signature.Bind(dataContext).GetEnumerator()` is taken and wrapped in a
+   `CalciteResult`. Nothing has been enumerated yet.
+8. **Read.** `CalciteDataReader` pulls rows through `CalciteResult.ReadAsync`, and each accessor
+   goes `CalciteResultRow` → `CalciteResultValue` → CLR value.
+9. **Dispose.** Disposing the reader disposes the result and its enumerator. Disposing the
+   connection disposes the session.
+
+**A non-query** follows steps 1–6, then branches on the statement type as described above and
+returns a `CalciteResult` with a count and no enumerator.
+
+**DDL** never reaches step 7: it took effect during step 5, and the signature it produced has no
+plan to bind.
+
+**`EXPLAIN`** never reaches `Implement`. `ClrPrepare.PrepareSql` renders the plan or the type as
+text and returns a `ClrExplainResult`; `Describe` wraps that text in a `ClrExplainBindable`, which
+yields one row.
 
 ---
 
 ## Direct Engine Access
 
-`CalciteConnection` deliberately exposes selected Calcite-native objects as public properties
-instead of providing a JDBC-style `unwrap` API. This keeps the contract typed and discoverable
-while still allowing advanced consumers to:
+`CalciteConnection` exposes selected Calcite-native objects as public properties rather than
+providing a JDBC-style `unwrap`. This keeps the contract typed and discoverable while letting
+advanced consumers register schemas, tables, functions and views on `RootSchema`, build types with
+`TypeFactory`, and inspect resolved configuration through `Config`.
 
-- Register schemas, tables, functions, and views on `RootSchema`.
-- Build types using `TypeFactory`.
-- Inspect resolved configuration through `Config`.
+A user-defined function written in .NET works here and in no plan Janino compiles: IKVM names a CLR
+class `cli.Namespace.Type`, which `EnumerableConvention` would write into generated Java source and
+Janino cannot resolve. This convention holds the method rather than its name.
 
-The provider does not currently expose the prepare/plan APIs publicly; those remain inside
-`CalciteEngineClient`.
+The prepare and plan APIs are not exposed on the ADO.NET surface. A caller who wants them references
+`Apache.Calcite.Extensions` and uses `ClrPrepareImpl` directly.
 
 ---
 
@@ -189,44 +312,71 @@ The provider does not currently expose the prepare/plan APIs publicly; those rem
 
 ```
 src/
-  Apache.Calcite.Data/                ADO.NET provider (this design)
-    CalciteConnection.cs              Public DbConnection + native engine accessors
-    CalciteCommand.cs                 Public DbCommand
-    CalciteDataReader.cs              Public DbDataReader
-    CalciteParameter.cs               Public DbParameter
-    CalciteParameterCollection.cs     Public DbParameterCollection
-    CalciteTransaction.cs             Public DbTransaction
-    CalciteProviderFactory.cs         Public DbProviderFactory
-    CalciteConnectionStringBuilder.cs Public DbConnectionStringBuilder
-    CalciteException.cs               Public provider exception
-    CalciteSession.cs                 Internal per-connection state
-    ICalciteClient.cs                 Internal engine contract
-    CalciteEngineClient.cs            Internal Calcite-backed engine
-    CalciteClientFactory.cs           Internal engine factory
-    CalciteExecuteRequest.cs          Internal execute payload
-    ICalciteResult.cs                 Internal result handle
-    CalciteEngineResult.cs            Internal Calcite result adapter
-    CalciteColumn.cs                  Internal column descriptor
-    ColumnAdapter.cs                  Internal signature → column mapping
-    CalciteTypeMap.cs                 Internal SQL ↔ CLR type mapping
-    RowMaterializer.cs                Internal row materialization
-    StatementDataContext.cs           Internal Calcite DataContext implementation
-    PrepareContext.cs                 Internal Calcite Context implementation
-    RootSchemaBuilder.cs              Internal schema/config builder
-    CalciteParameterValue.cs          Internal parameter normalization
-  Apache.Calcite.Data.Tests/          xUnit test suite
+  Apache.Calcite.Data/                    ADO.NET provider (this design)
+    CalciteConnection.cs                  DbConnection, native accessors, hook registration
+    CalciteCommand.cs                     DbCommand
+    CalciteDataReader.cs                  DbDataReader over one or more results
+    CalciteBatch.cs                       DbBatch
+    CalciteBatchCommand.cs                DbBatchCommand
+    CalciteBatchCommandCollection.cs      DbBatchCommandCollection
+    CalciteParameter.cs                   DbParameter
+    CalciteParameterCollection.cs         DbParameterCollection
+    CalciteTransaction.cs                 DbTransaction (Commit/Rollback throw)
+    CalciteDataSource.cs                  DbDataSource
+    CalciteProviderFactory.cs             DbProviderFactory
+    CalciteConnectionStringBuilder.cs     DbConnectionStringBuilder
+    CalciteException.cs                   DbException
+    Internal/
+      CalciteSession.cs                   Per-connection engine state; plan, bind, execute
+      CalciteExecuteRequest.cs            Execute payload
+      CalciteParameterValue.cs            (DbType, value) pair
+      ParameterBinder.cs                  CLR value → Calcite runtime representation
+      BigDecimalConverter.cs              decimal ↔ java.math.BigDecimal
+      CalciteResult.cs                    Row stream over a ClrSignature
+      CalciteResultColumns.cs             Avatica ColumnMetaData → ADO.NET column metadata
+      CalciteResultRow.cs                 Column addressing within one row, by cursor style
+      CalciteResultValue.cs               Final value conversion and typed getters
+      CalciteTypeMap.cs                   DbType ↔ CLR type, for parameters
+      CalciteSchemaInfo.cs                GetSchema collections
+      CalciteHookEntry.cs                 (Hook, Consumer) pair
+      CalciteColumn.cs                    Unreferenced
+
+  Apache.Calcite.Extensions/              The convention and the prepare pipeline
+    Prepare/
+      ClrPrepareImpl.cs                   The driver: parse, plan, execute DDL, describe
+      ClrPrepare.cs                       The algorithm, less any wiring
+      ClrPreparingStmt.cs                 Cluster, validator, view expansion
+      ClrPrepareResult.cs                 What preparing produces
+      ClrSignature.cs                     The planned statement
+      ClrExplainResult.cs                 EXPLAIN, rendered at prepare time
+      ClrExplainBindable.cs               …and yielded as one row
+      PrepareContext.cs                   CalcitePrepare.Context
+      StatementDataContext.cs             DataContext for execution
+      Enumerable/
+        ClrEnumerablePreparingStmt.cs     Convention, program, traits, compiler
+        ClrEnumerablePrepareResult.cs     Carries the IClrBindable
+    Runtime/IClrBindable.cs               The compiled plan
+    Adapter/Enumerable/                   ClrEnumerableConvention: nodes, rules, implementor
+    Linq4j/, Interop/                     linq4j → System.Linq.Expressions, Java ↔ CLR values
+
+  Apache.Calcite.Data.Tests/              xUnit tests for this provider
+  Apache.Calcite.Tests/                   xUnit tests for the convention and the pipeline
 ```
 
 ---
 
 ## Design Constraints
 
-- **No JDBC dependency.** The provider must not call into `org.apache.calcite.avatica.*` or
-  Calcite's JDBC entry points. It uses `CalcitePrepare`, `CalciteSchema`, `SchemaPlus`,
-  `JavaTypeFactory`, and `CalciteConnectionConfig` directly.
-- **Layer isolation.** The ADO.NET surface only talks to the engine through `ICalciteClient`
-  (plus the deliberate re-exposure of three engine objects on `CalciteConnection`). The
-  engine implementation never reaches back into the public surface.
-- **Idiomatic .NET.** Public types follow .NET naming and `IDisposable` conventions. JDBC
-  concepts are translated, not copied verbatim.
-- **Targeting.** The provider targets .NET 8 (C# 12).
+- **Nothing on the statement path goes through JDBC or Avatica plumbing.** Calcite's JDBC driver is
+  registered once, for view expansion, and no statement executed here reaches it. Avatica's
+  `ColumnMetaData`, `AvaticaParameter` and `Meta.*` are used as the metadata value types Calcite's
+  prepare produces, and nothing more.
+- **No `Bindable` and no `PreparedResult` on the row path.** A plan is a compiled delegate behind
+  `IClrBindable`; `ClrSignature` and `ClrPrepareResult` exist because Calcite's equivalents are
+  declared in terms of the linq4j types this convention does not produce.
+- **The ADO.NET surface owns no engine logic.** Everything that touches Calcite's planner is in
+  `CalciteSession` and below it. The `Internal` types are reachable from the public surface; the
+  reverse does not happen.
+- **Idiomatic .NET.** Public types follow .NET naming and `IDisposable` conventions. JDBC concepts
+  are translated, not copied.
+- **Targeting.** The provider targets .NET 8, and is verified on .NET 8 and .NET 10.
