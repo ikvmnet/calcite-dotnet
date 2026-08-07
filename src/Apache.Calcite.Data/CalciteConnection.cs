@@ -40,32 +40,7 @@ namespace Apache.Calcite.Data
         CalciteSession? _session;
         ConnectionState _state = ConnectionState.Closed;
         bool _disposed;
-        Func<org.apache.calcite.jdbc.CalcitePrepare>? _prepareFactory;
         List<CalciteHookEntry>? _hooks;
-
-        /// <summary>
-        /// Gets or sets a factory that supplies the <see cref="org.apache.calcite.jdbc.CalcitePrepare"/>
-        /// instance used to plan and compile each query.
-        /// </summary>
-        /// <remarks>
-        /// Set this before calling <see cref="Open"/> to substitute a custom planner implementation.
-        /// When <see langword="null"/> (the default), Calcite's built-in planner is used.
-        /// </remarks>
-        /// <exception cref="InvalidOperationException">
-        /// Thrown when the property is set after the connection has already been opened.
-        /// </exception>
-        public Func<org.apache.calcite.jdbc.CalcitePrepare>? PrepareFactory
-        {
-            get => _prepareFactory;
-            set
-            {
-                ThrowIfDisposed();
-                if (_session is not null)
-                    throw new InvalidOperationException("PrepareFactory cannot be changed after the connection has been opened.");
-
-                _prepareFactory = value;
-            }
-        }
 
         /// <summary>
         /// Registers a Calcite hook with a Java <see cref="Consumer"/> for the duration of every statement executed on this connection.
@@ -271,7 +246,7 @@ namespace Apache.Calcite.Data
             try
             {
                 // Session is created once on the first Open() and reused across Close/Open cycles.
-                _session ??= new CalciteSession(_options, _prepareFactory);
+                _session ??= new CalciteSession(_options);
                 SetState(ConnectionState.Open);
             }
             catch

@@ -2,6 +2,7 @@ using org.apache.calcite.jdbc;
 using org.apache.calcite.linq4j;
 
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -14,9 +15,9 @@ namespace Apache.Calcite.Data.Internal
     internal sealed record CalciteResult : IDisposable
     {
 
-        readonly CalcitePrepare.CalciteSignature _signature;
+        readonly ClrSignature _signature;
         readonly CalciteResultColumns _columns;
-        readonly Enumerator? _enumerator;
+        readonly IEnumerator<object>? _enumerator;
         readonly long _recordsAffected;
 
         CalciteResultRow? _current = null;
@@ -28,7 +29,7 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="signature"></param>
         /// <param name="enumerator"></param>
         /// <param name="recordsAffected"></param>
-        public CalciteResult(CalcitePrepare.CalciteSignature signature, Enumerator? enumerator, long recordsAffected = -1)
+        public CalciteResult(ClrSignature signature, IEnumerator<object>? enumerator, long recordsAffected = -1)
         {
             ArgumentNullException.ThrowIfNull(signature);
 
@@ -58,13 +59,13 @@ namespace Apache.Calcite.Data.Internal
             ThrowIfDisposed();
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (_enumerator is null || _enumerator.moveNext() == false)
+            if (_enumerator is null || _enumerator.MoveNext() == false)
             {
                 _current = null;
                 return Task.FromResult(false);
             }
 
-            _current = new CalciteResultRow(_columns, _signature.cursorFactory, _enumerator.current());
+            _current = new CalciteResultRow(_columns, _signature.CursorFactory, _enumerator.Current);
             return Task.FromResult(true);
         }
 
@@ -85,7 +86,7 @@ namespace Apache.Calcite.Data.Internal
 
             try
             {
-                _enumerator?.close();
+                _enumerator?.Dispose();
             }
             catch
             {

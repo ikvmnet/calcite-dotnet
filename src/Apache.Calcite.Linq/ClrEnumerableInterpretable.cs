@@ -26,7 +26,7 @@ namespace Apache.Calcite.Linq
     /// <see cref="ClrEnumerableRel"/> and uses
     /// <see cref="ClrEnumerableRelImplementor.ImplementRoot"/>.</para>
     /// </remarks>
-    static class ClrEnumerableInterpretable
+    public static class ClrEnumerableInterpretable
     {
 
         /// <summary>

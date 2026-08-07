@@ -26,7 +26,6 @@ namespace Apache.Calcite.Linq.Tests
         static CalciteConnection Open()
         {
             var c = new CalciteConnection(Model);
-            c.PrepareFactory = () => new ClrEnumerablePrepare();
             c.Open();
 
             return c;
