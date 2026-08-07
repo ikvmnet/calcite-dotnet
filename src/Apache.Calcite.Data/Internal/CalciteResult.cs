@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Apache.Calcite.Data.Prepare;
+using Apache.Calcite.Extensions.Prepare;
 
 namespace Apache.Calcite.Data.Internal
 {

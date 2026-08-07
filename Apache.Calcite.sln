@@ -40,10 +40,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Data", "src\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Data.Tests", "src\Apache.Calcite.Data.Tests\Apache.Calcite.Data.Tests.csproj", "{59332DAC-29C7-C98D-1529-481A25BE73CE}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Linq", "src\Apache.Calcite.Linq\Apache.Calcite.Linq.csproj", "{33F4F06A-771F-4DAD-ADC9-1370FBBCB135}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apache.Calcite.Linq.Tests", "src\Apache.Calcite.Linq.Tests\Apache.Calcite.Linq.Tests.csproj", "{6C1B9E24-95D5-4A1E-8E70-2F0B5C4D9A31}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -82,14 +78,6 @@ Global
 		{59332DAC-29C7-C98D-1529-481A25BE73CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{59332DAC-29C7-C98D-1529-481A25BE73CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{59332DAC-29C7-C98D-1529-481A25BE73CE}.Release|Any CPU.Build.0 = Release|Any CPU
-		{33F4F06A-771F-4DAD-ADC9-1370FBBCB135}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{33F4F06A-771F-4DAD-ADC9-1370FBBCB135}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{33F4F06A-771F-4DAD-ADC9-1370FBBCB135}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{33F4F06A-771F-4DAD-ADC9-1370FBBCB135}.Release|Any CPU.Build.0 = Release|Any CPU
-		{6C1B9E24-95D5-4A1E-8E70-2F0B5C4D9A31}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{6C1B9E24-95D5-4A1E-8E70-2F0B5C4D9A31}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{6C1B9E24-95D5-4A1E-8E70-2F0B5C4D9A31}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{6C1B9E24-95D5-4A1E-8E70-2F0B5C4D9A31}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -104,8 +92,6 @@ Global
 		{2D684421-5A73-841A-541C-FD5846D69B76} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{A76434AE-21CD-DA8F-8151-C28769A1ECB6} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{59332DAC-29C7-C98D-1529-481A25BE73CE} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
-		{33F4F06A-771F-4DAD-ADC9-1370FBBCB135} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
-		{6C1B9E24-95D5-4A1E-8E70-2F0B5C4D9A31} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A03ACB78-6C3F-4E09-BAF1-16E41D5A3945}

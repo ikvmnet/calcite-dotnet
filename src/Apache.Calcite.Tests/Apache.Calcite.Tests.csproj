@@ -1,4 +1,4 @@
-<Project Sdk="MSTest.Sdk">
+<Project Sdk="MSTest.Sdk/3.10.4">
 
     <PropertyGroup>
         <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
@@ -21,10 +21,16 @@
 
     <ItemGroup>
         <MavenReference Include="org.apache.calcite:calcite-core" Version="1.42.0" />
+        <!-- Smalls.fibonacciTableWithLimit100 is a one-column table function written in Java, and the only
+             oracle ClrEnumerableRowFormatTests can have: Janino cannot name a CLR class, so a table function
+             of this project's own gives EnumerableConvention no plan to compare against. -->
+        <MavenReference Include="org.apache.calcite:calcite-testkit" Version="1.42.0" />
+        <MavenReference Include="org.apache.calcite:calcite-server" Version="1.42.0" />
     </ItemGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\Apache.Calcite.Extensions\Apache.Calcite.Extensions.csproj" />
+        <ProjectReference Include="..\Apache.Calcite.Data\Apache.Calcite.Data.csproj" />
     </ItemGroup>
 
 </Project>

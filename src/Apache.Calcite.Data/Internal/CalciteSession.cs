@@ -17,7 +17,8 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Apache.Calcite.Data.Prepare;
+using Apache.Calcite.Extensions.Prepare;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Data.Internal
 {

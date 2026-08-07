@@ -2,9 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Linq;
+using Apache.Calcite.Extensions;
 
 using org.apache.calcite.rel.core;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Adapter.AdoNet
 {

@@ -275,7 +275,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <inheritdoc />
-        public Enumerable scan(DataContext root)
+        public org.apache.calcite.linq4j.Enumerable scan(DataContext root)
         {
             var typeFactory = root.getTypeFactory();
             var sql = GenerateSql();

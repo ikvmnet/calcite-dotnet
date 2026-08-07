@@ -1,9 +1,10 @@
-using Apache.Calcite.Linq;
+using Apache.Calcite.Extensions;
 
 using java.util.function;
 
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.convert;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {

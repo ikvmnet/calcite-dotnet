@@ -274,7 +274,7 @@ namespace Apache.Calcite.Data.Tests
                 .add("VAL", SqlTypeName.INTEGER)
                 .build();
 
-        public Enumerable scan(DataContext root) =>
+        public org.apache.calcite.linq4j.Enumerable scan(DataContext root) =>
             Linq4j.singletonEnumerable(new object[] { 42 });
     }
 

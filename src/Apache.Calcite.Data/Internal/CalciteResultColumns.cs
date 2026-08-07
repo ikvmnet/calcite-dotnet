@@ -4,7 +4,7 @@ using org.apache.calcite.avatica;
 using org.apache.calcite.jdbc;
 using org.apache.calcite.sql.type;
 
-using Apache.Calcite.Data.Prepare;
+using Apache.Calcite.Extensions.Prepare;
 
 namespace Apache.Calcite.Data.Internal
 {

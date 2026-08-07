@@ -1,10 +1,12 @@
-﻿using java.util;
+using java.util;
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using org.apache.calcite.avatica.util;
 using org.apache.calcite.config;
 using org.apache.calcite.sql.validate;
+using Apache.Calcite.Extensions;
+using Apache.Calcite.Extensions.Config;
 
 namespace Apache.Calcite.Data.Tests
 {

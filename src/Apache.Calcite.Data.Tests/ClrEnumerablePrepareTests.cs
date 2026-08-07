@@ -1,13 +1,14 @@
-using Apache.Calcite.Linq;
+using Apache.Calcite.Extensions;
 
 using Xunit;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Data.Tests
 {
 
     /// <summary>
     /// The ADO.NET surface driven by the CLR calling convention, from an assembly that sees only the public
-    /// API of <c>Apache.Calcite.Linq</c>.
+    /// API of <c>Apache.Calcite.Extensions</c>.
     /// </summary>
     /// <remarks>
     /// This project has no <c>InternalsVisibleTo</c> from the Linq assembly, so it reaches
