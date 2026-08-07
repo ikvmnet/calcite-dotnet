@@ -217,6 +217,65 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <summary>
+        /// Prepares a plan that was built rather than parsed.
+        /// </summary>
+        /// <param name="rel">The plan to run.</param>
+        /// <param name="resultType">The row type a caller wants the result described as.</param>
+        /// <returns>The compiled statement.</returns>
+        /// <remarks>
+        /// <c>CalcitePreparingStmt.prepare_(Supplier&lt;RelNode&gt;, RelDataType)</c>, which is how Calcite
+        /// answers <c>RelRunner</c> and a linq4j <c>Queryable</c>. It is a shorter pipeline than
+        /// <see cref="PrepareSql"/> and says so: there is nothing to validate, so there are no dynamic
+        /// parameters and no field origins, and no <c>EXPLAIN</c>, checked-arithmetic or decorrelation pass.
+        ///
+        /// <para>Calcite reaches this through <c>Query.of(rel)</c> and <c>Query.of(queryable)</c>. The
+        /// queryable half cannot be ported — <c>LixToRelTranslator</c> is package-private, takes a
+        /// <c>Prepare</c>, and translates linq4j expression trees, which is Java's LINQ rather than
+        /// .NET's — so this is where a .NET provider's own translation would land instead.</para>
+        /// </remarks>
+        public ClrPrepareResult PrepareRel(RelNode rel, RelDataType resultType)
+        {
+            ArgumentNullException.ThrowIfNull(rel);
+            ArgumentNullException.ThrowIfNull(resultType);
+
+            var rowType = rel.getRowType();
+            var fields = org.apache.calcite.util.Pair.zip(
+                org.apache.calcite.util.ImmutableIntList.identity(rowType.getFieldCount()),
+                rowType.getFieldNames());
+
+            var collation = rel is org.apache.calcite.rel.core.Sort sort
+                ? sort.collation
+                : RelCollations.EMPTY;
+
+            var root = new RelRoot(rel, resultType, SqlKind.SELECT, fields, collation, com.google.common.collect.ImmutableList.of());
+
+            // no validation happened, so there is nothing to say about where a field came from or what
+            // parameters the statement takes — which is what Calcite records here too
+            var jdbcType = MakeStruct(rexBuilder.getTypeFactory(), resultType);
+            fieldOrigins = java.util.Collections.nCopies(jdbcType.getFieldCount(), null);
+            parameterRowType = rexBuilder.getTypeFactory().builder().build();
+
+            root = root.withRel(FlattenTypes(root.rel, true));
+            root = TrimUnusedFields(root);
+            root = Optimize(root);
+
+            org.apache.calcite.runtime.Hook.PLAN_BEFORE_IMPLEMENTATION.run(root);
+
+            return Implement(root);
+        }
+
+        /// <summary>
+        /// Wraps a type in a one-field struct where it is not one already.
+        /// </summary>
+        /// <remarks>
+        /// <c>CalcitePrepareImpl.makeStruct</c>, a private static there.
+        /// </remarks>
+        static RelDataType MakeStruct(RelDataTypeFactory typeFactory, RelDataType type)
+        {
+            return type.isStruct() ? type : typeFactory.builder().add("$0", type).build();
+        }
+
+        /// <summary>
         /// Gets the row type of the statement's dynamic parameters, once it has been validated.
         /// </summary>
         protected RelDataType ParameterRowType =>

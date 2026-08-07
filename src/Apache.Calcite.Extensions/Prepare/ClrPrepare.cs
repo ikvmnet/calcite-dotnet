@@ -82,6 +82,58 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <summary>
+        /// Plans and compiles a relational expression that was built rather than parsed.
+        /// </summary>
+        /// <param name="context">The schema, type factory and configuration to plan against.</param>
+        /// <param name="rel">The plan to run.</param>
+        /// <param name="maxRowCount">The row limit, or a negative number for none.</param>
+        /// <returns>The planned statement.</returns>
+        /// <remarks>
+        /// <c>CalcitePrepareImpl.prepare2_</c>'s <c>query.rel</c> branch, which Calcite reaches through
+        /// <c>RelRunner</c>. The result is described from the plan's own row type, and the statement is
+        /// always a SELECT — a plan carries no statement kind.
+        /// </remarks>
+        public ClrSignature PrepareRel(CalcitePrepare.Context context, org.apache.calcite.rel.RelNode rel, long maxRowCount)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+            ArgumentNullException.ThrowIfNull(rel);
+
+            var typeFactory = context.getTypeFactory();
+            var catalogReader = new CalciteCatalogReader(
+                context.getRootSchema(),
+                context.getDefaultSchemaPath(),
+                typeFactory,
+                context.config());
+
+            // the plan arrives in its caller's cluster, and Optimize runs on that cluster's planner —
+            // Prepare.optimize reads the planner off the root rather than being handed one. So the rules go
+            // on that planner rather than on one of our own, and the preparing statement shares the cluster,
+            // or field trimming would build nodes the planner has never seen. PlannerRulesProgram installs
+            // nothing by design, so if they are not here they are nowhere.
+            var cluster = rel.getCluster();
+            var planner = cluster.getPlanner();
+
+            RelOptUtil.registerDefaultRules(planner, context.config().materializationsEnabled(), false);
+
+            foreach (var rule in ClrEnumerableRules.Rules())
+                planner.addRule(rule);
+
+            var preparingStmt = new ClrEnumerablePreparingStmt(
+                context,
+                catalogReader,
+                context.getRootSchema(),
+                cluster,
+                CreateConvertletTable(),
+                ClrEnumerablePrefer.Array);
+
+            var x = rel.getRowType();
+            var preparedResult = preparingStmt.PrepareRel(rel, x);
+
+            return Describe(context, org.apache.calcite.plan.RelOptUtil.toString(rel), x, maxRowCount,
+                preparingStmt, preparedResult, Meta.StatementType.SELECT);
+        }
+
+        /// <summary>
         /// Creates the planner, with Calcite's default rules and this convention's.
         /// </summary>
         /// <param name="context"></param>
@@ -255,9 +307,30 @@ namespace Apache.Calcite.Extensions.Prepare
                     break;
             }
 
+            return Describe(context, sql, x, maxRowCount, preparingStmt, preparedResult, statementType);
+        }
+
+        /// <summary>
+        /// Describes a prepared statement for a caller: its parameters, its columns, how a row is read back,
+        /// and the plan that produces the rows.
+        /// </summary>
+        /// <remarks>
+        /// The tail of <c>prepare2_</c>, shared by both entry points because a statement is described the
+        /// same way however its plan was arrived at.
+        /// </remarks>
+        ClrSignature Describe(
+            CalcitePrepare.Context context,
+            string sql,
+            RelDataType x,
+            long maxRowCount,
+            ClrPreparingStmt preparingStmt,
+            ClrPrepareResult preparedResult,
+            Meta.StatementType statementType)
+        {
+            var typeFactory = context.getTypeFactory();
+
             var parameters = new java.util.ArrayList();
-            var parameterRowType = preparedResult.ParameterRowType;
-            for (var i = parameterRowType.getFieldList().iterator(); i.hasNext();)
+            for (var i = preparedResult.ParameterRowType.getFieldList().iterator(); i.hasNext();)
             {
                 var field = (RelDataTypeField)i.next();
                 var type = field.getType();
