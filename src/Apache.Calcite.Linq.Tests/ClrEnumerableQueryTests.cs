@@ -147,7 +147,7 @@ namespace Apache.Calcite.Linq.Tests
         {
             var (physical, rootSchema) = Plan(sql);
 
-            org.apache.calcite.runtime.Bindable bindable;
+            IClrBindable bindable;
             try
             {
                 bindable = ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), null, physical, ClrEnumerablePrefer.Array);
@@ -158,10 +158,8 @@ namespace Apache.Calcite.Linq.Tests
             }
 
             var rows = new List<object[]>();
-            var enumerator = bindable.bind(new TestDataContext(rootSchema)).enumerator();
-            while (enumerator.moveNext())
+            foreach (var current in bindable.Bind(new TestDataContext(rootSchema)))
             {
-                var current = enumerator.current();
                 rows.Add(current as object[] ?? [current]);
             }
 
@@ -290,12 +288,8 @@ namespace Apache.Calcite.Linq.Tests
             var bindable = ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), null, physical, ClrEnumerablePrefer.Array);
 
             var rows = new List<object[]>();
-            var enumerator = bindable.bind(new TestDataContext(rootSchema)).enumerator();
-            while (enumerator.moveNext())
-            {
-                var current = enumerator.current();
+            foreach (var current in bindable.Bind(new TestDataContext(rootSchema)))
                 rows.Add(current as object[] ?? [current]);
-            }
 
             rows.Should().HaveCount(3);
             ((java.util.Map)rows[0][0]).get("NAME").Should().Be("SMITH");

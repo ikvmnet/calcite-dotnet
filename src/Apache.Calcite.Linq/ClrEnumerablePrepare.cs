@@ -1,5 +1,8 @@
-using org.apache.calcite.adapter.enumerable;
+using Apache.Calcite.Linq.Runtime;
+
+using org.apache.calcite;
 using org.apache.calcite.jdbc;
+using org.apache.calcite.linq4j;
 using org.apache.calcite.plan;
 using org.apache.calcite.prepare;
 using org.apache.calcite.rel;
@@ -173,7 +176,7 @@ namespace Apache.Calcite.Linq
         sealed class ClrEnumerablePreparedResult : Prepare.PreparedResultImpl
         {
 
-            readonly Bindable bindable;
+            readonly IClrBindable bindable;
 
             public ClrEnumerablePreparedResult(
                 RelDataType rowType,
@@ -183,7 +186,7 @@ namespace Apache.Calcite.Linq
                 RelNode rootRel,
                 org.apache.calcite.rel.core.TableModify.Operation tableModOp,
                 bool isDml,
-                Bindable bindable) :
+                IClrBindable bindable) :
                 base(rowType, parameterRowType, fieldOrigins, collations, rootRel, tableModOp, isDml)
             {
                 this.bindable = bindable;
@@ -201,15 +204,48 @@ namespace Apache.Calcite.Linq
             }
 
             /// <inheritdoc />
+            /// <remarks>
+            /// Temporary. <c>Prepare.PreparedResult</c> is declared to return Calcite's <c>Bindable</c>, so
+            /// the compiled delegate is wrapped back into a linq4j sequence here and unwrapped a row at a
+            /// time by whoever reads it. That round trip is what the prepare pipeline in
+            /// <c>Apache.Calcite.Data</c> removes; until it lands, this keeps the ADO.NET surface running
+            /// against the new bindable without changing what it consumes.
+            /// </remarks>
             public override Bindable getBindable(org.apache.calcite.avatica.Meta.CursorFactory cursorFactory)
             {
-                return bindable;
+                return new JavaBindable(bindable);
             }
 
             /// <inheritdoc />
             public override java.lang.reflect.Type getElementType()
             {
-                return ((Typed)bindable).getElementType();
+                return bindable.ElementType;
+            }
+
+        }
+
+        /// <summary>
+        /// Presents an <see cref="IClrBindable"/> as the <see cref="Bindable"/> Calcite's prepare framework
+        /// is declared against.
+        /// </summary>
+        /// <param name="bindable"></param>
+        /// <remarks>
+        /// Temporary, and the only thing left holding <c>JavaSequences.ToJava</c> on this path. See
+        /// <see cref="ClrEnumerablePreparedResult.getBindable"/>.
+        /// </remarks>
+        sealed class JavaBindable(IClrBindable bindable) : Bindable, Typed
+        {
+
+            /// <inheritdoc />
+            public Enumerable bind(DataContext dataContext)
+            {
+                return JavaSequences.ToJava(bindable.Bind(dataContext));
+            }
+
+            /// <inheritdoc />
+            public java.lang.reflect.Type getElementType()
+            {
+                return bindable.ElementType;
             }
 
         }

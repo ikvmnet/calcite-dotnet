@@ -381,14 +381,14 @@ namespace Apache.Calcite.Linq.Tests
                 return [org.apache.calcite.plan.RelOptUtil.toString(physical)];
 
             var parameters = new java.util.HashMap();
-            var bindable = physical is ClrEnumerableRel node
-                ? ClrEnumerableInterpretable.ToBindable(parameters, null, node, ClrEnumerablePrefer.Array)
-                : EnumerableInterpretable.toBindable(parameters, null, (EnumerableRel)physical, EnumerableRel.Prefer.ARRAY);
+            var context = new TestDataContext(rootSchema, parameters);
+            var source = physical is ClrEnumerableRel node
+                ? TestRows.Of(ClrEnumerableInterpretable.ToBindable(parameters, null, node, ClrEnumerablePrefer.Array), context)
+                : TestRows.Of(EnumerableInterpretable.toBindable(parameters, null, (EnumerableRel)physical, EnumerableRel.Prefer.ARRAY), context);
 
             var rows = new List<string>();
-            var enumerator = bindable.bind(new TestDataContext(rootSchema, parameters)).enumerator();
-            while (enumerator.moveNext())
-                rows.Add(Render(enumerator.current()));
+            foreach (var row in source)
+                rows.Add(Render(row));
 
             return rows;
         }
@@ -462,14 +462,14 @@ namespace Apache.Calcite.Linq.Tests
                 return [org.apache.calcite.plan.RelOptUtil.toString(physical)];
 
             var parameters = new java.util.HashMap();
-            var bindable = physical is ClrEnumerableRel node
-                ? ClrEnumerableInterpretable.ToBindable(parameters, null, node, ClrEnumerablePrefer.Array)
-                : EnumerableInterpretable.toBindable(parameters, null, (EnumerableRel)physical, EnumerableRel.Prefer.ARRAY);
+            var context = new TestDataContext(rootSchema, parameters);
+            var source = physical is ClrEnumerableRel node
+                ? TestRows.Of(ClrEnumerableInterpretable.ToBindable(parameters, null, node, ClrEnumerablePrefer.Array), context)
+                : TestRows.Of(EnumerableInterpretable.toBindable(parameters, null, (EnumerableRel)physical, EnumerableRel.Prefer.ARRAY), context);
 
             var rows = new List<string>();
-            var enumerator = bindable.bind(new TestDataContext(rootSchema, parameters)).enumerator();
-            while (enumerator.moveNext())
-                rows.Add(Render(enumerator.current()));
+            foreach (var row in source)
+                rows.Add(Render(row));
 
             return rows;
         }

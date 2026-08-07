@@ -119,15 +119,14 @@ namespace Apache.Calcite.Linq.Tests
             var physical = planner.transform(1, chosen.getTraitSet(), chosen);
 
             var parameters = new java.util.HashMap();
-            var bindable = physical is ClrEnumerableRel clr
-                ? ClrEnumerableInterpretable.ToBindable(parameters, null, clr, ClrEnumerablePrefer.Array)
-                : EnumerableInterpretable.toBindable(parameters, null, (EnumerableRel)physical, EnumerableRel.Prefer.ARRAY);
+            var context = new TestDataContext(rootSchema);
+            var source = physical is ClrEnumerableRel clr
+                ? TestRows.Of(ClrEnumerableInterpretable.ToBindable(parameters, null, clr, ClrEnumerablePrefer.Array), context)
+                : TestRows.Of(EnumerableInterpretable.toBindable(parameters, null, (EnumerableRel)physical, EnumerableRel.Prefer.ARRAY), context);
 
             var rows = new List<object[]>();
-            var enumerator = bindable.bind(new TestDataContext(rootSchema)).enumerator();
-            while (enumerator.moveNext())
+            foreach (var current in source)
             {
-                var current = enumerator.current();
                 rows.Add(current as object[] ?? [current]);
             }
 
@@ -185,13 +184,9 @@ namespace Apache.Calcite.Linq.Tests
 
             var rows = new List<object[]>();
             var bindable = ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), null, (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
-            var enumerator = bindable.bind(new TestDataContext(rootSchema)).enumerator();
 
-            while (enumerator.moveNext())
-            {
-                var current = enumerator.current();
+            foreach (var current in bindable.Bind(new TestDataContext(rootSchema)))
                 rows.Add(current as object[] ?? [current]);
-            }
 
             return rows;
         }

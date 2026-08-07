@@ -118,7 +118,7 @@ namespace Apache.Calcite.Linq
         /// <returns>
         /// A lambda of one <see cref="DataContext"/> parameter whose value is the rows.
         /// <see cref="System.Linq.Expressions.LambdaExpression.Compile()"/> gives a
-        /// <c>Func&lt;DataContext, IEnumerable&gt;</c>.
+        /// <c>Func&lt;DataContext, IEnumerable&lt;object&gt;&gt;</c>.
         /// </returns>
         /// <exception cref="java.lang.IllegalStateException">
         /// A node of the plan could not be implemented. The message names the plan; the failure itself is the
@@ -150,8 +150,11 @@ namespace Apache.Calcite.Linq
                     result.PhysType,
                     JavaRowFormat.SCALAR);
 
-            return Expression.Lambda<Func<DataContext, IEnumerable>>(
-                Expression.Convert(BoxScalars(result.Expression), typeof(IEnumerable)),
+            // IEnumerable<object>, not the non-generic IEnumerable. Every IEnumerable<T> converts to the
+            // latter, so a sequence this method failed to box would still compile and nothing would say so.
+            // The element type is named here for the same reason a node's is named in RequireRowType.
+            return Expression.Lambda<Func<DataContext, IEnumerable<object>>>(
+                Expression.Convert(BoxScalars(result.Expression), typeof(IEnumerable<object>)),
                 Root);
         }
 
