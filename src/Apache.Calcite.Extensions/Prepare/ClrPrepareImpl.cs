@@ -2,6 +2,8 @@ using System;
 
 using Apache.Calcite.Extensions;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Prepare.AsyncEnumerable;
+using Apache.Calcite.Extensions.Runtime;
 using Apache.Calcite.Extensions.Prepare.Enumerable;
 
 using org.apache.calcite;
@@ -65,6 +67,32 @@ namespace Apache.Calcite.Extensions.Prepare
         /// </remarks>
         public ClrSignature Prepare(CalcitePrepare.Context context, string sql, java.lang.reflect.Type elementType, long maxRowCount)
         {
+            return Prepare(context, sql, elementType, maxRowCount, false);
+        }
+
+        /// <summary>
+        /// Plans and compiles one statement into one of the two conventions.
+        /// </summary>
+        /// <param name="context">The schema, type factory and configuration to plan against.</param>
+        /// <param name="sql">The statement's text.</param>
+        /// <param name="elementType">What a caller wants a row to be. <c>Object[]</c> asks for an array.</param>
+        /// <param name="maxRowCount">The row limit, or a negative number for none.</param>
+        /// <param name="async">Whether to prepare into the asynchronous convention.</param>
+        /// <returns>The planned statement.</returns>
+        /// <remarks>
+        /// The whole of what the two conventions differ by here is which rules go on the planner and which
+        /// preparing statement is built, which is what <c>ClrPreparingStmt</c> already scopes: the
+        /// convention, the program, the root traits and the compiler are a convention's own and nothing else
+        /// is. Parsing, DDL, the statement kind, the parameter and column metadata and the cursor factory
+        /// are shared, and this is the same method for both rather than a second copy of it.
+        ///
+        /// <para><b>An asynchronous plan has no fallback.</b> That convention has no converter to any other,
+        /// so a query touching a table that cannot produce rows asynchronously does not plan and the planner
+        /// throws. A caller that wants the synchronous plan in that case asks for it, rather than being
+        /// handed one that would block a thread per row while looking asynchronous.</para>
+        /// </remarks>
+        public ClrSignature Prepare(CalcitePrepare.Context context, string sql, java.lang.reflect.Type elementType, long maxRowCount, bool async)
+        {
             ArgumentNullException.ThrowIfNull(context);
             ArgumentNullException.ThrowIfNull(sql);
 
@@ -75,8 +103,8 @@ namespace Apache.Calcite.Extensions.Prepare
                 typeFactory,
                 context.config());
 
-            var planner = CreatePlanner(context);
-            var preparingStmt = GetPreparingStmt(context, elementType, catalogReader, planner);
+            var planner = CreatePlanner(context, async);
+            var preparingStmt = GetPreparingStmt(context, elementType, catalogReader, planner, async);
 
             return Prepare2(context, sql, elementType, maxRowCount, catalogReader, preparingStmt);
         }
@@ -144,7 +172,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <c>EnumerableConvention</c>, with a converter carrying its rows. That is how a table
         /// modification works here.
         /// </remarks>
-        RelOptPlanner CreatePlanner(CalcitePrepare.Context context)
+        RelOptPlanner CreatePlanner(CalcitePrepare.Context context, bool async = false)
         {
             var planner = new org.apache.calcite.plan.volcano.VolcanoPlanner(null, Contexts.of(context.config()));
             planner.setExecutor(new RexExecutorImpl(DataContexts.EMPTY));
@@ -160,8 +188,12 @@ namespace Apache.Calcite.Extensions.Prepare
             // is not a choice available here
             RelOptUtil.registerDefaultRules(planner, context.config().materializationsEnabled(), false);
 
-            foreach (var rule in ClrEnumerableRules.Rules())
-                planner.addRule(rule);
+            if (async)
+                foreach (var rule in Apache.Calcite.Extensions.Adapter.AsyncEnumerable.ClrAsyncEnumerableRules.Rules())
+                    planner.addRule(rule);
+            else
+                foreach (var rule in ClrEnumerableRules.Rules())
+                    planner.addRule(rule);
 
             return planner;
         }
@@ -216,18 +248,29 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <c>CalcitePrepareImpl.getPreparingStmt</c>, deciding the row format the same way — an
         /// <c>Object[]</c> element type asks for an array and anything else asks for a custom row.
         /// </remarks>
-        ClrEnumerablePreparingStmt GetPreparingStmt(CalcitePrepare.Context context, java.lang.reflect.Type elementType, CalciteCatalogReader catalogReader, RelOptPlanner planner)
+        ClrPreparingStmt GetPreparingStmt(CalcitePrepare.Context context, java.lang.reflect.Type elementType, CalciteCatalogReader catalogReader, RelOptPlanner planner, bool async = false)
         {
             var typeFactory = context.getTypeFactory();
             var prefer = elementType == (java.lang.reflect.Type)(java.lang.Class)typeof(object[])
                 ? ClrEnumerablePrefer.Array
                 : ClrEnumerablePrefer.Custom;
 
+            var cluster = CreateCluster(planner, new RexBuilder(typeFactory));
+
+            if (async)
+                return new ClrAsyncEnumerablePreparingStmt(
+                    context,
+                    catalogReader,
+                    context.getRootSchema(),
+                    cluster,
+                    CreateConvertletTable(),
+                    prefer);
+
             return new ClrEnumerablePreparingStmt(
                 context,
                 catalogReader,
                 context.getRootSchema(),
-                CreateCluster(planner, new RexBuilder(typeFactory)),
+                cluster,
                 CreateConvertletTable(),
                 prefer);
         }
@@ -239,7 +282,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <c>CalcitePrepareImpl.prepare2_</c>, in its order, less the <c>queryable</c> and <c>rel</c>
         /// branches — this pipeline is reached with SQL text and nothing else.
         /// </remarks>
-        ClrSignature Prepare2(CalcitePrepare.Context context, string sql, java.lang.reflect.Type elementType, long maxRowCount, CalciteCatalogReader catalogReader, ClrEnumerablePreparingStmt preparingStmt)
+        ClrSignature Prepare2(CalcitePrepare.Context context, string sql, java.lang.reflect.Type elementType, long maxRowCount, CalciteCatalogReader catalogReader, ClrPreparingStmt preparingStmt)
         {
             var typeFactory = context.getTypeFactory();
             var config = context.config();
@@ -351,9 +394,10 @@ namespace Apache.Calcite.Extensions.Prepare
 
             // an EXPLAIN never reaches Implement, so there is no plan behind it — the rendered text is the
             // result, and the cursor factory decides whether the one row is an array or the text itself
-            var bindable = preparedResult switch
+            IClrBindableBase? bindable = preparedResult switch
             {
                 ClrEnumerablePrepareResult clr => clr.Bindable,
+                ClrAsyncEnumerablePrepareResult clr => clr.Bindable,
                 ClrExplainResult explain => new ClrExplainBindable(explain.Explanation, cursorFactory),
                 _ => throw new java.lang.IllegalStateException($"{preparedResult.GetType()} has no plan."),
             };

@@ -533,10 +533,10 @@ namespace Apache.Calcite.Tests
 
         internal static List<string> RunFib(string sql, bool clr, bool excludeHashJoin = false) => Run(sql, clr, false, false, false, false, false, false, excludeHashJoin);
 
-        static void Same(string sql)
+        static void Same(string sql, bool limitSort = false)
         {
-            var mine = Run(sql, true);
-            var calcite = Run(sql, false);
+            var mine = Run(sql, true, limitSort: limitSort);
+            var calcite = Run(sql, false, limitSort: limitSort);
 
             mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
         }
@@ -949,6 +949,40 @@ namespace Apache.Calcite.Tests
             PlanOf(sql, true, limitSort: true).Should().Contain("ClrEnumerableLimitSort");
             PlanOf(sql, false, limitSort: true).Should().Contain("EnumerableLimitSort");
         }
+
+        // The limit sort's edges, against Calcite. OrderByWithFetchAndOffset was a full sort followed by a
+        // skip and a take, where linq4j keeps at most offset + fetch rows and evicts as it reads
+        // (CALCITE-3920, CALCITE-4157). Porting that algorithm properly means the eviction, the tie handling
+        // and the offset-past-the-end case are all newly written code, and none of it is visible in the
+        // answer to an ordinary query -- so these are the cases where a hand-rolled bound goes wrong.
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortWithTiesAcrossTheBoundary() =>
+            SameThrough("ClrEnumerableLimitSort", "SELECT \"K\", \"V\" FROM \"SORTED\" ORDER BY \"K\" FETCH NEXT 2 ROWS ONLY", limitSort: true);
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortWithAnOffsetInsideATie() =>
+            SameThrough("ClrEnumerableLimitSort", "SELECT \"K\", \"V\" FROM \"SORTED\" ORDER BY \"K\" OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY", limitSort: true);
+
+        [TestMethod]
+        /// <remarks>
+        /// No node assertion: an offset past the end lets the planner prune the whole thing, so there is no
+        /// limit sort in the plan to find. What is being compared is that both sides answer nothing.
+        /// </remarks>
+        public void ShouldAgreeOnALimitSortWithAnOffsetPastTheEnd() =>
+            Same("SELECT \"K\" FROM \"SORTED\" ORDER BY \"K\" OFFSET 10 ROWS FETCH NEXT 2 ROWS ONLY", limitSort: true);
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortTakingEverything() =>
+            SameThrough("ClrEnumerableLimitSort", "SELECT \"K\" FROM \"SORTED\" ORDER BY \"K\" FETCH NEXT 100 ROWS ONLY", limitSort: true);
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortOverNulls() =>
+            SameThrough("ClrEnumerableLimitSort", "SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"AMOUNT\" OFFSET 1 ROWS FETCH NEXT 3 ROWS ONLY", limitSort: true);
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortDescending() =>
+            SameThrough("ClrEnumerableLimitSort", "SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" DESC OFFSET 1 ROWS FETCH NEXT 3 ROWS ONLY", limitSort: true);
 
         /// <summary>
         /// With neither side given the rule, both plan a limit over a sort — which is what carried a

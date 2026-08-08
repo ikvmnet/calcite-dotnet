@@ -2,6 +2,7 @@ using System;
 using System.Linq.Expressions;
 
 using Apache.Calcite.Extensions.Linq4j.Tree;
+using Apache.Calcite.Extensions.Schema;
 
 using java.util.function;
 using org.apache.calcite.adapter.enumerable;
@@ -43,7 +44,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         public static ClrEnumerableTableScan Create(RelOptCluster cluster, RelOptTable relOptTable)
         {
             var table = (Table)relOptTable.unwrap(typeof(Table));
-            var elementType = EnumerableTableScan.deduceElementType(table);
+            var elementType = DeduceElementType(table);
             var traitSet = cluster.traitSetOf(ClrEnumerableConvention.Instance)
                 .replaceIfs(RelCollationTraitDef.INSTANCE, new DelegateSupplier<object>(() => table != null ? table.getStatistic().getCollations() : com.google.common.collect.ImmutableList.of()));
 
@@ -61,11 +62,38 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (table is TransientTable)
                 return false;
 
+            // this convention's own table SPI, which is read directly rather than through linq4j
+            if (table is IClrScannableTable or IClrQueryableTable)
+                return true;
+
             // see org.apache.calcite.prepare.RelOptTableImpl.getClassExpressionFunction
             return table is QueryableTable
                 || table is FilterableTable
                 || table is ProjectableFilterableTable
                 || table is ScannableTable;
+        }
+
+        /// <summary>
+        /// Returns the type of one row of a table.
+        /// </summary>
+        /// <param name="table"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>EnumerableTableScan.deduceElementType</c>, with this convention's own table SPI answered first
+        /// and everything else handed to Calcite's. The two new cases are the two Calcite already has, for
+        /// the two interfaces that mirror them: an <see cref="IClrQueryableTable"/> names its element type
+        /// as a <see cref="QueryableTable"/> does, and an <see cref="IClrScannableTable"/> yields arrays as a
+        /// <see cref="ScannableTable"/> does.
+        /// </remarks>
+        public static java.lang.Class DeduceElementType(Table? table)
+        {
+            if (table is IClrQueryableTable queryable)
+                return (java.lang.Class)queryable.ElementType;
+
+            if (table is IClrScannableTable)
+                return (java.lang.Class)typeof(object[]);
+
+            return EnumerableTableScan.deduceElementType(table);
         }
 
         /// <summary>
@@ -111,7 +139,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <returns></returns>
         public static JavaRowFormat DeduceFormat(RelOptTable table)
         {
-            var elementType = EnumerableTableScan.deduceElementType((Table)table.unwrapOrThrow(typeof(Table)));
+            var elementType = DeduceElementType((Table)table.unwrapOrThrow(typeof(Table)));
 
             return elementType == (java.lang.Class)typeof(object[]) ? JavaRowFormat.ARRAY : JavaRowFormat.CUSTOM;
         }
@@ -166,12 +194,19 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // the only linq4j here is the table's own expression, which the schema SPI defines as one, and the
             // row shape below. It is translated as soon as it is in hand; what a sequence is made to do after
             // that is this convention's, and is built as this convention builds everything.
+            var unwrapped = (Table)table.unwrap(typeof(Table));
+
+            // this convention's own table SPI is read directly: the rows are already a .NET sequence, so
+            // there is no linq4j tree to translate and no FromJava to read one back
+            if (unwrapped is IClrScannableTable or IClrQueryableTable)
+                return implementor.Result(physType, ToRows(implementor, physType, ClrSource(implementor), true));
+
             var expression = table.getExpression(typeof(Queryable))
                 ?? throw new java.lang.IllegalStateException($"Unable to implement {RelOptUtil.toString(this, org.apache.calcite.sql.SqlExplainLevel.ALL_ATTRIBUTES)}: {table}.getExpression(Queryable.class) returned null");
 
             var source = ToEnumerable(implementor.Translator.Translate(expression));
 
-            return implementor.Result(physType, ToRows(implementor, physType, source));
+            return implementor.Result(physType, ToRows(implementor, physType, source, false));
         }
 
         /// <summary>
@@ -201,6 +236,43 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return expression;
         }
 
+        /// <summary>
+        /// Returns the expression yielding the rows of a table of this convention's own SPI.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// An <see cref="IClrQueryableTable"/> writes its own reading into the plan, as a
+        /// <see cref="QueryableTable"/> does; an <see cref="IClrScannableTable"/> is called, as a
+        /// <see cref="ScannableTable"/> is. Either way what comes back is already an
+        /// <see cref="System.Collections.Generic.IEnumerable{T}"/> of the deduced element type.
+        /// </remarks>
+        Expression ClrSource(ClrEnumerableRelImplementor implementor)
+        {
+            var unwrapped = (Table)table.unwrap(typeof(Table));
+
+            if (unwrapped is IClrQueryableTable queryable)
+            {
+                var names = table.getQualifiedName();
+
+                return queryable.GetExpression(
+                    ((org.apache.calcite.jdbc.CalciteSchema)table.unwrap(typeof(org.apache.calcite.jdbc.CalciteSchema)))?.plus()!,
+                    (string)names.get(names.size() - 1))
+                    ?? throw new java.lang.IllegalStateException($"{table}.GetExpression returned null");
+            }
+
+            // reached as a constant, the way EnumerableRelImplementor.stash reaches an object a plan cannot
+            // hold. An expression tree can hold one, so it is a constant rather than a stash.
+            return Expression.Call(
+                Expression.Constant((IClrScannableTable)unwrapped, typeof(IClrScannableTable)),
+                ScanMethod,
+                implementor.Root);
+        }
+
+
+        static readonly System.Reflection.MethodInfo ScanMethod = typeof(IClrScannableTable).GetMethod(nameof(IClrScannableTable.Scan))
+            ?? throw new System.InvalidOperationException($"'{nameof(IClrScannableTable.Scan)}' is missing.");
+
         static readonly System.Reflection.MethodInfo AsList = ClrTypes.Resolve(BuiltInMethod.AS_LIST.method);
         static readonly System.Reflection.MethodInfo AsEnumerable = ClrTypes.Resolve(BuiltInMethod.AS_ENUMERABLE.method);
         static readonly System.Reflection.MethodInfo AsEnumerable2 = ClrTypes.Resolve(BuiltInMethod.AS_ENUMERABLE2.method);
@@ -213,9 +285,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="physType"></param>
         /// <param name="source"></param>
         /// <returns></returns>
-        Expression ToRows(ClrEnumerableRelImplementor implementor, ClrPhysType physType, Expression source)
+        Expression ToRows(ClrEnumerableRelImplementor implementor, ClrPhysType physType, Expression source, bool native)
         {
             var element = ClrTypes.FromClass(elementType);
+
+            // a table of this convention's own SPI has already handed back a .NET sequence; one of Calcite's
+            // handed back a linq4j Enumerable, which is read across the boundary. The rest is the same.
+            Expression Source(System.Type rowType) => native ? source : FromJava(rowType, source);
 
             if (physType.Format == JavaRowFormat.SCALAR
                 && ((java.lang.Class)typeof(object[])).isAssignableFrom(elementType)
@@ -225,7 +301,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     || table.unwrap(typeof(ProjectableFilterableTable)) != null))
                 return Expression.Call(null,
                     ClrBuiltInMethod.Slice0.MakeGenericMethod(physType.RowType),
-                    FromJava(element, source));
+                    Source(element));
 
             var oldFormat = Format();
             if (physType.Format == oldFormat && HasCollectionField(getRowType()) == false)
@@ -233,7 +309,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 // Calcite passes the table's own element type along here because a linq4j Enumerable erases
                 // it; a CLR sequence does not, and the two differ wherever a format was optimized away — a
                 // one column table declares Object[] and holds the value itself.
-                return FromJava(physType.RowType, source);
+                return Source(physType.RowType);
 
             // the row shape is PhysType's, and one field of it can be a multiset that has to be reformatted
             // through linq4j's own select -- an Enumerable of Java's, not a sequence of this convention's. So
@@ -255,7 +331,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 implementor.Translator.Translate(calcite.record(expressionList)),
                 parameter);
 
-            return Expression.Call(null, ClrBuiltInMethod.Select.MakeGenericMethod(element, rowType), FromJava(element, source), selector);
+            return Expression.Call(null, ClrBuiltInMethod.Select.MakeGenericMethod(element, rowType), Source(element), selector);
         }
 
         /// <summary>

@@ -54,7 +54,7 @@ namespace Apache.Calcite.Extensions.Prepare
             CalciteSchema? rootSchema,
             java.util.List collations,
             long maxRowCount,
-            IClrBindable? bindable,
+            IClrBindableBase? bindable,
             Meta.StatementType statementType)
         {
             Sql = sql ?? throw new ArgumentNullException(nameof(sql));
@@ -123,7 +123,12 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Gets the compiled plan, or <see langword="null"/> where there is nothing to run.
         /// </summary>
-        public IClrBindable? Bindable { get; }
+        /// <remarks>
+        /// Either convention's, because a statement is described the same way whichever prepared it and this
+        /// type reads nothing of the plan but its element type. <see cref="Bind"/> and
+        /// <see cref="BindAsync"/> are where the two part company, and each refuses the other's.
+        /// </remarks>
+        public IClrBindableBase? Bindable { get; }
 
         /// <summary>
         /// Gets what kind of statement this is.
@@ -148,10 +153,61 @@ namespace Apache.Calcite.Extensions.Prepare
 
             if (Bindable is null)
                 throw new InvalidOperationException($"{Sql} has no plan to run.");
+            if (Bindable is not IClrBindable bindable)
+                throw new InvalidOperationException($"{Sql} was prepared into an asynchronous convention; read it with {nameof(BindAsync)}.");
 
-            var rows = Bindable.Bind(root);
+            var rows = bindable.Bind(root);
 
             return MaxRowCount < 0 ? rows : Take(rows, MaxRowCount);
+        }
+
+        /// <summary>
+        /// Runs an asynchronous plan against a <see cref="DataContext"/> and returns its rows.
+        /// </summary>
+        /// <param name="root"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException">There is no plan to run, or it is a synchronous
+        /// one.</exception>
+        /// <remarks>
+        /// <see cref="Bind"/> for a statement prepared into the asynchronous convention. It refuses a
+        /// synchronous plan rather than wrapping one: an <see cref="IEnumerable{T}"/> behind an awaited
+        /// interface is a blocking pull, and a caller that asked for this method asked not to have one.
+        /// </remarks>
+        public IAsyncEnumerable<object> BindAsync(DataContext root)
+        {
+            ArgumentNullException.ThrowIfNull(root);
+
+            if (Bindable is null)
+                throw new InvalidOperationException($"{Sql} has no plan to run.");
+            if (Bindable is not IClrAsyncBindable bindable)
+                throw new InvalidOperationException($"{Sql} was prepared into a synchronous convention; read it with {nameof(Bind)}.");
+
+            var rows = bindable.Bind(root);
+
+            return MaxRowCount < 0 ? rows : TakeAsync(rows, MaxRowCount);
+        }
+
+        /// <summary>
+        /// Yields at most <paramref name="count"/> rows.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Take"/> over an asynchronous sequence, and a limit of a <see cref="long"/> for the
+        /// same reason.
+        /// </remarks>
+        static async IAsyncEnumerable<object> TakeAsync(IAsyncEnumerable<object> source, long count)
+        {
+            if (count <= 0)
+                yield break;
+
+            var taken = 0L;
+
+            await foreach (var row in source)
+            {
+                yield return row;
+
+                if (++taken >= count)
+                    yield break;
+            }
         }
 
         /// <summary>

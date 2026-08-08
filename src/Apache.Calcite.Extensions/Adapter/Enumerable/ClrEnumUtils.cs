@@ -151,7 +151,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// did, null where a comparison was unknown. So the marker is a <c>java.lang.Boolean</c> and not a
         /// <see cref="bool"/>, and the row is boxed as every other join here boxes it.
         /// </remarks>
-        public static LambdaExpression MarkJoinSelector(ClrEnumerableRelImplementor implementor, ClrPhysType resultPhysType, ClrPhysType inputPhysType)
+        public static LambdaExpression MarkJoinSelector(IClrRelImplementor implementor, ClrPhysType resultPhysType, ClrPhysType inputPhysType)
         {
             // a Function always takes boxed arguments, so a row that is a primitive is boxed here
             var input = Expression.Parameter(inputPhysType.RowType, "input");
@@ -185,7 +185,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// would otherwise exceed what a Java class file allows (CALCITE-3094). An expression tree has no such
         /// limit, so there is one form here and it is the one Calcite uses everywhere else.
         /// </remarks>
-        public static LambdaExpression JoinSelector(ClrEnumerableRelImplementor implementor, JoinRelType joinType, ClrPhysType physType, ClrPhysType left, ClrPhysType right)
+        public static LambdaExpression JoinSelector(IClrRelImplementor implementor, JoinRelType joinType, ClrPhysType physType, ClrPhysType left, ClrPhysType right)
         {
             var outputFieldCount = physType.RelRowType.getFieldCount();
             var inputs = new[] { left, right };
@@ -236,7 +236,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="rightPhysType"></param>
         /// <param name="condition"></param>
         /// <returns></returns>
-        public static LambdaExpression GeneratePredicate(ClrEnumerableRelImplementor implementor, RexBuilder rexBuilder, RelNode left, RelNode right, ClrPhysType leftPhysType, ClrPhysType rightPhysType, RexNode condition)
+        public static LambdaExpression GeneratePredicate(IClrRelImplementor implementor, RexBuilder rexBuilder, RelNode left, RelNode right, ClrPhysType leftPhysType, ClrPhysType rightPhysType, RexNode condition)
         {
             return GeneratePredicate(implementor, rexBuilder, left, right, leftPhysType, rightPhysType, condition, false);
         }
@@ -260,7 +260,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// false. That is <c>Predicate2</c> against <c>NullablePredicate2</c> in Calcite, and
         /// <see cref="bool"/> against <c>java.lang.Boolean</c> here.
         /// </remarks>
-        public static LambdaExpression GeneratePredicate(ClrEnumerableRelImplementor implementor, RexBuilder rexBuilder, RelNode left, RelNode right, ClrPhysType leftPhysType, ClrPhysType rightPhysType, RexNode condition, bool nullable)
+        public static LambdaExpression GeneratePredicate(IClrRelImplementor implementor, RexBuilder rexBuilder, RelNode left, RelNode right, ClrPhysType leftPhysType, ClrPhysType rightPhysType, RexNode condition, bool nullable)
         {
             // the condition is Rex, so it is translated by Calcite against Calcite's own physical types;
             // those are built here rather than carried, because this is the only thing in a join that needs one

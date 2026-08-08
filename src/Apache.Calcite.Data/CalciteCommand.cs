@@ -255,9 +255,21 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Reads the synchronous plan, rather than blocking on <see cref="ExecuteScalarAsync"/>. Doing the
+        /// latter would make an ordinary <c>ExecuteScalar</c> demand a table that can produce rows
+        /// asynchronously, which is not what a synchronous caller asked for.
+        /// </remarks>
         public override object? ExecuteScalar()
         {
-            return ExecuteScalarAsync(CancellationToken.None).GetAwaiter().GetResult();
+            using var result = GetOpenSession().ExecuteReader(CalciteExecuteRequest.From(_commandText, _parameters, _commandTimeout, ResolveHooks()));
+            if (result.Read() == false)
+                return null;
+
+            if (result.Columns.Count == 0)
+                return null;
+
+            return result.Current.GetValue(0).GetValue();
         }
 
         /// <inheritdoc />
@@ -274,12 +286,24 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Asks for a synchronous plan, because the reader it returns will be read with
+        /// <c>DbDataReader.Read</c>, which refuses to block on an asynchronous one.
+        /// </remarks>
         protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
         {
-            return ExecuteDbDataReaderAsync(behavior, CancellationToken.None).GetAwaiter().GetResult();
+            var result = GetOpenSession().ExecuteReader(CalciteExecuteRequest.From(_commandText, _parameters, _commandTimeout, ResolveHooks()));
+            return new CalciteDataReader(result, behavior);
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Prepares into the asynchronous convention, and <b>throws where the query cannot be planned into
+        /// it</b> — where it touches a table that is not an <c>IClrAsyncScannableTable</c>, there being no
+        /// converter to carry those rows. Preparing the synchronous plan instead would hand back a reader
+        /// that looks asynchronous and blocks a thread per row, which a caller cannot tell from the outside.
+        /// <see cref="ExecuteReader()"/> is how a caller asks for that plan deliberately.
+        /// </remarks>
         protected override async Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
         {
             var result = await ExecuteReaderCoreAsync(cancellationToken).ConfigureAwait(false);

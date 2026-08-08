@@ -52,21 +52,49 @@ namespace Apache.Calcite.Extensions.Interop
         }
 
         /// <summary>
-        /// Runs a compiled plan and reads its rows as a linq4j sequence.
+        /// Reads a linq4j sequence as an asynchronous .NET one.
         /// </summary>
-        /// <param name="plan"></param>
-        /// <param name="root"></param>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="cancellationToken"></param>
         /// <returns></returns>
         /// <remarks>
-        /// What a converter out of this convention calls. Calcite compiles its side from generated source,
-        /// which cannot mention an object, so the delegate travels on the DataContext and is called from here.
+        /// <see cref="FromJava{TSource}"/> yielding into an <see cref="IAsyncEnumerable{T}"/>. It converts
+        /// rather than casts for the reason that method gives.
+        ///
+        /// <para>Nothing here suspends, and that is the honest shape of it: the source is a linq4j
+        /// <c>Enumerator</c>, which is pulled. Producing an asynchronous sequence that always completes
+        /// synchronously costs a state machine and no thread -- it is not the sync-over-async this
+        /// convention refuses, which is a caller blocked waiting. A plan reading a Calcite sub-plan this way
+        /// is simply not asynchronous over that part of itself, and cannot be.</para>
         /// </remarks>
-        public static org.apache.calcite.linq4j.Enumerable Bind(System.Func<org.apache.calcite.DataContext, IEnumerable> plan, org.apache.calcite.DataContext root)
+        public static async IAsyncEnumerable<TSource> FromJavaAsync<TSource>(org.apache.calcite.linq4j.Enumerable source, [System.Runtime.CompilerServices.EnumeratorCancellation] System.Threading.CancellationToken cancellationToken = default)
         {
-            ArgumentNullException.ThrowIfNull(plan);
+            ArgumentNullException.ThrowIfNull(source);
 
-            return ToJava(System.Linq.Enumerable.Cast<object>(plan(root)));
+            var enumerator = source.enumerator();
+
+            try
+            {
+                while (enumerator.moveNext())
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    yield return JavaValues.As<TSource>(enumerator.current());
+                }
+            }
+            finally
+            {
+                enumerator.close();
+            }
+
+            await System.Threading.Tasks.Task.CompletedTask;
         }
+
+
+
+
+
 
         /// <summary>
         /// Reads a .NET sequence as a linq4j one.

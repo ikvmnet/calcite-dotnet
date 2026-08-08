@@ -330,6 +330,43 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (format == targetFormat)
                 return expression;
 
+            var (selector, targetRowType) = Reformatter(targetFormat);
+
+            return Expression.Call(null,
+                ClrBuiltInMethod.Select.MakeGenericMethod(javaRowClass, targetRowType),
+                expression,
+                selector);
+        }
+
+        /// <inheritdoc />
+        public Expression ConvertToAsync(Expression expression, JavaRowFormat targetFormat)
+        {
+            ArgumentNullException.ThrowIfNull(expression);
+            ArgumentNullException.ThrowIfNull(targetFormat);
+
+            if (format == targetFormat)
+                return expression;
+
+            var (selector, targetRowType) = Reformatter(targetFormat);
+
+            return AsyncEnumerable.ClrAsyncBuiltInMethod.Call(
+                AsyncEnumerable.ClrAsyncBuiltInMethod.Select.MakeGenericMethod(javaRowClass, targetRowType),
+                expression,
+                selector);
+        }
+
+        /// <summary>
+        /// Returns the per-row selector that rewrites a row of this format into another, and the type it
+        /// yields.
+        /// </summary>
+        /// <param name="targetFormat"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// What the two <c>ConvertTo</c> overloads share, which is all of the work: reformatting a row is a
+        /// row's business, and which operator carries the selector over the sequence is the convention's.
+        /// </remarks>
+        (LambdaExpression Selector, Type TargetRowType) Reformatter(JavaRowFormat targetFormat)
+        {
             var o_ = Expression.Parameter(javaRowClass, "o");
             var fieldCount = rowType.getFieldCount();
 
@@ -341,12 +378,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // a one column row of a value is the value, and a sequence of it still carries the box
             var targetRowType = targetPhysType.RowType;
             var body = ClrEnumUtils.Convert(targetPhysType.Record(FieldReferences(o_, Util.range(fieldCount))), targetRowType);
-            var selector = Expression.Lambda(typeof(Func<,>).MakeGenericType(javaRowClass, targetRowType), body, o_);
 
-            return Expression.Call(null,
-                ClrBuiltInMethod.Select.MakeGenericMethod(javaRowClass, targetRowType),
-                expression,
-                selector);
+            return (Expression.Lambda(typeof(Func<,>).MakeGenericType(javaRowClass, targetRowType), body, o_), targetRowType);
         }
 
         /// <inheritdoc />

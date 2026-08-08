@@ -107,15 +107,30 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Refuses where the rows come from a plan of the asynchronous convention, rather than blocking on
+        /// it. That block is the sync-over-async this convention exists to avoid — it deadlocks on a
+        /// synchronization context and wastes a thread everywhere else — and this is the one place a caller
+        /// could reach it by accident. A reader over an asynchronous plan has <see cref="ReadAsync"/>.
+        /// </remarks>
         public override bool Read()
         {
-            return ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
+            ThrowIfClosed();
+
+            _hasRow = ActiveResult.Read();
+            return _hasRow;
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// A synchronous plan is read synchronously and reported in a completed task, which is what every
+        /// synchronous ADO.NET provider does and is not sync over async — there is nothing asynchronous to
+        /// be over. An asynchronous plan is awaited.
+        /// </remarks>
         public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
         {
             ThrowIfClosed();
+
             _hasRow = await ActiveResult.ReadAsync(cancellationToken).ConfigureAwait(false);
             return _hasRow;
         }
@@ -155,6 +170,39 @@ namespace Apache.Calcite.Data
             _closed = true;
             for (var i = _resultIndex; i < _results.Length; i++)
                 _results[i].Dispose();
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// <b>Overridden, and it has to be.</b> <c>DbDataReader.CloseAsync</c> and <c>DisposeAsync</c> both
+        /// fall back to the synchronous <see cref="Close"/> if a provider leaves them alone, which for a
+        /// plan of the asynchronous convention means <c>CalciteAsyncEnumerableResult.Release</c> — and that
+        /// can only finish a disposal the plan already completed synchronously. A table whose
+        /// <c>DisposeAsync</c> really suspends, because it is closing a connection or a channel, would have
+        /// had its disposal dropped.
+        ///
+        /// <para>So <c>await using</c> over a reader means what it says, and <c>using</c> still works: the
+        /// synchronous path is unchanged and is what a synchronous plan needs.</para>
+        /// </remarks>
+        public override async Task CloseAsync()
+        {
+            if (_closed)
+                return;
+
+            _closed = true;
+
+            for (var i = _resultIndex; i < _results.Length; i++)
+                await _results[i].DisposeAsync().ConfigureAwait(false);
+        }
+
+        /// <inheritdoc />
+        public override async ValueTask DisposeAsync()
+        {
+            await CloseAsync().ConfigureAwait(false);
+
+            // the base call reaches Dispose, which reaches Close, which returns at once now that the reader
+            // is closed. It is made so that whatever DbDataReader does besides closing still happens.
+            await base.DisposeAsync().ConfigureAwait(false);
         }
 
         /// <inheritdoc />

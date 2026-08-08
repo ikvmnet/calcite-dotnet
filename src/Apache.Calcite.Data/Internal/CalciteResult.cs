@@ -1,8 +1,4 @@
-using org.apache.calcite.jdbc;
-using org.apache.calcite.linq4j;
-
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -15,33 +11,47 @@ namespace Apache.Calcite.Data.Internal
     /// Reads the rows of a prepared <see cref="ClrSignature"/>.
     /// </summary>
     /// <remarks>
-    /// The enumerator is the plan's own — a compiled delegate hands back an
-    /// <see cref="IEnumerator{T}"/> of objects — so nothing stands between a row and the reader.
+    /// What a reader holds, and what both execute paths return. Everything about a <em>row</em> is here —
+    /// the columns, the cursor factory, the current row, the affected count — because a row is the same
+    /// thing whichever convention produced it. Reading is what the two subclasses differ by, and it is the
+    /// only thing they differ by.
+    ///
+    /// <para>Two classes rather than one holding two enumerators. A single class decided which it was
+    /// from a nullable field, so nothing could be relied on at a call site; here the type is the answer and
+    /// each subclass holds exactly the enumerator it has.</para>
+    ///
+    /// <para><b>Both read methods are on both</b>, and that is deliberate rather than a compromise.
+    /// <c>DbDataReader</c> is a contract: a consumer that knows nothing but <c>DbDataReader</c> -- a
+    /// micro-ORM, <c>DataTable.Load</c>, anything generic -- calls <c>Read</c>, and a provider whose reader
+    /// throws there is not a provider. So a synchronous plan answers <c>ReadAsync</c> with a completed
+    /// task, and an asynchronous plan blocks in <c>Read</c>.</para>
+    ///
+    /// <para>Neither is the sync-over-async this convention refuses. That rule is about a <em>plan's</em>
+    /// internals, where a converter would insert blocking nobody asked for and nobody could see. Here the
+    /// caller is choosing, in the open, at the boundary -- which is where every ADO.NET provider blocks and
+    /// what <c>Read</c> on an asynchronous source means.</para>
     /// </remarks>
-    internal sealed record CalciteResult : IDisposable
+    internal abstract class CalciteResult : IDisposable, IAsyncDisposable
     {
 
         readonly ClrSignature _signature;
         readonly CalciteResultColumns _columns;
-        readonly IEnumerator<object>? _enumerator;
         readonly long _recordsAffected;
 
-        CalciteResultRow? _current = null;
+        CalciteResultRow? _current;
         bool _disposed;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
         /// <param name="signature"></param>
-        /// <param name="enumerator"></param>
         /// <param name="recordsAffected"></param>
-        public CalciteResult(ClrSignature signature, IEnumerator<object>? enumerator, long recordsAffected = -1)
+        protected CalciteResult(ClrSignature signature, long recordsAffected)
         {
             ArgumentNullException.ThrowIfNull(signature);
 
-            _columns = new CalciteResultColumns(signature);
             _signature = signature;
-            _enumerator = enumerator;
+            _columns = new CalciteResultColumns(signature);
             _recordsAffected = recordsAffected;
         }
 
@@ -56,33 +66,55 @@ namespace Apache.Calcite.Data.Internal
         public long RecordsAffected => _recordsAffected;
 
         /// <summary>
-        /// Reads the next row from the enumerator.
-        /// </summary>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        public Task<bool> ReadAsync(CancellationToken cancellationToken)
-        {
-            ThrowIfDisposed();
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (_enumerator is null || _enumerator.MoveNext() == false)
-            {
-                _current = null;
-                return Task.FromResult(false);
-            }
-
-            _current = new CalciteResultRow(_columns, _signature.CursorFactory, _enumerator.Current);
-            return Task.FromResult(true);
-        }
-
-        /// <summary>
         /// Gets the current row.
         /// </summary>
         public CalciteResultRow Current => _current ?? throw new InvalidOperationException();
 
         /// <summary>
-        /// Disposes of the instance.
+        /// Reads the next row.
         /// </summary>
+        /// <returns>Whether there was a row.</returns>
+        public abstract bool Read();
+
+        /// <summary>
+        /// Reads the next row.
+        /// </summary>
+        /// <param name="cancellationToken"></param>
+        /// <returns>Whether there was a row.</returns>
+        public abstract Task<bool> ReadAsync(CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Records the row just read, or that there was none.
+        /// </summary>
+        /// <param name="row">The row the plan produced, or <see langword="null"/> where it is exhausted.</param>
+        /// <param name="moved"></param>
+        /// <returns>Whether there was a row.</returns>
+        protected bool Accept(object? row, bool moved)
+        {
+            _current = moved ? new CalciteResultRow(_columns, _signature.CursorFactory, row!) : null;
+            return moved;
+        }
+
+        /// <summary>
+        /// Throws where this instance has been disposed.
+        /// </summary>
+        protected void ThrowIfDisposed()
+        {
+            if (_disposed)
+                throw new ObjectDisposedException(GetType().Name);
+        }
+
+        /// <summary>
+        /// Releases the plan's enumerator.
+        /// </summary>
+        protected abstract void Release();
+
+        /// <summary>
+        /// Releases the plan's enumerator, awaiting it where it has something to await.
+        /// </summary>
+        protected abstract ValueTask ReleaseAsync();
+
+        /// <inheritdoc />
         public void Dispose()
         {
             if (_disposed)
@@ -92,7 +124,7 @@ namespace Apache.Calcite.Data.Internal
 
             try
             {
-                _enumerator?.Dispose();
+                Release();
             }
             catch
             {
@@ -100,10 +132,22 @@ namespace Apache.Calcite.Data.Internal
             }
         }
 
-        void ThrowIfDisposed()
+        /// <inheritdoc />
+        public async ValueTask DisposeAsync()
         {
             if (_disposed)
-                throw new ObjectDisposedException(nameof(CalciteResult));
+                return;
+
+            _disposed = true;
+
+            try
+            {
+                await ReleaseAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                // best-effort cleanup
+            }
         }
 
     }
