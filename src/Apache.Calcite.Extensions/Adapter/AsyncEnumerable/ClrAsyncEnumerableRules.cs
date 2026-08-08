@@ -192,6 +192,22 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
 
 
         /// <summary>
+        /// Rule that reads a plan of <c>EnumerableConvention</c> as one of this convention.
+        /// </summary>
+        /// <remarks>
+        /// The only converter this convention has, and it goes one way. It lets a query be planned partly
+        /// here and partly by Calcite, which is what stops a node this convention has none of — a table
+        /// function, a MATCH_RECOGNIZE, an interpreted transient scan — from making the whole query
+        /// unplannable.
+        ///
+        /// <para>There is no converter out. Calcite cannot read an
+        /// <see cref="Schema.IClrAsyncScannableTable"/> by any route, so a Calcite node can never sit above
+        /// an asynchronous one; a query that would need it does not plan, and that is the right answer
+        /// rather than a gap, because the alternative blocks once per row.</para>
+        /// </remarks>
+        public static readonly RelOptRule EnumerableToClrAsyncEnumerableConverterRule = Apache.Calcite.Extensions.Adapter.AsyncEnumerable.EnumerableToClrAsyncEnumerableConverterRule.Create();
+
+        /// <summary>
         /// The rules registered by default.
         /// </summary>
         /// <remarks>
@@ -240,6 +256,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             ClrAsyncEnumerableWindowRule,
             ClrAsyncEnumerableCollectRule,
             ClrAsyncEnumerableUncollectRule,
+            EnumerableToClrAsyncEnumerableConverterRule,
             EnumerableToClrEnumerableConverterRule,
         ];
 

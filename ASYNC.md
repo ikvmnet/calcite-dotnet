@@ -142,6 +142,153 @@ does the threading.
 `DataContext.Variable.CANCEL_FLAG` stays as it is, because Calcite's own generated blocks read it and
 those blocks are unchanged.
 
+### One converter, and it goes one way
+
+`EnumerableToClrAsyncEnumerableConverter` reads an `EnumerableConvention` sub-plan as an asynchronous one:
+Calcite's implementor produces its linq4j block, `LixToClrTranslator` translates it, and `FromJavaAsync`
+wraps the resulting `Enumerable`. **Nothing suspends and nothing blocks** — a linq4j `Enumerable` is
+pulled, so the sequence completes synchronously every time, which costs a state machine and no thread.
+
+That is what stops the convention having to plan a query whole or not at all. A node it has none of — a
+table function, a MATCH_RECOGNIZE, an interpreted transient scan, a table that is not an
+`IClrAsyncScannableTable` — is planned by Calcite under the converter, and the rest of the query is still
+asynchronous.
+
+**There is no converter out, and there should not be.** A sequence going the other way would have to become
+a linq4j `Enumerator`, whose `moveNext` returns a `boolean` with nowhere to await, so it would block once
+per row. Nothing requires it: Calcite cannot read an `IClrAsyncScannableTable` by any route, so no plan can
+put a Calcite node *above* an asynchronous one. A query that would need that does not plan — which is the
+right answer, not a gap, because the alternative is answering it by blocking.
+
+The synchronous convention does have a converter out, and pays for it: `ClrEnumerableToEnumerableConverter`
+stashes its sub-plan for generated Java to call back into. `TODO.md` has the fix — translating a CLR tree
+into a linq4j one, so the sub-plan becomes part of the block Janino compiles.
+
+**Compiling is not planning.** That converter used to call `Compile()` inside its own `Implement`, which did
+JIT work while the plan was still being assembled and did it once per converter. It stashes a
+`ClrPlan<TRows>` now, which compiles itself the first time it runs — at most once per prepared statement,
+because the stash belongs to the `ClrSignature`.
+
+### The root is `IAsyncEnumerable<object>`, and a scalar row has to be boxed to reach it
+
+`IAsyncEnumerable<out T>` and `IAsyncEnumerator<out T>` are covariant — the same declaration
+`IEnumerable<out T>` carries, measured off the reference assembly rather than remembered. So a row of a
+reference type reaches `IAsyncEnumerable<object>` by a free reference conversion, exactly as it does in
+the sync convention.
+
+A row of a value type does not, and the way it fails is the dangerous one. Measured on net8.0:
+
+| | build | run |
+|---|---|---|
+| `Expression.Convert(IAsyncEnumerable<string>, IAsyncEnumerable<object>)` | OK | OK |
+| `Expression.Convert(IAsyncEnumerable<int>, IAsyncEnumerable<object>)` | **OK** | `InvalidCastException` |
+
+`Expression.Convert` accepts the second one **without complaint** — the target is an interface, so the
+tree emits a cast the runtime is entitled to attempt — and it throws when the query runs. There is no
+compile-time signal at all.
+
+**But it cannot arise, because a row of these conventions is never a value type.** `ClrPhysTypeImpl`
+boxes on the way in — `javaRowClass = ClrPrimitive.Box(ClrTypes.Resolve(javaRowType))`, and `RowType`
+returns that — and `ClrPrimitive.Box` maps a Java primitive to its box class and returns everything else
+unchanged. A row is a synthetic record, an `object[]`, a `java.util.List`, or a boxed scalar; never a
+struct. `RequireRowType` then forces every node's result to be exactly `IEnumerable<physType.RowType>`,
+and the only other shape `ImplementRoot` produces is `Slice0<object>`. So the element type at the root is
+a reference type on every path there is.
+
+So `ClrAsyncEnumerableRelImplementor.ImplementRoot` carries **no** boxing pass. The conversion to
+`IAsyncEnumerable<object>` is a plain variance conversion, free and total. What keeps it safe is
+`RequireRowType` naming `IAsyncEnumerable<>` and the row type exactly — the guard is the row-type
+discipline, not a hop at the end.
+
+### Two defects in the sync convention, found establishing the above
+
+Neither is the async port's to fix, and both mislead it if left:
+
+- **`ClrEnumerableRelImplementor.BoxScalars` is unreachable.** Its `elementType.IsValueType` test cannot
+  be true, for the reason just given. It is dead on every path, and it was the basis for the first two
+  answers I gave about this — the hop it performs is not happening today.
+- **`ClrPhysType.RowType`'s doc comment states the opposite of what `ClrPhysTypeImpl` does.** It says
+  "Unboxed, as Calcite's is: the physical type of a one column row of `INTEGER NOT NULL` is `int`", and
+  that a sequence carries "this boxed … through `ClrEnumUtils.Boxed`". The implementation boxes in the
+  constructor and `RowType` is that. `CLAUDE.md` has it right — "a row of this convention is boxed, and
+  the physical type says so" — so the comment is stale from before the convention got a physical type of
+  its own, and describes Calcite's `PhysType.getRowType`, which this deliberately diverges from.
+
+Deleting `BoxScalars` and correcting the comment is a small change to the sync convention that
+`ClrEnumerableDifferentialTests` covers already; do it before the port copies either.
+
+**The cast cannot be deferred to the consumer, and the boxing is not overhead.** The obvious escape —
+let the tree hand back an `IAsyncEnumerable<object>` whose runtime object is really an
+`IAsyncEnumerable<int>`, and cast down where the rows are read — does not exist. Measured:
+
+| | |
+|---|---|
+| `IAsyncEnumerable<Row>` → `<object>` → back to `<Row>` | OK both ways, **same instance** |
+| `IAsyncEnumerable<int>` → `<object>` | not assignable; the `is` check is false |
+| a type implementing *both* closings, `<object>` → `<int>` | OK, same instance |
+
+For a reference row type the round trip already works and costs nothing: variance is a reference
+conversion, not a wrapper. For `int` there is nothing to cast back *from* — the iterator does not
+implement `IAsyncEnumerable<object>`, so the reference cannot be held in the first place. The third row
+is the only shape that would work, and it requires the sequence to implement `IAsyncEnumerator<object>`
+as well, whose `Current` returns `object` — which moves the box from the `Select` to the property and
+makes it a *CLR* box, `System.Int32`, where a reader of a Calcite result expects `java.lang.Integer`.
+
+### Single-column results as real .NET types, later
+
+The intent is that a one-column result eventually leaves as a real .NET value — a boxed `System.Int32`
+the consumer unboxes with `(int)row` — while the compiled expression still returns
+`IAsyncEnumerable<object>` and nothing about the plan's shape moves. The measurements above say that
+works: the element cast is what the consumer makes, and the sequence stays `<object>` either way.
+
+What it is **not** is a use for `BoxScalars`. Today a one-column INTEGER leaves as a `java.lang.Integer`
+— already a reference, already boxed, by `ClrPhysTypeImpl`. The future change converts a Java box to a
+CLR value, which is a different conversion in a different direction from the dead method's, and the only
+thing they share is a position.
+
+Where that conversion goes is open. Inside the plan a value must stay Java's — Calcite's generated
+blocks read it and its comparators compare it, and two representations of one value in a plan is the
+failure `JavaValues` exists to prevent. So the candidates are the outermost hop of `ImplementRoot`, or
+the reader. Whichever, it moves in step with the metadata: `ClrPrepareImpl.AvaticaTypeOf` derives
+`ColumnMetaData.Rep` from `typeFactory.getJavaClass(...)`, and `CalciteResultRow` / `CalciteTypeMap` read
+a row against it. Change the representation without changing those and the column metadata describes a
+value the reader is no longer handed — which surfaces as a wrong `GetFieldType`, not as an exception.
+
+This is a decision for both conventions at once, not the async one's to make.
+
+The sequence-level cast is still not available whichever box is chosen — `IAsyncEnumerable<object>` to
+`IAsyncEnumerable<int>` fails for the reason in the table above. The cast the consumer makes is on the
+element.
+
+Three async-specific traps around value types, none of which the sync port has:
+
+- **`System.Linq.AsyncEnumerable` does not exist on net8.0** — it arrived in .NET 10, and the library
+  targets net8.0. Measured: absent. So there is no `Select` to lean on for the boxing hop, and no
+  built-in operator for anything else either. `ClrAsyncEnumerableDefaults` writes all of them, which was
+  already the plan; the point is that there is no fallback if one is missed.
+  `TaskAsyncEnumerableExtensions` — `WithCancellation`, `ConfigureAwait` — *is* present.
+- **`ConfiguredCancelableAsyncEnumerable<T>` is a struct and is not an `IAsyncEnumerable<T>`.** What
+  `source.WithCancellation(ct)` returns can be `await foreach`ed and nothing else: it cannot be stored
+  as a sequence, returned, or passed to another operator. Every operator therefore applies it at its own
+  `await foreach` rather than threading a "cancelable sequence" through.
+- **`ValueTask<bool>` from `MoveNextAsync` may be awaited once.** Any operator holding an enumerator by
+  hand — `MergeJoin`, `AsofJoin` — must not stash the `ValueTask` and await it twice. This is the
+  async-only failure mode in the two nodes §8 already flags as unproven.
+
+### Cancellation carries itself
+
+The compiled root is `Func<DataContext, IAsyncEnumerable<object>>`. A token enters at
+`IAsyncEnumerable<T>.GetAsyncEnumerator(CancellationToken)`, and every operator in
+`ClrAsyncEnumerableDefaults` is an `async IAsyncEnumerable<T>` iterator declaring
+`[EnumeratorCancellation] CancellationToken cancellationToken = default` and consuming its input as
+`await foreach (var row in source.WithCancellation(cancellationToken))`. So the token flows from
+`CalciteDataReader.ReadAsync` down to the leaf without ever appearing in the plan: no expression-tree
+parameter, no `DataContext` variable, no stash. The expression tree passes nothing and the language
+does the threading.
+
+`DataContext.Variable.CANCEL_FLAG` stays as it is, because Calcite's own generated blocks read it and
+those blocks are unchanged.
+
 ### No converters — not to Calcite's convention, and not to ours
 
 This is the caveat, and it is larger than it sounds.

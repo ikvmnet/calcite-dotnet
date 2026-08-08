@@ -101,20 +101,21 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// A query that cannot be planned asynchronously fails, rather than quietly running synchronously.
+        /// A query over a table that cannot produce rows asynchronously still plans, through the converter.
         /// </summary>
         /// <remarks>
-        /// There is no fallback and this is what stands in its place. A table that is not an
-        /// <c>IClrAsyncScannableTable</c> cannot be reached from this convention, there being no converter
-        /// to carry its rows, and preparing the synchronous plan instead would hand back a reader that looks
-        /// asynchronous and blocks a thread per row — which a caller cannot tell from the outside, so the
-        /// failure has to be visible.
+        /// What the converter into this convention is for. Calcite's own scan reads the
+        /// <c>ScannableTable</c> and <c>EnumerableToClrAsyncEnumerableConverter</c> brings the rows across,
+        /// so a query is no longer planned whole in this convention or not at all.
         ///
-        /// <para>The same query read through <c>ExecuteReader</c> works, and that is the caller's way of
-        /// saying they meant it.</para>
+        /// <para>The part under the converter is not asynchronous and cannot be — it is a pulled linq4j
+        /// sequence — but it does not block either: reading it produces an
+        /// <see cref="IAsyncEnumerable{T}"/> that always completes synchronously, which costs a state
+        /// machine and no thread. What it is not is a silent substitution: the converter is a node the
+        /// planner chose and the plan shows.</para>
         /// </remarks>
         [TestMethod]
-        public async Task ShouldRefuseToPlanASyncOnlyTableAsynchronously()
+        public async Task ShouldPlanASyncOnlyTableThroughTheConverter()
         {
             using var c = new CalciteConnection(Model);
             c.Open();
@@ -123,11 +124,10 @@ namespace Apache.Calcite.Tests
             using var cmd = c.CreateCommand();
             cmd.CommandText = "SELECT K, V FROM SYNCONLY ORDER BY K, V";
 
-            await cmd.Invoking(x => x.ExecuteReaderAsync()).Should().ThrowAsync<Exception>();
-
             var rows = new List<string>();
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
+            using var reader = await cmd.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
                 rows.Add(reader.GetInt32(0) + "|" + reader.GetString(1));
 
             rows.Should().Equal(["1|A", "2|B", "2|C", "4|D"]);

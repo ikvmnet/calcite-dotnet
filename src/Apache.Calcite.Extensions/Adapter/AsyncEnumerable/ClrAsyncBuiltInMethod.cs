@@ -231,6 +231,17 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// </summary>
         public static readonly MethodInfo CombineQueryResults = Of(nameof(ClrAsyncEnumerableDefaults.CombineQueryResults));
 
+
+        /// <summary>
+        /// <see cref="Apache.Calcite.Extensions.Interop.JavaSequences.FromJavaAsync"/>.
+        /// </summary>
+        /// <remarks>
+        /// Not an operator of <see cref="ClrAsyncEnumerableDefaults"/> but of the interop, as
+        /// <c>ClrBuiltInMethod.FromJava</c> is. It is what a converter into this convention calls.
+        /// </remarks>
+        public static readonly MethodInfo FromJavaAsync = typeof(Apache.Calcite.Extensions.Interop.JavaSequences).GetMethod(nameof(Apache.Calcite.Extensions.Interop.JavaSequences.FromJavaAsync), System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            ?? throw new InvalidOperationException("'FromJavaAsync' is missing.");
+
         /// <summary>
         /// Builds the call to an operator of this class.
         /// </summary>

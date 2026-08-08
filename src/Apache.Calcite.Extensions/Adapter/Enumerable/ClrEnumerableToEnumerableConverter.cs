@@ -23,9 +23,16 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// </summary>
     /// <remarks>
     /// The other direction of <see cref="EnumerableToClrEnumerableConverter"/>, and the harder one. Calcite
-    /// compiles its side with Janino from generated source, which cannot mention an object, so the sub-plan is
-    /// compiled here and the delegate is stashed on the <see cref="DataContext"/> for the generated code to
-    /// call. The rows are not touched.
+    /// compiles its side with Janino from generated source, which cannot mention an object, so the sub-plan's
+    /// tree is stashed on the <see cref="DataContext"/> for the generated code to call back into. The rows
+    /// are not touched.
+    ///
+    /// <para>A tree rather than a delegate, because compiling is not planning: it happens the first time the
+    /// plan runs. See <see cref="ClrPlan{TRows}"/>.</para>
+    ///
+    /// <para>What would be better is translating the tree into a linq4j one, so that the sub-plan became
+    /// part of the block Calcite compiles and there was no callback at all. That is the inverse of
+    /// <c>LixToClrTranslator</c> and a real piece of work; <c>TODO.md</c> has it.</para>
     /// </remarks>
     public class ClrEnumerableToEnumerableConverter : ConverterImpl, EnumerableRel
     {
@@ -78,11 +85,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var clr = new ClrEnumerableRelImplementor(implementor.getRexBuilder(), implementor.map);
             var result = clr.VisitChild(null, 0, (ClrEnumerableRel)getInput(), ClrEnumerablePrefers.FromCalcite(pref));
 
-            var plan = Expression.Lambda<Func<DataContext, IEnumerable>>(
-                Expression.Convert(result.Expression, typeof(IEnumerable)),
-                clr.Root).Compile();
+            // the tree, not a delegate. Compiling here would be JIT work done while the plan is still being
+            // assembled, and once per converter besides; ClrPlan compiles itself the first time it is run.
+            var plan = new ClrPlan<IEnumerable>(
+                Expression.Lambda<Func<DataContext, IEnumerable>>(
+                    Expression.Convert(result.Expression, typeof(IEnumerable)),
+                    clr.Root));
 
-            var stashed = implementor.stash(plan, (java.lang.Class)typeof(Func<DataContext, IEnumerable>));
+            var stashed = implementor.stash(plan, (java.lang.Class)typeof(ClrPlan<IEnumerable>));
 
             // their convention's row abstraction, built from the three values ours carries, because that
             // is what EnumerableRelImplementor.result takes -- and it casts to PhysTypeImpl besides
@@ -93,10 +103,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <summary>
-        /// <see cref="JavaSequences.Bind"/>, which runs the compiled sub-plan and reads it as a linq4j sequence.
+        /// <see cref="JavaPlans.Bind"/>, which runs the compiled sub-plan and reads it as a linq4j sequence.
         /// </summary>
-        static readonly java.lang.reflect.Method BindMethod = ((java.lang.Class)typeof(JavaSequences))
-            .getDeclaredMethod(nameof(JavaSequences.Bind), [typeof(Func<DataContext, IEnumerable>), typeof(DataContext)]);
+        static readonly java.lang.reflect.Method BindMethod = ((java.lang.Class)typeof(JavaPlans))
+            .getDeclaredMethod(nameof(JavaPlans.Bind), [typeof(ClrPlan<IEnumerable>), typeof(DataContext)]);
 
         /// <inheritdoc />
         public Pair deriveTraits(RelTraitSet childTraits, int childId) => EnumerableRel.__DefaultMethods.deriveTraits(this, childTraits, childId);

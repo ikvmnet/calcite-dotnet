@@ -148,3 +148,27 @@ surface whether or not the operation succeeds.
   queries. Direct tests need a planner fixture that does not exist yet.
 - The AdoNet adapter is tested against SQLite only. `SqlServerDatabaseMetadata`,
   `OdbcDatabaseMetadata` and `OleDbDatabaseMetadata` have no coverage.
+
+## Translate a CLR expression tree into a linq4j one
+
+`ClrEnumerableToEnumerableConverter` is the only place a plan of these conventions has to call back out of
+generated Java. Calcite compiles its side with Janino from source that cannot mention a CLR object, so the
+converter stashes the sub-plan's tree on the `DataContext` and emits a call to `JavaPlans.Bind`, which
+compiles it on first use and wraps the result as a linq4j `Enumerable`.
+
+What that costs is a boundary in the middle of a plan: a compiled delegate on one side, a Janino class on
+the other, and a sequence adapter between them. The rows still cross untouched, so it is correct — it is
+not cheap.
+
+The fix is the inverse of `LixToClrTranslator`: translate the `System.Linq.Expressions` tree into a linq4j
+one, hand it to Calcite's implementor as an ordinary block, and let Janino compile the whole thing. Then
+there is no callback, no stash, no adapter, and one compilation unit.
+
+It is a real piece of work and not a transcription. `LixToClrTranslator` had the easier direction — linq4j's
+tree is smaller than the CLR's, so going the other way means deciding what to do with everything linq4j has
+no node for, and the answer for some of it will be "nothing". Worth doing when the boundary starts to
+matter; not before.
+
+Note the asynchronous convention needs none of this. It reads a Calcite sub-plan and never feeds one — no
+plan can put a Calcite node above an asynchronous one, because Calcite cannot read an
+`IClrAsyncScannableTable` — so it has no converter out and nothing to translate.
