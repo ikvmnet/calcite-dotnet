@@ -29,7 +29,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// <para>The format arrives already through <c>JavaRowFormat.optimize</c>, and every question about
     /// how a row is laid out is the format's to answer.</para>
     /// </remarks>
-    class ClrPhysTypeImpl : ClrPhysType
+    public class ClrPhysTypeImpl : ClrPhysType
     {
 
         readonly JavaTypeFactory typeFactory;
