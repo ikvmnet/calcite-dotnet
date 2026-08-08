@@ -2201,10 +2201,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var frame = new WindowFrame();
             var accumulator = accumulatorInitializer();
-            var list = new List<TResult>();
 
-            foreach (var rows in Partitions(source, partitionSelector, comparator))
+            var (collection, iterator) = PartitionIterator(source, partitionSelector, comparator);
+            var list = new List<TResult>(PartitionCollectionSize(collection));
+
+            while (iterator.hasNext())
             {
+                var rows = (object[])iterator.next();
+
                 frame.Rows = rows;
                 frame.PartitionRowCount = rows.Length;
 
@@ -2280,11 +2284,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 }
             }
 
+            ClearPartitionCollection(collection);
+
             return list;
         }
 
         /// <summary>
-        /// Returns the rows of each partition, in the window's order.
+        /// Returns the collection the rows were buffered into, and an iterator over the partitions in the
+        /// window's order.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>
         /// <typeparam name="TKey"></typeparam>
@@ -2301,30 +2308,65 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// partition of its own, and <c>arrays</c> sorts with <c>Arrays.sort</c>, which is stable, so rows the
         /// collation does not separate stay in the order they arrived.
         /// </remarks>
-        static IEnumerable<object[]> Partitions<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey>? partitionSelector, java.util.Comparator comparator)
+        static (object Collection, java.util.Iterator Iterator) PartitionIterator<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey>? partitionSelector, java.util.Comparator comparator)
         {
-            java.util.Iterator iterator;
-
             if (partitionSelector == null)
             {
-                // one partition, which is yielded even when it is empty
-                var all = new java.util.ArrayList();
+                // one partition, which is iterated even when it is empty
+                var tempList = new java.util.ArrayList();
                 foreach (var row in source)
-                    all.add(row);
+                    tempList.add(row);
 
-                iterator = org.apache.calcite.runtime.SortedMultiMap.singletonArrayIterator(comparator, all);
+                return (tempList, org.apache.calcite.runtime.SortedMultiMap.singletonArrayIterator(comparator, tempList));
             }
-            else
+
+            var multiMap = new org.apache.calcite.runtime.SortedMultiMap();
+            foreach (var row in source)
+                multiMap.putMulti(partitionSelector(row), row);
+
+            return (multiMap, multiMap.arrays(comparator));
+        }
+
+        /// <summary>
+        /// Returns the size the generated block would size its output list by.
+        /// </summary>
+        /// <remarks>
+        /// <c>new ArrayList&lt;&gt;(collectionExpr.size())</c>. Calcite names <c>Collection.size</c> on
+        /// whichever of the two it has and lets javac resolve it against the receiver, which is the advisory
+        /// <c>Method</c> trap in the other direction: over a <c>SortedMultiMap</c> that resolves to
+        /// <c>HashMap.size</c> and counts partitions, and over the one-partition list it counts rows. Two
+        /// different quantities from one written call, and C# has to dispatch on the type to get both.
+        /// </remarks>
+        static int PartitionCollectionSize(object collection)
+        {
+            return collection switch
             {
-                var multiMap = new org.apache.calcite.runtime.SortedMultiMap();
-                foreach (var row in source)
-                    multiMap.putMulti(partitionSelector(row), row);
+                java.util.Map map => map.size(),
+                java.util.Collection rows => rows.size(),
+                _ => 0,
+            };
+        }
 
-                iterator = multiMap.arrays(comparator);
+        /// <summary>
+        /// Drops the buffered input, as the generated block does before it hands the output list on.
+        /// </summary>
+        /// <remarks>
+        /// <c>collectionExpr.clear()</c>, which Calcite writes as <c>BuiltInMethod.MAP_CLEAR</c> and comments
+        /// "allows gc". It is the reason the whole window can be materialised without the input and the output
+        /// being alive at once, and the same advisory resolution as the size above -- <c>Map.clear</c> named
+        /// on a <c>List</c> is <c>List.clear</c> once javac has seen the receiver.
+        /// </remarks>
+        static void ClearPartitionCollection(object collection)
+        {
+            switch (collection)
+            {
+                case java.util.Map map:
+                    map.clear();
+                    break;
+                case java.util.Collection rows:
+                    rows.clear();
+                    break;
             }
-
-            while (iterator.hasNext())
-                yield return (object[])iterator.next();
         }
 
         /// <summary>
