@@ -2493,46 +2493,86 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <remarks>
         /// The counterpart of <c>EnumerableDefaults.repeatUnion</c>, which is what WITH RECURSIVE becomes. The
         /// iterative part is enumerated afresh each round, reading what the spool beneath it left behind.
+        ///
+        /// <para>Transcribed from Calcite's enumerator rather than re-expressed, because its termination test
+        /// is not the obvious one. It stops when <c>current</c> still holds the <c>DUMMY</c> sentinel after a
+        /// round -- not when the round produced nothing. Those differ, and the difference is reproduced here
+        /// deliberately: see the note at the seed/iteration boundary.</para>
+        ///
+        /// <para>The sentinel itself is a flag. Calcite casts a private <c>DUMMY</c> object to the row type and
+        /// compares by reference; a row can never be that object, so a <see cref="bool"/> decides exactly what
+        /// the reference comparison decides, without a cast that would be a lie about the row type.</para>
         /// </remarks>
         public static async IAsyncEnumerable<TSource> RepeatUnion<TSource>(IAsyncEnumerable<TSource> seed, IAsyncEnumerable<TSource> iteration, int iterationLimit, bool all, EqualityComparer? comparer, Action? cleanUp,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
-{
+        {
             ArgumentNullException.ThrowIfNull(seed);
             ArgumentNullException.ThrowIfNull(iteration);
 
+            var processed = all ? null : new HashSet<TSource>(JavaEqualityComparer<TSource>.Of(comparer));
+
+            // Calcite's `current == DUMMY`. Set false wherever `checkValue` passed and Calcite assigned
+            // `current`, and back to true wherever Calcite put the sentinel back.
+            var currentIsDummy = true;
+
+            // the seed enumerator is held for the whole life of the sequence, as Calcite holds it -- it is
+            // closed in `close()` and not when the seed runs out
+            var seedEnumerator = seed.GetAsyncEnumerator(cancellationToken);
+            IAsyncEnumerator<TSource>? iterativeEnumerator = null;
+
             try
             {
-                var processed = all ? null : new HashSet<TSource>(JavaEqualityComparer<TSource>.Of(comparer));
-
-                await foreach (var row in (seed).WithCancellation(cancellationToken))
-                    if (processed == null || processed.Add(row))
-                        yield return row;
-
-                for (int i = 0; iterationLimit < 0 || i < iterationLimit; i++)
+                while (await seedEnumerator.MoveNextAsync().ConfigureAwait(false))
                 {
-                    // a round that returned no row this sequence had not already returned is the end of it,
-                    // and not a round that read no rows. Calcite's own enumerator says the same thing by
-                    // setting `current` only where `checkValue` passed and stopping where it is still DUMMY.
-                    // Counting what was read instead is an infinite loop for every UNION rather than UNION
-                    // ALL: the iterative part re-reads the whole spool each round and so never runs dry.
-                    var any = false;
+                    var value = seedEnumerator.Current;
 
-                    await foreach (var row in (iteration).WithCancellation(cancellationToken))
+                    if (processed == null || processed.Add(value))
                     {
-                        if (processed == null || processed.Add(row))
+                        currentIsDummy = false;
+                        yield return value;
+                    }
+                }
+
+                // The sentinel is NOT put back here, and that is Calcite's, not an oversight of the
+                // transcription. A seed that emitted a row leaves `current` holding that row, so the first
+                // iterative round to produce nothing does not stop the sequence -- it goes round once more,
+                // and only the second empty round stops it. A recursive query whose step reads the working
+                // table row by row cannot tell, because an empty table gives an empty round either way; one
+                // whose step aggregates -- COUNT(*) yields a row over no rows -- can, and does.
+                for (var currentIteration = 0; ; currentIteration++)
+                {
+                    if (iterationLimit >= 0 && currentIteration == iterationLimit)
+                        yield break;
+
+                    iterativeEnumerator = iteration.GetAsyncEnumerator(cancellationToken);
+
+                    while (await iterativeEnumerator.MoveNextAsync().ConfigureAwait(false))
+                    {
+                        var value = iterativeEnumerator.Current;
+
+                        if (processed == null || processed.Add(value))
                         {
-                            any = true;
-                            yield return row;
+                            currentIsDummy = false;
+                            yield return value;
                         }
                     }
 
-                    if (any == false)
+                    if (currentIsDummy)
                         yield break;
+
+                    currentIsDummy = true;
+                    await iterativeEnumerator.DisposeAsync().ConfigureAwait(false);
+                    iterativeEnumerator = null;
                 }
             }
             finally
             {
+                // Calcite's `close()` in its order: the clean-up first, then the two enumerators. An await
+                // foreach would have disposed them first, which is the other way round.
                 cleanUp?.Invoke();
+                await seedEnumerator.DisposeAsync().ConfigureAwait(false);
+                if (iterativeEnumerator != null)
+                    await iterativeEnumerator.DisposeAsync().ConfigureAwait(false);
             }
         }
 
