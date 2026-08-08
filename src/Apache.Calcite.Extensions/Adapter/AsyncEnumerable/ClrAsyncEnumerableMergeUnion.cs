@@ -1,0 +1,123 @@
+using System.Collections.Generic;
+using System.Linq.Expressions;
+
+using org.apache.calcite.adapter.enumerable;
+using org.apache.calcite.plan;
+using org.apache.calcite.rel;
+
+using Apache.Calcite.Extensions.Adapter.Enumerable;
+
+namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
+{
+
+    /// <summary>
+    /// Implementation of a union in the <see cref="ClrAsyncEnumerableConvention"/> calling convention, by merging
+    /// inputs that are already sorted rather than reading them all first.
+    /// </summary>
+    /// <remarks>
+    /// Chosen where an ORDER BY sits directly on a UNION, so the sort can be pushed to each input and the
+    /// result taken in order. `EnumerableMergeUnion` extends `EnumerableUnion`, and so does this.
+    /// </remarks>
+    public class ClrAsyncEnumerableMergeUnion : ClrAsyncEnumerableUnion
+    {
+
+        /// <summary>
+        /// Creates a <see cref="ClrAsyncEnumerableMergeUnion"/>.
+        /// </summary>
+        /// <param name="collation"></param>
+        /// <param name="inputs"></param>
+        /// <param name="all"></param>
+        /// <returns></returns>
+        public static ClrAsyncEnumerableMergeUnion Create(RelCollation collation, java.util.List inputs, bool all)
+        {
+            var cluster = ((RelNode)inputs.get(0)).getCluster();
+            var traitSet = cluster.traitSetOf(ClrAsyncEnumerableConvention.Instance).replace(collation);
+
+            return new ClrAsyncEnumerableMergeUnion(cluster, traitSet, inputs, all);
+        }
+
+        /// <summary>
+        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// </summary>
+        /// <param name="cluster"></param>
+        /// <param name="traitSet"></param>
+        /// <param name="inputs"></param>
+        /// <param name="all"></param>
+        public ClrAsyncEnumerableMergeUnion(RelOptCluster cluster, RelTraitSet traitSet, java.util.List inputs, bool all) :
+            base(cluster, traitSet, inputs, all)
+        {
+            var collations = traitSet.getCollations();
+            if (collations.isEmpty() || ((RelCollation)collations.get(0)).getFieldCollations().isEmpty())
+                throw new java.lang.IllegalArgumentException("ClrAsyncEnumerableMergeUnion with no collation");
+
+            for (int i = 0; i < inputs.size(); i++)
+            {
+                // getCollations rather than getCollation, because the slot may hold a RelCompositeTrait of
+                // several collations; each required one has to be satisfied by at least one of the input's
+                var inputCollations = ((RelNode)inputs.get(i)).getTraitSet().getCollations();
+
+                for (int j = 0; j < collations.size(); j++)
+                {
+                    var collation = (RelCollation)collations.get(j);
+                    var satisfied = false;
+                    for (int k = 0; k < inputCollations.size() && satisfied == false; k++)
+                        satisfied = ((RelCollation)inputCollations.get(k)).satisfies(collation);
+
+                    if (satisfied == false)
+                        throw new java.lang.IllegalArgumentException(
+                            $"ClrAsyncEnumerableMergeUnion input does not satisfy collation. ClrAsyncEnumerableMergeUnion collation: {collation}. Input collations: {inputCollations}. Input: {inputs.get(i)}");
+                }
+            }
+        }
+
+        /// <inheritdoc />
+        public override org.apache.calcite.rel.core.SetOp copy(RelTraitSet traitSet, java.util.List inputs, bool all)
+        {
+            return new ClrAsyncEnumerableMergeUnion(getCluster(), traitSet, inputs, all);
+        }
+
+        /// <inheritdoc />
+        public override ClrAsyncEnumerableResult Implement(ClrAsyncEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
+            var rowType = physType.RowType;
+
+            // the inputs go into a list, because the merge walks all of them at once rather than one after
+            // the other; Calcite builds the same list into the block it generates
+            var sources = Expression.Variable(typeof(java.util.List), "mergeUnionInputs");
+            var body = new List<Expression>
+            {
+                Expression.Assign(sources, Expression.New(typeof(java.util.ArrayList).GetConstructor([])!)),
+            };
+
+            for (int i = 0; i < getInputs().size(); i++)
+            {
+                var result = implementor.VisitChild(this, i, (ClrAsyncEnumerableRel)getInputs().get(i), pref);
+                body.Add(Expression.Call(sources, CollectionAdd, Expression.Convert(result.Expression, typeof(object))));
+            }
+
+            var collation = getTraitSet().getCollation();
+            if (collation == null || collation.getFieldCollations().isEmpty())
+                throw new java.lang.IllegalStateException("ClrAsyncEnumerableMergeUnion with no collation");
+
+            var (sortKeySelector, collationComparator) = physType.GenerateCollationKey(collation.getFieldCollations());
+            var sortComparator = collationComparator == null
+                ? Expression.Constant(null, typeof(java.util.Comparator))
+                : collationComparator;
+
+            body.Add(
+                ClrAsyncBuiltInMethod.Call(ClrAsyncBuiltInMethod.MergeUnion.MakeGenericMethod(rowType, sortKeySelector.ReturnType),
+                    sources,
+                    sortKeySelector,
+                    sortComparator,
+                    Expression.Constant(all),
+                    physType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer))));
+
+            return implementor.Result(physType, Expression.Block(body[^1].Type, [sources], body));
+        }
+
+        static readonly System.Reflection.MethodInfo CollectionAdd = typeof(java.util.List).GetMethod("add", [typeof(object)])!;
+
+    }
+
+}

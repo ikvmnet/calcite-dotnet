@@ -1,0 +1,69 @@
+using java.util.function;
+
+using org.apache.calcite.plan;
+using org.apache.calcite.rel;
+using org.apache.calcite.rel.convert;
+using org.apache.calcite.rel.core;
+using org.apache.calcite.rel.logical;
+using org.apache.calcite.schema;
+
+using Apache.Calcite.Extensions.Adapter.Enumerable;
+
+namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
+{
+
+    /// <summary>
+    /// Rule that converts a <see cref="LogicalTableScan"/> to a <see cref="ClrAsyncEnumerableTableScan"/>.
+    /// </summary>
+    public class ClrAsyncEnumerableTableScanRule : ConverterRule
+    {
+
+        /// <summary>
+        /// Creates a <see cref="ClrAsyncEnumerableTableScanRule"/>.
+        /// </summary>
+        /// <returns></returns>
+        public static ClrAsyncEnumerableTableScanRule Create()
+        {
+            return (ClrAsyncEnumerableTableScanRule)Config.INSTANCE
+                .withConversion(
+                    (java.lang.Class)typeof(LogicalTableScan),
+                    new DelegatePredicate<LogicalTableScan>(r => ClrAsyncEnumerableTableScan.CanHandle(r.getTable())),
+                    Convention.NONE,
+                    ClrAsyncEnumerableConvention.Instance,
+                    "ClrAsyncEnumerableTableScanRule")
+                .withRuleFactory(new DelegateFunction<Config, ClrAsyncEnumerableTableScanRule>(c => new ClrAsyncEnumerableTableScanRule(c)))
+                .toRule(typeof(ClrAsyncEnumerableTableScanRule));
+        }
+
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        /// <param name="config"></param>
+        public ClrAsyncEnumerableTableScanRule(Config config) :
+            base(config)
+        {
+
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// A table with no expression cannot be read by any plan of this convention, and refusing it here is
+        /// the only place the refusal belongs: <c>Implement</c> runs after a plan has been chosen. A
+        /// <c>QueryableTable</c> passes regardless, because Calcite's own test tables leave
+        /// <c>getExpression</c> unimplemented and are still readable.
+        /// </remarks>
+        public override RelNode convert(RelNode rel)
+        {
+            var scan = (TableScan)rel;
+            var relOptTable = scan.getTable();
+            var table = (Table)relOptTable.unwrap(typeof(Table));
+
+            if (table is QueryableTable || relOptTable.getExpression(typeof(object)) != null)
+                return ClrAsyncEnumerableTableScan.Create(scan.getCluster(), relOptTable);
+
+            return null!;
+        }
+
+    }
+
+}

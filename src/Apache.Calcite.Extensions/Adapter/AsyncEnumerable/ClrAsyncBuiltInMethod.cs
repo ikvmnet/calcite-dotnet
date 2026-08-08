@@ -60,9 +60,9 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         public static readonly MethodInfo OrderByWithFetchAndOffset = Of(nameof(ClrAsyncEnumerableDefaults.OrderByWithFetchAndOffset));
 
         /// <summary>
-        /// <see cref="ClrAsyncEnumerableDefaults.AsAsyncEnumerable"/>.
+        /// <see cref="ClrAsyncEnumerableDefaults.AsEnumerable"/>.
         /// </summary>
-        public static readonly MethodInfo AsAsyncEnumerable = Of(nameof(ClrAsyncEnumerableDefaults.AsAsyncEnumerable));
+        public static readonly MethodInfo AsEnumerable = Of(nameof(ClrAsyncEnumerableDefaults.AsEnumerable));
 
         /// <summary>
         /// <see cref="ClrAsyncEnumerableDefaults.Singleton"/>.
@@ -78,6 +78,137 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <see cref="ClrAsyncEnumerableDefaults.FromJavaList"/>.
         /// </summary>
         public static readonly MethodInfo FromJavaList = Of(nameof(ClrAsyncEnumerableDefaults.FromJavaList));
+
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.Concat"/>.
+        /// </summary>
+        public static readonly MethodInfo Concat = Of(nameof(ClrAsyncEnumerableDefaults.Concat));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.Union"/>.
+        /// </summary>
+        public static readonly MethodInfo Union = Of(nameof(ClrAsyncEnumerableDefaults.Union));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.Intersect"/>.
+        /// </summary>
+        public static readonly MethodInfo Intersect = Of(nameof(ClrAsyncEnumerableDefaults.Intersect));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.Except"/>.
+        /// </summary>
+        public static readonly MethodInfo Except = Of(nameof(ClrAsyncEnumerableDefaults.Except));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.Distinct"/>.
+        /// </summary>
+        public static readonly MethodInfo Distinct = Of(nameof(ClrAsyncEnumerableDefaults.Distinct));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.LeftMarkHashJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo LeftMarkHashJoin = Of(nameof(ClrAsyncEnumerableDefaults.LeftMarkHashJoin));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.HashJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo HashJoin = Of(nameof(ClrAsyncEnumerableDefaults.HashJoin));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.SemiJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo SemiJoin = Of(nameof(ClrAsyncEnumerableDefaults.SemiJoin));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.AsofJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo AsofJoin = Of(nameof(ClrAsyncEnumerableDefaults.AsofJoin));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.SortedGroupBy"/>.
+        /// </summary>
+        public static readonly MethodInfo SortedGroupBy = Of(nameof(ClrAsyncEnumerableDefaults.SortedGroupBy));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.MergeUnion"/>.
+        /// </summary>
+        public static readonly MethodInfo MergeUnion = Of(nameof(ClrAsyncEnumerableDefaults.MergeUnion));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.MergeJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo MergeJoin = Of(nameof(ClrAsyncEnumerableDefaults.MergeJoin));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.CorrelateBatchJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo CorrelateBatchJoin = Of(nameof(ClrAsyncEnumerableDefaults.CorrelateBatchJoin));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.LeftMarkNestedLoopJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo LeftMarkNestedLoopJoin = Of(nameof(ClrAsyncEnumerableDefaults.LeftMarkNestedLoopJoin));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.CorrelateLeftMarkJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo CorrelateLeftMarkJoin = Of(nameof(ClrAsyncEnumerableDefaults.CorrelateLeftMarkJoin));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.NestedLoopJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo NestedLoopJoin = Of(nameof(ClrAsyncEnumerableDefaults.NestedLoopJoin));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.CorrelateJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo CorrelateJoin = Of(nameof(ClrAsyncEnumerableDefaults.CorrelateJoin));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.GroupBy"/>.
+        /// </summary>
+        public static readonly MethodInfo GroupBy = Of(nameof(ClrAsyncEnumerableDefaults.GroupBy));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.GroupByMultiple"/>.
+        /// </summary>
+        public static readonly MethodInfo GroupByMultiple = Of(nameof(ClrAsyncEnumerableDefaults.GroupByMultiple));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.Aggregate"/>.
+        /// </summary>
+        public static readonly MethodInfo Aggregate = Of(nameof(ClrAsyncEnumerableDefaults.Aggregate));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.Window"/>.
+        /// </summary>
+        public static readonly MethodInfo Window = Of(nameof(ClrAsyncEnumerableDefaults.Window));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.SelectMany"/>.
+        /// </summary>
+        public static readonly MethodInfo SelectMany = Of(nameof(ClrAsyncEnumerableDefaults.SelectMany));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.LazyCollectionSpool"/>.
+        /// </summary>
+        public static readonly MethodInfo LazyCollectionSpool = Of(nameof(ClrAsyncEnumerableDefaults.LazyCollectionSpool));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.RepeatUnion"/>.
+        /// </summary>
+        public static readonly MethodInfo RepeatUnion = Of(nameof(ClrAsyncEnumerableDefaults.RepeatUnion));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.ToJavaList"/>.
+        /// </summary>
+        public static readonly MethodInfo ToJavaList = Of(nameof(ClrAsyncEnumerableDefaults.ToJavaList));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.ToJavaMap"/>.
+        /// </summary>
+        public static readonly MethodInfo ToJavaMap = Of(nameof(ClrAsyncEnumerableDefaults.ToJavaMap));
 
         /// <summary>
         /// Builds the call to an operator of this class.
