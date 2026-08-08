@@ -66,7 +66,7 @@ namespace Apache.Calcite.Tests
         /// <summary>
         /// Plans a statement in one convention and returns its rows, rendered.
         /// </summary>
-        static async Task<List<string>> Run(string sql, bool async, bool planOnly = false)
+        static async Task<List<string>> Run(string sql, bool async, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false)
         {
             var rootSchema = Schema(async);
 
@@ -74,7 +74,22 @@ namespace Apache.Calcite.Tests
             var calcRules = new java.util.ArrayList();
 
             foreach (var rule in async ? ClrAsyncEnumerableRules.Rules() : ClrEnumerableRules.Rules())
+            {
+                // dropped on both sides together, or the comparison is between two different plans
+                if (excludeMergeJoin && rule == (async ? ClrAsyncEnumerableRules.ClrAsyncEnumerableMergeJoinRule : ClrEnumerableRules.ClrEnumerableMergeJoinRule))
+                    continue;
+
                 rules.add(rule);
+            }
+
+            // the three rules each convention declares as fields and leaves out of its default list; a
+            // caller turns one on, and each side registers its own
+            if (sortedAggregate)
+                rules.add(async ? ClrAsyncEnumerableRules.ClrAsyncEnumerableSortedAggregateRule : ClrEnumerableRules.ClrEnumerableSortedAggregateRule);
+            if (batchNestedLoopJoin)
+                rules.add(async ? ClrAsyncEnumerableRules.ClrAsyncEnumerableBatchNestedLoopJoinRule : ClrEnumerableRules.ClrEnumerableBatchNestedLoopJoinRule);
+            if (limitSort)
+                rules.add(async ? ClrAsyncEnumerableRules.ClrAsyncEnumerableLimitSortRule : ClrEnumerableRules.ClrEnumerableLimitSortRule);
             foreach (var rule in async ? ClrAsyncEnumerableRules.CalcRules() : ClrEnumerableRules.CalcRules())
                 calcRules.add(rule);
 
@@ -87,7 +102,7 @@ namespace Apache.Calcite.Tests
                 .defaultSchema(rootSchema)
                 .programs(
                     Programs.subQuery(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE),
-                    new DefaultRulesProgram(rules, false, false, false, null, null),
+                    new DefaultRulesProgram(rules, false, excludeMergeJoin, excludeHashJoin, null, null),
                     Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE))
                 .build();
 
@@ -160,10 +175,10 @@ namespace Apache.Calcite.Tests
         /// <summary>
         /// Requires that a query gives the same rows in both conventions.
         /// </summary>
-        static async Task Same(string sql)
+        static async Task Same(string sql, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false)
         {
-            var async = await Run(sql, true);
-            var sync = await Run(sql, false);
+            var async = await Run(sql, true, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, excludeHashJoin: excludeHashJoin, excludeMergeJoin: excludeMergeJoin);
+            var sync = await Run(sql, false, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, excludeHashJoin: excludeHashJoin, excludeMergeJoin: excludeMergeJoin);
 
             async.Should().Equal(sync, "'{0}' should give what ClrEnumerableConvention gives", sql);
         }
@@ -177,12 +192,12 @@ namespace Apache.Calcite.Tests
         /// rule that fails to fire does not quietly produce a plan of the other convention — it produces no
         /// plan at all — but a node reached by a route nobody intended still looks like a pass.
         /// </remarks>
-        static async Task SameThrough(string node, string sql)
+        static async Task SameThrough(string node, string sql, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false)
         {
-            (await Run(sql, true, planOnly: true))[0]
+            (await Run(sql, true, planOnly: true, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, excludeHashJoin: excludeHashJoin, excludeMergeJoin: excludeMergeJoin))[0]
                 .Should().Contain(node, "'{0}' should be planned through {1}", sql, node);
 
-            await Same(sql);
+            await Same(sql, sortedAggregate, batchNestedLoopJoin, limitSort, excludeHashJoin, excludeMergeJoin);
         }
 
         [TestMethod]
@@ -257,6 +272,87 @@ namespace Apache.Calcite.Tests
         [TestMethod]
         public Task ShouldAgreeOnACorrelatedSubQuery() =>
             Same("SELECT ID, (SELECT COUNT(*) FROM SORTED t WHERE t.K = s.ID) FROM SALES s");
+
+        /// <remarks>
+        /// A merge join is only ever chosen over a hash join where both inputs carry a collation, and only
+        /// where the hash join is not available to be cheaper — VolcanoCost compares the row count and
+        /// nothing else, so the planner keeps whichever it saw first.
+        /// </remarks>
+        [TestMethod]
+        public Task ShouldAgreeOnAMergeJoin() =>
+            SameThrough("ClrAsyncEnumerableMergeJoin", "SELECT a.K, b.V FROM SORTED a JOIN SORTED b ON a.K = b.K", excludeHashJoin: true);
+
+        [TestMethod]
+        public Task ShouldAgreeOnAMergeJoinWithTies() =>
+            Same("SELECT a.K, a.V, b.V FROM SORTED a JOIN SORTED b ON a.K = b.K ORDER BY a.K, a.V, b.V", excludeHashJoin: true);
+
+        [TestMethod]
+        public Task ShouldAgreeOnALeftMergeJoin() =>
+            Same("SELECT a.K, b.V FROM SORTED a LEFT JOIN SORTED b ON a.K = b.K", excludeHashJoin: true);
+
+        [TestMethod]
+        public Task ShouldAgreeOnAMergeUnion() =>
+            Same("SELECT K FROM SORTED UNION SELECT K FROM SORTED ORDER BY 1");
+
+        [TestMethod]
+        public Task ShouldAgreeOnASortedAggregate() =>
+            Same("SELECT K, COUNT(*) FROM SORTED GROUP BY K ORDER BY K", sortedAggregate: true);
+
+        [TestMethod]
+        public Task ShouldAgreeOnABatchNestedLoopJoin() =>
+            Same("SELECT s.ID, t.V FROM SALES s JOIN SORTED t ON s.ID > t.K", batchNestedLoopJoin: true);
+
+        [TestMethod]
+        public Task ShouldAgreeOnALimitSort() =>
+            Same("SELECT * FROM SALES ORDER BY AMOUNT FETCH NEXT 2 ROWS ONLY", limitSort: true);
+
+        [TestMethod]
+        public Task ShouldAgreeOnGroupingSets() =>
+            Same("SELECT REGION, SUM(AMOUNT) FROM SALES GROUP BY GROUPING SETS ((REGION), ()) ORDER BY 1");
+
+        [TestMethod]
+        public Task ShouldAgreeOnACube() =>
+            Same("SELECT REGION, LABEL, COUNT(*) FROM SALES GROUP BY CUBE(REGION, LABEL) ORDER BY 1, 2");
+
+        [TestMethod]
+        public Task ShouldAgreeOnAnAntiJoin() =>
+            Same("SELECT ID FROM SALES WHERE ID NOT IN (SELECT K FROM SORTED WHERE K IS NOT NULL)");
+
+        [TestMethod]
+        public Task ShouldAgreeOnAnExists() =>
+            Same("SELECT ID FROM SALES s WHERE EXISTS (SELECT 1 FROM SORTED t WHERE t.K = s.ID)");
+
+        [TestMethod]
+        public Task ShouldAgreeOnAMultiset() =>
+            Same("SELECT REGION, COLLECT(AMOUNT) FROM SALES GROUP BY REGION ORDER BY 1");
+
+        [TestMethod]
+        public Task ShouldAgreeOnAnUncollect() =>
+            Same("SELECT * FROM UNNEST(ARRAY[1, 2, 3]) AS t(x)");
+
+        [TestMethod]
+        public Task ShouldAgreeOnACaseAndCoalesce() =>
+            Same("SELECT ID, CASE WHEN AMOUNT IS NULL THEN -1 ELSE AMOUNT END, COALESCE(AMOUNT, 0) FROM SALES");
+
+        [TestMethod]
+        public Task ShouldAgreeOnAggregatesOverNulls() =>
+            Same("SELECT REGION, COUNT(AMOUNT), COUNT(*), SUM(AMOUNT), AVG(AMOUNT), MIN(AMOUNT), MAX(AMOUNT) FROM SALES GROUP BY REGION ORDER BY 1");
+
+        [TestMethod]
+        public Task ShouldAgreeOnAWindowWithFraming() =>
+            Same("SELECT ID, SUM(AMOUNT) OVER (ORDER BY ID ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM SALES");
+
+        [TestMethod]
+        public Task ShouldAgreeOnRankAndLag() =>
+            Same("SELECT ID, RANK() OVER (PARTITION BY REGION ORDER BY AMOUNT), LAG(AMOUNT) OVER (ORDER BY ID) FROM SALES");
+
+        [TestMethod]
+        public Task ShouldAgreeOnAnEmptyResult() =>
+            Same("SELECT * FROM SALES WHERE 1 = 0");
+
+        [TestMethod]
+        public Task ShouldAgreeOnASelfJoinProducingNoRows() =>
+            Same("SELECT a.ID FROM SALES a JOIN SALES b ON a.ID = b.ID + 1000");
 
     }
 
