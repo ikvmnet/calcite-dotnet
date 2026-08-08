@@ -20,16 +20,16 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
     - name: Checkout Source
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
       with:
         fetch-depth: 0
         submodules: recursive
     - name: Setup .NET 9.0
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 9.0.x
     - name: Setup .NET 10.0
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
     - name: Install GitVersion
@@ -65,12 +65,12 @@ jobs:
           Apache.Calcite.dist.msbuildproj
     - name: Upload MSBuild Log
       if: ${{ always() }}
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v7
       with:
         name: msbuild.binlog
         path: msbuild.binlog
     - name: Upload NuGet Packages
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v7
       with:
         name: nuget
         path: dist/nuget
@@ -78,7 +78,7 @@ jobs:
       run: tar czvf tests.tar.gz tests
       working-directory: dist
     - name: Upload Tests
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v7
       with:
         name: tests
         path: dist/tests.tar.gz
@@ -107,11 +107,11 @@ jobs:
     runs-on: ${{ fromJSON('{"win-x86":["windows-2022"],"win-x64":["windows-2022"],"linux-x64":["ubuntu-24.04"],"linux-arm64":["ubuntu-24.04-arm"],"osx-x64":["macos-15-intel"],"osx-arm64":["macos-15"]}')[matrix.sys] }}
     steps:
     - name: Setup .NET 9.0
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 9.0.x
     - name: Setup .NET 10.0
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
     - name: Add NuGet Source (GitHub)
@@ -121,7 +121,7 @@ jobs:
         GITHUB_REPOS: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: Download Tests
-      uses: actions/download-artifact@v5
+      uses: actions/download-artifact@v8
       with:
         name: tests
     - name: Restore Tests
@@ -174,7 +174,7 @@ jobs:
       run: tar czvf TestResults.tar.gz TestResults
     - name: Upload Test Results
       if: always() && startsWith(env.RET, 'TestResults--')
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ env.RET }}
         path: TestResults.tar.gz
@@ -186,11 +186,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Source
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
       with:
         fetch-depth: 0
     - name: Setup .NET 10.0
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
     - name: Install GitVersion
@@ -201,7 +201,7 @@ jobs:
       id: GitVersion
       uses: gittools/actions/gitversion/execute@v4
     - name: Download NuGet Packages
-      uses: actions/download-artifact@v5
+      uses: actions/download-artifact@v8
       with:
         name: nuget
         path: dist/nuget
