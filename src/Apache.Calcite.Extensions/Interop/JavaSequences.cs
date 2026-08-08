@@ -120,7 +120,7 @@ namespace Apache.Calcite.Extensions.Interop
             /// <inheritdoc />
             public override Enumerator enumerator()
             {
-                return new JavaEnumerator<TSource>(source.GetEnumerator());
+                return new JavaEnumerator<TSource>(source);
             }
 
         }
@@ -132,30 +132,43 @@ namespace Apache.Calcite.Extensions.Interop
         /// <param name="source"></param>
         /// <remarks>
         /// linq4j positions before the first row and advances on <c>moveNext</c>, which is what
-        /// <see cref="IEnumerator"/> does, so the two agree except over <c>reset</c>, which .NET is allowed to
-        /// refuse.
+        /// <see cref="IEnumerator"/> does, so the two agree except over <c>reset</c>.
+        ///
+        /// <para><c>reset</c> means "be positioned before the first row again", and it is live: linq4j's
+        /// <c>CartesianProductEnumerator.moveNext</c> calls it to rewind the inner side once per row of the
+        /// outer, so a sequence of ours reaching a cartesian product of Calcite's is asked for it. A .NET
+        /// iterator refuses <see cref="IEnumerator.Reset"/> -- the compiler generates a throw -- so the
+        /// sequence is enumerated afresh instead. That is what the linq4j enumerable it stands for would do
+        /// when asked for a second enumerator, and it is why this holds the sequence rather than one
+        /// enumerator of it.</para>
         /// </remarks>
-        sealed class JavaEnumerator<TSource>(IEnumerator<TSource> source) : Enumerator
+        sealed class JavaEnumerator<TSource>(IEnumerable<TSource> source) : Enumerator
         {
 
-            /// <inheritdoc />
-            public object current() => source.Current!;
+            IEnumerator<TSource> enumerator = source.GetEnumerator();
 
             /// <inheritdoc />
-            public bool moveNext() => source.MoveNext();
+            public object current() => enumerator.Current!;
 
             /// <inheritdoc />
-            public void reset() => source.Reset();
+            public bool moveNext() => enumerator.MoveNext();
 
             /// <inheritdoc />
-            public void close() => source.Dispose();
+            public void reset()
+            {
+                enumerator.Dispose();
+                enumerator = source.GetEnumerator();
+            }
+
+            /// <inheritdoc />
+            public void close() => enumerator.Dispose();
 
             /// <inheritdoc />
             /// <remarks>
             /// IKVM maps <c>java.lang.AutoCloseable</c>, which a linq4j Enumerator extends, onto
             /// <see cref="IDisposable"/>, so closing one from Java arrives here.
             /// </remarks>
-            public void Dispose() => source.Dispose();
+            public void Dispose() => enumerator.Dispose();
 
         }
 
