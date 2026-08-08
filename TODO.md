@@ -162,8 +162,15 @@ plan can put a Calcite node above an asynchronous one, because Calcite cannot re
 17 are now transcribed from Calcite's body in both conventions — `HashEquiJoin`'s leftover order,
 `NestedLoopJoin`'s five, `RepeatUnion`'s termination test and clean-up ordering, `SemiJoin`'s two algorithms
 and its memoization, `Take`'s n+1 draw, `CorrelateJoin`'s refusal and null guard, `Cartesian`'s eagerness and
-`int` overflow, the call-time fold in `GroupBy`/`GroupByMultiple`/`AsofJoin`, `JavaSequences`' `reset`, and
-the deletion of `Count`/`IntersectAll`/`ExceptAll`.
+`int` overflow, the call-time fold in `GroupBy`/`GroupByMultiple`/`AsofJoin`/`Window`, `JavaSequences`'
+`reset`, and the deletion of `Count`/`IntersectAll`/`ExceptAll`.
+
+Every one of those was then re-checked against the 1.42 source rather than against the agent report that
+found it, and one had been filed wrongly: `Window`'s laziness was recorded as a divergence to keep, on the
+grounds that it returns the same rows in the same order and only reaches them sooner. `EnumerableWindow`
+generates an `ArrayList`, appends each output row to it and evaluates to `Linq4j.asEnumerable(list)`, once
+per window group — so Calcite computes the whole window where the expression is evaluated, and keeping ours
+lazy was a decision the port is not entitled to make. It collects now.
 
 What no query can reach is pinned directly instead: `ClrEnumerableNestedLoopJoinTests`,
 `ClrRepeatUnionTests`, `ClrEnumerableDefaultsContractTests`.
@@ -179,8 +186,6 @@ What remains below is what was deliberate, and what is still unproven.
 
 - **`Window` reproduces a Calcite bug**: with UNBOUNDED/UNBOUNDED plus EXCLUDE the outer guard is false
   after row 0, so the exclusion never takes effect.
-- **`Window` streams its output** where Calcite collects it first. The reverse of the eagerness the other
-  operators had, and left alone: it holds the same rows in the same order and only reaches them sooner.
 - **RIGHT/FULL unmatched-right order**: Calcite walks an `IdentityHashMap`, whose buckets key on
   `System.identityHashCode`. We now dedup on identity as it does, but there is no CLR counterpart to that
   number, so the unmatched rows come out in insertion order. The set of rows is Calcite's; the order is not,

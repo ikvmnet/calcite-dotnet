@@ -2303,6 +2303,12 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <para>The accumulator carries each aggregate's state and its last result, so a result that does not
         /// change while the frame is intact is computed once and read again, which is the whole point of the
         /// frame bookkeeping. It is made once for the whole window, as Calcite declares its variables once.</para>
+        ///
+        /// <para><b>Forced by the CLR:</b> the generated block appends each output row to an <c>ArrayList</c>
+        /// and evaluates to <c>Linq4j.asEnumerable(list)</c>, so Calcite computes the whole window where the
+        /// expression is evaluated. A method returning an <see cref="IAsyncEnumerable{T}"/> cannot await
+        /// before it returns, so the rows are produced on the first <c>MoveNextAsync</c> instead. Same
+        /// constraint as <see cref="NestedLoopJoinAsList"/>.</para>
         /// </remarks>
         public static async IAsyncEnumerable<TResult> Window<TSource, TKey, TAccumulator, TResult>(
             IAsyncEnumerable<TSource> source,

@@ -2162,6 +2162,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <para>The accumulator carries each aggregate's state and its last result, so a result that does not
         /// change while the frame is intact is computed once and read again, which is the whole point of the
         /// frame bookkeeping. It is made once for the whole window, as Calcite declares its variables once.</para>
+        ///
+        /// <para>The rows go into a list and the list is returned, because that is what the generated block
+        /// does: it appends each output row to an <c>ArrayList</c> and evaluates to
+        /// <c>Linq4j.asEnumerable(list)</c>, once per window group, each group's list being the next group's
+        /// source. So the whole window is computed where the expression is evaluated. Yielding instead was a
+        /// laziness Calcite does not have — the same rows in the same order, reached sooner and recomputed on
+        /// a second pass.</para>
         /// </remarks>
         public static IEnumerable<TResult> Window<TSource, TKey, TAccumulator, TResult>(
             IEnumerable<TSource> source,
@@ -2194,6 +2201,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var frame = new WindowFrame();
             var accumulator = accumulatorInitializer();
+            var list = new List<TResult>();
 
             foreach (var rows in Partitions(source, partitionSelector, comparator))
             {
@@ -2268,9 +2276,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     if (uncachedResult != null)
                         accumulator = uncachedResult(frame, accumulator);
 
-                    yield return selector(frame, accumulator);
+                    list.Add(selector(frame, accumulator));
                 }
             }
+
+            return list;
         }
 
         /// <summary>
