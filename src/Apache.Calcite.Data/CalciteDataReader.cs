@@ -107,9 +107,17 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Refuses where the rows come from a plan of the asynchronous convention, rather than blocking on
+        /// it. That block is the sync-over-async this convention exists to avoid — it deadlocks on a
+        /// synchronization context and wastes a thread everywhere else — and this is the one place a caller
+        /// could reach it by accident. A reader over an asynchronous plan has <see cref="ReadAsync"/>.
+        /// </remarks>
         public override bool Read()
         {
-            return ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
+            ThrowIfClosed();
+            _hasRow = ActiveResult.Read();
+            return _hasRow;
         }
 
         /// <inheritdoc />

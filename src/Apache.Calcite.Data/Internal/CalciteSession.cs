@@ -216,14 +216,14 @@ namespace Apache.Calcite.Data.Internal
         /// The context is still pushed onto <c>CalcitePrepare.Dummy</c>'s thread-local stack, because
         /// Calcite's own parse-to-rel reads it from there.
         /// </remarks>
-        ClrSignature Plan(CalciteExecuteRequest request)
+        ClrSignature Plan(CalciteExecuteRequest request, bool async = false)
         {
             var ctx = new PrepareContext(_typeFactory, _rootSchema, _config, _defaultSchemaPath);
 
             CalcitePrepare.Dummy.push(ctx);
             try
             {
-                return new ClrPrepareImpl().Prepare(ctx, request.Sql, (java.lang.Class)typeof(java.lang.Object[]), -1);
+                return new ClrPrepareImpl().Prepare(ctx, request.Sql, (java.lang.Class)typeof(java.lang.Object[]), -1, async);
             }
             finally
             {
@@ -286,6 +286,24 @@ namespace Apache.Calcite.Data.Internal
         /// <exception cref="CalciteException">Thrown when planning or execution fails.</exception>
         public Task<CalciteResult> ExecuteReaderAsync(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {
+            return ExecuteReaderAsync(request, false, cancellationToken);
+        }
+
+        /// <summary>
+        /// Prepares and executes a query, returning a <see cref="CalciteResult"/> whose enumerator streams
+        /// the result rows.
+        /// </summary>
+        /// <param name="request">The execute request containing SQL text, parameters, timeout, and hooks.</param>
+        /// <param name="preferAsynchronous">Whether the caller will read the rows asynchronously.</param>
+        /// <param name="cancellationToken">Token used to cancel execution.</param>
+        /// <remarks>
+        /// The caller says which it wants, because both entry points arrive here: <c>ExecuteReader</c> and
+        /// <c>ExecuteReaderAsync</c> are the same method on <c>DbCommand</c> once the synchronous one has
+        /// blocked on the asynchronous one. Deciding here instead would hand a synchronous caller a plan it
+        /// cannot read — which is what happened, and what the ADO.NET tests caught.
+        /// </remarks>
+        public Task<CalciteResult> ExecuteReaderAsync(CalciteExecuteRequest request, bool preferAsynchronous, CancellationToken cancellationToken)
+        {
             ArgumentNullException.ThrowIfNull(request);
 
             ThrowIfDisposed();
@@ -295,7 +313,39 @@ namespace Apache.Calcite.Data.Internal
 
             try
             {
-                var signature = Plan(request);
+                // the asynchronous convention first, because this is the asynchronous entry point. It has no
+                // converter to any other, so a query touching a table that cannot produce rows
+                // asynchronously does not plan at all -- which is the signal to fall back, and the only one.
+                // A plan that failed for any other reason is a failure and is not retried into a convention
+                // where it would fail differently.
+                ClrSignature? signature = null;
+                if (preferAsynchronous)
+                {
+                    try
+                    {
+                        signature = Plan(request, async: true);
+                    }
+                    catch (org.apache.calcite.plan.RelOptPlanner.CannotPlanException)
+                    {
+                        signature = null;
+                    }
+                }
+
+                if (signature is not null)
+                {
+                    Bind(request, signature, out var asyncContext, out _);
+
+                    IAsyncEnumerator<object>? asyncEnumerator = null;
+                    if (!IsDdl(signature.StatementType))
+                        asyncEnumerator = signature.BindAsync(asyncContext).GetAsyncEnumerator(cancellationToken);
+
+                    return Task.FromResult(new CalciteResult(signature, asyncEnumerator, 0));
+                }
+
+                // the synchronous plan. Reading it completes synchronously, which blocks nothing -- it is
+                // simply not asynchronous, and CalciteResult.IsAsynchronous says so rather than leaving a
+                // caller to assume otherwise.
+                signature = Plan(request);
                 Bind(request, signature, out var dataContext, out _);
 
                 var statementType = signature.StatementType;
@@ -379,7 +429,7 @@ namespace Apache.Calcite.Data.Internal
                     }
                 }
 
-                return Task.FromResult(new CalciteResult(signature, enumerator: null, recordsAffected));
+                return Task.FromResult(new CalciteResult(signature, (IEnumerator<object>?)null, recordsAffected));
             }
             catch (CalciteException)
             {
