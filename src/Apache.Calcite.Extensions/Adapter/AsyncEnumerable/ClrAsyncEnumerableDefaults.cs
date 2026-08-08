@@ -816,13 +816,17 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             if (unmatched == null)
                 yield break;
 
-            for (var i = lookup.entrySet().iterator(); i.hasNext();)
+            // the set is walked and each key looked back up, which is what linq4j does and is not the same as
+            // walking the map and filtering by the set. A HashSet copied from a key set does not have the
+            // map's iteration order: HashSet(Collection) sizes its table as
+            // tableSizeFor(max((int) (n / 0.75f) + 1, 16)), while a map grown by insertion holds the smallest
+            // power of two at or above 16 that still leaves n <= 0.75 * cap. The two disagree exactly where
+            // n = 0.75 * 2^k — 12, 24, 48 — and these rows have no ORDER BY over them.
+            for (var i = unmatched.iterator(); i.hasNext();)
             {
-                var entry = (java.util.Map.Entry)i.next();
-                if (unmatched.contains(entry.getKey()) == false)
-                    continue;
+                var key = i.next();
 
-                foreach (var other in (List<TInner>)entry.getValue())
+                foreach (var other in (List<TInner>)lookup.get(key))
                     yield return resultSelector(default!, other);
             }
         }
