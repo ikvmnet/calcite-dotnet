@@ -152,45 +152,17 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     JavaRowFormat.SCALAR);
 
             // IEnumerable<object>, not the non-generic IEnumerable. Every IEnumerable<T> converts to the
-            // latter, so a sequence this method failed to box would still compile and nothing would say so.
+            // latter, so a sequence of the wrong element type would still compile and nothing would say so.
             // The element type is named here for the same reason a node's is named in RequireRowType.
+            //
+            // The conversion is by variance and cannot fail: a row is never a value type. ClrPhysTypeImpl
+            // boxes what the type factory answers, so RowType is a synthetic record, an Object[], a List or
+            // a box class; RequireRowType holds every node to it; and the one other shape reaching here is
+            // Slice0<object>. There was a boxing pass in front of this for a while, and it was unreachable
+            // on every path -- the boxing it looked for has already happened in the physical type.
             return Expression.Lambda<Func<DataContext, IEnumerable<object>>>(
-                Expression.Convert(BoxScalars(result.Expression), typeof(IEnumerable<object>)),
+                Expression.Convert(result.Expression, typeof(IEnumerable<object>)),
                 Root);
-        }
-
-        /// <summary>
-        /// Boxes a sequence of primitives the way Java would.
-        /// </summary>
-        /// <param name="sequence"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// A one column result is the value, and where that value is a primitive the sequence is of a
-        /// primitive. Handing it out untyped boxes it, and the CLR would box it as its own, which is not the
-        /// java.lang.Integer every reader of a Calcite result expects. The type factory decides what a value
-        /// is, and it says Integer, so this is the same boxing every other conversion here does.
-        ///
-        /// <para>Not <c>EnumerableInterpretable.box</c>, which wraps each row in a one element
-        /// <c>Object[]</c> for the interpreter and has no counterpart here. This has no counterpart there
-        /// either: generated Java produces an <c>Enumerable</c> of objects and the question cannot arise.
-        /// It belongs with <see cref="ImplementRoot"/> because that is where a plan becomes the sequence a
-        /// caller reads.</para>
-        /// </remarks>
-        static Expression BoxScalars(Expression sequence)
-        {
-            if (sequence.Type.IsGenericType == false)
-                return sequence;
-
-            var elementType = sequence.Type.GetGenericArguments()[0];
-            if (elementType.IsValueType == false)
-                return sequence;
-
-            var row = Expression.Parameter(elementType, "row");
-
-            return Expression.Call(null,
-                ClrBuiltInMethod.Select.MakeGenericMethod(elementType, typeof(object)),
-                sequence,
-                Expression.Lambda(ClrEnumUtils.Convert(row, typeof(object)), row));
         }
 
         /// <summary>

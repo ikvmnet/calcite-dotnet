@@ -38,14 +38,17 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// Returns the CLR type that represents a row.
         /// </summary>
         /// <remarks>
-        /// <c>PhysType.getRowType</c>. Unboxed, as Calcite's is: the physical type of a one column row of
-        /// <c>INTEGER NOT NULL</c> is <see cref="int"/>, and a node reading a field of it inside its own lambda
-        /// wants that.
+        /// <c>PhysType.getRowType</c>, <b>boxed</b>, which is where this diverges from Calcite. The physical
+        /// type of a one column row of <c>INTEGER NOT NULL</c> is <c>java.lang.Integer</c>, not
+        /// <see cref="int"/>: a CLR sequence states its element type and nothing autoboxes at the boundary,
+        /// so the choice is made once here rather than at each call site.
         ///
-        /// <para>What a <em>sequence</em> of these rows carries is this boxed, which is not the same type and
-        /// is the one a node hands to the node above it. Calcite boxes at the call site — <c>joinSelector</c>
-        /// and <c>generateComparator</c> both write <c>Primitive.box(physType.getRowType())</c> — and so
-        /// does this convention, through <c>ClrEnumUtils.Boxed</c>.</para>
+        /// <para>Calcite can leave it to its callers, because there is no <c>Enumerable&lt;int&gt;</c> in
+        /// Java — the element is a reference whatever the physical type says, and javac inserts the
+        /// conversion. So <c>joinSelector</c> and <c>generateComparator</c> each write
+        /// <c>Primitive.box(physType.getRowType())</c> where they need it. Here
+        /// <see cref="ClrPhysTypeImpl"/> boxes in its constructor and this is that;
+        /// <c>ClrEnumerableRelImplementor.Result</c> refuses a sequence that disagrees.</para>
         /// </remarks>
         Type RowType { get; }
 
