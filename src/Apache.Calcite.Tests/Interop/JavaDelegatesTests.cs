@@ -175,21 +175,47 @@ namespace Apache.Calcite.Tests.Interop
         }
 
         /// <summary>
-        /// Access is checked as Lookup.unreflect checks it, and marking the member accessible is the caller's
-        /// to do. java.lang.Runtime's constructor is private.
+        /// A member the public lookup cannot reach is retried through a copy marked accessible.
+        /// java.lang.Runtime's constructor is private.
         /// </summary>
         [TestMethod]
-        public void ShouldRefuseAnInaccessibleMemberUntilMarkedAccessible()
+        public void ShouldReachAnInaccessibleMember()
         {
             var c = ((Class)typeof(Runtime)).getDeclaredConstructor([]);
-
-            var act = () => JavaDelegates.FromMethod(typeof(Func<object>), c);
-            act.Should().Throw<java.lang.IllegalAccessException>();
-
-            c.setAccessible(true);
             var d = (Func<object>)JavaDelegates.FromMethod(typeof(Func<object>), c);
 
             d().Should().BeOfType<Runtime>();
+
+            // the caller's own member is left as it was
+            c.isAccessible().Should().BeFalse();
+        }
+
+        /// <summary>
+        /// The case that made the retry necessary rather than speculative: the public lookup cannot reach a
+        /// public method of a non-public class, and Calcite names one.
+        /// </summary>
+        [TestMethod]
+        public void ShouldReachAPublicMethodOfANonPublicClass()
+        {
+            var m = BuiltInMethod.QUERYABLE_SELECT.method;
+            (m.getDeclaringClass().getModifiers() & java.lang.reflect.Modifier.PUBLIC).Should().Be(0);
+
+            JavaDelegates.FromMethod(m).Should().NotBeNull();
+        }
+
+        /// <summary>
+        /// A ghost interface's CLR type is not the type IKVM signs with, so the exact signature cannot be
+        /// built and the references are erased instead. Utilities.compare(Comparable, Comparable) is the shape
+        /// eleven of Calcite's comparison methods have.
+        /// </summary>
+        [TestMethod]
+        public void ShouldCallAMethodWhoseSignatureNamesAGhostInterface()
+        {
+            var d = (Func<object, object, int>)JavaDelegates.FromMethod(
+                typeof(Func<object, object, int>),
+                ((Class)typeof(org.apache.calcite.runtime.Utilities)).getDeclaredMethod("compare", [(Class)typeof(java.lang.Comparable), (Class)typeof(java.lang.Comparable)]));
+
+            d(Integer.valueOf(1), Integer.valueOf(2)).Should().Be(-1);
         }
 
         [TestMethod]

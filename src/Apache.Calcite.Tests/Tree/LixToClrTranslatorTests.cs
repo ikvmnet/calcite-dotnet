@@ -187,8 +187,8 @@ namespace Apache.Calcite.Tests.Tree
         [TestMethod]
         public void ShouldTranslateCallToMethodOfRemappedClass()
         {
-            // String.toUpperCase is static on a helper and takes the receiver first, so what linq4j calls the
-            // target has to move into argument zero
+            // String is System.String, which has no toUpperCase; IKVM put the Java method on a static helper
+            // taking the receiver first. The delegate hides that the receiver moved
             var e = J.Expressions.call(
                 J.Expressions.constant("abc"),
                 ((Class)typeof(java.lang.String)).getDeclaredMethod("toUpperCase", []));
@@ -197,16 +197,14 @@ namespace Apache.Calcite.Tests.Tree
         }
 
         /// <summary>
-        /// A method with no CLR method to call at all. IKVM answered String.length() with a property, so
-        /// nothing of that name and arity is on the type, on a helper, or on anything the search reaches —
-        /// ClrTypes.TryResolve says so, and the call goes through a delegate over the method instead.
+        /// A method with no CLR method of that name to call at all: IKVM answered String.length() with a
+        /// property. Nothing about translating it is special — every call goes through a delegate over the
+        /// method — but a search would have had nothing to find here, and one used to run.
         /// </summary>
         [TestMethod]
         public void ShouldTranslateCallToMethodWithNoClrMethod()
         {
             var method = ((Class)typeof(java.lang.String)).getDeclaredMethod("length", []);
-            ClrTypes.TryResolve(method).Should().BeNull();
-
             Run<int>(J.Expressions.call(J.Expressions.constant("abc"), method)).Should().Be(3);
         }
 
@@ -218,8 +216,6 @@ namespace Apache.Calcite.Tests.Tree
         public void ShouldTranslateCallToMethodOfObject()
         {
             var method = ((Class)typeof(java.lang.Object)).getDeclaredMethod("hashCode", []);
-            ClrTypes.TryResolve(method).Should().BeNull();
-
             var value = new java.util.ArrayList();
             value.add("a");
 
@@ -233,8 +229,6 @@ namespace Apache.Calcite.Tests.Tree
         public void ShouldTranslateCallToMethodWithNoClrMethodAndAnArgument()
         {
             var method = ((Class)typeof(java.lang.String)).getDeclaredMethod("charAt", [Integer.TYPE]);
-            ClrTypes.TryResolve(method).Should().BeNull();
-
             Run<char>(J.Expressions.call(J.Expressions.constant("abc"), method, J.Expressions.constant(Integer.valueOf(1)))).Should().Be('b');
         }
 

@@ -696,74 +696,28 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// </summary>
         /// <param name="expression"></param>
         /// <returns></returns>
+        /// <remarks>
+        /// The method is not looked for. A <c>java.lang.reflect.Method</c> already says which member is meant,
+        /// and IKVM can say which CLR method it compiled for that member — <c>unreflect</c> does, and
+        /// <c>JavaDelegates</c> makes a delegate of the answer. Searching for a CLR method of that name and
+        /// signature is a second opinion that can only agree or be wrong, and it cannot answer at all for a
+        /// remapped class, whose Java methods went to a static helper, or a ghost interface, which declares
+        /// nothing.
+        ///
+        /// <para>The delegate takes the receiver first where the method has one, and its signature is objects
+        /// and primitives, so what is left to do here is convert each argument to its parameter.
+        /// <see cref="Coerce"/> does that, and it boxes a primitive the Java way before any reference
+        /// conversion, so nothing crosses as a boxed CLR value where Java's box is meant.</para>
+        /// </remarks>
         Expression Call(J.MethodCallExpression expression)
         {
-            var method = ClrTypes.TryResolve(expression.method);
             var target = expression.targetExpression == null ? null : Visit(expression.targetExpression);
-
             var arguments = expression.expressions;
 
-            // no CLR method of that name and signature is on that type at all, which is what a remapped class
-            // or a ghost interface leaves behind. IKVM knows which method it compiled; a name search does not
-            if (method == null)
-                return Invoke(expression.method, target, arguments);
-
-            // a method IKVM moved off a remapped class is static and takes the receiver first, so what Java
-            // called the target is argument zero
-            var offset = target != null && method.IsStatic ? 1 : 0;
-            var translated = new Expression[arguments.size() + offset];
-            if (offset == 1)
-                translated[0] = target!;
-
-            for (int i = 0; i < arguments.size(); i++)
-                translated[i + offset] = Visit((J.Node)arguments.get(i));
-
-            // the overload is chosen by the receiver and by what is being passed, not by the method the tree
-            // names: Janino resolves both from the source text and never looks at that method
-            var argumentTypes = new Type[arguments.size()];
-            for (int i = 0; i < argumentTypes.Length; i++)
-                argumentTypes[i] = translated[i + offset].Type;
-
-            if (target != null && method.IsStatic == false)
-                method = ClrTypes.RebindReceiver(method, target.Type, argumentTypes);
-
-            method = ClrTypes.Rebind(method, Array.ConvertAll(translated, e => e.Type));
-
-            var parameters = method.GetParameters();
-            var resolved = new Expression[translated.Length];
-            for (int i = 0; i < translated.Length; i++)
-                resolved[i] = Coerce(translated[i], parameters[i].ParameterType);
-
-            if (method.IsStatic)
-                return Expression.Call(null, method, resolved);
-
-            return Expression.Call(ClrEnumUtils.Convert(target!, method.DeclaringType!), method, resolved);
-        }
-
-        /// <summary>
-        /// Translates a method call as an invocation of a delegate over the method.
-        /// </summary>
-        /// <param name="method"></param>
-        /// <param name="target"></param>
-        /// <param name="arguments"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// The route for a method the CLR type system cannot be asked about — one of a remapped class, whose
-        /// Java methods went elsewhere, or of a ghost interface, which declares nothing. The delegate is
-        /// IKVM's own resolution of the member and takes the receiver first where the method has one, so the
-        /// receiver moves the same way it does for a method that landed on a <c>Helper</c> class.
-        ///
-        /// <para>Its signature is objects and primitives — see <c>JavaDelegates.FromMethod</c> — so the
-        /// conversions here are reference conversions and the boxing of a primitive argument, both of which
-        /// <see cref="Coerce"/> already does. A primitive never crosses as an object, which is the one thing
-        /// that would put a <c>java.lang.Integer</c> where a CLR int belongs.</para>
-        /// </remarks>
-        Expression Invoke(java.lang.reflect.Method method, Expression? target, java.util.List arguments)
-        {
-            var del = JavaDelegates.FromMethod(method);
+            var offset = target != null ? 1 : 0;
+            var del = JavaDelegates.FromMethod(expression.method, arguments.size() + offset);
             var parameters = del.GetType().GetMethod("Invoke")!.GetParameters();
 
-            var offset = target != null ? 1 : 0;
             var resolved = new Expression[arguments.size() + offset];
             if (offset == 1)
                 resolved[0] = Coerce(target!, parameters[0].ParameterType);

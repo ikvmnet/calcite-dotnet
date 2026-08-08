@@ -74,15 +74,19 @@ namespace Apache.Calcite.Tests.Tree
         /// Each was reachable by a search that reconstructed what IKVM had done — java.lang.String is
         /// System.String and its Java methods went to a static helper; java.lang.Comparable is left empty and
         /// extends System.IComparable, whose method is spelled CompareTo. Both reconstructions happened to
-        /// land, and neither was an answer from IKVM. They go to a delegate over the method handle instead,
-        /// which is one.
+        /// land, and neither was an answer from IKVM.
         /// </remarks>
         [TestMethod]
-        public void ShouldNotResolveWhatOnlyASearchWouldFind()
+        public void ShouldRefuseWhatOnlyASearchWouldFind()
         {
-            ClrTypes.TryResolve(((Class)typeof(java.lang.String)).getDeclaredMethod("toUpperCase", [])).Should().BeNull();
-            ClrTypes.TryResolve(((Class)typeof(java.lang.Object)).getDeclaredMethod("toString", [])).Should().BeNull();
-            ClrTypes.TryResolve(((Class)typeof(java.lang.Comparable)).getDeclaredMethod("compareTo", [typeof(object)])).Should().BeNull();
+            var toUpperCase = () => ClrTypes.Resolve(((Class)typeof(java.lang.String)).getDeclaredMethod("toUpperCase", []));
+            toUpperCase.Should().Throw<NotSupportedException>();
+
+            var toString = () => ClrTypes.Resolve(((Class)typeof(java.lang.Object)).getDeclaredMethod("toString", []));
+            toString.Should().Throw<NotSupportedException>();
+
+            var compareTo = () => ClrTypes.Resolve(((Class)typeof(java.lang.Comparable)).getDeclaredMethod("compareTo", [typeof(object)]));
+            compareTo.Should().Throw<NotSupportedException>();
         }
 
         [TestMethod]
@@ -112,24 +116,18 @@ namespace Apache.Calcite.Tests.Tree
         public static string Describe(DbConnection connection, string label) => label;
 
         /// <summary>
-        /// Reaches every method Calcite names in <c>BuiltInMethod</c>, by one route or the other.
+        /// Builds a delegate over every method Calcite names in <c>BuiltInMethod</c>.
         /// </summary>
         /// <remarks>
-        /// The whole port rests on this direction of the interop working, and it either works for a signature
-        /// shape or it does not. Sweeping the table says which shapes are the exceptions instead of finding
-        /// them one at a time, node by node, much later.
-        ///
-        /// <para>Reaching one is either resolving it to a CLR method or building a delegate over it, which is
-        /// what a translated call does. The count of each is asserted rather than only the total: a method
-        /// moving from the first route to the second is a call becoming an invoke, and that should not happen
-        /// unnoticed.</para>
+        /// This is the route a translated call takes for all of them, so the whole table going through it is
+        /// the thing to assert. It either works for a signature shape or it does not, and sweeping says which
+        /// shapes are the exceptions instead of finding them one at a time, node by node, much later.
         /// </remarks>
         [TestMethod]
-        public void ShouldReachEveryBuiltInMethod()
+        public void ShouldBuildADelegateForEveryBuiltInMethod()
         {
             var failures = new List<string>();
-            var invoked = new List<string>();
-            var called = 0;
+            var built = 0;
 
             foreach (BuiltInMethod value in BuiltInMethod.values())
             {
@@ -139,10 +137,8 @@ namespace Apache.Calcite.Tests.Tree
 
                 try
                 {
-                    if (ClrTypes.TryResolve(method) != null)
-                        called++;
-                    else if (JavaDelegates.FromMethod(method) != null)
-                        invoked.Add($"{value.name()}: {method}");
+                    JavaDelegates.FromMethod(method).Should().NotBeNull();
+                    built++;
                 }
                 catch (System.Exception e)
                 {
@@ -150,13 +146,8 @@ namespace Apache.Calcite.Tests.Tree
                 }
             }
 
-            Assert.IsTrue(failures.Count == 0, $"{called} called, {invoked.Count} invoked, {failures.Count} failed:{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
-
-            called.Should().Be(594);
-            invoked.Should().BeEquivalentTo([
-                "STRING_TO_UPPER: public java.lang.String java.lang.String.toUpperCase()",
-                "OBJECT_TO_STRING: public java.lang.String java.lang.Object.toString()",
-                "COMPARE_TO: public abstract int java.lang.Comparable.compareTo(java.lang.Object)"]);
+            Assert.IsTrue(failures.Count == 0, $"{built} built, {failures.Count} failed:{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
+            built.Should().Be(597);
         }
 
     }

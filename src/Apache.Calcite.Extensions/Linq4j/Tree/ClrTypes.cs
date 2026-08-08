@@ -16,11 +16,15 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
     /// Calcite asks it what runtime class a <c>Type</c> stands for, and which method or field a name and a
     /// signature resolve to; the answers are the same questions, and the runtime is the difference.
     ///
-    /// <para><c>Types.toClass</c> can answer with the class it was handed, a Java type already being a
-    /// Java runtime type. Nothing here can: every answer crosses from what Calcite described to what IKVM
-    /// compiled, and a linq4j call's recorded method is advisory besides — Janino resolves the overload
-    /// from the source it writes, so an overload named against one signature and passed another has to be
-    /// resolved again here.</para>
+    /// <para><c>Types.toClass</c> can answer with the class it was handed, a Java type already being a Java
+    /// runtime type. Nothing here can: every answer crosses from what Calcite described to what IKVM
+    /// compiled.</para>
+    ///
+    /// <para>Methods are the exception, and are mostly not here. A linq4j call carries a
+    /// <c>java.lang.reflect.Method</c>, which names the member exactly, and IKVM can be asked which CLR
+    /// method it compiled for it — so <c>JavaDelegates</c> answers that question and translation uses it.
+    /// What is left here is the search a caller needs when it must have a <see cref="MethodInfo"/> to emit a
+    /// direct call, or when Calcite named a class and a method and no <c>Method</c> at all.</para>
     /// </remarks>
     public static class ClrTypes
     {
@@ -95,38 +99,25 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         const BindingFlags All = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
 
         /// <summary>
-        /// Resolves a Java method to its CLR method.
+        /// Returns the CLR method of the same name and signature as a Java method.
         /// </summary>
         /// <param name="method"></param>
         /// <returns></returns>
         /// <exception cref="NotSupportedException"></exception>
-        public static MethodInfo Resolve(java.lang.reflect.Method method)
-        {
-            return TryResolve(method)
-                ?? throw new NotSupportedException($"No CLR method matches '{method}'.");
-        }
-
-        /// <summary>
-        /// Resolves a Java method to the CLR method of that name and signature, or answers
-        /// <see langword="null"/> where there is none.
-        /// </summary>
-        /// <param name="method"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// One question, asked once: is there a method of this name whose parameters are exactly these. Where
-        /// there is, it is the method IKVM compiled and nothing further needs deciding; where there is not,
-        /// there is no second question worth asking here. A name that differs, a receiver that moved to a
-        /// static <c>Helper</c>, a ghost interface that declares nothing — those were four more searches, and
-        /// each was a reconstruction of what IKVM did rather than an answer from it. Across all 597 of
-        /// Calcite's <c>BuiltInMethod</c>s they resolved three: <c>String.toUpperCase</c>,
-        /// <c>Object.toString</c> and <c>Comparable.compareTo</c>.
+        /// This is a search, and it is here for the callers that need a <see cref="MethodInfo"/> in order to
+        /// emit a direct call — the handful of Calcite methods this convention names itself, which are read
+        /// once into static fields and then called on every row. Translating a linq4j tree does not use it:
+        /// <c>JavaDelegates</c> puts the member to IKVM instead, which answers rather than agrees.
         ///
-        /// <para>Answering <see langword="null"/> is therefore not a claim that no such method exists. It says
-        /// the CLR type system cannot be asked, and the question goes to IKVM instead — <c>JavaDelegates</c>
-        /// unreflects the member into a method handle, which is IKVM's own resolution of it and cannot be
-        /// wrong. A caller that can invoke a delegate rather than emit a call should do that.</para>
+        /// <para>It asks one question — is there a method of this name whose parameters are exactly these —
+        /// and refuses when the answer is no. It used to ask four more, each a reconstruction of something
+        /// IKVM had done: a name differing in case, a receiver moved to a static <c>Helper</c> class, a walk
+        /// of base interfaces matching parameters by assignability. Across all 597 of Calcite's
+        /// <c>BuiltInMethod</c>s those four resolved three — <c>String.toUpperCase</c>, <c>Object.toString</c>
+        /// and <c>Comparable.compareTo</c> — and each of the three is a method handle's to answer.</para>
         /// </remarks>
-        public static MethodInfo? TryResolve(java.lang.reflect.Method method)
+        public static MethodInfo Resolve(java.lang.reflect.Method method)
         {
             ArgumentNullException.ThrowIfNull(method);
 
@@ -137,7 +128,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             for (int i = 0; i < parameterTypes.Length; i++)
                 parameters[i] = ClrTypes.FromClass(parameterTypes[i]);
 
-            return declaring.GetMethod(method.getName(), All, null, parameters, null);
+            return declaring.GetMethod(method.getName(), All, null, parameters, null)
+                ?? throw new NotSupportedException($"No CLR method matches '{method}'.");
         }
 
         /// <summary>
@@ -149,9 +141,10 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <returns></returns>
         /// <exception cref="NotSupportedException"></exception>
         /// <remarks>
-        /// The same resolution as <see cref="Rebind"/>, where there is no method to start from. Calcite names
-        /// a class and a method and nothing more — <c>Expressions.call(Utilities.class, "compareNullsFirst",
-        /// args)</c> — and lets javac choose the overload from the argument expressions of the source it emits.
+        /// Calcite names a class and a method and nothing more — <c>Expressions.call(Utilities.class,
+        /// "compareNullsFirst", args)</c> — and lets javac choose the overload from the argument expressions of
+        /// the source it emits. There is no <c>java.lang.reflect.Method</c> to unreflect, so choosing is done
+        /// here rather than by IKVM, and <c>ClrPhysTypeImpl</c>'s comparator generation is what asks.
         /// </remarks>
         public static MethodInfo Resolve(Type declaring, string name, Type[] arguments)
         {
@@ -171,84 +164,6 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Returns the overload that accepts the given arguments, which is not always the one a linq4j call
-        /// names.
-        /// </summary>
-        /// <param name="method"></param>
-        /// <param name="arguments"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// A linq4j tree records a Method, but Janino never uses it: <c>MethodCallExpression</c> writes itself
-        /// out as <c>target.name(args)</c> and the Java compiler resolves the overload from the argument
-        /// expressions. So the recorded method is only what the code that built the tree happened to name.
-        ///
-        /// <para>It is very nearly always the method to call, and measuring says how nearly: across the whole
-        /// test suite one call in the plans this convention builds names a method that is not the one, and it
-        /// is Calcite's own — <c>EnumerableWindow</c> names <c>BINARY_SEARCH5_UPPER</c>, whose method takes
-        /// five parameters, and passes it six arguments. Janino writes the name and javac binds the six-parameter
-        /// overload. Nothing derived from the recorded method can find that, a method handle over it included:
-        /// the handle would take five arguments. Choosing needs the candidates of that name, which is what this
-        /// walks.</para>
-        /// </remarks>
-        public static MethodInfo Rebind(MethodInfo method, Type[] arguments)
-        {
-            ArgumentNullException.ThrowIfNull(method);
-            ArgumentNullException.ThrowIfNull(arguments);
-
-            if (Accepts(method, arguments))
-                return method;
-
-            // an argument that is statically an object fits every overload, so there is nothing to choose on
-            // and the method the tree names is the only information there is
-            foreach (var argument in arguments)
-                if (argument == typeof(object))
-                    return method;
-
-            MethodInfo? best = null;
-
-            foreach (var candidate in method.DeclaringType!.GetMethods(All))
-            {
-                if (candidate.Name != method.Name || candidate.IsStatic != method.IsStatic)
-                    continue;
-                if (Accepts(candidate, arguments) == false)
-                    continue;
-
-                // the most specific of those that fit, which is what Java would choose
-                if (best == null || best.GetParameters()[0].ParameterType.IsAssignableFrom(candidate.GetParameters()[0].ParameterType))
-                    best = candidate;
-            }
-
-            return best ?? method;
-        }
-
-        /// <summary>
-        /// Returns the method of the receiver's own type, which is not always the one a linq4j call names.
-        /// </summary>
-        /// <param name="method"></param>
-        /// <param name="receiver"></param>
-        /// <param name="arguments"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// The same reason as <see cref="Rebind"/>, in the other position. Calcite writes multiMap.size()
-        /// against BuiltInMethod.COLLECTION_SIZE, and a SortedMultiMap is a Map rather than a Collection; Java
-        /// binds Map.size() from the receiver in the source text and never looks at the named method.
-        /// </remarks>
-        public static MethodInfo RebindReceiver(MethodInfo method, Type receiver, Type[] arguments)
-        {
-            ArgumentNullException.ThrowIfNull(method);
-            ArgumentNullException.ThrowIfNull(receiver);
-
-            if (method.IsStatic || method.DeclaringType!.IsAssignableFrom(receiver))
-                return method;
-
-            foreach (var candidate in receiver.GetMethods(All))
-                if (candidate.Name == method.Name && candidate.IsStatic == false && Accepts(candidate, arguments))
-                    return candidate;
-
-            return method;
-        }
-
-        /// <summary>
         /// Returns whether every argument fits the parameter it would be passed as.
         /// </summary>
         /// <param name="method"></param>
@@ -257,10 +172,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <remarks>
         /// Fitting includes the box and the primitive of one another, because the call being composed converts
         /// each argument to its parameter anyway and that conversion is one of the ones it makes. Counting it
-        /// as a misfit sends <see cref="Rebind"/> looking for another method where there was nothing wrong
-        /// with this one: <c>SqlFunctions.greater(int, int)</c> handed an <c>int</c> and a
-        /// <c>java.lang.Integer</c> is the method Calcite named and the method whose return type the tree
-        /// carries, and the second argument wants unboxing rather than a different overload.
+        /// as a misfit would pass over an overload that suits perfectly well for one that only looks like it
+        /// does.
         /// </remarks>
         static bool Accepts(MethodInfo method, Type[] arguments)
         {
