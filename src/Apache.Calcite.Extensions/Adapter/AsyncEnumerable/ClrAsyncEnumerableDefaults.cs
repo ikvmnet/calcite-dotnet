@@ -789,7 +789,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             // right or a full join owes against a null left.
             var unmatched = generateNullsOnLeft ? new java.util.HashSet(lookup.keySet()) : null;
 
-            foreach (var row in outer)
+            await foreach (var row in outer.WithCancellation(cancellationToken))
             {
                 var key = outerKeySelector(row);
                 var any = false;
@@ -848,10 +848,11 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             EqualityComparer? comparer,
             bool generateNullsOnLeft,
             bool generateNullsOnRight,
-            Func<TSource, TInner, bool> predicate)
+            Func<TSource, TInner, bool> predicate,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             // read once, because a right or a full join walks it twice
-            IEnumerable<TInner> innerToLookUp = generateNullsOnLeft ? new List<TInner>(inner) : inner;
+            IReadOnlyList<TInner> innerToLookUp = await Buffer(inner, cancellationToken).ConfigureAwait(false);
 
             var lookup = new java.util.HashMap();
 
@@ -868,7 +869,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
 
             var unmatched = generateNullsOnLeft ? new List<TInner>(innerToLookUp) : null;
 
-            foreach (var row in outer)
+            await foreach (var row in outer.WithCancellation(cancellationToken))
             {
                 var key = outerKeySelector(row);
                 var any = false;
@@ -1382,7 +1383,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             }
 
             // moves to the next key present on both sides, filling lefts and rights with its rows
-            bool Advance()
+            async ValueTask<bool> Advance()
             {
                 while (true)
                 {
@@ -1496,10 +1497,10 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                     done = true;
                 else if (await RightMoveNext() == false)
                     remainingLeft = true;
-                else if (Advance() == false)
+                else if (await Advance() == false)
                     done = true;
             }
-            else if (await LeftMoveNext() == false || await RightMoveNext() == false || Advance() == false)
+            else if (await LeftMoveNext() == false || await RightMoveNext() == false || await Advance() == false)
             {
                 done = true;
             }
@@ -1530,7 +1531,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                 if (done)
                     yield break;
 
-                if (Advance() == false)
+                if (await Advance() == false)
                     yield break;
             }
         }
@@ -1616,7 +1617,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
 
             // the right rows of the batch being read, held across the batch's first left row because that is
             // the only one that pulls from it
-            IEnumerator<TInner>? source = null;
+            IAsyncEnumerator<TInner>? source = null;
 
             try
             {
@@ -1651,7 +1652,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
 
                             if (i == 0)
                             {
-                                if (source.MoveNextAsync() == false)
+                                if (await source.MoveNextAsync().ConfigureAwait(false) == false)
                                     break;
 
                                 right = source.Current;
@@ -1677,7 +1678,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                             if (isSemi || isAnti)
                             {
                                 if (i == 0)
-                                    while (source.MoveNextAsync())
+                                    while (await source.MoveNextAsync().ConfigureAwait(false))
                                         rows.Add(source.Current);
 
                                 if (isAnti == false)
@@ -2099,7 +2100,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             var frame = new WindowFrame();
             var accumulator = accumulatorInitializer();
 
-            await foreach (var rows in Partitions(source, partitionSelector, comparator, cancellationToken).WithCancellation(cancellationToken))
+            foreach (var rows in Partitions(await Buffer(source, cancellationToken).ConfigureAwait(false), partitionSelector, comparator))
             {
                 frame.Rows = rows;
                 frame.PartitionRowCount = rows.Length;
