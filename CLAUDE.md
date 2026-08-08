@@ -24,6 +24,13 @@ operator audit against linq4j — 45 methods read side by side, 17 of them diver
   found in the convention was found by it, three of them in nodes already believed done. Add a query
   there rather than writing an assertion by hand: the expected answer is whatever Calcite says. It lives
   in `Apache.Calcite.Tests`, with the rest of the convention and prepare tests.
+- **`dotnet test --filter` is silently ignored here** — the project runs on Microsoft.Testing.Platform, and
+  `dotnet test` does not forward the flag to the test app. It runs the whole suite and reports success, so a
+  run that looks like one test is 619. Run the built executable instead, which honours it and is faster than
+  the `dotnet test` host by about a third:
+  `src\Apache.Calcite.Tests\bin\Debug\net8.0\Apache.Calcite.Tests.exe --filter FullyQualifiedName~Name`.
+  The whole suite is about 133 seconds that way against about 215 through `dotnet test`; a single test is
+  seconds. `--blame-hang --blame-hang-timeout 90s` names the test that hangs.
 - **Calcite is checked out at `D:\calcite`, and it is 1.43.0-SNAPSHOT.** The projects reference **1.42.0**,
   which is released; `Apache.Calcite.Data.Tests` alone references **1.43.0-SNAPSHOT**, from
   `https://repository.apache.org/content/repositories/snapshots/`, for `calcite-server` and the
@@ -73,6 +80,14 @@ nullable column, and it has no `lastKey` or `headMap`, so the limit sort had to 
 transcribed — and both defects came out of that re-expression. `Dictionary` for a `HashMap` is not, wherever
 iteration order reaches the output, which is why the join lookups are `java.util.HashMap`. When the Java
 type is the one that fits, use it — we run on IKVM — and name at the site which property forced it.
+
+**A recursive query can fail to terminate under Calcite too, and then there is no oracle.** A repeat union's
+spool is cleared by a round that wrote nothing, so a step that aggregates the working table oscillates: the
+round that counts one is empty and empties the table, and the round after it counts zero and emits again.
+Under UNION ALL that runs forever in both conventions. Deduplication is what ends it, the second copy being
+a row the sequence already returned. Before writing a recursive test, check that the shape converges —
+`SameRel` will hang rather than fail, and a hung suite looks like an infinite loop in the operator that was
+just changed. It is worth running the new test alone first.
 
 **A differential test compares answers, not implementations.** It is a strong oracle for correctness and no
 oracle at all for faithfulness. Three divergences from Calcite have been found by reading rather than by

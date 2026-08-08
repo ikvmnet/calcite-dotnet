@@ -161,15 +161,10 @@ plan can put a Calcite node above an asynchronous one, because Calcite cannot re
 divergent, 1 uncertain.** Everything below was found by reading Calcite beside ours; none of it was visible
 to the differential suite.
 
-### Wrong rows, latent
+Fixed so far, in both conventions: `HashEquiJoin`'s leftover order, `NestedLoopJoin` (five defects), and
+`RepeatUnion`'s termination test and clean-up ordering. Each carries a test that fails against the old
+behaviour -- `ClrEnumerableNestedLoopJoinTests` and `ClrRepeatUnionTests` for what no query can reach.
 
-- **`NestedLoopJoin` SEMI passes a null right row** where both of Calcite's bodies pass the matched inner
-  row. Invisible only because `ClrEnumUtils.JoinSelector` declares the right parameter for SEMI and never
-  reads it. Reachable from `MergeJoin`'s non-equi SEMI path.
-- **`RepeatUnion` stops one round early.** Calcite sets `current` to `DUMMY` at the end of each round but
-  never restores it across the seed/iteration boundary, so a non-empty seed followed by an empty round 0
-  does not stop it. Differs iff the seed emitted at least one row and round 0 emits nothing new; changes
-  rows only for a non-monotone step. Upstream behaviour at HEAD.
 ### Eager where Calcite is eager, or the reverse
 
 Calcite builds at call time and returns an enumerable over finished state; our `yield` iterators defer and
@@ -182,8 +177,6 @@ map there. `Window` is the reverse and in our favour: we stream output where Cal
 
 - **`Cartesian` is fully eager**: `new List(outer.Count * inner.Count)` before the first row, where
   Calcite's is lazy. Quadratic per merge-join key run, and that `int` multiply overflows around 2^31 pairs.
-- **`NestedLoopJoin` buffers its inner** where Calcite's optimized body re-enumerates per outer row. The
-  asymmetry is Calcite's own, so ours is a divergence rather than a choice.
 - **`SemiJoin` holds every inner row** where linq4j holds distinct keys, and drains the inner even for an
   empty outer where linq4j memoizes (CALCITE-2909).
 - **`Take` draws n rows where linq4j draws n+1**, because `takeWhile` reads `current()` before rejecting.
@@ -193,8 +186,6 @@ map there. `Window` is the reverse and in our favour: we stream output where Cal
 
 - `CorrelateJoin` does not reject RIGHT/FULL (Calcite throws, we silently inner-join) and does not guard a
   null correlated inner (Calcite substitutes empty, we throw). `LeftMarkJoin` next door does guard.
-- `RepeatUnion`'s `cleanUp` runs after the child enumerators close rather than before, and not at all if the
-  plan is created and never pulled.
 - `JavaSequences.ToJava`'s `reset()` throws where linq4j re-acquires. Only `CartesianProductEnumerator`
   calls it live.
 
@@ -208,11 +199,12 @@ yields in `HashMultiset` order, a throw on a null key.
 
 - **`Window` reproduces a Calcite bug**: with UNBOUNDED/UNBOUNDED plus EXCLUDE the outer guard is false
   after row 0, so the exclusion never takes effect.
-- **RIGHT/FULL unmatched-right dedup**: Calcite uses an identity set, so two unmatched rows that are the
-  same object emit once; ours emits twice. Ours is the SQL-correct answer.
-- **`HashEquiJoin` retires keys by the comparer** where linq4j uses natural equality on unwrapped keys, and
-  **`SemiJoin` applies the comparer** where linq4j's `contains` ignores it. Ours is more correct in both;
-  both unreachable, the key projection optimising to LIST/SCALAR so `comparer()` is null.
+- **RIGHT/FULL unmatched-right order**: Calcite walks an `IdentityHashMap`, whose buckets key on
+  `System.identityHashCode`. We now dedup on identity as it does, but there is no CLR counterpart to that
+  number, so the unmatched rows come out in insertion order. The set of rows is Calcite's; the order is not,
+  and cannot be.
+- **`SemiJoin` applies the comparer** where linq4j's `contains` ignores it. Ours is more correct, and
+  unreachable: the key projection optimises to LIST/SCALAR, so `comparer()` is null.
 - **`CompareNullsLastForMergeJoin`** returns 1 for two nulls where Calcite throws and its caller converts to
   1. Composed behaviour identical; the contract no longer signals two-nulls to a future caller.
 
