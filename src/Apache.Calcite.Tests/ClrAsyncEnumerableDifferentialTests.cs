@@ -53,11 +53,13 @@ namespace Apache.Calcite.Tests
             {
                 rootSchema.add("SALES", new AsyncRowsTable(AsyncTestRows.Sales, AsyncTestRows.SalesRowType, false));
                 rootSchema.add("SORTED", new AsyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, true));
+                rootSchema.add("WIDE", new AsyncRowsTable(AsyncTestRows.Wide, AsyncTestRows.WideRowType, false));
             }
             else
             {
                 rootSchema.add("SALES", new SyncRowsTable(AsyncTestRows.Sales, AsyncTestRows.SalesRowType, false));
                 rootSchema.add("SORTED", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, true));
+                rootSchema.add("WIDE", new SyncRowsTable(AsyncTestRows.Wide, AsyncTestRows.WideRowType, false));
             }
 
             // a table function, which this convention has no node for: Calcite plans it and the converter
@@ -141,6 +143,116 @@ namespace Apache.Calcite.Tests
 
             return rows;
         }
+
+        /// <summary>
+        /// Plans a hand-built rel in one convention and returns its rows, rendered.
+        /// </summary>
+        /// <param name="build"></param>
+        /// <param name="async"></param>
+        /// <param name="planOnly"></param>
+        /// <param name="add"></param>
+        /// <param name="remove"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>ClrEnumerableDifferentialTests.RunRel</c> for this convention: the same planning, and the rule
+        /// registration of <see cref="Run"/> next door. It exists because SQL cannot reach every shape. The
+        /// one that forced it is a recursive query whose step aggregates the working table — standard SQL
+        /// will not put an aggregate in a recursive term, and that shape is the only thing that tells
+        /// <c>repeatUnion</c>'s termination test apart from "stop after an empty round".
+        ///
+        /// <para>Each side builds against its own schema, as <see cref="Run"/> does, so the asynchronous side
+        /// reads asynchronous tables and the synchronous side reads synchronous ones. The rel is therefore
+        /// built twice rather than shared, which is also what makes the builder's own state safe.</para>
+        ///
+        /// <para>No parser, so no validator and no sub-query program: a rel built here is already the shape
+        /// the planner is given. That is the point of the route and also its limit — nothing here exercises
+        /// how SQL becomes a rel.</para>
+        /// </remarks>
+        static async Task<List<string>> RunRel(Func<RelBuilder, RelNode> build, bool async, bool planOnly = false, RelOptRule[]? add = null, RelOptRule[]? remove = null)
+        {
+            var rootSchema = Schema(async);
+
+            var rules = new java.util.ArrayList();
+            foreach (var rule in async ? ClrAsyncEnumerableRules.Rules() : ClrEnumerableRules.Rules())
+                rules.add(rule);
+
+            var calcRules = new java.util.ArrayList();
+            foreach (var rule in async ? ClrAsyncEnumerableRules.CalcRules() : ClrEnumerableRules.CalcRules())
+                calcRules.add(rule);
+            foreach (var rule in RelOptRules.CALC_RULES.toArray())
+                calcRules.add(rule);
+
+            var config = Frameworks.newConfigBuilder().defaultSchema(rootSchema).build();
+            var logical = build(RelBuilder.create(config));
+
+            var planner = (org.apache.calcite.plan.volcano.VolcanoPlanner)logical.getCluster().getPlanner();
+            planner.addRelTraitDef(ConventionTraitDef.INSTANCE);
+            planner.addRelTraitDef(RelCollationTraitDef.INSTANCE);
+
+            var convention = async ? (Convention)ClrAsyncEnumerableConvention.Instance : ClrEnumerableConvention.Instance;
+            var empty = new java.util.ArrayList();
+
+            var chosen = new DefaultRulesProgram(rules, false, false, false, add, remove)
+                .run(planner, logical, logical.getTraitSet().replace(convention).simplify(), empty, empty);
+
+            var physical = Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)
+                .run(planner, chosen, chosen.getTraitSet(), empty, empty);
+
+            if (planOnly)
+                return [RelOptUtil.toString(physical)];
+
+            var parameters = new java.util.HashMap();
+            var context = new TestDataContext(rootSchema, parameters);
+
+            var rows = new List<string>();
+
+            if (async)
+            {
+                var bindable = ClrAsyncEnumerableInterpretable.ToBindable(parameters, null, (ClrAsyncEnumerableRel)physical, ClrEnumerablePrefer.Array);
+                await foreach (var row in bindable.Bind(context))
+                    rows.Add(Render(row));
+            }
+            else
+            {
+                var bindable = ClrEnumerableInterpretable.ToBindable(parameters, null, (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
+                foreach (var row in bindable.Bind(context))
+                    rows.Add(Render(row));
+            }
+
+            return rows;
+        }
+
+        /// <summary>
+        /// Requires that a hand-built rel gives the same rows in both conventions.
+        /// </summary>
+        static async Task SameRel(Func<RelBuilder, RelNode> build, RelOptRule[]? add = null, RelOptRule[]? remove = null)
+        {
+            var async = await RunRel(build, true, add: add, remove: remove);
+            var sync = await RunRel(build, false, add: add, remove: remove);
+
+            async.Should().Equal(sync, "the plan should give what ClrEnumerableConvention gives");
+        }
+
+        /// <summary>
+        /// Requires the same rows, and that the asynchronous convention really planned the node aimed at.
+        /// </summary>
+        /// <remarks>
+        /// The reason <see cref="SameThrough"/> gives, and it applies here with more force: a rel built by
+        /// hand does not have a parser's opinion about which node it wants, so a rule that fires on some
+        /// other shape than the one intended still produces rows that agree.
+        /// </remarks>
+        static async Task SameRelThrough(string node, Func<RelBuilder, RelNode> build, RelOptRule[]? add = null, RelOptRule[]? remove = null)
+        {
+            (await RunRel(build, true, planOnly: true, add: add, remove: remove))[0]
+                .Should().Contain(node, "the plan should be planned through {0}", node);
+
+            await SameRel(build, add, remove);
+        }
+
+        /// <summary>
+        /// A boxed integer, which is what a literal of a hand-built rel takes.
+        /// </summary>
+        static java.lang.Integer I(int value) => java.lang.Integer.valueOf(value);
 
         /// <summary>
         /// The context a plan of either convention is bound with.
@@ -285,6 +397,19 @@ namespace Apache.Calcite.Tests
 
         [TestMethod]
         public Task ShouldAgreeOnANestedLoopJoin() => Same("SELECT s.ID, t.V FROM SALES s JOIN SORTED t ON s.ID > t.K");
+
+        // A right and a full join over twelve build-side keys with no ORDER BY. The rows that matched nothing
+        // come out at the end, and twelve is the one size at which the collection they are walked from
+        // decides their order: the lookup is a table of 16 and the HashSet copied from its key set is a table
+        // of 32.
+
+        [TestMethod]
+        public Task ShouldAgreeOnARightJoinsOwnOrderOverTwelveKeys() =>
+            SameThrough("ClrAsyncEnumerableHashJoin", "SELECT a.N, b.K FROM (SELECT * FROM WIDE WHERE N < 3) a RIGHT JOIN WIDE b ON a.K = b.K");
+
+        [TestMethod]
+        public Task ShouldAgreeOnAFullJoinsOwnOrderOverTwelveKeys() =>
+            SameThrough("ClrAsyncEnumerableHashJoin", "SELECT a.N, b.K FROM (SELECT * FROM WIDE WHERE N < 3) a FULL JOIN WIDE b ON a.K = b.K");
 
         [TestMethod]
         public Task ShouldAgreeOnASemiJoin() => Same("SELECT ID FROM SALES WHERE ID IN (SELECT K FROM SORTED)");
@@ -433,6 +558,69 @@ namespace Apache.Calcite.Tests
         [TestMethod]
         public Task ShouldAgreeOnARecursiveQueryOfSeveralColumns() =>
             Same("WITH RECURSIVE t(n, m) AS (VALUES (1, 10) UNION ALL SELECT n + 1, m + 10 FROM t WHERE n < 4) SELECT n, m FROM t ORDER BY 1");
+
+        // ------------------------------------------------------------------ built by hand
+        //
+        // Shapes SQL cannot express, through RunRel. Each has a twin in ClrEnumerableRelTests, which checks
+        // the synchronous convention against Calcite; these check this convention against that one.
+
+        /// <summary>
+        /// A recursive query whose step aggregates the working table rather than reading it row by row.
+        /// </summary>
+        /// <remarks>
+        /// The shape this harness was built for, and the only one that tells <c>repeatUnion</c>'s termination
+        /// test apart from "stop after a round that produced nothing": the sentinel is never restored across
+        /// the seed/iteration boundary, so a seed that emitted a row leaves the first empty round
+        /// non-terminating. An aggregate step makes the extra round visible, because <c>COUNT(*)</c> yields a
+        /// row over no rows; a step that reads the table row by row cannot see it.
+        ///
+        /// <para>UNION rather than UNION ALL, and that is what makes it terminate — the spool is cleared by
+        /// the round that wrote nothing, so the step oscillates, and deduplication is what ends it. Under
+        /// UNION ALL this runs forever in every convention including Calcite's.</para>
+        /// </remarks>
+        [TestMethod]
+        public Task ShouldAgreeOnARecursiveQueryWhoseStepAggregates() =>
+            SameRel(builder => builder
+                .values(["i"], I(1))
+                .transientScan("EMPTY_FIRST")
+                .aggregate(builder.groupKey(), builder.count(false, "C"))
+                .filter(builder.equals(builder.field(0), builder.literal(java.lang.Long.valueOf(0))))
+                .project(builder.literal(I(99)))
+                .repeatUnion("EMPTY_FIRST", false)
+                .build());
+
+        /// <summary>
+        /// A recursive query whose step reads the working table a row at a time.
+        /// </summary>
+        /// <remarks>
+        /// The ordinary shape, which SQL can express and this suite already runs as
+        /// <c>ShouldAgreeOnARecursiveQuery</c>. Here to show the two routes agree on it, so that a failure of
+        /// the one above is read as being about the aggregate rather than about the harness.
+        /// </remarks>
+        [TestMethod]
+        public Task ShouldAgreeOnARecursiveQueryBuiltByHand() =>
+            SameRel(builder => builder
+                .values(["i"], I(1))
+                .transientScan("DELTA")
+                .filter(builder.call(org.apache.calcite.sql.fun.SqlStdOperatorTable.LESS_THAN, builder.field(0), builder.literal(I(4))))
+                .project(builder.call(org.apache.calcite.sql.fun.SqlStdOperatorTable.PLUS, builder.field(0), builder.literal(I(1))))
+                .repeatUnion("DELTA", true)
+                .build());
+
+        /// <summary>
+        /// A scan and a filter built by hand, planned through this convention's own nodes.
+        /// </summary>
+        /// <remarks>
+        /// The harness proving itself: that a rel built rather than parsed reaches this convention at all,
+        /// and reaches it through <c>ClrAsyncEnumerableCalc</c> rather than through a converter. Without this
+        /// a failure anywhere above is ambiguous between the shape and the route.
+        /// </remarks>
+        [TestMethod]
+        public Task ShouldPlanAHandBuiltScanThroughThisConvention() =>
+            SameRelThrough("ClrAsyncEnumerableCalc", builder => builder
+                .scan("SORTED")
+                .filter(builder.call(org.apache.calcite.sql.fun.SqlStdOperatorTable.GREATER_THAN, builder.field(0), builder.literal(I(1))))
+                .build());
 
         [TestMethod]
         public Task ShouldAgreeOnATableFunction() =>

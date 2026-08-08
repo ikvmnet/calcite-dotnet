@@ -315,6 +315,38 @@ namespace Apache.Calcite.Tests
                 .build());
 
         /// <summary>
+        /// A recursive query whose step aggregates the working table rather than reading it row by row.
+        /// </summary>
+        /// <remarks>
+        /// The one shape that tells Calcite's termination test apart from "stop after a round that produced
+        /// nothing". <c>EnumerableDefaults.repeatUnion</c> stops on an empty round only where its
+        /// <c>current</c> field still holds the <c>DUMMY</c> sentinel, and the sentinel is never put back
+        /// across the seed/iteration boundary -- so a seed that emitted a row leaves <c>current</c> holding
+        /// that row, and the first empty round does not stop it. It runs the iterative part once more.
+        ///
+        /// <para>Every recursive test above reads the working table row by row, and none of them can see
+        /// this: an empty table gives an empty round whether the round runs or not. The step here is
+        /// <c>COUNT(*)</c>, which yields a row over no rows, so the extra round shows up in the answer.</para>
+        ///
+        /// <para>It is a UNION rather than a UNION ALL, and that is what makes it terminate. The spool is
+        /// cleared by the round that wrote nothing, so the step oscillates: a round that counts one is empty
+        /// and empties the table, and the round after it counts zero and emits 99 again. Under UNION ALL
+        /// that runs forever -- under Calcite too, which is worth knowing before writing a recursive test.
+        /// Deduplication stops it: the second 99 is one this sequence already returned, so that round adds
+        /// nothing new, the sentinel survives it, and the query ends. Rows 1 and 99.</para>
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnARecursiveQueryWhoseStepAggregates() =>
+            ClrEnumerableDifferentialTests.SameRel(builder => builder
+                .values(["i"], I(1))
+                .transientScan("EMPTY_FIRST")
+                .aggregate(builder.groupKey(), builder.count(false, "C"))
+                .filter(builder.equals(builder.field(0), builder.literal(java.lang.Long.valueOf(0))))
+                .project(builder.literal(I(99)))
+                .repeatUnion("EMPTY_FIRST", false)
+                .build());
+
+        /// <summary>
         /// CALCITE-4054: a repeat union whose step is a correlate with the transient scan on its right.
         /// </summary>
         /// <remarks>

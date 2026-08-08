@@ -187,26 +187,27 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         /// <remarks>
-        /// Written out rather than delegated, for the reason the class remarks give. It stops reading the
-        /// input once it has what it needs, which is what makes a fetch over a table a fetch rather than a
-        /// scan.
+        /// <c>EnumerableDefaults.take</c> is <c>takeWhile</c> over <c>n &lt; count</c>, and
+        /// <c>TakeWhileLongEnumerator.moveNext</c> is <c>enumerator.moveNext() &amp;&amp; predicate(current,
+        /// ++n)</c> -- it has to draw a row before it can test it. Two consequences, and both are visible.
+        ///
+        /// <para>A satisfied fetch has drawn one row more than it returned. Over a table that is a row the
+        /// scan actually read.</para>
+        ///
+        /// <para>A count of zero still opens the input and still draws that row. Opening is not free: it is
+        /// what runs a lazy collection spool's write-back and a repeat union's clean-up. Returning an empty
+        /// sequence without touching the input skips both.</para>
         /// </remarks>
         public static async IAsyncEnumerable<TSource> Take<TSource>(IAsyncEnumerable<TSource> source, int count, [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(source);
 
-            if (count <= 0)
-                yield break;
+            await using var enumerator = source.GetAsyncEnumerator(cancellationToken);
 
-            var taken = 0;
+            var n = -1;
 
-            await foreach (var row in source.WithCancellation(cancellationToken))
-            {
-                yield return row;
-
-                if (++taken >= count)
-                    yield break;
-            }
+            while (await enumerator.MoveNextAsync().ConfigureAwait(false) && ++n < count)
+                yield return enumerator.Current;
         }
 
         /// <summary>
@@ -412,28 +413,6 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
         /// <summary>
-        /// Returns each row as many times as it appears in both sequences.
-        /// </summary>
-        /// <typeparam name="TSource"></typeparam>
-        /// <param name="source"></param>
-        /// <param name="other"></param>
-        /// <param name="comparer"></param>
-        /// <returns></returns>
-        static IEnumerable<TSource> IntersectAll<TSource>(IEnumerable<TSource> source, IEnumerable<TSource> other, IEqualityComparer<TSource> comparer)
-        {
-            var counts = Count(other, comparer);
-
-            foreach (var row in source)
-            {
-                if (counts.TryGetValue(row, out var remaining) == false || remaining == 0)
-                    continue;
-
-                counts[row] = remaining - 1;
-                yield return row;
-            }
-        }
-
-        /// <summary>
         /// Returns the rows of the first sequence that are not in the second.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>
@@ -456,47 +435,6 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                 yield return row;
         }
 
-
-        /// <summary>
-        /// Returns each row of the first sequence except as many times as it appears in the second.
-        /// </summary>
-        /// <typeparam name="TSource"></typeparam>
-        /// <param name="source"></param>
-        /// <param name="other"></param>
-        /// <param name="comparer"></param>
-        /// <returns></returns>
-        static IEnumerable<TSource> ExceptAll<TSource>(IEnumerable<TSource> source, IEnumerable<TSource> other, IEqualityComparer<TSource> comparer)
-        {
-            var counts = Count(other, comparer);
-
-            foreach (var row in source)
-            {
-                if (counts.TryGetValue(row, out var remaining) && remaining > 0)
-                {
-                    counts[row] = remaining - 1;
-                    continue;
-                }
-
-                yield return row;
-            }
-        }
-
-        /// <summary>
-        /// Counts how many times each row appears.
-        /// </summary>
-        /// <typeparam name="TSource"></typeparam>
-        /// <param name="source"></param>
-        /// <param name="comparer"></param>
-        /// <returns></returns>
-        static Dictionary<TSource, int> Count<TSource>(IEnumerable<TSource> source, IEqualityComparer<TSource> comparer)
-        {
-            var counts = new Dictionary<TSource, int>(comparer);
-
-            foreach (var row in source)
-                counts[row] = counts.TryGetValue(row, out var count) ? count + 1 : 1;
-
-            return counts;
-        }
 
         /// <summary>
         /// Returns the distinct rows of a sequence.
@@ -816,13 +754,17 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             if (unmatched == null)
                 yield break;
 
-            for (var i = lookup.entrySet().iterator(); i.hasNext();)
+            // the set is walked and each key looked back up, which is what linq4j does and is not the same as
+            // walking the map and filtering by the set. A HashSet copied from a key set does not have the
+            // map's iteration order: HashSet(Collection) sizes its table as
+            // tableSizeFor(max((int) (n / 0.75f) + 1, 16)), while a map grown by insertion holds the smallest
+            // power of two at or above 16 that still leaves n <= 0.75 * cap. The two disagree exactly where
+            // n = 0.75 * 2^k — 12, 24, 48 — and these rows have no ORDER BY over them.
+            for (var i = unmatched.iterator(); i.hasNext();)
             {
-                var entry = (java.util.Map.Entry)i.next();
-                if (unmatched.contains(entry.getKey()) == false)
-                    continue;
+                var key = i.next();
 
-                foreach (var other in (List<TInner>)entry.getValue())
+                foreach (var other in (List<TInner>)lookup.get(key))
                     yield return resultSelector(default!, other);
             }
         }
@@ -915,7 +857,13 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <param name="anti">Whether the rows without a match are the ones returned.</param>
         /// <param name="predicate"></param>
         /// <returns></returns>
-        public static async IAsyncEnumerable<TSource> SemiJoin<TSource, TInner, TKey>(
+        /// <remarks>
+        /// <c>EnumerableDefaults.semiJoin</c>, which is a dispatch and not an implementation: with no
+        /// predicate it is <c>semiEquiJoin_</c>, which holds the distinct inner <em>keys</em>, and with one it
+        /// is <c>semiJoinWithPredicate_</c>, which holds a lookup of inner <em>rows</em> because the predicate
+        /// has to see them. Those are the two methods below, and they are not the same algorithm.
+        /// </remarks>
+        public static IAsyncEnumerable<TSource> SemiJoin<TSource, TInner, TKey>(
             IAsyncEnumerable<TSource> outer,
             IAsyncEnumerable<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
@@ -923,37 +871,110 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             EqualityComparer? comparer,
             bool anti,
             Func<TSource, TInner, bool>? predicate,
+            CancellationToken cancellationToken = default)
+        {
+            return predicate == null
+                ? SemiEquiJoin(outer, inner, outerKeySelector, innerKeySelector, comparer, anti, cancellationToken)
+                : SemiJoinWithPredicate(outer, inner, outerKeySelector, innerKeySelector, comparer, anti, predicate, cancellationToken);
+        }
+
+        /// <summary>
+        /// Returns the rows of the first sequence whose key is, or is not, one of the second's.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="ClrEnumerableDefaults.SemiEquiJoin"/> over asynchronous sequences:
+        /// <c>EnumerableDefaults.semiEquiJoin_</c>, the distinct keys rather than the rows, the two sets that
+        /// keep the comparer off the membership test, and CALCITE-2909's memoization.
+        /// </remarks>
+        static async IAsyncEnumerable<TSource> SemiEquiJoin<TSource, TInner, TKey>(
+            IAsyncEnumerable<TSource> outer,
+            IAsyncEnumerable<TInner> inner,
+            Func<TSource, TKey> outerKeySelector,
+            Func<TInner, TKey> innerKeySelector,
+            EqualityComparer? comparer,
+            bool anti,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
-{
-            var equality = JavaEqualityComparer<TKey>.Of(comparer);
-            var lookup = new Dictionary<TKey, List<TInner>>(equality);
+        {
+            java.util.HashSet? keys = null;
 
-            await foreach (var row in (inner).WithCancellation(cancellationToken))
+            await foreach (var row in outer.WithCancellation(cancellationToken))
             {
-                var key = innerKeySelector(row);
-                if (key == null)
-                    continue;
+                if (keys == null)
+                {
+                    var distinct = new java.util.HashSet();
+                    keys = new java.util.HashSet();
 
-                if (lookup.TryGetValue(key, out var bucket) == false)
-                    lookup[key] = bucket = [];
+                    await foreach (var innerRow in inner.WithCancellation(cancellationToken))
+                    {
+                        var innerKey = JavaValues.From(innerKeySelector(innerRow));
 
-                bucket.Add(row);
-            }
+                        if (distinct.add(JavaWrapped.Of(comparer, innerKey)))
+                            keys.add(innerKey);
+                    }
+                }
 
-            await foreach (var row in (outer).WithCancellation(cancellationToken))
-            {
                 var key = outerKeySelector(row);
-                var any = false;
+                var found = key != null && keys.contains(JavaValues.From(key));
 
-                if (key != null && lookup.TryGetValue(key, out var bucket))
-                    foreach (var other in (bucket))
-                        if (predicate == null || predicate(row, other))
+                if (found != anti)
+                    yield return row;
+            }
+        }
+
+        /// <summary>
+        /// Returns the rows of the first sequence that have, or have not, a match in the second under a
+        /// condition the key does not express.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="ClrEnumerableDefaults.SemiJoinWithPredicate"/> over asynchronous sequences:
+        /// <c>EnumerableDefaults.semiJoinWithPredicate_</c>, which holds the rows and does let the comparer
+        /// reach the lookup.
+        /// </remarks>
+        static async IAsyncEnumerable<TSource> SemiJoinWithPredicate<TSource, TInner, TKey>(
+            IAsyncEnumerable<TSource> outer,
+            IAsyncEnumerable<TInner> inner,
+            Func<TSource, TKey> outerKeySelector,
+            Func<TInner, TKey> innerKeySelector,
+            EqualityComparer? comparer,
+            bool anti,
+            Func<TSource, TInner, bool> predicate,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            java.util.HashMap? lookup = null;
+
+            await foreach (var row in outer.WithCancellation(cancellationToken))
+            {
+                if (lookup == null)
+                {
+                    lookup = new java.util.HashMap();
+
+                    await foreach (var innerRow in inner.WithCancellation(cancellationToken))
+                    {
+                        var innerKey = JavaWrapped.Of(comparer, JavaValues.From(innerKeySelector(innerRow)));
+
+                        if (lookup.get(innerKey) is not List<TInner> bucket)
+                            lookup.put(innerKey, bucket = []);
+
+                        bucket.Add(innerRow);
+                    }
+                }
+
+                var key = outerKeySelector(row);
+                var found = false;
+
+                if (key != null && lookup.get(JavaWrapped.Of(comparer, JavaValues.From(key))) is List<TInner> matches)
+                {
+                    foreach (var other in matches)
+                    {
+                        if (predicate(row, other))
                         {
-                            any = true;
+                            found = true;
                             break;
                         }
+                    }
+                }
 
-                if (any != anti)
+                if (found != anti)
                     yield return row;
             }
         }
@@ -983,6 +1004,12 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <para>The index is a <c>java.util.HashMap</c> rather than a <see cref="Dictionary{TKey, TValue}"/>
         /// because the emitted order is that map's iteration order, and nothing else can agree with the map
         /// linq4j walks. Same lesson as the partition order of a window.</para>
+        ///
+        /// <para><b>Forced by the CLR:</b> Calcite builds all three indexes where <c>asofJoin</c> is called
+        /// and only then returns the enumerable that walks them. A method returning an
+        /// <see cref="IAsyncEnumerable{T}"/> cannot await before it returns, so both scans happen on the first
+        /// <c>MoveNextAsync</c>. Every index is still complete before the first row is yielded. Same
+        /// constraint as <see cref="NestedLoopJoinAsList"/>.</para>
         /// </remarks>
         public static async IAsyncEnumerable<TResult> AsofJoin<TSource, TInner, TKey, TResult>(
             IAsyncEnumerable<TSource> outer,
@@ -1407,7 +1434,21 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                             return false;
                         }
 
-                        var c = Compare(leftKey, rightKey);
+                        int c;
+
+                        try
+                        {
+                            c = Compare(leftKey, rightKey);
+                        }
+                        catch (BothValuesAreNullException)
+                        {
+                            // take the left as the bigger, so the right advances and the algorithm carries on.
+                            // Unreachable: the null guard above returns before either key can be null. Calcite
+                            // has the same dead catch, and it is what decides the answer rather than the
+                            // comparison, so it is written here too.
+                            c = 1;
+                        }
+
                         if (c == 0)
                             break;
 
@@ -1540,14 +1581,36 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <summary>
         /// Returns every pairing of two sequences, in order.
         /// </summary>
+        /// <remarks>
+        /// <c>CartesianProductJoinEnumerator</c>, which extends linq4j's <c>CartesianProductEnumerator</c> and
+        /// holds nothing: it advances the last enumerator first and only falls back to the one before it when
+        /// that runs out, which is this nesting. Building the pairings into a list instead made a merge join
+        /// pay for the whole of a key run before it could yield the first row of it, and multiplied the two
+        /// counts as <see cref="int"/> to size the list -- an overflow at about 2^31 pairs, on the one path
+        /// where a run of equal keys on both sides is exactly what produces them.
+        ///
+        /// <para>Being lazy couples this to the caller: the two lists are the merge join's own buffers, reused
+        /// and cleared per key run, so the pairings must be drained before the join advances. They are -- the
+        /// driving loop yields all of <c>results</c> before it calls <c>Advance</c>. Calcite has the same
+        /// coupling, <c>Linq4j.enumerator(lefts)</c> being a live view of the list it goes on clearing.</para>
+        /// </remarks>
         static IEnumerable<TResult> Cartesian<TSource, TInner, TResult>(IReadOnlyList<TSource> outer, IReadOnlyList<TInner> inner, Func<TSource, TInner, TResult> resultSelector)
         {
-            var rows = new List<TResult>(outer.Count * inner.Count);
             foreach (var left in outer)
                 foreach (var right in inner)
-                    rows.Add(resultSelector(left, right));
+                    yield return resultSelector(left, right);
+        }
 
-            return rows;
+        /// <summary>
+        /// Raised where a merge join compares two null keys, which it must not call equal.
+        /// </summary>
+        /// <remarks>
+        /// <c>EnumerableDefaults.BothValuesAreNullException</c>, which is private, so it is written again
+        /// rather than reused. It carries no message and is never allowed out of <c>advance</c>.
+        /// </remarks>
+        sealed class BothValuesAreNullException : Exception
+        {
+
         }
 
         /// <summary>
@@ -1555,12 +1618,19 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// </summary>
         /// <remarks>
         /// The counterpart of <c>EnumerableDefaults.compareNullsLastForMergeJoin</c>, reached only where no
-        /// comparator was given. Two nulls are not equal, and the caller takes the left as the bigger.
+        /// comparator was given.
+        ///
+        /// <para>Two nulls are a throw rather than an answer, because there is no answer this method could
+        /// give that is right for both of its callers -- calling them equal would join them, and calling
+        /// either one bigger is a decision about which side to advance. Calcite leaves that decision to
+        /// <c>advance</c>, which catches this and takes 1. Returning 1 from here instead composed to the same
+        /// rows and quietly moved the decision, so a second caller would inherit an answer that was only ever
+        /// right for the first.</para>
         /// </remarks>
         static int CompareNullsLastForMergeJoin<TKey>(TKey a, TKey b)
         {
             if (a == null && b == null)
-                return 1;
+                throw new BothValuesAreNullException();
 
             if (a == null)
                 return 1;
@@ -1828,60 +1898,232 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <param name="joinType"></param>
         /// <returns></returns>
         /// <remarks>
-        /// The counterpart of <c>EnumerableDefaults.nestedLoopJoin</c>. The inner sequence is read once and
-        /// kept, because it is walked again for every outer row.
+        /// <see cref="ClrEnumerableDefaults.NestedLoopJoin"/> over asynchronous sequences, and the same
+        /// dispatch <c>EnumerableDefaults.nestedLoopJoin</c> makes: a join type that generates nulls on the
+        /// left -- RIGHT and FULL -- goes to <see cref="NestedLoopJoinAsList"/>, which reads the inner into
+        /// a list; everything else goes to <see cref="NestedLoopJoinOptimized"/>, which buffers nothing and
+        /// re-enumerates the inner for every outer row. The asymmetry is Calcite's.
+        ///
+        /// <para>The token is an ordinary parameter here rather than an <c>[EnumeratorCancellation]</c> one,
+        /// because this method is not the iterator -- the two bodies are, and each carries the attribute. It
+        /// is declared at all so that the operator ends in a <see cref="CancellationToken"/>, which is what
+        /// <see cref="ClrAsyncBuiltInMethod.Call"/> requires of everything a plan calls.</para>
         /// </remarks>
-        public static async IAsyncEnumerable<TResult> NestedLoopJoin<TSource, TInner, TResult>(
+        public static IAsyncEnumerable<TResult> NestedLoopJoin<TSource, TInner, TResult>(
+            IAsyncEnumerable<TSource> outer,
+            IAsyncEnumerable<TInner> inner,
+            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource, TInner, bool> predicate,
+            org.apache.calcite.linq4j.JoinType joinType,
+            CancellationToken cancellationToken = default)
+        {
+            if (joinType.generatesNullsOnLeft() == false)
+                return NestedLoopJoinOptimized(outer, inner, resultSelector, predicate, joinType, cancellationToken);
+
+            return NestedLoopJoinAsList(outer, inner, resultSelector, predicate, joinType, cancellationToken);
+        }
+
+        /// <summary>
+        /// Joins two sequences on a condition, building the whole result before yielding any of it.
+        /// </summary>
+        /// <remarks>
+        /// <c>EnumerableDefaults.nestedLoopJoinAsList</c>. The inner is read into a list once, and the
+        /// unmatched right rows are held in a set keyed on identity -- <c>Sets.newIdentityHashSet()</c> --
+        /// so two unmatched rows that are the same object emit once, as they do in Calcite.
+        ///
+        /// <para><b>Forced by the CLR:</b> Calcite runs this whole join at <em>call</em> time and returns
+        /// <c>Linq4j.asEnumerable(result)</c>. A method returning an <see cref="IAsyncEnumerable{T}"/>
+        /// cannot await before it returns, so the work happens on the first <c>MoveNextAsync</c> instead.
+        /// Every row is still computed before the first one is yielded, which is the property the ordering
+        /// depends on.</para>
+        ///
+        /// <para><b>Also forced:</b> the unmatched rows come out in insertion order. Calcite walks an
+        /// <c>IdentityHashMap</c>, whose buckets are keyed on <c>System.identityHashCode</c>; there is no
+        /// CLR counterpart to that number, so the order cannot be reproduced. The set of rows, deduplication
+        /// included, is Calcite's.</para>
+        /// </remarks>
+        static async IAsyncEnumerable<TResult> NestedLoopJoinAsList<TSource, TInner, TResult>(
             IAsyncEnumerable<TSource> outer,
             IAsyncEnumerable<TInner> inner,
             Func<TSource, TInner, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             org.apache.calcite.linq4j.JoinType joinType,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
-{
-            var rows = (IReadOnlyList<TInner>)await Buffer(inner, cancellationToken).ConfigureAwait(false);
+        {
             var name = joinType.name();
-            var nullsOnRight = name is nameof(org.apache.calcite.linq4j.JoinType.LEFT) or nameof(org.apache.calcite.linq4j.JoinType.FULL);
-            var nullsOnLeft = name is nameof(org.apache.calcite.linq4j.JoinType.RIGHT) or nameof(org.apache.calcite.linq4j.JoinType.FULL);
-            var semi = name == nameof(org.apache.calcite.linq4j.JoinType.SEMI);
-            var anti = name == nameof(org.apache.calcite.linq4j.JoinType.ANTI);
-            var matched = nullsOnLeft ? new bool[rows.Count] : null;
+            var generateNullsOnLeft = joinType.generatesNullsOnLeft();
+            var generateNullsOnRight = joinType.generatesNullsOnRight();
+            var result = new List<TResult>();
+            var rightList = await Buffer(inner, cancellationToken).ConfigureAwait(false);
+            java.util.Set? rightUnmatched;
 
-            await foreach (var row in (outer).WithCancellation(cancellationToken))
+            if (generateNullsOnLeft)
             {
-                var any = false;
+                // Sets.newIdentityHashSet(), which is Guava's, backed by an IdentityHashMap. Not a stand-in
+                // for it: what comes out of here is the order that map's buckets give, keyed on
+                // System.identityHashCode, and nothing written against CLR references reproduces that. We
+                // run on IKVM, so the set Calcite uses is available and is the one used.
+                rightUnmatched = com.google.common.collect.Sets.newIdentityHashSet();
 
-                for (int i = 0; i < rows.Count; i++)
-                {
-                    if (predicate(row, rows[i]) == false)
-                        continue;
-
-                    any = true;
-                    if (matched != null)
-                        matched[i] = true;
-
-                    if (semi || anti)
-                        break;
-
-                    yield return resultSelector(row, rows[i]);
-                }
-
-                if (semi && any)
-                    yield return resultSelector(row, default!);
-                else if (anti && any == false)
-                    yield return resultSelector(row, default!);
-                else if (any == false && nullsOnRight)
-                    yield return resultSelector(row, default!);
+                foreach (var right in rightList)
+                    rightUnmatched.add(right);
+            }
+            else
+            {
+                rightUnmatched = null;
             }
 
-            if (matched == null)
-                yield break;
+            await foreach (var left in outer.WithCancellation(cancellationToken))
+            {
+                var leftMatchCount = 0;
 
-            for (int i = 0; i < rows.Count; i++)
-                if (matched[i] == false)
-                    yield return resultSelector(default!, rows[i]);
+                foreach (var right in rightList)
+                {
+                    if (predicate(left, right))
+                    {
+                        ++leftMatchCount;
+
+                        if (name == nameof(org.apache.calcite.linq4j.JoinType.ANTI))
+                        {
+                            break;
+                        }
+                        else
+                        {
+                            rightUnmatched?.remove(right);
+
+                            // a semi join emits the matched right row, not a null one, and then stops
+                            result.Add(resultSelector(left, right));
+
+                            if (name == nameof(org.apache.calcite.linq4j.JoinType.SEMI))
+                                break;
+                        }
+                    }
+                }
+
+                if (leftMatchCount == 0 && (generateNullsOnRight || name == nameof(org.apache.calcite.linq4j.JoinType.ANTI)))
+                    result.Add(resultSelector(left, default!));
+            }
+
+            if (rightUnmatched != null)
+                for (var i = rightUnmatched.iterator(); i.hasNext();)
+                    result.Add(resultSelector(default!, (TInner)i.next()));
+
+            foreach (var row in result)
+                yield return row;
         }
 
+        /// <summary>
+        /// Joins two sequences on a condition without building the result as a list first.
+        /// </summary>
+        /// <remarks>
+        /// <c>EnumerableDefaults.nestedLoopJoinOptimized</c>, and the same state machine: state 0 moves the
+        /// outer, state 1 moves the inner. The inner is enumerated afresh for every outer row and never read
+        /// into a list.
+        ///
+        /// <para>A join type that is none of the six the switch names -- ASOF, LEFT_ASOF, LEFT_MARK -- falls
+        /// to its default, which returns no pair and no unmatched row either, so the whole join is empty.
+        /// That is what Calcite does, and it is not treated as INNER.</para>
+        ///
+        /// <para>The RIGHT/FULL refusal happens when the caller calls rather than when it enumerates, as
+        /// Calcite's does, which is why this method is not itself the iterator.</para>
+        /// </remarks>
+        static IAsyncEnumerable<TResult> NestedLoopJoinOptimized<TSource, TInner, TResult>(
+            IAsyncEnumerable<TSource> outer,
+            IAsyncEnumerable<TInner> inner,
+            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource, TInner, bool> predicate,
+            org.apache.calcite.linq4j.JoinType joinType,
+            CancellationToken cancellationToken = default)
+        {
+            var name = joinType.name();
+
+            if (name is nameof(org.apache.calcite.linq4j.JoinType.RIGHT) or nameof(org.apache.calcite.linq4j.JoinType.FULL))
+                throw new ArgumentException($"JoinType {name} is unsupported");
+
+            return Walk(cancellationToken);
+
+            async IAsyncEnumerable<TResult> Walk([EnumeratorCancellation] CancellationToken cancellationToken = default)
+            {
+                var outerEnumerator = outer.GetAsyncEnumerator(cancellationToken);
+                IAsyncEnumerator<TInner>? innerEnumerator = null;
+                var outerMatch = false;
+                var outerValue = default(TSource)!;
+                var innerValue = default(TInner)!;
+                var state = 0;
+
+                try
+                {
+                    while (true)
+                    {
+                        switch (state)
+                        {
+                            case 0:
+                                if (await outerEnumerator.MoveNextAsync().ConfigureAwait(false) == false)
+                                    yield break;
+
+                                outerValue = outerEnumerator.Current;
+                                if (innerEnumerator != null)
+                                    await innerEnumerator.DisposeAsync().ConfigureAwait(false);
+                                innerEnumerator = inner.GetAsyncEnumerator(cancellationToken);
+                                outerMatch = false;
+                                state = 1;
+                                continue;
+                            case 1:
+                                if (await innerEnumerator!.MoveNextAsync().ConfigureAwait(false))
+                                {
+                                    innerValue = innerEnumerator.Current;
+
+                                    if (predicate(outerValue, innerValue))
+                                    {
+                                        outerMatch = true;
+
+                                        switch (name)
+                                        {
+                                            case nameof(org.apache.calcite.linq4j.JoinType.ANTI):
+                                                state = 0;
+                                                continue;
+                                            case nameof(org.apache.calcite.linq4j.JoinType.SEMI):
+                                                state = 0;
+                                                // the matched inner row, not a null one -- the fields are
+                                                // what Calcite's current() would have read
+                                                yield return resultSelector(outerValue, innerValue);
+                                                continue;
+                                            case nameof(org.apache.calcite.linq4j.JoinType.INNER):
+                                            case nameof(org.apache.calcite.linq4j.JoinType.LEFT):
+                                                yield return resultSelector(outerValue, innerValue);
+                                                continue;
+                                            default:
+                                                break;
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    state = 0;
+                                    innerValue = default!;
+
+                                    if (outerMatch == false &&
+                                        name is nameof(org.apache.calcite.linq4j.JoinType.LEFT) or nameof(org.apache.calcite.linq4j.JoinType.ANTI))
+                                    {
+                                        yield return resultSelector(outerValue, innerValue);
+                                        continue;
+                                    }
+                                }
+
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                }
+                finally
+                {
+                    await outerEnumerator.DisposeAsync().ConfigureAwait(false);
+                    if (innerEnumerator != null)
+                        await innerEnumerator.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+        }
 
         /// <summary>
         /// Joins each row of a sequence to the rows a function of it yields.
@@ -1896,41 +2138,61 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <returns></returns>
         /// <remarks>
         /// The counterpart of <c>EnumerableDefaults.correlateJoin</c>.
+        ///
+        /// <para>Two things it does before any row moves. RIGHT and FULL are refused -- a correlated join has
+        /// no right side to drive -- and the refusal happens where the enumerable is built rather than where
+        /// it is enumerated, which is why this method is not itself the iterator. And a correlated function
+        /// that answers null is read as an empty sequence rather than dereferenced; Calcite writes
+        /// <c>Linq4j.emptyEnumerable()</c> for it, and <c>LeftMarkJoin</c> next door already guarded it.</para>
+        ///
+        /// <para>The null right row a SEMI join emits is Calcite's too, and for a subtler reason than it
+        /// looks: its enumerator returns without assigning <c>innerValue</c>, so <c>current()</c> reads
+        /// whatever was there. For a join that is SEMI throughout, that is null every time.</para>
         /// </remarks>
-        public static async IAsyncEnumerable<TResult> CorrelateJoin<TSource, TInner, TResult>(
+        public static IAsyncEnumerable<TResult> CorrelateJoin<TSource, TInner, TResult>(
             IAsyncEnumerable<TSource> outer,
             Func<TSource, IAsyncEnumerable<TInner>> inner,
             Func<TSource, TInner, TResult> resultSelector,
             org.apache.calcite.linq4j.JoinType joinType,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-{
+            CancellationToken cancellationToken = default)
+        {
             var name = joinType.name();
-            var semi = name == nameof(org.apache.calcite.linq4j.JoinType.SEMI);
-            var anti = name == nameof(org.apache.calcite.linq4j.JoinType.ANTI);
-            var nullsOnRight = name == nameof(org.apache.calcite.linq4j.JoinType.LEFT);
 
-            await foreach (var row in (outer).WithCancellation(cancellationToken))
+            if (name is nameof(org.apache.calcite.linq4j.JoinType.RIGHT) or nameof(org.apache.calcite.linq4j.JoinType.FULL))
+                throw new ArgumentException($"JoinType {name} is not valid for correlation");
+
+            return Walk(cancellationToken);
+
+            async IAsyncEnumerable<TResult> Walk([EnumeratorCancellation] CancellationToken cancellationToken = default)
             {
-                var any = false;
+                var semi = name == nameof(org.apache.calcite.linq4j.JoinType.SEMI);
+                var anti = name == nameof(org.apache.calcite.linq4j.JoinType.ANTI);
+                var nullsOnRight = name == nameof(org.apache.calcite.linq4j.JoinType.LEFT);
 
-                await foreach (var other in (inner(row).WithCancellation(cancellationToken)))
+                await foreach (var row in outer.WithCancellation(cancellationToken))
                 {
-                    any = true;
+                    var any = false;
 
-                    if (semi || anti)
-                        break;
+                    await foreach (var other in (inner(row) ?? Empty<TInner>(cancellationToken)).WithCancellation(cancellationToken))
+                    {
+                        any = true;
 
-                    yield return resultSelector(row, other);
+                        if (semi || anti)
+                            break;
+
+                        yield return resultSelector(row, other);
+                    }
+
+                    if (semi && any)
+                        yield return resultSelector(row, default!);
+                    else if (anti && any == false)
+                        yield return resultSelector(row, default!);
+                    else if (any == false && nullsOnRight)
+                        yield return resultSelector(row, default!);
                 }
-
-                if (semi && any)
-                    yield return resultSelector(row, default!);
-                else if (anti && any == false)
-                    yield return resultSelector(row, default!);
-                else if (any == false && nullsOnRight)
-                    yield return resultSelector(row, default!);
             }
         }
+
 
 
         /// <summary>
@@ -1950,6 +2212,12 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// The counterpart of <c>EnumerableDefaults.groupBy</c>. The three functions are Calcite's, because
         /// they come from its <c>AggregateLambdaFactory</c> rather than from anything built here. Groups are
         /// returned in the order their keys were first seen, which is what linq4j's own map ordering gives.
+        /// <para><b>Forced by the CLR:</b> <c>groupBy_</c> drains the input where it is called and returns a
+        /// <c>LookupResultEnumerable</c> over a finished map. A method returning an
+        /// <see cref="IAsyncEnumerable{T}"/> cannot await before it returns, so the fold happens on the first
+        /// <c>MoveNextAsync</c> instead, and a second pass folds again where Calcite replays. Every group is
+        /// still complete before the first one is yielded, which is the property the order rests on. Same
+        /// constraint as <see cref="NestedLoopJoinAsList"/>.</para>
         /// </remarks>
         public static async IAsyncEnumerable<TResult> GroupBy<TSource, TKey, TResult>(
             IAsyncEnumerable<TSource> source,
@@ -1998,6 +2266,12 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <c>GROUPING SETS</c> and has no counterpart on <c>Enumerable</c>. Every row is offered to every
         /// selector, so one pass folds it into one group per grouping set; the keys of two sets never collide
         /// because each carries an indicator per field saying which set it came from.
+        /// <para><b>Forced by the CLR:</b> <c>groupBy_</c> drains the input where it is called and returns a
+        /// <c>LookupResultEnumerable</c> over a finished map. A method returning an
+        /// <see cref="IAsyncEnumerable{T}"/> cannot await before it returns, so the fold happens on the first
+        /// <c>MoveNextAsync</c> instead, and a second pass folds again where Calcite replays. Every group is
+        /// still complete before the first one is yielded, which is the property the order rests on. Same
+        /// constraint as <see cref="NestedLoopJoinAsList"/>.</para>
         /// </remarks>
         public static async IAsyncEnumerable<TResult> GroupByMultiple<TSource, TKey, TResult>(
             IAsyncEnumerable<TSource> source,
@@ -2066,6 +2340,12 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <para>The accumulator carries each aggregate's state and its last result, so a result that does not
         /// change while the frame is intact is computed once and read again, which is the whole point of the
         /// frame bookkeeping. It is made once for the whole window, as Calcite declares its variables once.</para>
+        ///
+        /// <para><b>Forced by the CLR:</b> the generated block appends each output row to an <c>ArrayList</c>
+        /// and evaluates to <c>Linq4j.asEnumerable(list)</c>, so Calcite computes the whole window where the
+        /// expression is evaluated. A method returning an <see cref="IAsyncEnumerable{T}"/> cannot await
+        /// before it returns, so the rows are produced on the first <c>MoveNextAsync</c> instead. Same
+        /// constraint as <see cref="NestedLoopJoinAsList"/>.</para>
         /// </remarks>
         public static async IAsyncEnumerable<TResult> Window<TSource, TKey, TAccumulator, TResult>(
             IAsyncEnumerable<TSource> source,
@@ -2100,8 +2380,13 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             var frame = new WindowFrame();
             var accumulator = accumulatorInitializer();
 
-            foreach (var rows in Partitions(await Buffer(source, cancellationToken).ConfigureAwait(false), partitionSelector, comparator))
+            var (collection, iterator) = PartitionIterator(await Buffer(source, cancellationToken).ConfigureAwait(false), partitionSelector, comparator);
+            var list = new List<TResult>(PartitionCollectionSize(collection));
+
+            while (iterator.hasNext())
             {
+                var rows = (object[])iterator.next();
+
                 frame.Rows = rows;
                 frame.PartitionRowCount = rows.Length;
 
@@ -2173,14 +2458,20 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                     if (uncachedResult != null)
                         accumulator = uncachedResult(frame, accumulator);
 
-                    yield return selector(frame, accumulator);
+                    list.Add(selector(frame, accumulator));
                 }
             }
+
+            ClearPartitionCollection(collection);
+
+            foreach (var row in list)
+                yield return row;
         }
 
 
         /// <summary>
-        /// Returns the rows of each partition, in the window's order.
+        /// Returns the collection the rows were buffered into, and an iterator over the partitions in the
+        /// window's order.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>
         /// <typeparam name="TKey"></typeparam>
@@ -2197,30 +2488,65 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// partition of its own, and <c>arrays</c> sorts with <c>Arrays.sort</c>, which is stable, so rows the
         /// collation does not separate stay in the order they arrived.
         /// </remarks>
-        static IEnumerable<object[]> Partitions<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey>? partitionSelector, java.util.Comparator comparator)
+        static (object Collection, java.util.Iterator Iterator) PartitionIterator<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey>? partitionSelector, java.util.Comparator comparator)
         {
-            java.util.Iterator iterator;
-
             if (partitionSelector == null)
             {
-                // one partition, which is yielded even when it is empty
-                var all = new java.util.ArrayList();
+                // one partition, which is iterated even when it is empty
+                var tempList = new java.util.ArrayList();
                 foreach (var row in source)
-                    all.add(row);
+                    tempList.add(row);
 
-                iterator = org.apache.calcite.runtime.SortedMultiMap.singletonArrayIterator(comparator, all);
+                return (tempList, org.apache.calcite.runtime.SortedMultiMap.singletonArrayIterator(comparator, tempList));
             }
-            else
+
+            var multiMap = new org.apache.calcite.runtime.SortedMultiMap();
+            foreach (var row in source)
+                multiMap.putMulti(partitionSelector(row), row);
+
+            return (multiMap, multiMap.arrays(comparator));
+        }
+
+        /// <summary>
+        /// Returns the size the generated block would size its output list by.
+        /// </summary>
+        /// <remarks>
+        /// <c>new ArrayList&lt;&gt;(collectionExpr.size())</c>. Calcite names <c>Collection.size</c> on
+        /// whichever of the two it has and lets javac resolve it against the receiver, which is the advisory
+        /// <c>Method</c> trap in the other direction: over a <c>SortedMultiMap</c> that resolves to
+        /// <c>HashMap.size</c> and counts partitions, and over the one-partition list it counts rows. Two
+        /// different quantities from one written call, and C# has to dispatch on the type to get both.
+        /// </remarks>
+        static int PartitionCollectionSize(object collection)
+        {
+            return collection switch
             {
-                var multiMap = new org.apache.calcite.runtime.SortedMultiMap();
-                foreach (var row in source)
-                    multiMap.putMulti(partitionSelector(row), row);
+                java.util.Map map => map.size(),
+                java.util.Collection rows => rows.size(),
+                _ => 0,
+            };
+        }
 
-                iterator = multiMap.arrays(comparator);
+        /// <summary>
+        /// Drops the buffered input, as the generated block does before it hands the output list on.
+        /// </summary>
+        /// <remarks>
+        /// <c>collectionExpr.clear()</c>, which Calcite writes as <c>BuiltInMethod.MAP_CLEAR</c> and comments
+        /// "allows gc". It is the reason the whole window can be materialised without the input and the output
+        /// being alive at once, and the same advisory resolution as the size above -- <c>Map.clear</c> named
+        /// on a <c>List</c> is <c>List.clear</c> once javac has seen the receiver.
+        /// </remarks>
+        static void ClearPartitionCollection(object collection)
+        {
+            switch (collection)
+            {
+                case java.util.Map map:
+                    map.clear();
+                    break;
+                case java.util.Collection rows:
+                    rows.clear();
+                    break;
             }
-
-            while (iterator.hasNext())
-                yield return (object[])iterator.next();
         }
 
         /// <summary>
@@ -2321,46 +2647,86 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <remarks>
         /// The counterpart of <c>EnumerableDefaults.repeatUnion</c>, which is what WITH RECURSIVE becomes. The
         /// iterative part is enumerated afresh each round, reading what the spool beneath it left behind.
+        ///
+        /// <para>Transcribed from Calcite's enumerator rather than re-expressed, because its termination test
+        /// is not the obvious one. It stops when <c>current</c> still holds the <c>DUMMY</c> sentinel after a
+        /// round -- not when the round produced nothing. Those differ, and the difference is reproduced here
+        /// deliberately: see the note at the seed/iteration boundary.</para>
+        ///
+        /// <para>The sentinel itself is a flag. Calcite casts a private <c>DUMMY</c> object to the row type and
+        /// compares by reference; a row can never be that object, so a <see cref="bool"/> decides exactly what
+        /// the reference comparison decides, without a cast that would be a lie about the row type.</para>
         /// </remarks>
         public static async IAsyncEnumerable<TSource> RepeatUnion<TSource>(IAsyncEnumerable<TSource> seed, IAsyncEnumerable<TSource> iteration, int iterationLimit, bool all, EqualityComparer? comparer, Action? cleanUp,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
-{
+        {
             ArgumentNullException.ThrowIfNull(seed);
             ArgumentNullException.ThrowIfNull(iteration);
 
+            var processed = all ? null : new HashSet<TSource>(JavaEqualityComparer<TSource>.Of(comparer));
+
+            // Calcite's `current == DUMMY`. Set false wherever `checkValue` passed and Calcite assigned
+            // `current`, and back to true wherever Calcite put the sentinel back.
+            var currentIsDummy = true;
+
+            // the seed enumerator is held for the whole life of the sequence, as Calcite holds it -- it is
+            // closed in `close()` and not when the seed runs out
+            var seedEnumerator = seed.GetAsyncEnumerator(cancellationToken);
+            IAsyncEnumerator<TSource>? iterativeEnumerator = null;
+
             try
             {
-                var processed = all ? null : new HashSet<TSource>(JavaEqualityComparer<TSource>.Of(comparer));
-
-                await foreach (var row in (seed).WithCancellation(cancellationToken))
-                    if (processed == null || processed.Add(row))
-                        yield return row;
-
-                for (int i = 0; iterationLimit < 0 || i < iterationLimit; i++)
+                while (await seedEnumerator.MoveNextAsync().ConfigureAwait(false))
                 {
-                    // a round that returned no row this sequence had not already returned is the end of it,
-                    // and not a round that read no rows. Calcite's own enumerator says the same thing by
-                    // setting `current` only where `checkValue` passed and stopping where it is still DUMMY.
-                    // Counting what was read instead is an infinite loop for every UNION rather than UNION
-                    // ALL: the iterative part re-reads the whole spool each round and so never runs dry.
-                    var any = false;
+                    var value = seedEnumerator.Current;
 
-                    await foreach (var row in (iteration).WithCancellation(cancellationToken))
+                    if (processed == null || processed.Add(value))
                     {
-                        if (processed == null || processed.Add(row))
+                        currentIsDummy = false;
+                        yield return value;
+                    }
+                }
+
+                // The sentinel is NOT put back here, and that is Calcite's, not an oversight of the
+                // transcription. A seed that emitted a row leaves `current` holding that row, so the first
+                // iterative round to produce nothing does not stop the sequence -- it goes round once more,
+                // and only the second empty round stops it. A recursive query whose step reads the working
+                // table row by row cannot tell, because an empty table gives an empty round either way; one
+                // whose step aggregates -- COUNT(*) yields a row over no rows -- can, and does.
+                for (var currentIteration = 0; ; currentIteration++)
+                {
+                    if (iterationLimit >= 0 && currentIteration == iterationLimit)
+                        yield break;
+
+                    iterativeEnumerator = iteration.GetAsyncEnumerator(cancellationToken);
+
+                    while (await iterativeEnumerator.MoveNextAsync().ConfigureAwait(false))
+                    {
+                        var value = iterativeEnumerator.Current;
+
+                        if (processed == null || processed.Add(value))
                         {
-                            any = true;
-                            yield return row;
+                            currentIsDummy = false;
+                            yield return value;
                         }
                     }
 
-                    if (any == false)
+                    if (currentIsDummy)
                         yield break;
+
+                    currentIsDummy = true;
+                    await iterativeEnumerator.DisposeAsync().ConfigureAwait(false);
+                    iterativeEnumerator = null;
                 }
             }
             finally
             {
+                // Calcite's `close()` in its order: the clean-up first, then the two enumerators. An await
+                // foreach would have disposed them first, which is the other way round.
                 cleanUp?.Invoke();
+                await seedEnumerator.DisposeAsync().ConfigureAwait(false);
+                if (iterativeEnumerator != null)
+                    await iterativeEnumerator.DisposeAsync().ConfigureAwait(false);
             }
         }
 

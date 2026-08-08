@@ -12,27 +12,6 @@ None of the items below are covered by tests either way: the 98 adapter tests ex
 only. Every bug found in this adapter so far has been in code nothing executed, so write the
 failing test first.
 
-### 0. Correlated sub-queries — done, but thinly tested
-
-Fixed. Kept here only for the note at the end.
-
-The feature was present, reachable, and broken in five separate ways, none of which could be seen
-without `forceDecorrelate=false` — Calcite rewrites a correlated sub-query into a join before it
-reaches the adapter, so eleven passing tests in `AdoCorrelationTests` never touched any of this code.
-
-`AdoToEnumerableConverter` built the correlation data context and never called `Build()` on it.
-`AdoCorrelationDataContext.get` ignored the parameters it was constructed with.
-`AdoCorrelationDataContextBuilderImpl` cast `typeof(X)` to `java.lang.reflect.Type`, which a
-`System.RuntimeType` fails, so the class could never initialize — hidden because C# defers a static
-field until first read and the only read was in `Build()`. The generated SQL carried Calcite's
-positional `?` where ADO.NET matches by name. And correlation values arrived as boxed Java types no
-provider can bind.
-
-`AdoEnumerable.ToProviderValue` unwraps those boxed values, and is now exercised for an integer, a
-real, a string and a date. `Boolean`, `Double`, `BigDecimal` and `ByteString` remain unexercised —
-SQLite has no column of those types in the fixture, so covering them needs either a wider fixture or
-a second provider.
-
 ### 0b. ODBC and OleDb cannot answer what they are
 
 `OdbcDatabaseMetadata` and `OleDbDatabaseMetadata` throw from `Dialect`, `GetDefaultSchema` and
@@ -122,6 +101,9 @@ when several schemas point at one database. Lowest priority; measure before assu
 Sized against measured coverage: `Apache.Calcite.Data` 69.9%, `Apache.Calcite.Adapter.AdoNet` ~60%.
 Listed worst-first by uncovered lines.
 
+- **`AdoEnumerable.ToProviderValue`** — `Boolean`, `Double`, `BigDecimal` and `ByteString` are unexercised.
+  SQLite has no column of those types in the fixture, so covering them needs a wider fixture or a second
+  provider. All that is left of the correlated sub-query work.
 - **`CalciteResultValue`** — 56%, **282 uncovered**, the largest single gap anywhere. It is the whole
   type-conversion surface, and the `DATE`-as-milliseconds bug lived in exactly this kind of code.
 - **`AdoSchemaFactory` from a Calcite model** — 0%. The operand-driven path is the primary documented
@@ -173,55 +155,47 @@ Note the asynchronous convention needs none of this. It reads a Calcite sub-plan
 plan can put a Calcite node above an asynchronous one, because Calcite cannot read an
 `IClrAsyncScannableTable` — so it has no converter out and nothing to translate.
 
-## Audit every operator against linq4j, member by member
+## Audit findings: 45 operators, twelve agents, one method group each
 
-Three divergences have now been found by being asked about, not by testing:
+**The audit has run, and its findings are fixed.** 45 operators, twelve agents, one method group each:
+**30 equivalent, 17 divergent, 1 uncertain.** None of the 17 was visible to the differential suite, and all
+17 are now transcribed from Calcite's body in both conventions — `HashEquiJoin`'s leftover order,
+`NestedLoopJoin`'s five, `RepeatUnion`'s termination test and clean-up ordering, `SemiJoin`'s two algorithms
+and its memoization, `Take`'s n+1 draw, `CorrelateJoin`'s refusal and null guard, `Cartesian`'s eagerness and
+`int` overflow, the call-time fold in `GroupBy`/`GroupByMultiple`/`AsofJoin`/`Window`, `JavaSequences`'
+`reset`, and the deletion of `Count`/`IntersectAll`/`ExceptAll`.
 
-| | ours | Calcite's |
-|---|---|---|
-| `ClrAsyncEnumerableTableScan.Format` | no `Row` case, tested `IsArray` | `EnumerableTableScan.format()` |
-| direct `ScannableTable.scan` in the scan | re-derived `deduceElementType`'s precedence | `getExpression(Queryable.class)` |
-| `OrderByWithFetchAndOffset` | full sort, then skip and take | bounded `TreeMap` (CALCITE-3920, CALCITE-4157) |
+Every one of those was then re-checked against the 1.42 source rather than against the agent report that
+found it, and one had been filed wrongly: `Window`'s laziness was recorded as a divergence to keep, on the
+grounds that it returns the same rows in the same order and only reaches them sooner. `EnumerableWindow`
+generates an `ArrayList`, appends each output row to it and evaluates to `Linq4j.asEnumerable(list)`, once
+per window group — so Calcite computes the whole window where the expression is evaluated, and keeping ours
+lazy was a decision the port is not entitled to make. It collects now.
 
-All three passed the differential tests, and they had to: **those tests compare answers, and every one of
-these returns the right answer.** They are an oracle for correctness and a null oracle for equivalence. So
-"the suite is green" cannot be the stopping condition for a port.
+What no query can reach is pinned directly instead: `ClrEnumerableNestedLoopJoinTests`,
+`ClrRepeatUnionTests`, `ClrEnumerableDefaultsContractTests`.
 
-What found all three was reading Calcite's source for that one member. The audit is therefore: for every
-member of `ClrEnumerableDefaults` against `EnumerableDefaults`, and every node against its `Enumerable*`
-counterpart, read both and record the verdict — ported unchanged, or the exact divergence and why.
+Two of the asynchronous twins cannot follow Calcite exactly, and say so at the site: a method returning an
+`IAsyncEnumerable` cannot await before it returns, so the fold in `GroupBy`/`GroupByMultiple`/`AsofJoin` and
+the list in `NestedLoopJoinAsList` happen on the first `MoveNextAsync` rather than at the call. Every row is
+still computed before the first is yielded, which is the property the ordering rests on.
 
-It is embarrassingly parallel and each unit is small, which is what makes it a job for one agent per
-member rather than one pass by one reader: an agent holding a single method cannot drift onto something
-else, which is how all three of these got through.
+What remains below is what was deliberate, and what is still unproven.
 
-Where a divergence is deliberate — and several are, `ClrPhysType.RowType` being boxed above all — the
-verdict is the record of that, not a defect.
+### Defects of Calcite's that are reproduced, and tested as such
 
-## A limit sort sorts more than it needs to — fixed
+- **`Window`'s EXCLUDE over an UNBOUNDED/UNBOUNDED frame**: the outer guard is still false after row 0, so
+  the exclusion never takes effect.
+- **A RANGE bound with an offset over a nullable order key throws.** `translateBound` boxes the key type
+  only where the bound has no offset, so with one the key stays `java.lang.Integer` and the `subtract` built
+  on it unboxes a null. `ShouldAgreeOnFailingARangeFrameWithAnOffsetOverANullableKey` asserts that *both*
+  conventions throw, so if Calcite ever fixes it we are told to follow.
 
-Ported now, and kept here as the worked example of what the audit is for.
+### The SPI contract, which needs no enforcing
 
-`ClrEnumerableDefaults.OrderByWithFetchAndOffset` sorted the whole input and then skipped and took:
-
-    var ordered = OrderBy(source, keySelector, comparator);
-    if (offset > 0) ordered = ordered.Skip(offset);
-    if (fetch != int.MaxValue) ordered = ordered.Take(fetch);
-
-linq4j does not. CALCITE-3920 and CALCITE-4157 changed `EnumerableDefaults.orderBy(source, keySelector,
-comparator, offset, fetch)` to keep a `TreeMap` bounded at `offset + fetch` rows: a row whose key sorts at
-or after the last key held is discarded without being stored, and adding one evicts the last. A comment in
-the source says why a `TreeMap` rather than a heap — it behaves like the plain `orderBy` and is better when
-there are few distinct keys.
-
-So `ORDER BY x FETCH 10` over a million rows holds ten in Calcite and a million here. The rows and their
-order are identical, which is why the differential tests never saw it — this is a divergence in what it
-costs, not in what it answers.
-
-Both conventions have it: the asynchronous `OrderByWithFetchAndOffset` drains into a buffer and hands it to
-the synchronous one, so fixing the synchronous one fixes both.
-
-A plain sort is not this. It has to read its whole input before it can yield anything, in linq4j and here
-alike, and both do it lazily on the first read rather than when the sequence is built. That part is
-faithful.
-
+A table of this convention's SPI returns what the type factory says, which is Java's — the same contract
+Calcite puts on `ScannableTable`, and for the same reason. Nothing checks it and nothing needs to: what
+reads a field is `SqlFunctions.toInt` or a cast to the boxed type the row type declares, both Calcite's own,
+so a table that gets it wrong stops on its first row.
+`ShouldFailOverATableWhoseValuesAreNotTheTypeFactorys` holds that, so that the failure is not one day read
+as a defect in the scan and answered with a per-row conversion every correct table would pay for.

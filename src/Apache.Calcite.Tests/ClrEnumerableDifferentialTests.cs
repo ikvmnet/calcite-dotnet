@@ -190,6 +190,57 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
+        /// A table of twelve distinct keys, which is the one row count at which a hash join's leftovers can
+        /// come out in the wrong order.
+        /// </summary>
+        /// <remarks>
+        /// A RIGHT or a FULL join ends by emitting the build rows nothing probed, and <c>hashEquiJoin_</c>
+        /// walks those by copying the lookup's key set into a <c>java.util.HashSet</c> and iterating
+        /// <em>that</em>. The copy does not have the map's iteration order:
+        /// <c>HashSet(Collection)</c> sizes its table as <c>tableSizeFor(max((int) (n / 0.75f) + 1, 16))</c>,
+        /// while a map grown by insertion holds the smallest power of two at or above 16 that still leaves
+        /// <c>n &lt;= 0.75 * cap</c>. The two disagree exactly where <c>n = 0.75 * 2^k</c> — 12, 24, 48 — and
+        /// at twelve keys the map is a table of 16 and the copy a table of 32.
+        ///
+        /// <para>So this is the shape no other fixture here has. <c>SALES</c> has six rows, which puts both
+        /// at 16, and a right join over it agrees whichever collection the leftovers are walked from.</para>
+        /// </remarks>
+        sealed class WideTable : AbstractTable, ScannableTable
+        {
+
+            static readonly object[][] Rows = BuildRows();
+
+            static object[][] BuildRows()
+            {
+                var rows = new object[12][];
+                for (var i = 0; i < rows.Length; i++)
+                    rows[i] = [string.Format("K{0:D2}", i + 1), java.lang.Integer.valueOf(i + 1)];
+
+                return rows;
+            }
+
+            /// <inheritdoc />
+            public override RelDataType getRowType(RelDataTypeFactory typeFactory)
+            {
+                return typeFactory.builder()
+                    .add("K", typeFactory.createSqlType(SqlTypeName.VARCHAR))
+                    .add("N", typeFactory.createSqlType(SqlTypeName.INTEGER))
+                    .build();
+            }
+
+            /// <inheritdoc />
+            public org.apache.calcite.linq4j.Enumerable scan(DataContext root)
+            {
+                var list = new java.util.ArrayList();
+                foreach (var row in Rows)
+                    list.add(row);
+
+                return Linq4j.asEnumerable(list);
+            }
+
+        }
+
+        /// <summary>
         /// A table with a timestamp, which is what a window table function needs and <c>SALES</c> has not.
         /// </summary>
         /// <remarks>
@@ -280,6 +331,7 @@ namespace Apache.Calcite.Tests
             rootSchema.add("EVENTS", new EventsTable());
             rootSchema.add("SORTED", new SortedTable());
             rootSchema.add("SCALARS", new ScalarsTable());
+            rootSchema.add("WIDE", new WideTable());
             rootSchema.add("FIB", org.apache.calcite.schema.impl.TableFunctionImpl.create(org.apache.calcite.util.Smalls.FIBONACCI_LIMIT_100_TABLE_METHOD));
 
             // A CUSTOM-format fixture, which every other table here is not. HrSchema's rows are instances of
@@ -871,6 +923,23 @@ namespace Apache.Calcite.Tests
         public void ShouldAgreeOnARightJoinsOwnOrder() =>
             Same("SELECT a.\"ID\", b.\"ID\" FROM (SELECT * FROM \"SALES\" WHERE \"ID\" < 3) a RIGHT JOIN \"SALES\" b ON a.\"REGION\" = b.\"REGION\" AND a.\"LABEL\" = b.\"LABEL\"");
 
+        /// <summary>
+        /// The same question at the one build-side size where the collection the leftovers are walked from
+        /// decides the answer.
+        /// </summary>
+        /// <remarks>
+        /// <c>WIDE</c> has twelve keys, so the lookup is a table of 16 and the <c>HashSet</c> copied from its
+        /// key set is a table of 32; the two orders differ. <see cref="ShouldAgreeOnARightJoinsOwnOrder"/> is
+        /// over six keys, where both are 16 and either collection gives the same rows.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnARightJoinsOwnOrderOverTwelveKeys() =>
+            SameThrough("ClrEnumerableHashJoin", "SELECT a.\"N\", b.\"K\" FROM (SELECT * FROM \"WIDE\" WHERE \"N\" < 3) a RIGHT JOIN \"WIDE\" b ON a.\"K\" = b.\"K\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnAFullJoinsOwnOrderOverTwelveKeys() =>
+            SameThrough("ClrEnumerableHashJoin", "SELECT a.\"N\", b.\"K\" FROM (SELECT * FROM \"WIDE\" WHERE \"N\" < 3) a FULL JOIN \"WIDE\" b ON a.\"K\" = b.\"K\"");
+
         [TestMethod]
         public void ShouldAgreeOnAFullJoinsOwnOrder() =>
             Same("SELECT a.\"ID\", b.\"ID\" FROM (SELECT * FROM \"SALES\" WHERE \"ID\" < 3) a FULL JOIN (SELECT * FROM \"SALES\" WHERE \"ID\" > 1) b ON a.\"LABEL\" = b.\"LABEL\"");
@@ -1128,6 +1197,34 @@ namespace Apache.Calcite.Tests
 
         [TestMethod]
         public void ShouldAgreeOnARangeFrameWithAnOffset() => Same("SELECT \"ID\", SUM(\"AMOUNT\") OVER (ORDER BY \"ID\" RANGE BETWEEN 2 PRECEDING AND CURRENT ROW) FROM \"SALES\" ORDER BY \"ID\"");
+
+        /// <summary>
+        /// A RANGE bound with an offset over a nullable order key fails, here as in Calcite.
+        /// </summary>
+        /// <remarks>
+        /// <c>EnumerableWindow.translateBound</c> boxes the key type only where the bound has no offset --
+        /// <c>if (bound.getOffset() == null) desiredKeyType = Primitive.box(desiredKeyType)</c> -- so with an
+        /// offset the key stays whatever the type factory gave, which for a nullable column is
+        /// <c>java.lang.Integer</c>. The <c>subtract</c> built on it then unboxes, and a null key is a
+        /// <c>NullPointerException</c>.
+        ///
+        /// <para>Ours is the same translation and fails the same way: IKVM maps that exception onto
+        /// <see cref="NullReferenceException"/>, and the unboxing an expression tree does for the same
+        /// arithmetic raises the same one. Both sides are asserted, because the point is not that ours throws
+        /// -- it is that neither convention answers a query the other answers. If Calcite ever fixes this,
+        /// this test fails and tells us to follow.</para>
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnFailingARangeFrameWithAnOffsetOverANullableKey()
+        {
+            const string sql = "SELECT \"ID\", SUM(\"AMOUNT\") OVER (ORDER BY \"AMOUNT\" RANGE BETWEEN 2 PRECEDING AND CURRENT ROW) FROM \"SALES\" ORDER BY \"ID\"";
+
+            var calcite = () => Run(sql, false);
+            var mine = () => Run(sql, true);
+
+            calcite.Should().Throw<NullReferenceException>("Calcite unboxes a null order key");
+            mine.Should().Throw<NullReferenceException>("and so do we, from the same translation");
+        }
 
         [TestMethod]
         public void ShouldAgreeOnLeadAndLag() => Same("SELECT \"ID\", LAG(\"AMOUNT\") OVER (ORDER BY \"ID\"), LEAD(\"AMOUNT\") OVER (ORDER BY \"ID\") FROM \"SALES\" ORDER BY \"ID\"");
@@ -1826,6 +1923,19 @@ namespace Apache.Calcite.Tests
         [TestMethod]
         public void ShouldAgreeOnALimitSortWithNullsFirstAndAnOffset() =>
             SameLimitSort("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"AMOUNT\" NULLS FIRST, \"ID\" OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY");
+
+        /// <remarks>
+        /// A <em>single</em>-column collation over a nullable column, which is the only shape whose sort key
+        /// can itself be null: a multi-field collation key is a FlatLists row, and a row is never null even
+        /// when a field in it is. The four tests above are all two-key and therefore cannot reach it.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortOnOneNullableKeyNullsFirst() =>
+            SameLimitSort("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"AMOUNT\" NULLS FIRST FETCH NEXT 3 ROWS ONLY");
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortOnOneNullableKeyTakingEverything() =>
+            SameLimitSort("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"AMOUNT\" FETCH NEXT 100 ROWS ONLY");
 
         [TestMethod]
         public void ShouldAgreeOnALimitSortWithNullsLastAndAnOffset() =>

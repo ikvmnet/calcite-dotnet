@@ -10,10 +10,10 @@ instead of Janino, and the prepare pipeline that gets a statement to one.
 |---|---|
 | `Apache.Calcite.Adapter.AdoNet` | pushes a plan down to an ADO.NET provider |
 | `Apache.Calcite.Data` | the `DbConnection` / `DbCommand` surface |
-| `Apache.Calcite.Extensions` | `ClrEnumerableConvention` (the async one is not written yet), the prepare pipeline, and the IKVM interop helpers |
+| `Apache.Calcite.Extensions` | `ClrEnumerableConvention` and `ClrAsyncEnumerableConvention`, the prepare pipeline, and the IKVM interop helpers |
 
-`TODO.md` has the outstanding work on the ADO.NET adapter, sized and reasoned. The CLR convention is
-ported and has no list of its own.
+`TODO.md` has the outstanding work on the ADO.NET adapter, sized and reasoned, and the findings of the
+operator audit against linq4j — 45 methods read side by side, 17 of them divergent.
 
 ## Building
 
@@ -24,6 +24,13 @@ ported and has no list of its own.
   found in the convention was found by it, three of them in nodes already believed done. Add a query
   there rather than writing an assertion by hand: the expected answer is whatever Calcite says. It lives
   in `Apache.Calcite.Tests`, with the rest of the convention and prepare tests.
+- **`dotnet test --filter` is silently ignored here** — the project runs on Microsoft.Testing.Platform, and
+  `dotnet test` does not forward the flag to the test app. It runs the whole suite and reports success, so a
+  run that looks like one test is 619. Run the built executable instead, which honours it and is faster than
+  the `dotnet test` host by about a third:
+  `src\Apache.Calcite.Tests\bin\Debug\net8.0\Apache.Calcite.Tests.exe --filter FullyQualifiedName~Name`.
+  The whole suite is about 133 seconds that way against about 215 through `dotnet test`; a single test is
+  seconds. `--blame-hang --blame-hang-timeout 90s` names the test that hangs.
 - **Calcite is checked out at `D:\calcite`, and it is 1.43.0-SNAPSHOT.** The projects reference **1.42.0**,
   which is released; `Apache.Calcite.Data.Tests` alone references **1.43.0-SNAPSHOT**, from
   `https://repository.apache.org/content/repositories/snapshots/`, for `calcite-server` and the
@@ -56,6 +63,61 @@ ported and has no list of its own.
   by hand.
 
 ## Apache.Calcite.Extensions: the rules that hold
+
+**A port reproduces Calcite's logic, bugs included.** This is a port, and Calcite's behaviour is the
+specification — not SQL, and not what the algorithm ought to be. Do not drop a step because it looks
+unnecessary. Do not optimize what Calcite does not optimize. Where Calcite has a defect, reproduce the
+defect and say so at the site: `EnumerableWindow`'s outer guard is still false after row 0, so an
+`UNBOUNDED`/`UNBOUNDED` frame with `EXCLUDE` never excludes anything, and `ClrEnumerableWindow` shares that.
+Correctness against SQL is a later argument to have upstream; a divergence introduced here is a defect we
+own alone and cannot diff against anything.
+
+**Reach for the type whose semantics match, not the runtime's.** A CLR type is fine where it agrees on what
+the algorithm actually depends on — null handling, iteration order, equality, and whether the operations the
+code is written in terms of exist. `List<T>` for an `ArrayList` is fine. `SortedDictionary` for a `TreeMap`
+is not: it rejects a null key *before* consulting the comparer, which breaks `NULLS FIRST` over a single
+nullable column, and it has no `lastKey` or `headMap`, so the limit sort had to be re-expressed rather than
+transcribed — and both defects came out of that re-expression. `Dictionary` for a `HashMap` is not, wherever
+iteration order reaches the output, which is why the join lookups are `java.util.HashMap`. When the Java
+type is the one that fits, use it — we run on IKVM — and name at the site which property forced it.
+
+**"Cannot be reproduced" is usually "did not look for the class."** We run on IKVM, and Calcite's runtime
+and Guava are both on the classpath — `ImmutableList`, `HashMultiset` and `SortedMultiMap` are already used
+here. So a Java collection Calcite's behaviour depends on is generally *available*, not merely imitable:
+`nestedLoopJoinAsList` holds its unmatched right rows in Guava's `Sets.newIdentityHashSet()`, and that was
+written as a CLR `HashSet` over a reference-equality comparer on the grounds that the CLR has no
+`System.identityHashCode`. It does not need one. The order those rows come out in is that map's, and using
+the map is the whole of the fix. Before writing that something cannot be carried across, name the class and
+check whether it is simply reachable.
+
+**A divergence recorded as deliberate is a scope reduction unless Calcite cannot be followed.** The bar is
+whether the CLR makes it impossible — a method returning `IAsyncEnumerable` cannot await before it returns,
+and that is a real one, stated at each site. "Ours holds the same rows in the same order and only reaches
+them sooner" is not: that was `Window`'s laziness, filed under record-do-not-fix for a while, and Calcite
+builds an `ArrayList` and returns `Linq4j.asEnumerable(list)`. Whether ours is better is not the question
+the port gets to answer.
+
+**A claim about how something fails is a claim to run.** Reasoning from a comparator's semantics gave "a
+CLR-boxed row element and a Java-boxed one compare unequal, their hashes agree, so a set operator quietly
+keeps both copies" — a description of a state no query reaches. One query over a table holding CLR-boxed
+values stops on its first row, because what reads a field is `SqlFunctions.toInt` or a cast to the boxed
+type the row type declares. The difference between those two stories is a per-row conversion on every
+scan, nearly added to fix a defect that was in the test table.
+
+**A recursive query can fail to terminate under Calcite too, and then there is no oracle.** A repeat union's
+spool is cleared by a round that wrote nothing, so a step that aggregates the working table oscillates: the
+round that counts one is empty and empties the table, and the round after it counts zero and emits again.
+Under UNION ALL that runs forever in both conventions. Deduplication is what ends it, the second copy being
+a row the sequence already returned. Before writing a recursive test, check that the shape converges —
+`SameRel` will hang rather than fail, and a hung suite looks like an infinite loop in the operator that was
+just changed. It is worth running the new test alone first.
+
+**A differential test compares answers, not implementations.** It is a strong oracle for correctness and no
+oracle at all for faithfulness. Three divergences from Calcite have been found by reading rather than by
+testing, and every one returned the right rows: the async `Format` missing its `Row` case, a scan that
+re-derived `deduceElementType`'s precedence by hand, and a limit sort that sorted its whole input where
+linq4j keeps a bounded `TreeMap`. A green suite does not mean a member has been ported. Reading Calcite's
+source for that member is what settles it.
 
 **Where linq4j may appear.** A node holds linq4j only where a generator of Calcite's produced one or takes
 one, and it is translated where it is produced rather than composed into a larger tree first. That is four
@@ -121,6 +183,15 @@ CLR rows into the table's `java.util.Collection` and left `SqlFunctions.toInt` r
 the interpreter read them back — that one did not cast, it simply did not convert, and no test had ever
 written to a spool. **Every boundary where a value crosses between the two runtimes is an
 adapter**, a sequence included — if it casts, it is wrong.
+
+**But `JavaValues.From` is not what keeps that invariant, and mostly cannot be.** It branches on
+`typeof(T).IsValueType`, the static type parameter — so wherever a call site instantiates it from a
+`PhysType.RowType` it compiles away to nothing, that type always being `ClrPrimitive.Box(...)` and therefore
+a Java class. The spool's guard is inert for exactly this reason. What actually holds the line there is
+upstream: `JavaRowFormatExtensions.ObjectArray` builds every array element through `ClrEnumUtils.Convert`,
+which boxes the Java way. `From` earns its keep only in the `Delegate*` SAM adapters, where `T` really is a
+CLR primitive. Do not read a `From` at a boundary as proof the boundary is guarded — go and find where the
+value was boxed.
 
 **`Rules()` and `CalcRules()` are two passes, not one.** `VolcanoCost.isLt` compares the row count and
 nothing else — cpu and io are dead code behind `if (true)` — so a project and a calc are never cheaper
@@ -211,7 +282,7 @@ differential tests cannot use Calcite as the oracle for.
 ## Working with this user
 
 Comprehension questions ("what is X for?", "why would we do Y?") are **defect reports**. Go read the code,
-and Calcite's, and expect to find something wrong. In this session that pattern caught, in order: a
+and Calcite's, and expect to find something wrong. Across sessions that pattern has caught, in order: a
 gratuitous divergence in `Calc`, a cost analysis that was simply false, calling a spool a write, calling a
 deliberate Calcite refusal a blocker to work around, and `Window` translating far more linq4j than the rule
 allows. Every one was a case of reasoning past what had been verified, and usually toward the cheaper

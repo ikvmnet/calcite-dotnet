@@ -55,6 +55,41 @@ namespace Apache.Calcite.Tests
         ];
 
         /// <summary>
+        /// Twelve distinct keys, which is the one build-side size at which a hash join's leftovers can come
+        /// out in the wrong order.
+        /// </summary>
+        /// <remarks>
+        /// <c>hashEquiJoin_</c> ends a right or a full join by copying the lookup's key set into a
+        /// <c>java.util.HashSet</c> and walking that. The copy does not have the map's iteration order:
+        /// <c>HashSet(Collection)</c> sizes its table as <c>tableSizeFor(max((int) (n / 0.75f) + 1, 16))</c>,
+        /// while a map grown by insertion holds the smallest power of two at or above 16 that still leaves
+        /// <c>n &lt;= 0.75 * cap</c>. The two disagree exactly where <c>n = 0.75 * 2^k</c> — 12, 24, 48 — and
+        /// at twelve keys the map is a table of 16 and the copy a table of 32. <c>SALES</c> has six, which
+        /// puts both at 16 and says nothing.
+        /// </remarks>
+        public static readonly object[][] Wide = BuildWide();
+
+        static object[][] BuildWide()
+        {
+            var rows = new object[12][];
+            for (var i = 0; i < rows.Length; i++)
+                rows[i] = [string.Format("K{0:D2}", i + 1), java.lang.Integer.valueOf(i + 1)];
+
+            return rows;
+        }
+
+        /// <summary>
+        /// Returns the WIDE row type.
+        /// </summary>
+        public static RelDataType WideRowType(RelDataTypeFactory typeFactory)
+        {
+            return typeFactory.builder()
+                .add("K", typeFactory.createSqlType(SqlTypeName.VARCHAR))
+                .add("N", typeFactory.createSqlType(SqlTypeName.INTEGER))
+                .build();
+        }
+
+        /// <summary>
         /// Returns the SALES row type.
         /// </summary>
         public static RelDataType SalesRowType(RelDataTypeFactory typeFactory)

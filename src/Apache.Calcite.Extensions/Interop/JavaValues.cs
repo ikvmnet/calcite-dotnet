@@ -60,7 +60,14 @@ namespace Apache.Calcite.Extensions.Interop
             if (value == null)
                 return null!;
 
-            return typeof(T).IsValueType ? JavaValues.Box(value, typeof(T)) : value;
+            // the value's own type, not typeof(T). A boundary is crossed by a value, and the static type
+            // parameter at these sites is nearly always object or a PhysType.RowType -- and a RowType is
+            // ClrPrimitive.Box(...), a Java class -- so testing typeof(T) compiled the guard away at exactly
+            // the sites that had something to guard. Box returns what it was given where the type is not one
+            // of linq4j's primitives, so a struct of our own still passes through untouched.
+            var type = value.GetType();
+
+            return type.IsValueType ? JavaValues.Box(value, type) : value;
         }
 
 
