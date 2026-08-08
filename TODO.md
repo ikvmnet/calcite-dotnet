@@ -173,7 +173,7 @@ Note the asynchronous convention needs none of this. It reads a Calcite sub-plan
 plan can put a Calcite node above an asynchronous one, because Calcite cannot read an
 `IClrAsyncScannableTable` — so it has no converter out and nothing to translate.
 
-## Audit every operator against linq4j, member by member
+## Audit findings: 45 operators, twelve agents, one method group each
 
 Three divergences have now been found by being asked about, not by testing:
 
@@ -191,12 +191,95 @@ What found all three was reading Calcite's source for that one member. The audit
 member of `ClrEnumerableDefaults` against `EnumerableDefaults`, and every node against its `Enumerable*`
 counterpart, read both and record the verdict — ported unchanged, or the exact divergence and why.
 
-It is embarrassingly parallel and each unit is small, which is what makes it a job for one agent per
-member rather than one pass by one reader: an agent holding a single method cannot drift onto something
-else, which is how all three of these got through.
+**The audit has run.** 45 operators, twelve agents, one method group each. Result: **30 equivalent, 17
+divergent, 1 uncertain.** Everything below was found by reading Calcite beside ours; none of it was visible
+to the differential suite.
 
-Where a divergence is deliberate — and several are, `ClrPhysType.RowType` being boxed above all — the
-verdict is the record of that, not a defect.
+### Fixed
+
+- **A null sort key threw.** `SortedDictionary` rejects a null key *before* consulting the comparer, where a
+  `TreeMap` built with a comparator hands one to it, which is the whole job of `Functions.nullsComparator`.
+  Introduced by the limit-sort port itself. Reachable only for a **single**-column collation over a nullable
+  column: a multi-field collation keys on a `FlatLists` row, never null however many fields in it are, which
+  is why four existing NULLS FIRST/LAST tests could not reach it. An agent fuzzed 20,000 cases against
+  `OrderBy().Skip().Take()`: 0 row or order mismatches, 5,714 throws.
+
+### Wrong rows, latent
+
+- **`NestedLoopJoin` SEMI passes a null right row** where both of Calcite's bodies pass the matched inner
+  row. Invisible only because `ClrEnumUtils.JoinSelector` declares the right parameter for SEMI and never
+  reads it. Reachable from `MergeJoin`'s non-equi SEMI path.
+- **`RepeatUnion` stops one round early.** Calcite sets `current` to `DUMMY` at the end of each round but
+  never restores it across the seed/iteration boundary, so a non-empty seed followed by an empty round 0
+  does not stop it. Differs iff the seed emitted at least one row and round 0 emits nothing new; changes
+  rows only for a non-monotone step. Upstream behaviour at HEAD.
+- **`HashEquiJoin` emits unmatched right rows in the wrong order.** linq4j iterates the `HashSet` copy of
+  the key set; we iterate the `HashMap` `entrySet()` filtered by membership. Measured on a JVM: they
+  disagree at 12, 24, 48, 96 distinct build keys, 199/200 trials at n=12. `SalesTable` has six rows, so no
+  test can reach it. One-line fix. Same in the async twin.
+
+### Eager where Calcite is eager, or the reverse
+
+Calcite builds at call time and returns an enumerable over finished state; our `yield` iterators defer and
+re-execute. In `AsofJoin`, `GroupBy`, `GroupByMultiple`, `nestedLoopJoinAsList`, `Cartesian`, `Window`.
+Identical for a single pass; on re-enumeration ours rescans, and **`RepeatUnion` re-enumerates its
+iterative branch every round**, so a `GROUP BY` under a recursive CTE recomputes here and replays a frozen
+map there. `Window` is the reverse and in our favour: we stream output where Calcite collects it.
+
+### Memory and laziness
+
+- **`Cartesian` is fully eager**: `new List(outer.Count * inner.Count)` before the first row, where
+  Calcite's is lazy. Quadratic per merge-join key run, and that `int` multiply overflows around 2^31 pairs.
+- **`NestedLoopJoin` buffers its inner** where Calcite's optimized body re-enumerates per outer row. The
+  asymmetry is Calcite's own, so ours is a divergence rather than a choice.
+- **`SemiJoin` holds every inner row** where linq4j holds distinct keys, and drains the inner even for an
+  empty outer where linq4j memoizes (CALCITE-2909).
+- **`Take` draws n rows where linq4j draws n+1**, because `takeWhile` reads `current()` before rejecting.
+  With `FETCH 0` we never open the input, so `LazyCollectionSpool`'s write-back and `RepeatUnion`'s
+  `cleanUp` are skipped where Calcite opens and closes.
+- **`Ordered` finds its last key in O(n)**, `SortedDictionary.Keys` being neither an `IList` nor a LINQ
+  partition. The CALCITE-3920 memory bound is correct; its constant is not.
+
+### Robustness
+
+- `CorrelateJoin` does not reject RIGHT/FULL (Calcite throws, we silently inner-join) and does not guard a
+  null correlated inner (Calcite substitutes empty, we throw). `LeftMarkJoin` next door does guard.
+- `RepeatUnion`'s `cleanUp` runs after the child enumerators close rather than before, and not at all if the
+  plan is created and never pulled.
+- `JavaSequences.ToJava`'s `reset()` throws where linq4j re-acquires. Only `CartesianProductEnumerator`
+  calls it live.
+
+### Dead code to delete
+
+`Count`, `IntersectAll`, `ExceptAll`, in both conventions, found independently by two agents. Latent
+defects if wired up: CLR `Dictionary` keying that bypasses `JavaWrapped`, source-order output where linq4j
+yields in `HashMultiset` order, a throw on a null key.
+
+### Deliberate: record, do not fix
+
+- **`Window` reproduces a Calcite bug**: with UNBOUNDED/UNBOUNDED plus EXCLUDE the outer guard is false
+  after row 0, so the exclusion never takes effect.
+- **RIGHT/FULL unmatched-right dedup**: Calcite uses an identity set, so two unmatched rows that are the
+  same object emit once; ours emits twice. Ours is the SQL-correct answer.
+- **`HashEquiJoin` retires keys by the comparer** where linq4j uses natural equality on unwrapped keys, and
+  **`SemiJoin` applies the comparer** where linq4j's `contains` ignores it. Ours is more correct in both;
+  both unreachable, the key projection optimising to LIST/SCALAR so `comparer()` is null.
+- **`CompareNullsLastForMergeJoin`** returns 1 for two nulls where Calcite throws and its caller converts to
+  1. Composed behaviour identical; the contract no longer signals two-nulls to a future caller.
+
+### Still to settle
+
+- **`JavaValues.From` is a no-op wherever a row type instantiates it.** It branches on
+  `typeof(T).IsValueType`, and a `PhysType.RowType` is always `ClrPrimitive.Box(...)`, a Java class. The
+  protection at those sites comes from that boxing, not from `From`, which earns its keep only in the
+  `Delegate*` SAM adapters. If it is meant as a boundary guard it should test `value.GetType().IsValueType`
+  as `As` does.
+- **`arrayComparer` compares `object[]` elements by `equals`, and `From` does not recurse into an array.** A
+  set operation with one CLR-native input and one carried across a converter would compare CLR-boxed values
+  against `java.lang.Integer`; hashes agree, so order survives and only deduplication breaks. Reachability
+  unproven.
+- A RANGE window bound with an offset over a nullable order key builds `subtract(boxedKey, offs)`, which
+  NPEs in Java. Confirm the CLR translation fails the same way.
 
 ## A limit sort sorts more than it needs to — fixed
 

@@ -1827,6 +1827,19 @@ namespace Apache.Calcite.Tests
         public void ShouldAgreeOnALimitSortWithNullsFirstAndAnOffset() =>
             SameLimitSort("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"AMOUNT\" NULLS FIRST, \"ID\" OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY");
 
+        /// <remarks>
+        /// A <em>single</em>-column collation over a nullable column, which is the only shape whose sort key
+        /// can itself be null: a multi-field collation key is a FlatLists row, and a row is never null even
+        /// when a field in it is. The four tests above are all two-key and therefore cannot reach it.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortOnOneNullableKeyNullsFirst() =>
+            SameLimitSort("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"AMOUNT\" NULLS FIRST FETCH NEXT 3 ROWS ONLY");
+
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortOnOneNullableKeyTakingEverything() =>
+            SameLimitSort("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"AMOUNT\" FETCH NEXT 100 ROWS ONLY");
+
         [TestMethod]
         public void ShouldAgreeOnALimitSortWithNullsLastAndAnOffset() =>
             SameLimitSort("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"AMOUNT\" NULLS LAST, \"ID\" OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY");

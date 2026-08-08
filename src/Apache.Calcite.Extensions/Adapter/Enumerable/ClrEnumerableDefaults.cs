@@ -2088,6 +2088,20 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return Ordered(source, keySelector, comparator, offset, fetch);
         }
 
+
+        /// <summary>
+        /// A sort key, held so that it can be null.
+        /// </summary>
+        /// <typeparam name="TKey"></typeparam>
+        /// <param name="Key">The key, which may be null.</param>
+        /// <remarks>
+        /// <see cref="SortedDictionary{TKey, TValue}"/> rejects a null key before it consults the comparer,
+        /// where a <c>TreeMap</c> built with a comparator hands one to it. Since a SQL sort key is null
+        /// wherever its column is, and <c>Functions.nullsComparator</c> exists precisely to order those, the
+        /// key is wrapped in something that is never null and the comparer unwraps it.
+        /// </remarks>
+        readonly record struct Sorted<TKey>(TKey Key);
+
         /// <summary>
         /// Reads the input, keeping only the rows that can reach the output, and yields them in order.
         /// </summary>
@@ -2097,7 +2111,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 ? Comparer<TKey>.Default
                 : Comparer<TKey>.Create((x, y) => comparator.compare(x, y));
 
-            var map = new SortedDictionary<TKey, List<TSource>>(order);
+            // the key is wrapped in a struct, which is never null. A TreeMap built with a comparator routes
+            // a null key through that comparator -- which is the whole job of Functions.nullsComparator, and
+            // is how NULLS FIRST/LAST is expressed -- but SortedDictionary null-checks the key before it
+            // consults the comparer and throws. Wrapping is what makes ours accept what linq4j accepts.
+            //
+            // Only a single-column collation can produce a null key: a multi-field one keys on a FlatLists
+            // row, which is never null however many of its fields are.
+            var map = new SortedDictionary<Sorted<TKey>, List<TSource>>(
+                Comparer<Sorted<TKey>>.Create((x, y) => order.Compare(x.Key, y.Key)));
             var size = 0L;
             var needed = fetch == int.MaxValue ? -1L : fetch + (long)offset;
 
@@ -2109,7 +2131,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 {
                     // the current row will never appear in the output, so just skip it
                     var lastKey = map.Keys.Last();
-                    if (order.Compare(key, lastKey) >= 0)
+                    if (order.Compare(key, lastKey.Key) >= 0)
                         continue;
 
                     // remove the last entry, so that at most 'needed' rows are kept
@@ -2122,10 +2144,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     size--;
                 }
 
-                if (map.TryGetValue(key, out var held))
+                if (map.TryGetValue(new Sorted<TKey>(key), out var held))
                     held.Add(row);
                 else
-                    map[key] = [row];
+                    map[new Sorted<TKey>(key)] = [row];
 
                 size++;
             }
@@ -2135,7 +2157,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             {
                 var skipped = 0;
                 var found = false;
-                TKey until = default!;
+                var until = default(Sorted<TKey>);
 
                 foreach (var entry in map)
                 {
@@ -2158,7 +2180,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 if (found == false)
                     yield break;
 
-                foreach (var key in map.Keys.TakeWhile(k => order.Compare(k, until) < 0).ToList())
+                foreach (var key in map.Keys.TakeWhile(k => order.Compare(k.Key, until.Key) < 0).ToList())
                     map.Remove(key);
             }
 
