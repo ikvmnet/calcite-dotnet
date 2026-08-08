@@ -166,6 +166,38 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
+        /// A reader over a synchronous plan can still be read asynchronously.
+        /// </summary>
+        /// <remarks>
+        /// The other half of <see cref="ShouldReadAnAsyncPlanSynchronouslyWhenAskedTo"/>, and the crossing
+        /// that had no test. A synchronous plan answers <c>ReadAsync</c> by reading and handing back a
+        /// completed task — which is what every synchronous ADO.NET provider does, and is not sync over
+        /// async because there is nothing asynchronous underneath to be over.
+        ///
+        /// <para>It matters because code written against <c>ReadAsync</c> is the normal case, and a query
+        /// that could not be planned asynchronously still has to be readable by it.</para>
+        /// </remarks>
+        [TestMethod]
+        public async Task ShouldReadASyncPlanAsynchronously()
+        {
+            using var c = new CalciteConnection(Model);
+            c.Open();
+            c.RootSchema.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false));
+
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT K, V FROM SYNCONLY ORDER BY K, V";
+
+            // the synchronous plan, deliberately: this query cannot be planned asynchronously at all
+            using var reader = cmd.ExecuteReader();
+
+            var rows = new List<string>();
+            while (await reader.ReadAsync())
+                rows.Add(reader.GetInt32(0) + "|" + reader.GetString(1));
+
+            rows.Should().Equal(["1|A", "2|B", "2|C", "4|D"]);
+        }
+
+        /// <summary>
         /// Cancelling a read stops the table producing rows.
         /// </summary>
         [TestMethod]
