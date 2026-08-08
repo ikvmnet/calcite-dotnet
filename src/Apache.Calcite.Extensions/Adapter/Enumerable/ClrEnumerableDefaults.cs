@@ -1853,7 +1853,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// reference — <c>ClrPhysType.RowType</c> is the boxed row type — so identity is defined for every
         /// <c>TInner</c> a plan produces.
         /// </remarks>
-        sealed class IdentityComparer<T> : IEqualityComparer<T>
+        internal sealed class IdentityComparer<T> : IEqualityComparer<T>
         {
 
             public static readonly IdentityComparer<T> Instance = new();

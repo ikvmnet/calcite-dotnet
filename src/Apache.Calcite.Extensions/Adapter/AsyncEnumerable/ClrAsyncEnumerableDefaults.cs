@@ -1832,60 +1832,228 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <param name="joinType"></param>
         /// <returns></returns>
         /// <remarks>
-        /// The counterpart of <c>EnumerableDefaults.nestedLoopJoin</c>. The inner sequence is read once and
-        /// kept, because it is walked again for every outer row.
+        /// <see cref="ClrEnumerableDefaults.NestedLoopJoin"/> over asynchronous sequences, and the same
+        /// dispatch <c>EnumerableDefaults.nestedLoopJoin</c> makes: a join type that generates nulls on the
+        /// left -- RIGHT and FULL -- goes to <see cref="NestedLoopJoinAsList"/>, which reads the inner into
+        /// a list; everything else goes to <see cref="NestedLoopJoinOptimized"/>, which buffers nothing and
+        /// re-enumerates the inner for every outer row. The asymmetry is Calcite's.
+        ///
+        /// <para>The token is an ordinary parameter here rather than an <c>[EnumeratorCancellation]</c> one,
+        /// because this method is not the iterator -- the two bodies are, and each carries the attribute. It
+        /// is declared at all so that the operator ends in a <see cref="CancellationToken"/>, which is what
+        /// <see cref="ClrAsyncBuiltInMethod.Call"/> requires of everything a plan calls.</para>
         /// </remarks>
-        public static async IAsyncEnumerable<TResult> NestedLoopJoin<TSource, TInner, TResult>(
+        public static IAsyncEnumerable<TResult> NestedLoopJoin<TSource, TInner, TResult>(
+            IAsyncEnumerable<TSource> outer,
+            IAsyncEnumerable<TInner> inner,
+            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource, TInner, bool> predicate,
+            org.apache.calcite.linq4j.JoinType joinType,
+            CancellationToken cancellationToken = default)
+        {
+            if (joinType.generatesNullsOnLeft() == false)
+                return NestedLoopJoinOptimized(outer, inner, resultSelector, predicate, joinType, cancellationToken);
+
+            return NestedLoopJoinAsList(outer, inner, resultSelector, predicate, joinType, cancellationToken);
+        }
+
+        /// <summary>
+        /// Joins two sequences on a condition, building the whole result before yielding any of it.
+        /// </summary>
+        /// <remarks>
+        /// <c>EnumerableDefaults.nestedLoopJoinAsList</c>. The inner is read into a list once, and the
+        /// unmatched right rows are held in a set keyed on identity -- <c>Sets.newIdentityHashSet()</c> --
+        /// so two unmatched rows that are the same object emit once, as they do in Calcite.
+        ///
+        /// <para><b>Forced by the CLR:</b> Calcite runs this whole join at <em>call</em> time and returns
+        /// <c>Linq4j.asEnumerable(result)</c>. A method returning an <see cref="IAsyncEnumerable{T}"/>
+        /// cannot await before it returns, so the work happens on the first <c>MoveNextAsync</c> instead.
+        /// Every row is still computed before the first one is yielded, which is the property the ordering
+        /// depends on.</para>
+        ///
+        /// <para><b>Also forced:</b> the unmatched rows come out in insertion order. Calcite walks an
+        /// <c>IdentityHashMap</c>, whose buckets are keyed on <c>System.identityHashCode</c>; there is no
+        /// CLR counterpart to that number, so the order cannot be reproduced. The set of rows, deduplication
+        /// included, is Calcite's.</para>
+        /// </remarks>
+        static async IAsyncEnumerable<TResult> NestedLoopJoinAsList<TSource, TInner, TResult>(
             IAsyncEnumerable<TSource> outer,
             IAsyncEnumerable<TInner> inner,
             Func<TSource, TInner, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             org.apache.calcite.linq4j.JoinType joinType,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
-{
-            var rows = (IReadOnlyList<TInner>)await Buffer(inner, cancellationToken).ConfigureAwait(false);
+        {
             var name = joinType.name();
-            var nullsOnRight = name is nameof(org.apache.calcite.linq4j.JoinType.LEFT) or nameof(org.apache.calcite.linq4j.JoinType.FULL);
-            var nullsOnLeft = name is nameof(org.apache.calcite.linq4j.JoinType.RIGHT) or nameof(org.apache.calcite.linq4j.JoinType.FULL);
-            var semi = name == nameof(org.apache.calcite.linq4j.JoinType.SEMI);
-            var anti = name == nameof(org.apache.calcite.linq4j.JoinType.ANTI);
-            var matched = nullsOnLeft ? new bool[rows.Count] : null;
+            var generateNullsOnLeft = joinType.generatesNullsOnLeft();
+            var generateNullsOnRight = joinType.generatesNullsOnRight();
+            var result = new List<TResult>();
+            var rightList = await Buffer(inner, cancellationToken).ConfigureAwait(false);
+            HashSet<TInner>? rightUnmatched;
 
-            await foreach (var row in (outer).WithCancellation(cancellationToken))
+            if (generateNullsOnLeft)
             {
-                var any = false;
+                rightUnmatched = new HashSet<TInner>(ClrEnumerableDefaults.IdentityComparer<TInner>.Instance);
 
-                for (int i = 0; i < rows.Count; i++)
-                {
-                    if (predicate(row, rows[i]) == false)
-                        continue;
-
-                    any = true;
-                    if (matched != null)
-                        matched[i] = true;
-
-                    if (semi || anti)
-                        break;
-
-                    yield return resultSelector(row, rows[i]);
-                }
-
-                if (semi && any)
-                    yield return resultSelector(row, default!);
-                else if (anti && any == false)
-                    yield return resultSelector(row, default!);
-                else if (any == false && nullsOnRight)
-                    yield return resultSelector(row, default!);
+                foreach (var right in rightList)
+                    rightUnmatched.Add(right);
+            }
+            else
+            {
+                rightUnmatched = null;
             }
 
-            if (matched == null)
-                yield break;
+            await foreach (var left in outer.WithCancellation(cancellationToken))
+            {
+                var leftMatchCount = 0;
 
-            for (int i = 0; i < rows.Count; i++)
-                if (matched[i] == false)
-                    yield return resultSelector(default!, rows[i]);
+                foreach (var right in rightList)
+                {
+                    if (predicate(left, right))
+                    {
+                        ++leftMatchCount;
+
+                        if (name == nameof(org.apache.calcite.linq4j.JoinType.ANTI))
+                        {
+                            break;
+                        }
+                        else
+                        {
+                            rightUnmatched?.Remove(right);
+
+                            // a semi join emits the matched right row, not a null one, and then stops
+                            result.Add(resultSelector(left, right));
+
+                            if (name == nameof(org.apache.calcite.linq4j.JoinType.SEMI))
+                                break;
+                        }
+                    }
+                }
+
+                if (leftMatchCount == 0 && (generateNullsOnRight || name == nameof(org.apache.calcite.linq4j.JoinType.ANTI)))
+                    result.Add(resultSelector(left, default!));
+            }
+
+            if (rightUnmatched != null)
+                foreach (var right in rightUnmatched)
+                    result.Add(resultSelector(default!, right));
+
+            foreach (var row in result)
+                yield return row;
         }
 
+        /// <summary>
+        /// Joins two sequences on a condition without building the result as a list first.
+        /// </summary>
+        /// <remarks>
+        /// <c>EnumerableDefaults.nestedLoopJoinOptimized</c>, and the same state machine: state 0 moves the
+        /// outer, state 1 moves the inner. The inner is enumerated afresh for every outer row and never read
+        /// into a list.
+        ///
+        /// <para>A join type that is none of the six the switch names -- ASOF, LEFT_ASOF, LEFT_MARK -- falls
+        /// to its default, which returns no pair and no unmatched row either, so the whole join is empty.
+        /// That is what Calcite does, and it is not treated as INNER.</para>
+        ///
+        /// <para>The RIGHT/FULL refusal happens when the caller calls rather than when it enumerates, as
+        /// Calcite's does, which is why this method is not itself the iterator.</para>
+        /// </remarks>
+        static IAsyncEnumerable<TResult> NestedLoopJoinOptimized<TSource, TInner, TResult>(
+            IAsyncEnumerable<TSource> outer,
+            IAsyncEnumerable<TInner> inner,
+            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource, TInner, bool> predicate,
+            org.apache.calcite.linq4j.JoinType joinType,
+            CancellationToken cancellationToken = default)
+        {
+            var name = joinType.name();
+
+            if (name is nameof(org.apache.calcite.linq4j.JoinType.RIGHT) or nameof(org.apache.calcite.linq4j.JoinType.FULL))
+                throw new ArgumentException($"JoinType {name} is unsupported");
+
+            return Walk(cancellationToken);
+
+            async IAsyncEnumerable<TResult> Walk([EnumeratorCancellation] CancellationToken cancellationToken = default)
+            {
+                var outerEnumerator = outer.GetAsyncEnumerator(cancellationToken);
+                IAsyncEnumerator<TInner>? innerEnumerator = null;
+                var outerMatch = false;
+                var outerValue = default(TSource)!;
+                var innerValue = default(TInner)!;
+                var state = 0;
+
+                try
+                {
+                    while (true)
+                    {
+                        switch (state)
+                        {
+                            case 0:
+                                if (await outerEnumerator.MoveNextAsync().ConfigureAwait(false) == false)
+                                    yield break;
+
+                                outerValue = outerEnumerator.Current;
+                                if (innerEnumerator != null)
+                                    await innerEnumerator.DisposeAsync().ConfigureAwait(false);
+                                innerEnumerator = inner.GetAsyncEnumerator(cancellationToken);
+                                outerMatch = false;
+                                state = 1;
+                                continue;
+                            case 1:
+                                if (await innerEnumerator!.MoveNextAsync().ConfigureAwait(false))
+                                {
+                                    innerValue = innerEnumerator.Current;
+
+                                    if (predicate(outerValue, innerValue))
+                                    {
+                                        outerMatch = true;
+
+                                        switch (name)
+                                        {
+                                            case nameof(org.apache.calcite.linq4j.JoinType.ANTI):
+                                                state = 0;
+                                                continue;
+                                            case nameof(org.apache.calcite.linq4j.JoinType.SEMI):
+                                                state = 0;
+                                                // the matched inner row, not a null one -- the fields are
+                                                // what Calcite's current() would have read
+                                                yield return resultSelector(outerValue, innerValue);
+                                                continue;
+                                            case nameof(org.apache.calcite.linq4j.JoinType.INNER):
+                                            case nameof(org.apache.calcite.linq4j.JoinType.LEFT):
+                                                yield return resultSelector(outerValue, innerValue);
+                                                continue;
+                                            default:
+                                                break;
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    state = 0;
+                                    innerValue = default!;
+
+                                    if (outerMatch == false &&
+                                        name is nameof(org.apache.calcite.linq4j.JoinType.LEFT) or nameof(org.apache.calcite.linq4j.JoinType.ANTI))
+                                    {
+                                        yield return resultSelector(outerValue, innerValue);
+                                        continue;
+                                    }
+                                }
+
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                }
+                finally
+                {
+                    await outerEnumerator.DisposeAsync().ConfigureAwait(false);
+                    if (innerEnumerator != null)
+                        await innerEnumerator.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+        }
 
         /// <summary>
         /// Joins each row of a sequence to the rows a function of it yields.
