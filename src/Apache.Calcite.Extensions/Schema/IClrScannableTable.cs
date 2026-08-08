@@ -26,7 +26,12 @@ namespace Apache.Calcite.Extensions.Schema
     /// <para>The values in each row are Java's — <c>java.lang.Integer</c>, <c>java.lang.String</c>,
     /// <c>BigDecimal</c> — exactly as a <see cref="ScannableTable"/>'s are. What is avoided is the hop the
     /// <em>sequence</em> makes, not the conversion each value needs: everything downstream is Calcite's, and
-    /// every boundary where a value crosses between the two runtimes is an adapter.</para>
+    /// every boundary where a value crosses between the two runtimes is an adapter. This is a contract and
+    /// not a suggestion, and nothing enforces it — the scan hands these rows on unconverted, exactly as
+    /// Calcite hands on a <see cref="ScannableTable"/>'s. What goes wrong is narrow and quiet:
+    /// <c>ShouldNotDeduplicateARowBoxedTheClrWayAgainstOneBoxedTheJavaWay</c> shows a CLR-boxed element and
+    /// a Java-boxed one comparing unequal while their hashes agree, so a set operator keeps both copies and
+    /// the rows are otherwise in the right order.</para>
     /// </remarks>
     public interface IClrScannableTable : Table
     {

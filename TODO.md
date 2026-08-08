@@ -182,27 +182,21 @@ still computed before the first is yielded, which is the property the ordering r
 
 What remains below is what was deliberate, and what is still unproven.
 
-### Deliberate: record, do not fix
+### Defects of Calcite's that are reproduced, and tested as such
 
-- **`Window` reproduces a Calcite bug**: with UNBOUNDED/UNBOUNDED plus EXCLUDE the outer guard is false
-  after row 0, so the exclusion never takes effect.
-- **RIGHT/FULL unmatched-right order**: Calcite walks an `IdentityHashMap`, whose buckets key on
-  `System.identityHashCode`. We now dedup on identity as it does, but there is no CLR counterpart to that
-  number, so the unmatched rows come out in insertion order. The set of rows is Calcite's; the order is not,
-  and cannot be.
-- **`CompareNullsLastForMergeJoin`** returns 1 for two nulls where Calcite throws and its caller converts to
-  1. Composed behaviour identical; the contract no longer signals two-nulls to a future caller.
+- **`Window`'s EXCLUDE over an UNBOUNDED/UNBOUNDED frame**: the outer guard is still false after row 0, so
+  the exclusion never takes effect.
+- **A RANGE bound with an offset over a nullable order key throws.** `translateBound` boxes the key type
+  only where the bound has no offset, so with one the key stays `java.lang.Integer` and the `subtract` built
+  on it unboxes a null. `ShouldAgreeOnFailingARangeFrameWithAnOffsetOverANullableKey` asserts that *both*
+  conventions throw, so if Calcite ever fixes it we are told to follow.
 
-### Still to settle
+### The one thing a port cannot carry across, and what guards it
 
-- **`JavaValues.From` is a no-op wherever a row type instantiates it.** It branches on
-  `typeof(T).IsValueType`, and a `PhysType.RowType` is always `ClrPrimitive.Box(...)`, a Java class. The
-  protection at those sites comes from that boxing, not from `From`, which earns its keep only in the
-  `Delegate*` SAM adapters. If it is meant as a boundary guard it should test `value.GetType().IsValueType`
-  as `As` does.
-- **`arrayComparer` compares `object[]` elements by `equals`, and `From` does not recurse into an array.** A
-  set operation with one CLR-native input and one carried across a converter would compare CLR-boxed values
-  against `java.lang.Integer`; hashes agree, so order survives and only deduplication breaks. Reachability
-  unproven.
-- A RANGE window bound with an offset over a nullable order key builds `subtract(boxedKey, offs)`, which
-  NPEs in Java. Confirm the CLR translation fails the same way.
+A row array holding a CLR-boxed value is not equal to one holding the Java-boxed same value, and their
+hashes agree — so a set operator silently keeps both copies and nothing else looks wrong.
+`ShouldNotDeduplicateARowBoxedTheClrWayAgainstOneBoxedTheJavaWay` proves it.
+
+Nothing enforces this, and nothing should: Calcite requires the same of a `ScannableTable` and converts
+nothing either. It is the contract on `IClrScannableTable` and `IClrAsyncScannableTable`, which now say so
+and name that test.

@@ -1434,7 +1434,21 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                             return false;
                         }
 
-                        var c = Compare(leftKey, rightKey);
+                        int c;
+
+                        try
+                        {
+                            c = Compare(leftKey, rightKey);
+                        }
+                        catch (BothValuesAreNullException)
+                        {
+                            // take the left as the bigger, so the right advances and the algorithm carries on.
+                            // Unreachable: the null guard above returns before either key can be null. Calcite
+                            // has the same dead catch, and it is what decides the answer rather than the
+                            // comparison, so it is written here too.
+                            c = 1;
+                        }
+
                         if (c == 0)
                             break;
 
@@ -1588,16 +1602,35 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
         /// <summary>
+        /// Raised where a merge join compares two null keys, which it must not call equal.
+        /// </summary>
+        /// <remarks>
+        /// <c>EnumerableDefaults.BothValuesAreNullException</c>, which is private, so it is written again
+        /// rather than reused. It carries no message and is never allowed out of <c>advance</c>.
+        /// </remarks>
+        sealed class BothValuesAreNullException : Exception
+        {
+
+        }
+
+        /// <summary>
         /// Orders two keys with nulls last, refusing to call two nulls equal.
         /// </summary>
         /// <remarks>
         /// The counterpart of <c>EnumerableDefaults.compareNullsLastForMergeJoin</c>, reached only where no
-        /// comparator was given. Two nulls are not equal, and the caller takes the left as the bigger.
+        /// comparator was given.
+        ///
+        /// <para>Two nulls are a throw rather than an answer, because there is no answer this method could
+        /// give that is right for both of its callers -- calling them equal would join them, and calling
+        /// either one bigger is a decision about which side to advance. Calcite leaves that decision to
+        /// <c>advance</c>, which catches this and takes 1. Returning 1 from here instead composed to the same
+        /// rows and quietly moved the decision, so a second caller would inherit an answer that was only ever
+        /// right for the first.</para>
         /// </remarks>
         static int CompareNullsLastForMergeJoin<TKey>(TKey a, TKey b)
         {
             if (a == null && b == null)
-                return 1;
+                throw new BothValuesAreNullException();
 
             if (a == null)
                 return 1;
@@ -1922,14 +1955,18 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             var generateNullsOnRight = joinType.generatesNullsOnRight();
             var result = new List<TResult>();
             var rightList = await Buffer(inner, cancellationToken).ConfigureAwait(false);
-            HashSet<TInner>? rightUnmatched;
+            java.util.Set? rightUnmatched;
 
             if (generateNullsOnLeft)
             {
-                rightUnmatched = new HashSet<TInner>(ClrEnumerableDefaults.IdentityComparer<TInner>.Instance);
+                // Sets.newIdentityHashSet(), which is Guava's, backed by an IdentityHashMap. Not a stand-in
+                // for it: what comes out of here is the order that map's buckets give, keyed on
+                // System.identityHashCode, and nothing written against CLR references reproduces that. We
+                // run on IKVM, so the set Calcite uses is available and is the one used.
+                rightUnmatched = com.google.common.collect.Sets.newIdentityHashSet();
 
                 foreach (var right in rightList)
-                    rightUnmatched.Add(right);
+                    rightUnmatched.add(right);
             }
             else
             {
@@ -1952,7 +1989,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                         }
                         else
                         {
-                            rightUnmatched?.Remove(right);
+                            rightUnmatched?.remove(right);
 
                             // a semi join emits the matched right row, not a null one, and then stops
                             result.Add(resultSelector(left, right));
@@ -1968,8 +2005,8 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             }
 
             if (rightUnmatched != null)
-                foreach (var right in rightUnmatched)
-                    result.Add(resultSelector(default!, right));
+                for (var i = rightUnmatched.iterator(); i.hasNext();)
+                    result.Add(resultSelector(default!, (TInner)i.next()));
 
             foreach (var row in result)
                 yield return row;

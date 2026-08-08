@@ -1198,6 +1198,34 @@ namespace Apache.Calcite.Tests
         [TestMethod]
         public void ShouldAgreeOnARangeFrameWithAnOffset() => Same("SELECT \"ID\", SUM(\"AMOUNT\") OVER (ORDER BY \"ID\" RANGE BETWEEN 2 PRECEDING AND CURRENT ROW) FROM \"SALES\" ORDER BY \"ID\"");
 
+        /// <summary>
+        /// A RANGE bound with an offset over a nullable order key fails, here as in Calcite.
+        /// </summary>
+        /// <remarks>
+        /// <c>EnumerableWindow.translateBound</c> boxes the key type only where the bound has no offset --
+        /// <c>if (bound.getOffset() == null) desiredKeyType = Primitive.box(desiredKeyType)</c> -- so with an
+        /// offset the key stays whatever the type factory gave, which for a nullable column is
+        /// <c>java.lang.Integer</c>. The <c>subtract</c> built on it then unboxes, and a null key is a
+        /// <c>NullPointerException</c>.
+        ///
+        /// <para>Ours is the same translation and fails the same way: IKVM maps that exception onto
+        /// <see cref="NullReferenceException"/>, and the unboxing an expression tree does for the same
+        /// arithmetic raises the same one. Both sides are asserted, because the point is not that ours throws
+        /// -- it is that neither convention answers a query the other answers. If Calcite ever fixes this,
+        /// this test fails and tells us to follow.</para>
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnFailingARangeFrameWithAnOffsetOverANullableKey()
+        {
+            const string sql = "SELECT \"ID\", SUM(\"AMOUNT\") OVER (ORDER BY \"AMOUNT\" RANGE BETWEEN 2 PRECEDING AND CURRENT ROW) FROM \"SALES\" ORDER BY \"ID\"";
+
+            var calcite = () => Run(sql, false);
+            var mine = () => Run(sql, true);
+
+            calcite.Should().Throw<NullReferenceException>("Calcite unboxes a null order key");
+            mine.Should().Throw<NullReferenceException>("and so do we, from the same translation");
+        }
+
         [TestMethod]
         public void ShouldAgreeOnLeadAndLag() => Same("SELECT \"ID\", LAG(\"AMOUNT\") OVER (ORDER BY \"ID\"), LEAD(\"AMOUNT\") OVER (ORDER BY \"ID\") FROM \"SALES\" ORDER BY \"ID\"");
 

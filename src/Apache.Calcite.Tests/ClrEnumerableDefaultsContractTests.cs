@@ -9,6 +9,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Interop;
 
 using org.apache.calcite.linq4j.function;
 
@@ -214,6 +215,42 @@ namespace Apache.Calcite.Tests
             // over finished state buys and what a yield in the method itself would have lost
             rows.ToList().Should().Equal(2, 1);
             drawn.Should().Be(3);
+        }
+
+        /// <summary>
+        /// A row array holding a CLR-boxed value is not equal to one holding the Java-boxed same value, so a
+        /// set operator keeps both.
+        /// </summary>
+        /// <remarks>
+        /// The failure mode behind the SPI contract on <c>IClrScannableTable</c>, proved here rather than
+        /// left as a possibility. <c>Functions.arrayComparer</c> compares element by element with
+        /// <c>equals</c>, and a <see cref="int"/> boxed the CLR way and a <c>java.lang.Integer</c> are not
+        /// equal in either direction. Their hashes do agree — IKVM maps <c>hashCode</c> onto
+        /// <see cref="object.GetHashCode"/>, and <see cref="int"/>'s is the value, which is
+        /// <c>Integer.hashCode</c> — so the two land in the same bucket, the iteration order of the set is
+        /// undisturbed, and the only thing that breaks is the deduplication. That is why it would not show up
+        /// as rows in the wrong order.
+        ///
+        /// <para><see cref="JavaValues.From"/> does not save this and is not meant to: a row is an
+        /// <c>object[]</c>, which is not a value type, so it passes through whole and its elements are never
+        /// looked at. Calcite requires the same of a <c>ScannableTable</c> and converts nothing either.</para>
+        /// </remarks>
+        [TestMethod]
+        public void ShouldNotDeduplicateARowBoxedTheClrWayAgainstOneBoxedTheJavaWay()
+        {
+            var comparer = org.apache.calcite.linq4j.function.Functions.arrayComparer();
+
+            object[] clr = [1, "A"];
+            object[] java = [global::java.lang.Integer.valueOf(1), "A"];
+
+            comparer.equal(clr, java).Should().BeFalse("this is what the SPI contract exists to prevent");
+            comparer.hashCode(clr).Should().Be(comparer.hashCode(java), "the hashes agree, so only dedup breaks");
+
+            ClrEnumerableDefaults.Distinct([clr, java], comparer).Should().HaveCount(2);
+
+            // and the same two rows, both boxed the way the contract requires, are one row
+            object[] other = [global::java.lang.Integer.valueOf(1), "A"];
+            ClrEnumerableDefaults.Distinct([java, other], comparer).Should().HaveCount(1);
         }
 
         /// <summary>
