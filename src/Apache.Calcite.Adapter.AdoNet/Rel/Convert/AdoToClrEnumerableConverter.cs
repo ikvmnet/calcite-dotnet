@@ -3,6 +3,7 @@ using System.Data.Common;
 using System.Linq.Expressions;
 
 using Apache.Calcite.Extensions;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using org.apache.calcite;
@@ -17,7 +18,6 @@ using org.apache.calcite.schema;
 using org.apache.calcite.sql.type;
 
 using J = org.apache.calcite.linq4j.tree;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {
@@ -75,8 +75,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             if (getInput() is not AdoRel self)
                 throw new AdoCalciteException("Unsupported input type.");
 
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.PreferArray());
-            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
+            var rowType = physType.RowType;
 
             if (self.getConvention() is not AdoConvention convention)
                 throw new AdoCalciteException($"getConvention() is null for {self}.");
@@ -122,7 +122,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// already told the physical type the same thing: no field is a null, one field is the value itself,
         /// and only beyond that is a row an array.
         /// </remarks>
-        Expression RowBuilder(PhysType physType, Type rowType)
+        Expression RowBuilder(ClrPhysType physType, Type rowType)
         {
             var reader = Expression.Parameter(typeof(DbDataReader), "reader");
             var fieldCount = getRowType().getFieldCount();
@@ -161,9 +161,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// The declared SQL type decides how the value is read, not whatever the provider chose to surface it
         /// as, so the row holds what the plan was built against.
         /// </remarks>
-        static Expression ReadField(ParameterExpression reader, PhysType physType, int index)
+        static Expression ReadField(ParameterExpression reader, ClrPhysType physType, int index)
         {
-            var fieldType = ((RelDataTypeField)physType.getRowType().getFieldList().get(index)).getType();
+            var fieldType = ((RelDataTypeField)physType.RelRowType.getFieldList().get(index)).getType();
 
             return Expression.Call(null,
                 GetDbReaderValueMethod,

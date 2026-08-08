@@ -2,7 +2,6 @@ using System;
 using System.Linq.Expressions;
 
 using java.util.function;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -152,17 +151,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
 
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.PreferArray());
-            var keyPhysType = leftResult.PhysType.project(joinInfo.leftKeys, JavaRowFormat.LIST);
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
+            var keyPhysType = leftResult.PhysType.Project(joinInfo.leftKeys, JavaRowFormat.LIST);
 
-            var leftSource = ClrEnumUtils.BoxRows(leftResult.PhysType, leftResult.Expression);
-            var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
-            var leftType = leftSource.Type.GetGenericArguments()[0];
-            var rightType = rightSource.Type.GetGenericArguments()[0];
-            var rowType = physType.RowType();
+            var leftType = leftResult.PhysType.RowType;
+            var rightType = rightResult.PhysType.RowType;
+            var rowType = physType.RowType;
 
-            var leftKey = NullAwareAccessor(implementor, leftResult.PhysType, joinInfo.leftKeys, leftType);
-            var rightKey = NullAwareAccessor(implementor, rightResult.PhysType, joinInfo.rightKeys, rightType);
+            var leftKey = NullAwareAccessor(leftResult.PhysType, joinInfo.leftKeys);
+            var rightKey = NullAwareAccessor(rightResult.PhysType, joinInfo.rightKeys);
             var keyType = leftKey.ReturnType;
 
             var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);
@@ -171,12 +168,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return implementor.Result(physType,
                 Expression.Call(null,
                     ClrBuiltInMethod.HashJoin.MakeGenericMethod(leftType, rightType, keyType, rowType),
-                    leftSource,
-                    rightSource,
+                    leftResult.Expression,
+                    rightResult.Expression,
                     leftKey,
                     rightKey,
                     selector,
-                    keyPhysType.Comparer(implementor),
+                    keyPhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)),
                     Expression.Constant(joinType.generatesNullsOnLeft()),
                     Expression.Constant(joinType.generatesNullsOnRight()),
                     predicate));
@@ -194,12 +191,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
 
             var physType = leftResult.PhysType;
-            var leftType = leftResult.PhysType.RowType();
-            var rightType = rightResult.PhysType.RowType();
+            var leftType = leftResult.PhysType.RowType;
+            var rightType = rightResult.PhysType.RowType;
 
-            var keyPhysType = leftResult.PhysType.project(joinInfo.leftKeys, JavaRowFormat.LIST);
-            var leftKey = NullAwareAccessor(implementor, leftResult.PhysType, joinInfo.leftKeys, leftType);
-            var rightKey = NullAwareAccessor(implementor, rightResult.PhysType, joinInfo.rightKeys, rightType);
+            var keyPhysType = leftResult.PhysType.Project(joinInfo.leftKeys, JavaRowFormat.LIST);
+            var leftKey = NullAwareAccessor(leftResult.PhysType, joinInfo.leftKeys);
+            var rightKey = NullAwareAccessor(rightResult.PhysType, joinInfo.rightKeys);
 
             return implementor.Result(physType,
                 Expression.Call(null,
@@ -208,7 +205,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     rightResult.Expression,
                     leftKey,
                     rightKey,
-                    keyPhysType.Comparer(implementor),
+                    keyPhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)),
                     Expression.Constant(joinType.name() == nameof(JoinRelType.ANTI)),
                     Predicate(implementor, leftResult.PhysType, rightResult.PhysType, leftType, rightType)));
         }
@@ -235,13 +232,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
 
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.PreferArray());
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
 
-            var leftSource = ClrEnumUtils.BoxRows(leftResult.PhysType, leftResult.Expression);
-            var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
-            var leftType = leftSource.Type.GetGenericArguments()[0];
-            var rightType = rightSource.Type.GetGenericArguments()[0];
-            var rowType = physType.RowType();
+            var leftType = leftResult.PhysType.RowType;
+            var rightType = rightResult.PhysType.RowType;
+            var rowType = physType.RowType;
 
             var rexBuilder = getCluster().getRexBuilder();
 
@@ -258,8 +253,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             // the null-aware accessor yields null where a not null-safe key is null, which is how the runtime
             // learns that a comparison is unknown rather than false
-            var leftKeySelector = NullAwareAccessor(implementor, leftResult.PhysType, joinInfo.leftKeys, leftType);
-            var rightKeySelector = NullAwareAccessor(implementor, rightResult.PhysType, joinInfo.rightKeys, rightType);
+            var leftKeySelector = NullAwareAccessor(leftResult.PhysType, joinInfo.leftKeys);
+            var rightKeySelector = NullAwareAccessor(rightResult.PhysType, joinInfo.rightKeys);
 
             var notNullSafeKeyCount = 0;
             var leftNullSafeKeys = new java.util.ArrayList();
@@ -280,17 +275,17 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var leftNullSafeKeySelector = leftNullSafeKeys.isEmpty()
                 ? null
-                : Accessor(implementor, leftResult.PhysType, ImmutableIntList.copyOf(leftNullSafeKeys), leftType);
+                : Accessor(leftResult.PhysType, ImmutableIntList.copyOf(leftNullSafeKeys));
             var rightNullSafeKeySelector = rightNullSafeKeys.isEmpty()
                 ? null
-                : Accessor(implementor, rightResult.PhysType, ImmutableIntList.copyOf(rightNullSafeKeys), rightType);
+                : Accessor(rightResult.PhysType, ImmutableIntList.copyOf(rightNullSafeKeys));
 
             var atMostOneNotNullSafeKey = notNullSafeKeyCount <= 1;
 
-            var nullSafeKeyPhysType = leftResult.PhysType.project(leftNullSafeKeys, JavaRowFormat.LIST);
-            var nullSafeKeyComparer = nullSafeKeyPhysType.Comparer(implementor);
-            var keyPhysType = leftResult.PhysType.project(joinInfo.leftKeys, JavaRowFormat.LIST);
-            var keyComparer = keyPhysType.Comparer(implementor);
+            var nullSafeKeyPhysType = leftResult.PhysType.Project(leftNullSafeKeys, JavaRowFormat.LIST);
+            var nullSafeKeyComparer = nullSafeKeyPhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer));
+            var keyPhysType = leftResult.PhysType.Project(joinInfo.leftKeys, JavaRowFormat.LIST);
+            var keyComparer = keyPhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer));
 
             var selector = ClrEnumUtils.MarkJoinSelector(implementor, physType, leftResult.PhysType);
 
@@ -300,8 +295,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return implementor.Result(physType,
                 Expression.Call(null,
                     ClrBuiltInMethod.LeftMarkHashJoin.MakeGenericMethod(leftType, rightType, keyType, nullSafeKeyType, rowType),
-                    leftSource,
-                    rightSource,
+                    leftResult.Expression,
+                    rightResult.Expression,
                     leftKeySelector,
                     rightKeySelector,
                     (Expression?)leftNullSafeKeySelector ?? Expression.Constant(null, typeof(Func<,>).MakeGenericType(leftType, nullSafeKeyType)),
@@ -329,9 +324,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// another one. That is the whole difference from <see cref="Accessor"/>, and it is what makes
         /// <c>IS NOT DISTINCT FROM</c> join a null to a null.
         /// </remarks>
-        LambdaExpression NullAwareAccessor(ClrEnumerableRelImplementor implementor, PhysType physType, java.util.List keys, Type rowType)
+        LambdaExpression NullAwareAccessor(ClrPhysType physType, java.util.List keys)
         {
-            return implementor.Translator.TranslateSelector(physType.generateNullAwareAccessor(keys, joinInfo.nullExclusionFlags), rowType);
+            return physType.GenerateNullAwareAccessor(keys, joinInfo.nullExclusionFlags);
         }
 
         /// <summary>
@@ -346,9 +341,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// The plain accessor, which yields the field itself for a key of one. A mark join keys its null-safe
         /// lookup on this, as Calcite does; nothing else here does.
         /// </remarks>
-        static LambdaExpression Accessor(ClrEnumerableRelImplementor implementor, PhysType physType, java.util.List keys, Type rowType)
+        static LambdaExpression Accessor(ClrPhysType physType, java.util.List keys)
         {
-            return implementor.Translator.TranslateSelector(physType.generateAccessor(keys), rowType);
+            return physType.GenerateAccessor(keys);
         }
 
         /// <summary>
@@ -361,7 +356,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="leftType"></param>
         /// <param name="rightType"></param>
         /// <returns></returns>
-        Expression Predicate(ClrEnumerableRelImplementor implementor, PhysType leftPhysType, PhysType rightPhysType, Type leftType, Type rightType)
+        Expression Predicate(ClrEnumerableRelImplementor implementor, ClrPhysType leftPhysType, ClrPhysType rightPhysType, Type leftType, Type rightType)
         {
             var type = typeof(Func<,,>).MakeGenericType(leftType, rightType, typeof(bool));
             var info = analyzeCondition();

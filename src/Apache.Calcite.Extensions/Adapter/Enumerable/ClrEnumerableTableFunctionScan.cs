@@ -1,5 +1,7 @@
 using System.Linq.Expressions;
 
+using Apache.Calcite.Extensions.Linq4j.Tree;
+
 using org.apache.calcite;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.adapter.java;
@@ -11,7 +13,6 @@ using org.apache.calcite.schema;
 using org.apache.calcite.schema.impl;
 
 using J = org.apache.calcite.linq4j.tree;
-using Apache.Calcite.Extensions.Linq4j.Tree;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable
 {
@@ -107,9 +108,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var typeFactory = implementor.TypeFactory;
             var child = (ClrEnumerableRel)getInputs().get(0);
             var result = implementor.VisitChild(this, 0, child, pref);
-            var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.Prefer(result.Format));
+            var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.Prefer(result.Format));
 
-            var sourceType = result.PhysType.RowType();
+            var sourceType = result.PhysType.RowType;
             var source = Expression.Call(null, ClrBuiltInMethod.ToJava.MakeGenericMethod(sourceType), result.Expression);
 
             var input_ = J.Expressions.parameter((java.lang.Class)typeof(org.apache.calcite.linq4j.Enumerable), "_input");
@@ -125,8 +126,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     DataContext.ROOT,
                     (RexCall)getCall(),
                     input_,
-                    result.PhysType,
-                    physType));
+                    PhysTypeImpl.of(typeFactory, result.PhysType.RelRowType, result.PhysType.Format, false),
+                    PhysTypeImpl.of(typeFactory, physType.RelRowType, physType.Format, false)));
 
             var windowed = Expression.Block(
                 typeof(org.apache.calcite.linq4j.Enumerable),
@@ -134,7 +135,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 Expression.Assign(inputParameter, source),
                 implementor.Translator.TranslateBody(block.toBlock(), typeof(org.apache.calcite.linq4j.Enumerable)));
 
-            var rowType = physType.RowType();
+            var rowType = physType.RowType;
 
             return implementor.Result(physType,
                 Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), windowed));
@@ -161,7 +162,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             else
                 format = JavaRowFormat.CUSTOM;
 
-            var physType = PhysTypeImpl.of(typeFactory, getRowType(), format, false);
+            var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), format, false);
 
             var block = new J.BlockBuilder();
             var translator = RexToLixTranslator
@@ -170,7 +171,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             block.add(ClrEnumUtils.Translate(translator, getCall(), null));
 
-            var rowType = physType.RowType();
+            var rowType = physType.RowType;
 
             return implementor.Result(physType,
                 Expression.Call(null,

@@ -116,38 +116,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
 
         /// <summary>
-        /// Boxes a sequence whose rows are a primitive, and returns it unchanged otherwise.
-        /// </summary>
-        /// <param name="physType"></param>
-        /// <param name="source"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// A join selector takes its rows boxed, because Calcite builds it against a linq4j Function whose
-        /// arguments are erased to Object, and because an outer join compares a row to null, which a primitive
-        /// cannot be. The sequence has to agree: a delegate is typed where the Java interface was not.
-        /// </remarks>
-        public static System.Linq.Expressions.Expression BoxRows(PhysType physType, System.Linq.Expressions.Expression source)
-        {
-            var boxed = ClrTypes.Resolve(J.Primitive.box(physType.getJavaRowType()));
-
-            // what the sequence holds, not what the physical type calls a field: a node hands its rows up
-            // boxed already, and only a sequence built inside this one can still be carrying a primitive
-            var rowType = source.Type.IsGenericType && source.Type.GetGenericTypeDefinition() == typeof(System.Collections.Generic.IEnumerable<>)
-                ? source.Type.GetGenericArguments()[0]
-                : boxed;
-
-            if (rowType == boxed || rowType.IsValueType == false)
-                return source;
-
-            var row = System.Linq.Expressions.Expression.Parameter(rowType, "row");
-
-            return System.Linq.Expressions.Expression.Call(null,
-                ClrBuiltInMethod.Select.MakeGenericMethod(rowType, boxed),
-                source,
-                System.Linq.Expressions.Expression.Lambda(ClrEnumUtils.Convert(row, boxed), row));
-        }
-
-        /// <summary>
         /// Returns the linq4j join type a relational one means.
         /// </summary>
         /// <param name="joinType"></param>
@@ -183,31 +151,24 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// did, null where a comparison was unknown. So the marker is a <c>java.lang.Boolean</c> and not a
         /// <see cref="bool"/>, and the row is boxed as every other join here boxes it.
         /// </remarks>
-        public static LambdaExpression MarkJoinSelector(ClrEnumerableRelImplementor implementor, PhysType resultPhysType, PhysType inputPhysType)
+        public static LambdaExpression MarkJoinSelector(ClrEnumerableRelImplementor implementor, ClrPhysType resultPhysType, ClrPhysType inputPhysType)
         {
-            var javaRowType = J.Primitive.box(inputPhysType.getJavaRowType());
-            var input_ = J.Expressions.parameter(javaRowType, "input");
-            var marker_ = J.Expressions.parameter((java.lang.Class)typeof(java.lang.Boolean), "marker");
+            // a Function always takes boxed arguments, so a row that is a primitive is boxed here
+            var input = Expression.Parameter(inputPhysType.RowType, "input");
+            var marker = Expression.Parameter(typeof(java.lang.Boolean), "marker");
 
-            var inputParameter = Expression.Parameter(ClrTypes.Resolve(javaRowType), "input");
-            var markerParameter = Expression.Parameter(typeof(java.lang.Boolean), "marker");
-            implementor.Translator.Bind(input_, inputParameter);
-            implementor.Translator.Bind(marker_, markerParameter);
-
-            var expressions = new java.util.ArrayList();
-            var inputFieldCount = inputPhysType.getRowType().getFieldCount();
+            var expressions = new List<Expression>();
+            var inputFieldCount = inputPhysType.RelRowType.getFieldCount();
             for (int i = 0; i < inputFieldCount; i++)
-                expressions.add(inputPhysType.fieldReference(input_, i));
+                expressions.Add(inputPhysType.FieldReference(input, i));
 
-            expressions.add(marker_);
-
-            var rowType = ClrTypes.Resolve(resultPhysType.getJavaRowType());
+            expressions.Add(marker);
 
             return Expression.Lambda(
-                typeof(Func<,,>).MakeGenericType(inputParameter.Type, markerParameter.Type, rowType),
-                implementor.Translator.Translate(resultPhysType.record(expressions)),
-                inputParameter,
-                markerParameter);
+                typeof(Func<,,>).MakeGenericType(input.Type, marker.Type, resultPhysType.RowType),
+                resultPhysType.Record(expressions),
+                input,
+                marker);
         }
 
         /// <summary>
@@ -224,49 +185,43 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// would otherwise exceed what a Java class file allows (CALCITE-3094). An expression tree has no such
         /// limit, so there is one form here and it is the one Calcite uses everywhere else.
         /// </remarks>
-        public static LambdaExpression JoinSelector(ClrEnumerableRelImplementor implementor, JoinRelType joinType, PhysType physType, PhysType left, PhysType right)
+        public static LambdaExpression JoinSelector(ClrEnumerableRelImplementor implementor, JoinRelType joinType, ClrPhysType physType, ClrPhysType left, ClrPhysType right)
         {
-            var outputFieldCount = physType.getRowType().getFieldCount();
+            var outputFieldCount = physType.RelRowType.getFieldCount();
             var inputs = new[] { left, right };
 
             var parameters = new ParameterExpression[2];
-            var expressions = new java.util.ArrayList();
+            var expressions = new List<Expression>();
 
             for (int ord = 0; ord < inputs.Length; ord++)
             {
-                var inputPhysType = inputs[ord].makeNullable(joinType.generatesNullsOn(ord));
+                var inputPhysType = inputs[ord].MakeNullable(joinType.generatesNullsOn(ord));
 
                 // a Function always takes boxed arguments, so a row that is a primitive is boxed here
-                var javaRowType = J.Primitive.box(inputPhysType.getJavaRowType());
-                var row = J.Expressions.parameter(javaRowType, ord == 0 ? "left" : "right");
-
-                parameters[ord] = Expression.Parameter(ClrTypes.Resolve(javaRowType), ord == 0 ? "left" : "right");
-                implementor.Translator.Bind(row, parameters[ord]);
+                var row = Expression.Parameter(inputPhysType.RowType, ord == 0 ? "left" : "right");
+                parameters[ord] = row;
 
                 // a semi join returns the left input alone, so the fields run out before the inputs do
-                if (expressions.size() == outputFieldCount)
-                    break;
+                if (expressions.Count == outputFieldCount)
+                    continue;
 
-                var fieldCount = inputPhysType.getRowType().getFieldCount();
+                var fieldCount = inputPhysType.RelRowType.getFieldCount();
                 for (int i = 0; i < fieldCount; i++)
                 {
-                    var expression = inputPhysType.fieldReference(row, i, physType.getJavaFieldType(expressions.size()));
+                    var expression = inputPhysType.FieldReference(row, i, physType.FieldType(expressions.Count));
 
+                    // the whole row is null on the side an outer join generates nulls for, so every field of
+                    // it is, and the storage type asked for above is a box for exactly that reason
                     if (joinType.generatesNullsOn(ord))
-                        expression = J.Expressions.condition(
-                            J.Expressions.equal(row, J.Expressions.constant(null)),
-                            J.Expressions.constant(null),
-                            expression);
+                        expression = NullIfNull(row, expression);
 
-                    expressions.add(expression);
+                    expressions.Add(expression);
                 }
             }
 
-            var rowType = ClrTypes.Resolve(physType.getJavaRowType());
-
             return Expression.Lambda(
-                typeof(Func<,,>).MakeGenericType(parameters[0].Type, parameters[1].Type, rowType),
-                implementor.Translator.Translate(physType.record(expressions)),
+                typeof(Func<,,>).MakeGenericType(parameters[0].Type, parameters[1].Type, physType.RowType),
+                physType.Record(expressions),
                 parameters);
         }
 
@@ -281,7 +236,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="rightPhysType"></param>
         /// <param name="condition"></param>
         /// <returns></returns>
-        public static LambdaExpression GeneratePredicate(ClrEnumerableRelImplementor implementor, RexBuilder rexBuilder, RelNode left, RelNode right, PhysType leftPhysType, PhysType rightPhysType, RexNode condition)
+        public static LambdaExpression GeneratePredicate(ClrEnumerableRelImplementor implementor, RexBuilder rexBuilder, RelNode left, RelNode right, ClrPhysType leftPhysType, ClrPhysType rightPhysType, RexNode condition)
         {
             return GeneratePredicate(implementor, rexBuilder, left, right, leftPhysType, rightPhysType, condition, false);
         }
@@ -305,18 +260,25 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// false. That is <c>Predicate2</c> against <c>NullablePredicate2</c> in Calcite, and
         /// <see cref="bool"/> against <c>java.lang.Boolean</c> here.
         /// </remarks>
-        public static LambdaExpression GeneratePredicate(ClrEnumerableRelImplementor implementor, RexBuilder rexBuilder, RelNode left, RelNode right, PhysType leftPhysType, PhysType rightPhysType, RexNode condition, bool nullable)
+        public static LambdaExpression GeneratePredicate(ClrEnumerableRelImplementor implementor, RexBuilder rexBuilder, RelNode left, RelNode right, ClrPhysType leftPhysType, ClrPhysType rightPhysType, RexNode condition, bool nullable)
         {
-            var left_ = J.Expressions.parameter(leftPhysType.getJavaRowType(), "left");
-            var right_ = J.Expressions.parameter(rightPhysType.getJavaRowType(), "right");
+            // the condition is Rex, so it is translated by Calcite against Calcite's own physical types;
+            // those are built here rather than carried, because this is the only thing in a join that needs one
+            var leftCalcite = PhysTypeImpl.of(implementor.TypeFactory, leftPhysType.RelRowType, leftPhysType.Format, false);
+            var rightCalcite = PhysTypeImpl.of(implementor.TypeFactory, rightPhysType.RelRowType, rightPhysType.Format, false);
+
+            var left_ = J.Expressions.parameter(leftCalcite.getJavaRowType(), "left");
+            var right_ = J.Expressions.parameter(rightCalcite.getJavaRowType(), "right");
 
             // the rows arrive boxed, because the sequence a join runs over is boxed for the selector, so the
             // predicate takes them boxed and unboxes on the way in
-            var leftParameter = Expression.Parameter(ClrTypes.Resolve(J.Primitive.box(leftPhysType.getJavaRowType())), "left");
-            var rightParameter = Expression.Parameter(ClrTypes.Resolve(J.Primitive.box(rightPhysType.getJavaRowType())), "right");
+            var leftParameter = Expression.Parameter(leftPhysType.RowType, "left");
+            var rightParameter = Expression.Parameter(rightPhysType.RowType, "right");
 
-            var leftRow = Expression.Variable(ClrTypes.Resolve(leftPhysType.getJavaRowType()), "leftRow");
-            var rightRow = Expression.Variable(ClrTypes.Resolve(rightPhysType.getJavaRowType()), "rightRow");
+            // unboxed, because the linq4j parameter the Rex condition is built against is the Java row
+            // class and the two have to be the same type for the binding to mean anything
+            var leftRow = Expression.Variable(ClrTypes.Resolve(leftCalcite.getJavaRowType()), "leftRow");
+            var rightRow = Expression.Variable(ClrTypes.Resolve(rightCalcite.getJavaRowType()), "rightRow");
             implementor.Translator.Bind(left_, leftRow);
             implementor.Translator.Bind(right_, rightRow);
 
@@ -329,8 +291,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             program.addCondition(condition);
 
             var inputs = new java.util.LinkedHashMap();
-            inputs.put(left_, leftPhysType);
-            inputs.put(right_, rightPhysType);
+            inputs.put(left_, leftCalcite);
+            inputs.put(right_, rightCalcite);
 
             var builder = new J.BlockBuilder();
             builder.add(
@@ -358,35 +320,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
 
         /// <summary>
-        /// CLR type of each Java primitive, against the <see cref="J.Primitive"/> that describes it.
-        /// </summary>
-        static readonly Dictionary<Type, J.Primitive> Primitives = [];
-
-        /// <summary>
-        /// CLR type of each Java box class, against the <see cref="J.Primitive"/> it boxes.
-        /// </summary>
-        static readonly Dictionary<Type, J.Primitive> Boxes = [];
-
-        /// <summary>
-        /// Initializes the static instance.
-        /// </summary>
-        static ClrEnumUtils()
-        {
-            // taken from linq4j rather than written out, so the pairing of a primitive with its box is the
-            // one Calcite itself uses, and the CLR types are whichever ones IKVM actually chose
-            foreach (J.Primitive primitive in J.Primitive.values())
-            {
-                if (primitive.primitiveClass == null || primitive.boxClass == null)
-                    continue;
-                if (primitive.primitiveName == "void")
-                    continue;
-
-                Primitives[ClrTypes.FromClass(primitive.primitiveClass)] = primitive;
-                Boxes[ClrTypes.FromClass(primitive.boxClass)] = primitive;
-            }
-        }
-
-        /// <summary>
         /// Returns an expression yielding <paramref name="expression"/> as <paramref name="type"/>.
         /// </summary>
         /// <param name="expression"></param>
@@ -403,12 +336,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (type == typeof(void))
                 return expression;
 
-            var fromPrimitive = Primitives.GetValueOrDefault(expression.Type);
-            var toPrimitive = Primitives.GetValueOrDefault(type);
-            var fromBox = Boxes.GetValueOrDefault(expression.Type);
+            var fromPrimitive = ClrPrimitive.Of(expression.Type);
+            var toPrimitive = ClrPrimitive.Of(type);
+            var fromBox = ClrPrimitive.OfBox(expression.Type);
 
             // int to Integer, and int to Long by way of long, exactly as Java widens before it boxes
-            if (fromPrimitive != null && Boxes.TryGetValue(type, out var toBox))
+            if (fromPrimitive != null && ClrPrimitive.OfBox(type) is J.Primitive toBox)
                 return Box(Number(expression, toBox), toBox);
 
             // Integer to int, and Integer to long by way of int
@@ -429,6 +362,151 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             return Expression.Convert(expression, type);
         }
+        /// <summary>
+        /// Returns an expression yielding <paramref name="expression"/> as <paramref name="toType"/>, reading
+        /// it as <paramref name="fromType"/> where that differs from the type it already has.
+        /// </summary>
+        /// <param name="expression"></param>
+        /// <param name="fromType">The type the value is to be read as, or null for the one it has.</param>
+        /// <param name="toType"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>EnumUtils.convert(operand, fromType, toType)</c>. The only caller that gives a
+        /// <paramref name="fromType"/> of its own is <c>PhysType.fieldReference</c>, and it gives one only for
+        /// <c>java.sql.Date</c>, <c>Time</c> and <c>Timestamp</c> — the three types a row stores as an int or a
+        /// long rather than as themselves. That is the whole of what this adds over the two argument form.
+        ///
+        /// <para>The conversion is taken only where the expression really has the type named. Where a row holds
+        /// its fields as objects the access is an <see cref="object"/>, and Calcite is in the same position: it
+        /// names <c>SqlFunctions.toInt(Date)</c> and Janino resolves <c>toInt(Object)</c> from the source text,
+        /// because a linq4j call has a recorded method that is only advisory. Falling through to the two
+        /// argument form is that resolution.</para>
+        /// </remarks>
+        public static Expression Convert(Expression expression, Type? fromType, Type toType)
+        {
+            ArgumentNullException.ThrowIfNull(expression);
+            ArgumentNullException.ThrowIfNull(toType);
+
+            if (fromType != null && fromType != expression.Type && fromType.IsAssignableFrom(expression.Type))
+            {
+                var method = InternalOf(fromType, toType);
+                if (method != null)
+                    return Expression.Call(null, method, Convert(expression, fromType));
+            }
+
+            return Convert(expression, toType);
+        }
+
+        /// <summary>
+        /// Returns the method reading a datetime as the value a row stores it as, or null where there is none.
+        /// </summary>
+        /// <param name="fromType"></param>
+        /// <param name="toType"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>EnumUtils.toInternal</c>, which is private. A <c>Date</c> and a <c>Time</c> are stored as an int
+        /// and a <c>Timestamp</c> as a long, and each has a second method for the boxed form, which carries a
+        /// null through.
+        /// </remarks>
+        static MethodInfo? InternalOf(Type fromType, Type toType)
+        {
+            if (fromType == typeof(java.sql.Date))
+                return toType == typeof(int) ? DateToInt : toType == typeof(java.lang.Integer) ? DateToIntOptional : null;
+
+            if (fromType == typeof(java.sql.Time))
+                return toType == typeof(int) ? TimeToInt : toType == typeof(java.lang.Integer) ? TimeToIntOptional : null;
+
+            if (fromType == typeof(java.sql.Timestamp))
+                return toType == typeof(long) ? TimestampToLong : toType == typeof(java.lang.Long) ? TimestampToLongOptional : null;
+
+            return null;
+        }
+
+        /// <summary>
+        /// The members Calcite names through <c>BuiltInMethod</c> for a datetime as a row stores it.
+        /// </summary>
+        static readonly MethodInfo DateToInt = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.DATE_TO_INT.method);
+
+        /// <inheritdoc cref="DateToInt" />
+        static readonly MethodInfo DateToIntOptional = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.DATE_TO_INT_OPTIONAL.method);
+
+        /// <inheritdoc cref="DateToInt" />
+        static readonly MethodInfo TimeToInt = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.TIME_TO_INT.method);
+
+        /// <inheritdoc cref="DateToInt" />
+        static readonly MethodInfo TimeToIntOptional = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.TIME_TO_INT_OPTIONAL.method);
+
+        /// <inheritdoc cref="DateToInt" />
+        static readonly MethodInfo TimestampToLong = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.TIMESTAMP_TO_LONG.method);
+
+        /// <inheritdoc cref="DateToInt" />
+        static readonly MethodInfo TimestampToLongOptional = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.TIMESTAMP_TO_LONG_OPTIONAL.method);
+
+        /// <summary>
+        /// Returns an expression yielding null where the given value is null, and the given body otherwise.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <param name="body"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>Expressions.condition(Expressions.equal(value, NULL), NULL, body)</c>, which the accessors of
+        /// <c>PhysTypeImpl</c> write once per key field.
+        ///
+        /// <para>A value that is a primitive is never null, and comparing one to null is not Java at all.
+        /// Calcite writes the comparison anyway and relies on <c>OptimizeShuttle</c> to take it out again
+        /// before Janino sees it. There is no shuttle over an expression tree, and the CLR would convert the
+        /// null to a primitive and throw, so the test is not written where it cannot hold.</para>
+        /// </remarks>
+        public static Expression NullIfNull(Expression value, Expression body)
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            ArgumentNullException.ThrowIfNull(body);
+
+            if (value.Type.IsValueType)
+                return body;
+
+            return Expression.Condition(
+                Expression.Equal(value, Expression.Constant(null, value.Type)),
+                Expression.Constant(null, body.Type),
+                body,
+                body.Type);
+        }
+
+        /// <summary>
+        /// Returns the expression yielding a collator for a collation, or null where the collation has none.
+        /// </summary>
+        /// <param name="collation"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>EnumUtils.generateCollatorExpression</c>, which is public and answers in linq4j.
+        /// <c>PhysTypeImpl</c> reaches it by a static import, so it lives here rather than there.
+        /// </remarks>
+        public static Expression? GenerateCollatorExpression(org.apache.calcite.sql.SqlCollation? collation)
+        {
+            var collator = collation?.getCollator();
+            if (collator == null)
+                return null;
+
+            var locale = collation!.getLocale();
+
+            return Expression.Call(null, GenerateCollator,
+                Expression.New(LocaleConstructor,
+                    Expression.Constant(locale.getLanguage()),
+                    Expression.Constant(locale.getCountry()),
+                    Expression.Constant(locale.getVariant())),
+                Expression.Constant(collator.getStrength()));
+        }
+
+        /// <summary>
+        /// <c>Utilities.generateCollator</c>, and the locale it takes.
+        /// </summary>
+        static readonly MethodInfo GenerateCollator = typeof(org.apache.calcite.runtime.Utilities)
+            .GetMethod("generateCollator", BindingFlags.Public | BindingFlags.Static)!;
+
+        /// <inheritdoc cref="GenerateCollator" />
+        static readonly System.Reflection.ConstructorInfo LocaleConstructor = typeof(java.util.Locale)
+            .GetConstructor([typeof(string), typeof(string), typeof(string)])!;
+
         /// <summary>
         /// Converts between two primitives, and returns <paramref name="expression"/> when they agree.
         /// </summary>
@@ -474,20 +552,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 ?? throw new NotSupportedException($"'{box}' has no valueOf for '{expression.Type}'.");
 
             return Expression.Call(null, valueOf, expression);
-        }
-
-        /// <summary>
-        /// Returns the primitive a Java box holds, or <see langword="null"/> where the type is not one.
-        /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
-        public static Type? PrimitiveOf(Type type)
-        {
-            ArgumentNullException.ThrowIfNull(type);
-
-            return Boxes.TryGetValue(type, out var primitive)
-                ? ClrTypes.FromClass(primitive.primitiveClass)
-                : null;
         }
 
         /// <summary>

@@ -106,12 +106,20 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var child = (ClrEnumerableRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);
 
-            var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.PreferCustom());
+            var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.PreferCustom());
             var inputPhysType = result.PhysType;
-            var sourceType = inputPhysType.RowType();
-            var rowType = physType.RowType();
+            var sourceType = inputPhysType.RowType;
+            var rowType = physType.RowType;
 
-            var keyPhysType = inputPhysType.project(groupSet.asList(), getGroupType() != Group.SIMPLE, JavaRowFormat.LIST);
+            // the accumulator, the group key and the output row are all written by Calcite's aggregate
+            // implementors, into blocks of Calcite's, so each of those takes a physical type of Calcite's
+            var inputCalcite = PhysTypeImpl.of(typeFactory, inputPhysType.RelRowType, inputPhysType.Format, false);
+            var outputCalcite = PhysTypeImpl.of(typeFactory, physType.RelRowType, physType.Format, false);
+
+            var keyPhysType = inputCalcite.project(groupSet.asList(), getGroupType() != Group.SIMPLE, JavaRowFormat.LIST);
+
+            // and the key again as ours, because the selector and the comparator are delegates
+            var keyClr = ClrPhysTypeImpl.Of(typeFactory, keyPhysType.getRowType(), keyPhysType.getFormat(), false);
             var groupCount = getGroupCount();
 
             var aggs = new java.util.ArrayList();
@@ -122,7 +130,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var initBlock = new J.BlockBuilder();
             var aggStateTypes = CreateAggStateTypes(initExpressions, initBlock, aggs, typeFactory, getInput().getRowType(), groupSet, getGroupSets());
 
-            var accPhysType = AccumulatorPhysType(typeFactory, typeFactory.createSyntheticType(aggStateTypes));
+            var accPhysType = PhysTypeImplWorkaround.Of(typeFactory, typeFactory.createSyntheticType(aggStateTypes));
             DeclareParentAccumulator(initExpressions, initBlock, accPhysType);
 
             var accType = ClrTypes.Resolve(accPhysType.getJavaRowType());
@@ -132,14 +140,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     implementor.Translator.TranslateBody(initBlock.toBlock(), accType)),
                 accType);
 
-            var in_ = J.Expressions.parameter(inputPhysType.getJavaRowType(), "in");
+            var in_ = J.Expressions.parameter(inputCalcite.getJavaRowType(), "in");
             var acc_ = J.Expressions.parameter(accPhysType.getJavaRowType(), "acc");
             var inParameter = Expression.Parameter(sourceType, "in");
             var accParameter = Expression.Parameter(accType, "acc");
             implementor.Translator.Bind(in_, inParameter);
             implementor.Translator.Bind(acc_, accParameter);
 
-            var adders = CreateAccumulatorAdders(implementor, in_, inParameter, aggs, accPhysType, acc_, accParameter, inputPhysType, typeFactory, accType, sourceType);
+            var adders = CreateAccumulatorAdders(implementor, in_, inParameter, aggs, accPhysType, acc_, accParameter, inputCalcite, typeFactory, accType, sourceType);
 
             // false, as Calcite passes: an aggregate call with its own ordering is the plain aggregate's
             var lambdaFactory = ImplementLambdaFactory(implementor, inputPhysType, aggs, adders, accumulatorInitializer, false, sourceType);
@@ -160,11 +168,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 results.add(agg.implementor.implementResult(agg.context, new AggResultContextImpl(resultBlock, agg.call, agg.state, key_, keyPhysType)));
             }
 
-            resultBlock.add(J.Expressions.return_(null, physType.record(results)));
+            resultBlock.add(J.Expressions.return_(null, outputCalcite.record(results)));
 
-            var keySelector = implementor.Translator.TranslateSelector(
-                inputPhysType.generateSelector(in_, groupSet.asList(), keyPhysType.getFormat()),
-                sourceType);
+            var keySelector = inputPhysType.GenerateSelector(inParameter, groupSet.asList(), keyClr.Format);
 
             var groupResultSelector = Expression.Lambda(
                 typeof(Func<,,>).MakeGenericType(keyParameter.Type, accType, rowType),
@@ -174,8 +180,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             // the comparator decides where one group ends, and a null in a key has to order consistently,
             // which is why it comes from the collation this node carries rather than from equality
-            var comparator = implementor.Translator.Translate(
-                keyPhysType.generateComparator(getTraitSet().getCollation() ?? throw new java.lang.NullPointerException($"getTraitSet().getCollation() is null; traits are {getTraitSet()}")));
+            var comparator = keyClr.GenerateComparator(getTraitSet().getCollation() ?? throw new java.lang.NullPointerException($"getTraitSet().getCollation() is null; traits are {getTraitSet()}"));
 
             return implementor.Result(physType,
                 Expression.Call(null,

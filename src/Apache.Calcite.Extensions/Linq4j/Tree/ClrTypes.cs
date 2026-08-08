@@ -2,8 +2,8 @@ using System;
 using System.Linq.Expressions;
 using System.Reflection;
 
-using J = org.apache.calcite.linq4j.tree;
 using JavaType = java.lang.reflect.Type;
+using J = org.apache.calcite.linq4j.tree;
 
 namespace Apache.Calcite.Extensions.Linq4j.Tree
 {
@@ -126,6 +126,36 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 // than case is a resolution to fail on rather than to guess at
                 ?? Search(declaring, name, parameters, StringComparison.OrdinalIgnoreCase)
                 ?? throw new NotSupportedException($"No CLR method matches '{method}'.");
+        }
+
+        /// <summary>
+        /// Returns the method of the given name on the given type that accepts the given arguments.
+        /// </summary>
+        /// <param name="declaring"></param>
+        /// <param name="name"></param>
+        /// <param name="arguments"></param>
+        /// <returns></returns>
+        /// <exception cref="NotSupportedException"></exception>
+        /// <remarks>
+        /// The same resolution as <see cref="Rebind"/>, where there is no method to start from. Calcite names
+        /// a class and a method and nothing more — <c>Expressions.call(Utilities.class, "compareNullsFirst",
+        /// args)</c> — and lets javac choose the overload from the argument expressions of the source it emits.
+        /// </remarks>
+        public static MethodInfo Resolve(Type declaring, string name, Type[] arguments)
+        {
+            ArgumentNullException.ThrowIfNull(declaring);
+            ArgumentNullException.ThrowIfNull(name);
+            ArgumentNullException.ThrowIfNull(arguments);
+
+            var exact = declaring.GetMethod(name, BindingFlags.Public | BindingFlags.Static, null, arguments, null);
+            if (exact != null)
+                return exact;
+
+            foreach (var candidate in declaring.GetMethods(BindingFlags.Public | BindingFlags.Static))
+                if (candidate.Name == name && Accepts(candidate, arguments))
+                    return candidate;
+
+            throw new NotSupportedException($"No overload of {name} on {declaring} accepts the given arguments.");
         }
 
         /// <summary>

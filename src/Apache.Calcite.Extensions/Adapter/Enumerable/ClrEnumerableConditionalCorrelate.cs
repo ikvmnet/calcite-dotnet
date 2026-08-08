@@ -4,7 +4,6 @@ using System.Linq.Expressions;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using java.util.function;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -118,33 +117,33 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // not optimising, for the reason ClrEnumerableCorrelate gives: the block is translated apart from
             // the sub-plan that reads its variables
             var corrBlock = new J.BlockBuilder(false);
-            var corrVarType = leftResult.PhysType.getJavaRowType();
-            var corrArg = J.Expressions.parameter(java.lang.reflect.Modifier.FINAL, corrVarType, getCorrelVariable());
+            // the getter registered below is one Calcite's Rex translation reads the outer row through,
+            // so it is given their physical type, built here from the three values ours carries
+            var leftCalcite = PhysTypeImpl.of(implementor.TypeFactory, leftResult.PhysType.RelRowType, leftResult.PhysType.Format, false);
+            var corrArg = J.Expressions.parameter(java.lang.reflect.Modifier.FINAL, leftCalcite.getJavaRowType(), getCorrelVariable());
 
-            var corrParameter = Expression.Parameter(ClrTypes.Resolve(J.Primitive.box(corrVarType)), getCorrelVariable());
+            var corrParameter = Expression.Parameter(leftResult.PhysType.RowType, getCorrelVariable());
             implementor.Translator.Bind(corrArg, corrParameter);
 
-            implementor.RegisterCorrelVariable(getCorrelVariable(), corrArg, corrBlock, leftResult.PhysType);
+            implementor.RegisterCorrelVariable(getCorrelVariable(), corrArg, corrBlock, leftCalcite);
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)getRight(), pref);
             implementor.ClearCorrelVariable(getCorrelVariable());
 
             // three-valued, because a mark join's marker is null where a comparison was unknown
             var predicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), getLeft(), getRight(), leftResult.PhysType, rightResult.PhysType, getCondition(), true);
 
-            var leftSource = ClrEnumUtils.BoxRows(leftResult.PhysType, leftResult.Expression);
-            var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
 
             implementor.Translator.TranslateStatements(corrBlock.toBlock(), out var declared, out var body);
-            body.Add(rightSource);
+            body.Add(rightResult.Expression);
 
-            var leftType = leftSource.Type.GetGenericArguments()[0];
-            var rightType = rightSource.Type.GetGenericArguments()[0];
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
-            var rowType = physType.RowType();
+            var leftType = leftResult.PhysType.RowType;
+            var rightType = rightResult.PhysType.RowType;
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
+            var rowType = physType.RowType;
 
             var inner = Expression.Lambda(
-                typeof(Func<,>).MakeGenericType(leftType, rightSource.Type),
-                Expression.Block(rightSource.Type, declared, body),
+                typeof(Func<,>).MakeGenericType(leftType, rightResult.Expression.Type),
+                Expression.Block(rightResult.Expression.Type, declared, body),
                 corrParameter);
 
             var selector = ClrEnumUtils.MarkJoinSelector(implementor, physType, leftResult.PhysType);
@@ -152,7 +151,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return implementor.Result(physType,
                 Expression.Call(null,
                     ClrBuiltInMethod.CorrelateLeftMarkJoin.MakeGenericMethod(leftType, rightType, rowType),
-                    leftSource,
+                    leftResult.Expression,
                     inner,
                     predicate,
                     selector));

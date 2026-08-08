@@ -1,4 +1,4 @@
-﻿# Apache.Calcite for .NET
+# Apache.Calcite for .NET
 
 Apache Calcite under IKVM, with an ADO.NET adapter, an ADO.NET client surface, and
 `Apache.Calcite.Extensions` — calling conventions that execute a plan as `System.Linq.Expressions`
@@ -60,10 +60,29 @@ ported and has no list of its own.
 **Where linq4j may appear.** A node holds linq4j only where a generator of Calcite's produced one or takes
 one, and it is translated where it is produced rather than composed into a larger tree first. That is four
 things: Rex (`translateCondition`, `translateProjects`, `translateLiteral`, everything `RexImpTable`
-reaches); `PhysType`'s expression members and `JavaRowFormat.field`; a table's own
-`getExpression(Queryable.class)`, which the schema SPI defines as linq4j; and the block Calcite's
-implementor produces for an `EnumerableConvention` sub-plan at a converter. Everything else is
-`System.Linq.Expressions` directly.
+reaches); the blocks an `AggImplementor` or a `WinAggImplementor` writes, which take a `BlockBuilder` and
+read linq4j state slots; a table's own `getExpression(Queryable.class)`, which the schema SPI defines as
+linq4j; and the block Calcite's implementor produces for an `EnumerableConvention` sub-plan at a converter.
+Everything else is `System.Linq.Expressions` directly.
+
+**A physical type is not one of them.** `ClrPhysType` answers every question about a row in
+`System.Linq.Expressions` — it mirrors `PhysType` member for member and `ClrPhysTypeImpl` mirrors
+`PhysTypeImpl`, private helpers included — and `JavaRowFormatExtensions` answers the members of
+`JavaRowFormat` that are linq4j or package private. What a row *is* stays Calcite's: the format goes
+through `JavaRowFormat.optimize` and the row class is the type factory's own answer, resolved.
+
+**Calcite's `PhysType` survives only where the shared Rex machinery takes one**, and each of those builds
+it where it is called, from the type factory, row type and format a `ClrPhysType` already carries:
+`translateProjects` for its storage types, `InputGetterImpl`, `AggResultContextImpl`'s key,
+`translateTableFunction`, the correlate input getter, and `EnumerableRelImplementor.result` at the
+converter out — which casts to `PhysTypeImpl`, so nothing else will do. A node is in one convention or the
+other and so is its physical type; there is no adapter between them and none is wanted.
+
+**A row of this convention is boxed, and the physical type says so.** `ClrPhysType.RowType` is
+`getJavaRowType()` boxed, because a CLR sequence states its element type and nothing autoboxes at the
+boundary. Calcite can leave the choice to its callers — there is no `Enumerable<int>` in Java, so the
+element is a reference whatever the physical type says, and javac inserts the conversion. Here it is
+decided once, and `ClrEnumerableRelImplementor.Result` refuses a sequence that disagrees.
 
 **`JavaCast` is for what Java the language converts and an expression tree will not** — boxing, unboxing,
 numeric promotion, `byte` sign extension. It is not a way to make one type into another where they ought
@@ -86,9 +105,11 @@ against the array overload and passed a list; `size()` on a `SortedMultiMap` is 
 `MethodResolver.Rebind` and `RebindReceiver` fix both, and refuse to guess where an argument is statically
 `object`, because then every overload fits.
 
-**A lambda linq4j declared against one of its functional interfaces is one**, so `SamAdapters` wraps it
-where it is built; an operator of this convention takes the delegate and asks for it back through
-`TranslateSelector`. Deciding it at the call site instead breaks sixteen tests.
+**A lambda linq4j declared against one of its functional interfaces is one**, so `AnonymousClasses.Wrap`
+makes it one where a Java API is going to read it — `ClrEnumerableWindow.Hoist` does this for the key
+selector `BinarySearch` takes as a `Function1`. Converting the delegate instead compiles and throws at run
+time. Everywhere else an operator of this convention takes the delegate as it stands, the generators
+answering in expression trees rather than in linq4j selectors that had to be translated back.
 
 **An adapter converts values in both directions.** `JavaValues.As` / `From`. Taking a `java.lang.Integer`
 and casting it to a CLR `int`, or handing an `int` back boxed the CLR way, leaves two representations of
@@ -117,7 +138,9 @@ a variable that no longer exists. `ClrEnumerableCorrelate` needs this.
 
 **Calcite keeps a lot of what a port needs package private** — `EnumUtils.joinSelector`,
 `generatePredicate`, `fieldTypes`, `fieldRowTypes`, `javaClass`, `EnumerableAggregateBase`'s four helpers,
-`PhysTypeImpl.of(typeFactory, javaRowType)`, `EnumerableWindow`'s five private helpers and its constructor,
+`PhysTypeImpl.of(typeFactory, javaRowType)` **and `PhysTypeImpl`'s own constructor** — so
+`PhysTypeImplWorkaround` has to go back out through the public `of`, and cannot pass the row class
+through the way Calcite does — `EnumerableWindow`'s five private helpers and its constructor,
 and **every `RexToLixTranslator.translate` overload** — only the `translateList` forms are public, and
 `translateList(operands, storageTypes)` is `translate(operand, storageType)` once per element, so a list of
 one is the same call by a reachable name. Expect to port rather than reuse, or to find a public route: a
@@ -168,6 +191,11 @@ differential tests cannot use Calcite as the oracle for.
 
 ## Traps
 
+- **`java.lang.Comparable` is a ghost interface IKVM gives to `System.String`.** The CLR type system does
+  not see it, so a cast to it throws — in an expression tree *and* in C# we write, because IKVM emits the
+  ghost conversion only for the Java it compiles itself. `IComparable` is the way in, and
+  `JavaComparisons` is where the `Utilities` comparisons that take a `Comparable` go through it.
+  `PhysTypeImpl.generateComparator` casts to it purely to pick an overload out of the source text.
 - **Java enum ordinals are not stable across versions; names are.** Dispatch on `switch (x.name())` with
   `nameof(...)` labels. Never `ordinal()`, never IKVM's `__Enum` shadow.
 - **`(java.lang.Class)typeof(X)`, never `(java.lang.reflect.Type)typeof(X)`.**

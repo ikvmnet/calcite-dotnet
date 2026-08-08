@@ -1,8 +1,9 @@
 using System;
 using System.Linq.Expressions;
 
-using java.util.function;
+using Apache.Calcite.Extensions.Linq4j.Tree;
 
+using java.util.function;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -126,7 +127,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // Not optimising, for the reason ClrEnumerableCorrelate gives: the block is translated apart
             // from the sub-plan that reads its variables.
             var corrBlock = new J.BlockBuilder(false);
-            var corrVarType = leftResult.PhysType.getJavaRowType();
+
+            // the getters registered below are ones Calcite's Rex translation reads the outer row through,
+            // so they are given their physical type, built here from the three values ours carries
+            var leftCalcite = PhysTypeImpl.of(implementor.TypeFactory, leftResult.PhysType.RelRowType, leftResult.PhysType.Format, false);
+            var corrVarType = leftCalcite.getJavaRowType();
             var corrArgList = J.Expressions.parameter(java.lang.reflect.Modifier.FINAL, (java.lang.reflect.Type)(java.lang.Class)typeof(java.util.List), "corrList");
             var listParameter = Expression.Parameter(typeof(java.util.List), "corrList");
             implementor.Translator.Bind(corrArgList, listParameter);
@@ -145,7 +150,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                             J.Expressions.call(corrArgList, ListGet, J.Expressions.constant(java.lang.Integer.valueOf(c))),
                             corrVarType)));
 
-                implementor.RegisterCorrelVariable(names[c], corrArg, corrBlock, leftResult.PhysType);
+                implementor.RegisterCorrelVariable(names[c], corrArg, corrBlock, leftCalcite);
             }
 
             var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)getRight(), pref);
@@ -154,20 +159,18 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 implementor.ClearCorrelVariable(name);
 
             // boxed, as every join here boxes: the selector takes boxed rows, and a left join hands it a null
-            var leftSource = ClrEnumUtils.BoxRows(leftResult.PhysType, leftResult.Expression);
-            var rightSource = ClrEnumUtils.BoxRows(rightResult.PhysType, rightResult.Expression);
 
             implementor.Translator.TranslateStatements(corrBlock.toBlock(), out var declared, out var body);
-            body.Add(rightSource);
+            body.Add(rightResult.Expression);
 
-            var leftType = leftSource.Type.GetGenericArguments()[0];
-            var rightType = rightSource.Type.GetGenericArguments()[0];
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
-            var rowType = physType.RowType();
+            var leftType = leftResult.PhysType.RowType;
+            var rightType = rightResult.PhysType.RowType;
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
+            var rowType = physType.RowType;
 
             var inner = Expression.Lambda(
-                typeof(Func<,>).MakeGenericType(typeof(java.util.List), rightSource.Type),
-                Expression.Block(rightSource.Type, declared, body),
+                typeof(Func<,>).MakeGenericType(typeof(java.util.List), rightResult.Expression.Type),
+                Expression.Block(rightResult.Expression.Type, declared, body),
                 listParameter);
 
             var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);
@@ -177,7 +180,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 Expression.Call(null,
                     ClrBuiltInMethod.CorrelateBatchJoin.MakeGenericMethod(leftType, rightType, rowType),
                     Expression.Constant(ClrEnumUtils.ToLinq4jJoinType(joinType)),
-                    leftSource,
+                    leftResult.Expression,
                     inner,
                     selector,
                     predicate,

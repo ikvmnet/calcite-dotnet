@@ -77,7 +77,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <inheritdoc />
         public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), JavaRowFormat.ARRAY);
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), JavaRowFormat.ARRAY);
 
             // Calcite writes new Interpreter(root, stash(input)) and reads the value back off the DataContext,
             // because Janino compiles source text and source text cannot mention an object. An expression tree
@@ -95,7 +95,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (getRowType().getFieldCount() == 1)
                 source = Expression.Call(null, Slice0, source);
 
-            var rowType = physType.RowType();
+            var rowType = physType.RowType;
 
             return implementor.Result(physType,
                 Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), source));

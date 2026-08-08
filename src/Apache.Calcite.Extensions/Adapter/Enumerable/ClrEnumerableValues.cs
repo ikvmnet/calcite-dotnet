@@ -1,8 +1,9 @@
 using System.Collections.Generic;
 using System.Linq.Expressions;
 
-using java.util.function;
+using Apache.Calcite.Extensions.Linq4j.Tree;
 
+using java.util.function;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.adapter.java;
 using org.apache.calcite.plan;
@@ -95,9 +96,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var typeFactory = (JavaTypeFactory)getCluster().getTypeFactory();
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), pref.PreferCustom());
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferCustom());
             // Calcite boxes here too, EnumerableValues building its array with Primitive.box(rowClass)
-            var rowType = physType.RowType();
+            var rowType = physType.RowType;
 
             var fields = getRowType().getFieldList();
             var rows = new List<Expression>();
@@ -105,19 +106,22 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             for (int i = 0; i < tuples.size(); i++)
             {
                 var tuple = (java.util.List)tuples.get(i);
-                var literals = new java.util.ArrayList();
+                var literals = new List<Expression>(tuple.size());
 
+                // Rex produces a literal in linq4j, so each is translated as it is produced rather than
+                // composed into a row first
                 for (int j = 0; j < tuple.size(); j++)
-                    literals.add(
-                        RexToLixTranslator.translateLiteral(
-                            (RexLiteral)tuple.get(j),
-                            ((RelDataTypeField)fields.get(j)).getType(),
-                            typeFactory,
-                            RexImpTable.NullAs.NULL));
+                    literals.Add(
+                        implementor.Translator.Translate(
+                            RexToLixTranslator.translateLiteral(
+                                (RexLiteral)tuple.get(j),
+                                ((RelDataTypeField)fields.get(j)).getType(),
+                                typeFactory,
+                                RexImpTable.NullAs.NULL)));
 
                 // a null literal translates to a constant of Object, and Java may assign that to a field of
                 // any reference type where an array initializer may not
-                rows.Add(ClrEnumUtils.Convert(implementor.Translator.Translate(physType.record(literals)), rowType));
+                rows.Add(ClrEnumUtils.Convert(physType.Record(literals), rowType));
             }
 
             return implementor.Result(physType,

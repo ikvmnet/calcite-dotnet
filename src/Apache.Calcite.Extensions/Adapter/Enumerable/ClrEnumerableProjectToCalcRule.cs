@@ -1,9 +1,9 @@
+using Apache.Calcite.Extensions.Linq4j.Function;
 using Apache.Calcite.Extensions.Runtime;
 
 using org.apache.calcite.plan;
 using org.apache.calcite.rel.rules;
 using org.apache.calcite.rex;
-using Apache.Calcite.Extensions.Linq4j.Function;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable
 {

@@ -32,7 +32,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// only because it had been fixed by hand, and silently wrong again the moment anything about it
         /// changed.
         /// </remarks>
-        internal ClrEnumerableResult(Expression expression, PhysType physType, JavaRowFormat format)
+        internal ClrEnumerableResult(Expression expression, ClrPhysType physType, JavaRowFormat format)
         {
             Expression = expression ?? throw new ArgumentNullException(nameof(expression));
             PhysType = physType ?? throw new ArgumentNullException(nameof(physType));
@@ -48,7 +48,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// Gets the Java type returned by this relational expression, and how it maps onto the fields of the
         /// logical row type.
         /// </summary>
-        public PhysType PhysType { get; }
+        public ClrPhysType PhysType { get; }
 
         /// <summary>
         /// Gets how a row is represented.

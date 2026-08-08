@@ -1,5 +1,7 @@
 using System.Linq.Expressions;
 
+using Apache.Calcite.Extensions.Linq4j.Tree;
+
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -64,16 +66,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         {
             var child = (ClrEnumerableRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);
-            var physType = PhysTypeImpl.of(implementor.TypeFactory, getRowType(), result.Format);
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), result.Format);
 
             var inputPhysType = result.PhysType;
-            var pair = inputPhysType.generateCollationKey(collation.getFieldCollations());
-            var sourceType = inputPhysType.RowType();
+            var (keySelector, collationComparator) = inputPhysType.GenerateCollationKey(collation.getFieldCollations());
+            var sourceType = inputPhysType.RowType;
 
-            var keySelector = implementor.Translator.TranslateSelector((J.Expression)pair.getKey(), sourceType);
-            var comparator = pair.getValue() == null
-                ? Expression.Constant(null, typeof(java.util.Comparator))
-                : implementor.Translator.Translate((J.Expression)pair.getValue());
+            var comparator = collationComparator ?? Expression.Constant(null, typeof(java.util.Comparator));
 
             return implementor.Result(physType,
                 Expression.Call(null,

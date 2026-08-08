@@ -2,10 +2,9 @@ using System;
 using System.Reflection;
 
 using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using J = org.apache.calcite.linq4j.tree;
-
-using Apache.Calcite.Extensions.Linq4j.Tree;
 
 namespace Apache.Calcite.Extensions.Interop
 {
@@ -39,7 +38,7 @@ namespace Apache.Calcite.Extensions.Interop
             // the other way round, and the case a table of this runtime makes: its rows hold a CLR int where
             // the plan's row type is java.lang.Integer, and a cast between those two is not a conversion any
             // more than the one above is
-            if (value != null && value.GetType().IsValueType && ClrEnumUtils.PrimitiveOf(typeof(T)) is Type primitive)
+            if (value != null && value.GetType().IsValueType && ClrPrimitive.PrimitiveClass(typeof(T)) is Type primitive)
                 return (T)JavaValues.Box(value, primitive);
 
             return (T)value!;

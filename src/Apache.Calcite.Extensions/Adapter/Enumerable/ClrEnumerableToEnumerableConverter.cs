@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Linq.Expressions;
 
+using Apache.Calcite.Extensions.Interop;
 using Apache.Calcite.Extensions.Runtime;
 
 using org.apache.calcite;
@@ -12,7 +13,6 @@ using org.apache.calcite.rel.convert;
 using org.apache.calcite.util;
 
 using J = org.apache.calcite.linq4j.tree;
-using Apache.Calcite.Extensions.Interop;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable
 {
@@ -84,7 +84,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var stashed = implementor.stash(plan, (java.lang.Class)typeof(Func<DataContext, IEnumerable>));
 
-            return implementor.result(result.PhysType,
+            // their convention's row abstraction, built from the three values ours carries, because that
+            // is what EnumerableRelImplementor.result takes -- and it casts to PhysTypeImpl besides
+            var physType = PhysTypeImpl.of(clr.TypeFactory, result.PhysType.RelRowType, result.PhysType.Format, false);
+
+            return implementor.result(physType,
                 J.Blocks.toBlock(J.Expressions.call(BindMethod, stashed, DataContext.ROOT)));
         }
 

@@ -1,8 +1,9 @@
 using System;
 using System.Linq.Expressions;
 
-using java.util.function;
+using Apache.Calcite.Extensions.Linq4j.Tree;
 
+using java.util.function;
 using org.apache.calcite;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
@@ -12,8 +13,6 @@ using org.apache.calcite.rel.metadata;
 using org.apache.calcite.rex;
 
 using J = org.apache.calcite.linq4j.tree;
-
-using Apache.Calcite.Extensions.Linq4j.Tree;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable
 {
@@ -111,11 +110,17 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var typeFactory = implementor.TypeFactory;
             var child = (ClrEnumerableRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);
-            var physType = PhysTypeImpl.of(typeFactory, getRowType(), pref.Prefer(result.Format));
+            var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.Prefer(result.Format));
 
-            var inputJavaType = result.PhysType.getJavaRowType();
-            var inputType = result.PhysType.RowType();
-            var outputType = physType.RowType();
+            // a calc is Rex and nothing else: the condition and the projects are both Calcite's to
+            // translate, and each takes its own physical type -- one to read a field of the input with, one
+            // to read the storage types of the output off. So both are built here, where they are used.
+            var inputCalcite = PhysTypeImpl.of(typeFactory, result.PhysType.RelRowType, result.PhysType.Format, false);
+            var outputCalcite = PhysTypeImpl.of(typeFactory, physType.RelRowType, physType.Format, false);
+
+            var inputJavaType = inputCalcite.getJavaRowType();
+            var inputType = result.PhysType.RowType;
+            var outputType = physType.RowType;
 
             var rexBuilder = getCluster().getRexBuilder();
             var mq = getCluster().getMetadataQuery();
@@ -138,7 +143,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     program,
                     typeFactory,
                     builder,
-                    new RexToLixTranslator.InputGetterImpl(row, result.PhysType),
+                    new RexToLixTranslator.InputGetterImpl(row, inputCalcite),
                     implementor.AllCorrelateVariables,
                     implementor.Conformance);
                 builder.add(J.Expressions.return_(null, condition));
@@ -160,11 +165,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 implementor.Conformance,
                 projectBuilder,
                 null,
-                physType,
+                outputCalcite,
                 DataContext.ROOT,
-                new RexToLixTranslator.InputGetterImpl(projectRow, result.PhysType),
+                new RexToLixTranslator.InputGetterImpl(projectRow, inputCalcite),
                 implementor.AllCorrelateVariables);
-            projectBuilder.add(J.Expressions.return_(null, physType.record(expressions)));
+            projectBuilder.add(J.Expressions.return_(null, outputCalcite.record(expressions)));
 
             var selector = Expression.Lambda(
                 typeof(Func<,>).MakeGenericType(inputType, outputType),
