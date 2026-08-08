@@ -157,54 +157,34 @@ plan can put a Calcite node above an asynchronous one, because Calcite cannot re
 
 ## Audit findings: 45 operators, twelve agents, one method group each
 
-**The audit has run.** 45 operators, twelve agents, one method group each. Result: **30 equivalent, 17
-divergent, 1 uncertain.** Everything below was found by reading Calcite beside ours; none of it was visible
-to the differential suite.
+**The audit has run, and its findings are fixed.** 45 operators, twelve agents, one method group each:
+**30 equivalent, 17 divergent, 1 uncertain.** None of the 17 was visible to the differential suite, and all
+17 are now transcribed from Calcite's body in both conventions — `HashEquiJoin`'s leftover order,
+`NestedLoopJoin`'s five, `RepeatUnion`'s termination test and clean-up ordering, `SemiJoin`'s two algorithms
+and its memoization, `Take`'s n+1 draw, `CorrelateJoin`'s refusal and null guard, `Cartesian`'s eagerness and
+`int` overflow, the call-time fold in `GroupBy`/`GroupByMultiple`/`AsofJoin`, `JavaSequences`' `reset`, and
+the deletion of `Count`/`IntersectAll`/`ExceptAll`.
 
-Fixed so far, in both conventions: `HashEquiJoin`'s leftover order, `NestedLoopJoin` (five defects), and
-`RepeatUnion`'s termination test and clean-up ordering. Each carries a test that fails against the old
-behaviour -- `ClrEnumerableNestedLoopJoinTests` and `ClrRepeatUnionTests` for what no query can reach.
+What no query can reach is pinned directly instead: `ClrEnumerableNestedLoopJoinTests`,
+`ClrRepeatUnionTests`, `ClrEnumerableDefaultsContractTests`.
 
-### Eager where Calcite is eager, or the reverse
+Two of the asynchronous twins cannot follow Calcite exactly, and say so at the site: a method returning an
+`IAsyncEnumerable` cannot await before it returns, so the fold in `GroupBy`/`GroupByMultiple`/`AsofJoin` and
+the list in `NestedLoopJoinAsList` happen on the first `MoveNextAsync` rather than at the call. Every row is
+still computed before the first is yielded, which is the property the ordering rests on.
 
-Calcite builds at call time and returns an enumerable over finished state; our `yield` iterators defer and
-re-execute. In `AsofJoin`, `GroupBy`, `GroupByMultiple`, `nestedLoopJoinAsList`, `Cartesian`, `Window`.
-Identical for a single pass; on re-enumeration ours rescans, and **`RepeatUnion` re-enumerates its
-iterative branch every round**, so a `GROUP BY` under a recursive CTE recomputes here and replays a frozen
-map there. `Window` is the reverse and in our favour: we stream output where Calcite collects it.
-
-### Memory and laziness
-
-- **`Cartesian` is fully eager**: `new List(outer.Count * inner.Count)` before the first row, where
-  Calcite's is lazy. Quadratic per merge-join key run, and that `int` multiply overflows around 2^31 pairs.
-- **`SemiJoin` holds every inner row** where linq4j holds distinct keys, and drains the inner even for an
-  empty outer where linq4j memoizes (CALCITE-2909).
-- **`Take` draws n rows where linq4j draws n+1**, because `takeWhile` reads `current()` before rejecting.
-  With `FETCH 0` we never open the input, so `LazyCollectionSpool`'s write-back and `RepeatUnion`'s
-  `cleanUp` are skipped where Calcite opens and closes.
-### Robustness
-
-- `CorrelateJoin` does not reject RIGHT/FULL (Calcite throws, we silently inner-join) and does not guard a
-  null correlated inner (Calcite substitutes empty, we throw). `LeftMarkJoin` next door does guard.
-- `JavaSequences.ToJava`'s `reset()` throws where linq4j re-acquires. Only `CartesianProductEnumerator`
-  calls it live.
-
-### Dead code to delete
-
-`Count`, `IntersectAll`, `ExceptAll`, in both conventions, found independently by two agents. Latent
-defects if wired up: CLR `Dictionary` keying that bypasses `JavaWrapped`, source-order output where linq4j
-yields in `HashMultiset` order, a throw on a null key.
+What remains below is what was deliberate, and what is still unproven.
 
 ### Deliberate: record, do not fix
 
 - **`Window` reproduces a Calcite bug**: with UNBOUNDED/UNBOUNDED plus EXCLUDE the outer guard is false
   after row 0, so the exclusion never takes effect.
+- **`Window` streams its output** where Calcite collects it first. The reverse of the eagerness the other
+  operators had, and left alone: it holds the same rows in the same order and only reaches them sooner.
 - **RIGHT/FULL unmatched-right order**: Calcite walks an `IdentityHashMap`, whose buckets key on
   `System.identityHashCode`. We now dedup on identity as it does, but there is no CLR counterpart to that
   number, so the unmatched rows come out in insertion order. The set of rows is Calcite's; the order is not,
   and cannot be.
-- **`SemiJoin` applies the comparer** where linq4j's `contains` ignores it. Ours is more correct, and
-  unreachable: the key projection optimises to LIST/SCALAR, so `comparer()` is null.
 - **`CompareNullsLastForMergeJoin`** returns 1 for two nulls where Calcite throws and its caller converts to
   1. Composed behaviour identical; the contract no longer signals two-nulls to a future caller.
 
