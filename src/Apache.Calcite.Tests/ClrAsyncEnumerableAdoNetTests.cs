@@ -101,21 +101,19 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// A query over a table that cannot produce rows asynchronously still plans, through the converter.
+        /// A query over an ordinary Calcite table plans asynchronously.
         /// </summary>
         /// <remarks>
-        /// What the converter into this convention is for. Calcite's own scan reads the
-        /// <c>ScannableTable</c> and <c>EnumerableToClrAsyncEnumerableConverter</c> brings the rows across,
-        /// so a query is no longer planned whole in this convention or not at all.
+        /// The scan reads a <see cref="ScannableTable"/> the way Calcite reads one — through
+        /// <c>getExpression(Queryable.class)</c>, translated — and wraps the linq4j sequence rather than
+        /// converting the plan, so this is one node of this convention and no converter at all.
         ///
-        /// <para>The part under the converter is not asynchronous and cannot be — it is a pulled linq4j
-        /// sequence — but it does not block either: reading it produces an
-        /// <see cref="IAsyncEnumerable{T}"/> that always completes synchronously, which costs a state
-        /// machine and no thread. What it is not is a silent substitution: the converter is a node the
-        /// planner chose and the plan shows.</para>
+        /// <para>That part of the query is not asynchronous and cannot be: a linq4j <c>Enumerable</c> is
+        /// pulled. It does not block either — reading it produces an <see cref="IAsyncEnumerable{T}"/> that
+        /// always completes synchronously, which costs a state machine and no thread.</para>
         /// </remarks>
         [TestMethod]
-        public async Task ShouldPlanASyncOnlyTableThroughTheConverter()
+        public async Task ShouldPlanACalciteTableAsynchronously()
         {
             using var c = new CalciteConnection(Model);
             c.Open();
@@ -195,6 +193,64 @@ namespace Apache.Calcite.Tests
                 rows.Add(reader.GetInt32(0) + "|" + reader.GetString(1));
 
             rows.Should().Equal(["1|A", "2|B", "2|C", "4|D"]);
+        }
+
+        /// <summary>
+        /// Disposing the reader asynchronously awaits the plan's own disposal.
+        /// </summary>
+        /// <remarks>
+        /// <c>DbDataReader.DisposeAsync</c> falls back to the synchronous <c>Dispose</c> unless a provider
+        /// overrides it, and the synchronous path can only finish a disposal the plan already completed
+        /// itself. A table closing a connection or a channel in its <c>finally</c> would have been
+        /// abandoned — and nothing else in this suite would have noticed, because the rows were all correct
+        /// by then.
+        /// </remarks>
+        [TestMethod]
+        public async Task ShouldAwaitThePlansDisposal()
+        {
+            var (c, table) = Open();
+            await using (c)
+            {
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = "SELECT ID FROM SALES ORDER BY ID";
+
+                await using (var reader = await cmd.ExecuteReaderAsync())
+                {
+                    while (await reader.ReadAsync())
+                    {
+                    }
+                }
+
+                table.DisposedAsynchronously.Should().BeTrue(
+                    "await using over the reader must reach the awaited part of the table's disposal");
+            }
+        }
+
+        /// <summary>
+        /// The same when the reader is abandoned part way through.
+        /// </summary>
+        /// <remarks>
+        /// No ORDER BY, deliberately. A sort reads its whole input before it yields anything, so a plan
+        /// with one in it has already drained the table by the first row and there is nothing left to
+        /// abandon — which is what this test asserted at first, and why it failed.
+        /// </remarks>
+        [TestMethod]
+        public async Task ShouldAwaitThePlansDisposalWhenAbandoned()
+        {
+            var (c, table) = Open();
+            await using (c)
+            {
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = "SELECT ID FROM SALES";
+
+                await using (var reader = await cmd.ExecuteReaderAsync())
+                {
+                    await reader.ReadAsync();
+                }
+
+                table.DisposedAsynchronously.Should().BeTrue();
+                table.Produced.Should().BeLessThan(6, "the plan was abandoned after one row");
+            }
         }
 
         /// <summary>

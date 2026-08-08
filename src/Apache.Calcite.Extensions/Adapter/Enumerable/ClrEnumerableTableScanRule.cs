@@ -56,6 +56,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var relOptTable = scan.getTable();
             var table = (Table)relOptTable.unwrap(typeof(Table));
 
+            // a table of this convention's own SPI is read directly and has no linq4j expression to ask
+            // for. Asking is not merely redundant: RelOptTableImpl throws UnsupportedOperationException for
+            // a table it has no class-expression function for, and one of ours always is.
+            if (table is Apache.Calcite.Extensions.Schema.IClrScannableTable or Apache.Calcite.Extensions.Schema.IClrQueryableTable)
+                return ClrEnumerableTableScan.Create(scan.getCluster(), relOptTable);
+
             if (table is QueryableTable || relOptTable.getExpression(typeof(object)) != null)
                 return ClrEnumerableTableScan.Create(scan.getCluster(), relOptTable);
 

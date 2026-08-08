@@ -173,6 +173,39 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// <b>Overridden, and it has to be.</b> <c>DbDataReader.CloseAsync</c> and <c>DisposeAsync</c> both
+        /// fall back to the synchronous <see cref="Close"/> if a provider leaves them alone, which for a
+        /// plan of the asynchronous convention means <c>CalciteAsyncEnumerableResult.Release</c> — and that
+        /// can only finish a disposal the plan already completed synchronously. A table whose
+        /// <c>DisposeAsync</c> really suspends, because it is closing a connection or a channel, would have
+        /// had its disposal dropped.
+        ///
+        /// <para>So <c>await using</c> over a reader means what it says, and <c>using</c> still works: the
+        /// synchronous path is unchanged and is what a synchronous plan needs.</para>
+        /// </remarks>
+        public override async Task CloseAsync()
+        {
+            if (_closed)
+                return;
+
+            _closed = true;
+
+            for (var i = _resultIndex; i < _results.Length; i++)
+                await _results[i].DisposeAsync().ConfigureAwait(false);
+        }
+
+        /// <inheritdoc />
+        public override async ValueTask DisposeAsync()
+        {
+            await CloseAsync().ConfigureAwait(false);
+
+            // the base call reaches Dispose, which reaches Close, which returns at once now that the reader
+            // is closed. It is made so that whatever DbDataReader does besides closing still happens.
+            await base.DisposeAsync().ConfigureAwait(false);
+        }
+
+        /// <inheritdoc />
         protected override void Dispose(bool disposing)
         {
             if (disposing)

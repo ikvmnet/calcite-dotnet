@@ -172,3 +172,29 @@ matter; not before.
 Note the asynchronous convention needs none of this. It reads a Calcite sub-plan and never feeds one — no
 plan can put a Calcite node above an asynchronous one, because Calcite cannot read an
 `IClrAsyncScannableTable` — so it has no converter out and nothing to translate.
+
+## A limit sort sorts more than it needs to
+
+`ClrEnumerableDefaults.OrderByWithFetchAndOffset` sorts the whole input and then skips and takes:
+
+    var ordered = OrderBy(source, keySelector, comparator);
+    if (offset > 0) ordered = ordered.Skip(offset);
+    if (fetch != int.MaxValue) ordered = ordered.Take(fetch);
+
+linq4j does not. CALCITE-3920 and CALCITE-4157 changed `EnumerableDefaults.orderBy(source, keySelector,
+comparator, offset, fetch)` to keep a `TreeMap` bounded at `offset + fetch` rows: a row whose key sorts at
+or after the last key held is discarded without being stored, and adding one evicts the last. A comment in
+the source says why a `TreeMap` rather than a heap — it behaves like the plain `orderBy` and is better when
+there are few distinct keys.
+
+So `ORDER BY x FETCH 10` over a million rows holds ten in Calcite and a million here. The rows and their
+order are identical, which is why the differential tests never saw it — this is a divergence in what it
+costs, not in what it answers.
+
+Both conventions have it: the asynchronous `OrderByWithFetchAndOffset` drains into a buffer and hands it to
+the synchronous one, so fixing the synchronous one fixes both.
+
+A plain sort is not this. It has to read its whole input before it can yield anything, in linq4j and here
+alike, and both do it lazily on the first read rather than when the sequence is built. That part is
+faithful.
+

@@ -60,13 +60,17 @@ namespace Apache.Calcite.Tests
                 rootSchema.add("SORTED", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, true));
             }
 
+            // a table function, which this convention has no node for: Calcite plans it and the converter
+            // carries its rows
+            rootSchema.add("NUMBERS", org.apache.calcite.schema.impl.TableFunctionImpl.create((java.lang.Class)typeof(NumbersTableFunction), "eval"));
+
             return rootSchema;
         }
 
         /// <summary>
         /// Plans a statement in one convention and returns its rows, rendered.
         /// </summary>
-        static async Task<List<string>> Run(string sql, bool async, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false)
+        static async Task<List<string>> Run(string sql, bool async, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false, bool markJoin = false)
         {
             var rootSchema = Schema(async);
 
@@ -101,7 +105,7 @@ namespace Apache.Calcite.Tests
             var config = Frameworks.newConfigBuilder()
                 .defaultSchema(rootSchema)
                 .programs(
-                    Programs.subQuery(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE),
+                    markJoin ? MarkJoinSubQueryProgram() : Programs.subQuery(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE),
                     new DefaultRulesProgram(rules, false, excludeMergeJoin, excludeHashJoin, null, null),
                     Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE))
                 .build();
@@ -164,6 +168,28 @@ namespace Apache.Calcite.Tests
 
         }
 
+        /// <summary>
+        /// The sub-query pass that rewrites an EXISTS or an IN into a mark correlate rather than a join.
+        /// </summary>
+        /// <remarks>
+        /// The same program the synchronous harness uses. Without it the mark join paths are unreachable
+        /// from SQL: the ordinary pass turns an EXISTS into a semi join and the marked variants never
+        /// appear.
+        /// </remarks>
+        static Program MarkJoinSubQueryProgram()
+        {
+            var rules = new java.util.ArrayList();
+            rules.add(org.apache.calcite.rel.rules.CoreRules.FILTER_SUB_QUERY_TO_MARK_CORRELATE);
+            rules.add(org.apache.calcite.rel.rules.CoreRules.PROJECT_SUB_QUERY_TO_MARK_CORRELATE);
+            rules.add(org.apache.calcite.rel.rules.CoreRules.JOIN_SUB_QUERY_TO_CORRELATE);
+            rules.add(org.apache.calcite.rel.rules.CoreRules.PROJECT_OVER_SUM_TO_SUM0_RULE);
+
+            var builder = org.apache.calcite.plan.hep.HepProgram.builder();
+            builder.addRuleCollection(rules);
+
+            return Programs.of(builder.build(), true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE);
+        }
+
         static string Render(object row)
         {
             if (row is object[] array)
@@ -175,10 +201,10 @@ namespace Apache.Calcite.Tests
         /// <summary>
         /// Requires that a query gives the same rows in both conventions.
         /// </summary>
-        static async Task Same(string sql, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false)
+        static async Task Same(string sql, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false, bool markJoin = false)
         {
-            var async = await Run(sql, true, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, excludeHashJoin: excludeHashJoin, excludeMergeJoin: excludeMergeJoin);
-            var sync = await Run(sql, false, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, excludeHashJoin: excludeHashJoin, excludeMergeJoin: excludeMergeJoin);
+            var async = await Run(sql, true, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, excludeHashJoin: excludeHashJoin, excludeMergeJoin: excludeMergeJoin, markJoin: markJoin);
+            var sync = await Run(sql, false, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, excludeHashJoin: excludeHashJoin, excludeMergeJoin: excludeMergeJoin, markJoin: markJoin);
 
             async.Should().Equal(sync, "'{0}' should give what ClrEnumerableConvention gives", sql);
         }
@@ -353,6 +379,117 @@ namespace Apache.Calcite.Tests
         [TestMethod]
         public Task ShouldAgreeOnASelfJoinProducingNoRows() =>
             Same("SELECT a.ID FROM SALES a JOIN SALES b ON a.ID = b.ID + 1000");
+
+
+        // ASOF join. Its rule is in both conventions' default lists, so nothing has to be turned on; what it
+        // needs is a match condition and a key, and SALES has both.
+
+        [TestMethod]
+        public Task ShouldAgreeOnAnAsofJoin() =>
+            Same("SELECT a.ID, b.ID FROM SALES a ASOF JOIN SALES b MATCH_CONDITION b.ID <= a.ID ON a.REGION = b.REGION ORDER BY a.ID");
+
+        [TestMethod]
+        public Task ShouldAgreeOnALeftAsofJoin() =>
+            Same("SELECT a.ID, b.ID FROM SALES a LEFT ASOF JOIN (SELECT * FROM SALES WHERE ID > 3) b MATCH_CONDITION b.ID <= a.ID ON a.REGION = b.REGION ORDER BY a.ID");
+
+        [TestMethod]
+        public Task ShouldAgreeOnAnAsofJoinLookingForward() =>
+            Same("SELECT a.ID, b.ID FROM SALES a ASOF JOIN SALES b MATCH_CONDITION b.ID > a.ID ON a.REGION = b.REGION ORDER BY a.ID");
+
+        /// <remarks>
+        /// The order an ASOF join produces is the order of the map it indexes its left input by, so a query
+        /// without an ORDER BY compares that order too.
+        /// </remarks>
+        [TestMethod]
+        public Task ShouldAgreeOnAnAsofJoinsOwnOrder() =>
+            Same("SELECT a.ID, b.ID FROM SALES a ASOF JOIN SALES b MATCH_CONDITION b.ID <= a.ID ON a.REGION = b.REGION");
+
+        [TestMethod]
+        public Task ShouldAgreeOnALeftAsofJoinWithANullKey() =>
+            Same("SELECT a.ID, b.ID FROM SALES a LEFT ASOF JOIN SALES b MATCH_CONDITION b.ID <= a.ID ON a.AMOUNT = b.AMOUNT ORDER BY a.ID");
+
+        // the mark join paths, which the ordinary sub-query pass never reaches.
+
+        [TestMethod]
+        public Task ShouldAgreeOnAMarkedExists() =>
+            Same("SELECT ID FROM SALES WHERE EXISTS (SELECT 1 FROM SALES S2 WHERE S2.ID > 4) ORDER BY ID", markJoin: true);
+
+        [TestMethod]
+        public Task ShouldAgreeOnAMarkedIn() =>
+            Same("SELECT ID FROM SALES WHERE AMOUNT IN (SELECT AMOUNT FROM SALES WHERE ID > 3) ORDER BY ID", markJoin: true);
+
+        [TestMethod]
+        public Task ShouldAgreeOnAMarkedCorrelatedExists() =>
+            Same("SELECT ID FROM SALES S1 WHERE EXISTS (SELECT 1 FROM SALES S2 WHERE S2.REGION = S1.REGION AND S2.ID > 3) ORDER BY ID", markJoin: true);
+
+        // what the converter into this convention unlocked. None of these has a node here, and before the
+        // converter each one made the whole query unplannable; now Calcite plans that part and the rest of
+        // the query is still asynchronous.
+
+        [TestMethod]
+        public Task ShouldAgreeOnARecursiveQuery() =>
+            Same("WITH RECURSIVE t(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 4) SELECT n FROM t ORDER BY 1");
+
+        [TestMethod]
+        public Task ShouldAgreeOnARecursiveQueryOfSeveralColumns() =>
+            Same("WITH RECURSIVE t(n, m) AS (VALUES (1, 10) UNION ALL SELECT n + 1, m + 10 FROM t WHERE n < 4) SELECT n, m FROM t ORDER BY 1");
+
+        [TestMethod]
+        public Task ShouldAgreeOnATableFunction() =>
+            Same("SELECT * FROM TABLE(NUMBERS(3))");
+
+        /// <summary>
+        /// A table function joined to a table is refused, as it is in the synchronous convention.
+        /// </summary>
+        /// <remarks>
+        /// The same defect of Calcite's that <c>ShouldRefuseATableFunctionInAJoin</c> records:
+        /// <c>EnumerableSort</c> optimises the scan's ARRAY format to SCALAR and hands the <c>Object[]</c>
+        /// rows on unchanged, so the sequence carries arrays where its row type says
+        /// <c>java.lang.Integer</c>.
+        ///
+        /// <para>It surfaces later here, and worse. In the synchronous convention the sort is our node, so
+        /// <c>RequireRowType</c> catches it while the plan is being implemented and names the node. Here the
+        /// whole subtree is Calcite's under one converter, and the converter believes what
+        /// <c>result.physType.getFormat()</c> tells it — which is the thing that is wrong. So the mismatch
+        /// is not visible statically and arrives as a cast at the first row read.</para>
+        ///
+        /// <para>Nothing to fix on this side: the convention does what Calcite does, and the check that
+        /// would catch it is a check on Calcite's own answer about its own rows.</para>
+        /// </remarks>
+        [TestMethod]
+        public async Task ShouldRefuseATableFunctionJoinedToATable()
+        {
+            var act = async () => await Run("SELECT s.ID FROM SALES s, TABLE(NUMBERS(6)) n WHERE s.ID = n.N ORDER BY 1", true);
+
+            await act.Should().ThrowAsync<InvalidCastException>();
+        }
+
+        /// <summary>
+        /// MATCH_RECOGNIZE over an asynchronous table cannot be planned at all.
+        /// </summary>
+        /// <remarks>
+        /// The design boundary, arriving where it was predicted to. Neither convention can write a
+        /// MATCH_RECOGNIZE — <c>PassedRowsInputGetter</c> and <c>PrevInputGetter</c> are package-private
+        /// types Calcite casts to by name — so the node has to be Calcite's. But Calcite's node needs its
+        /// input in <c>EnumerableConvention</c>, and its input here is an
+        /// <see cref="Schema.IClrAsyncScannableTable"/>, which Calcite cannot read by any route. The
+        /// converter goes the other way.
+        ///
+        /// <para>So there is no plan, and the planner says so. That is the right answer rather than a gap:
+        /// the only thing that would make it plan is a converter out of this convention, which would block
+        /// once per row for a query nobody asked to have answered that way.</para>
+        ///
+        /// <para>The same query over a synchronous table plans, because then the whole subtree is
+        /// Calcite's — which is what <c>ShouldPlanASyncOnlyTableThroughTheConverter</c> exercises the
+        /// general form of.</para>
+        /// </remarks>
+        [TestMethod]
+        public async Task ShouldRefuseAMatchRecognizeOverAnAsyncTable()
+        {
+            var act = async () => await Run("SELECT * FROM SALES MATCH_RECOGNIZE (ORDER BY ID MEASURES CLASSIFIER() AS cl PATTERN (a b) DEFINE a AS a.AMOUNT > 0, b AS b.AMOUNT > 0)", true);
+
+            await act.Should().ThrowAsync<org.apache.calcite.plan.RelOptPlanner.CannotPlanException>();
+        }
 
     }
 

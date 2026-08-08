@@ -142,6 +142,15 @@ namespace Apache.Calcite.Tests
         /// </summary>
         public bool SawCancellableToken { get; private set; }
 
+        /// <summary>
+        /// Gets whether the sequence was disposed with something to await, rather than abandoned.
+        /// </summary>
+        /// <remarks>
+        /// Set from the iterator's <c>finally</c>, which runs when the enumerator is disposed. A reader that
+        /// disposed the plan synchronously would never reach the awaited part of it.
+        /// </remarks>
+        public bool DisposedAsynchronously { get; private set; }
+
         /// <inheritdoc />
         public override RelDataType getRowType(RelDataTypeFactory typeFactory) => rowType(typeFactory);
 
@@ -160,17 +169,27 @@ namespace Apache.Calcite.Tests
         {
             SawCancellableToken = cancellationToken.CanBeCanceled;
 
-            foreach (var row in rows)
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                foreach (var row in rows)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
 
-                // genuinely suspends, for the reason the class remarks give
+                    // genuinely suspends, for the reason the class remarks give
+                    await Task.Yield();
+
+                    Produced++;
+                    OnRow?.Invoke(Produced);
+
+                    yield return row;
+                }
+            }
+            finally
+            {
+                // an awaited disposal reaches this; one dropped on the floor does not
                 await Task.Yield();
 
-                Produced++;
-                OnRow?.Invoke(Produced);
-
-                yield return row;
+                DisposedAsynchronously = true;
             }
         }
 
