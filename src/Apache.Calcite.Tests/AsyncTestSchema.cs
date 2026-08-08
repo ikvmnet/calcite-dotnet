@@ -122,6 +122,17 @@ namespace Apache.Calcite.Tests
     {
 
         /// <summary>
+        /// Called with the running row count as each row is produced.
+        /// </summary>
+        /// <remarks>
+        /// So that a test can cancel at a known point in the input rather than after a wall-clock delay. A
+        /// timer is the wrong instrument here: ten thousand rows that each yield finish in well under the
+        /// shortest delay worth waiting for, and a test written that way passes because the query completed
+        /// rather than because anything was cancelled.
+        /// </remarks>
+        public System.Action<int>? OnRow { get; set; }
+
+        /// <summary>
         /// Gets how many rows this table has produced, across every scan of it.
         /// </summary>
         public int Produced { get; private set; }
@@ -157,6 +168,8 @@ namespace Apache.Calcite.Tests
                 await Task.Yield();
 
                 Produced++;
+                OnRow?.Invoke(Produced);
+
                 yield return row;
             }
         }
