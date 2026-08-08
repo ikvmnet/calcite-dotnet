@@ -95,12 +95,6 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         const BindingFlags All = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
 
         /// <summary>
-        /// Assembly IKVM compiles the Java class library into, and so where a remapped class keeps the methods
-        /// its CLR counterpart does not have.
-        /// </summary>
-        static readonly Assembly JavaAssembly = typeof(java.lang.Class).Assembly;
-
-        /// <summary>
         /// Resolves a Java method to its CLR method.
         /// </summary>
         /// <param name="method"></param>
@@ -108,24 +102,42 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <exception cref="NotSupportedException"></exception>
         public static MethodInfo Resolve(java.lang.reflect.Method method)
         {
+            return TryResolve(method)
+                ?? throw new NotSupportedException($"No CLR method matches '{method}'.");
+        }
+
+        /// <summary>
+        /// Resolves a Java method to the CLR method of that name and signature, or answers
+        /// <see langword="null"/> where there is none.
+        /// </summary>
+        /// <param name="method"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// One question, asked once: is there a method of this name whose parameters are exactly these. Where
+        /// there is, it is the method IKVM compiled and nothing further needs deciding; where there is not,
+        /// there is no second question worth asking here. A name that differs, a receiver that moved to a
+        /// static <c>Helper</c>, a ghost interface that declares nothing — those were four more searches, and
+        /// each was a reconstruction of what IKVM did rather than an answer from it. Across all 597 of
+        /// Calcite's <c>BuiltInMethod</c>s they resolved three: <c>String.toUpperCase</c>,
+        /// <c>Object.toString</c> and <c>Comparable.compareTo</c>.
+        ///
+        /// <para>Answering <see langword="null"/> is therefore not a claim that no such method exists. It says
+        /// the CLR type system cannot be asked, and the question goes to IKVM instead — <c>JavaDelegates</c>
+        /// unreflects the member into a method handle, which is IKVM's own resolution of it and cannot be
+        /// wrong. A caller that can invoke a delegate rather than emit a call should do that.</para>
+        /// </remarks>
+        public static MethodInfo? TryResolve(java.lang.reflect.Method method)
+        {
             ArgumentNullException.ThrowIfNull(method);
 
             var declaring = ClrTypes.FromClass(method.getDeclaringClass());
-            var name = method.getName();
 
             var parameterTypes = method.getParameterTypes();
             var parameters = new Type[parameterTypes.Length];
             for (int i = 0; i < parameterTypes.Length; i++)
                 parameters[i] = ClrTypes.FromClass(parameterTypes[i]);
 
-            return declaring.GetMethod(name, All, null, parameters, null)
-                ?? Search(declaring, name, parameters, StringComparison.Ordinal)
-                ?? FromRemappedClass(method.getDeclaringClass(), declaring, name, parameters)
-                // a remapped class keeps its methods but not their Java names: java.lang.Comparable is
-                // System.IComparable, whose method is CompareTo. Last, because a name that differs by more
-                // than case is a resolution to fail on rather than to guess at
-                ?? Search(declaring, name, parameters, StringComparison.OrdinalIgnoreCase)
-                ?? throw new NotSupportedException($"No CLR method matches '{method}'.");
+            return declaring.GetMethod(method.getName(), All, null, parameters, null);
         }
 
         /// <summary>
@@ -166,10 +178,17 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <param name="arguments"></param>
         /// <returns></returns>
         /// <remarks>
-        /// A linq4j tree records a Method, but Janino never uses it: the tree is written out as source and the
-        /// Java compiler resolves the overload from the argument expressions. So the recorded method is only
-        /// what the code that built the tree happened to name. Calcite writes Linq4j.asEnumerable(list) against
-        /// BuiltInMethod.AS_ENUMERABLE, whose parameter is an array, and Java binds the List overload.
+        /// A linq4j tree records a Method, but Janino never uses it: <c>MethodCallExpression</c> writes itself
+        /// out as <c>target.name(args)</c> and the Java compiler resolves the overload from the argument
+        /// expressions. So the recorded method is only what the code that built the tree happened to name.
+        ///
+        /// <para>It is very nearly always the method to call, and measuring says how nearly: across the whole
+        /// test suite one call in the plans this convention builds names a method that is not the one, and it
+        /// is Calcite's own — <c>EnumerableWindow</c> names <c>BINARY_SEARCH5_UPPER</c>, whose method takes
+        /// five parameters, and passes it six arguments. Janino writes the name and javac binds the six-parameter
+        /// overload. Nothing derived from the recorded method can find that, a method handle over it included:
+        /// the handle would take five arguments. Choosing needs the candidates of that name, which is what this
+        /// walks.</para>
         /// </remarks>
         public static MethodInfo Rebind(MethodInfo method, Type[] arguments)
         {
@@ -235,6 +254,14 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <param name="method"></param>
         /// <param name="arguments"></param>
         /// <returns></returns>
+        /// <remarks>
+        /// Fitting includes the box and the primitive of one another, because the call being composed converts
+        /// each argument to its parameter anyway and that conversion is one of the ones it makes. Counting it
+        /// as a misfit sends <see cref="Rebind"/> looking for another method where there was nothing wrong
+        /// with this one: <c>SqlFunctions.greater(int, int)</c> handed an <c>int</c> and a
+        /// <c>java.lang.Integer</c> is the method Calcite named and the method whose return type the tree
+        /// carries, and the second argument wants unboxing rather than a different overload.
+        /// </remarks>
         static bool Accepts(MethodInfo method, Type[] arguments)
         {
             var parameters = method.GetParameters();
@@ -242,118 +269,17 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 return false;
 
             for (int i = 0; i < parameters.Length; i++)
-                if (parameters[i].ParameterType.IsAssignableFrom(arguments[i]) == false)
-                    return false;
-
-            return true;
-        }
-
-        /// <summary>
-        /// Finds a method that a remapped Java class keeps outside the CLR type it was remapped onto.
-        /// </summary>
-        /// <param name="clazz"></param>
-        /// <param name="declaring"></param>
-        /// <param name="name"></param>
-        /// <param name="parameters"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// IKVM remaps a handful of Java classes onto the CLR type that already means the same thing, so
-        /// <c>java.lang.String</c> is <see cref="string"/>. The methods only Java has cannot go there, and
-        /// land on a static <c>Helper</c> class taking the receiver as the first parameter:
-        /// <c>String.toUpperCase()</c> is <c>java.lang.StringHelper.toUpperCase(string)</c>.
-        ///
-        /// <para>The returned method is therefore static where the Java one was not, and a caller composing a
-        /// call must pass the receiver as the first argument rather than as the call's target.</para>
-        /// </remarks>
-        static MethodInfo? FromRemappedClass(java.lang.Class clazz, Type declaring, string name, Type[] parameters)
-        {
-            var helper = JavaAssembly.GetType(clazz.getName() + "Helper");
-            if (helper == null)
-                return null;
-
-            var withReceiver = new Type[parameters.Length + 1];
-            withReceiver[0] = declaring;
-            parameters.CopyTo(withReceiver, 1);
-
-            return helper.GetMethod(name, All, null, withReceiver, null)
-                ?? helper.GetMethod(name, All, null, parameters, null)
-                ?? Search(helper, name, withReceiver, StringComparison.Ordinal)
-                ?? Search(helper, name, parameters, StringComparison.Ordinal);
-        }
-
-        /// <summary>
-        /// Finds a method by name and parameter types when an exact binder match fails.
-        /// </summary>
-        /// <param name="declaring"></param>
-        /// <param name="name"></param>
-        /// <param name="parameters"></param>
-        /// <param name="comparison"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// A method the binder will not match on exact types is still reachable by walking the candidates:
-        /// an interface method is declared on a base interface rather than the one asked about, and a
-        /// method IKVM generates for a Java class can differ from the erased signature Java reports.
-        /// </remarks>
-        static MethodInfo? Search(Type declaring, string name, Type[] parameters, StringComparison comparison)
-        {
-            var found = SearchDeclared(declaring, name, parameters, comparison);
-            if (found != null)
-                return found;
-
-            // an interface does not report the members it inherits, and IKVM leaves a Java interface empty
-            // when a CLR interface already carries its method: java.lang.Comparable extends System.IComparable
-            // and declares nothing itself
-            if (declaring.IsInterface)
-                foreach (var inherited in declaring.GetInterfaces())
-                    if ((found = SearchDeclared(inherited, name, parameters, comparison)) != null)
-                        return found;
-
-            return null;
-        }
-
-        /// <summary>
-        /// Finds a method declared on one type by name and parameter types.
-        /// </summary>
-        /// <param name="declaring"></param>
-        /// <param name="name"></param>
-        /// <param name="parameters"></param>
-        /// <param name="comparison"></param>
-        /// <returns></returns>
-        static MethodInfo? SearchDeclared(Type declaring, string name, Type[] parameters, StringComparison comparison)
-        {
-            MethodInfo? found = null;
-
-            foreach (var candidate in declaring.GetMethods(All))
             {
-                if (string.Equals(candidate.Name, name, comparison) == false)
+                var parameter = parameters[i].ParameterType;
+                if (parameter.IsAssignableFrom(arguments[i]))
+                    continue;
+                if (ClrPrimitive.Box(parameter) == ClrPrimitive.Box(arguments[i]))
                     continue;
 
-                var candidateParameters = candidate.GetParameters();
-                if (candidateParameters.Length != parameters.Length)
-                    continue;
-
-                var match = true;
-                for (int i = 0; i < parameters.Length; i++)
-                {
-                    if (candidateParameters[i].ParameterType.IsAssignableFrom(parameters[i]) == false)
-                    {
-                        match = false;
-                        break;
-                    }
-                }
-
-                if (match == false)
-                    continue;
-
-                // an ambiguous name and arity is a resolution this cannot make, and silently taking the first
-                // would put the wrong method in the tree
-                if (found != null)
-                    throw new NotSupportedException($"'{name}' on '{declaring}' is ambiguous for the given parameter types.");
-
-                found = candidate;
+                return false;
             }
 
-            return found;
+            return true;
         }
 
         /// <summary>

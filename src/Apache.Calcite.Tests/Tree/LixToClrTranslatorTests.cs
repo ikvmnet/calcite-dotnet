@@ -196,6 +196,48 @@ namespace Apache.Calcite.Tests.Tree
             Run<string>(e).Should().Be("ABC");
         }
 
+        /// <summary>
+        /// A method with no CLR method to call at all. IKVM answered String.length() with a property, so
+        /// nothing of that name and arity is on the type, on a helper, or on anything the search reaches —
+        /// ClrTypes.TryResolve says so, and the call goes through a delegate over the method instead.
+        /// </summary>
+        [TestMethod]
+        public void ShouldTranslateCallToMethodWithNoClrMethod()
+        {
+            var method = ((Class)typeof(java.lang.String)).getDeclaredMethod("length", []);
+            ClrTypes.TryResolve(method).Should().BeNull();
+
+            Run<int>(J.Expressions.call(J.Expressions.constant("abc"), method)).Should().Be(3);
+        }
+
+        /// <summary>
+        /// The same, for a method whose receiver is the one type the CLR does not keep Java's methods on, and
+        /// which returns a primitive: the value comes back as an int rather than as a java.lang.Integer.
+        /// </summary>
+        [TestMethod]
+        public void ShouldTranslateCallToMethodOfObject()
+        {
+            var method = ((Class)typeof(java.lang.Object)).getDeclaredMethod("hashCode", []);
+            ClrTypes.TryResolve(method).Should().BeNull();
+
+            var value = new java.util.ArrayList();
+            value.add("a");
+
+            Run<int>(J.Expressions.call(J.Expressions.constant(value), method)).Should().Be(value.hashCode());
+        }
+
+        /// <summary>
+        /// One with an argument, so the delegate's parameters are being filled in the right order.
+        /// </summary>
+        [TestMethod]
+        public void ShouldTranslateCallToMethodWithNoClrMethodAndAnArgument()
+        {
+            var method = ((Class)typeof(java.lang.String)).getDeclaredMethod("charAt", [Integer.TYPE]);
+            ClrTypes.TryResolve(method).Should().BeNull();
+
+            Run<char>(J.Expressions.call(J.Expressions.constant("abc"), method, J.Expressions.constant(Integer.valueOf(1)))).Should().Be('b');
+        }
+
         [TestMethod]
         public void ShouldTranslateTernary()
         {
