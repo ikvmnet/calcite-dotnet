@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Apache Calcite for .NET">
+<!--
+  Apache Calcite for .NET.
+  The crystal is derived from the Apache Calcite logo (https://calcite.apache.org/),
+  Copyright the Apache Software Foundation, licensed under the Apache License 2.0,
+  recoloured to the .NET palette. Not an ASF mark and not a Microsoft one.
+-->
+  <g transform="translate(447.81,-431.72) scale(12.5860)"><g transform="matrix(0.21374972,0.11443934,-0.11443934,0.21374972,0,0)"><path d="m 72.769296,278.65947 -11.010793,6.74091 -11.010792,-0.006 -11.010792,-0.006 -11.010793,-6.75414 -13.399267,-19.40016 35.761967,-87.93272 35.50138,87.97544 z" fill="#512BD4"/></g></g>
+</svg>
