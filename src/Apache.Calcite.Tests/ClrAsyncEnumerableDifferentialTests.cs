@@ -53,11 +53,13 @@ namespace Apache.Calcite.Tests
             {
                 rootSchema.add("SALES", new AsyncRowsTable(AsyncTestRows.Sales, AsyncTestRows.SalesRowType, false));
                 rootSchema.add("SORTED", new AsyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, true));
+                rootSchema.add("WIDE", new AsyncRowsTable(AsyncTestRows.Wide, AsyncTestRows.WideRowType, false));
             }
             else
             {
                 rootSchema.add("SALES", new SyncRowsTable(AsyncTestRows.Sales, AsyncTestRows.SalesRowType, false));
                 rootSchema.add("SORTED", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, true));
+                rootSchema.add("WIDE", new SyncRowsTable(AsyncTestRows.Wide, AsyncTestRows.WideRowType, false));
             }
 
             // a table function, which this convention has no node for: Calcite plans it and the converter
@@ -285,6 +287,19 @@ namespace Apache.Calcite.Tests
 
         [TestMethod]
         public Task ShouldAgreeOnANestedLoopJoin() => Same("SELECT s.ID, t.V FROM SALES s JOIN SORTED t ON s.ID > t.K");
+
+        // A right and a full join over twelve build-side keys with no ORDER BY. The rows that matched nothing
+        // come out at the end, and twelve is the one size at which the collection they are walked from
+        // decides their order: the lookup is a table of 16 and the HashSet copied from its key set is a table
+        // of 32.
+
+        [TestMethod]
+        public Task ShouldAgreeOnARightJoinsOwnOrderOverTwelveKeys() =>
+            SameThrough("ClrAsyncEnumerableHashJoin", "SELECT a.N, b.K FROM (SELECT * FROM WIDE WHERE N < 3) a RIGHT JOIN WIDE b ON a.K = b.K");
+
+        [TestMethod]
+        public Task ShouldAgreeOnAFullJoinsOwnOrderOverTwelveKeys() =>
+            SameThrough("ClrAsyncEnumerableHashJoin", "SELECT a.N, b.K FROM (SELECT * FROM WIDE WHERE N < 3) a FULL JOIN WIDE b ON a.K = b.K");
 
         [TestMethod]
         public Task ShouldAgreeOnASemiJoin() => Same("SELECT ID FROM SALES WHERE ID IN (SELECT K FROM SORTED)");
