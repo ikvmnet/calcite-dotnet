@@ -173,9 +173,36 @@ Note the asynchronous convention needs none of this. It reads a Calcite sub-plan
 plan can put a Calcite node above an asynchronous one, because Calcite cannot read an
 `IClrAsyncScannableTable` — so it has no converter out and nothing to translate.
 
-## A limit sort sorts more than it needs to
+## Audit every operator against linq4j, member by member
 
-`ClrEnumerableDefaults.OrderByWithFetchAndOffset` sorts the whole input and then skips and takes:
+Three divergences have now been found by being asked about, not by testing:
+
+| | ours | Calcite's |
+|---|---|---|
+| `ClrAsyncEnumerableTableScan.Format` | no `Row` case, tested `IsArray` | `EnumerableTableScan.format()` |
+| direct `ScannableTable.scan` in the scan | re-derived `deduceElementType`'s precedence | `getExpression(Queryable.class)` |
+| `OrderByWithFetchAndOffset` | full sort, then skip and take | bounded `TreeMap` (CALCITE-3920, CALCITE-4157) |
+
+All three passed the differential tests, and they had to: **those tests compare answers, and every one of
+these returns the right answer.** They are an oracle for correctness and a null oracle for equivalence. So
+"the suite is green" cannot be the stopping condition for a port.
+
+What found all three was reading Calcite's source for that one member. The audit is therefore: for every
+member of `ClrEnumerableDefaults` against `EnumerableDefaults`, and every node against its `Enumerable*`
+counterpart, read both and record the verdict — ported unchanged, or the exact divergence and why.
+
+It is embarrassingly parallel and each unit is small, which is what makes it a job for one agent per
+member rather than one pass by one reader: an agent holding a single method cannot drift onto something
+else, which is how all three of these got through.
+
+Where a divergence is deliberate — and several are, `ClrPhysType.RowType` being boxed above all — the
+verdict is the record of that, not a defect.
+
+## A limit sort sorts more than it needs to — fixed
+
+Ported now, and kept here as the worked example of what the audit is for.
+
+`ClrEnumerableDefaults.OrderByWithFetchAndOffset` sorted the whole input and then skipped and took:
 
     var ordered = OrderBy(source, keySelector, comparator);
     if (offset > 0) ordered = ordered.Skip(offset);

@@ -2062,20 +2062,109 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="fetch"></param>
         /// <returns></returns>
         /// <remarks>
-        /// The counterpart of <c>EnumerableDefaults.orderBy</c> with a fetch and an offset, which is a sort
-        /// carrying a limit rather than a sort followed by one.
+        /// <c>EnumerableDefaults.orderBy</c> with a fetch and an offset, which is a sort carrying a limit
+        /// rather than a sort followed by one -- and the difference is the whole point of it. CALCITE-3920
+        /// and CALCITE-4157 made linq4j keep at most <c>offset + fetch</c> rows: a row whose key sorts at or
+        /// after the last key held cannot reach the output and is dropped without being stored, and adding
+        /// one evicts the last. <c>ORDER BY x FETCH 10</c> over a million rows holds ten.
+        ///
+        /// <para>This sorted the whole input and then skipped and took, which answers the same rows in the
+        /// same order and holds all million. The differential tests could not see it, because what they
+        /// compare is the answer.</para>
+        ///
+        /// <para>A <c>SortedDictionary</c> where linq4j has a <c>TreeMap</c>, and the same reason its own
+        /// comment gives for choosing one over a heap: it behaves like the plain <c>OrderBy</c> and does
+        /// better when there are few distinct keys. The list per key starts as a single element, as
+        /// linq4j's does.</para>
         /// </remarks>
         public static IEnumerable<TSource> OrderByWithFetchAndOffset<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, int offset, int fetch)
         {
-            var ordered = OrderBy(source, keySelector, comparator);
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(keySelector);
 
+            if (fetch == 0)
+                return [];
+
+            return Ordered(source, keySelector, comparator, offset, fetch);
+        }
+
+        /// <summary>
+        /// Reads the input, keeping only the rows that can reach the output, and yields them in order.
+        /// </summary>
+        static IEnumerable<TSource> Ordered<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, int offset, int fetch)
+        {
+            var order = comparator == null
+                ? Comparer<TKey>.Default
+                : Comparer<TKey>.Create((x, y) => comparator.compare(x, y));
+
+            var map = new SortedDictionary<TKey, List<TSource>>(order);
+            var size = 0L;
+            var needed = fetch == int.MaxValue ? -1L : fetch + (long)offset;
+
+            foreach (var row in source)
+            {
+                var key = keySelector(row);
+
+                if (needed >= 0 && size >= needed)
+                {
+                    // the current row will never appear in the output, so just skip it
+                    var lastKey = map.Keys.Last();
+                    if (order.Compare(key, lastKey) >= 0)
+                        continue;
+
+                    // remove the last entry, so that at most 'needed' rows are kept
+                    var last = map[lastKey];
+                    if (last.Count == 1)
+                        map.Remove(lastKey);
+                    else
+                        last.RemoveAt(last.Count - 1);
+
+                    size--;
+                }
+
+                if (map.TryGetValue(key, out var held))
+                    held.Add(row);
+                else
+                    map[key] = [row];
+
+                size++;
+            }
+
+            // skip the first 'offset' rows by dropping them from the map
             if (offset > 0)
-                ordered = ordered.Skip(offset);
+            {
+                var skipped = 0;
+                var found = false;
+                TKey until = default!;
 
-            if (fetch != int.MaxValue)
-                ordered = ordered.Take(fetch);
+                foreach (var entry in map)
+                {
+                    skipped += entry.Value.Count;
 
-            return ordered;
+                    if (skipped > offset)
+                    {
+                        // part of this key's rows may still be wanted
+                        var keep = skipped - offset;
+                        if (keep < entry.Value.Count)
+                            entry.Value.RemoveRange(0, entry.Value.Count - keep);
+
+                        until = entry.Key;
+                        found = true;
+                        break;
+                    }
+                }
+
+                // the offset is bigger than the number of rows in the map
+                if (found == false)
+                    yield break;
+
+                foreach (var key in map.Keys.TakeWhile(k => order.Compare(k, until) < 0).ToList())
+                    map.Remove(key);
+            }
+
+            foreach (var rows in map.Values)
+                foreach (var row in rows)
+                    yield return row;
         }
 
         /// <summary>

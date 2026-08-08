@@ -196,6 +196,42 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
+        /// Nothing is read until the first <c>ReadAsync</c>.
+        /// </summary>
+        /// <remarks>
+        /// Which is why <c>ExecuteReaderAsync</c> has nothing to await and returns a completed task. It
+        /// parses, plans and compiles — all CPU, on the calling thread — and then composes the operator
+        /// chain, but every operator is an <c>async IAsyncEnumerable</c> iterator, so calling one builds a
+        /// state machine and runs none of it. <c>GetAsyncEnumerator</c> is the same. The table is not
+        /// touched.
+        ///
+        /// <para>So the answer to "could it yield" is that there is nothing there to yield on, rather than
+        /// that the work is hidden. The first suspension is inside the first <c>ReadAsync</c>.</para>
+        ///
+        /// <para>A table that did eager work in <c>ScanAsync</c> — opening a connection before returning the
+        /// sequence — would be doing it synchronously, because <c>ScanAsync</c> returns an
+        /// <see cref="IAsyncEnumerable{T}"/> rather than a task. The place to do that work is the first
+        /// <c>MoveNextAsync</c>, which an iterator gives for free.</para>
+        /// </remarks>
+        [TestMethod]
+        public async Task ShouldReadNothingUntilTheFirstRead()
+        {
+            var (c, table) = Open();
+            await using (c)
+            {
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = "SELECT ID FROM SALES";
+
+                await using var reader = await cmd.ExecuteReaderAsync();
+
+                table.Produced.Should().Be(0, "ExecuteReaderAsync composes the plan and reads none of it");
+
+                (await reader.ReadAsync()).Should().BeTrue();
+                table.Produced.Should().Be(1, "the first row is read by the first ReadAsync and no more");
+            }
+        }
+
+        /// <summary>
         /// Disposing the reader asynchronously awaits the plan's own disposal.
         /// </summary>
         /// <remarks>
