@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data.Common;
 
+using Apache.Calcite.Extensions.Interop;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using FluentAssertions;
@@ -66,28 +67,22 @@ namespace Apache.Calcite.Tests.Tree
             m.Invoke(null, [7]).Should().Be(Integer.valueOf(7));
         }
 
+        /// <summary>
+        /// The three methods of Calcite's whole table that have no CLR method of their name and signature.
+        /// </summary>
+        /// <remarks>
+        /// Each was reachable by a search that reconstructed what IKVM had done — java.lang.String is
+        /// System.String and its Java methods went to a static helper; java.lang.Comparable is left empty and
+        /// extends System.IComparable, whose method is spelled CompareTo. Both reconstructions happened to
+        /// land, and neither was an answer from IKVM. They go to a delegate over the method handle instead,
+        /// which is one.
+        /// </remarks>
         [TestMethod]
-        public void ShouldResolveMethodOfRemappedClass()
+        public void ShouldNotResolveWhatOnlyASearchWouldFind()
         {
-            // java.lang.String is System.String, which has no toUpperCase, so the method is static on a helper
-            // and takes the receiver first. A translated call has to pass the target as argument zero.
-            var m = ClrTypes.Resolve(((Class)typeof(java.lang.String)).getDeclaredMethod("toUpperCase", []));
-
-            m.IsStatic.Should().BeTrue();
-            m.GetParameters().Should().ContainSingle()
-                .Which.ParameterType.Should().Be(typeof(string));
-            m.Invoke(null, ["abc"]).Should().Be("ABC");
-        }
-
-        [TestMethod]
-        public void ShouldResolveMethodInheritedFromClrInterface()
-        {
-            // IKVM leaves java.lang.Comparable empty and extends System.IComparable, and an interface does not
-            // report what it inherits, so this only resolves if the base interfaces are walked
-            var m = ClrTypes.Resolve(((Class)typeof(java.lang.Comparable)).getDeclaredMethod("compareTo", [typeof(object)]));
-
-            m.Name.Should().Be("CompareTo");
-            m.DeclaringType.Should().Be(typeof(IComparable));
+            ClrTypes.TryResolve(((Class)typeof(java.lang.String)).getDeclaredMethod("toUpperCase", [])).Should().BeNull();
+            ClrTypes.TryResolve(((Class)typeof(java.lang.Object)).getDeclaredMethod("toString", [])).Should().BeNull();
+            ClrTypes.TryResolve(((Class)typeof(java.lang.Comparable)).getDeclaredMethod("compareTo", [typeof(object)])).Should().BeNull();
         }
 
         [TestMethod]
@@ -117,18 +112,24 @@ namespace Apache.Calcite.Tests.Tree
         public static string Describe(DbConnection connection, string label) => label;
 
         /// <summary>
-        /// Resolves every method Calcite names in <c>BuiltInMethod</c>.
+        /// Reaches every method Calcite names in <c>BuiltInMethod</c>, by one route or the other.
         /// </summary>
         /// <remarks>
         /// The whole port rests on this direction of the interop working, and it either works for a signature
         /// shape or it does not. Sweeping the table says which shapes are the exceptions instead of finding
         /// them one at a time, node by node, much later.
+        ///
+        /// <para>Reaching one is either resolving it to a CLR method or building a delegate over it, which is
+        /// what a translated call does. The count of each is asserted rather than only the total: a method
+        /// moving from the first route to the second is a call becoming an invoke, and that should not happen
+        /// unnoticed.</para>
         /// </remarks>
         [TestMethod]
-        public void ShouldResolveEveryBuiltInMethod()
+        public void ShouldReachEveryBuiltInMethod()
         {
             var failures = new List<string>();
-            var resolved = 0;
+            var invoked = new List<string>();
+            var called = 0;
 
             foreach (BuiltInMethod value in BuiltInMethod.values())
             {
@@ -138,8 +139,10 @@ namespace Apache.Calcite.Tests.Tree
 
                 try
                 {
-                    ClrTypes.Resolve(method);
-                    resolved++;
+                    if (ClrTypes.TryResolve(method) != null)
+                        called++;
+                    else if (JavaDelegates.FromMethod(method) != null)
+                        invoked.Add($"{value.name()}: {method}");
                 }
                 catch (System.Exception e)
                 {
@@ -147,8 +150,13 @@ namespace Apache.Calcite.Tests.Tree
                 }
             }
 
-            resolved.Should().BeGreaterThan(0);
-            Assert.IsTrue(failures.Count == 0, $"{resolved} resolved, {failures.Count} failed:{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
+            Assert.IsTrue(failures.Count == 0, $"{called} called, {invoked.Count} invoked, {failures.Count} failed:{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
+
+            called.Should().Be(594);
+            invoked.Should().BeEquivalentTo([
+                "STRING_TO_UPPER: public java.lang.String java.lang.String.toUpperCase()",
+                "OBJECT_TO_STRING: public java.lang.String java.lang.Object.toString()",
+                "COMPARE_TO: public abstract int java.lang.Comparable.compareTo(java.lang.Object)"]);
         }
 
     }

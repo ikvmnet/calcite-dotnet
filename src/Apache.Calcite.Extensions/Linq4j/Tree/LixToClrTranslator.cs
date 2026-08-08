@@ -698,10 +698,15 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <returns></returns>
         Expression Call(J.MethodCallExpression expression)
         {
-            var method = ClrTypes.Resolve(expression.method);
+            var method = ClrTypes.TryResolve(expression.method);
             var target = expression.targetExpression == null ? null : Visit(expression.targetExpression);
 
             var arguments = expression.expressions;
+
+            // no CLR method of that name and signature is on that type at all, which is what a remapped class
+            // or a ghost interface leaves behind. IKVM knows which method it compiled; a name search does not
+            if (method == null)
+                return Invoke(expression.method, target, arguments);
 
             // a method IKVM moved off a remapped class is static and takes the receiver first, so what Java
             // called the target is argument zero
@@ -733,6 +738,40 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 return Expression.Call(null, method, resolved);
 
             return Expression.Call(ClrEnumUtils.Convert(target!, method.DeclaringType!), method, resolved);
+        }
+
+        /// <summary>
+        /// Translates a method call as an invocation of a delegate over the method.
+        /// </summary>
+        /// <param name="method"></param>
+        /// <param name="target"></param>
+        /// <param name="arguments"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The route for a method the CLR type system cannot be asked about — one of a remapped class, whose
+        /// Java methods went elsewhere, or of a ghost interface, which declares nothing. The delegate is
+        /// IKVM's own resolution of the member and takes the receiver first where the method has one, so the
+        /// receiver moves the same way it does for a method that landed on a <c>Helper</c> class.
+        ///
+        /// <para>Its signature is objects and primitives — see <c>JavaDelegates.FromMethod</c> — so the
+        /// conversions here are reference conversions and the boxing of a primitive argument, both of which
+        /// <see cref="Coerce"/> already does. A primitive never crosses as an object, which is the one thing
+        /// that would put a <c>java.lang.Integer</c> where a CLR int belongs.</para>
+        /// </remarks>
+        Expression Invoke(java.lang.reflect.Method method, Expression? target, java.util.List arguments)
+        {
+            var del = JavaDelegates.FromMethod(method);
+            var parameters = del.GetType().GetMethod("Invoke")!.GetParameters();
+
+            var offset = target != null ? 1 : 0;
+            var resolved = new Expression[arguments.size() + offset];
+            if (offset == 1)
+                resolved[0] = Coerce(target!, parameters[0].ParameterType);
+
+            for (int i = 0; i < arguments.size(); i++)
+                resolved[i + offset] = Coerce(Visit((J.Node)arguments.get(i)), parameters[i + offset].ParameterType);
+
+            return Expression.Invoke(Expression.Constant(del, del.GetType()), resolved);
         }
 
         /// <summary>
