@@ -116,14 +116,21 @@ namespace Apache.Calcite.Data
         public override bool Read()
         {
             ThrowIfClosed();
+
             _hasRow = ActiveResult.Read();
             return _hasRow;
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// A synchronous plan is read synchronously and reported in a completed task, which is what every
+        /// synchronous ADO.NET provider does and is not sync over async — there is nothing asynchronous to
+        /// be over. An asynchronous plan is awaited.
+        /// </remarks>
         public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
         {
             ThrowIfClosed();
+
             _hasRow = await ActiveResult.ReadAsync(cancellationToken).ConfigureAwait(false);
             return _hasRow;
         }

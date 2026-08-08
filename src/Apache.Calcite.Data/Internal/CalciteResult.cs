@@ -1,8 +1,4 @@
-using org.apache.calcite.jdbc;
-using org.apache.calcite.linq4j;
-
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -15,62 +11,49 @@ namespace Apache.Calcite.Data.Internal
     /// Reads the rows of a prepared <see cref="ClrSignature"/>.
     /// </summary>
     /// <remarks>
-    /// The enumerator is the plan's own — a compiled delegate hands back an
-    /// <see cref="IEnumerator{T}"/> of objects — so nothing stands between a row and the reader.
+    /// What a reader holds, and what both execute paths return. Everything about a <em>row</em> is here —
+    /// the columns, the cursor factory, the current row, the affected count — because a row is the same
+    /// thing whichever convention produced it. Reading is what the two subclasses differ by, and it is the
+    /// only thing they differ by.
+    ///
+    /// <para>Two classes rather than one holding two enumerators. A single class decided which it was
+    /// from a nullable field, so nothing could be relied on at a call site; here the type is the answer and
+    /// each subclass holds exactly the enumerator it has.</para>
+    ///
+    /// <para><b>Both read methods are on both</b>, and that is deliberate rather than a compromise.
+    /// <c>DbDataReader</c> is a contract: a consumer that knows nothing but <c>DbDataReader</c> -- a
+    /// micro-ORM, <c>DataTable.Load</c>, anything generic -- calls <c>Read</c>, and a provider whose reader
+    /// throws there is not a provider. So a synchronous plan answers <c>ReadAsync</c> with a completed
+    /// task, and an asynchronous plan blocks in <c>Read</c>.</para>
+    ///
+    /// <para>Neither is the sync-over-async this convention refuses. That rule is about a <em>plan's</em>
+    /// internals, where a converter would insert blocking nobody asked for and nobody could see. Here the
+    /// caller is choosing, in the open, at the boundary -- which is where every ADO.NET provider blocks and
+    /// what <c>Read</c> on an asynchronous source means.</para>
     /// </remarks>
-    internal sealed record CalciteResult : IDisposable, IAsyncDisposable
+    internal abstract class CalciteResult : IDisposable, IAsyncDisposable
     {
 
         readonly ClrSignature _signature;
         readonly CalciteResultColumns _columns;
-        readonly IEnumerator<object>? _enumerator;
-        readonly IAsyncEnumerator<object>? _asyncEnumerator;
         readonly long _recordsAffected;
 
-        CalciteResultRow? _current = null;
+        CalciteResultRow? _current;
         bool _disposed;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
         /// <param name="signature"></param>
-        /// <param name="enumerator"></param>
         /// <param name="recordsAffected"></param>
-        public CalciteResult(ClrSignature signature, IEnumerator<object>? enumerator, long recordsAffected = -1)
+        protected CalciteResult(ClrSignature signature, long recordsAffected)
         {
             ArgumentNullException.ThrowIfNull(signature);
 
-            _columns = new CalciteResultColumns(signature);
             _signature = signature;
-            _enumerator = enumerator;
+            _columns = new CalciteResultColumns(signature);
             _recordsAffected = recordsAffected;
         }
-
-        /// <summary>
-        /// Initializes a new instance over an asynchronous plan.
-        /// </summary>
-        /// <param name="signature"></param>
-        /// <param name="enumerator"></param>
-        /// <param name="recordsAffected"></param>
-        public CalciteResult(ClrSignature signature, IAsyncEnumerator<object>? enumerator, long recordsAffected = -1)
-        {
-            ArgumentNullException.ThrowIfNull(signature);
-
-            _columns = new CalciteResultColumns(signature);
-            _signature = signature;
-            _asyncEnumerator = enumerator;
-            _recordsAffected = recordsAffected;
-        }
-
-        /// <summary>
-        /// Gets whether the rows come from a plan of the asynchronous convention.
-        /// </summary>
-        /// <remarks>
-        /// Readable because a caller has no other way to tell, and because a reader that fell back to a
-        /// synchronous plan is not doing what it was asked. A silent fallback is how "it is asynchronous
-        /// now" stops being true without anyone noticing.
-        /// </remarks>
-        public bool IsAsynchronous => _asyncEnumerator is not null;
 
         /// <summary>
         /// Gets the collection of columns returned by the Calcite query result.
@@ -83,79 +66,55 @@ namespace Apache.Calcite.Data.Internal
         public long RecordsAffected => _recordsAffected;
 
         /// <summary>
-        /// Reads the next row from the enumerator.
-        /// </summary>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// <b>The token that reaches the leaf is the one given to <c>ExecuteReaderAsync</c>, not this one.</b>
-        /// An <see cref="IAsyncEnumerable{T}"/> takes its token at
-        /// <see cref="IAsyncEnumerable{T}.GetAsyncEnumerator"/>, which happened once when the reader was
-        /// created; <c>DbDataReader.ReadAsync</c> offers a token per call, and there is nowhere to put a
-        /// later one. So a token passed only here stops the reader between rows — that is what the check
-        /// below does — but cannot interrupt a table already waiting on I/O.
-        ///
-        /// <para>Nothing can be done about that shape without giving every operator a token parameter the
-        /// plan would have to thread, which is the design this convention deliberately does not have. A
-        /// caller who wants a read interruptible mid-row passes the token to <c>ExecuteReaderAsync</c>.</para>
-        /// </remarks>
-        public async Task<bool> ReadAsync(CancellationToken cancellationToken)
-        {
-            ThrowIfDisposed();
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (_asyncEnumerator is not null)
-            {
-                if (await _asyncEnumerator.MoveNextAsync().ConfigureAwait(false) == false)
-                {
-                    _current = null;
-                    return false;
-                }
-
-                _current = new CalciteResultRow(_columns, _signature.CursorFactory, _asyncEnumerator.Current);
-                return true;
-            }
-
-            // a synchronous plan completes synchronously, which blocks nothing: it is not asynchronous, and
-            // that is a different thing from blocking a thread while pretending to be
-            if (_enumerator is null || _enumerator.MoveNext() == false)
-            {
-                _current = null;
-                return false;
-            }
-
-            _current = new CalciteResultRow(_columns, _signature.CursorFactory, _enumerator.Current);
-            return true;
-        }
-
-        /// <summary>
-        /// Reads the next row, refusing to block on an asynchronous plan.
-        /// </summary>
-        /// <returns></returns>
-        /// <exception cref="InvalidOperationException">The rows come from an asynchronous plan.</exception>
-        /// <remarks>
-        /// The one place a caller could stumble into sync over async by accident, so it is the one place
-        /// that refuses. Blocking on <c>MoveNextAsync</c> here would deadlock on a synchronization context
-        /// and would waste a thread everywhere else; a caller holding an asynchronous reader has
-        /// <see cref="ReadAsync"/>.
-        /// </remarks>
-        public bool Read()
-        {
-            if (_asyncEnumerator is not null)
-                throw new InvalidOperationException(
-                    "This result was prepared into the asynchronous convention and can only be read with ReadAsync.");
-
-            return ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
-        }
-
-        /// <summary>
         /// Gets the current row.
         /// </summary>
         public CalciteResultRow Current => _current ?? throw new InvalidOperationException();
 
         /// <summary>
-        /// Disposes of the instance.
+        /// Reads the next row.
         /// </summary>
+        /// <returns>Whether there was a row.</returns>
+        public abstract bool Read();
+
+        /// <summary>
+        /// Reads the next row.
+        /// </summary>
+        /// <param name="cancellationToken"></param>
+        /// <returns>Whether there was a row.</returns>
+        public abstract Task<bool> ReadAsync(CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Records the row just read, or that there was none.
+        /// </summary>
+        /// <param name="row">The row the plan produced, or <see langword="null"/> where it is exhausted.</param>
+        /// <param name="moved"></param>
+        /// <returns>Whether there was a row.</returns>
+        protected bool Accept(object? row, bool moved)
+        {
+            _current = moved ? new CalciteResultRow(_columns, _signature.CursorFactory, row!) : null;
+            return moved;
+        }
+
+        /// <summary>
+        /// Throws where this instance has been disposed.
+        /// </summary>
+        protected void ThrowIfDisposed()
+        {
+            if (_disposed)
+                throw new ObjectDisposedException(GetType().Name);
+        }
+
+        /// <summary>
+        /// Releases the plan's enumerator.
+        /// </summary>
+        protected abstract void Release();
+
+        /// <summary>
+        /// Releases the plan's enumerator, awaiting it where it has something to await.
+        /// </summary>
+        protected abstract ValueTask ReleaseAsync();
+
+        /// <inheritdoc />
         public void Dispose()
         {
             if (_disposed)
@@ -165,34 +124,15 @@ namespace Apache.Calcite.Data.Internal
 
             try
             {
-                _enumerator?.Dispose();
+                Release();
             }
             catch
             {
                 // best-effort cleanup
             }
-
-            if (_asyncEnumerator is not null)
-            {
-                // a synchronous Dispose of an asynchronous plan has nowhere to await, and blocking here is
-                // the deadlock this convention exists to avoid. DisposeAsync is the way, and a caller
-                // reading asynchronously has one.
-                try
-                {
-                    var pending = _asyncEnumerator.DisposeAsync();
-                    if (pending.IsCompleted)
-                        pending.GetAwaiter().GetResult();
-                }
-                catch
-                {
-                    // best-effort cleanup
-                }
-            }
         }
 
-        /// <summary>
-        /// Disposes of the instance, awaiting an asynchronous plan's own disposal.
-        /// </summary>
+        /// <inheritdoc />
         public async ValueTask DisposeAsync()
         {
             if (_disposed)
@@ -202,21 +142,12 @@ namespace Apache.Calcite.Data.Internal
 
             try
             {
-                _enumerator?.Dispose();
-
-                if (_asyncEnumerator is not null)
-                    await _asyncEnumerator.DisposeAsync().ConfigureAwait(false);
+                await ReleaseAsync().ConfigureAwait(false);
             }
             catch
             {
                 // best-effort cleanup
             }
-        }
-
-        void ThrowIfDisposed()
-        {
-            if (_disposed)
-                throw new ObjectDisposedException(nameof(CalciteResult));
         }
 
     }

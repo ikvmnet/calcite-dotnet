@@ -321,10 +321,30 @@ In `Apache.Calcite.Data`:
   first and the ADO.NET tests broke on it at once: `ExecuteReader` and `ExecuteReaderAsync` arrive at the
   *same* session method, because the synchronous one blocks on the asynchronous one, so deciding inside
   the session handed a synchronous caller a reader whose `Read` throws. `CalciteCommand` passes a flag.
-- `ExecuteDbDataReaderAsync` asks for asynchronous and falls back **on `CannotPlanException` only** —
-  the one signal that means the query cannot be covered, as opposed to failing. That is not
-  sync-over-async: reading a synchronous plan completes synchronously and blocks nothing. What the
-  fallback must never do is wrap the synchronous plan in an `IAsyncEnumerable`.
+- **There is no fallback.** `ExecuteReaderAsync` prepares into the asynchronous convention and throws
+  where it cannot. Preparing the synchronous plan instead would hand back a reader that looks
+  asynchronous and blocks a thread per row, and a caller cannot tell the difference from the outside, so
+  the failure has to be visible. If a fallback is ever wanted it comes from a converter — which would
+  make the mixed plan one the planner chose and costed, rather than a second plan substituted behind the
+  caller's back.
+- `CalciteSession` carries both halves of each operation — `ExecuteReader`/`ExecuteReaderAsync`,
+  `ExecuteNonQuery`/`ExecuteNonQueryAsync` — rather than one async method the synchronous entry point
+  blocks on. That funnelling is what made a session-level decision look possible in the first place.
+- `CalciteResult` is abstract, with `CalciteEnumerableResult` and `CalciteAsyncEnumerableResult` under
+  it. One class holding two nullable enumerators decided which it was from a field, so nothing could be
+  relied on at a call site.
+- **Both read methods are on both.** `DbDataReader` is a contract — a consumer that knows nothing but
+  that interface calls `Read`, and a provider whose reader throws there is not a provider. So a
+  synchronous plan answers `ReadAsync` with a completed task, and an asynchronous plan blocks in
+  `Read`. Neither is the sync-over-async this convention refuses: **that rule is about a plan's
+  internals**, where a converter would insert blocking nobody asked for and nobody could see. At the
+  boundary the caller is choosing in the open, which is where every ADO.NET provider blocks.
+- `CalciteBatch` reads synchronously even from its async entry point. A batch runs whatever statements
+  the caller has, and demanding they all be asynchronously scannable would fail a batch on the strength
+  of how it was executed rather than what it says. An asynchronous batch is a decision about that API.
+- There is no asynchronous DML and cannot be: a table modification is not a node either convention
+  implements, the synchronous one reaching Calcite's across a converter and this one having none. A write
+  is planned into `ClrEnumerableConvention` whichever entry point asked for it.
 - **A token reaches the leaf only if it was given to `ExecuteReaderAsync`.** An `IAsyncEnumerable` takes
   its token at `GetAsyncEnumerator`, which happens once when the reader is made; `DbDataReader.ReadAsync`
   offers one per call and there is nowhere to put a later one. A token passed only to `ReadAsync` stops

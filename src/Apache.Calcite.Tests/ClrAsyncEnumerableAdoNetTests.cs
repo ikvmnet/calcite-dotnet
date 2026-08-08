@@ -23,10 +23,10 @@ namespace Apache.Calcite.Tests
     /// <c>Func&lt;DataContext, IAsyncEnumerable&lt;object&gt;&gt;</c>, and <c>DbDataReader.ReadAsync</c>
     /// pulling the rows out.
     ///
-    /// <para>Every one of them asserts <c>which</c> convention ran, not only that rows came back. A reader
-    /// that quietly fell back to the synchronous plan returns exactly the right rows, so a test that checked
-    /// only the rows would pass while the feature did nothing — which is the whole reason
-    /// <c>CalciteResult.IsAsynchronous</c> is readable at all.</para>
+    /// <para>Every one of them asserts <c>which</c> convention ran, not only that rows came back. There is
+    /// no fallback to be caught out by any more — <c>ExecuteReaderAsync</c> throws where it cannot plan —
+    /// but a test that checked only the rows would still be satisfied by a plan that never suspended, so
+    /// each one reads the leaf's own counters.</para>
     /// </remarks>
     [TestClass]
     public class ClrAsyncEnumerableAdoNetTests
@@ -101,17 +101,20 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// A query that cannot be planned asynchronously still runs, and is read synchronously.
+        /// A query that cannot be planned asynchronously fails, rather than quietly running synchronously.
         /// </summary>
         /// <remarks>
-        /// A VALUES query has no table at all, so both conventions can plan it; a query over a table that is
-        /// not an <c>IClrAsyncScannableTable</c> cannot be planned asynchronously, because there is no
-        /// converter to carry its rows. The fallback is what stops that being a failure, and reading it
-        /// completes synchronously — which blocks nothing, and is a different thing from blocking a thread
-        /// while looking asynchronous.
+        /// There is no fallback and this is what stands in its place. A table that is not an
+        /// <c>IClrAsyncScannableTable</c> cannot be reached from this convention, there being no converter
+        /// to carry its rows, and preparing the synchronous plan instead would hand back a reader that looks
+        /// asynchronous and blocks a thread per row — which a caller cannot tell from the outside, so the
+        /// failure has to be visible.
+        ///
+        /// <para>The same query read through <c>ExecuteReader</c> works, and that is the caller's way of
+        /// saying they meant it.</para>
         /// </remarks>
         [TestMethod]
-        public async Task ShouldFallBackForATableThatCannotProduceRowsAsynchronously()
+        public async Task ShouldRefuseToPlanASyncOnlyTableAsynchronously()
         {
             using var c = new CalciteConnection(Model);
             c.Open();
@@ -120,37 +123,45 @@ namespace Apache.Calcite.Tests
             using var cmd = c.CreateCommand();
             cmd.CommandText = "SELECT K, V FROM SYNCONLY ORDER BY K, V";
 
-            var rows = new List<string>();
-            using var reader = await cmd.ExecuteReaderAsync();
+            await cmd.Invoking(x => x.ExecuteReaderAsync()).Should().ThrowAsync<Exception>();
 
-            while (await reader.ReadAsync())
+            var rows = new List<string>();
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
                 rows.Add(reader.GetInt32(0) + "|" + reader.GetString(1));
 
             rows.Should().Equal(["1|A", "2|B", "2|C", "4|D"]);
         }
 
         /// <summary>
-        /// A reader over an asynchronous plan refuses to be read synchronously.
+        /// A reader over an asynchronous plan can still be read synchronously.
         /// </summary>
         /// <remarks>
-        /// The one place a caller could reach sync over async by accident. Blocking on
-        /// <c>MoveNextAsync</c> here deadlocks on a synchronization context and wastes a thread everywhere
-        /// else, so it refuses instead and says which method to use.
+        /// <c>DbDataReader</c> is a contract, and a consumer that knows nothing but that interface — a
+        /// micro-ORM, <c>DataTable.Load</c> — calls <c>Read</c>. A provider whose reader throws there is not
+        /// a provider, so the asynchronous result blocks instead.
+        ///
+        /// <para>That is not the sync-over-async the convention refuses. That rule governs what a plan does
+        /// inside itself, where a converter would insert blocking nobody chose and nobody could see; here
+        /// the caller is choosing it in the open at the boundary.</para>
         /// </remarks>
         [TestMethod]
-        public async Task ShouldRefuseToReadAnAsyncPlanSynchronously()
+        public async Task ShouldReadAnAsyncPlanSynchronouslyWhenAskedTo()
         {
-            var (c, _) = Open();
+            var (c, table) = Open();
             using (c)
             {
                 using var cmd = c.CreateCommand();
-                cmd.CommandText = "SELECT ID FROM SALES";
+                cmd.CommandText = "SELECT ID FROM SALES ORDER BY ID";
 
                 using var reader = await cmd.ExecuteReaderAsync();
 
-                reader.Invoking(r => r.Read())
-                    .Should().Throw<InvalidOperationException>()
-                    .WithMessage("*ReadAsync*");
+                var rows = new List<int>();
+                while (reader.Read())
+                    rows.Add(reader.GetInt32(0));
+
+                rows.Should().Equal([1, 2, 3, 4, 5, 6]);
+                table.Produced.Should().Be(6, "the rows still come from the asynchronous plan");
             }
         }
 

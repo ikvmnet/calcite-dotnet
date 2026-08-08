@@ -276,33 +276,77 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Prepares and executes a query, returning a <see cref="CalciteResult"/> whose enumerator
-        /// streams the result rows. For DDL statements the enumerator is <see langword="null"/>.
+        /// Prepares and executes a query, returning a <see cref="CalciteResult"/> whose enumerator streams
+        /// the result rows. For DDL statements the enumerator is <see langword="null"/>.
         /// </summary>
         /// <param name="request">The execute request containing SQL text, parameters, timeout, and hooks.</param>
-        /// <param name="cancellationToken">Token used to cancel execution.</param>
-        /// <returns>A <see cref="CalciteResult"/> holding the signature, cancellation registration, and row enumerator.</returns>
+        /// <returns>A <see cref="CalciteResult"/> holding the signature and a row enumerator.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="request"/> is <see langword="null"/>.</exception>
         /// <exception cref="CalciteException">Thrown when planning or execution fails.</exception>
-        public Task<CalciteResult> ExecuteReaderAsync(CalciteExecuteRequest request, CancellationToken cancellationToken)
+        /// <remarks>
+        /// Prepares into <c>ClrEnumerableConvention</c>, which reads a <c>ScannableTable</c>, a
+        /// <c>QueryableTable</c> and the rest of Calcite's table SPI, and falls through to
+        /// <c>EnumerableConvention</c> across a converter for anything it has no node for.
+        /// </remarks>
+        public CalciteEnumerableResult ExecuteReader(CalciteExecuteRequest request)
         {
-            return ExecuteReaderAsync(request, false, cancellationToken);
+            ArgumentNullException.ThrowIfNull(request);
+
+            ThrowIfDisposed();
+
+            var closeables = ActivateHooks(request.Hooks);
+
+            try
+            {
+                var signature = Plan(request);
+                Bind(request, signature, out var dataContext, out _);
+
+                IEnumerator<object>? enumerator = null;
+                if (!IsDdl(signature.StatementType))
+                    enumerator = signature.Bind(dataContext).GetEnumerator();
+
+                return new CalciteEnumerableResult(signature, enumerator, 0);
+            }
+            catch (CalciteException)
+            {
+                throw;
+            }
+            catch (Exception e)
+            {
+                throw new CalciteException("Failed to execute Calcite statement.", e);
+            }
+            finally
+            {
+                DeactivateHooks(closeables);
+            }
         }
 
         /// <summary>
-        /// Prepares and executes a query, returning a <see cref="CalciteResult"/> whose enumerator streams
-        /// the result rows.
+        /// Prepares and executes a query into the asynchronous convention, returning a
+        /// <see cref="CalciteResult"/> whose enumerator streams the result rows.
         /// </summary>
         /// <param name="request">The execute request containing SQL text, parameters, timeout, and hooks.</param>
-        /// <param name="preferAsynchronous">Whether the caller will read the rows asynchronously.</param>
-        /// <param name="cancellationToken">Token used to cancel execution.</param>
+        /// <param name="cancellationToken">Token used to cancel execution. It is given to the plan's
+        /// enumerator, which is the only place a token can enter an
+        /// <see cref="IAsyncEnumerable{T}"/>.</param>
+        /// <returns>A <see cref="CalciteResult"/> holding the signature and an asynchronous row enumerator.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="request"/> is <see langword="null"/>.</exception>
+        /// <exception cref="CalciteException">Thrown when planning or execution fails, <b>including where the
+        /// query cannot be planned asynchronously at all</b>.</exception>
         /// <remarks>
-        /// The caller says which it wants, because both entry points arrive here: <c>ExecuteReader</c> and
-        /// <c>ExecuteReaderAsync</c> are the same method on <c>DbCommand</c> once the synchronous one has
-        /// blocked on the asynchronous one. Deciding here instead would hand a synchronous caller a plan it
-        /// cannot read — which is what happened, and what the ADO.NET tests caught.
+        /// <b>There is no fallback.</b> <c>ClrAsyncEnumerableConvention</c> has no converter to any other, so
+        /// a query touching a table that is not an <c>IClrAsyncScannableTable</c> cannot be planned and this
+        /// throws. Preparing the synchronous plan instead would hand back a reader that looks asynchronous
+        /// and blocks a thread per row, which is the one thing this convention exists to refuse -- and a
+        /// caller cannot tell the difference from the outside, so the failure has to be visible.
+        ///
+        /// <para>If a fallback is ever wanted it will come from a converter, which would make the mixed plan
+        /// one the planner chose and costed rather than a second plan substituted behind the caller's
+        /// back.</para>
+        ///
+        /// <para>A caller that wants the synchronous plan asks for it: <see cref="ExecuteReader"/>.</para>
         /// </remarks>
-        public Task<CalciteResult> ExecuteReaderAsync(CalciteExecuteRequest request, bool preferAsynchronous, CancellationToken cancellationToken)
+        public Task<CalciteResult> ExecuteReaderAsync(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(request);
 
@@ -313,48 +357,14 @@ namespace Apache.Calcite.Data.Internal
 
             try
             {
-                // the asynchronous convention first, because this is the asynchronous entry point. It has no
-                // converter to any other, so a query touching a table that cannot produce rows
-                // asynchronously does not plan at all -- which is the signal to fall back, and the only one.
-                // A plan that failed for any other reason is a failure and is not retried into a convention
-                // where it would fail differently.
-                ClrSignature? signature = null;
-                if (preferAsynchronous)
-                {
-                    try
-                    {
-                        signature = Plan(request, async: true);
-                    }
-                    catch (org.apache.calcite.plan.RelOptPlanner.CannotPlanException)
-                    {
-                        signature = null;
-                    }
-                }
-
-                if (signature is not null)
-                {
-                    Bind(request, signature, out var asyncContext, out _);
-
-                    IAsyncEnumerator<object>? asyncEnumerator = null;
-                    if (!IsDdl(signature.StatementType))
-                        asyncEnumerator = signature.BindAsync(asyncContext).GetAsyncEnumerator(cancellationToken);
-
-                    return Task.FromResult(new CalciteResult(signature, asyncEnumerator, 0));
-                }
-
-                // the synchronous plan. Reading it completes synchronously, which blocks nothing -- it is
-                // simply not asynchronous, and CalciteResult.IsAsynchronous says so rather than leaving a
-                // caller to assume otherwise.
-                signature = Plan(request);
+                var signature = Plan(request, async: true);
                 Bind(request, signature, out var dataContext, out _);
 
-                var statementType = signature.StatementType;
+                IAsyncEnumerator<object>? enumerator = null;
+                if (!IsDdl(signature.StatementType))
+                    enumerator = signature.BindAsync(dataContext).GetAsyncEnumerator(cancellationToken);
 
-                IEnumerator<object>? enumerator = null;
-                if (!IsDdl(statementType))
-                    enumerator = signature.Bind(dataContext).GetEnumerator();
-
-                return Task.FromResult(new CalciteResult(signature, enumerator, 0));
+                return Task.FromResult<CalciteResult>(new CalciteAsyncEnumerableResult(signature, enumerator, 0));
             }
             catch (CalciteException)
             {
@@ -380,7 +390,14 @@ namespace Apache.Calcite.Data.Internal
         /// <returns>A <see cref="CalciteResult"/> with <c>RecordsAffected</c> set and no row enumerator.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="request"/> is <see langword="null"/>.</exception>
         /// <exception cref="CalciteException">Thrown when planning or execution fails.</exception>
-        public Task<CalciteResult> ExecuteNonQueryAsync(CalciteExecuteRequest request, CancellationToken cancellationToken)
+        /// <remarks>
+        /// Synchronous, and <see cref="ExecuteNonQueryAsync"/> is this method in a completed task. There is
+        /// no asynchronous DML and there cannot be one: a table modification is not a node either of these
+        /// conventions implements -- the synchronous one reaches Calcite's across a converter, and the
+        /// asynchronous one has no converter -- so a write is planned into <c>ClrEnumerableConvention</c>
+        /// whichever entry point asked for it.
+        /// </remarks>
+        public CalciteEnumerableResult ExecuteNonQuery(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(request);
 
@@ -429,7 +446,7 @@ namespace Apache.Calcite.Data.Internal
                     }
                 }
 
-                return Task.FromResult(new CalciteResult(signature, (IEnumerator<object>?)null, recordsAffected));
+                return new CalciteEnumerableResult(signature, null, recordsAffected);
             }
             catch (CalciteException)
             {
@@ -443,6 +460,22 @@ namespace Apache.Calcite.Data.Internal
             {
                 DeactivateHooks(closeables);
             }
+        }
+
+        /// <summary>
+        /// Prepares and executes a DML, DDL, or SELECT statement and returns the number of rows affected.
+        /// </summary>
+        /// <param name="request">The execute request containing SQL text, parameters, timeout, and hooks.</param>
+        /// <param name="cancellationToken">Token used to cancel execution.</param>
+        /// <returns>A <see cref="CalciteResult"/> with <c>RecordsAffected</c> set and no row enumerator.</returns>
+        /// <remarks>
+        /// <see cref="ExecuteNonQuery"/> in a completed task, for the reason that method gives: there is no
+        /// asynchronous DML to prepare. It is here so that a caller writing asynchronously has the method it
+        /// expects, not because anything about it awaits.
+        /// </remarks>
+        public Task<CalciteResult> ExecuteNonQueryAsync(CalciteExecuteRequest request, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<CalciteResult>(ExecuteNonQuery(request, cancellationToken));
         }
 
         /// <summary>Returns <see langword="true"/> when <paramref name="t"/> represents a DDL statement type.</summary>

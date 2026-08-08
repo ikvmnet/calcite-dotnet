@@ -239,9 +239,21 @@ namespace Apache.Calcite.Data
         /// <param name="command"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
+        /// <remarks>
+        /// The synchronous plan, though this method is awaited. A batch is a sequence of statements over
+        /// whatever tables the caller has, and there is no reason to think they can produce rows
+        /// asynchronously — <c>ExecuteReaderAsync</c> would throw for any that cannot, which would make a
+        /// batch fail on the strength of how it happened to be executed rather than on what it says.
+        ///
+        /// <para>An asynchronous batch would want the asynchronous plan and would then need every table it
+        /// touches to be an <c>IClrAsyncScannableTable</c>. That is a decision about the batch API and not
+        /// one to make here by accident.</para>
+        /// </remarks>
         Task<CalciteResult> ExecuteReaderCoreAsync(CalciteSession session, CalciteBatchCommand command, CancellationToken cancellationToken)
         {
-            return session.ExecuteReaderAsync(CalciteExecuteRequest.From(command.CommandText, command.Parameters, _timeout), cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult<CalciteResult>(session.ExecuteReader(CalciteExecuteRequest.From(command.CommandText, command.Parameters, _timeout)));
         }
 
         /// <summary>

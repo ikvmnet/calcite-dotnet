@@ -255,17 +255,27 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Reads the synchronous plan, rather than blocking on <see cref="ExecuteScalarAsync"/>. Doing the
+        /// latter would make an ordinary <c>ExecuteScalar</c> demand a table that can produce rows
+        /// asynchronously, which is not what a synchronous caller asked for.
+        /// </remarks>
         public override object? ExecuteScalar()
         {
-            return ExecuteScalarAsync(CancellationToken.None).GetAwaiter().GetResult();
+            using var result = GetOpenSession().ExecuteReader(CalciteExecuteRequest.From(_commandText, _parameters, _commandTimeout, ResolveHooks()));
+            if (result.Read() == false)
+                return null;
+
+            if (result.Columns.Count == 0)
+                return null;
+
+            return result.Current.GetValue(0).GetValue();
         }
 
         /// <inheritdoc />
         public override async Task<object?> ExecuteScalarAsync(CancellationToken cancellationToken)
         {
-            // asynchronous, because this method reads with ReadAsync; ExecuteScalar blocks on this one and
-            // is the same call, so a scalar is read the same way whichever entry point was used
-            using var result = await ExecuteReaderCoreAsync(true, cancellationToken).ConfigureAwait(false);
+            using var result = await ExecuteReaderCoreAsync(cancellationToken).ConfigureAwait(false);
             if (await result.ReadAsync(cancellationToken).ConfigureAwait(false) == false)
                 return null;
 
@@ -282,20 +292,21 @@ namespace Apache.Calcite.Data
         /// </remarks>
         protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
         {
-            var result = ExecuteReaderCoreAsync(false, CancellationToken.None).GetAwaiter().GetResult();
+            var result = GetOpenSession().ExecuteReader(CalciteExecuteRequest.From(_commandText, _parameters, _commandTimeout, ResolveHooks()));
             return new CalciteDataReader(result, behavior);
         }
 
         /// <inheritdoc />
         /// <remarks>
-        /// Asks for an asynchronous plan. Where the query cannot be planned into that convention — it
-        /// touches a table that cannot produce rows asynchronously, and there is no converter to carry them
-        /// — a synchronous plan is prepared instead and <c>CalciteResult.IsAsynchronous</c> says so. Reading
-        /// that plan completes synchronously, which blocks nothing; it is simply not asynchronous.
+        /// Prepares into the asynchronous convention, and <b>throws where the query cannot be planned into
+        /// it</b> — where it touches a table that is not an <c>IClrAsyncScannableTable</c>, there being no
+        /// converter to carry those rows. Preparing the synchronous plan instead would hand back a reader
+        /// that looks asynchronous and blocks a thread per row, which a caller cannot tell from the outside.
+        /// <see cref="ExecuteReader()"/> is how a caller asks for that plan deliberately.
         /// </remarks>
         protected override async Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
         {
-            var result = await ExecuteReaderCoreAsync(true, cancellationToken).ConfigureAwait(false);
+            var result = await ExecuteReaderCoreAsync(cancellationToken).ConfigureAwait(false);
             return new CalciteDataReader(result, behavior);
         }
 
@@ -303,9 +314,9 @@ namespace Apache.Calcite.Data
         /// Executes the command and returns a <see cref="CalciteResult"/> containing the result set.
         /// </summary>
         /// <param name="cancellationToken">A token to cancel the operation.</param>
-        Task<CalciteResult> ExecuteReaderCoreAsync(bool preferAsynchronous, CancellationToken cancellationToken)
+        Task<CalciteResult> ExecuteReaderCoreAsync(CancellationToken cancellationToken)
         {
-            return GetOpenSession().ExecuteReaderAsync(CalciteExecuteRequest.From(_commandText, _parameters, _commandTimeout, ResolveHooks()), preferAsynchronous, cancellationToken);
+            return GetOpenSession().ExecuteReaderAsync(CalciteExecuteRequest.From(_commandText, _parameters, _commandTimeout, ResolveHooks()), cancellationToken);
         }
 
         Task<CalciteResult> ExecuteNonQueryCoreAsync(CancellationToken cancellationToken)
