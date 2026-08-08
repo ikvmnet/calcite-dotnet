@@ -81,6 +81,29 @@ transcribed — and both defects came out of that re-expression. `Dictionary` fo
 iteration order reaches the output, which is why the join lookups are `java.util.HashMap`. When the Java
 type is the one that fits, use it — we run on IKVM — and name at the site which property forced it.
 
+**"Cannot be reproduced" is usually "did not look for the class."** We run on IKVM, and Calcite's runtime
+and Guava are both on the classpath — `ImmutableList`, `HashMultiset` and `SortedMultiMap` are already used
+here. So a Java collection Calcite's behaviour depends on is generally *available*, not merely imitable:
+`nestedLoopJoinAsList` holds its unmatched right rows in Guava's `Sets.newIdentityHashSet()`, and that was
+written as a CLR `HashSet` over a reference-equality comparer on the grounds that the CLR has no
+`System.identityHashCode`. It does not need one. The order those rows come out in is that map's, and using
+the map is the whole of the fix. Before writing that something cannot be carried across, name the class and
+check whether it is simply reachable.
+
+**A divergence recorded as deliberate is a scope reduction unless Calcite cannot be followed.** The bar is
+whether the CLR makes it impossible — a method returning `IAsyncEnumerable` cannot await before it returns,
+and that is a real one, stated at each site. "Ours holds the same rows in the same order and only reaches
+them sooner" is not: that was `Window`'s laziness, filed under record-do-not-fix for a while, and Calcite
+builds an `ArrayList` and returns `Linq4j.asEnumerable(list)`. Whether ours is better is not the question
+the port gets to answer.
+
+**A claim about how something fails is a claim to run.** Reasoning from a comparator's semantics gave "a
+CLR-boxed row element and a Java-boxed one compare unequal, their hashes agree, so a set operator quietly
+keeps both copies" — a description of a state no query reaches. One query over a table holding CLR-boxed
+values stops on its first row, because what reads a field is `SqlFunctions.toInt` or a cast to the boxed
+type the row type declares. The difference between those two stories is a per-row conversion on every
+scan, nearly added to fix a defect that was in the test table.
+
 **A recursive query can fail to terminate under Calcite too, and then there is no oracle.** A repeat union's
 spool is cleared by a round that wrote nothing, so a step that aggregates the working table oscillates: the
 round that counts one is empty and empties the table, and the round after it counts zero and emits again.
