@@ -30,7 +30,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
     /// is the same thing in both conventions: the translator, the correlation variables, the stash and the
     /// conformance are all the same, and the physical type is literally the same class.</para>
     /// </remarks>
-    public class ClrAsyncEnumerableRelImplementor
+    public class ClrAsyncEnumerableRelImplementor : IClrRelImplementor
     {
 
         readonly RexBuilder rexBuilder;
@@ -81,6 +81,15 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// variable means the same thing wherever a node mentions it.
         /// </summary>
         internal LixToClrTranslator Translator { get; }
+
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// Explicit, because <see cref="Translator"/> is internal and an interface member has to be
+        /// implemented publicly otherwise. The translator is not part of this class's surface — a node reads
+        /// it, and nothing outside the assembly has any use for one.
+        /// </remarks>
+        LixToClrTranslator IClrRelImplementor.Translator => Translator;
 
         /// <summary>
         /// Gets the internal parameters, which reach the query through the <see cref="DataContext"/> it is

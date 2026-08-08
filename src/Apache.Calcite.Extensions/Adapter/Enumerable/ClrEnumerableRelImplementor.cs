@@ -31,7 +31,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// <see cref="ClrEnumerableRel"/>, pass it to <see cref="ImplementRoot"/>, and compile the lambda that
     /// comes back into a <c>Func&lt;DataContext, IEnumerable&lt;object&gt;&gt;</c>.</para>
     /// </remarks>
-    public class ClrEnumerableRelImplementor
+    public class ClrEnumerableRelImplementor : IClrRelImplementor
     {
 
         readonly RexBuilder rexBuilder;
@@ -85,6 +85,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// variable means the same thing wherever a node mentions it.
         /// </summary>
         internal LixToClrTranslator Translator { get; }
+
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// Explicit, because <see cref="Translator"/> is internal and an interface member has to be
+        /// implemented publicly otherwise. The translator is not part of this class's surface — a node reads
+        /// it, and nothing outside the assembly has any use for one.
+        /// </remarks>
+        LixToClrTranslator IClrRelImplementor.Translator => Translator;
 
         /// <summary>
         /// Gets the internal parameters, which reach the query through the <see cref="DataContext"/> it is

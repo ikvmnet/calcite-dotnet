@@ -176,11 +176,6 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         public static readonly MethodInfo GroupByMultiple = Of(nameof(ClrAsyncEnumerableDefaults.GroupByMultiple));
 
         /// <summary>
-        /// <see cref="ClrAsyncEnumerableDefaults.Aggregate"/>.
-        /// </summary>
-        public static readonly MethodInfo Aggregate = Of(nameof(ClrAsyncEnumerableDefaults.Aggregate));
-
-        /// <summary>
         /// <see cref="ClrAsyncEnumerableDefaults.Window"/>.
         /// </summary>
         public static readonly MethodInfo Window = Of(nameof(ClrAsyncEnumerableDefaults.Window));
@@ -200,15 +195,27 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// </summary>
         public static readonly MethodInfo RepeatUnion = Of(nameof(ClrAsyncEnumerableDefaults.RepeatUnion));
 
-        /// <summary>
-        /// <see cref="ClrAsyncEnumerableDefaults.ToJavaList"/>.
-        /// </summary>
-        public static readonly MethodInfo ToJavaList = Of(nameof(ClrAsyncEnumerableDefaults.ToJavaList));
 
         /// <summary>
-        /// <see cref="ClrAsyncEnumerableDefaults.ToJavaMap"/>.
+        /// <see cref="ClrAsyncEnumerableDefaults.SingletonAggregate"/>.
         /// </summary>
-        public static readonly MethodInfo ToJavaMap = Of(nameof(ClrAsyncEnumerableDefaults.ToJavaMap));
+        public static readonly MethodInfo SingletonAggregate = Of(nameof(ClrAsyncEnumerableDefaults.SingletonAggregate));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.SingletonJavaList"/>.
+        /// </summary>
+        public static readonly MethodInfo SingletonJavaList = Of(nameof(ClrAsyncEnumerableDefaults.SingletonJavaList));
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.SingletonJavaMap"/>.
+        /// </summary>
+        public static readonly MethodInfo SingletonJavaMap = Of(nameof(ClrAsyncEnumerableDefaults.SingletonJavaMap));
+
+
+        /// <summary>
+        /// <see cref="ClrAsyncEnumerableDefaults.CombineQueryResults"/>.
+        /// </summary>
+        public static readonly MethodInfo CombineQueryResults = Of(nameof(ClrAsyncEnumerableDefaults.CombineQueryResults));
 
         /// <summary>
         /// Builds the call to an operator of this class.

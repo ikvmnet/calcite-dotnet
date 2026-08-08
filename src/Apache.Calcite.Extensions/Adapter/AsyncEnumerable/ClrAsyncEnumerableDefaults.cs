@@ -619,7 +619,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                         // comparison came out unknown rather than false
                         foreach (var bucket in (Buckets<TInner>(lookup)))
                         {
-                            await foreach (var other in (bucket).WithCancellation(cancellationToken))
+                            foreach (var other in (bucket))
                             {
                                 if (equiPredicate(row, other) == null)
                                 {
@@ -740,9 +740,12 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             Func<TSource, TInner, bool>? predicate,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
 {
-            return predicate == null
-                ? HashEquiJoin(outer, inner, outerKeySelector, innerKeySelector, resultSelector, comparer, generateNullsOnLeft, generateNullsOnRight)
-                : HashJoinWithPredicate(outer, inner, outerKeySelector, innerKeySelector, resultSelector, comparer, generateNullsOnLeft, generateNullsOnRight, predicate);
+            var rows = predicate == null
+                ? HashEquiJoin(outer, inner, outerKeySelector, innerKeySelector, resultSelector, comparer, generateNullsOnLeft, generateNullsOnRight, cancellationToken)
+                : HashJoinWithPredicate(outer, inner, outerKeySelector, innerKeySelector, resultSelector, comparer, generateNullsOnLeft, generateNullsOnRight, predicate, cancellationToken);
+
+            await foreach (var row in rows.WithCancellation(cancellationToken))
+                yield return row;
         }
 
 
@@ -753,22 +756,23 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// The counterpart of <c>EnumerableDefaults.hashEquiJoin_</c>. What is left over at the end is a
         /// <em>key</em> no outer row carried, and every build row under it comes out together.
         /// </remarks>
-        static IEnumerable<TResult> HashEquiJoin<TSource, TInner, TKey, TResult>(
-            IEnumerable<TSource> outer,
-            IEnumerable<TInner> inner,
+        static async IAsyncEnumerable<TResult> HashEquiJoin<TSource, TInner, TKey, TResult>(
+            IAsyncEnumerable<TSource> outer,
+            IAsyncEnumerable<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource, TInner, TResult> resultSelector,
             EqualityComparer? comparer,
             bool generateNullsOnLeft,
-            bool generateNullsOnRight)
+            bool generateNullsOnRight,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             // the lookup is a java.util.HashMap, as linq4j's toLookup builds one: a right or a full join ends
             // with the rows of the right input that matched nothing, and the order those come out in is this
             // map's. See JavaHashingTests for why that order is the same in every process.
             var lookup = new java.util.HashMap();
 
-            foreach (var row in inner)
+            await foreach (var row in inner.WithCancellation(cancellationToken))
             {
                 var key = innerKeySelector(row);
 
@@ -835,9 +839,9 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// whose predicate did not has matched nothing, and a right join owes it a row against a null left.
         /// Tracking the key instead lost it, because some other row under that key had passed.</para>
         /// </remarks>
-        static IEnumerable<TResult> HashJoinWithPredicate<TSource, TInner, TKey, TResult>(
-            IEnumerable<TSource> outer,
-            IEnumerable<TInner> inner,
+        static async IAsyncEnumerable<TResult> HashJoinWithPredicate<TSource, TInner, TKey, TResult>(
+            IAsyncEnumerable<TSource> outer,
+            IAsyncEnumerable<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource, TInner, TResult> resultSelector,
@@ -1139,7 +1143,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             EqualityComparer? comparer,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
 {
-            var inputs = new IEnumerator<TSource>[sources.size()];
+            var inputs = new IAsyncEnumerator<TSource>[sources.size()];
             for (int i = 0; i < inputs.Length; i++)
                 inputs[i] = ((IAsyncEnumerable<TSource>)sources.get(i)).GetAsyncEnumerator(cancellationToken);
 
@@ -1151,9 +1155,9 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             var processed = all ? null : new java.util.HashSet();
             object? keyInProcessed = null;
 
-            void Move(int i)
+            async System.Threading.Tasks.ValueTask Move(int i)
             {
-                if (inputs[i].MoveNextAsync() == false)
+                if (await inputs[i].MoveNextAsync().ConfigureAwait(false) == false)
                 {
                     active--;
                     finished[i] = true;
@@ -1201,7 +1205,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             try
             {
                 for (int i = 0; i < inputs.Length; i++)
-                    Move(i);
+                    await Move(i);
 
                 while (active > 0)
                 {
@@ -1229,7 +1233,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
 
                     var value = current[candidate];
                     var emit = NotDuplicated(value);
-                    Move(candidate);
+                    await Move(candidate);
 
                     if (emit)
                         yield return value;
@@ -1237,8 +1241,8 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             }
             finally
             {
-                foreach (var input in (inputs))
-                    input.Dispose();
+                foreach (var input in inputs)
+                    await input.DisposeAsync().ConfigureAwait(false);
             }
         }
 
@@ -1310,15 +1314,15 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             var rights = new List<TInner>();
             var done = false;
             var remainingLeft = false;
-            IAsyncEnumerable<TResult>? results = null;
+            IEnumerable<TResult>? results = null;
 
             await using var leftEnumerator = outer.GetAsyncEnumerator(cancellationToken);
             await using var rightEnumerator = inner.GetAsyncEnumerator(cancellationToken);
 
             // the left enumerator advanced, and onto a row whose key is not null — a LEFT join reads its
             // left input to the end whatever the keys are, because every row of it is a result
-            bool LeftMoveNext() => leftEnumerator.MoveNextAsync() && (isLeft || outerKeySelector(leftEnumerator.Current) != null);
-            bool RightMoveNext() => rightEnumerator.MoveNextAsync() && innerKeySelector(rightEnumerator.Current) != null;
+            async ValueTask<bool> LeftMoveNext() => await leftEnumerator.MoveNextAsync().ConfigureAwait(false) && (isLeft || outerKeySelector(leftEnumerator.Current) != null);
+            async ValueTask<bool> RightMoveNext() => await rightEnumerator.MoveNextAsync().ConfigureAwait(false) && innerKeySelector(rightEnumerator.Current) != null;
 
             int Compare(TKey a, TKey b)
             {
@@ -1337,12 +1341,12 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             }
 
             // the rows of one key on the left, and whether the input has more after them
-            bool AdvanceLeft(TSource left, TKey leftKey)
+            async ValueTask<bool> AdvanceLeft(TSource left, TKey leftKey)
             {
                 lefts.Clear();
                 lefts.Add(left);
 
-                while (leftEnumerator.MoveNextAsync())
+                while (await leftEnumerator.MoveNextAsync().ConfigureAwait(false))
                 {
                     left = leftEnumerator.Current;
                     var leftKey2 = outerKeySelector(left);
@@ -1357,12 +1361,12 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                 return false;
             }
 
-            bool AdvanceRight(TInner right, TKey rightKey)
+            async ValueTask<bool> AdvanceRight(TInner right, TKey rightKey)
             {
                 rights.Clear();
                 rights.Add(right);
 
-                while (rightEnumerator.MoveNextAsync())
+                while (await rightEnumerator.MoveNextAsync().ConfigureAwait(false))
                 {
                     right = rightEnumerator.Current;
                     var rightKey2 = innerKeySelector(right);
@@ -1411,14 +1415,14 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                             if (isLeftOrAnti)
                             {
                                 // this row, and every other with the same key, is a result on its own
-                                if (AdvanceLeft(left, leftKey) == false)
+                                if (await AdvanceLeft(left, leftKey) == false)
                                     done = true;
 
                                 results = Cartesian(lefts, [default(TInner)!], resultSelector);
                                 return true;
                             }
 
-                            if (leftEnumerator.MoveNextAsync() == false)
+                            if (await leftEnumerator.MoveNextAsync().ConfigureAwait(false) == false)
                             {
                                 done = true;
                                 return false;
@@ -1429,7 +1433,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                         }
                         else
                         {
-                            if (rightEnumerator.MoveNextAsync() == false)
+                            if (await rightEnumerator.MoveNextAsync().ConfigureAwait(false) == false)
                             {
                                 if (isLeftOrAnti)
                                 {
@@ -1446,10 +1450,10 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                         }
                     }
 
-                    if (AdvanceLeft(left, leftKey) == false)
+                    if (await AdvanceLeft(left, leftKey) == false)
                         done = true;
 
-                    if (AdvanceRight(right, rightKey) == false)
+                    if (await AdvanceRight(right, rightKey) == false)
                     {
                         if (done == false && isLeftOrAnti)
                             remainingLeft = true;
@@ -1479,7 +1483,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                     {
                         // the rest of the condition still has to hold, and a nested loop over the two runs is
                         // what decides it
-                        results = NestedLoopJoin([.. lefts], [.. rights], resultSelector, predicate, joinType);
+                        results = ClrEnumerableDefaults.NestedLoopJoin([.. lefts], [.. rights], resultSelector, predicate, joinType);
                     }
 
                     return true;
@@ -1488,14 +1492,14 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
 
             if (isLeftOrAnti)
             {
-                if (LeftMoveNext() == false)
+                if (await LeftMoveNext() == false)
                     done = true;
-                else if (RightMoveNext() == false)
+                else if (await RightMoveNext() == false)
                     remainingLeft = true;
                 else if (Advance() == false)
                     done = true;
             }
-            else if (LeftMoveNext() == false || RightMoveNext() == false || Advance() == false)
+            else if (await LeftMoveNext() == false || await RightMoveNext() == false || Advance() == false)
             {
                 done = true;
             }
@@ -1504,7 +1508,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             {
                 if (results != null)
                 {
-                    await foreach (var row in (results).WithCancellation(cancellationToken))
+                    foreach (var row in results)
                         yield return row;
 
                     results = null;
@@ -1514,7 +1518,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                 {
                     yield return resultSelector(leftEnumerator.Current, default!);
 
-                    if (LeftMoveNext() == false)
+                    if (await LeftMoveNext() == false)
                     {
                         remainingLeft = false;
                         done = true;
@@ -1619,7 +1623,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                 while (true)
                 {
                     batch.Clear();
-                    while (batch.Count < batchSize && enumerator.MoveNextAsync())
+                    while (batch.Count < batchSize && await enumerator.MoveNextAsync().ConfigureAwait(false))
                         batch.Add(enumerator.Current);
 
                     if (batch.Count == 0)
@@ -1632,8 +1636,9 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                         padded.add(JavaValues.From(batch[i < batch.Count ? i : 0]));
 
                     rows.Clear();
-                    source?.Dispose();
-                    source = (inner(padded) is IAsyncEnumerable<TInner> sequence ? sequence : []).GetAsyncEnumerator(cancellationToken);
+                    if (source != null)
+                        await source.DisposeAsync().ConfigureAwait(false);
+                    source = (inner(padded) is IAsyncEnumerable<TInner> sequence ? sequence : Empty<TInner>()).GetAsyncEnumerator(cancellationToken);
 
                     for (int i = 0; i < batch.Count; i++)
                     {
@@ -1691,7 +1696,8 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             }
             finally
             {
-                source?.Dispose();
+                if (source != null)
+                        await source.DisposeAsync().ConfigureAwait(false);
             }
         }
 
@@ -1724,7 +1730,8 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
 {
             ArgumentNullException.ThrowIfNull(inner);
 
-            return LeftMarkJoin(outer, _ => inner, predicate, resultSelector);
+            await foreach (var row in LeftMarkJoin(outer, _ => inner, predicate, resultSelector, cancellationToken).WithCancellation(cancellationToken))
+                yield return row;
         }
 
 
@@ -1751,7 +1758,8 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             Func<TSource, java.lang.Boolean, TResult> resultSelector,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
 {
-            return LeftMarkJoin(outer, inner, predicate, resultSelector);
+            await foreach (var row in LeftMarkJoin(outer, inner, predicate, resultSelector, cancellationToken).WithCancellation(cancellationToken))
+                yield return row;
         }
 
 
@@ -1769,25 +1777,26 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <remarks>
         /// The counterpart of <c>EnumerableDefaults.leftMarkJoinInternal</c>.
         /// </remarks>
-        static IEnumerable<TResult> LeftMarkJoin<TSource, TInner, TResult>(
-            IEnumerable<TSource> outer,
-            Func<TSource, IEnumerable<TInner>> inner,
+        static async IAsyncEnumerable<TResult> LeftMarkJoin<TSource, TInner, TResult>(
+            IAsyncEnumerable<TSource> outer,
+            Func<TSource, IAsyncEnumerable<TInner>> inner,
             Func<TSource, TInner, java.lang.Boolean> predicate,
-            Func<TSource, java.lang.Boolean, TResult> resultSelector)
+            Func<TSource, java.lang.Boolean, TResult> resultSelector,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(outer);
             ArgumentNullException.ThrowIfNull(inner);
             ArgumentNullException.ThrowIfNull(predicate);
             ArgumentNullException.ThrowIfNull(resultSelector);
 
-            foreach (var left in outer)
+            await foreach (var left in outer.WithCancellation(cancellationToken))
             {
                 var marker = java.lang.Boolean.FALSE;
                 var rows = inner(left);
 
                 if (rows != null)
                 {
-                    foreach (var right in rows)
+                    await foreach (var right in rows.WithCancellation(cancellationToken))
                     {
                         var matched = predicate(left, right);
 
@@ -1829,7 +1838,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             org.apache.calcite.linq4j.JoinType joinType,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
 {
-            var rows = inner as IReadOnlyList<TInner> ?? [.. inner];
+            var rows = (IReadOnlyList<TInner>)await Buffer(inner, cancellationToken).ConfigureAwait(false);
             var name = joinType.name();
             var nullsOnRight = name is nameof(org.apache.calcite.linq4j.JoinType.LEFT) or nameof(org.apache.calcite.linq4j.JoinType.FULL);
             var nullsOnLeft = name is nameof(org.apache.calcite.linq4j.JoinType.RIGHT) or nameof(org.apache.calcite.linq4j.JoinType.FULL);
@@ -2021,29 +2030,6 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
 
-        /// <summary>
-        /// Folds every row into one.
-        /// </summary>
-        /// <typeparam name="TSource"></typeparam>
-        /// <typeparam name="TResult"></typeparam>
-        /// <param name="source"></param>
-        /// <param name="seed"></param>
-        /// <param name="accumulatorAdder"></param>
-        /// <param name="resultSelector"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// The counterpart of <c>EnumerableDefaults.aggregate</c>, which is what a query with aggregate calls
-        /// and no GROUP BY becomes.
-        /// </remarks>
-        public static TResult Aggregate<TSource, TResult>(IAsyncEnumerable<TSource> source, object seed, Function2 accumulatorAdder, Function1 resultSelector)
-{
-            var accumulator = seed;
-
-            foreach (var row in source)
-                accumulator = accumulatorAdder.apply(accumulator, row);
-
-            return JavaValues.As<TResult>(resultSelector.apply(accumulator));
-        }
 
 
         /// <summary>
@@ -2113,7 +2099,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             var frame = new WindowFrame();
             var accumulator = accumulatorInitializer();
 
-            await foreach (var rows in (Partitions(source, partitionSelector, comparator).WithCancellation(cancellationToken)))
+            await foreach (var rows in Partitions(source, partitionSelector, comparator, cancellationToken).WithCancellation(cancellationToken))
             {
                 frame.Rows = rows;
                 frame.PartitionRowCount = rows.Length;
@@ -2284,44 +2270,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
 
-        /// <summary>
-        /// Reads every row into a list.
-        /// </summary>
-        /// <typeparam name="TSource"></typeparam>
-        /// <param name="source"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// A java.util.List, because this is a value in a row and the reader of that row is Calcite's.
-        /// </remarks>
-        public static java.util.List ToJavaList<TSource>(IEnumerable<TSource> source)
-        {
-            ArgumentNullException.ThrowIfNull(source);
 
-            var list = new java.util.ArrayList();
-            foreach (var row in source)
-                list.add(row);
-
-            return list;
-        }
-
-        /// <summary>
-        /// Reads every row into a map, keeping the order the keys were seen in.
-        /// </summary>
-        /// <typeparam name="TSource"></typeparam>
-        /// <param name="source"></param>
-        /// <param name="keySelector"></param>
-        /// <param name="valueSelector"></param>
-        /// <returns></returns>
-        public static java.util.Map ToJavaMap<TSource>(IEnumerable<TSource> source, Func<TSource, object> keySelector, Func<TSource, object> valueSelector)
-        {
-            ArgumentNullException.ThrowIfNull(source);
-
-            var map = new java.util.LinkedHashMap();
-            foreach (var row in source)
-                map.put(keySelector(row), valueSelector(row));
-
-            return map;
-        }
 
         /// <summary>
         /// Passes every row through, and leaves them in a collection behind it.
@@ -2412,6 +2361,165 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             {
                 cleanUp?.Invoke();
             }
+        }
+
+
+        /// <summary>
+        /// Folds a whole sequence and yields the one row the fold produces.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="seed"></param>
+        /// <param name="accumulatorAdder"></param>
+        /// <param name="resultSelector"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>Singleton(Aggregate(source, …))</c> as one operator, which is a divergence from the
+        /// synchronous convention and is forced. There <c>Aggregate</c> returns the row and
+        /// <c>Singleton</c> wraps it, composed as two nested calls in the tree; here the fold has to be
+        /// awaited and <b>an expression tree cannot await</b>, so the composition cannot be written as a
+        /// tree and is written as an operator instead.
+        ///
+        /// <para>It is also lazier than the pair it replaces. The synchronous <c>Aggregate</c> runs when
+        /// <c>Singleton</c> is called, which is when the compiled plan is invoked rather than when it is
+        /// enumerated; this folds on the first <c>MoveNextAsync</c>, which is where the work belongs.</para>
+        ///
+        /// <para>The fold itself does not buffer, as the synchronous one does not.</para>
+        /// </remarks>
+        public static async IAsyncEnumerable<TResult> SingletonAggregate<TSource, TResult>(
+            IAsyncEnumerable<TSource> source,
+            object seed,
+            Function2 accumulatorAdder,
+            Function1 resultSelector,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+
+            var accumulator = seed;
+
+            await foreach (var row in source.WithCancellation(cancellationToken))
+                accumulator = accumulatorAdder.apply(accumulator, row);
+
+            yield return JavaValues.As<TResult>(resultSelector.apply(accumulator));
+        }
+
+        /// <summary>
+        /// Reads a whole sequence into a Java list and yields the one row holding it.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>Singleton(ToJavaList(source))</c> as one operator, for the reason
+        /// <see cref="SingletonAggregate"/> gives. A <c>java.util.List</c>, because this is a value in a row
+        /// and the reader of that row is Calcite's.
+        /// </remarks>
+        public static async IAsyncEnumerable<java.util.List> SingletonJavaList<TSource>(
+            IAsyncEnumerable<TSource> source,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+
+            var list = new java.util.ArrayList();
+
+            await foreach (var row in source.WithCancellation(cancellationToken))
+                list.add(row);
+
+            yield return list;
+        }
+
+        /// <summary>
+        /// Reads a whole sequence into a Java map and yields the one row holding it.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="keySelector"></param>
+        /// <param name="valueSelector"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>Singleton(ToJavaMap(source, …))</c> as one operator, for the reason
+        /// <see cref="SingletonAggregate"/> gives. A <c>LinkedHashMap</c>, so that the order the rows
+        /// arrived in is the order the map keeps.
+        /// </remarks>
+        public static async IAsyncEnumerable<java.util.Map> SingletonJavaMap<TSource>(
+            IAsyncEnumerable<TSource> source,
+            Func<TSource, object> keySelector,
+            Func<TSource, object> valueSelector,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+
+            var map = new java.util.LinkedHashMap();
+
+            await foreach (var row in source.WithCancellation(cancellationToken))
+                map.put(keySelector(row), valueSelector(row));
+
+            yield return map;
+        }
+
+        /// <summary>
+        /// Reads a whole sequence into a Java list.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <see cref="ClrEnumerableDefaults.ToJavaList"/>. Not called from a plan -- an expression tree
+        /// cannot await it -- and kept for <see cref="ClrAsyncEnumerableCombine"/>, which needs the lists
+        /// before it can combine them and does its awaiting inside an operator of its own.
+        /// </remarks>
+        public static async System.Threading.Tasks.ValueTask<java.util.List> ToJavaList<TSource>(
+            IAsyncEnumerable<TSource> source,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+
+            var list = new java.util.ArrayList();
+
+            await foreach (var row in source.WithCancellation(cancellationToken))
+                list.add(row);
+
+            return list;
+        }
+
+
+        /// <summary>
+        /// Reads every input into a Java list, combines them, and yields the rows that come back.
+        /// </summary>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="sources"></param>
+        /// <param name="combine">What to do with the lists once they are all read, which is
+        /// <c>SqlFunctions.combineQueryResults</c>.</param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The third of the fused operators, for the reason <see cref="SingletonAggregate"/> gives: the
+        /// synchronous node reads each input into a list inside the tree and passes the lists to the combine,
+        /// and here each read has to be awaited.
+        ///
+        /// <para>The combining itself is not this operator's business and arrives as a delegate, so that
+        /// which function Calcite combines with stays the node's decision, as it is in the other
+        /// convention.</para>
+        /// </remarks>
+        public static async IAsyncEnumerable<TResult> CombineQueryResults<TResult>(
+            IAsyncEnumerable<java.util.Map>[] sources,
+            Func<java.util.List[], java.util.List> combine,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(sources);
+            ArgumentNullException.ThrowIfNull(combine);
+
+            var lists = new java.util.List[sources.Length];
+            for (int i = 0; i < sources.Length; i++)
+                lists[i] = await ToJavaList(sources[i], cancellationToken).ConfigureAwait(false);
+
+            foreach (var row in ClrEnumerableDefaults.FromJavaList<TResult>(combine(lists)))
+                yield return row;
         }
 
         /// <summary>

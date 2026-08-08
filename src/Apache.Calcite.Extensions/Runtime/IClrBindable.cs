@@ -24,7 +24,7 @@ namespace Apache.Calcite.Extensions.Runtime
     /// the way out, because that is what every reader of a Calcite result expects — so the one type
     /// argument Calcite's interface takes would always be <see cref="object"/>.</para>
     /// </remarks>
-    public interface IClrBindable
+    public interface IClrBindable : IClrBindableBase
     {
 
         /// <summary>
@@ -34,16 +34,6 @@ namespace Apache.Calcite.Extensions.Runtime
         /// from.</param>
         /// <returns>The rows, produced as the sequence is enumerated.</returns>
         IEnumerable<object> Bind(DataContext root);
-
-        /// <summary>
-        /// Gets the Java type of one row.
-        /// </summary>
-        /// <remarks>
-        /// The counterpart of <c>Typed.getElementType</c>, and it has a caller rather than being carried for
-        /// symmetry: Calcite's prepare framework reads it off the prepared result and hands it to
-        /// <c>Meta.CursorFactory.deduce</c>, which decides how a row is read back.
-        /// </remarks>
-        java.lang.reflect.Type ElementType { get; }
 
     }
 
