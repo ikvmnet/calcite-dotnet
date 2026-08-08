@@ -47,21 +47,21 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
 
         /// <inheritdoc />
         /// <remarks>
-        /// A table with no expression cannot be read by any plan of this convention, and refusing it here is
-        /// the only place the refusal belongs: <c>Implement</c> runs after a plan has been chosen. A
-        /// <c>QueryableTable</c> passes regardless, because Calcite's own test tables leave
-        /// <c>getExpression</c> unimplemented and are still readable.
+        /// The whole test is <c>CanHandle</c>, which the configuration above already applies, and it asks one
+        /// question: is this an <see cref="Schema.IClrAsyncScannableTable"/>.
+        ///
+        /// <para>Where the synchronous rule also asks whether the table has an expression, this does not,
+        /// because no plan of this convention ever calls <c>getExpression</c> — the scan reaches the table as
+        /// a constant and calls <c>ScanAsync</c> on it. Asking is not merely redundant: <c>RelOptTableImpl</c>
+        /// throws <c>UnsupportedOperationException</c> for a table it has no class-expression function for,
+        /// and an asynchronous table is exactly that, so the question the synchronous rule asks safely is one
+        /// this one cannot ask at all.</para>
         /// </remarks>
         public override RelNode convert(RelNode rel)
         {
             var scan = (TableScan)rel;
-            var relOptTable = scan.getTable();
-            var table = (Table)relOptTable.unwrap(typeof(Table));
 
-            if (table is QueryableTable || relOptTable.getExpression(typeof(object)) != null)
-                return ClrAsyncEnumerableTableScan.Create(scan.getCluster(), relOptTable);
-
-            return null!;
+            return ClrAsyncEnumerableTableScan.Create(scan.getCluster(), scan.getTable());
         }
 
     }

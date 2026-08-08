@@ -9,17 +9,25 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
 {
 
     /// <summary>
-    /// Calling convention that returns results as an <see cref="System.Collections.Generic.IEnumerable{T}"/>.
+    /// Calling convention that returns results as an
+    /// <see cref="System.Collections.Generic.IAsyncEnumerable{T}"/>.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <c>EnumerableConvention</c>, which returns a linq4j <c>Enumerable</c>. A plan runs
-    /// as a compiled <see cref="System.Linq.Expressions"/> tree rather than as generated Java source.
+    /// <see cref="ClrEnumerableConvention"/> node for node and rule for rule, over a sequence that is
+    /// awaited. Everything about a <em>row</em> is the same: the same physical type, the same row formats,
+    /// the same Rex translation, the same synthetic records.
     ///
-    /// <para>Register <see cref="ClrAsyncEnumerableRules.Rules"/> with the planner and ask for this convention on
-    /// the root; <see cref="ClrAsyncEnumerablePrograms"/> has the passes that takes. The root of the plan that
-    /// comes out is a <see cref="ClrAsyncEnumerableRel"/>, and
-    /// <see cref="ClrAsyncEnumerableRelImplementor.ImplementRoot"/> turns it into a lambda to compile. A plan may
-    /// hold nodes of both conventions — converters exist in each direction and rows cross untouched.</para>
+    /// <para>Register <see cref="ClrAsyncEnumerableRules.Rules"/> with the planner and ask for this
+    /// convention on the root; <see cref="ClrAsyncEnumerablePrograms"/> has the passes that takes. The root
+    /// of the plan that comes out is a <see cref="ClrAsyncEnumerableRel"/>, and
+    /// <see cref="ClrAsyncEnumerableRelImplementor.ImplementRoot"/> turns it into a lambda to compile.</para>
+    ///
+    /// <para><b>A plan cannot hold nodes of any other convention.</b> There is no converter to
+    /// <c>EnumerableConvention</c> or to <see cref="ClrEnumerableConvention"/> and there will not be: an
+    /// <see cref="System.Collections.Generic.IEnumerable{T}"/> behind an awaited interface is a blocking
+    /// pull, and the reverse is sync over async. So a query this convention cannot cover whole does not plan
+    /// at all, and the planner throws rather than quietly falling back to a plan that would block a thread
+    /// per row. Its leaves are <see cref="Schema.IClrAsyncScannableTable"/> and nothing else.</para>
     /// </remarks>
     public sealed class ClrAsyncEnumerableConvention : Convention.Impl
     {
@@ -39,7 +47,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// Initializes a new instance.
         /// </summary>
         ClrAsyncEnumerableConvention() :
-            base("CLR_ENUMERABLE", typeof(ClrAsyncEnumerableRel))
+            base("CLR_ASYNC_ENUMERABLE", typeof(ClrAsyncEnumerableRel))
         {
 
         }
