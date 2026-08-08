@@ -119,6 +119,57 @@ namespace Apache.Calcite.Tests
 
         }
 
+        /// <summary>
+        /// A table that breaks the SPI's contract, holding its values boxed the CLR way.
+        /// </summary>
+        /// <remarks>
+        /// What an implementer writing ordinary C# would produce, and what
+        /// <see cref="ShouldFailOverATableWhoseValuesAreNotTheTypeFactory's"/> exists to pin.
+        /// </remarks>
+        sealed class ClrBoxedRowsTable : AbstractTable, IClrScannableTable
+        {
+
+            /// <inheritdoc />
+            public override RelDataType getRowType(RelDataTypeFactory typeFactory) => AsyncTestRows.SortedRowType(typeFactory);
+
+            /// <inheritdoc />
+            public IEnumerable<object?[]> Scan(DataContext root) =>
+            [
+                [1, "A"],
+                [2, "B"],
+            ];
+
+        }
+
+        /// <summary>
+        /// A table whose values are not the type factory's fails, and fails at once.
+        /// </summary>
+        /// <remarks>
+        /// The contract on <see cref="IClrScannableTable"/> is Calcite's own contract on
+        /// <see cref="ScannableTable"/>: the values in a row are what the type factory says they are, which
+        /// is to say Java's. Nothing checks it, and nothing needs to -- what reads a field is
+        /// <c>SqlFunctions.toInt</c> and a cast to <c>java.lang.Integer</c>, both of them Calcite's own and
+        /// neither of them able to see a <see cref="int"/> boxed the CLR way. So the simplest query there is
+        /// over such a table stops on its first row.
+        ///
+        /// <para>Recorded as a test because the failure is the correct behaviour and should stay correct. It
+        /// would be easy to read "Cannot convert 1 to int" as a defect in the scan and to answer it by
+        /// converting every row on the way in — an adapter on a boundary that does not have one, paid for by
+        /// every table that was already right.</para>
+        /// </remarks>
+        [TestMethod]
+        public void ShouldFailOverATableWhoseValuesAreNotTheTypeFactorys()
+        {
+            var scan = () => Run("SELECT \"K\" FROM \"T\"", new ClrBoxedRowsTable(), false);
+            var distinct = () => Run("SELECT DISTINCT \"K\" FROM \"T\"", new ClrBoxedRowsTable(), false);
+
+            // SqlFunctions.toInt, which knows java.lang.Number and nothing else
+            scan.Should().Throw<org.apache.calcite.runtime.CalciteException>().WithMessage("*Cannot convert 1 to int*");
+
+            // and the group key, which casts the field to the boxed type the row type declares
+            distinct.Should().Throw<InvalidCastException>().WithMessage("*System.Int32*java.lang.Integer*");
+        }
+
         static (RelNode Plan, List<string> Rows) Run(string sql, Table table, bool async)
         {
             var rootSchema = Frameworks.createRootSchema(true);

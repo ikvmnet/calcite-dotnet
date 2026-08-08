@@ -191,12 +191,11 @@ What remains below is what was deliberate, and what is still unproven.
   on it unboxes a null. `ShouldAgreeOnFailingARangeFrameWithAnOffsetOverANullableKey` asserts that *both*
   conventions throw, so if Calcite ever fixes it we are told to follow.
 
-### The one thing a port cannot carry across, and what guards it
+### The SPI contract, which needs no enforcing
 
-A row array holding a CLR-boxed value is not equal to one holding the Java-boxed same value, and their
-hashes agree — so a set operator silently keeps both copies and nothing else looks wrong.
-`ShouldNotDeduplicateARowBoxedTheClrWayAgainstOneBoxedTheJavaWay` proves it.
-
-Nothing enforces this, and nothing should: Calcite requires the same of a `ScannableTable` and converts
-nothing either. It is the contract on `IClrScannableTable` and `IClrAsyncScannableTable`, which now say so
-and name that test.
+A table of this convention's SPI returns what the type factory says, which is Java's — the same contract
+Calcite puts on `ScannableTable`, and for the same reason. Nothing checks it and nothing needs to: what
+reads a field is `SqlFunctions.toInt` or a cast to the boxed type the row type declares, both Calcite's own,
+so a table that gets it wrong stops on its first row.
+`ShouldFailOverATableWhoseValuesAreNotTheTypeFactorys` holds that, so that the failure is not one day read
+as a defect in the scan and answered with a per-row conversion every correct table would pay for.

@@ -31,9 +31,10 @@ namespace Apache.Calcite.Extensions.Schema
     /// <c>BigDecimal</c> — exactly as a <see cref="ScannableTable"/>'s are, because everything downstream of
     /// this is Calcite's and every boundary where a value crosses between the two runtimes is an adapter. A
     /// table handing back CLR primitives leaves two representations of one value in a plan, and Calcite's own
-    /// comparators fail on them — quietly, which is the trouble:
-    /// <c>ShouldNotDeduplicateARowBoxedTheClrWayAgainstOneBoxedTheJavaWay</c> shows the two comparing unequal
-    /// while their hashes agree, so a set operator keeps both copies and everything else looks right.</para>
+    /// comparators fail on them — at once rather than quietly, because what reads a field is
+    /// <c>SqlFunctions.toInt</c> or a cast to the boxed type the row type declares.
+    /// <c>ShouldFailOverATableWhoseValuesAreNotTheTypeFactorys</c> holds that for the synchronous SPI, and
+    /// the contract is the same one.</para>
     /// </remarks>
     public interface IClrAsyncScannableTable : Table
     {
