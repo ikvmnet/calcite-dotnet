@@ -99,7 +99,12 @@ namespace Apache.Calcite.Extensions.Prepare.AsyncEnumerable
                 node,
                 MapTableModOp(isDml, root.kind),
                 isDml,
-                bindable);
+                bindable,
+                // the type factory's answer, which is what the cursor factory is deduced from
+                org.apache.calcite.adapter.enumerable.PhysTypeImpl.of(
+                    (org.apache.calcite.adapter.java.JavaTypeFactory)node.getCluster().getTypeFactory(),
+                    node.getRowType(),
+                    prefer.PreferArray()).getJavaRowType());
         }
 
     }

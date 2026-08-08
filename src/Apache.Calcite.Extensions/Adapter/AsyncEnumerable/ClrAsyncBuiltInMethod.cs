@@ -8,13 +8,27 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
     /// The methods a plan of the <see cref="ClrAsyncEnumerableConvention"/> calling convention is built from.
     /// </summary>
     /// <remarks>
-    /// <see cref="Apache.Calcite.Extensions.Adapter.Enumerable.ClrBuiltInMethod"/>, name for name, over the
-    /// asynchronous operator set. This is the whole of what a node of this convention names differently from
-    /// its synchronous counterpart: a node reads a member here where the other reads one there, and the rest
-    /// of its <c>Implement</c> is the same code.
+    /// <see cref="Apache.Calcite.Extensions.Adapter.Enumerable.ClrBuiltInMethod"/> over the asynchronous
+    /// operator set. For all but seven members it is name for name, and that is the whole of what a node of
+    /// this convention names differently from its synchronous counterpart: a node reads a member here where
+    /// the other reads one there, and the rest of its <c>Implement</c> is the same code.
     ///
-    /// <para>Only the operators the nodes written so far need are here. A member is added when the node that
-    /// calls it is written, so that a name in this class always has an operator and a caller.</para>
+    /// <para><b>The seven that differ, and why.</b> Four are here and not there —
+    /// <see cref="SingletonAggregate"/>, <see cref="SingletonJavaList"/>, <see cref="SingletonJavaMap"/> and
+    /// <see cref="CombineQueryResults"/> — and each fuses a pair the synchronous convention nests in the
+    /// tree. There <c>Singleton(Aggregate(source, …))</c> is two calls, the inner one returning a row; here
+    /// the inner one has to be awaited and <b>an expression tree cannot await</b>, so the composition is an
+    /// operator instead. <c>Aggregate</c>, <c>ToJavaList</c> and <c>ToJavaMap</c> are therefore absent, being
+    /// the inner halves of those pairs.</para>
+    ///
+    /// <para>The other two absences are <c>FromJava</c> and <c>ToJava</c>, which carry a sequence across to
+    /// linq4j and back. No node of this convention has a use for one: the nodes that needed them in the
+    /// other — the table function scan and the interpreter — cannot exist here at all, because handing an
+    /// asynchronous sequence to a generator of Calcite's is exactly the sync-over-async this convention
+    /// refuses.</para>
+    ///
+    /// <para>A member is added when the node that calls it is written, so that a name in this class always
+    /// has an operator and a caller.</para>
     /// </remarks>
     static class ClrAsyncBuiltInMethod
     {

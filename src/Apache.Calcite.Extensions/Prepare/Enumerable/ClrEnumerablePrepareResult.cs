@@ -33,10 +33,12 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable
             RelNode rootRel,
             TableModify.Operation? tableModOp,
             bool isDml,
-            IClrBindable bindable) :
+            IClrBindable bindable,
+            java.lang.reflect.Type javaElementType) :
             base(rowType, parameterRowType, fieldOrigins, collations, rootRel, tableModOp, isDml)
         {
             Bindable = bindable ?? throw new ArgumentNullException(nameof(bindable));
+            this.javaElementType = javaElementType ?? throw new ArgumentNullException(nameof(javaElementType));
         }
 
         /// <summary>
@@ -45,7 +47,14 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable
         public IClrBindable Bindable { get; }
 
         /// <inheritdoc />
-        public override java.lang.reflect.Type? ElementType => Bindable.ElementType;
+        /// <remarks>
+        /// The type factory's own answer, kept apart from the bindable's. A compiled plan states its rows in
+        /// CLR types; <c>Meta.CursorFactory.deduce</c> wants the <c>java.lang.Class</c> the row type was
+        /// built from, and converting one back would be answering a question with a translation of itself.
+        /// </remarks>
+        public override java.lang.reflect.Type? ElementType => javaElementType;
+
+        readonly java.lang.reflect.Type javaElementType;
 
     }
 

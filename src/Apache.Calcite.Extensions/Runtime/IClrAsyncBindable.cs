@@ -8,26 +8,6 @@ namespace Apache.Calcite.Extensions.Runtime
 {
 
     /// <summary>
-    /// What every compiled plan of these conventions has in common.
-    /// </summary>
-    /// <remarks>
-    /// Only the element type, because that is the only member a caller reads without knowing which
-    /// convention prepared the statement: <c>ClrPrepareImpl.Describe</c> hands it to
-    /// <c>Meta.CursorFactory.deduce</c> and asks nothing else. Binding is on the two interfaces below,
-    /// because the two return different things and a common <c>Bind</c> could only return the sequence
-    /// neither of them wants.
-    /// </remarks>
-    public interface IClrBindableBase
-    {
-
-        /// <summary>
-        /// Gets the Java type of one row.
-        /// </summary>
-        java.lang.reflect.Type ElementType { get; }
-
-    }
-
-    /// <summary>
     /// A compiled plan of the <see cref="ClrAsyncEnumerableConvention"/> calling convention, bound to a
     /// <see cref="DataContext"/> when it is run.
     /// </summary>

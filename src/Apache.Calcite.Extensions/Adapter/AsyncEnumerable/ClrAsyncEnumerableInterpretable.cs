@@ -75,7 +75,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             var lambda = implementor.ImplementRoot(rel, prefer);
             var plan = (Func<DataContext, IAsyncEnumerable<object>>)lambda.Compile();
 
-            return new ClrAsyncBindable(plan, PhysTypeImpl.of(implementor.TypeFactory, rel.getRowType(), prefer.PreferArray()).getJavaRowType());
+            return new ClrAsyncBindable(plan, Linq4j.Tree.ClrTypes.Resolve(PhysTypeImpl.of(implementor.TypeFactory, rel.getRowType(), prefer.PreferArray()).getJavaRowType()));
         }
 
     }

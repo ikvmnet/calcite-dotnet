@@ -87,6 +87,18 @@ namespace Apache.Calcite.Data.Internal
         /// </summary>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
+        /// <remarks>
+        /// <b>The token that reaches the leaf is the one given to <c>ExecuteReaderAsync</c>, not this one.</b>
+        /// An <see cref="IAsyncEnumerable{T}"/> takes its token at
+        /// <see cref="IAsyncEnumerable{T}.GetAsyncEnumerator"/>, which happened once when the reader was
+        /// created; <c>DbDataReader.ReadAsync</c> offers a token per call, and there is nowhere to put a
+        /// later one. So a token passed only here stops the reader between rows — that is what the check
+        /// below does — but cannot interrupt a table already waiting on I/O.
+        ///
+        /// <para>Nothing can be done about that shape without giving every operator a token parameter the
+        /// plan would have to thread, which is the design this convention deliberately does not have. A
+        /// caller who wants a read interruptible mid-row passes the token to <c>ExecuteReaderAsync</c>.</para>
+        /// </remarks>
         public async Task<bool> ReadAsync(CancellationToken cancellationToken)
         {
             ThrowIfDisposed();

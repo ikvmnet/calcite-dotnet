@@ -73,7 +73,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var lambda = implementor.ImplementRoot(rel, prefer);
             var plan = (Func<DataContext, IEnumerable<object>>)lambda.Compile();
 
-            return new ClrBindable(plan, PhysTypeImpl.of(implementor.TypeFactory, rel.getRowType(), prefer.PreferArray()).getJavaRowType());
+            return new ClrBindable(plan, Linq4j.Tree.ClrTypes.Resolve(PhysTypeImpl.of(implementor.TypeFactory, rel.getRowType(), prefer.PreferArray()).getJavaRowType()));
         }
 
     }

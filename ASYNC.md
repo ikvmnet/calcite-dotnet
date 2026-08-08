@@ -317,10 +317,24 @@ In `Apache.Calcite.Data`:
 
 - `CalciteResult` holds an `IAsyncEnumerator<object>?` alternative to its `IEnumerator<object>?`,
   gains a real `ReadAsync`, and gains `DisposeAsync`.
-- `CalciteSession.ExecuteReaderAsync` plans asynchronously first and, **on `CannotPlanException`
-  only**, falls back to the existing synchronous plan. That is not sync-over-async: today's `ReadAsync`
-  already runs an `IEnumerator` and returns `Task.FromResult`, which blocks nothing — it merely is not
-  asynchronous. What the fallback must never do is wrap the synchronous plan in an `IAsyncEnumerable`.
+- **Which convention to prepare into is the caller's to say, not the session's.** This was got wrong
+  first and the ADO.NET tests broke on it at once: `ExecuteReader` and `ExecuteReaderAsync` arrive at the
+  *same* session method, because the synchronous one blocks on the asynchronous one, so deciding inside
+  the session handed a synchronous caller a reader whose `Read` throws. `CalciteCommand` passes a flag.
+- `ExecuteDbDataReaderAsync` asks for asynchronous and falls back **on `CannotPlanException` only** —
+  the one signal that means the query cannot be covered, as opposed to failing. That is not
+  sync-over-async: reading a synchronous plan completes synchronously and blocks nothing. What the
+  fallback must never do is wrap the synchronous plan in an `IAsyncEnumerable`.
+- **A token reaches the leaf only if it was given to `ExecuteReaderAsync`.** An `IAsyncEnumerable` takes
+  its token at `GetAsyncEnumerator`, which happens once when the reader is made; `DbDataReader.ReadAsync`
+  offers one per call and there is nowhere to put a later one. A token passed only to `ReadAsync` stops
+  the reader between rows but cannot interrupt a table already waiting on I/O. Nothing can be done about
+  that without giving every operator a token the plan threads, which is the design this deliberately does
+  not have.
+- **A table that is only an `IClrAsyncScannableTable` cannot be read synchronously at all.** Neither this
+  project's synchronous convention nor Calcite's own has a scan for it, and no converter can carry its
+  rows, so `ExecuteReader` fails to plan. That is the premise arriving at the surface rather than a gap: a
+  schema may hold both kinds of table, but an individual query is one or the other.
 - The fallback is **observable** — a property on the reader, or a hook a test can assert on. A silent
   fallback is how "it is asynchronous now" stops being true without anyone noticing.
 - `CalciteDataReader.Read()` over an asynchronous result **throws** rather than blocking. That is

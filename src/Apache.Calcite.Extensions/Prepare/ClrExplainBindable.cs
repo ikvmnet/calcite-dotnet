@@ -36,8 +36,11 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <inheritdoc />
-        public java.lang.reflect.Type ElementType =>
-            IsArray ? (java.lang.Class)typeof(string[]) : (java.lang.Class)typeof(java.lang.String);
+        /// <remarks>
+        /// A CLR type, as the interface says, and the rows really are these: <see cref="Bind"/> yields a
+        /// <see cref="string"/> or a <c>string[]</c> and nothing here goes near the type factory.
+        /// </remarks>
+        public Type ElementType => IsArray ? typeof(string[]) : typeof(string);
 
         /// <summary>
         /// Returns whether the row is an array holding the text rather than the text itself.
