@@ -2090,87 +2090,85 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
 
         /// <summary>
-        /// A sort key, held so that it can be null.
-        /// </summary>
-        /// <typeparam name="TKey"></typeparam>
-        /// <param name="Key">The key, which may be null.</param>
-        /// <remarks>
-        /// <see cref="SortedDictionary{TKey, TValue}"/> rejects a null key before it consults the comparer,
-        /// where a <c>TreeMap</c> built with a comparator hands one to it. Since a SQL sort key is null
-        /// wherever its column is, and <c>Functions.nullsComparator</c> exists precisely to order those, the
-        /// key is wrapped in something that is never null and the comparer unwraps it.
-        /// </remarks>
-        readonly record struct Sorted<TKey>(TKey Key);
-
-        /// <summary>
         /// Reads the input, keeping only the rows that can reach the output, and yields them in order.
         /// </summary>
+        /// <remarks>
+        /// linq4j's <c>orderBy(source, keySelector, comparator, offset, fetch)</c>, transcribed. A
+        /// <c>java.util.TreeMap</c> because that is what linq4j uses, and the reason its own comment gives:
+        /// it behaves like the plain <c>orderBy</c> and does better than a heap where there are few distinct
+        /// keys.
+        ///
+        /// <para>Using Calcite's own structure rather than a <c>SortedDictionary</c> settles three things at
+        /// once. It takes the <c>java.util.Comparator</c> this method is handed, unwrapped. It accepts a
+        /// null key and routes it through that comparator — which is the whole job of
+        /// <c>Functions.nullsComparator</c>, and is how NULLS FIRST and NULLS LAST are expressed;
+        /// <c>SortedDictionary</c> rejects a null key before it ever consults the comparer. And
+        /// <c>lastKey</c> and <c>headMap</c> are the operations the algorithm is written in terms of, in
+        /// O(log n), where <c>SortedDictionary</c> offers neither.</para>
+        ///
+        /// <para>One deliberate difference: linq4j stores a one-row group as a <c>Collections.singletonList</c>
+        /// and swaps in an <c>ArrayList</c> when a second row arrives. Ours is always a
+        /// <see cref="List{T}"/>. That is an allocation difference, not a logical one.</para>
+        /// </remarks>
         static IEnumerable<TSource> Ordered<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, int offset, int fetch)
         {
-            var order = comparator == null
-                ? Comparer<TKey>.Default
-                : Comparer<TKey>.Create((x, y) => comparator.compare(x, y));
-
-            // the key is wrapped in a struct, which is never null. A TreeMap built with a comparator routes
-            // a null key through that comparator -- which is the whole job of Functions.nullsComparator, and
-            // is how NULLS FIRST/LAST is expressed -- but SortedDictionary null-checks the key before it
-            // consults the comparer and throws. Wrapping is what makes ours accept what linq4j accepts.
-            //
-            // Only a single-column collation can produce a null key: a multi-field one keys on a FlatLists
-            // row, which is never null however many of its fields are.
-            var map = new SortedDictionary<Sorted<TKey>, List<TSource>>(
-                Comparer<Sorted<TKey>>.Create((x, y) => order.Compare(x.Key, y.Key)));
+            var map = comparator == null ? new java.util.TreeMap() : new java.util.TreeMap(comparator);
             var size = 0L;
-            var needed = fetch == int.MaxValue ? -1L : fetch + (long)offset;
+            var needed = fetch + (long)offset;
 
+            // read the input into a tree map
             foreach (var row in source)
             {
-                var key = keySelector(row);
+                var key = (object?)keySelector(row);
 
                 if (needed >= 0 && size >= needed)
                 {
                     // the current row will never appear in the output, so just skip it
-                    var lastKey = map.Keys.Last();
-                    if (order.Compare(key, lastKey.Key) >= 0)
+                    var lastKey = map.lastKey();
+                    if (Compare(comparator, key, lastKey) >= 0)
                         continue;
 
-                    // remove the last entry, so that at most 'needed' rows are kept
-                    var last = map[lastKey];
+                    // remove last entry from tree map, so that we keep at most 'needed' rows
+                    var last = (List<TSource>)map.get(lastKey);
                     if (last.Count == 1)
-                        map.Remove(lastKey);
+                        map.remove(lastKey);
                     else
                         last.RemoveAt(last.Count - 1);
 
                     size--;
                 }
 
-                if (map.TryGetValue(new Sorted<TKey>(key), out var held))
+                // add the current element to the map
+                if (map.get(key) is List<TSource> held)
                     held.Add(row);
                 else
-                    map[new Sorted<TKey>(key)] = [row];
+                    map.put(key, new List<TSource> { row });
 
                 size++;
             }
 
-            // skip the first 'offset' rows by dropping them from the map
+            // skip the first 'offset' rows by deleting them from the map
             if (offset > 0)
             {
+                // search the key up to (but excluding) which we have to remove entries from the map
                 var skipped = 0;
                 var found = false;
-                var until = default(Sorted<TKey>);
+                object? until = null;
 
-                foreach (var entry in map)
+                for (var i = map.entrySet().iterator(); i.hasNext();)
                 {
-                    skipped += entry.Value.Count;
+                    var entry = (java.util.Map.Entry)i.next();
+                    var rows = (List<TSource>)entry.getValue();
+                    skipped += rows.Count;
 
                     if (skipped > offset)
                     {
-                        // part of this key's rows may still be wanted
+                        // we might need to remove entries from the list
                         var keep = skipped - offset;
-                        if (keep < entry.Value.Count)
-                            entry.Value.RemoveRange(0, entry.Value.Count - keep);
+                        if (keep < rows.Count)
+                            rows.RemoveRange(0, rows.Count - keep);
 
-                        until = entry.Key;
+                        until = entry.getKey();
                         found = true;
                         break;
                     }
@@ -2180,13 +2178,30 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 if (found == false)
                     yield break;
 
-                foreach (var key in map.Keys.TakeWhile(k => order.Compare(k.Key, until.Key) < 0).ToList())
-                    map.Remove(key);
+                map.headMap(until, false).clear();
             }
 
-            foreach (var rows in map.Values)
-                foreach (var row in rows)
+            for (var i = map.values().iterator(); i.hasNext();)
+                foreach (var row in (List<TSource>)i.next())
                     yield return row;
+        }
+
+        /// <summary>
+        /// Compares two keys the way the map holding them does.
+        /// </summary>
+        /// <remarks>
+        /// The comparator where there is one, which is every case Calcite reaches: <c>GenerateCollationKey</c>
+        /// always produces one. The fallback exists because the parameter is nullable and matches what a
+        /// <c>TreeMap</c> built without a comparator does — order by the keys themselves. It goes through
+        /// <see cref="IComparable"/> rather than <c>java.lang.Comparable</c>, which is a ghost interface a
+        /// cast cannot reach from C#.
+        /// </remarks>
+        static int Compare(java.util.Comparator? comparator, object? x, object? y)
+        {
+            if (comparator != null)
+                return comparator.compare(x, y);
+
+            return Comparer<object>.Default.Compare(x, y);
         }
 
         /// <summary>
