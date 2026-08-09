@@ -33,19 +33,36 @@ namespace Apache.Calcite.Data.Internal
         /// <remarks>
         /// Blocks on <see cref="ReadAsync"/>, because <c>DbDataReader.Read</c> has to be answerable: a
         /// consumer that knows nothing but the ADO.NET interface calls it, and a provider whose reader
-        /// throws there is not one.
+        /// throws there is not one. In the default mode this is the synchronous surface over every query the
+        /// connection plans, so it blocks only where the plan genuinely suspends — a synchronous source
+        /// beneath the converters answers with a completed task and the wait never happens.
         ///
-        /// <para>This is not the sync-over-async the surface refuses, and the line is about who chose. A
-        /// plan can block inside itself too -- <c>ClrAsyncEnumerableToClrEnumerableConverter</c> does, once
-        /// per row -- and what makes that refusable is that the planner would be choosing it for a caller
-        /// who could not see it, which is why the prepare pipeline never registers the rules that would put
-        /// one on a plan. A caller reaching for <c>Read</c> on a reader they asked to be asynchronous is
-        /// choosing it in the open. The usual caution applies -- a synchronization context can deadlock on
-        /// it -- and <see cref="ReadAsync"/> is how to avoid that.</para>
+        /// <para><b>The synchronization context is suppressed around the whole call, not around the
+        /// wait.</b> The operators of the asynchronous convention await without <c>ConfigureAwait(false)</c>,
+        /// and a continuation captures the context at the moment of suspension — which is inside
+        /// <c>MoveNextAsync</c>'s synchronous phase, on this thread, <em>before</em> any wait begins.
+        /// Measured: suppressing only around the wait deadlocks under a context that cannot pump, because
+        /// the capture has already happened; suppressing before the call completes, because there is nothing
+        /// to capture and the continuation goes to the thread pool. Where there is no context, which is
+        /// every thread a query is normally read on, this costs one read of
+        /// <see cref="SynchronizationContext.Current"/>.</para>
         /// </remarks>
         public override bool Read()
         {
-            return ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
+            var context = SynchronizationContext.Current;
+            if (context is null)
+                return ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+            SynchronizationContext.SetSynchronizationContext(null);
+
+            try
+            {
+                return ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(context);
+            }
         }
 
         /// <summary>
@@ -78,19 +95,43 @@ namespace Apache.Calcite.Data.Internal
 
         /// <inheritdoc />
         /// <remarks>
-        /// A synchronous disposal of an asynchronous plan has nowhere to await, and blocking here is the
-        /// deadlock this convention exists to avoid. So it completes the disposal only where the plan
-        /// finished it synchronously, and a caller reading asynchronously has
-        /// <see cref="CalciteResult.DisposeAsync"/>.
+        /// Blocks until the plan's disposal completes, the way <see cref="Read"/> blocks for a row. In the
+        /// default mode a synchronous consumer's <c>using</c> lands here over every query, and abandoning a
+        /// disposal that did not finish synchronously would leak whatever the leaf holds open. The context
+        /// is suppressed before <c>DisposeAsync</c> is called, for the reason <see cref="Read"/> gives: an
+        /// iterator's <c>finally</c> can suspend too, and its continuation captures the context at
+        /// suspension, inside the call.
         /// </remarks>
         protected override void Release()
         {
             if (_enumerator is null)
                 return;
 
-            var pending = _enumerator.DisposeAsync();
-            if (pending.IsCompleted)
-                pending.GetAwaiter().GetResult();
+            var context = SynchronizationContext.Current;
+            if (context is null)
+            {
+                Wait(_enumerator.DisposeAsync());
+                return;
+            }
+
+            SynchronizationContext.SetSynchronizationContext(null);
+
+            try
+            {
+                Wait(_enumerator.DisposeAsync());
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(context);
+            }
+
+            static void Wait(ValueTask pending)
+            {
+                if (pending.IsCompleted)
+                    pending.GetAwaiter().GetResult();
+                else
+                    pending.AsTask().GetAwaiter().GetResult();
+            }
         }
 
         /// <inheritdoc />
