@@ -119,7 +119,38 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             if (productVersion is not null)
                 context = context.withDatabaseVersion(productVersion);
 
-            return new MssqlSqlDialect(context);
+            return new Mssql(context);
+        }
+
+        /// <summary>
+        /// <see cref="MssqlSqlDialect"/>, and the one thing it does not say about SQL Server.
+        /// </summary>
+        /// <param name="context"></param>
+        /// <remarks>
+        /// <para>
+        /// SQL Server cannot group by a constant, and <see cref="MssqlSqlDialect"/> does not declare it:
+        /// <c>SqlDialect.supportsGroupByLiteral</c> defaults to true and Postgres, Redshift and Informix
+        /// each override it while SQL Server does not. Measured — <c>GROUP BY (1 = 1)</c> is "Incorrect
+        /// syntax near '='" and <c>GROUP BY 1</c> is "Each GROUP BY expression must contain at least one
+        /// column that is not an outer reference".
+        /// </para>
+        /// <para>
+        /// It costs every correlated sub-query. <c>EXISTS</c> becomes an aggregate over a constant true, and
+        /// <c>SqlImplementor.visitRoot</c> only runs <c>AggregateProjectConstantToDummyJoinRule</c> — which
+        /// exists for exactly this — when the dialect has said it is needed. Saying so is a correction to
+        /// Calcite rather than a reproduction of it, which the adapter is entitled to make: it generates SQL
+        /// for a server to run, and the server is the authority on what it accepts.
+        /// </para>
+        /// </remarks>
+        sealed class Mssql(SqlDialect.Context context) : MssqlSqlDialect(context)
+        {
+
+            /// <inheritdoc />
+            public override bool supportsGroupByLiteral()
+            {
+                return false;
+            }
+
         }
 
         /// <summary>

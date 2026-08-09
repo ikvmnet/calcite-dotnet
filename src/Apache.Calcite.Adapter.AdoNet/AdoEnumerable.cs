@@ -261,7 +261,9 @@ namespace Apache.Calcite.Adapter.AdoNet
             }
             catch (DbException e)
             {
-                throw new AdoCalciteException("Exception while enumerating query.", e);
+                // with the SQL, because what a provider says about a statement it rejected is rarely enough
+                // to find it: "Incorrect syntax near '='" names neither the statement nor the position
+                throw new AdoCalciteException($"Exception while enumerating query: {_sql}", e);
             }
         }
 

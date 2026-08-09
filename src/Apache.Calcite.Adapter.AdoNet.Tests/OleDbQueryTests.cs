@@ -140,7 +140,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         {
             var metadata = Metadata.AdoDatabaseMetadataFactoryImpl.Instance.Create(_server.OleDbDataSource);
 
-            Assert.AreEqual("MssqlSqlDialect", metadata.Dialect.GetType().Name);
+            Assert.IsInstanceOfType<org.apache.calcite.sql.dialect.MssqlSqlDialect>(metadata.Dialect);
         }
 
         [TestMethod]

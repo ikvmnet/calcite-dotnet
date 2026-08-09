@@ -101,10 +101,11 @@ when several schemas point at one database. Lowest priority; measure before assu
 Sized against measured coverage: `Apache.Calcite.Data` 69.9%, `Apache.Calcite.Adapter.AdoNet` ~60%.
 Listed worst-first by uncovered lines.
 
-- **`AdoEnumerable.ToProviderValue`** — `Boolean`, `Double`, `BigDecimal` and `ByteString` are unexercised.
-  SQLite has no column of those types in the fixture. The second provider now exists — `SqlServerFixture`'s
-  `TYPES` table has one column of each — but no correlated sub-query runs against it, which is what reaches
-  this. All that is left of the correlated sub-query work.
+- **`AdoEnumerable.ToProviderValue`** — done. `Boolean`, `Double`, `BigDecimal` and `ByteString` were
+  unexercised because SQLite's fixture has no column of those types;
+  `GenericProviderCorrelationTests.CorrelatingOnAColumnConvertsItsValueForTheProvider` correlates on one of
+  each in `SqlServerFixture`'s `TYPES`, through all three drivers. `Character` is still unreached, Calcite
+  having no type that arrives as one.
 - **`CalciteResultValue`** — 56%, **282 uncovered**, the largest single gap anywhere. It is the whole
   type-conversion surface, and the `DATE`-as-milliseconds bug lived in exactly this kind of code.
 - **`AdoSchemaFactory` from a Calcite model** — 0%. The operand-driven path is the primary documented
@@ -139,8 +140,13 @@ surface whether or not the operation succeeds.
   that proves least: an ODBC driver over Oracle or DB2 reports its catalog differently in ways only that
   driver will show. The type-code tables are from ODBC's `sql.h` and OLE DB's `oledb.h` rather than from
   one driver, but only SQL Server's codes have been seen.
-- Correlated sub-queries against ODBC and OLE DB are untested. Both bind `?` by position, which is a
-  different path from the named binding every covered provider uses.
+- **Upstream, and worth reporting**: `MssqlSqlDialect` does not override `supportsGroupByLiteral`, and SQL
+  Server cannot group by a constant in either form — `GROUP BY (1 = 1)` is "Incorrect syntax near '='" and
+  `GROUP BY 1` is "Each GROUP BY expression must contain at least one column that is not an outer
+  reference". It costs every correlated sub-query, because `EXISTS` becomes an aggregate over a constant
+  true and `SqlImplementor.visitRoot` only runs `AggregateProjectConstantToDummyJoinRule` when the dialect
+  has asked for it. Postgres, Redshift and Informix each override it. `AdoSqlDialects.Mssql` says it here;
+  the fix belongs in Calcite.
 
 ## Translate a CLR expression tree into a linq4j one
 

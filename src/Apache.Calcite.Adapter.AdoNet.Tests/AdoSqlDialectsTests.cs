@@ -3,6 +3,7 @@ using Apache.Calcite.Adapter.AdoNet.Metadata;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using org.apache.calcite.sql;
+using org.apache.calcite.sql.dialect;
 using org.apache.calcite.sql.parser;
 using org.apache.calcite.sql.pretty;
 
@@ -39,8 +40,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
         #region Product
 
+        /// <remarks>
+        /// SQL Server is absent because its dialect is not Calcite's own instance — see
+        /// <see cref="TheCorrectedDialectIsStillTheSqlServerOne"/>.
+        /// </remarks>
         [TestMethod]
-        [DataRow("Microsoft SQL Server", "MssqlSqlDialect")]
         [DataRow("PostgreSQL", "PostgresqlSqlDialect")]
         [DataRow("Oracle", "OracleSqlDialect")]
         [DataRow("MySQL", "MysqlSqlDialect")]
@@ -64,7 +68,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [DataRow("Microsoft SQL Server Enterprise Edition")]
         public void TheProductNameIsMatchedLoosely(string productName)
         {
-            Assert.AreEqual("MssqlSqlDialect", AdoSqlDialects.For(productName, "15.0").GetType().Name);
+            Assert.IsInstanceOfType<MssqlSqlDialect>(AdoSqlDialects.For(productName, "15.0"));
         }
 
         /// <summary>
@@ -129,7 +133,43 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [TestMethod]
         public void AnUnreadableVersionIsNotAnError()
         {
-            Assert.AreEqual("MssqlSqlDialect", AdoSqlDialects.For("Microsoft SQL Server", "not a version").GetType().Name);
+            Assert.IsInstanceOfType<MssqlSqlDialect>(AdoSqlDialects.For("Microsoft SQL Server", "not a version"));
+        }
+
+        #endregion
+
+        #region Group by a constant
+
+        /// <summary>
+        /// SQL Server cannot group by a constant and <c>MssqlSqlDialect</c> does not say so, which costs
+        /// every correlated sub-query: <c>EXISTS</c> becomes an aggregate over a constant true, and the
+        /// statement generated for it is <c>SELECT 1 AS [i] GROUP BY (1 = 1)</c> — "Incorrect syntax near
+        /// '='", measured. <c>SqlImplementor.visitRoot</c> only runs the rule that rewrites it away when
+        /// the dialect has asked for it.
+        /// </summary>
+        [TestMethod]
+        public void SqlServerSaysItCannotGroupByAConstant()
+        {
+            Assert.IsFalse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382").supportsGroupByLiteral());
+        }
+
+        /// <summary>
+        /// And it is still the SQL Server dialect, rather than a generic one that happens to say the same.
+        /// </summary>
+        [TestMethod]
+        public void TheCorrectedDialectIsStillTheSqlServerOne()
+        {
+            Assert.IsInstanceOfType<MssqlSqlDialect>(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"));
+        }
+
+        /// <summary>
+        /// The correction is to SQL Server alone: a dialect Calcite already had right is left as it is.
+        /// </summary>
+        [TestMethod]
+        public void AnotherProductKeepsCalcitesOwnAnswer()
+        {
+            Assert.IsFalse(AdoSqlDialects.For("PostgreSQL", "16.0").supportsGroupByLiteral(), "Postgres says so itself");
+            Assert.IsTrue(AdoSqlDialects.For("MySQL", "8.0").supportsGroupByLiteral(), "MySQL can");
         }
 
         #endregion
