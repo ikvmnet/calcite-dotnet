@@ -161,8 +161,11 @@ namespace Apache.Calcite.Adapter.AdoNet
                     return typeFactory.createSqlType(SqlTypeName.VARCHAR, size);
                 case DbType.Binary:
                     return typeFactory.createSqlType(SqlTypeName.VARBINARY, size);
+                // DbType.Byte is the unsigned 0..255 one and TINYINT is signed, so the top half of its range
+                // comes back negative: SQL Server's tinyint 200 read as a TINYINT is -56. SMALLINT is the
+                // narrowest Calcite type that holds it
                 case DbType.Byte:
-                    return typeFactory.createSqlType(SqlTypeName.TINYINT);
+                    return typeFactory.createSqlType(SqlTypeName.SMALLINT);
                 case DbType.Boolean:
                     return typeFactory.createSqlType(SqlTypeName.BOOLEAN);
                 // the scale money carries in every provider that has a distinct type for it

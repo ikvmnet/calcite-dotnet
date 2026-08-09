@@ -116,19 +116,42 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Every type the server names in <c>INFORMATION_SCHEMA.COLUMNS.DATA_TYPE</c>, because a name that
+        /// is missing does not cost that column — it throws, and takes the whole table with it. The spatial
+        /// and hierarchy types, and <c>sql_variant</c>, go to <see cref="DbType.Object"/>, which
+        /// <c>AdoTable</c> maps to <c>OTHER</c> and the reader passes through untouched.
+        /// </remarks>
         protected override DbType ParseDbType(string typeName)
         {
-            return typeName switch
+            return typeName.ToLowerInvariant() switch
             {
+                "bit" => DbType.Boolean,
+                "tinyint" => DbType.Byte,
+                "smallint" => DbType.Int16,
                 "int" => DbType.Int32,
+                "bigint" => DbType.Int64,
+                "decimal" or "numeric" => DbType.Decimal,
+                // money is a decimal of a fixed scale of its own, which is what DbType.Currency states
+                "money" or "smallmoney" => DbType.Currency,
+                // float is the eight byte one whatever its declared mantissa: the server reports a
+                // float(1..24) as 'real', so this name is only ever the wide type
+                "float" => DbType.Double,
+                "real" => DbType.Single,
                 "char" => DbType.AnsiStringFixedLength,
-                "varchar" => DbType.AnsiString,
+                "varchar" or "text" => DbType.AnsiString,
                 "nchar" => DbType.StringFixedLength,
-                "nvarchar" => DbType.String,
+                "nvarchar" or "ntext" => DbType.String,
+                "xml" => DbType.Xml,
                 "uniqueidentifier" => DbType.Guid,
-                "datetime" => DbType.DateTime,
+                "date" => DbType.Date,
+                "time" => DbType.Time,
+                "datetime" or "smalldatetime" => DbType.DateTime,
                 "datetime2" => DbType.DateTime2,
-                _ => throw new NotImplementedException($"Unsupported field type: {typeName}"),
+                "datetimeoffset" => DbType.DateTimeOffset,
+                // rowversion is spelled 'timestamp' here and is eight opaque bytes, not a time
+                "binary" or "varbinary" or "image" or "timestamp" or "rowversion" => DbType.Binary,
+                _ => DbType.Object,
             };
         }
 

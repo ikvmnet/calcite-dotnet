@@ -102,14 +102,18 @@ Sized against measured coverage: `Apache.Calcite.Data` 69.9%, `Apache.Calcite.Ad
 Listed worst-first by uncovered lines.
 
 - **`AdoEnumerable.ToProviderValue`** — `Boolean`, `Double`, `BigDecimal` and `ByteString` are unexercised.
-  SQLite has no column of those types in the fixture, so covering them needs a wider fixture or a second
-  provider. All that is left of the correlated sub-query work.
+  SQLite has no column of those types in the fixture. The second provider now exists — `SqlServerFixture`'s
+  `TYPES` table has one column of each — but no correlated sub-query runs against it, which is what reaches
+  this. All that is left of the correlated sub-query work.
 - **`CalciteResultValue`** — 56%, **282 uncovered**, the largest single gap anywhere. It is the whole
   type-conversion surface, and the `DATE`-as-milliseconds bug lived in exactly this kind of code.
 - **`AdoSchemaFactory` from a Calcite model** — 0%. The operand-driven path is the primary documented
   way anyone configures an adapter, and nothing proves it works.
-- **`AdoInformationSchemaDatabaseMetadata`** — 130 lines at 0%, shared by the SqlServer, Odbc and
-  OleDb providers, so one suite lifts four.
+- **`AdoInformationSchemaDatabaseMetadata`** — was 130 lines at 0%, and the whole of it was wrong:
+  `DataRow.Field<int?>` on SQL Server's `tinyint` precision threw on every table with a numeric column, so
+  no query against SQL Server had ever run. `SqlServerQueryTests` covers it now, on a Windows machine with
+  LocalDB; Odbc and OleDb still reach it through nothing, and their `ParseDbType` and `Dialect` are stubs
+  that throw.
 - **Connection strings, parameters, batches** — `CalciteConnectionStringBuilder` 35% (148 uncovered),
   `CalciteParameterCollection` 55% (78), `CalciteBatchCommandCollection` 21% (62). Mechanical, high
   line yield.
@@ -128,8 +132,11 @@ surface whether or not the operation succeeds.
   rather than saying a parent schema is required. First thing anyone calling the API by hand hits.
 - `AdoSetOpFactory.createSetOp` is covered only indirectly, through `UNION` / `INTERSECT` / `EXCEPT`
   queries. Direct tests need a planner fixture that does not exist yet.
-- The AdoNet adapter is tested against SQLite only. `SqlServerDatabaseMetadata`,
-  `OdbcDatabaseMetadata` and `OleDbDatabaseMetadata` have no coverage.
+- `OdbcDatabaseMetadata` and `OleDbDatabaseMetadata` have no coverage, and neither can be given any as
+  written: `GetDefaultSchema`, `Dialect` and `ParseDbType` all throw `NotImplementedException`. The README's
+  provider table lists both as supported. `SqlServerDatabaseMetadata` is covered as of `SqlServerQueryTests`,
+  which needs a Windows machine with LocalDB and skips everywhere else — so the Linux and macOS legs of the
+  matrix still see SQLite alone.
 
 ## Translate a CLR expression tree into a linq4j one
 

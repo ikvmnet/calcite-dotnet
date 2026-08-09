@@ -1,5 +1,6 @@
 using System;
 using System.Data.Common;
+using System.Globalization;
 
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
@@ -51,16 +52,16 @@ namespace Apache.Calcite.Adapter.AdoNet
                 case nameof(SqlTypeName.BIGINT):
                     return GetLong(reader, index);
                 case nameof(SqlTypeName.TIMESTAMP):
-                    return reader.IsDBNull(index) ? null : java.lang.Long.valueOf(((DateTimeOffset)reader.GetDateTime(index)).ToUnixTimeMilliseconds());
+                    return GetTimestamp(reader, index);
                 case nameof(SqlTypeName.DATE):
                     return GetDate(reader, index);
                 // FLOAT is eight bytes in Calcite, as it is in SQL, and shares DOUBLE's representation;
                 // REAL is the four byte one. JavaTypeFactoryImpl.getJavaClass says so, and marks it "sic".
                 case nameof(SqlTypeName.FLOAT):
                 case nameof(SqlTypeName.DOUBLE):
-                    return reader.IsDBNull(index) ? null : java.lang.Double.valueOf(reader.GetDouble(index));
+                    return GetDouble(reader, index);
                 case nameof(SqlTypeName.REAL):
-                    return reader.IsDBNull(index) ? null : java.lang.Float.valueOf(reader.GetFloat(index));
+                    return GetFloat(reader, index);
                 case nameof(SqlTypeName.DECIMAL):
                     return GetDecimal(reader, index);
                 case nameof(SqlTypeName.BINARY):
@@ -69,7 +70,7 @@ namespace Apache.Calcite.Adapter.AdoNet
                 case nameof(SqlTypeName.TIME):
                     return GetTime(reader, index);
                 case nameof(SqlTypeName.TIMESTAMP_TZ):
-                    return reader.IsDBNull(index) ? null : java.lang.Long.valueOf(new DateTimeOffset(reader.GetDateTime(index), TimeSpan.Zero).ToUnixTimeMilliseconds());
+                    return GetTimestampTz(reader, index);
                 case nameof(SqlTypeName.VARCHAR):
                     return GetString(reader, index);
                 case nameof(SqlTypeName.OTHER):
@@ -82,6 +83,36 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
+        /// Gets the value at an index converted to a CLR type, or <see langword="null"/>.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="reader"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <para>
+        /// The width a provider declares a column in is not the width Calcite chose for it, and the typed
+        /// accessors on <see cref="DbDataReader"/> cast rather than convert: <see cref="DbDataReader.GetInt16"/>
+        /// on SQL Server's <c>tinyint</c>, which only <c>SMALLINT</c> holds without loss, throws rather than
+        /// widening. Every one of these is a lossless widening of an integral or approximate value the
+        /// provider already decoded, so converting is what the mapping meant.
+        /// </para>
+        /// <para>
+        /// The cost is one boxed value per cell, which is what every one of these accessors was going to pay
+        /// anyway: the result is a <c>java.lang</c> wrapper, allocated per cell, whatever route it took.
+        /// </para>
+        /// </remarks>
+        static T? GetValueAs<T>(DbDataReader reader, int index)
+            where T : struct
+        {
+            if (reader.IsDBNull(index))
+                return null;
+
+            var value = reader.GetValue(index);
+            return value is T typed ? typed : (T)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
         /// Gets a <see cref="java.lang.Boolean"/>.
         /// </summary>
         /// <param name="reader"></param>
@@ -89,7 +120,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <returns></returns>
         public static object? GetBoolean(DbDataReader reader, int index)
         {
-            return reader.IsDBNull(index) ? null : java.lang.Boolean.valueOf(reader.GetBoolean(index));
+            return GetValueAs<bool>(reader, index) is bool value ? java.lang.Boolean.valueOf(value) : null;
         }
 
         /// <summary>
@@ -98,9 +129,15 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="reader"></param>
         /// <param name="index"></param>
         /// <returns></returns>
+        /// <remarks>
+        /// Calcite's <c>TINYINT</c> is signed, so this is an <see cref="sbyte"/> and not the <see cref="byte"/>
+        /// the <see cref="DbDataReader.GetByte"/> accessor answers with. A provider whose own tiny integer is
+        /// unsigned — SQL Server's is — maps to <c>SMALLINT</c> rather than through here. Java's <c>byte</c>
+        /// is IKVM's <see cref="byte"/> and is unsigned, so the sign travels in the bits.
+        /// </remarks>
         public static object? GetByte(DbDataReader reader, int index)
         {
-            return reader.IsDBNull(index) ? null : java.lang.Byte.valueOf(reader.GetByte(index));
+            return GetValueAs<sbyte>(reader, index) is sbyte value ? java.lang.Byte.valueOf(unchecked((byte)value)) : null;
         }
 
         /// <summary>
@@ -111,7 +148,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <returns></returns>
         public static object? GetShort(DbDataReader reader, int index)
         {
-            return reader.IsDBNull(index) ? null : java.lang.Short.valueOf(reader.GetInt16(index));
+            return GetValueAs<short>(reader, index) is short value ? java.lang.Short.valueOf(value) : null;
         }
 
         /// <summary>
@@ -122,7 +159,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <returns></returns>
         public static object? GetInt(DbDataReader reader, int index)
         {
-            return reader.IsDBNull(index) ? null : java.lang.Integer.valueOf(reader.GetInt32(index));
+            return GetValueAs<int>(reader, index) is int value ? java.lang.Integer.valueOf(value) : null;
         }
 
         /// <summary>
@@ -133,7 +170,29 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <returns></returns>
         public static object? GetLong(DbDataReader reader, int index)
         {
-            return reader.IsDBNull(index) ? null : java.lang.Long.valueOf(reader.GetInt64(index));
+            return GetValueAs<long>(reader, index) is long value ? java.lang.Long.valueOf(value) : null;
+        }
+
+        /// <summary>
+        /// Gets a <see cref="java.lang.Double"/>.
+        /// </summary>
+        /// <param name="reader"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        public static object? GetDouble(DbDataReader reader, int index)
+        {
+            return GetValueAs<double>(reader, index) is double value ? java.lang.Double.valueOf(value) : null;
+        }
+
+        /// <summary>
+        /// Gets a <see cref="java.lang.Float"/>.
+        /// </summary>
+        /// <param name="reader"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        public static object? GetFloat(DbDataReader reader, int index)
+        {
+            return GetValueAs<float>(reader, index) is float value ? java.lang.Float.valueOf(value) : null;
         }
 
         /// <summary>
@@ -167,6 +226,70 @@ namespace Apache.Calcite.Adapter.AdoNet
                 return null;
 
             return java.lang.Integer.valueOf(DateOnly.FromDateTime(reader.GetDateTime(index)).DayNumber - UnixEpochDay.DayNumber);
+        }
+
+        /// <summary>
+        /// The instant a <see cref="SqlTypeName.TIMESTAMP"/> counts from.
+        /// </summary>
+        static readonly DateTime UnixEpoch = new(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        /// <summary>
+        /// Gets a <see cref="SqlTypeName.TIMESTAMP"/> in Calcite's internal representation.
+        /// </summary>
+        /// <param name="reader"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A timestamp carries no zone: the count is of milliseconds from the epoch to the wall clock read
+        /// as though it were UTC, which is what <c>ParameterBinder.ConvertTimestamp</c> writes and what
+        /// <c>CalciteResultValue</c> decodes with <c>UnixEpoch.AddMilliseconds</c>. Casting the provider's
+        /// <see cref="DateTime"/> to a <see cref="DateTimeOffset"/> instead reads an unspecified
+        /// <see cref="DateTime.Kind"/> as local time and shifts the value by the machine's offset — the same
+        /// hazard <see cref="GetDate"/> avoids, and for the same reason.
+        /// </remarks>
+        public static object? GetTimestamp(DbDataReader reader, int index)
+        {
+            if (reader.IsDBNull(index))
+                return null;
+
+            return java.lang.Long.valueOf(ToUnixTimeMilliseconds(DateTime.SpecifyKind(reader.GetDateTime(index), DateTimeKind.Utc)));
+        }
+
+        /// <summary>
+        /// Gets a <see cref="SqlTypeName.TIMESTAMP_TZ"/> in Calcite's internal representation.
+        /// </summary>
+        /// <param name="reader"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A zoned timestamp is an instant, so the count is of milliseconds from the epoch to it. A provider
+        /// that has a type for one hands back a <see cref="DateTimeOffset"/> and refuses
+        /// <see cref="DbDataReader.GetDateTime"/> outright — SQL Server's <c>datetimeoffset</c> does; one
+        /// that does not is read as UTC, the offset being the thing it had no way to tell us.
+        /// </remarks>
+        public static object? GetTimestampTz(DbDataReader reader, int index)
+        {
+            if (reader.IsDBNull(index))
+                return null;
+
+            return java.lang.Long.valueOf(reader.GetValue(index) switch
+            {
+                DateTimeOffset o => o.ToUnixTimeMilliseconds(),
+                DateTime d => ToUnixTimeMilliseconds(d.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(d, DateTimeKind.Utc) : d.ToUniversalTime()),
+                string s => DateTimeOffset.Parse(s, CultureInfo.InvariantCulture).ToUnixTimeMilliseconds(),
+                _ => ToUnixTimeMilliseconds(DateTime.SpecifyKind(reader.GetDateTime(index), DateTimeKind.Utc)),
+            });
+        }
+
+        /// <summary>
+        /// Counts the milliseconds from the epoch to a <see cref="DateTime"/> already in the terms it is to
+        /// be counted in.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        static long ToUnixTimeMilliseconds(DateTime value)
+        {
+            return (long)(value - UnixEpoch).TotalMilliseconds;
         }
 
         /// <summary>
@@ -236,9 +359,20 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="reader"></param>
         /// <param name="index"></param>
         /// <returns></returns>
+        /// <remarks>
+        /// A column Calcite holds as <see cref="SqlTypeName.CHAR"/> or <see cref="SqlTypeName.VARCHAR"/> need
+        /// not be a string to the provider: SQL Server hands back a <see cref="Guid"/> for a
+        /// <c>uniqueidentifier</c>, which <c>AdoTable</c> types as <c>CHAR(36)</c>, and
+        /// <see cref="DbDataReader.GetString"/> casts rather than converts and refuses it. Formatting the
+        /// value is what the type says it is.
+        /// </remarks>
         public static object? GetString(DbDataReader reader, int index)
         {
-            return reader.IsDBNull(index) ? null : reader.GetString(index);
+            if (reader.IsDBNull(index))
+                return null;
+
+            var value = reader.GetValue(index);
+            return value as string ?? Convert.ToString(value, CultureInfo.InvariantCulture);
         }
 
         /// <summary>

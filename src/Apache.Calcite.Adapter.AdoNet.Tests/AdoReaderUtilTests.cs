@@ -92,6 +92,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             Assert.AreEqual((byte)7, ((java.lang.Byte)value!).byteValue());
         }
 
+        /// <summary>
+        /// Calcite's TINYINT is signed, and Java's <c>byte</c> is IKVM's unsigned one, so the sign has to
+        /// travel in the bits rather than in the type.
+        /// </summary>
+        [TestMethod]
+        public void ANegativeTinyIntKeepsItsSign()
+        {
+            using var reader = Row("-1");
+            var value = (java.lang.Byte)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.TINYINT)!;
+
+            Assert.AreEqual("-1", value.ToString());
+        }
+
         [TestMethod]
         public void SmallIntIsReadAsAJavaShort()
         {
