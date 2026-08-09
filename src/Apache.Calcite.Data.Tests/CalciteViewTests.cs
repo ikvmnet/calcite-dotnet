@@ -3,6 +3,8 @@ using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
 
+using Apache.Calcite.Extensions.Schema;
+
 using Xunit;
 
 namespace Apache.Calcite.Data.Tests
@@ -26,8 +28,8 @@ namespace Apache.Calcite.Data.Tests
     /// routes register a view as a <c>TableMacro</c> of no arguments, which lands in the schema's function
     /// map rather than its table map — so <c>getTableNames()</c> does not see one, and
     /// <c>GetSchema("Tables")</c> listed no views at all until <c>CalciteSchemaInfo.TablesOf</c> started
-    /// concatenating <c>getTablesBasedOnNullaryFunctions()</c> the way <c>CalciteMetaImpl.tables</c> does.
-    /// Querying a view worked the whole time, which is why this needs its own tests.</para>
+    /// reading the function map as well. Querying a view worked the whole time, which is why this needs
+    /// its own tests.</para>
     /// </remarks>
     public class CalciteViewTests
     {
@@ -82,7 +84,7 @@ namespace Apache.Calcite.Data.Tests
         /// <c>CREATE TABLE ... AS SELECT</c> load their rows — builds its <c>INSERT</c> against
         /// <c>context.getRootSchema()</c> and nothing else, so a statement naming objects in a sub-schema
         /// cannot resolve them. Upstream's own tests use a connection shaped like this one for the same
-        /// reason; see <see cref="Materialized_view_in_a_sub_schema_is_not_supported_upstream"/>.
+        /// reason; see <see cref="Materialized_view_in_a_sub_schema_fails_before_a_runner_is_asked_for"/>.
         /// </remarks>
         static readonly string RootDdlConnectionString = new CalciteConnectionStringBuilder
         {
@@ -399,7 +401,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A view registered through <c>ClrViewTable.ViewMacro</c> is analyzed under the connection's
+        /// A view registered through <c>SchemaPlusExtensions.AddView</c> is analyzed under the connection's
         /// configuration, so the function the previous test could not use works.
         /// </summary>
         /// <remarks>
@@ -422,10 +424,7 @@ namespace Apache.Calcite.Data.Tests
             c.Open();
 
             var adhoc = c.RootSchema.getSubSchema("adhoc")!;
-            adhoc.add("NVLVIEW", Apache.Calcite.Extensions.Schema.ClrViewTable.ViewMacro(
-                adhoc,
-                "SELECT NVL(CAST(NULL AS INTEGER), 7) AS Y",
-                viewPath: ["adhoc", "NVLVIEW"]));
+            adhoc.AddView("NVLVIEW", "SELECT NVL(CAST(NULL AS INTEGER), 7) AS Y");
 
             using var cmd = c.CreateCommand();
             cmd.CommandText = "SELECT Y FROM NVLVIEW";
@@ -454,11 +453,10 @@ namespace Apache.Calcite.Data.Tests
 
             c.RootSchema.add("BE3", new ViewTestBackEnd());
 
-            c.RootSchema.add("cbridged", Apache.Calcite.Extensions.Schema.ClrViewTable.ViewMacro(
-                c.RootSchema,
+            c.RootSchema.AddView(
+                "cbridged",
                 "SELECT \"s\".\"sid\" AS \"sid\", \"r\".\"RNAME\" AS \"rname\" " +
-                "FROM \"csale\" \"s\" JOIN \"BE3\".\"REGIONS\" \"r\" ON \"s\".\"rid\" = \"r\".\"RID\"",
-                viewPath: ["cbridged"]));
+                "FROM \"csale\" \"s\" JOIN \"BE3\".\"REGIONS\" \"r\" ON \"s\".\"rid\" = \"r\".\"RID\"");
 
             cmd.CommandText = "SELECT \"sid\", \"rname\" FROM \"cbridged\" ORDER BY \"sid\"";
             using var r = cmd.ExecuteReader();
@@ -495,10 +493,7 @@ namespace Apache.Calcite.Data.Tests
             c.Open();
 
             var adhoc = c.RootSchema.getSubSchema("adhoc")!;
-            adhoc.add("NVLDESC", Apache.Calcite.Extensions.Schema.ClrViewTable.ViewMacro(
-                adhoc,
-                "SELECT NVL(CAST(NULL AS INTEGER), 7) AS Y",
-                viewPath: ["adhoc", "NVLDESC"]));
+            adhoc.AddView("NVLDESC", "SELECT NVL(CAST(NULL AS INTEGER), 7) AS Y");
 
             var t = c.GetSchema("Columns", [null, null, "NVLDESC", null]);
             var columns = t.Rows.Cast<DataRow>().Select(r => (string)r["COLUMN_NAME"]).ToArray();
@@ -629,6 +624,27 @@ namespace Apache.Calcite.Data.Tests
             c.Open();
 
             Assert.ThrowsAny<Exception>(() => c.GetSchema("Tables"));
+        }
+
+        /// <summary>
+        /// And so does a listing restricted to <c>TABLE</c>, which wants no views at all.
+        /// </summary>
+        /// <remarks>
+        /// The type restriction cannot be applied before the expansion the way the name one is:
+        /// <c>TABLE_TYPE</c> is <c>Table.getJdbcTableType()</c>, so a view is expanded in order to be
+        /// typed and only then discarded. Deciding it from the macro's class instead would be a guess —
+        /// <c>ViewTableMacro.apply</c> is overridable — and a wrong <c>TABLE_TYPE</c> is worse than a slow
+        /// one. Asserted so the asymmetry with
+        /// <see cref="GetSchema_Tables_for_one_view_should_not_expand_the_others"/> is on the record
+        /// rather than waiting to surprise someone.
+        /// </remarks>
+        [Fact]
+        public void GetSchema_Tables_restricted_to_tables_still_expands_views()
+        {
+            using var c = new CalciteConnection(BrokenViewModelConnectionString);
+            c.Open();
+
+            Assert.ThrowsAny<Exception>(() => c.GetSchema("Tables", [null, null, null, "TABLE"]));
         }
 
         /// <summary>
@@ -976,15 +992,10 @@ namespace Apache.Calcite.Data.Tests
 
             c.RootSchema.add("BE2", new ViewTestBackEnd());
 
-            var viewPath = new java.util.ArrayList();
-            viewPath.add("bridged");
-            c.RootSchema.add("bridged", org.apache.calcite.schema.impl.ViewTable.viewMacro(
-                c.RootSchema,
+            c.RootSchema.AddView(
+                "bridged",
                 "SELECT \"s\".\"sid\" AS \"sid\", \"r\".\"RNAME\" AS \"rname\" " +
-                "FROM \"sale\" \"s\" JOIN \"BE2\".\"REGIONS\" \"r\" ON \"s\".\"rid\" = \"r\".\"RID\"",
-                new java.util.ArrayList(),
-                viewPath,
-                java.lang.Boolean.FALSE));
+                "FROM \"sale\" \"s\" JOIN \"BE2\".\"REGIONS\" \"r\" ON \"s\".\"rid\" = \"r\".\"RID\"");
 
             // selected from directly
             cmd.CommandText = "SELECT \"sid\", \"rname\" FROM \"bridged\" ORDER BY \"sid\"";
@@ -1062,14 +1073,7 @@ namespace Apache.Calcite.Data.Tests
             cmd.CommandText = "CREATE TABLE \"modsrc\" (\"id\" INTEGER NOT NULL, \"g\" INTEGER NOT NULL)";
             cmd.ExecuteNonQuery();
 
-            var viewPath = new java.util.ArrayList();
-            viewPath.add("modview");
-            c.RootSchema.add("modview", org.apache.calcite.schema.impl.ViewTable.viewMacro(
-                c.RootSchema,
-                "SELECT \"id\" FROM \"modsrc\" WHERE \"g\" = 7",
-                new java.util.ArrayList(),
-                viewPath,
-                java.lang.Boolean.TRUE));
+            c.RootSchema.AddView("modview", "SELECT \"id\" FROM \"modsrc\" WHERE \"g\" = 7", modifiable: true);
 
             cmd.CommandText = "INSERT INTO \"modview\" VALUES (1)";
             cmd.ExecuteNonQuery();

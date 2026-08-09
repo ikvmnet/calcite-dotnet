@@ -34,10 +34,10 @@ namespace Apache.Calcite.Extensions.Schema
     /// with no context on the stack, and this falls back to the connection Calcite would have used rather
     /// than failing: worse configuration, never worse than upstream.</para>
     ///
-    /// <para>Only views registered through <see cref="ClrViewTable"/> get this. A model's
-    /// <c>"type":"view"</c> and a <c>CREATE VIEW</c> both build Calcite's macro, from code with no seam to
-    /// pass a different one, so they keep upstream's behaviour — see
-    /// <c>CalciteViewTests.View_is_analyzed_under_the_default_config_not_the_connections</c>.</para>
+    /// <para>Two things register this. A model's <c>"type":"view"</c> gets it from
+    /// <c>ClrModelHandler</c>, and <see cref="Create"/> is how a caller registers one itself. A
+    /// <c>CREATE VIEW</c> does not: <c>ServerDdlExecutor</c> builds Calcite's macro with no seam to pass a
+    /// different one, and it is <c>calcite-server</c>, which nothing shipped here depends on.</para>
     /// </remarks>
     public class ClrViewTableMacro : ViewTableMacro
     {
@@ -89,70 +89,6 @@ namespace Apache.Calcite.Extensions.Schema
                 return modifiableViewTable(parsed, viewSql, schemaPath1, viewPath, schema);
 
             return viewTable(parsed, viewSql, schemaPath1, viewPath);
-        }
-
-    }
-
-    /// <summary>
-    /// Creates the view macros this provider registers.
-    /// </summary>
-    /// <remarks>
-    /// <c>ViewTable.viewMacro</c>, answering with a <see cref="ClrViewTableMacro"/>. Registering the result
-    /// on a schema is what makes a view: <c>schema.add(name, macro)</c> puts it in the function map, where
-    /// a nullary <c>TableMacro</c> is what the catalog reader resolves a table name to when the table map
-    /// has nothing.
-    /// </remarks>
-    public static class ClrViewTable
-    {
-
-        /// <summary>
-        /// Creates a macro for a view over <paramref name="viewSql"/>.
-        /// </summary>
-        /// <param name="schema">The schema the view is declared in, and the one it is registered on.</param>
-        /// <param name="viewSql">The view's defining query.</param>
-        /// <param name="schemaPath">
-        /// The path the definition is resolved against. <see langword="null"/> uses the schema's own path,
-        /// which is what a view over tables beside it wants; give a path explicitly when the definition
-        /// names tables somewhere else by an unqualified name.
-        /// </param>
-        /// <param name="viewPath">
-        /// The view's own path. Calcite compares it against the contexts already on the stack and raises
-        /// <c>CyclicDefinitionException</c> on a match, so a view defined in terms of itself is caught
-        /// rather than recursing. Passing <see langword="null"/> gives that up.
-        /// </param>
-        /// <param name="modifiable">
-        /// <see langword="true"/> requires a modifiable view and fails the analysis if the definition
-        /// cannot be one; <see langword="false"/> refuses one; <see langword="null"/> takes one where the
-        /// definition allows it.
-        /// </param>
-        public static TableMacro ViewMacro(
-            SchemaPlus schema,
-            string viewSql,
-            IEnumerable<string>? schemaPath = null,
-            IEnumerable<string>? viewPath = null,
-            bool? modifiable = null)
-        {
-            ArgumentNullException.ThrowIfNull(schema);
-            ArgumentNullException.ThrowIfNull(viewSql);
-
-            return new ClrViewTableMacro(
-                CalciteSchema.from(schema),
-                viewSql,
-                ToJavaList(schemaPath),
-                ToJavaList(viewPath),
-                modifiable is null ? null : java.lang.Boolean.valueOf(modifiable.Value));
-        }
-
-        static java.util.List? ToJavaList(IEnumerable<string>? values)
-        {
-            if (values is null)
-                return null;
-
-            var list = new java.util.ArrayList();
-            foreach (var value in values)
-                list.add(value);
-
-            return list;
         }
 
     }
