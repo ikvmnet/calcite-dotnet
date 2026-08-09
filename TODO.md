@@ -112,8 +112,8 @@ Listed worst-first by uncovered lines.
 - **`AdoInformationSchemaDatabaseMetadata`** — was 130 lines at 0%, and the whole of it was wrong:
   `DataRow.Field<int?>` on SQL Server's `tinyint` precision threw on every table with a numeric column, so
   no query against SQL Server had ever run. `SqlServerQueryTests` covers it now, on a Windows machine with
-  LocalDB; Odbc and OleDb still reach it through nothing, and their `ParseDbType` and `Dialect` are stubs
-  that throw.
+  LocalDB. It is no longer shared with Odbc and OleDb: neither driver's collections have the information
+  schema's shape, and both now read their own.
 - **Connection strings, parameters, batches** — `CalciteConnectionStringBuilder` 35% (148 uncovered),
   `CalciteParameterCollection` 55% (78), `CalciteBatchCommandCollection` 21% (62). Mechanical, high
   line yield.
@@ -132,11 +132,15 @@ surface whether or not the operation succeeds.
   rather than saying a parent schema is required. First thing anyone calling the API by hand hits.
 - `AdoSetOpFactory.createSetOp` is covered only indirectly, through `UNION` / `INTERSECT` / `EXCEPT`
   queries. Direct tests need a planner fixture that does not exist yet.
-- `OdbcDatabaseMetadata` and `OleDbDatabaseMetadata` have no coverage, and neither can be given any as
-  written: `GetDefaultSchema`, `Dialect` and `ParseDbType` all throw `NotImplementedException`. The README's
-  provider table lists both as supported. `SqlServerDatabaseMetadata` is covered as of `SqlServerQueryTests`,
-  which needs a Windows machine with LocalDB and skips everywhere else — so the Linux and macOS legs of the
-  matrix still see SQLite alone.
+- The SQL Server, ODBC and OLE DB suites all need a Windows machine with LocalDB and skip everywhere else,
+  so the Linux and macOS legs of the matrix still see SQLite alone. `AdoSqlDialectsTests` is the part of it
+  that runs everywhere.
+- Both generic providers are covered against SQL Server and against nothing else, which is the one backend
+  that proves least: an ODBC driver over Oracle or DB2 reports its catalog differently in ways only that
+  driver will show. The type-code tables are from ODBC's `sql.h` and OLE DB's `oledb.h` rather than from
+  one driver, but only SQL Server's codes have been seen.
+- Correlated sub-queries against ODBC and OLE DB are untested. Both bind `?` by position, which is a
+  different path from the named binding every covered provider uses.
 
 ## Translate a CLR expression tree into a linq4j one
 

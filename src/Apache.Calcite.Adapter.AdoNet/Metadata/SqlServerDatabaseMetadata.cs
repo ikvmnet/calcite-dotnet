@@ -2,9 +2,6 @@
 using System.Data;
 using System.Data.Common;
 
-using org.apache.calcite.avatica.util;
-using org.apache.calcite.config;
-using org.apache.calcite.rex;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.dialect;
 
@@ -14,7 +11,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
     /// <summary>
     /// Implements the <see cref="AdoDatabaseMetadata"/> for Microsoft SQL Server.
     /// </summary>
-    class SqlServerDatabaseMetadata : AdoInformationSchemaDatabaseMetadata<DbConnection>
+    class SqlServerDatabaseMetadata : AdoInformationSchemaDatabaseMetadata
     {
 
         /// <summary>
@@ -70,49 +67,18 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// Asks the server what it is, and describes it to Calcite.
         /// </summary>
         /// <returns></returns>
+        /// <remarks>
+        /// The version is the part that has to be asked for: under major version 11
+        /// <see cref="MssqlSqlDialect"/> writes <c>TOP(n)</c> and discards the offset, so a paged query
+        /// silently returns the first page for every page. The rest of the context is
+        /// <see cref="MssqlSqlDialect.DEFAULT_CONTEXT"/>'s, which already states the bracket quoting, the
+        /// type system and the low null collation.
+        /// </remarks>
         SqlDialect CreateDialect()
         {
             using var cnn = DbDataSource.OpenConnection();
 
-            return new MssqlSqlDialect(SqlDialect.EMPTY_CONTEXT
-                .withDatabaseProductName("Microsoft SQL Server")
-                .withDatabaseMajorVersion(ParseMajorVersion(cnn.ServerVersion))
-                .withDatabaseMinorVersion(ParseMinorVersion(cnn.ServerVersion))
-                .withDatabaseVersion(cnn.ServerVersion)
-                .withIdentifierQuoteString("\"")
-                .withUnquotedCasing(Casing.UNCHANGED)
-                .withQuotedCasing(Casing.UNCHANGED)
-                .withCaseSensitive(true)
-                .withNullCollation(NullCollation.LOW));
-        }
-
-        /// <summary>
-        /// Parses the major SQL Server version.
-        /// </summary>
-        /// <param name="v"></param>
-        /// <returns></returns>
-        int ParseMajorVersion(string v)
-        {
-            int p = v.IndexOf('.');
-            if (p > 0)
-                v = v.Substring(0, p);
-
-            return int.TryParse(v, out int r) ? r : 0;
-        }
-
-        /// <summary>
-        /// Parses the minor SQL Server version.
-        /// </summary>
-        /// <param name="v"></param>
-        /// <returns></returns>
-        int ParseMinorVersion(string v)
-        {
-            int p = v.IndexOf('.');
-            int q = v.IndexOf('.', p + 1);
-            if (p > 0 && q > 0)
-                v = v.Substring(p + 1, q);
-
-            return int.TryParse(v, out int r) ? r : 0;
+            return AdoSqlDialects.CreateMssql("Microsoft SQL Server", cnn.ServerVersion);
         }
 
         /// <inheritdoc />

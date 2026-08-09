@@ -6,33 +6,33 @@ using org.apache.calcite.sql.type;
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.Data.Odbc;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// Covers the adapter against a real SQL Server, which is the only thing that exercises the information
-    /// schema path and the SQL Server type mapping.
+    /// Covers the adapter over an <see cref="OdbcConnection"/>, against the same LocalDB database
+    /// <see cref="SqlServerQueryTests"/> uses.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Every query against SQL Server failed with <c>InvalidCastException: Unable to cast object of type
-    /// 'System.Byte' to type 'System.Int32'</c> and nothing here said so, because the suite had only ever
-    /// been pointed at SQLite, whose metadata comes from <c>PRAGMA table_xinfo</c> rather than from
-    /// <c>INFORMATION_SCHEMA</c>. A provider's own description of itself is not something one provider can
-    /// stand in for.
+    /// The ODBC catalog is not the information schema — <c>TABLE_CAT</c>, <c>TABLE_SCHEM</c>, a numeric
+    /// <c>DATA_TYPE</c>, no <c>NUMERIC_PRECISION</c> — so nothing about the SQL Server metadata provider
+    /// carries over, and the whole of <see cref="Metadata.OdbcDatabaseMetadata"/> threw
+    /// <see cref="NotImplementedException"/> until it was written against the shape the driver actually
+    /// returns.
     /// </para>
     /// <para>
-    /// LocalDB is Windows only, and a Windows machine need not have it either, so these skip where there is
-    /// no server to talk to.
+    /// Pointing it at the same database as the SqlClient suite is the point: the answers have to be the
+    /// same, and a metadata provider that has misread its own driver's collections says something different.
     /// </para>
     /// </remarks>
     [TestClass]
-    public class SqlServerQueryTests
+    public class OdbcQueryTests
     {
 
-        static SqlServerQueryTests()
+        static OdbcQueryTests()
         {
             ikvm.runtime.Startup.addBootClassPathAssembly(typeof(AdoSchemaFactory).Assembly);
             ikvm.runtime.Startup.addBootClassPathAssembly(typeof(CalciteJdbc41Factory).Assembly);
@@ -49,6 +49,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         {
             if (SqlServerFixture.IsAvailable == false)
                 Assert.Inconclusive("No SQL Server LocalDB instance is reachable on this machine.");
+            if (SqlServerFixture.OdbcDriver is null)
+                Assert.Inconclusive("No SQL Server ODBC driver is installed on this machine.");
 
             _server = SqlServerFixture.Shared;
             _types = new JavaTypeFactoryImpl();
@@ -61,7 +63,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
             var calcite = (CalciteConnection)_connection;
             var root = calcite.getRootSchema();
-            _schema = AdoSchema.Create(root, "ADO", _server.DataSource, null, "dbo");
+            _schema = AdoSchema.Create(root, "ADO", _server.OdbcDataSource, null, "dbo");
             root.add("ADO", _schema);
         }
 
@@ -72,8 +74,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Runs a query and returns its rows as strings, so a comparison does not depend on which numeric
-        /// type a provider chose.
+        /// Runs a query and returns its rows as strings.
         /// </summary>
         /// <param name="sql"></param>
         /// <returns></returns>
@@ -110,39 +111,16 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Returns a table by name.
-        /// </summary>
-        /// <param name="tableName"></param>
-        /// <returns></returns>
-        org.apache.calcite.schema.Table Table(string tableName)
-        {
-            return (org.apache.calcite.schema.Table?)_schema.tables().get(tableName)
-                ?? throw new AssertFailedException($"no table {tableName}; found {string.Join(", ", TableNames())}");
-        }
-
-        /// <summary>
-        /// Returns every table name the schema exposes.
-        /// </summary>
-        /// <returns></returns>
-        List<string> TableNames()
-        {
-            var names = _schema.tables().getNames(org.apache.calcite.schema.lookup.LikePattern.any());
-
-            var result = new List<string>();
-            for (var i = names.iterator(); i.hasNext();)
-                result.Add((string)i.next());
-
-            return result;
-        }
-
-        /// <summary>
         /// Returns the fields of a table's row type, by name.
         /// </summary>
         /// <param name="tableName"></param>
         /// <returns></returns>
         Dictionary<string, RelDataType> Fields(string tableName)
         {
-            var fields = Table(tableName).getRowType(_types).getFieldList();
+            var table = (org.apache.calcite.schema.Table?)_schema.tables().get(tableName)
+                ?? throw new AssertFailedException($"no table {tableName}");
+
+            var fields = table.getRowType(_types).getFieldList();
 
             var result = new Dictionary<string, RelDataType>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < fields.size(); i++)
@@ -151,67 +129,44 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             return result;
         }
 
-        /// <summary>
-        /// Returns the Calcite type name of a named column of a table.
-        /// </summary>
-        /// <param name="tableName"></param>
-        /// <param name="columnName"></param>
-        /// <returns></returns>
-        string TypeOf(string tableName, string columnName)
-        {
-            if (Fields(tableName).TryGetValue(columnName, out var type) == false)
-                throw new AssertFailedException($"no column {columnName} on {tableName}");
-
-            return type.getSqlTypeName().name();
-        }
-
-        #region The report
-
-        /// <summary>
-        /// The query from the report, verbatim in shape: three columns, one of them the <c>INT</c> whose
-        /// <c>tinyint</c> precision in the information schema was read as an <c>int</c> and threw.
-        /// </summary>
-        [TestMethod]
-        public void ScanningATableWithAnIntegerColumnReturnsItsRows()
-        {
-            CollectionAssert.AreEquivalent(
-                new[] { "Widget|Acme|3", "Gadget|Globex|10", "Doohickey|Initech|1" },
-                Rows("SELECT * FROM ADO.SUPPLIERS"));
-        }
-
-        /// <summary>
-        /// Projecting the two <c>VARCHAR</c> columns failed the same way, because the row type is derived
-        /// from every column of the table whatever the query asks for.
-        /// </summary>
-        [TestMethod]
-        public void ProjectingOnlyTheCharacterColumnsAlsoWorks()
-        {
-            CollectionAssert.AreEquivalent(
-                new[] { "Widget|Acme", "Gadget|Globex", "Doohickey|Initech" },
-                Rows("SELECT PRODUCT, SUPPLIER FROM ADO.SUPPLIERS"));
-        }
-
-        #endregion
-
         #region Discovery
 
         [TestMethod]
-        public void ASqlServerConnectionSelectsTheSqlServerMetadata()
+        public void AnOdbcConnectionSelectsTheOdbcMetadata()
         {
-            var metadata = Metadata.AdoDatabaseMetadataFactoryImpl.Instance.Create(_server.DataSource);
-            Assert.AreEqual("SqlServerDatabaseMetadata", metadata.GetType().Name);
+            var metadata = Metadata.AdoDatabaseMetadataFactoryImpl.Instance.Create(_server.OdbcDataSource);
+            Assert.AreEqual("OdbcDatabaseMetadata", metadata.GetType().Name);
+        }
+
+        /// <summary>
+        /// ODBC fronts anything, so the dialect can only come from what the driver says is behind it, which
+        /// here is SQL Server. That the version came with it is <see cref="AnOffsetIsHonoured"/>.
+        /// </summary>
+        [TestMethod]
+        public void TheDialectIsTheOneTheDriverReports()
+        {
+            var metadata = Metadata.AdoDatabaseMetadataFactoryImpl.Instance.Create(_server.OdbcDataSource);
+
+            Assert.AreEqual("MssqlSqlDialect", metadata.Dialect.GetType().Name);
         }
 
         [TestMethod]
         public void TheSchemaFindsTheTables()
         {
-            var names = TableNames();
+            var names = new List<string>();
+            var found = _schema.tables().getNames(org.apache.calcite.schema.lookup.LikePattern.any());
+            for (var i = found.iterator(); i.hasNext();)
+                names.Add((string)i.next());
 
             CollectionAssert.Contains(names, "SUPPLIERS");
             CollectionAssert.Contains(names, "EMPS");
             CollectionAssert.Contains(names, "DEPTS");
         }
 
+        /// <summary>
+        /// The ODBC catalog spells nullability as <c>NULLABLE</c>, an integer, where the information schema
+        /// spells it <c>IS_NULLABLE</c> and <c>YES</c>.
+        /// </summary>
         [TestMethod]
         public void NullabilityIsCarriedOntoTheType()
         {
@@ -225,26 +180,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
         #region Types
 
-        /// <summary>
-        /// Every column of the fixture's wide table has to reach a Calcite type: a name the mapping does not
-        /// know throws, and takes the whole table with it.
-        /// </summary>
-        [TestMethod]
-        public void EveryColumnTypeIsMapped()
-        {
-            Assert.AreEqual(26, Fields("TYPES").Count);
-        }
-
         [TestMethod]
         [DataRow("C_BIT", nameof(SqlTypeName.BOOLEAN))]
-        // the server's tinyint is unsigned 0..255 and Calcite's TINYINT is signed, so SMALLINT is what holds it
         [DataRow("C_TINYINT", nameof(SqlTypeName.SMALLINT))]
         [DataRow("C_SMALLINT", nameof(SqlTypeName.SMALLINT))]
         [DataRow("C_BIGINT", nameof(SqlTypeName.BIGINT))]
         [DataRow("C_DECIMAL", nameof(SqlTypeName.DECIMAL))]
         [DataRow("C_NUMERIC", nameof(SqlTypeName.DECIMAL))]
+        // ODBC reports money as SQL_DECIMAL with its precision and scale, so it arrives as the decimal it is
         [DataRow("C_MONEY", nameof(SqlTypeName.DECIMAL))]
-        [DataRow("C_SMALLMONEY", nameof(SqlTypeName.DECIMAL))]
         [DataRow("C_FLOAT", nameof(SqlTypeName.DOUBLE))]
         [DataRow("C_REAL", nameof(SqlTypeName.REAL))]
         [DataRow("C_CHAR", nameof(SqlTypeName.CHAR))]
@@ -254,7 +198,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [DataRow("C_DATE", nameof(SqlTypeName.DATE))]
         [DataRow("C_TIME", nameof(SqlTypeName.TIME))]
         [DataRow("C_DATETIME", nameof(SqlTypeName.TIMESTAMP))]
-        [DataRow("C_SMALLDATETIME", nameof(SqlTypeName.TIMESTAMP))]
         [DataRow("C_DATETIME2", nameof(SqlTypeName.TIMESTAMP))]
         [DataRow("C_DATETIMEOFFSET", nameof(SqlTypeName.TIMESTAMP_TZ))]
         [DataRow("C_BINARY", nameof(SqlTypeName.VARBINARY))]
@@ -263,50 +206,44 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [DataRow("C_XML", nameof(SqlTypeName.VARCHAR))]
         public void AColumnGetsItsCalciteType(string columnName, string expected)
         {
-            Assert.AreEqual(expected, TypeOf("TYPES", columnName));
+            Assert.AreEqual(expected, Fields("TYPES")[columnName].getSqlTypeName().name());
+        }
+
+        [TestMethod]
+        public void EveryColumnTypeIsMapped()
+        {
+            Assert.AreEqual(26, Fields("TYPES").Count);
         }
 
         /// <summary>
-        /// Reading the wide table is a separate claim from typing it: the reader picks its accessor from the
-        /// Calcite type, and a mapping that types a column plausibly can still refuse to read one.
+        /// Every column the driver can read, read. <c>C_TIME</c> and <c>C_DATETIMEOFFSET</c> are left out:
+        /// see <see cref="TheDriverCannotReadSqlServersOwnTimeTypes"/>.
         /// </summary>
         [TestMethod]
-        public void EveryColumnTypeCanBeRead()
+        public void EveryReadableColumnTypeCanBeRead()
         {
-            Assert.AreEqual(2, Rows("SELECT * FROM ADO.TYPES").Count);
-        }
-
-        [TestMethod]
-        public void ANullOfEveryTypeComesBackNull()
-        {
-            var row = Scalar("SELECT * FROM ADO.TYPES WHERE ID = 2");
-            var values = row.Split('|');
-
-            Assert.AreEqual("2", values[0]);
-            for (int i = 1; i < values.Length; i++)
-                Assert.AreEqual("NULL", values[i], $"column {i} of the all-null row");
-        }
-
-        [TestMethod]
-        public void ADecimalKeepsItsScale()
-        {
-            Assert.AreEqual("123456789.125", Scalar("SELECT C_DECIMAL FROM ADO.TYPES WHERE ID = 1"));
-        }
-
-        [TestMethod]
-        public void AVarcharMaxIsReadable()
-        {
-            Assert.AreEqual("unbounded", Scalar("SELECT C_VARCHARMAX FROM ADO.TYPES WHERE ID = 1"));
+            Assert.AreEqual(2, Rows("""
+                SELECT ID, C_BIT, C_TINYINT, C_SMALLINT, C_BIGINT, C_DECIMAL, C_NUMERIC, C_MONEY, C_SMALLMONEY,
+                       C_FLOAT, C_REAL, C_CHAR, C_VARCHAR, C_VARCHARMAX, C_NCHAR, C_NVARCHAR, C_DATE,
+                       C_DATETIME, C_SMALLDATETIME, C_DATETIME2, C_BINARY, C_VARBINARY, C_GUID, C_XML
+                FROM ADO.TYPES
+                """).Count);
         }
 
         /// <summary>
-        /// A <c>uniqueidentifier</c> is a <see cref="Guid"/> to the provider and a <c>CHAR(36)</c> to
-        /// Calcite, so what the reader hands over has to be the text.
+        /// A limitation of the driver rather than of the adapter, pinned so that it is a stated fact rather
+        /// than a surprise: <c>System.Data.Odbc</c> has no mapping for <c>SQL_SS_TIME2</c> or
+        /// <c>SQL_SS_TIMESTAMPOFFSET</c>, and <c>TypeMap.FromSqlType</c> throws on either. The columns are
+        /// still typed — the metadata comes from the catalog, not from a reader — and only reading one
+        /// fails.
         /// </summary>
         [TestMethod]
-        public void AUniqueIdentifierComesBackAsItsText()
+        public void TheDriverCannotReadSqlServersOwnTimeTypes()
         {
-            Assert.AreEqual("3f2504e0-4f89-11d3-9a0c-0305e82c3301", Scalar("SELECT C_GUID FROM ADO.TYPES WHERE ID = 1"));
+            Assert.AreEqual(nameof(SqlTypeName.TIME), Fields("TYPES")["C_TIME"].getSqlTypeName().name());
+
+            var thrown = Assert.ThrowsException<ArgumentException>(() => Rows("SELECT C_TIME FROM ADO.TYPES"));
+            StringAssert.Contains(thrown.Message, "SS_TIME_EX");
         }
 
         [TestMethod]
@@ -314,11 +251,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [DataRow("C_TINYINT", "200")]
         [DataRow("C_SMALLINT", "-300")]
         [DataRow("C_BIGINT", "9000000000")]
+        [DataRow("C_DECIMAL", "123456789.125")]
         [DataRow("C_FLOAT", "1.5")]
         [DataRow("C_REAL", "2.5")]
         [DataRow("C_CHAR", "abcd")]
+        [DataRow("C_VARCHAR", "varchar")]
+        [DataRow("C_VARCHARMAX", "unbounded")]
         [DataRow("C_NCHAR", "wxyz")]
         [DataRow("C_NVARCHAR", "nvarchar")]
+        [DataRow("C_GUID", "3f2504e0-4f89-11d3-9a0c-0305e82c3301")]
         public void AScalarValueComesBackAsWritten(string columnName, string expected)
         {
             Assert.AreEqual(expected, Scalar($"SELECT {columnName} FROM ADO.TYPES WHERE ID = 1"));
@@ -327,6 +268,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #endregion
 
         #region Query
+
+        [TestMethod]
+        public void ScanningATableReturnsItsRows()
+        {
+            CollectionAssert.AreEquivalent(
+                new[] { "Widget|Acme|3", "Gadget|Globex|10", "Doohickey|Initech|1" },
+                Rows("SELECT * FROM ADO.SUPPLIERS"));
+        }
 
         [TestMethod]
         public void AFilterIsApplied()
@@ -350,12 +299,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
                 Rows("SELECT E.NAME, D.DNAME FROM ADO.EMPS E JOIN ADO.DEPTS D ON E.DEPTNO = D.DEPTNO"));
         }
 
+        /// <summary>
+        /// The dialect has to know the server is past 2012 for this to be right: under that,
+        /// <c>MssqlSqlDialect</c> writes <c>TOP(1)</c> and drops the offset, and the answer is the first row
+        /// rather than the second.
+        /// </summary>
         [TestMethod]
-        public void AnOrderByIsHonoured()
+        public void AnOffsetIsHonoured()
         {
-            CollectionAssert.AreEqual(
-                new[] { "Doohickey", "Widget", "Gadget" },
-                Rows("SELECT PRODUCT FROM ADO.SUPPLIERS ORDER BY LEAD_DAYS"));
+            Assert.AreEqual("Widget", Scalar("SELECT PRODUCT FROM ADO.SUPPLIERS ORDER BY LEAD_DAYS OFFSET 1 ROWS FETCH NEXT 1 ROWS ONLY"));
         }
 
         #endregion

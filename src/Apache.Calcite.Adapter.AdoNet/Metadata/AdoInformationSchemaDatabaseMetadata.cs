@@ -1,17 +1,23 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
-using System.Globalization;
 
 namespace Apache.Calcite.Adapter.AdoNet.Metadata
 {
 
     /// <summary>
-    /// Implements the <see cref="AdoDatabaseMetadata"/> for a basic database that supports the GetSchema collections.
+    /// Implements the <see cref="AdoDatabaseMetadata"/> for a driver whose <c>Tables</c> and <c>Columns</c>
+    /// schema collections are the SQL <c>INFORMATION_SCHEMA</c> views.
     /// </summary>
-    abstract class AdoInformationSchemaDatabaseMetadata<TConnection> : AdoDatabaseMetadata
-        where TConnection : DbConnection
+    /// <remarks>
+    /// The shape is the driver's choice and not every driver's is this one, so a driver whose collections
+    /// are shaped otherwise derives from <see cref="AdoDatabaseMetadata"/> instead:
+    /// <see cref="OdbcDatabaseMetadata"/> reads the ODBC catalog, whose columns are <c>TABLE_CAT</c>,
+    /// <c>TABLE_SCHEM</c> and a numeric <c>DATA_TYPE</c>, and <see cref="OleDbDatabaseMetadata"/> reads the
+    /// OLE DB schema rowsets, which share these names and not their types.
+    /// </remarks>
+    abstract class AdoInformationSchemaDatabaseMetadata : AdoDatabaseMetadata
     {
 
         readonly DbDataSource _dbDataSource;
@@ -31,9 +37,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// <inheritdoc />
         public override string? GetDefaultDatabase()
         {
-            using var cnn = (TConnection?)_dbDataSource.OpenConnection();
-            if (cnn is null)
-                throw new NullReferenceException();
+            using var cnn = _dbDataSource.OpenConnection();
 
             // return database we connected to
             return cnn.Database;
@@ -42,9 +46,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// <inheritdoc />
         public override IReadOnlySet<AdoSchemaMetadata> GetSchemas(string? databaseName)
         {
-            using var cnn = (TConnection?)_dbDataSource.OpenConnection();
-            if (cnn is null)
-                throw new NullReferenceException();
+            using var cnn = _dbDataSource.OpenConnection();
 
             // establish target database
             if (databaseName is not null)
@@ -64,9 +66,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// <inheritdoc />
         public override IReadOnlySet<AdoTableMetadata> GetTables(string? databaseName, string? schemaName)
         {
-            using var cnn = (TConnection?)_dbDataSource.OpenConnection();
-            if (cnn is null)
-                throw new NullReferenceException();
+            using var cnn = _dbDataSource.OpenConnection();
 
             // establish target database
             if (databaseName is not null)
@@ -92,9 +92,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         {
             ArgumentNullException.ThrowIfNull(tableName);
 
-            using var cnn = (TConnection?)_dbDataSource.OpenConnection();
-            if (cnn is null)
-                throw new NullReferenceException();
+            using var cnn = _dbDataSource.OpenConnection();
 
             // establish target database
             if (databaseName is not null)
@@ -112,41 +110,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             foreach (DataRow row in result.Rows)
                 if ((string)row["TABLE_CATALOG"] == databaseName && (string)row["TABLE_SCHEMA"] == schemaName && (string)row["TABLE_NAME"] == tableName)
                     list.Add(new AdoFieldMetadata(
-                        row.Field<string>("COLUMN_NAME") ?? throw new InvalidOperationException(),
-                        ParseDbType(row.Field<string>("DATA_TYPE") ?? throw new InvalidOperationException()),
-                        GetInt32(row, "CHARACTER_MAXIMUM_LENGTH"),
-                        GetInt32(row, "NUMERIC_PRECISION"),
-                        GetInt32(row, "NUMERIC_SCALE"),
-                        row.Field<string>("IS_NULLABLE") == "YES"
+                        SchemaRow.String(row, "COLUMN_NAME") ?? throw new InvalidOperationException(),
+                        ParseDbType(SchemaRow.String(row, "DATA_TYPE") ?? throw new InvalidOperationException()),
+                        SchemaRow.Int32(row, "CHARACTER_MAXIMUM_LENGTH"),
+                        SchemaRow.Int32(row, "NUMERIC_PRECISION"),
+                        SchemaRow.Int32(row, "NUMERIC_SCALE"),
+                        SchemaRow.Boolean(row, "IS_NULLABLE") ?? true
                     ));
 
             return list;
-        }
-
-        /// <summary>
-        /// Reads a count out of the information schema without insisting on the width the server declared it
-        /// in.
-        /// </summary>
-        /// <param name="row"></param>
-        /// <param name="columnName"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// The information schema does not type these columns uniformly, and a driver carries the declared
-        /// type onto the <see cref="DataTable"/> it builds: SQL Server's <c>NUMERIC_PRECISION</c> is a
-        /// <c>tinyint</c> and arrives as a <see cref="byte"/>, its <c>DATETIME_PRECISION</c> and
-        /// <c>NUMERIC_PRECISION_RADIX</c> as <see cref="short"/>, while <c>NUMERIC_SCALE</c> and
-        /// <c>CHARACTER_MAXIMUM_LENGTH</c> are <see cref="int"/>. <see cref="DataRowExtensions.Field{T}(DataRow, string)"/>
-        /// unboxes rather than converts, so it throws on any of them that is not exactly the width asked
-        /// for — which is every table with a numeric column, and so every query. Each of these is a small
-        /// count whatever it was declared as, so widening it is exact.
-        /// </remarks>
-        static int? GetInt32(DataRow row, string columnName)
-        {
-            var value = row[columnName];
-            if (value is null || value == DBNull.Value)
-                return null;
-
-            return Convert.ToInt32(value, CultureInfo.InvariantCulture);
         }
 
         /// <summary>
