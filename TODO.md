@@ -140,6 +140,11 @@ surface whether or not the operation succeeds.
   that proves least: an ODBC driver over Oracle or DB2 reports its catalog differently in ways only that
   driver will show. The type-code tables are from ODBC's `sql.h` and OLE DB's `oledb.h` rather than from
   one driver, but only SQL Server's codes have been seen.
+- A temporal correlation value is now decoded before binding — a `DATE` left the plan as a day count and
+  SQL Server answered "Operand type clash: date is incompatible with int" through all three drivers; only
+  SQLite had tolerated the raw count. Two driver limits remain, pinned by tests: `System.Data.OleDb` cannot
+  bind a `DateTimeOffset` (Variant marshal refuses it) and binds a `TimeSpan` through `DBTIME`, which drops
+  fractional seconds — measured, `01:02:03.500` compares equal to `01:02:03` and unequal to itself.
 - **Upstream, and worth reporting**: `MssqlSqlDialect` does not override `supportsGroupByLiteral`, and SQL
   Server cannot group by a constant in either form — `GROUP BY (1 = 1)` is "Incorrect syntax near '='" and
   `GROUP BY 1` is "Each GROUP BY expression must contain at least one column that is not an outer

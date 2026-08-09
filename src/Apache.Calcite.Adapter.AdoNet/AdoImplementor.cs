@@ -12,6 +12,7 @@ using org.apache.calcite.rel.type;
 using org.apache.calcite.rex;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.parser;
+using org.apache.calcite.sql.type;
 
 namespace Apache.Calcite.Adapter.AdoNet
 {
@@ -67,13 +68,32 @@ namespace Apache.Calcite.Adapter.AdoNet
             public override SqlNode field(int ordinal)
             {
                 var field = (RelDataTypeField)_fieldList.get(ordinal);
-                return new SqlDynamicParam(_implementor._dataContextBuilder.Add(_variable.id, ordinal, _implementor._typeFactory.getJavaClass(field.getType())), SqlParserPos.ZERO);
+                var index = _implementor._dataContextBuilder.Add(_variable.id, ordinal, _implementor._typeFactory.getJavaClass(field.getType()));
+
+                // the SQL type is recorded here because this is the last place it exists: the value will
+                // leave the plan in Calcite's internal representation — a DATE as a day count in an Integer —
+                // and the Java class alone cannot tell that from an INTEGER when the parameter is bound
+                _implementor._dynamicParamTypes[index] = field.getType().getSqlTypeName();
+
+                return new SqlDynamicParam(index, SqlParserPos.ZERO);
             }
 
         }
 
         readonly JavaTypeFactory _typeFactory;
         readonly IAdoCorrelationDataContextBuilder _dataContextBuilder;
+        readonly System.Collections.Generic.Dictionary<int, SqlTypeName> _dynamicParamTypes = [];
+
+        /// <summary>
+        /// Returns the SQL type of the correlation variable behind a dynamic parameter, or
+        /// <see langword="null"/> for an index that is not one.
+        /// </summary>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        public SqlTypeName? GetDynamicParamType(int index)
+        {
+            return _dynamicParamTypes.TryGetValue(index, out var type) ? type : null;
+        }
 
         /// <summary>
         /// Initializes a new instance.

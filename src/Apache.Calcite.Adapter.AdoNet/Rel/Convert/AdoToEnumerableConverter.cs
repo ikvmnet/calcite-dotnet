@@ -35,7 +35,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         static readonly Method GetDbReaderValueMethod = ((Class)typeof(AdoReaderUtil)).getDeclaredMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(SqlTypeName)]);
         static readonly Method CreateReaderMethod = ((Class)typeof(AdoEnumerable)).getDeclaredMethod(nameof(AdoEnumerable.CreateReader), [typeof(AdoDataSource), typeof(string), typeof(Function1)]);
         static readonly Method CreateReaderWithEnricherMethod = ((Class)typeof(AdoEnumerable)).getDeclaredMethod(nameof(AdoEnumerable.CreateReader), [typeof(AdoDataSource), typeof(string), typeof(Function1), typeof(DbCommandEnricher)]);
-        static readonly Method CreateEnricherMethod = ((Class)typeof(AdoEnumerable)).getDeclaredMethod(nameof(AdoEnumerable.CreateEnricher), [typeof(AdoDataSource), typeof(java.util.List), typeof(DataContext)]);
+        static readonly Method CreateEnricherMethod = ((Class)typeof(AdoEnumerable)).getDeclaredMethod(nameof(AdoEnumerable.CreateEnricher), [typeof(AdoDataSource), typeof(java.util.List), typeof(java.util.List), typeof(DataContext)]);
 
         /// <summary>
         /// Initializes a new instance.
@@ -78,11 +78,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 
             // generate the SQL for the query, with every parameter already written as the name this
             // provider binds by rather than the bare ? that JDBC would match by position
-            var writer = GenerateSql(convention, dataContextBuilder, self);
+            var writer = GenerateSql(convention, dataContextBuilder, self, out var sqlImplementor);
             var dataSource = Schemas.unwrap(convention.Expression, typeof(AdoDataSource));
 
             var parameters = writer.Indexes;
             var hasParameters = parameters.isEmpty() == false;
+            var parameterTypeNames = GetParameterTypeNames(sqlImplementor, parameters);
 
             var sql = writer.toSqlString().getSql();
             Hook.QUERY_PLAN.run(sql);
@@ -172,8 +173,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                                 null,
                                 CreateEnricherMethod,
                                 dataSource,
-                                // the indexes are settled while planning, so they travel as a constant
+                                // the indexes and their types are settled while planning, so they travel as
+                                // constants
                                 Expressions.constant(parameters),
+                                Expressions.constant(parameterTypeNames),
                                 dataContextBuilder.Build()))))
                 : list.append("enumerable",
                     Expressions.call(
@@ -223,14 +226,29 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// <param name="dataContextBuilder"></param>
         /// <param name="input"></param>
         /// <returns></returns>
-        AdoSqlWriter GenerateSql(AdoConvention convention, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input)
+        AdoSqlWriter GenerateSql(AdoConvention convention, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input, out AdoImplementor implementor)
         {
-            var implementor = new AdoImplementor(convention.Dialect, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder);
+            implementor = new AdoImplementor(convention.Dialect, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder);
             var result = implementor.visitRoot(input);
 
             var writer = new AdoSqlWriter(convention.Dialect, convention.Syntax);
             result.asStatement().unparse(writer, 0, 0);
             return writer;
+        }
+
+        /// <summary>
+        /// Returns the SQL type name behind each parameter, in the writer's parameter order.
+        /// </summary>
+        /// <param name="implementor">The implementor that recorded a type per dynamic parameter index.</param>
+        /// <param name="indexes">The variable index behind each parameter, in parameter order.</param>
+        /// <returns></returns>
+        internal static java.util.ArrayList GetParameterTypeNames(AdoImplementor implementor, java.util.List indexes)
+        {
+            var names = new java.util.ArrayList(indexes.size());
+            for (int i = 0; i < indexes.size(); i++)
+                names.add(implementor.GetDynamicParamType(((java.lang.Number)indexes.get(i)).intValue())?.name());
+
+            return names;
         }
 
         #region EnumerableRel

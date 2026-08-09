@@ -256,6 +256,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [DataRow(SqlClient, "C_TINYINT")]
         [DataRow(Odbc, "C_TINYINT")]
         [DataRow(OleDb, "C_TINYINT")]
+        // the temporal types leave the plan as counts — a DATE as days since the epoch, a TIMESTAMP as
+        // milliseconds — and a count bound raw against a typed column is a type clash on a real backend
+        [DataRow(SqlClient, "C_DATE")]
+        [DataRow(Odbc, "C_DATE")]
+        [DataRow(OleDb, "C_DATE")]
+        [DataRow(SqlClient, "C_DATETIME2")]
+        [DataRow(Odbc, "C_DATETIME2")]
+        [DataRow(OleDb, "C_DATETIME2")]
+        // no ODBC rows for these two — System.Data.Odbc cannot read a time or datetimeoffset column at all,
+        // which TheDriverCannotReadSqlServersOwnTimeTypes already pins — and no OLE DB rows either, for the
+        // driver limitations the two tests below this one pin
+        [DataRow(SqlClient, "C_TIME")]
+        [DataRow(SqlClient, "C_DATETIMEOFFSET")]
         public void CorrelatingOnAColumnConvertsItsValueForTheProvider(string provider, string columnName)
         {
             CollectionAssert.AreEqual(
@@ -264,6 +277,39 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
                     SELECT T.ID FROM ADO.TYPES T
                     WHERE EXISTS (SELECT 1 FROM ADO.TYPES T2 WHERE T2.{columnName} = T.{columnName})
                     """));
+        }
+
+        /// <summary>
+        /// A limitation of the driver rather than of the adapter, pinned so that it is a stated fact rather
+        /// than a surprise: <c>System.Data.OleDb</c> cannot marshal a <see cref="DateTimeOffset"/> to a
+        /// Variant at all, so a zoned timestamp cannot be a parameter through OLE DB. It fails on the
+        /// client, before the server ever sees the statement.
+        /// </summary>
+        [TestMethod]
+        public void TheOleDbDriverCannotBindAZonedTimestamp()
+        {
+            var thrown = Assert.ThrowsException<NotSupportedException>(() => CorrelatedRows(OleDb, """
+                SELECT T.ID FROM ADO.TYPES T
+                WHERE EXISTS (SELECT 1 FROM ADO.TYPES T2 WHERE T2.C_DATETIMEOFFSET = T.C_DATETIMEOFFSET)
+                """));
+
+            StringAssert.Contains(thrown.Message, "Variant");
+        }
+
+        /// <summary>
+        /// The worse kind of driver limitation: not an error but a wrong answer.
+        /// <c>System.Data.OleDb</c> binds a <see cref="TimeSpan"/> through OLE DB's <c>DBTIME</c> structure,
+        /// which has no fractional seconds, so <c>01:02:03.500</c> reaches the server as <c>01:02:03</c> —
+        /// measured: the fractional value compares equal to the whole-second literal and unequal to itself.
+        /// An equality against a fractional <c>time</c> column therefore silently matches nothing.
+        /// </summary>
+        [TestMethod]
+        public void TheOleDbDriverTruncatesABoundTimeToWholeSeconds()
+        {
+            Assert.AreEqual(0, CorrelatedRows(OleDb, """
+                SELECT T.ID FROM ADO.TYPES T
+                WHERE EXISTS (SELECT 1 FROM ADO.TYPES T2 WHERE T2.C_TIME = T.C_TIME)
+                """).Count);
         }
 
         /// <summary>

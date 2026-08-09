@@ -48,7 +48,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         static readonly System.Reflection.MethodInfo GetDbReaderValueMethod = typeof(AdoReaderUtil).GetMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(SqlTypeName)])
             ?? throw new InvalidOperationException($"'{nameof(AdoReaderUtil.GetDbReaderValue)}' is missing from {nameof(AdoReaderUtil)}.");
 
-        static readonly System.Reflection.MethodInfo CreateEnricherMethod = typeof(AdoEnumerable).GetMethod(nameof(AdoEnumerable.CreateEnricher), [typeof(AdoDataSource), typeof(java.util.List), typeof(DataContext)])
+        static readonly System.Reflection.MethodInfo CreateEnricherMethod = typeof(AdoEnumerable).GetMethod(nameof(AdoEnumerable.CreateEnricher), [typeof(AdoDataSource), typeof(java.util.List), typeof(java.util.List), typeof(DataContext)])
             ?? throw new InvalidOperationException($"'{nameof(AdoEnumerable.CreateEnricher)}' is missing from {nameof(AdoEnumerable)}.");
 
         /// <summary>
@@ -83,8 +83,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 
             var dataContextBuilder = new AdoClrCorrelationDataContextBuilder(implementor, implementor.Root);
 
-            var writer = GenerateSql(convention, dataContextBuilder, self);
+            var writer = GenerateSql(convention, dataContextBuilder, self, out var sqlImplementor);
             var parameters = writer.Indexes;
+            var parameterTypeNames = AdoToEnumerableConverter.GetParameterTypeNames(sqlImplementor, parameters);
 
             var sql = writer.toSqlString().getSql();
             Hook.QUERY_PLAN.run(sql);
@@ -99,7 +100,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             // handed to the provider unfilled.
             var enricher = parameters.isEmpty()
                 ? (Expression)Expression.Constant(null, typeof(DbCommandEnricher))
-                : Expression.Call(null, CreateEnricherMethod, dataSource, Expression.Constant(parameters), dataContextBuilder.Build());
+                : Expression.Call(null, CreateEnricherMethod, dataSource, Expression.Constant(parameters), Expression.Constant(parameterTypeNames), dataContextBuilder.Build());
 
             return implementor.Result(physType,
                 Expression.Call(null,
@@ -179,9 +180,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// <param name="dataContextBuilder"></param>
         /// <param name="input"></param>
         /// <returns></returns>
-        AdoSqlWriter GenerateSql(AdoConvention convention, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input)
+        AdoSqlWriter GenerateSql(AdoConvention convention, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input, out AdoImplementor implementor)
         {
-            var implementor = new AdoImplementor(convention.Dialect, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder);
+            implementor = new AdoImplementor(convention.Dialect, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder);
             var result = implementor.visitRoot(input);
 
             var writer = new AdoSqlWriter(convention.Dialect, convention.Syntax);

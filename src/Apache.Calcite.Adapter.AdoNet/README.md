@@ -146,6 +146,7 @@ Two limitations worth knowing before choosing one of these over a native provide
 
 - A dialect matched from a product name alone is, in Calcite's words, an approximation. The version is carried where it changes the SQL — SQL Server below 2012 gets `TOP (n)` rather than `OFFSET`/`FETCH` — but a driver that will not report its product gets generic SQL. Name a metadata provider through `adoDatabaseMetadata` where that is not good enough.
 - `System.Data.Odbc` has no mapping for SQL Server's `time` or `datetimeoffset` and throws `ArgumentException` on reading either. The columns are still discovered and typed; only reading one fails. That is the driver, not the adapter.
+- `System.Data.OleDb` cannot bind a `DateTimeOffset` parameter at all — the Variant marshal refuses it on the client — and binds a `TimeSpan` through OLE DB's `DBTIME`, which has no fractional seconds, so a bound time reaches the server truncated to the whole second. Reading both types works; only a correlated comparison on one is affected.
 
 ## Key public types
 
