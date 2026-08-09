@@ -339,6 +339,63 @@ namespace Apache.Calcite.Data.Tests
             Assert.ThrowsAny<Exception>(() => cmd.ExecuteReader());
         }
 
+        /// <summary>
+        /// <b>A view is analyzed under Calcite's default connection config, not this connection's.</b>
+        /// A function the connection asked for works in a query and fails inside a view.
+        /// </summary>
+        /// <remarks>
+        /// <c>ViewTableMacro.apply</c> calls
+        /// <c>Schemas.analyzeView(MaterializedViewTable.MATERIALIZATION_CONNECTION, ...)</c>, and
+        /// <c>Schemas.makeContext</c> builds its context from <c>connection.config()</c> — that connection
+        /// being a <c>DriverManager.getConnection("jdbc:calcite:")</c> held in a <c>static final</c>, so its
+        /// config is the default one. Everything the connection string says about <c>fun</c>, <c>lex</c>,
+        /// <c>conformance</c> and the rest is therefore invisible while a view is being described, even
+        /// though <c>ClrPreparingStmt.expandView</c> uses the real config when the view is later expanded
+        /// into a plan.
+        ///
+        /// <para>NVL is in Calcite's Oracle library; this connection asks for <c>standard,oracle</c>. The
+        /// first half of this test shows the connection honours that. The second half is the same
+        /// expression inside a view, and it does not get that far — it fails in <c>apply</c>, so the view
+        /// cannot even be described.</para>
+        ///
+        /// <para><c>Schemas.makeContext</c> has the fix already: given a null connection it uses
+        /// <c>CalcitePrepare.Dummy.peek()</c>, which is this provider's own pushed context and carries the
+        /// real config. Reaching it means supplying a <c>ViewTableMacro</c> subclass that overrides
+        /// <c>apply</c> to pass null, and getting that subclass installed in place of Calcite's — which is
+        /// the part with no public seam. Asserted rather than skipped so that doing so shows up here as a
+        /// failure.</para>
+        /// </remarks>
+        [Fact]
+        public void View_is_analyzed_under_the_default_config_not_the_connections()
+        {
+            var withOracleFun = new CalciteConnectionStringBuilder
+            {
+                Model =
+                    "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"," +
+                    "\"tables\":[{\"name\":\"NVLVIEW\",\"type\":\"view\"," +
+                    "\"sql\":\"SELECT NVL(CAST(NULL AS INTEGER), 7) AS Y\"}]}]}",
+                Schema = "adhoc",
+                Fun = "standard,oracle",
+            };
+
+            using var c = new CalciteConnection(withOracleFun);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            // the connection really does have the Oracle library
+            cmd.CommandText = "SELECT NVL(CAST(NULL AS INTEGER), 7) AS Y";
+            using (var r = cmd.ExecuteReader())
+            {
+                Assert.True(r.Read());
+                Assert.Equal(7, r.GetInt32(0));
+            }
+
+            // the same expression inside a view does not, because apply() analyzes it without that config
+            cmd.CommandText = "SELECT Y FROM NVLVIEW";
+            var ex = Assert.ThrowsAny<Exception>(() => cmd.ExecuteReader());
+            Assert.Contains("No match found for function signature NVL", ex.ToString(), StringComparison.Ordinal);
+        }
+
         // ------------------------------------------------------------------------------------------
         // Views in the metadata collections
         // ------------------------------------------------------------------------------------------
