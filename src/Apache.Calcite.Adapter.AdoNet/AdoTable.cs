@@ -161,8 +161,12 @@ namespace Apache.Calcite.Adapter.AdoNet
                     return typeFactory.createSqlType(SqlTypeName.VARCHAR, size);
                 case DbType.Binary:
                     return typeFactory.createSqlType(SqlTypeName.VARBINARY, size);
+                // DbType.Byte is the unsigned 0..255 one and TINYINT is signed, so the top half of its range
+                // comes back negative: SQL Server's tinyint 200 read as a TINYINT is -56. UTINYINT is the
+                // type that holds it, as USMALLINT holds a UInt16 below — and as ParameterBinder already
+                // says on the way in, binding a DbType.Byte as a joou UByte
                 case DbType.Byte:
-                    return typeFactory.createSqlType(SqlTypeName.TINYINT);
+                    return typeFactory.createSqlType(SqlTypeName.UTINYINT);
                 case DbType.Boolean:
                     return typeFactory.createSqlType(SqlTypeName.BOOLEAN);
                 // the scale money carries in every provider that has a distinct type for it

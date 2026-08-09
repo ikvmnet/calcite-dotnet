@@ -127,14 +127,26 @@ Each side is pushed to its own database as far as it can go, and the join runs i
 
 `AdoDatabaseMetadataFactoryImpl` — the default, used when you do not name one — inspects the connection the data source produces and selects a metadata provider:
 
-| Connection type | Discovery |
-|---|---|
-| `Microsoft.Data.SqlClient.SqlConnection`, `System.Data.SqlClient.SqlConnection` | SQL Server, via `INFORMATION_SCHEMA` |
-| `Microsoft.Data.Sqlite.SqliteConnection` | SQLite |
-| `System.Data.Odbc.OdbcConnection` | Generic ODBC, via `INFORMATION_SCHEMA` |
-| `System.Data.OleDb.OleDbConnection` | Generic OLE DB, via `INFORMATION_SCHEMA` |
+| Connection type | Discovery | Dialect |
+|---|---|---|
+| `Microsoft.Data.SqlClient.SqlConnection`, `System.Data.SqlClient.SqlConnection` | `INFORMATION_SCHEMA`, via `GetSchema` | SQL Server, at the version the server reports |
+| `Microsoft.Data.Sqlite.SqliteConnection` | `PRAGMA table_xinfo` | SQLite |
+| `System.Data.Odbc.OdbcConnection` | The ODBC catalog — `SQLTables` and `SQLColumns`, via `GetSchema` | Whatever the driver names as the product behind it |
+| `System.Data.OleDb.OleDbConnection` | The OLE DB schema rowsets, via `GetSchema` | Whatever the provider names as the product behind it |
 
 Anything else throws `AdoCalciteException` naming the connection type. To support it, derive from `AdoDatabaseMetadata` — the abstract base that supplies the `SqlDialect`, table and column enumeration, and type mapping — and pass your implementation to an `AdoSchema.Create` overload, or name it in the `adoDatabaseMetadata` operand. The built-in implementations are internal; `AdoDatabaseMetadata` and `AdoDatabaseMetadataFactory` are the extension points.
+
+### ODBC and OLE DB
+
+Both front an unknown database, so both take the product name from the driver's `DataSourceInformation` collection and match it the way Calcite's own `SqlDialectFactoryImpl` does. An unrecognised name gets the generic ANSI dialect, which is Calcite's answer too. Neither has a default schema — a null schema means every schema rather than a particular one — so pass `adoSchema` (or the `schemaName` argument) where the database has more than one and the table names collide.
+
+The parameter marker for both is `?`, bound by position.
+
+Two limitations worth knowing before choosing one of these over a native provider:
+
+- A dialect matched from a product name alone is, in Calcite's words, an approximation. The version is carried where it changes the SQL — SQL Server below 2012 gets `TOP (n)` rather than `OFFSET`/`FETCH` — but a driver that will not report its product gets generic SQL. Name a metadata provider through `adoDatabaseMetadata` where that is not good enough.
+- `System.Data.Odbc` has no mapping for SQL Server's `time` or `datetimeoffset` and throws `ArgumentException` on reading either. The columns are still discovered and typed; only reading one fails. That is the driver, not the adapter.
+- `System.Data.OleDb` cannot bind a `DateTimeOffset` parameter at all — the Variant marshal refuses it on the client — and binds a `TimeSpan` through OLE DB's `DBTIME`, which has no fractional seconds, so a bound time reaches the server truncated to the whole second. Reading both types works; only a correlated comparison on one is affected.
 
 ## Key public types
 

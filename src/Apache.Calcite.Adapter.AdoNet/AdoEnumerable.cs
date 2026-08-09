@@ -134,16 +134,19 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// </summary>
         /// <param name="dataSource">The source whose syntax names a parameter for this provider.</param>
         /// <param name="indexes">The variable index behind each parameter, in parameter order.</param>
+        /// <param name="typeNames">The <see cref="org.apache.calcite.sql.type.SqlTypeName"/> name behind each parameter, in the same order, or a null where none was recorded.</param>
         /// <param name="context">The context the values are read from, one per correlation variable.</param>
         /// <returns></returns>
         /// <remarks>
         /// Reached from the code the converter generates, once per execution of the inner side of a
         /// correlated join. The context is an <see cref="AdoCorrelationDataContext"/> closed over the outer
-        /// row, so reading <c>?N</c> yields that row's value.
+        /// row, so reading <c>?N</c> yields that row's value. The type names travel beside the indexes
+        /// because a value alone cannot be bound: a <c>DATE</c> leaves the plan as a day count in a
+        /// <see cref="java.lang.Integer"/>, and only the type says it is not simply an <c>INTEGER</c>.
         /// </remarks>
-        public static DbCommandEnricher CreateEnricher(AdoDataSource dataSource, java.util.List indexes, DataContext context)
+        public static DbCommandEnricher CreateEnricher(AdoDataSource dataSource, java.util.List indexes, java.util.List typeNames, DataContext context)
         {
-            return new ParameterEnricher(dataSource.Metadata.Syntax, indexes, context);
+            return new ParameterEnricher(dataSource.Metadata.Syntax, indexes, typeNames, context);
         }
 
         /// <summary>
@@ -151,15 +154,18 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// </summary>
         /// <param name="syntax"></param>
         /// <param name="indexes"></param>
+        /// <param name="typeNames"></param>
         /// <param name="context"></param>
-        sealed class ParameterEnricher(IAdoSqlSyntax syntax, java.util.List indexes, DataContext context) : DbCommandEnricher
+        sealed class ParameterEnricher(IAdoSqlSyntax syntax, java.util.List indexes, java.util.List typeNames, DataContext context) : DbCommandEnricher
         {
 
             /// <inheritdoc />
             public void Enrich(DbCommand command)
             {
                 for (int i = 0; i < indexes.size(); i++)
-                    SetParameter(syntax, command, i, context.get("?" + ((java.lang.Number)indexes.get(i)).intValue()));
+                    SetParameter(syntax, command, i,
+                        context.get("?" + ((java.lang.Number)indexes.get(i)).intValue()),
+                        i < typeNames.size() ? (string?)typeNames.get(i) : null);
             }
 
         }
@@ -171,12 +177,64 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="command"></param>
         /// <param name="i"></param>
         /// <param name="value"></param>
-        static void SetParameter(IAdoSqlSyntax syntax, DbCommand command, int i, object? value)
+        /// <param name="typeName"></param>
+        static void SetParameter(IAdoSqlSyntax syntax, DbCommand command, int i, object? value, string? typeName)
         {
             var parameter = command.CreateParameter();
             parameter.ParameterName = syntax.GetParameterName(i);
-            parameter.Value = ToProviderValue(value) ?? DBNull.Value;
+            parameter.Value = ToProviderValue(value, typeName) ?? DBNull.Value;
+
+            // ODBC and OLE DB bind a temporal parameter at scale zero unless told otherwise, and then refuse
+            // the fractional seconds the value itself carries: "Datetime field overflow. Fractional second
+            // precision exceeds the scale specified in the parameter binding." Three digits is the honest
+            // scale — the representation these values decode from is a millisecond count. Measured: scale 3
+            // makes both drivers accept the value, and SqlClient ignores it for an inferred datetime.
+            if (parameter.Value is DateTime or TimeSpan or DateTimeOffset)
+                parameter.Scale = 3;
+
             command.Parameters.Insert(i, parameter);
+        }
+
+        /// <summary>
+        /// The instant the temporal representations count from.
+        /// </summary>
+        static readonly DateTime UnixEpoch = new(1970, 1, 1, 0, 0, 0, DateTimeKind.Unspecified);
+
+        /// <summary>
+        /// Converts a value read from a <see cref="DataContext"/> into one a provider can bind, undoing the
+        /// temporal encodings first.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <param name="typeName"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A temporal value leaves the plan as a count — a <c>DATE</c> as whole days since the epoch, a
+        /// <c>TIME</c> as milliseconds since midnight, a <c>TIMESTAMP</c> as milliseconds since the epoch —
+        /// which is Calcite's internal representation and nothing a typed column accepts: SQL Server answers
+        /// "Operand type clash: date is incompatible with int". Only SQLite tolerated it, and only because
+        /// SQLite compares whatever it is handed. The count is decoded to the temporal value it stands for,
+        /// exactly inverting what <see cref="AdoReaderUtil"/> encoded on the way in; the kind is Unspecified
+        /// because the count is of the wall clock as written, no zone having entered into it.
+        /// </remarks>
+        static object? ToProviderValue(object? value, string? typeName)
+        {
+            if (value is null)
+                return null;
+
+            switch (typeName)
+            {
+                case nameof(org.apache.calcite.sql.type.SqlTypeName.DATE):
+                    return UnixEpoch.AddDays(((java.lang.Number)value).intValue());
+                case nameof(org.apache.calcite.sql.type.SqlTypeName.TIME):
+                    return TimeSpan.FromMilliseconds(((java.lang.Number)value).intValue());
+                case nameof(org.apache.calcite.sql.type.SqlTypeName.TIMESTAMP):
+                    return UnixEpoch.AddMilliseconds(((java.lang.Number)value).longValue());
+                case nameof(org.apache.calcite.sql.type.SqlTypeName.TIMESTAMP_TZ):
+                case nameof(org.apache.calcite.sql.type.SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE):
+                    return new DateTimeOffset(DateTime.SpecifyKind(UnixEpoch, DateTimeKind.Utc).AddMilliseconds(((java.lang.Number)value).longValue()), TimeSpan.Zero);
+                default:
+                    return ToProviderValue(value);
+            }
         }
 
         /// <summary>
@@ -205,6 +263,14 @@ namespace Apache.Calcite.Adapter.AdoNet
                 java.lang.Character c => c.charValue(),
                 java.math.BigDecimal m => decimal.Parse(m.toString(), System.Globalization.CultureInfo.InvariantCulture),
                 org.apache.calcite.avatica.util.ByteString bs => bs.getBytes(),
+                // the unsigned types travel as joou values, and no provider knows those either. Each is
+                // unwrapped to the narrowest CLR type every provider binds: SqlClient takes a byte but none
+                // of ushort, uint or ulong, so the wider three go to the signed type that holds their range
+                // exactly — and ULong to decimal, ulong's top half being outside long
+                org.joou.UByte ub => (byte)ub.shortValue(),
+                org.joou.UShort us => us.intValue(),
+                org.joou.UInteger ui => ui.longValue(),
+                org.joou.ULong ul => decimal.Parse(ul.toString(), System.Globalization.CultureInfo.InvariantCulture),
                 _ => value,
             };
         }
@@ -261,7 +327,9 @@ namespace Apache.Calcite.Adapter.AdoNet
             }
             catch (DbException e)
             {
-                throw new AdoCalciteException("Exception while enumerating query.", e);
+                // with the SQL, because what a provider says about a statement it rejected is rarely enough
+                // to find it: "Incorrect syntax near '='" names neither the statement nor the position
+                throw new AdoCalciteException($"Exception while enumerating query: {_sql}", e);
             }
         }
 

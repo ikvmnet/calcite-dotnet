@@ -101,15 +101,20 @@ when several schemas point at one database. Lowest priority; measure before assu
 Sized against measured coverage: `Apache.Calcite.Data` 69.9%, `Apache.Calcite.Adapter.AdoNet` ~60%.
 Listed worst-first by uncovered lines.
 
-- **`AdoEnumerable.ToProviderValue`** — `Boolean`, `Double`, `BigDecimal` and `ByteString` are unexercised.
-  SQLite has no column of those types in the fixture, so covering them needs a wider fixture or a second
-  provider. All that is left of the correlated sub-query work.
+- **`AdoEnumerable.ToProviderValue`** — done. `Boolean`, `Double`, `BigDecimal` and `ByteString` were
+  unexercised because SQLite's fixture has no column of those types;
+  `GenericProviderCorrelationTests.CorrelatingOnAColumnConvertsItsValueForTheProvider` correlates on one of
+  each in `SqlServerFixture`'s `TYPES`, through all three drivers. `Character` is still unreached, Calcite
+  having no type that arrives as one.
 - **`CalciteResultValue`** — 56%, **282 uncovered**, the largest single gap anywhere. It is the whole
   type-conversion surface, and the `DATE`-as-milliseconds bug lived in exactly this kind of code.
 - **`AdoSchemaFactory` from a Calcite model** — 0%. The operand-driven path is the primary documented
   way anyone configures an adapter, and nothing proves it works.
-- **`AdoInformationSchemaDatabaseMetadata`** — 130 lines at 0%, shared by the SqlServer, Odbc and
-  OleDb providers, so one suite lifts four.
+- **`AdoInformationSchemaDatabaseMetadata`** — was 130 lines at 0%, and the whole of it was wrong:
+  `DataRow.Field<int?>` on SQL Server's `tinyint` precision threw on every table with a numeric column, so
+  no query against SQL Server had ever run. `SqlServerQueryTests` covers it now, on a Windows machine with
+  LocalDB. It is no longer shared with Odbc and OleDb: neither driver's collections have the information
+  schema's shape, and both now read their own.
 - **Connection strings, parameters, batches** — `CalciteConnectionStringBuilder` 35% (148 uncovered),
   `CalciteParameterCollection` 55% (78), `CalciteBatchCommandCollection` 21% (62). Mechanical, high
   line yield.
@@ -128,8 +133,25 @@ surface whether or not the operation succeeds.
   rather than saying a parent schema is required. First thing anyone calling the API by hand hits.
 - `AdoSetOpFactory.createSetOp` is covered only indirectly, through `UNION` / `INTERSECT` / `EXCEPT`
   queries. Direct tests need a planner fixture that does not exist yet.
-- The AdoNet adapter is tested against SQLite only. `SqlServerDatabaseMetadata`,
-  `OdbcDatabaseMetadata` and `OleDbDatabaseMetadata` have no coverage.
+- The SQL Server, ODBC and OLE DB suites all need a Windows machine with LocalDB and skip everywhere else,
+  so the Linux and macOS legs of the matrix still see SQLite alone. `AdoSqlDialectsTests` is the part of it
+  that runs everywhere.
+- Both generic providers are covered against SQL Server and against nothing else, which is the one backend
+  that proves least: an ODBC driver over Oracle or DB2 reports its catalog differently in ways only that
+  driver will show. The type-code tables are from ODBC's `sql.h` and OLE DB's `oledb.h` rather than from
+  one driver, but only SQL Server's codes have been seen.
+- A temporal correlation value is now decoded before binding — a `DATE` left the plan as a day count and
+  SQL Server answered "Operand type clash: date is incompatible with int" through all three drivers; only
+  SQLite had tolerated the raw count. Two driver limits remain, pinned by tests: `System.Data.OleDb` cannot
+  bind a `DateTimeOffset` (Variant marshal refuses it) and binds a `TimeSpan` through `DBTIME`, which drops
+  fractional seconds — measured, `01:02:03.500` compares equal to `01:02:03` and unequal to itself.
+- **Upstream, and worth reporting**: `MssqlSqlDialect` does not override `supportsGroupByLiteral`, and SQL
+  Server cannot group by a constant in either form — `GROUP BY (1 = 1)` is "Incorrect syntax near '='" and
+  `GROUP BY 1` is "Each GROUP BY expression must contain at least one column that is not an outer
+  reference". It costs every correlated sub-query, because `EXISTS` becomes an aggregate over a constant
+  true and `SqlImplementor.visitRoot` only runs `AggregateProjectConstantToDummyJoinRule` when the dialect
+  has asked for it. Postgres, Redshift and Informix each override it. `AdoSqlDialects.Mssql` says it here;
+  the fix belongs in Calcite.
 
 ## Translate a CLR expression tree into a linq4j one
 

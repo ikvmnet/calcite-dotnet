@@ -92,6 +92,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             Assert.AreEqual((byte)7, ((java.lang.Byte)value!).byteValue());
         }
 
+        /// <summary>
+        /// Calcite's TINYINT is signed, and Java's <c>byte</c> is IKVM's unsigned one, so the sign has to
+        /// travel in the bits rather than in the type.
+        /// </summary>
+        [TestMethod]
+        public void ANegativeTinyIntKeepsItsSign()
+        {
+            using var reader = Row("-1");
+            var value = (java.lang.Byte)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.TINYINT)!;
+
+            Assert.AreEqual("-1", value.ToString());
+        }
+
         [TestMethod]
         public void SmallIntIsReadAsAJavaShort()
         {
@@ -120,6 +133,73 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
             Assert.IsInstanceOfType<java.lang.Long>(value);
             Assert.AreEqual(long.MaxValue, ((java.lang.Long)value!).longValue());
+        }
+
+        #endregion
+
+        #region Unsigned types
+
+        /// <summary>
+        /// Calcite's unsigned types are not a variation on the signed ones: <c>getJavaClass</c> answers a
+        /// joou value for each, and <c>CalciteResultValue</c> is written to decode exactly those. Every one
+        /// of them threw <c>Unsupported SQL type mapping</c> until there was a case for it, so
+        /// <c>AdoTable</c>'s mapping of <c>UInt16</c>, <c>UInt32</c> and <c>UInt64</c> could type a column
+        /// and never read one.
+        /// </summary>
+        /// <param name="expression"></param>
+        /// <param name="typeName"></param>
+        /// <param name="expected"></param>
+        [TestMethod]
+        [DataRow("0", nameof(SqlTypeName.UTINYINT), "0")]
+        [DataRow("200", nameof(SqlTypeName.UTINYINT), "200")]
+        [DataRow("255", nameof(SqlTypeName.UTINYINT), "255")]
+        [DataRow("65535", nameof(SqlTypeName.USMALLINT), "65535")]
+        [DataRow("4294967295", nameof(SqlTypeName.UINTEGER), "4294967295")]
+        [DataRow("'18446744073709551615'", nameof(SqlTypeName.UBIGINT), "18446744073709551615")]
+        public void AnUnsignedValueKeepsTheWholeOfItsRange(string expression, string typeName, string expected)
+        {
+            using var reader = Row(expression);
+            var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.valueOf(typeName));
+
+            Assert.AreEqual(expected, value!.ToString());
+        }
+
+        /// <summary>
+        /// The class matters as much as the value: <c>CalciteResultValue</c> decodes a <c>UTINYINT</c> by
+        /// asking whether the value is a joou <c>UByte</c>, and a <see cref="java.lang.Short"/> holding the
+        /// same number is not one.
+        /// </summary>
+        [TestMethod]
+        public void AnUnsignedValueIsAJoouValue()
+        {
+            using var reader = Row("200");
+
+            Assert.IsInstanceOfType<org.joou.UByte>(AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.UTINYINT));
+        }
+
+        /// <summary>
+        /// The distinction the whole mapping turns on. 200 in a signed <c>TINYINT</c> is -56, which is why
+        /// an unsigned tiny integer is a <c>UTINYINT</c> and not a <c>TINYINT</c>.
+        /// </summary>
+        [TestMethod]
+        public void TheSameByteSignedAndUnsignedAreDifferentNumbers()
+        {
+            using var signed = Row("-56");
+            using var unsigned = Row("200");
+
+            Assert.AreEqual("-56", AdoReaderUtil.GetDbReaderValue(signed, 0, SqlTypeName.TINYINT)!.ToString());
+            Assert.AreEqual("200", AdoReaderUtil.GetDbReaderValue(unsigned, 0, SqlTypeName.UTINYINT)!.ToString());
+        }
+
+        /// <summary>
+        /// An unsigned value is null-safe like every other, the joou types being references.
+        /// </summary>
+        [TestMethod]
+        public void AnUnsignedNullIsNull()
+        {
+            using var reader = Row("CAST(NULL AS INTEGER)");
+
+            Assert.IsNull(AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.UTINYINT));
         }
 
         #endregion
