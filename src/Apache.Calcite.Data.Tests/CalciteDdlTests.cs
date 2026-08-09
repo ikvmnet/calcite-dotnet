@@ -492,6 +492,48 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(1L, reader.GetInt64(0));
         }
 
+        /// <summary>
+        /// <c>CREATE TABLE ... AS SELECT</c> is refused, and the empty table is left behind.
+        /// </summary>
+        /// <remarks>
+        /// <c>ServerDdlExecutor</c> adds the table and then calls <c>populate</c> to fill it, and
+        /// <c>populate</c> loads rows through <c>context.getRelRunner().prepareStatement(rel)</c> — a
+        /// <c>java.sql.PreparedStatement</c>, which this provider does not implement. So the column
+        /// definitions survive and the rows do not. The ordering is upstream's; the refusal is
+        /// <c>PrepareContext.getRelRunner</c>'s, and its message says which statements are affected.
+        ///
+        /// <para><c>CREATE MATERIALIZED VIEW</c> is the same path — see
+        /// <c>CalciteViewTests.Create_materialized_view_should_be_refused_with_a_reason</c>. Asserted
+        /// rather than skipped so that implementing a runner shows up here as a failure.</para>
+        /// </remarks>
+        [Fact]
+        public void CreateTableAsSelect_should_be_refused_leaving_an_empty_table()
+        {
+            var rootDdl = new CalciteConnectionStringBuilder
+            {
+                ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+            };
+
+            using var c = new CalciteConnection(rootDdl);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"ctas_src\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "INSERT INTO \"ctas_src\" VALUES (3), (4)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "CREATE TABLE \"ctas_dst\" AS SELECT \"id\" FROM \"ctas_src\"";
+            var ex = Assert.ThrowsAny<System.Exception>(() => cmd.ExecuteNonQuery());
+            Assert.Contains("CREATE TABLE ... AS SELECT", ex.ToString(), System.StringComparison.Ordinal);
+
+            cmd.CommandText = "SELECT COUNT(*) FROM \"ctas_dst\"";
+            using var reader2 = cmd.ExecuteReader();
+            Assert.True(reader2.Read());
+            Assert.Equal(0L, reader2.GetInt64(0));
+        }
+
     }
 
 }

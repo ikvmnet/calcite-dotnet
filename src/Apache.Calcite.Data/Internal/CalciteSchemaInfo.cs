@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
 
 using org.apache.calcite.avatica.util;
+using org.apache.calcite.jdbc;
 using org.apache.calcite.rel.type;
+using org.apache.calcite.schema;
 using org.apache.calcite.sql.parser;
 using org.apache.calcite.sql.type;
 
@@ -232,6 +235,11 @@ namespace Apache.Calcite.Data.Internal
             var tableFilter     = restrictionValues?.Length > 2 ? restrictionValues[2] : null;
             var tableTypeFilter = restrictionValues?.Length > 3 ? restrictionValues[3] : null;
 
+            // listing expands every view that passes the restriction, and a view is described against
+            // whatever context Calcite can find; without this it would be described under the default
+            // configuration even where querying it uses the connection's
+            using var _ = connection.RequireSession().PushContext();
+
             var root = connection.RootSchema;
             var schemaNames = root.getSubSchemaNames().iterator();
             while (schemaNames.hasNext())
@@ -244,14 +252,8 @@ namespace Apache.Calcite.Data.Internal
                 if (subSchema is null)
                     continue;
 
-                var tableNames = subSchema.getTableNames().iterator();
-                while (tableNames.hasNext())
+                foreach (var (tableName, table) in TablesOf(subSchema, tableFilter))
                 {
-                    var tableName = (string)tableNames.next();
-                    if (tableFilter is not null && !string.Equals(tableName, tableFilter, StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    var table = subSchema.getTable(tableName);
                     var tableType = table?.getJdbcTableType()?.jdbcName ?? "TABLE";
 
                     if (tableTypeFilter is not null && !string.Equals(tableType, tableTypeFilter, StringComparison.OrdinalIgnoreCase))
@@ -262,6 +264,94 @@ namespace Apache.Calcite.Data.Internal
             }
 
             return t;
+        }
+
+        /// <summary>
+        /// Returns the tables of <paramref name="subSchema"/> whose name passes
+        /// <paramref name="nameFilter"/>, views included.
+        /// </summary>
+        /// <remarks>
+        /// Two sequences rather than one, and it has to be: <b>a view is not a table.</b> Both routes to
+        /// one register it as a <c>TableMacro</c> taking no arguments — <c>ModelHandler.visit(JsonView)</c>
+        /// calls <c>schema.add(name, ViewTable.viewMacro(...))</c> for a model's <c>"type":"view"</c>, and
+        /// <c>ServerDdlExecutor.execute(SqlCreateView, ...)</c> does the same for <c>CREATE VIEW</c> — so a
+        /// view lands in the schema's function map. <c>getTableNames()</c> reads the table map and the
+        /// underlying schema, so it never sees one, whatever its own javadoc says.
+        ///
+        /// <para><b>A view is expanded to answer anything about it, so the filter is applied before the
+        /// expansion rather than after.</b> Turning a macro into a table is
+        /// <c>ViewTableMacro.apply(ImmutableList.of())</c>, which opens the materialization connection and
+        /// parses, validates and converts the view's SQL — the whole front end, per view. Calcite's
+        /// <c>CalciteMetaImpl.tables</c> concatenates <c>getTablesBasedOnNullaryFunctions()</c>, which
+        /// builds that map eagerly for the entire schema; this asks
+        /// <c>getTableBasedOnNullaryFunction</c> for the ones a caller actually named. That is a
+        /// divergence, and a deliberate one: <c>CalciteMetaImpl</c> is Avatica's JDBC metadata and this is
+        /// not a port of it, so there is no behaviour to reproduce — only a schema SPI to read correctly.
+        /// Expanding every view in a schema to answer <c>GetSchema("Columns", …, "ONE_TABLE", …)</c> made
+        /// one unresolvable view break every metadata call that touched its schema.</para>
+        ///
+        /// <para>What remains eager is an <i>unrestricted</i> listing: <c>TABLE_TYPE</c> comes from
+        /// <c>Table.getJdbcTableType()</c>, so a view has to be expanded to be typed. Short-cutting that
+        /// from the macro's class would be a guess — <c>ViewTableMacro.apply</c> is overridable and
+        /// <c>MaterializedViewTable.MaterializedViewTableMacro</c> overrides it — and a wrong
+        /// <c>TABLE_TYPE</c> is worse than a slow one.</para>
+        /// </remarks>
+        static IEnumerable<(string Name, Table? Table)> TablesOf(SchemaPlus subSchema, string? nameFilter)
+        {
+            var tableNames = subSchema.getTableNames().iterator();
+            while (tableNames.hasNext())
+            {
+                var tableName = (string)tableNames.next();
+                if (!MatchesName(tableName, nameFilter))
+                    continue;
+
+                yield return (tableName, subSchema.getTable(tableName));
+            }
+
+            var schema = CalciteSchema.from(subSchema);
+            foreach (var viewName in ViewNamesOf(schema))
+            {
+                if (!MatchesName(viewName, nameFilter))
+                    continue;
+
+                // the name came from this schema's own function names, so the lookup is exact
+                var entry = schema.getTableBasedOnNullaryFunction(viewName, true);
+                if (entry is not null)
+                    yield return (viewName, entry.getTable());
+            }
+        }
+
+        /// <summary>
+        /// Returns the names in <paramref name="schema"/> that resolve to a table macro of no arguments.
+        /// </summary>
+        /// <remarks>
+        /// The names <c>getTablesBasedOnNullaryFunctions</c> would key its map by, without applying any of
+        /// them. <c>getFunctionNames</c> covers the explicit and the implicit alike, and the two tests are
+        /// the ones that method makes before it calls <c>apply</c>.
+        /// </remarks>
+        static IEnumerable<string> ViewNamesOf(CalciteSchema schema)
+        {
+            var names = schema.getFunctionNames().iterator();
+            while (names.hasNext())
+            {
+                var name = (string)names.next();
+
+                var functions = schema.getFunctions(name, true).iterator();
+                while (functions.hasNext())
+                {
+                    if (functions.next() is TableMacro macro && macro.getParameters().isEmpty())
+                    {
+                        yield return name;
+                        break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>Applies an ADO.NET name restriction, which is absent when <see langword="null"/>.</summary>
+        static bool MatchesName(string name, string? filter)
+        {
+            return filter is null || string.Equals(name, filter, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -290,6 +380,9 @@ namespace Apache.Calcite.Data.Internal
             var tableFilter  = restrictionValues?.Length > 2 ? restrictionValues[2] : null;
             var columnFilter = restrictionValues?.Length > 3 ? restrictionValues[3] : null;
 
+            // as in BuildTables: a view's columns come from expanding it, and that needs a context
+            using var _ = connection.RequireSession().PushContext();
+
             var typeFactory = connection.TypeFactory;
             var root = connection.RootSchema;
             var schemaNames = root.getSubSchemaNames().iterator();
@@ -303,14 +396,8 @@ namespace Apache.Calcite.Data.Internal
                 if (subSchema is null)
                     continue;
 
-                var tableNames = subSchema.getTableNames().iterator();
-                while (tableNames.hasNext())
+                foreach (var (tableName, table) in TablesOf(subSchema, tableFilter))
                 {
-                    var tableName = (string)tableNames.next();
-                    if (tableFilter is not null && !string.Equals(tableName, tableFilter, StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    var table = subSchema.getTable(tableName);
                     if (table is null)
                         continue;
 

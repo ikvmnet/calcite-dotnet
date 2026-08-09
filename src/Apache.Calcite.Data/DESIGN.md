@@ -39,6 +39,18 @@ Three things carry Java names through this design and are not going away:
   type factory and configuration from. The latter is a thread-local stack Calcite's own parse-to-rel
   reads the context off, so `CalciteSession.Plan` pushes onto it for the duration of a prepare.
   `CalcitePrepare.DEFAULT_FACTORY` and `prepareSql` are never called.
+- **A model view is analysed under the connection's configuration, not Calcite's default.**
+  `ViewTableMacro.apply` analyses a view through `MaterializedViewTable.MATERIALIZATION_CONNECTION`, so
+  `fun`, `lex` and `conformance` were invisible while a view was described and a function the
+  connection asked for failed inside a view definition. `Schemas.makeContext` already has the branch —
+  a null connection makes it read `CalcitePrepare.Dummy.peek()`, our own pushed context — so
+  **`ClrViewTableMacro`** is `apply` again with null in place of the connection, reusing `ViewTable` and
+  `ModifiableViewTable` through the base class's `protected` hooks. **`ClrModelHandler`** gets it in
+  front of a model's `"type":"view"`: `ModelHandler` constructs Calcite's macro directly with no seam,
+  so the visit records each view and the constructor body swaps the macro once the base constructor has
+  built every schema. `ClrViewTable.ViewMacro` is the same thing for a view registered in code.
+  **`CREATE VIEW` is not covered** — `ServerDdlExecutor` has the same no-seam problem and lives in
+  `calcite-server`, which no shipping project here references.
 - **Calcite's JDBC driver, registered once, for views.** `CalciteSession`'s static constructor puts
   `org.apache.calcite.jdbc.Driver`'s assembly on IKVM's boot class path and constructs one.
   `ViewTableMacro.apply` reads `MaterializedViewTable.MATERIALIZATION_CONNECTION`, whose initializer
@@ -183,7 +195,26 @@ returning rows, plus the `ElementType` the cursor factory is deduced from. It me
   schema, config and default schema path. `getDataContext()` returns a throwaway
   `StatementDataContext` with only the timestamp variables, which is what backs `RexExecutorImpl`
   for constant folding during optimisation — the same thing `CalciteConnectionImpl.ContextImpl`
-  does. `getRelRunner()` throws `UnsupportedOperationException`.
+  does. **`getRelRunner()` refuses, with a message naming what that costs.** Calcite's
+  `ContextImpl` unwraps the connection — the connection *is* the runner — and
+  `RelRunner.prepareStatement` is declared to return a `java.sql.PreparedStatement`. Its one caller is
+  `ServerDdlExecutor.populate`, which uses two members of it, so supporting it means a hundred-odd
+  members of a JDBC interface this project exists to not have. The planning half is already here:
+  `ClrPrepareImpl.PrepareRel` is the `prepare2_` branch Calcite's own runner uses, ready for a runner
+  that wants it. So `CREATE MATERIALIZED VIEW` and `CREATE TABLE ... AS SELECT` are unsupported, and
+  fail *after* `ServerDdlExecutor` has added the table — that ordering is upstream's. Both are pinned
+  by tests. `populate` also resolves its INSERT against `getRootSchema()` unconditionally, so neither
+  would work in a sub-schema even with a runner; that is a second, independent upstream limitation,
+  and it has its own test.
+
+  Note that **this is the only place JDBC is declined, not the only place it appears.** Expanding any
+  view goes through `MaterializedViewTable.MATERIALIZATION_CONNECTION`, a `public static final`
+  eagerly initialised from `DriverManager.getConnection("jdbc:calcite:")` and read unconditionally by
+  `ViewTableMacro.apply` — which is why `CalciteSession` registers the driver. That connection supplies
+  only config, type factory and a `DataContext`; `Schemas.makeContext` takes `getRootSchema()` from the
+  `schema` argument, so its own empty schema is never consulted. `makeContext` has a `connection == null`
+  branch that would use `CalcitePrepare.Dummy.peek()` instead — our context — but a `static final`
+  cannot be null, so that path is unreachable from a view.
 - **`StatementDataContext`** implements `DataContext` for execution. It holds the root schema, the
   type factory, the well-known per-statement variables (`utcTimestamp`, `currentTimestamp`,
   `localTimestamp`, `sysTimestamp`, `cancelFlag`, `queryTimeout`), the values stashed at plan time
@@ -242,7 +273,22 @@ type, the value and the SQL type. `BigDecimalConverter` carries `java.math.BigDe
   `CalciteSession` is what turns it into a `Properties` and a `CalciteConnectionConfigImpl`.
 - `CalciteSchemaInfo` builds the `DataTable`s behind `DbConnection.GetSchema` —
   `MetaDataCollections` and `Restrictions` without a session, and `DataSourceInformation`,
-  `DataTypes`, `ReservedWords`, `Tables` and `Columns` from an open one.
+  `DataTypes`, `ReservedWords`, `Tables` and `Columns` from an open one. **`Tables` and `Columns` are
+  two enumerations concatenated, because a view is not a table.** Both routes to a view register it
+  as a `TableMacro` of no arguments — `ModelHandler.visit(JsonView)` and
+  `ServerDdlExecutor.execute(SqlCreateView, …)` both call `schema.add(name, ViewTable.viewMacro(…))` —
+  and that lands in the schema's function map, so `getTableNames()` never returns one whatever its
+  javadoc says. `TablesOf` reads the function map for names that resolve to a nullary `TableMacro`.
+  **A view is expanded to be described, so the name restriction is applied before the expansion.**
+  `ViewTableMacro.apply` opens the materialization connection and parses, validates and converts the
+  view's SQL — the whole front end, per view. `CalciteMetaImpl.tables` concatenates
+  `getTablesBasedOnNullaryFunctions()`, which builds that map eagerly for the whole schema; this asks
+  `getTableBasedOnNullaryFunction` for the names a caller actually gave. That divergence is
+  deliberate: `CalciteMetaImpl` is Avatica's JDBC metadata and this is not a port of it, so there is
+  no behaviour to reproduce, only a schema SPI to read correctly. An *unrestricted* listing is still
+  eager, because `TABLE_TYPE` comes from `Table.getJdbcTableType()` and typing a view means expanding
+  it; short-cutting that from the macro's class would be a guess, since `ViewTableMacro.apply` is
+  overridable and `MaterializedViewTable.MaterializedViewTableMacro` overrides it.
 - `CalciteTypeMap` maps between `DbType` and CLR types for the parameter surface. Result columns do
   not go through it; `CalciteResultColumns` maps those from the Avatica metadata.
 
@@ -338,6 +384,7 @@ src/
       CalciteResultValue.cs               Final value conversion and typed getters
       CalciteTypeMap.cs                   DbType ↔ CLR type, for parameters
       CalciteSchemaInfo.cs                GetSchema collections
+      ClrModelHandler.cs                  ModelHandler, re-registering "type":"view"
       CalciteHookEntry.cs                 (Hook, Consumer) pair
       CalciteColumn.cs                    Unreferenced
 
