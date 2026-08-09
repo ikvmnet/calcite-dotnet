@@ -396,6 +396,80 @@ namespace Apache.Calcite.Data.Tests
             Assert.Contains("No match found for function signature NVL", ex.ToString(), StringComparison.Ordinal);
         }
 
+        /// <summary>
+        /// A view registered through <c>ClrViewTable.ViewMacro</c> is analyzed under the connection's
+        /// configuration, so the function the previous test could not use works.
+        /// </summary>
+        /// <remarks>
+        /// Same connection, same SQL, same assertion — the only difference is which macro holds the
+        /// definition. <c>ClrViewTableMacro.apply</c> passes null where Calcite passes
+        /// <c>MATERIALIZATION_CONNECTION</c>, which sends <c>Schemas.makeContext</c> down its
+        /// <c>CalcitePrepare.Dummy.peek()</c> branch and onto this connection's own context.
+        /// </remarks>
+        [Fact]
+        public void Clr_view_macro_is_analyzed_under_the_connections_config()
+        {
+            var withOracleFun = new CalciteConnectionStringBuilder
+            {
+                Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
+                Schema = "adhoc",
+                Fun = "standard,oracle",
+            };
+
+            using var c = new CalciteConnection(withOracleFun);
+            c.Open();
+
+            var adhoc = c.RootSchema.getSubSchema("adhoc")!;
+            adhoc.add("NVLVIEW", Apache.Calcite.Extensions.Schema.ClrViewTable.ViewMacro(
+                adhoc,
+                "SELECT NVL(CAST(NULL AS INTEGER), 7) AS Y",
+                viewPath: ["adhoc", "NVLVIEW"]));
+
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT Y FROM NVLVIEW";
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(7, r.GetInt32(0));
+            Assert.False(r.Read());
+        }
+
+        /// <summary>
+        /// The same macro bridging two back ends, which is the case it exists for: a definition written
+        /// against the connection's dialect, over tables that are not all in one place.
+        /// </summary>
+        [Fact]
+        public void Clr_view_macro_should_bridge_two_back_ends()
+        {
+            using var c = new CalciteConnection(RootDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"csale\" (\"sid\" INTEGER NOT NULL, \"rid\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "INSERT INTO \"csale\" VALUES (1, 10), (2, 20)";
+            cmd.ExecuteNonQuery();
+
+            c.RootSchema.add("BE3", new ViewTestBackEnd());
+
+            c.RootSchema.add("cbridged", Apache.Calcite.Extensions.Schema.ClrViewTable.ViewMacro(
+                c.RootSchema,
+                "SELECT \"s\".\"sid\" AS \"sid\", \"r\".\"RNAME\" AS \"rname\" " +
+                "FROM \"csale\" \"s\" JOIN \"BE3\".\"REGIONS\" \"r\" ON \"s\".\"rid\" = \"r\".\"RID\"",
+                viewPath: ["cbridged"]));
+
+            cmd.CommandText = "SELECT \"sid\", \"rname\" FROM \"cbridged\" ORDER BY \"sid\"";
+            using var r = cmd.ExecuteReader();
+
+            Assert.True(r.Read());
+            Assert.Equal(1, r.GetInt32(0));
+            Assert.Equal("north", r.GetString(1));
+            Assert.True(r.Read());
+            Assert.Equal(2, r.GetInt32(0));
+            Assert.Equal("south", r.GetString(1));
+            Assert.False(r.Read());
+        }
+
         // ------------------------------------------------------------------------------------------
         // Views in the metadata collections
         // ------------------------------------------------------------------------------------------
