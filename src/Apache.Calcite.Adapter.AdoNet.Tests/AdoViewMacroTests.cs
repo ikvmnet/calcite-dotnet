@@ -1,8 +1,6 @@
 using System;
 
 using Apache.Calcite.Data;
-using Apache.Calcite.Extensions.Schema;
-
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using org.apache.calcite;
@@ -16,7 +14,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// Registering a view over the ADO.NET adapter through <c>ClrViewTable.ViewMacro</c>, and using it as
+    /// Registering a view over the ADO.NET adapter through <c>ViewTable.viewMacro</c>, and using it as
     /// a table.
     /// </summary>
     /// <remarks>
@@ -61,14 +59,16 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [TestMethod]
         public void View_over_the_adapter_should_behave_like_a_table()
         {
-            _connection.RootSchema.add("STAFF", ClrViewTable.ViewMacro(
+            _connection.RootSchema.add("STAFF", ViewTable.viewMacro(
                 _connection.RootSchema,
                 """
                 SELECT E.EMPNO AS EMPNO, E.NAME AS NAME, D.DNAME AS DNAME
                 FROM ADO.EMPS AS E
                 JOIN ADO.DEPTS AS D ON E.DEPTNO = D.DEPTNO
                 """,
-                viewPath: ["STAFF"]));
+                null,
+                org.apache.calcite.jdbc.CalciteSchema.from(_connection.RootSchema).path("STAFF"),
+                null));
 
             using var cmd = _connection.CreateCommand();
             cmd.CommandText = "SELECT NAME, DNAME FROM STAFF WHERE DNAME = 'Sales' ORDER BY NAME";
@@ -98,14 +98,16 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         {
             _connection.RootSchema.add("EXTRA", new GradeSchema());
 
-            _connection.RootSchema.add("STAFF", ClrViewTable.ViewMacro(
+            _connection.RootSchema.add("STAFF", ViewTable.viewMacro(
                 _connection.RootSchema,
                 """
                 SELECT E.EMPNO AS EMPNO, E.NAME AS NAME, D.DNAME AS DNAME
                 FROM ADO.EMPS AS E
                 JOIN ADO.DEPTS AS D ON E.DEPTNO = D.DEPTNO
                 """,
-                viewPath: ["STAFF"]));
+                null,
+                org.apache.calcite.jdbc.CalciteSchema.from(_connection.RootSchema).path("STAFF"),
+                null));
 
             using var cmd = _connection.CreateCommand();
             cmd.CommandText =

@@ -235,11 +235,6 @@ namespace Apache.Calcite.Data.Internal
             var tableFilter     = restrictionValues?.Length > 2 ? restrictionValues[2] : null;
             var tableTypeFilter = restrictionValues?.Length > 3 ? restrictionValues[3] : null;
 
-            // listing expands every view that passes the restriction, and a view is described against
-            // whatever context Calcite can find; without this it would be described under the default
-            // configuration even where querying it uses the connection's
-            using var _ = connection.RequireSession().PushContext();
-
             var root = connection.RootSchema;
             var schemaNames = root.getSubSchemaNames().iterator();
             while (schemaNames.hasNext())
@@ -290,11 +285,18 @@ namespace Apache.Calcite.Data.Internal
         /// Expanding every view in a schema to answer <c>GetSchema("Columns", …, "ONE_TABLE", …)</c> made
         /// one unresolvable view break every metadata call that touched its schema.</para>
         ///
-        /// <para>What remains eager is an <i>unrestricted</i> listing: <c>TABLE_TYPE</c> comes from
-        /// <c>Table.getJdbcTableType()</c>, so a view has to be expanded to be typed. Short-cutting that
-        /// from the macro's class would be a guess — <c>ViewTableMacro.apply</c> is overridable and
-        /// <c>MaterializedViewTable.MaterializedViewTableMacro</c> overrides it — and a wrong
-        /// <c>TABLE_TYPE</c> is worse than a slow one.</para>
+        /// <para><b>Only the name restriction is applied before expansion; the table-type one cannot be.</b>
+        /// <c>TABLE_TYPE</c> comes from <c>Table.getJdbcTableType()</c>, so a view has to be expanded
+        /// before it can be typed, and <c>BuildTables</c> therefore filters on the type afterwards. A
+        /// listing not restricted by name expands every view in the schema — including
+        /// <c>GetSchema("Tables", …, "TABLE")</c>, which wants no views at all and expands them anyway,
+        /// and fails if one of them no longer resolves.
+        ///
+        /// <para>Short-cutting the type from the macro's class would fix that and is not done, because it
+        /// would be a guess: <c>ViewTableMacro.apply</c> is overridable and
+        /// <c>MaterializedViewTable.MaterializedViewTableMacro</c> overrides it, so a macro is not obliged
+        /// to produce a <c>VIEW</c>. A wrong <c>TABLE_TYPE</c> is worse than a slow one, and Calcite's own
+        /// metadata filters on the type after building every row too.</para></para>
         /// </remarks>
         static IEnumerable<(string Name, Table? Table)> TablesOf(SchemaPlus subSchema, string? nameFilter)
         {
@@ -379,9 +381,6 @@ namespace Apache.Calcite.Data.Internal
             var schemaFilter = restrictionValues?.Length > 1 ? restrictionValues[1] : null;
             var tableFilter  = restrictionValues?.Length > 2 ? restrictionValues[2] : null;
             var columnFilter = restrictionValues?.Length > 3 ? restrictionValues[3] : null;
-
-            // as in BuildTables: a view's columns come from expanding it, and that needs a context
-            using var _ = connection.RequireSession().PushContext();
 
             var typeFactory = connection.TypeFactory;
             var root = connection.RootSchema;

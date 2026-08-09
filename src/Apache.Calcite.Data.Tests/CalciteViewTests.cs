@@ -3,6 +3,8 @@ using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
 
+using org.apache.calcite.schema.impl;
+
 using Xunit;
 
 namespace Apache.Calcite.Data.Tests
@@ -26,8 +28,8 @@ namespace Apache.Calcite.Data.Tests
     /// routes register a view as a <c>TableMacro</c> of no arguments, which lands in the schema's function
     /// map rather than its table map — so <c>getTableNames()</c> does not see one, and
     /// <c>GetSchema("Tables")</c> listed no views at all until <c>CalciteSchemaInfo.TablesOf</c> started
-    /// concatenating <c>getTablesBasedOnNullaryFunctions()</c> the way <c>CalciteMetaImpl.tables</c> does.
-    /// Querying a view worked the whole time, which is why this needs its own tests.</para>
+    /// reading the function map as well. Querying a view worked the whole time, which is why this needs
+    /// its own tests.</para>
     /// </remarks>
     public class CalciteViewTests
     {
@@ -82,7 +84,7 @@ namespace Apache.Calcite.Data.Tests
         /// <c>CREATE TABLE ... AS SELECT</c> load their rows — builds its <c>INSERT</c> against
         /// <c>context.getRootSchema()</c> and nothing else, so a statement naming objects in a sub-schema
         /// cannot resolve them. Upstream's own tests use a connection shaped like this one for the same
-        /// reason; see <see cref="Materialized_view_in_a_sub_schema_is_not_supported_upstream"/>.
+        /// reason; see <see cref="Materialized_view_in_a_sub_schema_fails_before_a_runner_is_asked_for"/>.
         /// </remarks>
         static readonly string RootDdlConnectionString = new CalciteConnectionStringBuilder
         {
@@ -340,27 +342,37 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// <b>A model view is analyzed under this connection's configuration.</b> A function the connection
-        /// asked for works in a query and inside a view alike.
+        /// <b>A view's definition is analyzed under Calcite's default configuration, not this
+        /// connection's</b> — and that is Calcite's behaviour, not this provider's.
         /// </summary>
         /// <remarks>
-        /// It did not, and the difference is <c>ClrModelHandler</c>. <c>ViewTableMacro.apply</c> calls
+        /// <c>ViewTableMacro.apply</c> calls
         /// <c>Schemas.analyzeView(MaterializedViewTable.MATERIALIZATION_CONNECTION, ...)</c>, and
         /// <c>Schemas.makeContext</c> builds its context from <c>connection.config()</c> — that connection
         /// being a <c>DriverManager.getConnection("jdbc:calcite:")</c> held in a <c>static final</c>, so its
-        /// configuration is the default one. Everything the connection string said about <c>fun</c>,
-        /// <c>lex</c> and <c>conformance</c> was invisible while a view was described, even though
-        /// <c>ClrPreparingStmt.expandView</c> used the real configuration when the view was later expanded
-        /// into a plan. Measured: this exact model threw
-        /// <c>No match found for function signature NVL</c> out of <c>apply</c>, so the view could not even
-        /// be described.
+        /// configuration is the default one. <c>CalcitePrepareImpl.parse_</c> builds the catalog reader and
+        /// the validator from it, so <c>fun</c>, <c>conformance</c> and <c>caseSensitive</c> never reach a
+        /// view definition, even though <c>ClrPreparingStmt.expandView</c> uses the real configuration when
+        /// the view is later expanded into a plan.
+        ///
+        /// <para><b>Measured against stock Calcite, and it does the same.</b> A plain
+        /// <c>jdbc:calcite:</c> connection with <c>fun=standard,oracle</c> and this model evaluates
+        /// <c>NVL</c> in a query and answers
+        /// <c>No match found for function signature NVL(&lt;NUMERIC&gt;, &lt;NUMERIC&gt;)</c> for the same
+        /// expression inside the view — nothing of this project involved. So this is reproduced rather than
+        /// fixed: a divergence here would be one we own alone and could diff against nothing, and the
+        /// argument belongs upstream.</para>
+        ///
+        /// <para>Not <c>lex</c>, though — <c>parse_</c> parses with <c>createParser(sql)</c> and
+        /// <c>expandView</c> with <c>SqlParser.config()</c>, both Calcite's default, so a view definition's
+        /// quoting and casing never come from the connection either way.</para>
         ///
         /// <para>NVL is in Calcite's Oracle library and this connection asks for <c>standard,oracle</c>.
-        /// The first half of the test is what makes the second meaningful — without it, a passing second
-        /// half would only show that NVL resolves somewhere.</para>
+        /// The first half of the test is what makes the second meaningful — without it, a failing second
+        /// half would only show that NVL resolves nowhere.</para>
         /// </remarks>
         [Fact]
-        public void Model_view_should_be_analyzed_under_the_connections_config()
+        public void Model_view_is_analyzed_under_calcites_default_config()
         {
             var withOracleFun = new CalciteConnectionStringBuilder
             {
@@ -384,32 +396,18 @@ namespace Apache.Calcite.Data.Tests
                 Assert.Equal(7, r.GetInt32(0));
             }
 
-            // and so does the view
+            // the view does not, because apply() analyzes it through the materialization connection
             cmd.CommandText = "SELECT Y FROM NVLVIEW";
-            using (var r = cmd.ExecuteReader())
-            {
-                Assert.True(r.Read());
-                Assert.Equal(7, r.GetInt32(0));
-                Assert.False(r.Read());
-            }
-
-            // including when it is only being described
-            var t = c.GetSchema("Columns", [null, null, "NVLVIEW", null]);
-            Assert.Equal(["Y"], t.Rows.Cast<DataRow>().Select(r => (string)r["COLUMN_NAME"]));
+            var ex = Assert.ThrowsAny<Exception>(() => cmd.ExecuteReader());
+            Assert.Contains("No match found for function signature NVL", ex.ToString(), StringComparison.Ordinal);
         }
 
         /// <summary>
-        /// A view registered through <c>ClrViewTable.ViewMacro</c> is analyzed under the connection's
-        /// configuration, so the function the previous test could not use works.
+        /// A view registered through <c>ViewTable.viewMacro</c> is Calcite's macro, so it is
+        /// analyzed the same way — the extension is ergonomics, not semantics.
         /// </summary>
-        /// <remarks>
-        /// Same connection, same SQL, same assertion — the only difference is which macro holds the
-        /// definition. <c>ClrViewTableMacro.apply</c> passes null where Calcite passes
-        /// <c>MATERIALIZATION_CONNECTION</c>, which sends <c>Schemas.makeContext</c> down its
-        /// <c>CalcitePrepare.Dummy.peek()</c> branch and onto this connection's own context.
-        /// </remarks>
         [Fact]
-        public void Clr_view_macro_is_analyzed_under_the_connections_config()
+        public void Added_view_is_analyzed_under_calcites_default_config()
         {
             var withOracleFun = new CalciteConnectionStringBuilder
             {
@@ -422,26 +420,25 @@ namespace Apache.Calcite.Data.Tests
             c.Open();
 
             var adhoc = c.RootSchema.getSubSchema("adhoc")!;
-            adhoc.add("NVLVIEW", Apache.Calcite.Extensions.Schema.ClrViewTable.ViewMacro(
+            adhoc.add("NVLVIEW", ViewTable.viewMacro(
                 adhoc,
                 "SELECT NVL(CAST(NULL AS INTEGER), 7) AS Y",
-                viewPath: ["adhoc", "NVLVIEW"]));
+                null,
+                org.apache.calcite.jdbc.CalciteSchema.from(adhoc).path("NVLVIEW"),
+                null));
 
             using var cmd = c.CreateCommand();
             cmd.CommandText = "SELECT Y FROM NVLVIEW";
 
-            using var r = cmd.ExecuteReader();
-            Assert.True(r.Read());
-            Assert.Equal(7, r.GetInt32(0));
-            Assert.False(r.Read());
+            var ex = Assert.ThrowsAny<Exception>(() => cmd.ExecuteReader());
+            Assert.Contains("No match found for function signature NVL", ex.ToString(), StringComparison.Ordinal);
         }
 
         /// <summary>
-        /// The same macro bridging two back ends, which is the case it exists for: a definition written
-        /// against the connection's dialect, over tables that are not all in one place.
+        /// The extension registering a view that bridges two back ends, which is what it is for.
         /// </summary>
         [Fact]
-        public void Clr_view_macro_should_bridge_two_back_ends()
+        public void Added_view_should_bridge_two_back_ends()
         {
             using var c = new CalciteConnection(RootDdlConnectionString);
             c.Open();
@@ -454,11 +451,13 @@ namespace Apache.Calcite.Data.Tests
 
             c.RootSchema.add("BE3", new ViewTestBackEnd());
 
-            c.RootSchema.add("cbridged", Apache.Calcite.Extensions.Schema.ClrViewTable.ViewMacro(
+            c.RootSchema.add("cbridged", ViewTable.viewMacro(
                 c.RootSchema,
                 "SELECT \"s\".\"sid\" AS \"sid\", \"r\".\"RNAME\" AS \"rname\" " +
                 "FROM \"csale\" \"s\" JOIN \"BE3\".\"REGIONS\" \"r\" ON \"s\".\"rid\" = \"r\".\"RID\"",
-                viewPath: ["cbridged"]));
+                null,
+                org.apache.calcite.jdbc.CalciteSchema.from(c.RootSchema).path("cbridged"),
+                null));
 
             cmd.CommandText = "SELECT \"sid\", \"rname\" FROM \"cbridged\" ORDER BY \"sid\"";
             using var r = cmd.ExecuteReader();
@@ -470,40 +469,6 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(2, r.GetInt32(0));
             Assert.Equal("south", r.GetString(1));
             Assert.False(r.Read());
-        }
-
-        /// <summary>
-        /// Metadata describes a view through the same macro, so the configuration has to reach it there
-        /// too — <c>GetSchema</c> expands views outside any planning.
-        /// </summary>
-        /// <remarks>
-        /// <c>CalciteSchemaInfo</c> pushes the session's context for the duration of a listing, which is
-        /// what <c>ClrViewTableMacro</c> reads. Without it the macro finds an empty stack, falls back to
-        /// the materialization connection, and this view could be queried but not described.
-        /// </remarks>
-        [Fact]
-        public void Clr_view_macro_should_be_describable_under_the_connections_config()
-        {
-            var withOracleFun = new CalciteConnectionStringBuilder
-            {
-                Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
-                Schema = "adhoc",
-                Fun = "standard,oracle",
-            };
-
-            using var c = new CalciteConnection(withOracleFun);
-            c.Open();
-
-            var adhoc = c.RootSchema.getSubSchema("adhoc")!;
-            adhoc.add("NVLDESC", Apache.Calcite.Extensions.Schema.ClrViewTable.ViewMacro(
-                adhoc,
-                "SELECT NVL(CAST(NULL AS INTEGER), 7) AS Y",
-                viewPath: ["adhoc", "NVLDESC"]));
-
-            var t = c.GetSchema("Columns", [null, null, "NVLDESC", null]);
-            var columns = t.Rows.Cast<DataRow>().Select(r => (string)r["COLUMN_NAME"]).ToArray();
-
-            Assert.Equal(["Y"], columns);
         }
 
         // ------------------------------------------------------------------------------------------
@@ -629,6 +594,27 @@ namespace Apache.Calcite.Data.Tests
             c.Open();
 
             Assert.ThrowsAny<Exception>(() => c.GetSchema("Tables"));
+        }
+
+        /// <summary>
+        /// And so does a listing restricted to <c>TABLE</c>, which wants no views at all.
+        /// </summary>
+        /// <remarks>
+        /// The type restriction cannot be applied before the expansion the way the name one is:
+        /// <c>TABLE_TYPE</c> is <c>Table.getJdbcTableType()</c>, so a view is expanded in order to be
+        /// typed and only then discarded. Deciding it from the macro's class instead would be a guess —
+        /// <c>ViewTableMacro.apply</c> is overridable — and a wrong <c>TABLE_TYPE</c> is worse than a slow
+        /// one. Asserted so the asymmetry with
+        /// <see cref="GetSchema_Tables_for_one_view_should_not_expand_the_others"/> is on the record
+        /// rather than waiting to surprise someone.
+        /// </remarks>
+        [Fact]
+        public void GetSchema_Tables_restricted_to_tables_still_expands_views()
+        {
+            using var c = new CalciteConnection(BrokenViewModelConnectionString);
+            c.Open();
+
+            Assert.ThrowsAny<Exception>(() => c.GetSchema("Tables", [null, null, null, "TABLE"]));
         }
 
         /// <summary>
@@ -976,15 +962,13 @@ namespace Apache.Calcite.Data.Tests
 
             c.RootSchema.add("BE2", new ViewTestBackEnd());
 
-            var viewPath = new java.util.ArrayList();
-            viewPath.add("bridged");
-            c.RootSchema.add("bridged", org.apache.calcite.schema.impl.ViewTable.viewMacro(
+            c.RootSchema.add("bridged", ViewTable.viewMacro(
                 c.RootSchema,
                 "SELECT \"s\".\"sid\" AS \"sid\", \"r\".\"RNAME\" AS \"rname\" " +
                 "FROM \"sale\" \"s\" JOIN \"BE2\".\"REGIONS\" \"r\" ON \"s\".\"rid\" = \"r\".\"RID\"",
-                new java.util.ArrayList(),
-                viewPath,
-                java.lang.Boolean.FALSE));
+                null,
+                org.apache.calcite.jdbc.CalciteSchema.from(c.RootSchema).path("bridged"),
+                null));
 
             // selected from directly
             cmd.CommandText = "SELECT \"sid\", \"rname\" FROM \"bridged\" ORDER BY \"sid\"";
@@ -1062,13 +1046,11 @@ namespace Apache.Calcite.Data.Tests
             cmd.CommandText = "CREATE TABLE \"modsrc\" (\"id\" INTEGER NOT NULL, \"g\" INTEGER NOT NULL)";
             cmd.ExecuteNonQuery();
 
-            var viewPath = new java.util.ArrayList();
-            viewPath.add("modview");
-            c.RootSchema.add("modview", org.apache.calcite.schema.impl.ViewTable.viewMacro(
+            c.RootSchema.add("modview", ViewTable.viewMacro(
                 c.RootSchema,
                 "SELECT \"id\" FROM \"modsrc\" WHERE \"g\" = 7",
-                new java.util.ArrayList(),
-                viewPath,
+                null,
+                org.apache.calcite.jdbc.CalciteSchema.from(c.RootSchema).path("modview"),
                 java.lang.Boolean.TRUE));
 
             cmd.CommandText = "INSERT INTO \"modview\" VALUES (1)";
