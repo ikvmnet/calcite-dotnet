@@ -471,10 +471,10 @@ namespace Apache.Calcite.Data.Internal
                     // Wire the cancellation token to the Calcite cancel flag only here, where we
                     // are synchronously enumerating and need Calcite's check-points to be able to
                     // interrupt the loop. The registration is scoped to this block only.
-                    // Because prepareSql is called with elementType=Object[], the prefer hint is
-                    // ARRAY and cursorFactory is CursorFactory.ARRAY. Calcite therefore yields a
-                    // single Object[] row whose only element [0] is the ROWCOUNT BIGINT column
-                    // defined by RelOptUtil.createDmlRowType.
+                    // RelOptUtil.createDmlRowType gives DML one ROWCOUNT column, and
+                    // Meta.CursorFactory.deduce answers OBJECT for a single column before it looks at
+                    // the element type -- measured -- so the row is the boxed count itself and not an
+                    // array holding it. The array branch below is for a plan that says otherwise.
                     recordsAffected = 0;
                     using var _ = cancellationToken.Register(() => cancelFlag.set(true));
                     using var e = signature.Bind(dataContext).GetEnumerator();

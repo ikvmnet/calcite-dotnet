@@ -261,7 +261,7 @@ cmd.RegisterHook(Hook.PROGRAM, /* ... */);
 
 Overloads accept a Java `Consumer`, a .NET `Action<object>`, or a primitive value to set as the hook's property. Connection hooks run before command hooks.
 
-`EXPLAIN PLAN FOR <query>` also works, and returns the rendered plan as a single row.
+`EXPLAIN PLAN FOR <query>` also works, and returns the rendered plan as a single row. It explains the plan the reader you called would have run: `ExecuteReader` renders `ClrEnumerable*` nodes and `ExecuteReaderAsync` renders `ClrAsyncEnumerable*` ones, since nothing in the SQL says which convention is wanted.
 
 ## Accessing the Calcite engine directly
 
