@@ -235,6 +235,11 @@ namespace Apache.Calcite.Data.Internal
             var tableFilter     = restrictionValues?.Length > 2 ? restrictionValues[2] : null;
             var tableTypeFilter = restrictionValues?.Length > 3 ? restrictionValues[3] : null;
 
+            // listing expands every view that passes the restriction, and a view is described against
+            // whatever context Calcite can find; without this it would be described under the default
+            // configuration even where querying it uses the connection's
+            using var _ = connection.RequireSession().PushContext();
+
             var root = connection.RootSchema;
             var schemaNames = root.getSubSchemaNames().iterator();
             while (schemaNames.hasNext())
@@ -374,6 +379,9 @@ namespace Apache.Calcite.Data.Internal
             var schemaFilter = restrictionValues?.Length > 1 ? restrictionValues[1] : null;
             var tableFilter  = restrictionValues?.Length > 2 ? restrictionValues[2] : null;
             var columnFilter = restrictionValues?.Length > 3 ? restrictionValues[3] : null;
+
+            // as in BuildTables: a view's columns come from expanding it, and that needs a context
+            using var _ = connection.RequireSession().PushContext();
 
             var typeFactory = connection.TypeFactory;
             var root = connection.RootSchema;

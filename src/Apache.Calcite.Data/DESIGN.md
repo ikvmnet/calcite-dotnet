@@ -39,6 +39,18 @@ Three things carry Java names through this design and are not going away:
   type factory and configuration from. The latter is a thread-local stack Calcite's own parse-to-rel
   reads the context off, so `CalciteSession.Plan` pushes onto it for the duration of a prepare.
   `CalcitePrepare.DEFAULT_FACTORY` and `prepareSql` are never called.
+- **A model view is analysed under the connection's configuration, not Calcite's default.**
+  `ViewTableMacro.apply` analyses a view through `MaterializedViewTable.MATERIALIZATION_CONNECTION`, so
+  `fun`, `lex` and `conformance` were invisible while a view was described and a function the
+  connection asked for failed inside a view definition. `Schemas.makeContext` already has the branch —
+  a null connection makes it read `CalcitePrepare.Dummy.peek()`, our own pushed context — so
+  **`ClrViewTableMacro`** is `apply` again with null in place of the connection, reusing `ViewTable` and
+  `ModifiableViewTable` through the base class's `protected` hooks. **`ClrModelHandler`** gets it in
+  front of a model's `"type":"view"`: `ModelHandler` constructs Calcite's macro directly with no seam,
+  so the visit records each view and the constructor body swaps the macro once the base constructor has
+  built every schema. `ClrViewTable.ViewMacro` is the same thing for a view registered in code.
+  **`CREATE VIEW` is not covered** — `ServerDdlExecutor` has the same no-seam problem and lives in
+  `calcite-server`, which no shipping project here references.
 - **Calcite's JDBC driver, registered once, for views.** `CalciteSession`'s static constructor puts
   `org.apache.calcite.jdbc.Driver`'s assembly on IKVM's boot class path and constructs one.
   `ViewTableMacro.apply` reads `MaterializedViewTable.MATERIALIZATION_CONNECTION`, whose initializer
@@ -372,6 +384,7 @@ src/
       CalciteResultValue.cs               Final value conversion and typed getters
       CalciteTypeMap.cs                   DbType ↔ CLR type, for parameters
       CalciteSchemaInfo.cs                GetSchema collections
+      ClrModelHandler.cs                  ModelHandler, re-registering "type":"view"
       CalciteHookEntry.cs                 (Hook, Consumer) pair
       CalciteColumn.cs                    Unreferenced
 

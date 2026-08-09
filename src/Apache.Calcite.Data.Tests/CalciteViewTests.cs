@@ -340,33 +340,27 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// <b>A view is analyzed under Calcite's default connection config, not this connection's.</b>
-        /// A function the connection asked for works in a query and fails inside a view.
+        /// <b>A model view is analyzed under this connection's configuration.</b> A function the connection
+        /// asked for works in a query and inside a view alike.
         /// </summary>
         /// <remarks>
-        /// <c>ViewTableMacro.apply</c> calls
+        /// It did not, and the difference is <c>ClrModelHandler</c>. <c>ViewTableMacro.apply</c> calls
         /// <c>Schemas.analyzeView(MaterializedViewTable.MATERIALIZATION_CONNECTION, ...)</c>, and
         /// <c>Schemas.makeContext</c> builds its context from <c>connection.config()</c> — that connection
         /// being a <c>DriverManager.getConnection("jdbc:calcite:")</c> held in a <c>static final</c>, so its
-        /// config is the default one. Everything the connection string says about <c>fun</c>, <c>lex</c>,
-        /// <c>conformance</c> and the rest is therefore invisible while a view is being described, even
-        /// though <c>ClrPreparingStmt.expandView</c> uses the real config when the view is later expanded
-        /// into a plan.
+        /// configuration is the default one. Everything the connection string said about <c>fun</c>,
+        /// <c>lex</c> and <c>conformance</c> was invisible while a view was described, even though
+        /// <c>ClrPreparingStmt.expandView</c> used the real configuration when the view was later expanded
+        /// into a plan. Measured: this exact model threw
+        /// <c>No match found for function signature NVL</c> out of <c>apply</c>, so the view could not even
+        /// be described.
         ///
-        /// <para>NVL is in Calcite's Oracle library; this connection asks for <c>standard,oracle</c>. The
-        /// first half of this test shows the connection honours that. The second half is the same
-        /// expression inside a view, and it does not get that far — it fails in <c>apply</c>, so the view
-        /// cannot even be described.</para>
-        ///
-        /// <para><c>Schemas.makeContext</c> has the fix already: given a null connection it uses
-        /// <c>CalcitePrepare.Dummy.peek()</c>, which is this provider's own pushed context and carries the
-        /// real config. Reaching it means supplying a <c>ViewTableMacro</c> subclass that overrides
-        /// <c>apply</c> to pass null, and getting that subclass installed in place of Calcite's — which is
-        /// the part with no public seam. Asserted rather than skipped so that doing so shows up here as a
-        /// failure.</para>
+        /// <para>NVL is in Calcite's Oracle library and this connection asks for <c>standard,oracle</c>.
+        /// The first half of the test is what makes the second meaningful — without it, a passing second
+        /// half would only show that NVL resolves somewhere.</para>
         /// </remarks>
         [Fact]
-        public void View_is_analyzed_under_the_default_config_not_the_connections()
+        public void Model_view_should_be_analyzed_under_the_connections_config()
         {
             var withOracleFun = new CalciteConnectionStringBuilder
             {
@@ -390,10 +384,18 @@ namespace Apache.Calcite.Data.Tests
                 Assert.Equal(7, r.GetInt32(0));
             }
 
-            // the same expression inside a view does not, because apply() analyzes it without that config
+            // and so does the view
             cmd.CommandText = "SELECT Y FROM NVLVIEW";
-            var ex = Assert.ThrowsAny<Exception>(() => cmd.ExecuteReader());
-            Assert.Contains("No match found for function signature NVL", ex.ToString(), StringComparison.Ordinal);
+            using (var r = cmd.ExecuteReader())
+            {
+                Assert.True(r.Read());
+                Assert.Equal(7, r.GetInt32(0));
+                Assert.False(r.Read());
+            }
+
+            // including when it is only being described
+            var t = c.GetSchema("Columns", [null, null, "NVLVIEW", null]);
+            Assert.Equal(["Y"], t.Rows.Cast<DataRow>().Select(r => (string)r["COLUMN_NAME"]));
         }
 
         /// <summary>
@@ -468,6 +470,40 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(2, r.GetInt32(0));
             Assert.Equal("south", r.GetString(1));
             Assert.False(r.Read());
+        }
+
+        /// <summary>
+        /// Metadata describes a view through the same macro, so the configuration has to reach it there
+        /// too — <c>GetSchema</c> expands views outside any planning.
+        /// </summary>
+        /// <remarks>
+        /// <c>CalciteSchemaInfo</c> pushes the session's context for the duration of a listing, which is
+        /// what <c>ClrViewTableMacro</c> reads. Without it the macro finds an empty stack, falls back to
+        /// the materialization connection, and this view could be queried but not described.
+        /// </remarks>
+        [Fact]
+        public void Clr_view_macro_should_be_describable_under_the_connections_config()
+        {
+            var withOracleFun = new CalciteConnectionStringBuilder
+            {
+                Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
+                Schema = "adhoc",
+                Fun = "standard,oracle",
+            };
+
+            using var c = new CalciteConnection(withOracleFun);
+            c.Open();
+
+            var adhoc = c.RootSchema.getSubSchema("adhoc")!;
+            adhoc.add("NVLDESC", Apache.Calcite.Extensions.Schema.ClrViewTable.ViewMacro(
+                adhoc,
+                "SELECT NVL(CAST(NULL AS INTEGER), 7) AS Y",
+                viewPath: ["adhoc", "NVLDESC"]));
+
+            var t = c.GetSchema("Columns", [null, null, "NVLDESC", null]);
+            var columns = t.Rows.Cast<DataRow>().Select(r => (string)r["COLUMN_NAME"]).ToArray();
+
+            Assert.Equal(["Y"], columns);
         }
 
         // ------------------------------------------------------------------------------------------
