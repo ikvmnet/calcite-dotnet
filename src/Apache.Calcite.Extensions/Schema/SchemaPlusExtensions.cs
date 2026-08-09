@@ -22,9 +22,11 @@ namespace Apache.Calcite.Extensions.Schema
         /// registered by <c>ViewTable.viewMacro</c> is not: the macro that call produces analyzes the
         /// definition through <c>MaterializedViewTable.MATERIALIZATION_CONNECTION</c>, a process-wide
         /// <c>DriverManager.getConnection("jdbc:calcite:")</c> whose configuration is Calcite's default, so
-        /// <c>fun</c>, <c>lex</c> and <c>conformance</c> are invisible to it and a function the connection
-        /// asked for fails inside a view. <see cref="ClrViewTableMacro"/> is that macro with the connection
-        /// left null, which is what makes Calcite read the real one; its remarks have the detail.
+        /// a function the connection asked for fails inside a view. <see cref="ClrViewTableMacro"/> is that
+        /// macro with the connection left null, which is what makes Calcite read the real one. What that
+        /// reaches is the catalog reader and the validator — <c>fun</c>, <c>conformance</c>,
+        /// <c>caseSensitive</c> and the like — and not the parser, which is Calcite's default for a view
+        /// definition either way; its remarks have the detail.
         ///
         /// <para>So <c>ViewTable.viewMacro</c> cannot be called here, and the obstacle is one line: all
         /// three of its overloads end in <c>new ViewTableMacro(...)</c>, naming the class rather than

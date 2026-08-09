@@ -350,12 +350,16 @@ namespace Apache.Calcite.Data.Tests
         /// <c>Schemas.analyzeView(MaterializedViewTable.MATERIALIZATION_CONNECTION, ...)</c>, and
         /// <c>Schemas.makeContext</c> builds its context from <c>connection.config()</c> — that connection
         /// being a <c>DriverManager.getConnection("jdbc:calcite:")</c> held in a <c>static final</c>, so its
-        /// configuration is the default one. Everything the connection string said about <c>fun</c>,
-        /// <c>lex</c> and <c>conformance</c> was invisible while a view was described, even though
-        /// <c>ClrPreparingStmt.expandView</c> used the real configuration when the view was later expanded
-        /// into a plan. Measured: this exact model threw
-        /// <c>No match found for function signature NVL</c> out of <c>apply</c>, so the view could not even
-        /// be described.
+        /// configuration is the default one. <c>CalcitePrepareImpl.parse_</c> builds the catalog reader and
+        /// the validator from that, so <c>fun</c>, <c>conformance</c> and <c>caseSensitive</c> were
+        /// invisible while a view was described, even though <c>ClrPreparingStmt.expandView</c> used the
+        /// real configuration when the view was later expanded into a plan. Measured: this exact model
+        /// threw <c>No match found for function signature NVL</c> out of <c>apply</c>, so the view could
+        /// not even be described.
+        ///
+        /// <para>Not <c>lex</c>, though — <c>parse_</c> parses with <c>createParser(sql)</c> and
+        /// <c>expandView</c> with <c>SqlParser.config()</c>, both Calcite's default, so a view definition's
+        /// quoting and casing never came from the connection and still do not.</para>
         ///
         /// <para>NVL is in Calcite's Oracle library and this connection asks for <c>standard,oracle</c>.
         /// The first half of the test is what makes the second meaningful — without it, a passing second

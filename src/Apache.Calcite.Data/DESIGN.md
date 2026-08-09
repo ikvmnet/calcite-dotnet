@@ -41,8 +41,12 @@ Three things carry Java names through this design and are not going away:
   `CalcitePrepare.DEFAULT_FACTORY` and `prepareSql` are never called.
 - **A model view is analysed under the connection's configuration, not Calcite's default.**
   `ViewTableMacro.apply` analyses a view through `MaterializedViewTable.MATERIALIZATION_CONNECTION`, so
-  `fun`, `lex` and `conformance` were invisible while a view was described and a function the
-  connection asked for failed inside a view definition. `Schemas.makeContext` already has the branch —
+  the catalog reader and the validator it builds got Calcite's default configuration, so `fun`,
+  `conformance`, `caseSensitive` and the rest were invisible while a view was described and a function
+  the connection asked for failed inside a view definition. (The *parser* is Calcite's default for a
+  view definition either way — `CalcitePrepareImpl.parse_` calls `createParser(sql)`, as
+  `ClrPreparingStmt.ParserConfig` does — so the quoting and casing a `lex` implies were never taken
+  from the connection and still are not.) `Schemas.makeContext` already has the branch —
   a null connection makes it read `CalcitePrepare.Dummy.peek()`, our own pushed context — so
   **`ClrViewTableMacro`** is `apply` again with null in place of the connection, reusing `ViewTable` and
   `ModifiableViewTable` through the base class's `protected` hooks. **`ClrModelHandler`** gets it in

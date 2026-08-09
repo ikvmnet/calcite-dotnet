@@ -16,11 +16,19 @@ namespace Apache.Calcite.Extensions.Schema
     /// <c>Schemas.analyzeView(MaterializedViewTable.MATERIALIZATION_CONNECTION, ...)</c>, and
     /// <c>Schemas.makeContext</c> takes the configuration, the type factory and the data context from
     /// whatever connection it is handed. That one is a <c>DriverManager.getConnection("jdbc:calcite:")</c>
-    /// held in a <c>static final</c>, so a view is described under Calcite's <i>default</i> configuration —
-    /// <c>fun</c>, <c>lex</c>, <c>conformance</c> and the rest of the connection string are invisible to it.
+    /// held in a <c>static final</c>, so a view is described under Calcite's <i>default</i> configuration.
     /// A function the connection asked for therefore works in a query and fails inside a view, which is a
     /// defect rather than a limitation: the same view expands correctly once
     /// <c>ClrPreparingStmt.expandView</c> gets it, so only the <i>description</i> is wrong.
+    ///
+    /// <para><b>What the configuration reaches, and what it does not.</b>
+    /// <c>CalcitePrepareImpl.parse_</c> builds the catalog reader and the validator from
+    /// <c>context.config()</c>, so <c>fun</c>, <c>conformance</c>, <c>caseSensitive</c>,
+    /// <c>lenientOperatorLookup</c> and <c>defaultNullCollation</c> are what this fixes. It does
+    /// <i>not</i> reach the parser: <c>parse_</c> calls <c>createParser(sql)</c> with the default
+    /// configuration, exactly as <c>ClrPreparingStmt.ParserConfig</c> does when the view is later
+    /// expanded. So the quoting and the casing a <c>lex</c> implies are Calcite's own inside a view
+    /// definition whichever macro holds it, and nothing here changes that.</para>
     ///
     /// <para><b>The fix is a branch Calcite already has.</b> <c>makeContext</c> reads
     /// <c>CalcitePrepare.Dummy.peek()</c> when the connection is null, and that is this provider's own
