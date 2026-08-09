@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
 
 using org.apache.calcite.avatica.util;
+using org.apache.calcite.jdbc;
 using org.apache.calcite.rel.type;
+using org.apache.calcite.schema;
 using org.apache.calcite.sql.parser;
 using org.apache.calcite.sql.type;
 
@@ -244,14 +247,11 @@ namespace Apache.Calcite.Data.Internal
                 if (subSchema is null)
                     continue;
 
-                var tableNames = subSchema.getTableNames().iterator();
-                while (tableNames.hasNext())
+                foreach (var (tableName, table) in TablesOf(subSchema))
                 {
-                    var tableName = (string)tableNames.next();
                     if (tableFilter is not null && !string.Equals(tableName, tableFilter, StringComparison.OrdinalIgnoreCase))
                         continue;
 
-                    var table = subSchema.getTable(tableName);
                     var tableType = table?.getJdbcTableType()?.jdbcName ?? "TABLE";
 
                     if (tableTypeFilter is not null && !string.Equals(tableType, tableTypeFilter, StringComparison.OrdinalIgnoreCase))
@@ -262,6 +262,40 @@ namespace Apache.Calcite.Data.Internal
             }
 
             return t;
+        }
+
+        /// <summary>
+        /// Returns every table of <paramref name="subSchema"/>, views included.
+        /// </summary>
+        /// <remarks>
+        /// <c>CalciteMetaImpl.tables(MetaSchema, LikePattern)</c>, which is two sequences concatenated
+        /// rather than one, and has to be: <b>a view is not a table.</b> Both routes to one register it as
+        /// a <c>TableMacro</c> taking no arguments — <c>ModelHandler.visit(JsonView)</c> calls
+        /// <c>schema.add(name, ViewTable.viewMacro(...))</c> and so does
+        /// <c>ServerDdlExecutor.execute(SqlCreateView, ...)</c> — and a macro goes in the schema's function
+        /// map. <c>getTableNames()</c> reads the table map and the underlying schema, so it never sees one,
+        /// whatever its own javadoc says.
+        ///
+        /// <para><c>getTablesBasedOnNullaryFunctions</c> is the other half, and it <i>expands</i> each view
+        /// to answer — <c>apply(ImmutableList.of())</c> per macro, which parses and validates the view's
+        /// SQL. So this is not a cheap enumeration and a view whose definition no longer resolves throws
+        /// here rather than returning nothing. Calcite's own metadata has both properties.</para>
+        /// </remarks>
+        static IEnumerable<(string Name, Table? Table)> TablesOf(SchemaPlus subSchema)
+        {
+            var tableNames = subSchema.getTableNames().iterator();
+            while (tableNames.hasNext())
+            {
+                var tableName = (string)tableNames.next();
+                yield return (tableName, subSchema.getTable(tableName));
+            }
+
+            var views = CalciteSchema.from(subSchema).getTablesBasedOnNullaryFunctions().entrySet().iterator();
+            while (views.hasNext())
+            {
+                var entry = (java.util.Map.Entry)views.next();
+                yield return ((string)entry.getKey(), (Table)entry.getValue());
+            }
         }
 
         /// <summary>
@@ -303,14 +337,11 @@ namespace Apache.Calcite.Data.Internal
                 if (subSchema is null)
                     continue;
 
-                var tableNames = subSchema.getTableNames().iterator();
-                while (tableNames.hasNext())
+                foreach (var (tableName, table) in TablesOf(subSchema))
                 {
-                    var tableName = (string)tableNames.next();
                     if (tableFilter is not null && !string.Equals(tableName, tableFilter, StringComparison.OrdinalIgnoreCase))
                         continue;
 
-                    var table = subSchema.getTable(tableName);
                     if (table is null)
                         continue;
 

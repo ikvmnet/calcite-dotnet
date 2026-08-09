@@ -1,4 +1,7 @@
 using System;
+using System.Data;
+using System.Linq;
+using System.Threading.Tasks;
 
 using Xunit;
 
@@ -18,6 +21,13 @@ namespace Apache.Calcite.Data.Tests
     /// in the model is a <c>ViewTable</c> built by <c>ModelHandler</c> at connection time, while
     /// <c>CREATE VIEW</c> is a DDL statement executed by <c>ServerDdlExecutor</c> against a live schema.
     /// Only the second needs the server parser.</para>
+    ///
+    /// <para><b>A view is not a table, and the metadata collections have to say so separately.</b> Both
+    /// routes register a view as a <c>TableMacro</c> of no arguments, which lands in the schema's function
+    /// map rather than its table map — so <c>getTableNames()</c> does not see one, and
+    /// <c>GetSchema("Tables")</c> listed no views at all until <c>CalciteSchemaInfo.TablesOf</c> started
+    /// concatenating <c>getTablesBasedOnNullaryFunctions()</c> the way <c>CalciteMetaImpl.tables</c> does.
+    /// Querying a view worked the whole time, which is why this needs its own tests.</para>
     /// </remarks>
     public class CalciteViewTests
     {
@@ -52,6 +62,36 @@ namespace Apache.Calcite.Data.Tests
                     "]}]}",
             Schema = "adhoc",
         };
+
+        /// <summary>
+        /// The other route to a view: a DDL statement against a live schema, which needs the server
+        /// parser exactly as <see cref="CalciteDdlTests"/> does.
+        /// </summary>
+        static readonly string ServerDdlConnectionString = new CalciteConnectionStringBuilder
+        {
+            Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
+            ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+            Schema = "adhoc",
+        };
+
+        /// <summary>
+        /// The server parser with no model, so DDL lands in the root schema.
+        /// </summary>
+        /// <remarks>
+        /// <c>ServerDdlExecutor.populate</c> — which is how <c>CREATE MATERIALIZED VIEW</c> and
+        /// <c>CREATE TABLE ... AS SELECT</c> load their rows — builds its <c>INSERT</c> against
+        /// <c>context.getRootSchema()</c> and nothing else, so a statement naming objects in a sub-schema
+        /// cannot resolve them. Upstream's own tests use a connection shaped like this one for the same
+        /// reason; see <see cref="Materialized_view_in_a_sub_schema_is_not_supported_upstream"/>.
+        /// </remarks>
+        static readonly string RootDdlConnectionString = new CalciteConnectionStringBuilder
+        {
+            ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+        };
+
+        // ------------------------------------------------------------------------------------------
+        // Querying a view
+        // ------------------------------------------------------------------------------------------
 
         [Fact]
         public void Model_view_should_be_queryable()
@@ -139,6 +179,93 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
+        /// <c>SELECT *</c> is expanded against the view's row type rather than the underlying table's.
+        /// </summary>
+        [Fact]
+        public void Star_over_a_view_should_expand_to_the_views_row_type()
+        {
+            using var c = new CalciteConnection(ViewModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT * FROM EMPS ORDER BY ID";
+
+            using var r = cmd.ExecuteReader();
+
+            Assert.Equal(3, r.FieldCount);
+            Assert.Equal("ID", r.GetName(0));
+            Assert.Equal("NAME", r.GetName(1));
+            Assert.Equal("DEPTNO", r.GetName(2));
+            Assert.True(r.Read());
+            Assert.Equal(10, r.GetInt32(0));
+        }
+
+        /// <summary>
+        /// A dynamic parameter in a predicate over a view: the parameter belongs to the outer query and
+        /// the view's own plan has none, so expansion has to keep the two apart.
+        /// </summary>
+        [Fact]
+        public void Parameterized_predicate_over_a_view_should_bind()
+        {
+            using var c = new CalciteConnection(ViewModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT NAME FROM EMPS WHERE ID = ?";
+            var p = cmd.CreateParameter();
+            p.Value = 20;
+            cmd.Parameters.Add(p);
+
+            using var r = cmd.ExecuteReader();
+
+            Assert.True(r.Read());
+            Assert.Equal("Bob", r.GetString(0));
+            Assert.False(r.Read());
+        }
+
+        [Fact]
+        public void ExecuteScalar_over_a_view_should_aggregate()
+        {
+            using var c = new CalciteConnection(ViewModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM EMPS";
+
+            Assert.Equal(3L, Convert.ToInt64(cmd.ExecuteScalar()));
+        }
+
+        [Fact]
+        public async Task Async_reader_over_a_view_should_return_the_same_rows()
+        {
+            using var c = new CalciteConnection(ViewModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT ID FROM EMPS ORDER BY ID";
+
+            using var r = await cmd.ExecuteReaderAsync();
+
+            Assert.True(await r.ReadAsync());
+            Assert.Equal(10, r.GetInt32(0));
+            Assert.True(await r.ReadAsync());
+            Assert.Equal(20, r.GetInt32(0));
+            Assert.True(await r.ReadAsync());
+            Assert.Equal(30, r.GetInt32(0));
+            Assert.False(await r.ReadAsync());
+        }
+
+        [Fact]
+        public void Explain_over_a_view_should_produce_a_plan()
+        {
+            using var c = new CalciteConnection(ViewModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "EXPLAIN PLAN FOR SELECT ID FROM EMPS";
+
+            using var r = cmd.ExecuteReader();
+
+            Assert.True(r.Read());
+            Assert.False(string.IsNullOrWhiteSpace(r.GetString(0)));
+        }
+
+        /// <summary>
         /// <c>JsonView.sql</c> accepts a list of strings, which are joined with newlines.
         /// </summary>
         [Fact]
@@ -159,15 +286,148 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The other route to a view: a DDL statement against a live schema, which needs the server
-        /// parser exactly as <see cref="CalciteDdlTests"/> does.
+        /// A view is expanded against the schema path it was <i>declared</i> with, not the connection's, so
+        /// one in another schema resolves its own tables and is reachable by a qualified name.
         /// </summary>
-        static readonly string ServerDdlConnectionString = new CalciteConnectionStringBuilder
+        [Fact]
+        public void View_in_another_schema_should_be_queryable_by_a_qualified_name()
         {
-            Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
-            ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
-            Schema = "adhoc",
-        };
+            var cs = new CalciteConnectionStringBuilder
+            {
+                Model =
+                    "inline:{\"version\":\"1.0\",\"defaultSchema\":\"main\",\"schemas\":[" +
+                    "{\"name\":\"main\"}," +
+                    "{\"name\":\"other\",\"tables\":[" +
+                        "{\"name\":\"SRC\",\"type\":\"view\",\"sql\":\"SELECT * FROM (VALUES (1), (2)) AS T(X)\"}," +
+                        "{\"name\":\"V\",\"type\":\"view\",\"sql\":\"SELECT X FROM SRC WHERE X = 2\"}" +
+                    "]}]}",
+                Schema = "main",
+            };
+
+            using var c = new CalciteConnection(cs.ToString());
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT X FROM \"other\".V";
+
+            using var r = cmd.ExecuteReader();
+
+            Assert.True(r.Read());
+            Assert.Equal(2, r.GetInt32(0));
+            Assert.False(r.Read());
+        }
+
+        /// <summary>
+        /// A view whose definition does not resolve fails when it is expanded, which is at query time
+        /// rather than at connection time — <c>ModelHandler</c> registers a macro without applying it.
+        /// </summary>
+        [Fact]
+        public void View_over_a_missing_table_should_fail_when_it_is_expanded()
+        {
+            var cs = new CalciteConnectionStringBuilder
+            {
+                Model =
+                    "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"," +
+                    "\"tables\":[{\"name\":\"BAD\",\"type\":\"view\",\"sql\":\"SELECT * FROM NO_SUCH_TABLE\"}]}]}",
+                Schema = "adhoc",
+            };
+
+            using var c = new CalciteConnection(cs.ToString());
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT * FROM BAD";
+
+            Assert.ThrowsAny<Exception>(() => cmd.ExecuteReader());
+        }
+
+        // ------------------------------------------------------------------------------------------
+        // Views in the metadata collections
+        // ------------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// A model view is listed by <c>GetSchema("Tables")</c>, typed VIEW.
+        /// </summary>
+        /// <remarks>
+        /// The type comes from <c>Table.getJdbcTableType().jdbcName</c>, as <c>CalciteMetaTable</c>'s does.
+        /// The listing itself comes from <c>getTablesBasedOnNullaryFunctions()</c>, because a view is in
+        /// the function map and <c>getTableNames()</c> reads the table map.
+        /// </remarks>
+        [Fact]
+        public void GetSchema_Tables_should_list_a_model_view_as_a_view()
+        {
+            using var c = new CalciteConnection(ViewModelConnectionString);
+            c.Open();
+
+            var t = c.GetSchema("Tables");
+            var rows = t.Rows.Cast<DataRow>()
+                .Select(r => ((string)r["TABLE_SCHEMA"], (string)r["TABLE_NAME"], (string)r["TABLE_TYPE"]))
+                .ToArray();
+
+            Assert.Contains(("adhoc", "EMPS", "VIEW"), rows);
+            Assert.Contains(("adhoc", "EMPS_IN_3", "VIEW"), rows);
+            Assert.Contains(("adhoc", "TWO_LINES", "VIEW"), rows);
+        }
+
+        /// <summary>
+        /// The TableType restriction filters views the same way it filters tables.
+        /// </summary>
+        [Fact]
+        public void GetSchema_Tables_should_honour_the_table_type_restriction_for_views()
+        {
+            using var c = new CalciteConnection(ViewModelConnectionString);
+            c.Open();
+
+            var t = c.GetSchema("Tables", [null, null, null, "VIEW"]);
+            var names = t.Rows.Cast<DataRow>().Select(r => (string)r["TABLE_NAME"]).ToArray();
+
+            Assert.Contains("EMPS", names);
+            Assert.All(t.Rows.Cast<DataRow>(), r => Assert.Equal("VIEW", (string)r["TABLE_TYPE"]));
+        }
+
+        /// <summary>
+        /// A view's columns come from its expanded row type, so listing them expands the view.
+        /// </summary>
+        [Fact]
+        public void GetSchema_Columns_should_list_a_model_views_columns()
+        {
+            using var c = new CalciteConnection(ViewModelConnectionString);
+            c.Open();
+
+            var t = c.GetSchema("Columns", [null, null, "EMPS", null]);
+            var columns = t.Rows.Cast<DataRow>()
+                .Select(r => ((string)r["COLUMN_NAME"], (string)r["DATA_TYPE"], (int)r["ORDINAL_POSITION"]))
+                .ToArray();
+
+            Assert.Equal([("ID", "INTEGER", 1), ("NAME", "VARCHAR", 2), ("DEPTNO", "INTEGER", 3)], columns);
+        }
+
+        /// <summary>
+        /// A view created by DDL is registered the same way a model view is — as a macro — so it has to be
+        /// listed by the same route.
+        /// </summary>
+        [Fact]
+        public void GetSchema_Tables_should_list_a_created_view_as_a_view()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"metasrc\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE VIEW \"metaview\" AS SELECT \"id\" FROM \"metasrc\"";
+            cmd.ExecuteNonQuery();
+
+            var t = c.GetSchema("Tables");
+            var rows = t.Rows.Cast<DataRow>()
+                .Select(r => ((string)r["TABLE_NAME"], (string)r["TABLE_TYPE"]))
+                .ToArray();
+
+            Assert.Contains(("metasrc", "TABLE"), rows);
+            Assert.Contains(("metaview", "VIEW"), rows);
+        }
+
+        // ------------------------------------------------------------------------------------------
+        // CREATE / REPLACE / DROP VIEW
+        // ------------------------------------------------------------------------------------------
 
         [Fact]
         public void Created_view_should_be_queryable()
@@ -193,6 +453,410 @@ namespace Apache.Calcite.Data.Tests
             Assert.True(r.Read());
             Assert.Equal(3, r.GetInt32(0));
             Assert.False(r.Read());
+        }
+
+        /// <summary>
+        /// A view holds its definition, not its rows, so a row inserted after the view was created is in
+        /// it. This is what separates a view from the materialized view below.
+        /// </summary>
+        [Fact]
+        public void Created_view_should_see_rows_inserted_after_it_was_created()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"latesrc\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE VIEW \"lateview\" AS SELECT \"id\" FROM \"latesrc\"";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "INSERT INTO \"latesrc\" VALUES (42)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "SELECT \"id\" FROM \"lateview\"";
+            using var r = cmd.ExecuteReader();
+
+            Assert.True(r.Read());
+            Assert.Equal(42, r.GetInt32(0));
+            Assert.False(r.Read());
+        }
+
+        /// <summary>
+        /// A view's column list renames the query's columns, which <c>ServerDdlExecutor</c> does by
+        /// rewriting the query before it ever becomes a macro.
+        /// </summary>
+        [Fact]
+        public void Created_view_with_a_column_list_should_rename_its_columns()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"colsrc\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "INSERT INTO \"colsrc\" VALUES (5)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE VIEW \"colview\" (\"renamed\") AS SELECT \"id\" FROM \"colsrc\"";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "SELECT \"renamed\" FROM \"colview\"";
+            using var r = cmd.ExecuteReader();
+
+            Assert.Equal("renamed", r.GetName(0));
+            Assert.True(r.Read());
+            Assert.Equal(5, r.GetInt32(0));
+        }
+
+        /// <summary>
+        /// A view over a join and an aggregate, which is the case where expansion produces a subtree rather
+        /// than a scan and the outer query's own aggregate has to sit on top of it.
+        /// </summary>
+        [Fact]
+        public void Created_view_over_a_join_and_an_aggregate_should_be_queryable()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"joina\" (\"id\" INTEGER NOT NULL, \"g\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE TABLE \"joinb\" (\"g\" INTEGER NOT NULL, \"nm\" VARCHAR(10) NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "INSERT INTO \"joina\" VALUES (1, 7), (2, 7), (3, 8)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "INSERT INTO \"joinb\" VALUES (7, 'seven'), (8, 'eight')";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText =
+                "CREATE VIEW \"joinview\" AS SELECT \"b\".\"nm\" AS \"nm\", COUNT(*) AS \"n\" " +
+                "FROM \"joina\" \"a\" JOIN \"joinb\" \"b\" ON \"a\".\"g\" = \"b\".\"g\" GROUP BY \"b\".\"nm\"";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "SELECT \"nm\", \"n\" FROM \"joinview\" WHERE \"n\" > 1";
+            using var r = cmd.ExecuteReader();
+
+            Assert.True(r.Read());
+            Assert.Equal("seven", r.GetString(0));
+            Assert.Equal(2L, r.GetInt64(1));
+            Assert.False(r.Read());
+        }
+
+        /// <summary>
+        /// <c>CREATE VIEW</c> over a name that is already a nullary function is an error without REPLACE.
+        /// </summary>
+        [Fact]
+        public void Creating_a_view_twice_should_fail_without_replace()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"dupsrc\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE VIEW \"dupview\" AS SELECT \"id\" FROM \"dupsrc\"";
+            cmd.ExecuteNonQuery();
+
+            Assert.ThrowsAny<Exception>(() => cmd.ExecuteNonQuery());
+        }
+
+        [Fact]
+        public void Create_or_replace_view_should_redefine_the_view()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"repsrc\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "INSERT INTO \"repsrc\" VALUES (1), (2)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE VIEW \"repview\" AS SELECT \"id\" FROM \"repsrc\" WHERE \"id\" = 1";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE OR REPLACE VIEW \"repview\" AS SELECT \"id\" FROM \"repsrc\" WHERE \"id\" = 2";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "SELECT \"id\" FROM \"repview\"";
+            using var r = cmd.ExecuteReader();
+
+            Assert.True(r.Read());
+            Assert.Equal(2, r.GetInt32(0));
+            Assert.False(r.Read());
+        }
+
+        [Fact]
+        public void Dropped_view_should_no_longer_resolve()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"dropsrc\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE VIEW \"dropview\" AS SELECT \"id\" FROM \"dropsrc\"";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "DROP VIEW \"dropview\"";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "SELECT \"id\" FROM \"dropview\"";
+            Assert.ThrowsAny<Exception>(() => cmd.ExecuteReader());
+        }
+
+        /// <summary>
+        /// A dropped view is also out of the metadata, which is a separate lookup from the one the
+        /// validator uses.
+        /// </summary>
+        [Fact]
+        public void Dropped_view_should_no_longer_be_listed()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"gonesrc\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE VIEW \"goneview\" AS SELECT \"id\" FROM \"gonesrc\"";
+            cmd.ExecuteNonQuery();
+
+            var before = c.GetSchema("Tables").Rows.Cast<DataRow>().Select(r => (string)r["TABLE_NAME"]).ToArray();
+            Assert.Contains("goneview", before);
+
+            cmd.CommandText = "DROP VIEW \"goneview\"";
+            cmd.ExecuteNonQuery();
+
+            var after = c.GetSchema("Tables").Rows.Cast<DataRow>().Select(r => (string)r["TABLE_NAME"]).ToArray();
+            Assert.DoesNotContain("goneview", after);
+        }
+
+        [Fact]
+        public void Dropping_a_missing_view_should_succeed_with_if_exists()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "DROP VIEW IF EXISTS \"neverexisted\"";
+
+            Assert.Null(Record.Exception(() => cmd.ExecuteNonQuery()));
+        }
+
+        [Fact]
+        public void Dropping_a_missing_view_should_fail_without_if_exists()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "DROP VIEW \"neverexisted\"";
+
+            Assert.ThrowsAny<Exception>(() => cmd.ExecuteNonQuery());
+        }
+
+        [Fact]
+        public void View_created_in_the_root_schema_should_be_queryable()
+        {
+            using var c = new CalciteConnection(RootDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"rootsrc\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "INSERT INTO \"rootsrc\" VALUES (9)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE VIEW \"rootview\" AS SELECT \"id\" FROM \"rootsrc\"";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "SELECT \"id\" FROM \"rootview\"";
+            using var r = cmd.ExecuteReader();
+
+            Assert.True(r.Read());
+            Assert.Equal(9, r.GetInt32(0));
+            Assert.False(r.Read());
+        }
+
+        // ------------------------------------------------------------------------------------------
+        // Writing through a view
+        // ------------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// <c>ServerDdlExecutor</c> always builds its macro with <c>modifiable = false</c>, so a view it
+        /// created is a plain <c>ViewTable</c> and not a <c>ModifiableView</c>. An INSERT into one is
+        /// rejected by the validator.
+        /// </summary>
+        [Fact]
+        public void Insert_into_a_created_view_should_be_rejected()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"rosrc\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE VIEW \"roview\" AS SELECT \"id\" FROM \"rosrc\"";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "INSERT INTO \"roview\" VALUES (1)";
+            Assert.ThrowsAny<Exception>(() => cmd.ExecuteNonQuery());
+        }
+
+        /// <summary>
+        /// A modifiable view does accept an INSERT, and fills the columns its own WHERE clause constrains.
+        /// </summary>
+        /// <remarks>
+        /// There is no SQL route to one: <c>ServerDdlExecutor</c> hard-codes <c>modifiable = false</c> and a
+        /// model view asking for <c>modifiable</c> can only sit over whatever the model can declare. So the
+        /// macro is registered through the schema SPI, over a table <c>CREATE TABLE</c> made — that being a
+        /// <c>MutableArrayTable</c>, which is the <c>ModifiableTable</c> the view needs underneath. This is
+        /// the one test here that reaches Calcite through <see cref="CalciteConnection.RootSchema"/> rather
+        /// than through SQL, because that is the only way in.
+        /// </remarks>
+        [Fact]
+        public void Insert_into_a_modifiable_view_should_write_through_to_its_table()
+        {
+            using var c = new CalciteConnection(RootDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"modsrc\" (\"id\" INTEGER NOT NULL, \"g\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+
+            var viewPath = new java.util.ArrayList();
+            viewPath.add("modview");
+            c.RootSchema.add("modview", org.apache.calcite.schema.impl.ViewTable.viewMacro(
+                c.RootSchema,
+                "SELECT \"id\" FROM \"modsrc\" WHERE \"g\" = 7",
+                new java.util.ArrayList(),
+                viewPath,
+                java.lang.Boolean.TRUE));
+
+            cmd.CommandText = "INSERT INTO \"modview\" VALUES (1)";
+            cmd.ExecuteNonQuery();
+
+            // the view's constraint supplies "g", which the INSERT never mentioned
+            cmd.CommandText = "SELECT \"id\", \"g\" FROM \"modsrc\"";
+            using var r = cmd.ExecuteReader();
+
+            Assert.True(r.Read());
+            Assert.Equal(1, r.GetInt32(0));
+            Assert.Equal(7, r.GetInt32(1));
+            Assert.False(r.Read());
+        }
+
+        // ------------------------------------------------------------------------------------------
+        // Materialized views
+        // ------------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// A materialized view is a real table holding a snapshot, and loading it needs a
+        /// <c>RelRunner</c>: <c>ServerDdlExecutor.populate</c> builds an INSERT and asks the prepare
+        /// context to run the plan. <c>PrepareContext.getRelRunner</c> threw until
+        /// <c>ClrRelRunner</c> was written, so the table was created and left empty — or rather, the
+        /// statement failed after the table had already been added to the schema.
+        /// </summary>
+        [Fact]
+        public void Created_materialized_view_should_hold_its_rows()
+        {
+            using var c = new CalciteConnection(RootDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"mvsrc\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "INSERT INTO \"mvsrc\" VALUES (1), (2)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE MATERIALIZED VIEW \"mv\" AS SELECT \"id\" FROM \"mvsrc\"";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "SELECT \"id\" FROM \"mv\" ORDER BY \"id\"";
+            using var r = cmd.ExecuteReader();
+
+            Assert.True(r.Read());
+            Assert.Equal(1, r.GetInt32(0));
+            Assert.True(r.Read());
+            Assert.Equal(2, r.GetInt32(0));
+            Assert.False(r.Read());
+        }
+
+        /// <summary>
+        /// A materialized view is a snapshot: a row written to the source afterwards is not in it. This is
+        /// the difference from <see cref="Created_view_should_see_rows_inserted_after_it_was_created"/>,
+        /// and it is also why the row count matters — an empty materialization would pass a test that only
+        /// checked the query planned.
+        /// </summary>
+        [Fact]
+        public void Materialized_view_should_not_see_later_rows()
+        {
+            using var c = new CalciteConnection(RootDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"snapsrc\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "INSERT INTO \"snapsrc\" VALUES (1)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE MATERIALIZED VIEW \"snapmv\" AS SELECT \"id\" FROM \"snapsrc\"";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "INSERT INTO \"snapsrc\" VALUES (2)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "SELECT COUNT(*) FROM \"snapmv\"";
+            Assert.Equal(1L, Convert.ToInt64(cmd.ExecuteScalar()));
+
+            cmd.CommandText = "SELECT COUNT(*) FROM \"snapsrc\"";
+            Assert.Equal(2L, Convert.ToInt64(cmd.ExecuteScalar()));
+        }
+
+        /// <summary>
+        /// A materialized view is dropped as a table, not as a view — <c>ServerDdlExecutor</c> removes it
+        /// from the table map and deregisters its <c>MaterializationKey</c>.
+        /// </summary>
+        [Fact]
+        public void Dropped_materialized_view_should_no_longer_resolve()
+        {
+            using var c = new CalciteConnection(RootDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"dropmvsrc\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "INSERT INTO \"dropmvsrc\" VALUES (1)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE MATERIALIZED VIEW \"dropmv\" AS SELECT \"id\" FROM \"dropmvsrc\"";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "DROP MATERIALIZED VIEW \"dropmv\"";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "SELECT \"id\" FROM \"dropmv\"";
+            Assert.ThrowsAny<Exception>(() => cmd.ExecuteReader());
+        }
+
+        /// <summary>
+        /// A materialized view cannot be created in a sub-schema, and that is Calcite's limitation rather
+        /// than this project's.
+        /// </summary>
+        /// <remarks>
+        /// <c>ServerDdlExecutor.populate</c> plans its INSERT through a <c>FrameworkConfig</c> whose default
+        /// schema is <c>context.getRootSchema().plus()</c> — the root, unconditionally. So neither the new
+        /// table nor the source table of the query resolves when either lives one level down, and the
+        /// statement fails at validation. Upstream never sees it: <c>ServerTest.connect()</c> opens a
+        /// connection with no model, so everything it creates is in the root schema.
+        ///
+        /// <para>This is asserted rather than skipped so that a fix upstream shows up here as a failure.
+        /// The fix is upstream's to make; there is nothing on this side to change, because
+        /// <c>getRootSchema()</c> has to return the root.</para>
+        /// </remarks>
+        [Fact]
+        public void Materialized_view_in_a_sub_schema_is_not_supported_upstream()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"submvsrc\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "INSERT INTO \"submvsrc\" VALUES (1)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "CREATE MATERIALIZED VIEW \"submv\" AS SELECT \"id\" FROM \"submvsrc\"";
+            var ex = Assert.ThrowsAny<Exception>(() => cmd.ExecuteNonQuery());
+
+            Assert.Contains("not found", ex.ToString(), StringComparison.OrdinalIgnoreCase);
         }
 
     }

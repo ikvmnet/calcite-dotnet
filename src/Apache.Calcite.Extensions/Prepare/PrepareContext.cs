@@ -92,9 +92,21 @@ namespace Apache.Calcite.Extensions.Prepare
             return new StatementDataContext(_rootSchema.plus(), _typeFactory, new AtomicBoolean(false), 0, [], null);
         }
 
+        /// <summary>
+        /// Returns the runner Calcite uses to execute a plan it built itself.
+        /// </summary>
+        /// <remarks>
+        /// <c>CalciteConnectionImpl.ContextImpl.getRelRunner</c>, which unwraps the connection — the
+        /// connection <i>is</i> the runner there. There is no connection here, so this is
+        /// <see cref="ClrRelRunner"/>, which plans through <c>ClrPrepareImpl.PrepareRel</c>: the same
+        /// <c>prepare2_</c> branch Calcite's runner uses.
+        ///
+        /// <para>The one caller is <c>ServerDdlExecutor.populate</c>, behind
+        /// <c>CREATE MATERIALIZED VIEW</c> and <c>CREATE TABLE ... AS SELECT</c>.</para>
+        /// </remarks>
         public RelRunner getRelRunner()
         {
-            throw new UnsupportedOperationException();
+            return new ClrRelRunner(this);
         }
     }
 

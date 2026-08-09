@@ -492,6 +492,46 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(1L, reader.GetInt64(0));
         }
 
+        /// <summary>
+        /// <c>CREATE TABLE ... AS SELECT</c> loads its rows through <c>ServerDdlExecutor.populate</c>,
+        /// which asks the prepare context for a <c>RelRunner</c> and runs an INSERT it built itself.
+        /// </summary>
+        /// <remarks>
+        /// The same path as <c>CREATE MATERIALIZED VIEW</c>; see the materialized-view tests in
+        /// <see cref="CalciteViewTests"/> for why it needs the root schema. Before
+        /// <c>PrepareContext.getRelRunner</c> was implemented, both statements threw
+        /// <c>UnsupportedOperationException</c> — after the table had been added to the schema.
+        /// </remarks>
+        [Fact]
+        public void CreateTableAsSelect_should_copy_the_rows()
+        {
+            var rootDdl = new CalciteConnectionStringBuilder
+            {
+                ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+            };
+
+            using var c = new CalciteConnection(rootDdl);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"ctas_src\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "INSERT INTO \"ctas_src\" VALUES (3), (4)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "CREATE TABLE \"ctas_dst\" AS SELECT \"id\" FROM \"ctas_src\"";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "SELECT \"id\" FROM \"ctas_dst\" ORDER BY \"id\"";
+            using var reader2 = cmd.ExecuteReader();
+            Assert.True(reader2.Read());
+            Assert.Equal(3, reader2.GetInt32(0));
+            Assert.True(reader2.Read());
+            Assert.Equal(4, reader2.GetInt32(0));
+            Assert.False(reader2.Read());
+        }
+
     }
 
 }
