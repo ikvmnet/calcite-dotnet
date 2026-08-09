@@ -401,6 +401,70 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
+        /// A model whose schema holds one view that expands and one that cannot.
+        /// </summary>
+        static readonly string BrokenViewModelConnectionString = new CalciteConnectionStringBuilder
+        {
+            Model =
+                "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"," +
+                "\"tables\":[" +
+                    "{\"name\":\"GOOD\",\"type\":\"view\",\"sql\":\"SELECT * FROM (VALUES (1)) AS T(X)\"}," +
+                    "{\"name\":\"BROKEN\",\"type\":\"view\",\"sql\":\"SELECT * FROM NO_SUCH_TABLE\"}" +
+                "]}]}",
+            Schema = "adhoc",
+        };
+
+        /// <summary>
+        /// Naming one view must not expand the others.
+        /// </summary>
+        /// <remarks>
+        /// A view is expanded to be described — <c>ViewTableMacro.apply</c> runs the whole front end over
+        /// its SQL — so where the restriction is applied is not a detail. Applied after, one unresolvable
+        /// view in a schema breaks every metadata call that touches that schema, including calls about
+        /// unrelated tables. <c>BROKEN</c> is here to fail if the ordering regresses; nothing in this test
+        /// mentions it.
+        /// </remarks>
+        [Fact]
+        public void GetSchema_Columns_for_one_view_should_not_expand_the_others()
+        {
+            using var c = new CalciteConnection(BrokenViewModelConnectionString);
+            c.Open();
+
+            var t = c.GetSchema("Columns", [null, null, "GOOD", null]);
+            var names = t.Rows.Cast<DataRow>().Select(r => (string)r["COLUMN_NAME"]).ToArray();
+
+            Assert.Equal(["X"], names);
+        }
+
+        [Fact]
+        public void GetSchema_Tables_for_one_view_should_not_expand_the_others()
+        {
+            using var c = new CalciteConnection(BrokenViewModelConnectionString);
+            c.Open();
+
+            var t = c.GetSchema("Tables", [null, null, "GOOD", null]);
+            var rows = t.Rows.Cast<DataRow>()
+                .Select(r => ((string)r["TABLE_NAME"], (string)r["TABLE_TYPE"]))
+                .ToArray();
+
+            Assert.Equal([("GOOD", "VIEW")], rows);
+        }
+
+        /// <summary>
+        /// The corollary, stated so it is not mistaken for an accident: an <i>unrestricted</i> listing does
+        /// expand every view, because <c>TABLE_TYPE</c> comes from the expanded table, so a schema holding
+        /// a view that no longer resolves cannot be listed whole.
+        /// </summary>
+        [Fact]
+        public void GetSchema_Tables_unrestricted_expands_every_view()
+        {
+            using var c = new CalciteConnection(BrokenViewModelConnectionString);
+            c.Open();
+
+            Assert.ThrowsAny<Exception>(() => c.GetSchema("Tables"));
+        }
+
+        /// <summary>
         /// A view created by DDL is registered the same way a model view is — as a macro — so it has to be
         /// listed by the same route.
         /// </summary>

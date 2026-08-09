@@ -257,10 +257,17 @@ type, the value and the SQL type. `BigDecimalConverter` carries `java.math.BigDe
   as a `TableMacro` of no arguments — `ModelHandler.visit(JsonView)` and
   `ServerDdlExecutor.execute(SqlCreateView, …)` both call `schema.add(name, ViewTable.viewMacro(…))` —
   and that lands in the schema's function map, so `getTableNames()` never returns one whatever its
-  javadoc says. `TablesOf` adds `getTablesBasedOnNullaryFunctions()`, as `CalciteMetaImpl.tables`
-  does. That call *expands* every view to answer, so listing a schema is not cheap and a view whose
-  definition no longer resolves throws rather than being skipped; Calcite's metadata has both
-  properties.
+  javadoc says. `TablesOf` reads the function map for names that resolve to a nullary `TableMacro`.
+  **A view is expanded to be described, so the name restriction is applied before the expansion.**
+  `ViewTableMacro.apply` opens the materialization connection and parses, validates and converts the
+  view's SQL — the whole front end, per view. `CalciteMetaImpl.tables` concatenates
+  `getTablesBasedOnNullaryFunctions()`, which builds that map eagerly for the whole schema; this asks
+  `getTableBasedOnNullaryFunction` for the names a caller actually gave. That divergence is
+  deliberate: `CalciteMetaImpl` is Avatica's JDBC metadata and this is not a port of it, so there is
+  no behaviour to reproduce, only a schema SPI to read correctly. An *unrestricted* listing is still
+  eager, because `TABLE_TYPE` comes from `Table.getJdbcTableType()` and typing a view means expanding
+  it; short-cutting that from the macro's class would be a guess, since `ViewTableMacro.apply` is
+  overridable and `MaterializedViewTable.MaterializedViewTableMacro` overrides it.
 - `CalciteTypeMap` maps between `DbType` and CLR types for the parameter surface. Result columns do
   not go through it; `CalciteResultColumns` maps those from the Avatica metadata.
 

@@ -247,11 +247,8 @@ namespace Apache.Calcite.Data.Internal
                 if (subSchema is null)
                     continue;
 
-                foreach (var (tableName, table) in TablesOf(subSchema))
+                foreach (var (tableName, table) in TablesOf(subSchema, tableFilter))
                 {
-                    if (tableFilter is not null && !string.Equals(tableName, tableFilter, StringComparison.OrdinalIgnoreCase))
-                        continue;
-
                     var tableType = table?.getJdbcTableType()?.jdbcName ?? "TABLE";
 
                     if (tableTypeFilter is not null && !string.Equals(tableType, tableTypeFilter, StringComparison.OrdinalIgnoreCase))
@@ -265,37 +262,91 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns every table of <paramref name="subSchema"/>, views included.
+        /// Returns the tables of <paramref name="subSchema"/> whose name passes
+        /// <paramref name="nameFilter"/>, views included.
         /// </summary>
         /// <remarks>
-        /// <c>CalciteMetaImpl.tables(MetaSchema, LikePattern)</c>, which is two sequences concatenated
-        /// rather than one, and has to be: <b>a view is not a table.</b> Both routes to one register it as
-        /// a <c>TableMacro</c> taking no arguments — <c>ModelHandler.visit(JsonView)</c> calls
-        /// <c>schema.add(name, ViewTable.viewMacro(...))</c> and so does
-        /// <c>ServerDdlExecutor.execute(SqlCreateView, ...)</c> — and a macro goes in the schema's function
-        /// map. <c>getTableNames()</c> reads the table map and the underlying schema, so it never sees one,
-        /// whatever its own javadoc says.
+        /// Two sequences rather than one, and it has to be: <b>a view is not a table.</b> Both routes to
+        /// one register it as a <c>TableMacro</c> taking no arguments — <c>ModelHandler.visit(JsonView)</c>
+        /// calls <c>schema.add(name, ViewTable.viewMacro(...))</c> for a model's <c>"type":"view"</c>, and
+        /// <c>ServerDdlExecutor.execute(SqlCreateView, ...)</c> does the same for <c>CREATE VIEW</c> — so a
+        /// view lands in the schema's function map. <c>getTableNames()</c> reads the table map and the
+        /// underlying schema, so it never sees one, whatever its own javadoc says.
         ///
-        /// <para><c>getTablesBasedOnNullaryFunctions</c> is the other half, and it <i>expands</i> each view
-        /// to answer — <c>apply(ImmutableList.of())</c> per macro, which parses and validates the view's
-        /// SQL. So this is not a cheap enumeration and a view whose definition no longer resolves throws
-        /// here rather than returning nothing. Calcite's own metadata has both properties.</para>
+        /// <para><b>A view is expanded to answer anything about it, so the filter is applied before the
+        /// expansion rather than after.</b> Turning a macro into a table is
+        /// <c>ViewTableMacro.apply(ImmutableList.of())</c>, which opens the materialization connection and
+        /// parses, validates and converts the view's SQL — the whole front end, per view. Calcite's
+        /// <c>CalciteMetaImpl.tables</c> concatenates <c>getTablesBasedOnNullaryFunctions()</c>, which
+        /// builds that map eagerly for the entire schema; this asks
+        /// <c>getTableBasedOnNullaryFunction</c> for the ones a caller actually named. That is a
+        /// divergence, and a deliberate one: <c>CalciteMetaImpl</c> is Avatica's JDBC metadata and this is
+        /// not a port of it, so there is no behaviour to reproduce — only a schema SPI to read correctly.
+        /// Expanding every view in a schema to answer <c>GetSchema("Columns", …, "ONE_TABLE", …)</c> made
+        /// one unresolvable view break every metadata call that touched its schema.</para>
+        ///
+        /// <para>What remains eager is an <i>unrestricted</i> listing: <c>TABLE_TYPE</c> comes from
+        /// <c>Table.getJdbcTableType()</c>, so a view has to be expanded to be typed. Short-cutting that
+        /// from the macro's class would be a guess — <c>ViewTableMacro.apply</c> is overridable and
+        /// <c>MaterializedViewTable.MaterializedViewTableMacro</c> overrides it — and a wrong
+        /// <c>TABLE_TYPE</c> is worse than a slow one.</para>
         /// </remarks>
-        static IEnumerable<(string Name, Table? Table)> TablesOf(SchemaPlus subSchema)
+        static IEnumerable<(string Name, Table? Table)> TablesOf(SchemaPlus subSchema, string? nameFilter)
         {
             var tableNames = subSchema.getTableNames().iterator();
             while (tableNames.hasNext())
             {
                 var tableName = (string)tableNames.next();
+                if (!MatchesName(tableName, nameFilter))
+                    continue;
+
                 yield return (tableName, subSchema.getTable(tableName));
             }
 
-            var views = CalciteSchema.from(subSchema).getTablesBasedOnNullaryFunctions().entrySet().iterator();
-            while (views.hasNext())
+            var schema = CalciteSchema.from(subSchema);
+            foreach (var viewName in ViewNamesOf(schema))
             {
-                var entry = (java.util.Map.Entry)views.next();
-                yield return ((string)entry.getKey(), (Table)entry.getValue());
+                if (!MatchesName(viewName, nameFilter))
+                    continue;
+
+                // the name came from this schema's own function names, so the lookup is exact
+                var entry = schema.getTableBasedOnNullaryFunction(viewName, true);
+                if (entry is not null)
+                    yield return (viewName, entry.getTable());
             }
+        }
+
+        /// <summary>
+        /// Returns the names in <paramref name="schema"/> that resolve to a table macro of no arguments.
+        /// </summary>
+        /// <remarks>
+        /// The names <c>getTablesBasedOnNullaryFunctions</c> would key its map by, without applying any of
+        /// them. <c>getFunctionNames</c> covers the explicit and the implicit alike, and the two tests are
+        /// the ones that method makes before it calls <c>apply</c>.
+        /// </remarks>
+        static IEnumerable<string> ViewNamesOf(CalciteSchema schema)
+        {
+            var names = schema.getFunctionNames().iterator();
+            while (names.hasNext())
+            {
+                var name = (string)names.next();
+
+                var functions = schema.getFunctions(name, true).iterator();
+                while (functions.hasNext())
+                {
+                    if (functions.next() is TableMacro macro && macro.getParameters().isEmpty())
+                    {
+                        yield return name;
+                        break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>Applies an ADO.NET name restriction, which is absent when <see langword="null"/>.</summary>
+        static bool MatchesName(string name, string? filter)
+        {
+            return filter is null || string.Equals(name, filter, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -337,11 +388,8 @@ namespace Apache.Calcite.Data.Internal
                 if (subSchema is null)
                     continue;
 
-                foreach (var (tableName, table) in TablesOf(subSchema))
+                foreach (var (tableName, table) in TablesOf(subSchema, tableFilter))
                 {
-                    if (tableFilter is not null && !string.Equals(tableName, tableFilter, StringComparison.OrdinalIgnoreCase))
-                        continue;
-
                     if (table is null)
                         continue;
 
