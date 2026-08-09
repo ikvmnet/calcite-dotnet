@@ -86,10 +86,13 @@ namespace Apache.Calcite.Extensions.Prepare
         /// is. Parsing, DDL, the statement kind, the parameter and column metadata and the cursor factory
         /// are shared, and this is the same method for both rather than a second copy of it.
         ///
-        /// <para><b>An asynchronous plan has no fallback.</b> That convention has no converter to any other,
-        /// so a query touching a table that cannot produce rows asynchronously does not plan and the planner
-        /// throws. A caller that wants the synchronous plan in that case asks for it, rather than being
-        /// handed one that would block a thread per row while looking asynchronous.</para>
+        /// <para><b>Neither plan can fall through to the other convention here</b>, and that is a matter of
+        /// which rules are registered rather than of what exists. <see cref="CreatePlanner"/> puts one
+        /// convention's rules on the planner and not the other's, so although a converter exists in each
+        /// direction, no node of the other convention is ever produced for one to match. A query touching a
+        /// table that cannot produce rows asynchronously therefore does not plan asynchronously — the planner
+        /// throws, rather than the caller being handed a plan that would block a thread per row while looking
+        /// asynchronous. A caller that wants the synchronous plan asks for it.</para>
         /// </remarks>
         public ClrSignature Prepare(CalcitePrepare.Context context, string sql, java.lang.reflect.Type elementType, long maxRowCount, bool async)
         {

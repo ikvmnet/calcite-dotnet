@@ -35,11 +35,13 @@ namespace Apache.Calcite.Data.Internal
         /// consumer that knows nothing but the ADO.NET interface calls it, and a provider whose reader
         /// throws there is not one.
         ///
-        /// <para>This is not the sync-over-async the convention refuses. That rule is about what a plan
-        /// does inside itself, where a converter would insert blocking nobody chose; a caller reaching for
-        /// <c>Read</c> on a reader they asked to be asynchronous is choosing it in the open. The usual
-        /// caution applies -- a synchronization context can deadlock on it -- and <see cref="ReadAsync"/>
-        /// is how to avoid that.</para>
+        /// <para>This is not the sync-over-async the surface refuses, and the line is about who chose. A
+        /// plan can block inside itself too -- <c>ClrAsyncEnumerableToClrEnumerableConverter</c> does, once
+        /// per row -- and what makes that refusable is that the planner would be choosing it for a caller
+        /// who could not see it, which is why the prepare pipeline never registers the rules that would put
+        /// one on a plan. A caller reaching for <c>Read</c> on a reader they asked to be asynchronous is
+        /// choosing it in the open. The usual caution applies -- a synchronization context can deadlock on
+        /// it -- and <see cref="ReadAsync"/> is how to avoid that.</para>
         /// </remarks>
         public override bool Read()
         {

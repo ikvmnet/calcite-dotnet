@@ -164,12 +164,6 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         public static readonly RelOptRule ClrAsyncEnumerableProjectToCalcRule = Apache.Calcite.Extensions.Adapter.AsyncEnumerable.ClrAsyncEnumerableProjectToCalcRule.Create();
 
         /// <summary>
-        /// Rule that reads a plan of <c>EnumerableConvention</c> as one of this convention.
-        /// </summary>
-        public static readonly RelOptRule EnumerableToClrEnumerableConverterRule = Apache.Calcite.Extensions.Adapter.Enumerable.EnumerableToClrEnumerableConverterRule.Create();
-
-
-        /// <summary>
         /// Rule that converts an aggregate over a sorted input to a
         /// <see cref="ClrAsyncEnumerableSortedAggregate"/>.
         /// </summary>
@@ -195,37 +189,54 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// Rule that reads a plan of <c>EnumerableConvention</c> as one of this convention.
         /// </summary>
         /// <remarks>
-        /// The only converter this convention has, and it goes one way. It lets a query be planned partly
-        /// here and partly by Calcite, which is what stops a node this convention has none of — a table
-        /// function, a MATCH_RECOGNIZE, an interpreted transient scan — from making the whole query
-        /// unplannable.
+        /// It lets a query be planned partly here and partly by Calcite, which is what stops a node this
+        /// convention has none of — a table function, a MATCH_RECOGNIZE, an interpreted transient scan — from
+        /// making the whole query unplannable. The sub-plan under it is not asynchronous and nothing can make
+        /// it so; that is a fact about the sub-plan rather than about the converter.
         ///
-        /// <para>There is no converter out. Calcite cannot read an
-        /// <see cref="Schema.IClrAsyncScannableTable"/> by any route, so a Calcite node can never sit above
-        /// an asynchronous one; a query that would need it does not plan, and that is the right answer
-        /// rather than a gap, because the alternative blocks once per row.</para>
+        /// <para>There is no converter out to <c>EnumerableConvention</c>, and there cannot be: Calcite
+        /// compiles its side with Janino from generated source, which cannot await. A Calcite node above an
+        /// asynchronous one would have to block, and it would have to do so inside a block this convention
+        /// does not write.</para>
         /// </remarks>
         public static readonly RelOptRule EnumerableToClrAsyncEnumerableConverterRule = Apache.Calcite.Extensions.Adapter.AsyncEnumerable.EnumerableToClrAsyncEnumerableConverterRule.Create();
+
+        /// <summary>
+        /// Rule that reads a plan of <see cref="ClrEnumerableConvention"/> as one of this convention.
+        /// </summary>
+        /// <remarks>
+        /// The cheap crossing between the two Clr conventions: the sub-plan's expression is spliced into the
+        /// tree being built and wrapped in a sequence that never suspends, so it costs a state machine and no
+        /// thread. The way back is
+        /// <c>ClrEnumerableRules.ClrAsyncEnumerableToClrEnumerableConverterRule</c>, which blocks, and which
+        /// is registered with the convention it produces rather than here.
+        /// </remarks>
+        public static readonly RelOptRule ClrEnumerableToClrAsyncEnumerableConverterRule = Apache.Calcite.Extensions.Adapter.AsyncEnumerable.ClrEnumerableToClrAsyncEnumerableConverterRule.Create();
 
         /// <summary>
         /// The rules registered by default.
         /// </summary>
         /// <remarks>
         /// The counterpart of <c>EnumerableRules.ENUMERABLE_RULES</c>, holding what that holds for the nodes
-        /// this convention has, plus the two converters that let one plan hold both conventions. Read through
-        /// <see cref="Rules"/>, as Calcite's is read through <c>rules()</c>.
+        /// this convention has, plus the two converters that read another convention's sub-plan as one of
+        /// these. Read through <see cref="Rules"/>, as Calcite's is read through <c>rules()</c>.
         ///
         /// <para>Membership is the synchronous convention's list less what this one cannot cover. Gone are
-        /// the two converters -- an IEnumerable behind an awaited interface is async over sync and the
-        /// reverse is sync over async, so this convention has none in either direction and a query it cannot
-        /// plan whole throws rather than falling back. Gone with them are the interpreter rule, whose
-        /// Interpreter is a pull based Enumerable, and the table function scan, whose two paths both hand a
-        /// linq4j Enumerable through a generator of Calcite's.</para>
+        /// the interpreter rule, whose Interpreter is a pull based Enumerable, and the table function scan,
+        /// whose two paths both hand a linq4j Enumerable through a generator of Calcite's; both are covered
+        /// by leaving the node in <c>EnumerableConvention</c> under the converter in.</para>
+        ///
+        /// <para><b>Both converters here go one way, into this convention.</b> A rule producing another
+        /// convention's node belongs to that convention's list, and the way back to
+        /// <see cref="ClrEnumerableConvention"/> is registered there, in
+        /// <c>ClrEnumerableRules.ClrAsyncEnumerableToClrEnumerableConverterRule</c>. There is no way back to
+        /// <c>EnumerableConvention</c> at all, for the reason
+        /// <see cref="EnumerableToClrAsyncEnumerableConverterRule"/> gives.</para>
         ///
         /// <para>The repeat union and the table spool are left out although both nodes exist. The spool's
         /// write is fine; the iterative side scans the TransientTable it filled, only Calcite's interpreter
-        /// reads one, and with no converter there is nothing to carry those rows. WITH RECURSIVE therefore
-        /// does not plan here, and will not until there is an asynchronous transient table.</para>
+        /// reads one, and nothing carries those rows back. WITH RECURSIVE therefore does not plan here, and
+        /// will not until there is an asynchronous transient table.</para>
         ///
         /// <para>What is left is Calcite's list less the match and table modify
         /// rules. Match cannot be written at all; modification is out of scope, so a
@@ -257,7 +268,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             ClrAsyncEnumerableCollectRule,
             ClrAsyncEnumerableUncollectRule,
             EnumerableToClrAsyncEnumerableConverterRule,
-            EnumerableToClrEnumerableConverterRule,
+            ClrEnumerableToClrAsyncEnumerableConverterRule,
         ];
 
         /// <summary>

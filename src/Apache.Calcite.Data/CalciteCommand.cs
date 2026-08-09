@@ -294,7 +294,9 @@ namespace Apache.Calcite.Data
         /// <inheritdoc />
         /// <remarks>
         /// Asks for a synchronous plan, because the reader it returns will be read with
-        /// <c>DbDataReader.Read</c>, which refuses to block on an asynchronous one.
+        /// <c>DbDataReader.Read</c>. A reader over an asynchronous plan answers that too, by blocking --
+        /// <c>CalciteResult</c> says why it has to -- and asking for the synchronous plan here is what keeps
+        /// a caller who never touched an <c>Async</c> method off that path.
         /// </remarks>
         protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
         {
@@ -305,10 +307,16 @@ namespace Apache.Calcite.Data
         /// <inheritdoc />
         /// <remarks>
         /// Prepares into the asynchronous convention, and <b>throws where the query cannot be planned into
-        /// it</b> — where it touches a table that is not an <c>IClrAsyncScannableTable</c>, there being no
-        /// converter to carry those rows. Preparing the synchronous plan instead would hand back a reader
-        /// that looks asynchronous and blocks a thread per row, which a caller cannot tell from the outside.
-        /// <see cref="ExecuteReader()"/> is how a caller asks for that plan deliberately.
+        /// it</b>. The prepare pipeline puts one convention's rules on the planner and not the other's, so
+        /// although converters exist between the two Clr conventions, no plan prepared here mixes them and a
+        /// query the asynchronous rules cannot cover has nowhere to go. Preparing the synchronous plan
+        /// instead would hand back a reader that looks asynchronous and blocks a thread per row, which a
+        /// caller cannot tell from the outside. <see cref="ExecuteReader()"/> is how a caller asks for that
+        /// plan deliberately.
+        ///
+        /// <para>A table Calcite can scan is not that case: it is planned in <c>EnumerableConvention</c> and
+        /// <c>EnumerableToClrAsyncEnumerableConverter</c> carries its rows, which costs a state machine and
+        /// no thread.</para>
         /// </remarks>
         protected override async Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
         {

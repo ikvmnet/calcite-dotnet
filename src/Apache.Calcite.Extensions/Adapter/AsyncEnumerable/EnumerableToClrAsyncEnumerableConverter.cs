@@ -66,6 +66,10 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             // the same map, so a value Calcite stashes reaches the DataContext this plan is bound with
             var enumerable = new EnumerableRelImplementor(implementor.RexBuilder, implementor.Map);
 
+            // and the same correlation variables, because a sub-plan of Calcite's under a correlate of this
+            // convention reads the outer row through them
+            implementor.ReplayCorrelVariables(enumerable);
+
             var result = enumerable.visitChild(null, 0, (EnumerableRel)getInput(), pref.ToCalcite());
 
             // a physical type is a type factory, a row type and a format, and theirs answers all three

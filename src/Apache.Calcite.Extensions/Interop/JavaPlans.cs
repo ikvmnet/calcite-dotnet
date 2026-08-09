@@ -18,12 +18,16 @@ namespace Apache.Calcite.Extensions.Interop
     /// the static below. At run time the generated Java calls it with the stashed delegate and the context,
     /// and gets back a linq4j <c>Enumerable</c>.
     ///
-    /// <para>There is one such converter and there is only going to be one.
-    /// <c>ClrAsyncEnumerableConvention</c> reads a Calcite sub-plan but never feeds one: a sequence going
-    /// that way would have to become a linq4j <c>Enumerator</c>, whose <c>moveNext</c> returns a
-    /// <c>boolean</c> with nowhere to await, so it would block once per row. Nothing requires it — Calcite
-    /// cannot read an <c>IClrAsyncScannableTable</c> by any route, so no plan can put a Calcite node above
-    /// an asynchronous one.</para>
+    /// <para>There is one such converter and there is only going to be one, because there is only one
+    /// boundary where Janino is on the other side. <c>ClrAsyncEnumerableConvention</c> reads a Calcite
+    /// sub-plan but never feeds one: a sequence going that way would have to become a linq4j
+    /// <c>Enumerator</c>, whose <c>moveNext</c> returns a <c>boolean</c> with nowhere to await, and the
+    /// generated source it would be called from cannot await either.</para>
+    ///
+    /// <para>That is not a claim that the asynchronous convention has no converter out.
+    /// <c>ClrAsyncEnumerableToClrEnumerableConverter</c> is one, and it blocks a thread per row -- but both
+    /// its sides are <see cref="System.Linq.Expressions"/>, so it splices rather than compiling separately
+    /// and leaves nothing here to call back into.</para>
     ///
     /// <para>Separate from <see cref="JavaSequences"/>, which carries a sequence between the two runtimes
     /// and nothing else. This takes a <em>plan</em> — a function of a <see cref="DataContext"/> — and

@@ -326,9 +326,10 @@ namespace Apache.Calcite.Tests
         /// </summary>
         /// <remarks>
         /// The plan assertion is what stops a test from comparing something against itself. It matters more
-        /// here than in the synchronous harness, not less: there is no converter to fall through to, so a
-        /// rule that fails to fire does not quietly produce a plan of the other convention — it produces no
-        /// plan at all — but a node reached by a route nobody intended still looks like a pass.
+        /// here than in the synchronous harness, not less: this harness registers one convention's rules
+        /// only, so there is nothing for a converter to carry and a rule that fails to fire does not quietly
+        /// produce a plan of the other convention — it produces no plan at all — but a node reached by a
+        /// route nobody intended still looks like a pass.
         /// </remarks>
         static async Task SameThrough(string node, string sql, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false)
         {

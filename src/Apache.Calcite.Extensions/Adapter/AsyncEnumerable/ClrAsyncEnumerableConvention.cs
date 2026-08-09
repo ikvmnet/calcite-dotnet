@@ -22,12 +22,17 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
     /// of the plan that comes out is a <see cref="ClrAsyncEnumerableRel"/>, and
     /// <see cref="ClrAsyncEnumerableRelImplementor.ImplementRoot"/> turns it into a lambda to compile.</para>
     ///
-    /// <para><b>A plan cannot hold nodes of any other convention.</b> There is no converter to
-    /// <c>EnumerableConvention</c> or to <see cref="ClrEnumerableConvention"/> and there will not be: an
-    /// <see cref="System.Collections.Generic.IEnumerable{T}"/> behind an awaited interface is a blocking
-    /// pull, and the reverse is sync over async. So a query this convention cannot cover whole does not plan
-    /// at all, and the planner throws rather than quietly falling back to a plan that would block a thread
-    /// per row. Its leaves are <see cref="Schema.IClrAsyncScannableTable"/> and nothing else.</para>
+    /// <para><b>A plan may hold nodes of another convention, and what that costs depends on the
+    /// direction.</b> Reading a <c>EnumerableConvention</c> or a <see cref="ClrEnumerableConvention"/>
+    /// sub-plan as one of these costs a state machine and no thread — the sub-plan is pulled, so nothing
+    /// suspends, and it is simply not asynchronous over that part of itself. Reading one of <em>these</em> as
+    /// a <see cref="ClrEnumerableConvention"/> sub-plan blocks a thread once per row, because an
+    /// <see cref="System.Collections.Generic.IEnumerable{T}"/> has nowhere to suspend; that converter is
+    /// registered with the convention it produces.</para>
+    ///
+    /// <para>There is no converter to <c>EnumerableConvention</c> and there will not be. Calcite compiles its
+    /// side with Janino from generated source, which cannot await, so a Calcite node above an asynchronous
+    /// one would have to block inside a block this convention does not write.</para>
     /// </remarks>
     public sealed class ClrAsyncEnumerableConvention : Convention.Impl
     {

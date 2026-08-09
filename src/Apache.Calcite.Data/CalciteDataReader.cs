@@ -108,10 +108,12 @@ namespace Apache.Calcite.Data
 
         /// <inheritdoc />
         /// <remarks>
-        /// Refuses where the rows come from a plan of the asynchronous convention, rather than blocking on
-        /// it. That block is the sync-over-async this convention exists to avoid — it deadlocks on a
-        /// synchronization context and wastes a thread everywhere else — and this is the one place a caller
-        /// could reach it by accident. A reader over an asynchronous plan has <see cref="ReadAsync"/>.
+        /// Blocks where the rows come from a plan of the asynchronous convention, and does not refuse:
+        /// <c>DbDataReader.Read</c> is a contract a generic consumer calls, and a provider whose reader
+        /// throws there is not a provider. <c>CalciteResult</c> has the argument, and
+        /// <c>CalciteAsyncEnumerableResult.Read</c> is where the block happens. The usual caution applies — a
+        /// synchronization context can deadlock on it — and a reader over an asynchronous plan has
+        /// <see cref="ReadAsync"/>.
         /// </remarks>
         public override bool Read()
         {
