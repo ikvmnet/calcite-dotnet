@@ -328,6 +328,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
         #region Query
 
+        /// <summary>
+        /// A filter on the unsigned column, which the planner pushes down as a comparison against a literal
+        /// typed <c>UTINYINT</c>: the value 200 has to survive planning without wrapping to -56, and the
+        /// dialect has to unparse the literal as something the server parses.
+        /// </summary>
+        [TestMethod]
+        public void AFilterOnATinyIntComparesUnsigned()
+        {
+            Assert.AreEqual("1", Scalar("SELECT ID FROM ADO.TYPES WHERE C_TINYINT = 200"));
+            Assert.AreEqual("1", Scalar("SELECT ID FROM ADO.TYPES WHERE C_TINYINT > 100"));
+            Assert.AreEqual(0, Rows("SELECT ID FROM ADO.TYPES WHERE C_TINYINT < 0").Count);
+        }
+
         [TestMethod]
         public void AFilterIsApplied()
         {

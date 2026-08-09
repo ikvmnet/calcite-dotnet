@@ -252,6 +252,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [DataRow(SqlClient, "C_BIGINT")]
         [DataRow(Odbc, "C_BIGINT")]
         [DataRow(OleDb, "C_BIGINT")]
+        // the one unsigned type a real backend reports: a tinyint leaves the plan as a joou UByte
+        [DataRow(SqlClient, "C_TINYINT")]
+        [DataRow(Odbc, "C_TINYINT")]
+        [DataRow(OleDb, "C_TINYINT")]
         public void CorrelatingOnAColumnConvertsItsValueForTheProvider(string provider, string columnName)
         {
             CollectionAssert.AreEqual(

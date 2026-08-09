@@ -205,6 +205,14 @@ namespace Apache.Calcite.Adapter.AdoNet
                 java.lang.Character c => c.charValue(),
                 java.math.BigDecimal m => decimal.Parse(m.toString(), System.Globalization.CultureInfo.InvariantCulture),
                 org.apache.calcite.avatica.util.ByteString bs => bs.getBytes(),
+                // the unsigned types travel as joou values, and no provider knows those either. Each is
+                // unwrapped to the narrowest CLR type every provider binds: SqlClient takes a byte but none
+                // of ushort, uint or ulong, so the wider three go to the signed type that holds their range
+                // exactly — and ULong to decimal, ulong's top half being outside long
+                org.joou.UByte ub => (byte)ub.shortValue(),
+                org.joou.UShort us => us.intValue(),
+                org.joou.UInteger ui => ui.longValue(),
+                org.joou.ULong ul => decimal.Parse(ul.toString(), System.Globalization.CultureInfo.InvariantCulture),
                 _ => value,
             };
         }
