@@ -792,6 +792,121 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------------
+        // Behaving like a table
+        // ------------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// A view joined to a real table, from a query that does not know it is a view.
+        /// </summary>
+        /// <remarks>
+        /// This is the property that makes a view usable as a table rather than as a saved query.
+        /// <c>ViewTable</c> is a <c>TranslatableTable</c>, so the validator sees a name with a row type
+        /// and <c>SqlToRelConverter.toRel</c> replaces the scan with the view's own plan before the
+        /// planner sees anything — the join is built against the expanded subtree, not against an opaque
+        /// node, and the outer predicate can be pushed into it.
+        /// </remarks>
+        [Fact]
+        public void View_should_join_to_a_table()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"jemp\" (\"id\" INTEGER NOT NULL, \"dept\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE TABLE \"jdept\" (\"dept\" INTEGER NOT NULL, \"dname\" VARCHAR(20) NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "INSERT INTO \"jemp\" VALUES (1, 10), (2, 20)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "INSERT INTO \"jdept\" VALUES (10, 'sales'), (20, 'eng')";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE VIEW \"jempv\" AS SELECT \"id\", \"dept\" FROM \"jemp\" WHERE \"id\" > 0";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText =
+                "SELECT \"v\".\"id\", \"d\".\"dname\" FROM \"jempv\" \"v\" " +
+                "JOIN \"jdept\" \"d\" ON \"v\".\"dept\" = \"d\".\"dept\" ORDER BY \"v\".\"id\"";
+            using var r = cmd.ExecuteReader();
+
+            Assert.True(r.Read());
+            Assert.Equal(1, r.GetInt32(0));
+            Assert.Equal("sales", r.GetString(1));
+            Assert.True(r.Read());
+            Assert.Equal(2, r.GetInt32(0));
+            Assert.Equal("eng", r.GetString(1));
+            Assert.False(r.Read());
+        }
+
+        /// <summary>
+        /// A view whose definition joins two different back ends, then joined and aggregated from outside.
+        /// </summary>
+        /// <remarks>
+        /// One side is a table <c>CREATE TABLE</c> made, the other a <see cref="ViewTestBackEnd"/> —
+        /// a <c>Schema</c> of <c>ScannableTable</c>, which is all an adapter is to Calcite. Nothing about
+        /// crossing a back end is view-specific: expansion splices the view's plan into the caller's, and
+        /// what the planner then has is the same mixed plan a hand-written join across the two schemas
+        /// would produce, converters and all. That is the point of the test — the view is not a barrier,
+        /// so a query can join it, filter it and aggregate it without knowing what is underneath.
+        /// </remarks>
+        [Fact]
+        public void View_should_bridge_two_back_ends_and_still_join_and_aggregate()
+        {
+            using var c = new CalciteConnection(RootDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE \"sale\" (\"sid\" INTEGER NOT NULL, \"rid\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "INSERT INTO \"sale\" VALUES (1, 10), (2, 20), (3, 10)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "CREATE TABLE \"tag\" (\"sid\" INTEGER NOT NULL, \"t\" VARCHAR(10) NOT NULL)";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "INSERT INTO \"tag\" VALUES (1, 'a'), (2, 'b'), (3, 'a')";
+            cmd.ExecuteNonQuery();
+
+            c.RootSchema.add("BE2", new ViewTestBackEnd());
+
+            var viewPath = new java.util.ArrayList();
+            viewPath.add("bridged");
+            c.RootSchema.add("bridged", org.apache.calcite.schema.impl.ViewTable.viewMacro(
+                c.RootSchema,
+                "SELECT \"s\".\"sid\" AS \"sid\", \"r\".\"RNAME\" AS \"rname\" " +
+                "FROM \"sale\" \"s\" JOIN \"BE2\".\"REGIONS\" \"r\" ON \"s\".\"rid\" = \"r\".\"RID\"",
+                new java.util.ArrayList(),
+                viewPath,
+                java.lang.Boolean.FALSE));
+
+            // selected from directly
+            cmd.CommandText = "SELECT \"sid\", \"rname\" FROM \"bridged\" ORDER BY \"sid\"";
+            using (var r = cmd.ExecuteReader())
+            {
+                Assert.True(r.Read());
+                Assert.Equal(1, r.GetInt32(0));
+                Assert.Equal("north", r.GetString(1));
+                Assert.True(r.Read());
+                Assert.Equal(2, r.GetInt32(0));
+                Assert.Equal("south", r.GetString(1));
+                Assert.True(r.Read());
+                Assert.Equal(3, r.GetInt32(0));
+                Assert.Equal("north", r.GetString(1));
+                Assert.False(r.Read());
+            }
+
+            // and joined to a third table, filtered and grouped
+            cmd.CommandText =
+                "SELECT \"b\".\"rname\", COUNT(*) AS \"n\" FROM \"bridged\" \"b\" " +
+                "JOIN \"tag\" \"t\" ON \"b\".\"sid\" = \"t\".\"sid\" " +
+                "WHERE \"t\".\"t\" = 'a' GROUP BY \"b\".\"rname\" ORDER BY \"b\".\"rname\"";
+            using (var r = cmd.ExecuteReader())
+            {
+                Assert.True(r.Read());
+                Assert.Equal("north", r.GetString(0));
+                Assert.Equal(2L, r.GetInt64(1));
+                Assert.False(r.Read());
+            }
+        }
+
+        // ------------------------------------------------------------------------------------------
         // Writing through a view
         // ------------------------------------------------------------------------------------------
 
