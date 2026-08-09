@@ -152,7 +152,7 @@ namespace Apache.Calcite.Data.Internal
                 if (model.StartsWith("inline:", StringComparison.OrdinalIgnoreCase) || model.TrimStart().StartsWith("{"))
                 {
                     var inline = model.StartsWith("inline:", StringComparison.OrdinalIgnoreCase) ? model.Substring("inline:".Length) : model;
-                    var handler = new ClrModelHandler(rootSchema.plus(), "inline:" + inline);
+                    var handler = new ModelHandler(rootSchema.plus(), "inline:" + inline);
                     defaultSchema = handler.defaultSchemaName();
                 }
                 else
@@ -160,7 +160,7 @@ namespace Apache.Calcite.Data.Internal
                     if (!File.Exists(model))
                         throw new FileNotFoundException("Model file was not found.", model);
 
-                    var handler = new ClrModelHandler(rootSchema.plus(), model);
+                    var handler = new ModelHandler(rootSchema.plus(), model);
                     defaultSchema = handler.defaultSchemaName();
                 }
 
@@ -229,47 +229,6 @@ namespace Apache.Calcite.Data.Internal
             {
                 CalcitePrepare.Dummy.pop(ctx);
             }
-        }
-
-        /// <summary>
-        /// Puts this session's context on <c>CalcitePrepare.Dummy</c>'s stack until the returned handle is
-        /// disposed.
-        /// </summary>
-        /// <remarks>
-        /// <see cref="Plan"/> does this around planning because Calcite's parse-to-rel reads the context
-        /// from there. Anything else that makes Calcite reach for a context has to do the same, and
-        /// describing a view is one: <c>ClrViewTableMacro</c> is the connection's configuration only
-        /// because <c>Schemas.makeContext</c> can find the context here, and metadata expands views outside
-        /// any planning.
-        ///
-        /// <para>The context reports no object path, so <c>push</c> cannot raise
-        /// <c>CyclicDefinitionException</c> against another of ours.</para>
-        /// </remarks>
-        public IDisposable PushContext()
-        {
-            ThrowIfDisposed();
-
-            var ctx = new PrepareContext(_typeFactory, _rootSchema, _config, _defaultSchemaPath);
-            CalcitePrepare.Dummy.push(ctx);
-
-            return new ContextScope(ctx);
-        }
-
-        /// <summary>Pops the context <see cref="PushContext"/> pushed.</summary>
-        sealed class ContextScope(CalcitePrepare.Context context) : IDisposable
-        {
-
-            bool _popped;
-
-            public void Dispose()
-            {
-                if (_popped)
-                    return;
-
-                _popped = true;
-                CalcitePrepare.Dummy.pop(context);
-            }
-
         }
 
         /// <summary>
