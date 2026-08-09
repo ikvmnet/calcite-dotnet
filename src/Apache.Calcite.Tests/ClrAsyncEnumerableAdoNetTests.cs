@@ -80,9 +80,12 @@ namespace Apache.Calcite.Tests
         /// <remarks>
         /// Not a limitation to work around — it is the convention's whole premise arriving at the surface.
         /// An <c>IClrAsyncScannableTable</c> is not a <c>ScannableTable</c>, so neither the synchronous
-        /// convention nor Calcite's own has a scan for it, and there is no converter that could carry its
-        /// rows into one. <c>ExecuteReader</c> therefore fails to plan rather than blocking a thread per row,
-        /// which is the trade this whole convention exists to make.
+        /// convention nor Calcite's own has a scan for it, and the synchronous planner is given no rule that
+        /// would put the scan in the asynchronous convention for
+        /// <c>ClrAsyncEnumerableToClrEnumerableConverter</c> to carry. <c>ExecuteReader</c> therefore fails to
+        /// plan rather than blocking a thread per row, which is the trade this whole convention exists to
+        /// make — and it is a trade the prepare pipeline makes by choosing rules, not one the planner is
+        /// incapable of unmaking.
         ///
         /// <para>A schema may hold both kinds of table; it is the individual query that is one or the
         /// other.</para>
@@ -139,9 +142,11 @@ namespace Apache.Calcite.Tests
         /// micro-ORM, <c>DataTable.Load</c> — calls <c>Read</c>. A provider whose reader throws there is not
         /// a provider, so the asynchronous result blocks instead.
         ///
-        /// <para>That is not the sync-over-async the convention refuses. That rule governs what a plan does
-        /// inside itself, where a converter would insert blocking nobody chose and nobody could see; here
-        /// the caller is choosing it in the open at the boundary.</para>
+        /// <para>That is not the sync-over-async the surface refuses, and the line is about who chose. A
+        /// plan can block inside itself too — <c>ClrAsyncEnumerableToClrEnumerableConverter</c> does, once
+        /// per row — and what makes that refusable is that the planner would be choosing it for a caller who
+        /// could not see it, which is why the prepare pipeline registers one convention's rules and not
+        /// both. Here the caller is choosing it in the open at the boundary.</para>
         /// </remarks>
         [TestMethod]
         public async Task ShouldReadAnAsyncPlanSynchronouslyWhenAskedTo()

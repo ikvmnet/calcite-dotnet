@@ -376,15 +376,18 @@ namespace Apache.Calcite.Data.Internal
         /// <exception cref="CalciteException">Thrown when planning or execution fails, <b>including where the
         /// query cannot be planned asynchronously at all</b>.</exception>
         /// <remarks>
-        /// <b>There is no fallback.</b> <c>ClrAsyncEnumerableConvention</c> has no converter to any other, so
-        /// a query touching a table that is not an <c>IClrAsyncScannableTable</c> cannot be planned and this
-        /// throws. Preparing the synchronous plan instead would hand back a reader that looks asynchronous
-        /// and blocks a thread per row, which is the one thing this convention exists to refuse -- and a
-        /// caller cannot tell the difference from the outside, so the failure has to be visible.
+        /// <b>There is no fallback.</b> The planner this goes to carries the asynchronous convention's rules
+        /// and not the synchronous one's, so a query touching a table that is not an
+        /// <c>IClrAsyncScannableTable</c> cannot be planned and this throws. Preparing the synchronous plan
+        /// instead would hand back a reader that looks asynchronous and blocks a thread per row, which is the
+        /// one thing this convention exists to refuse -- and a caller cannot tell the difference from the
+        /// outside, so the failure has to be visible.
         ///
-        /// <para>If a fallback is ever wanted it will come from a converter, which would make the mixed plan
-        /// one the planner chose and costed rather than a second plan substituted behind the caller's
-        /// back.</para>
+        /// <para><c>ClrEnumerableToClrAsyncEnumerableConverter</c> is what a fallback would be built from,
+        /// and it exists; what does not exist is a decision to register both rule sets here. Doing so would
+        /// make the mixed plan one the planner chose and costed rather than a second plan substituted behind
+        /// the caller's back — but it would also let a plan block a thread per row without saying so, which
+        /// is why it is not the default.</para>
         ///
         /// <para>A caller that wants the synchronous plan asks for it: <see cref="ExecuteReader"/>.</para>
         /// </remarks>
@@ -435,9 +438,9 @@ namespace Apache.Calcite.Data.Internal
         /// <remarks>
         /// Synchronous, and <see cref="ExecuteNonQueryAsync"/> is this method in a completed task. There is
         /// no asynchronous DML and there cannot be one: a table modification is not a node either of these
-        /// conventions implements -- the synchronous one reaches Calcite's across a converter, and the
-        /// asynchronous one has no converter -- so a write is planned into <c>ClrEnumerableConvention</c>
-        /// whichever entry point asked for it.
+        /// conventions implements, and only the synchronous one reaches Calcite's across a converter -- there
+        /// is no converter to <c>EnumerableConvention</c> from the asynchronous one and cannot be -- so a
+        /// write is planned into <c>ClrEnumerableConvention</c> whichever entry point asked for it.
         /// </remarks>
         public CalciteEnumerableResult ExecuteNonQuery(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {

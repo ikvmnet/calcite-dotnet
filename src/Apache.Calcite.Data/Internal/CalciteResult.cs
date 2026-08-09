@@ -26,10 +26,13 @@ namespace Apache.Calcite.Data.Internal
     /// throws there is not a provider. So a synchronous plan answers <c>ReadAsync</c> with a completed
     /// task, and an asynchronous plan blocks in <c>Read</c>.</para>
     ///
-    /// <para>Neither is the sync-over-async this convention refuses. That rule is about a <em>plan's</em>
-    /// internals, where a converter would insert blocking nobody asked for and nobody could see. Here the
-    /// caller is choosing, in the open, at the boundary -- which is where every ADO.NET provider blocks and
-    /// what <c>Read</c> on an asynchronous source means.</para>
+    /// <para>Neither is the sync-over-async this surface refuses, and the line is about who chose. A
+    /// <em>plan's</em> internals can block too — <c>ClrAsyncEnumerableToClrEnumerableConverter</c> is exactly
+    /// that, one blocked thread per row — and what makes it refusable there is that the planner would be
+    /// choosing it, invisibly, on behalf of a caller who asked for nothing of the sort. That is why the
+    /// prepare pipeline registers one convention's rules and not both, and so never produces a plan holding
+    /// one. Here the caller is choosing, in the open, at the boundary -- which is where every ADO.NET
+    /// provider blocks and what <c>Read</c> on an asynchronous source means.</para>
     /// </remarks>
     internal abstract class CalciteResult : IDisposable, IAsyncDisposable
     {
