@@ -68,9 +68,10 @@ namespace Apache.Calcite.Data.Internal
             ThrowIfDisposed();
             cancellationToken.ThrowIfCancellationRequested();
 
-            var moved = _enumerator is not null && await _enumerator.MoveNextAsync().ConfigureAwait(false);
+            if (_enumerator is null || await _enumerator.MoveNextAsync().ConfigureAwait(false) == false)
+                return Accept(null, false);
 
-            return Accept(moved ? _enumerator!.Current : null, moved);
+            return Accept(_enumerator.Current, true);
         }
 
         /// <inheritdoc />

@@ -74,11 +74,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public override RelOptCost computeSelfCost(RelOptPlanner planner, org.apache.calcite.rel.metadata.RelMetadataQuery mq)
+        public override RelOptCost? computeSelfCost(RelOptPlanner planner, org.apache.calcite.rel.metadata.RelMetadataQuery mq)
         {
             var cost = base.computeSelfCost(planner, mq);
             if (cost == null)
-                return null!;
+                return null;
 
             return cost.multiplyBy(ClrEnumerableConvention.CostMultiplier);
         }
@@ -1001,7 +1001,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             public override java.util.List rexArguments() => rexArgs;
 
             /// <inheritdoc />
-            public override RexNode rexFilterArgument() => null!;
+            public override RexNode? rexFilterArgument() => null;
 
         }
 

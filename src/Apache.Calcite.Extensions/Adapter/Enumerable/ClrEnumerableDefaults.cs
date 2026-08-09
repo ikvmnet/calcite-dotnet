@@ -320,11 +320,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             Func<TSource, TNsKey>? outerNullSafeKeySelector,
             Func<TInner, TNsKey>? innerNullSafeKeySelector,
             bool atMostOneNotNullSafeKey,
-            Func<TSource, java.lang.Boolean, TResult> resultSelector,
+            Func<TSource, java.lang.Boolean?, TResult> resultSelector,
             EqualityComparer? comparer,
             EqualityComparer? nullSafeComparer,
-            Func<TSource, TInner, java.lang.Boolean>? nonEquiPredicate,
-            Func<TSource, TInner, java.lang.Boolean> equiPredicate)
+            Func<TSource, TInner, java.lang.Boolean?>? nonEquiPredicate,
+            Func<TSource, TInner, java.lang.Boolean?> equiPredicate)
         {
             ArgumentNullException.ThrowIfNull(outer);
             ArgumentNullException.ThrowIfNull(inner);
@@ -352,7 +352,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             foreach (var row in outer)
             {
-                var marker = java.lang.Boolean.FALSE;
+                java.lang.Boolean? marker = java.lang.Boolean.FALSE;
 
                 if (outerNullSafeKeySelector != null
                     && nullSafeKeys.contains(JavaWrapped.Of(nullSafeComparer, JavaValues.From(outerNullSafeKeySelector(row)))) == false)
@@ -370,7 +370,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     if (atMostOneNotNullSafeKey)
                     {
                         // the one EQUALS key is null on this row, so every comparison it makes is unknown
-                        marker = null!;
+                        marker = null;
                     }
                     else
                     {
@@ -382,7 +382,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                             {
                                 if (equiPredicate(row, other) == null)
                                 {
-                                    marker = null!;
+                                    marker = null;
                                     break;
                                 }
                             }
@@ -405,7 +405,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                             var matched = nonEquiPredicate(row, other);
 
                             if (matched == null)
-                                marker = null!;
+                                marker = null;
                             else if (matched.booleanValue())
                             {
                                 marker = java.lang.Boolean.TRUE;
@@ -419,7 +419,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     // nothing hashed to this key, but the build side holds rows whose key is null
                     if (atMostOneNotNullSafeKey)
                     {
-                        marker = null!;
+                        marker = null;
                     }
                     else
                     {
@@ -427,7 +427,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                         {
                             if (equiPredicate(row, other) == null)
                             {
-                                marker = null!;
+                                marker = null;
                                 break;
                             }
                         }
@@ -491,7 +491,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             IEnumerable<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             EqualityComparer? comparer,
             bool generateNullsOnLeft,
             bool generateNullsOnRight,
@@ -514,7 +514,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             IEnumerable<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             EqualityComparer? comparer,
             bool generateNullsOnLeft,
             bool generateNullsOnRight)
@@ -562,7 +562,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 }
 
                 if (any == false && generateNullsOnRight)
-                    yield return resultSelector(row, default!);
+                    yield return resultSelector(row, default);
             }
 
             if (unmatched == null)
@@ -579,7 +579,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 var key = i.next();
 
                 foreach (var other in (List<TInner>)lookup.get(key))
-                    yield return resultSelector(default!, other);
+                    yield return resultSelector(default, other);
             }
         }
 
@@ -600,7 +600,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             IEnumerable<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             EqualityComparer? comparer,
             bool generateNullsOnLeft,
             bool generateNullsOnRight,
@@ -646,14 +646,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 }
 
                 if (any == false && generateNullsOnRight)
-                    yield return resultSelector(row, default!);
+                    yield return resultSelector(row, default);
             }
 
             if (unmatched == null)
                 yield break;
 
             foreach (var other in unmatched)
-                yield return resultSelector(default!, other);
+                yield return resultSelector(default, other);
         }
 
         /// <summary>
@@ -833,7 +833,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             IEnumerable<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> matchComparator,
             java.util.Comparator timestampComparator,
             bool emitNullsOnRight)
@@ -907,7 +907,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 }
 
                 foreach (var row in outerWithNullKeys)
-                    yield return resultSelector(row, default!);
+                    yield return resultSelector(row, default);
             }
         }
 
@@ -1137,7 +1137,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource, TInner, bool>? predicate,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             org.apache.calcite.linq4j.JoinType joinType,
             java.util.Comparator? comparator,
             EqualityComparer? comparer)
@@ -1372,7 +1372,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
                 if (remainingLeft)
                 {
-                    yield return resultSelector(leftEnumerator.Current, default!);
+                    yield return resultSelector(leftEnumerator.Current, default);
 
                     if (LeftMoveNext() == false)
                     {
@@ -1483,7 +1483,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             org.apache.calcite.linq4j.JoinType joinType,
             IEnumerable<TSource> outer,
             Func<java.util.List, IEnumerable<TInner>> inner,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             int batchSize)
         {
@@ -1572,7 +1572,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                         }
 
                         if (any == false && (isLeft || isAnti))
-                            yield return resultSelector(left, default!);
+                            yield return resultSelector(left, default);
                     }
                 }
             }
@@ -1604,8 +1604,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         public static IEnumerable<TResult> LeftMarkNestedLoopJoin<TSource, TInner, TResult>(
             IEnumerable<TSource> outer,
             IEnumerable<TInner> inner,
-            Func<TSource, TInner, java.lang.Boolean> predicate,
-            Func<TSource, java.lang.Boolean, TResult> resultSelector)
+            Func<TSource, TInner, java.lang.Boolean?> predicate,
+            Func<TSource, java.lang.Boolean?, TResult> resultSelector)
         {
             ArgumentNullException.ThrowIfNull(inner);
 
@@ -1630,9 +1630,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </remarks>
         public static IEnumerable<TResult> CorrelateLeftMarkJoin<TSource, TInner, TResult>(
             IEnumerable<TSource> outer,
-            Func<TSource, IEnumerable<TInner>> inner,
-            Func<TSource, TInner, java.lang.Boolean> predicate,
-            Func<TSource, java.lang.Boolean, TResult> resultSelector)
+            Func<TSource, IEnumerable<TInner>?> inner,
+            Func<TSource, TInner, java.lang.Boolean?> predicate,
+            Func<TSource, java.lang.Boolean?, TResult> resultSelector)
         {
             return LeftMarkJoin(outer, inner, predicate, resultSelector);
         }
@@ -1653,9 +1653,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </remarks>
         static IEnumerable<TResult> LeftMarkJoin<TSource, TInner, TResult>(
             IEnumerable<TSource> outer,
-            Func<TSource, IEnumerable<TInner>> inner,
-            Func<TSource, TInner, java.lang.Boolean> predicate,
-            Func<TSource, java.lang.Boolean, TResult> resultSelector)
+            Func<TSource, IEnumerable<TInner>?> inner,
+            Func<TSource, TInner, java.lang.Boolean?> predicate,
+            Func<TSource, java.lang.Boolean?, TResult> resultSelector)
         {
             ArgumentNullException.ThrowIfNull(outer);
             ArgumentNullException.ThrowIfNull(inner);
@@ -1664,7 +1664,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             foreach (var left in outer)
             {
-                var marker = java.lang.Boolean.FALSE;
+                java.lang.Boolean? marker = java.lang.Boolean.FALSE;
                 var rows = inner(left);
 
                 if (rows != null)
@@ -1674,7 +1674,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                         var matched = predicate(left, right);
 
                         if (matched == null)
-                            marker = null!;
+                            marker = null;
                         else if (matched.booleanValue())
                         {
                             marker = java.lang.Boolean.TRUE;
@@ -1710,7 +1710,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         public static IEnumerable<TResult> NestedLoopJoin<TSource, TInner, TResult>(
             IEnumerable<TSource> outer,
             IEnumerable<TInner> inner,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             org.apache.calcite.linq4j.JoinType joinType)
         {
@@ -1753,7 +1753,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         static IEnumerable<TResult> NestedLoopJoinAsList<TSource, TInner, TResult>(
             IEnumerable<TSource> outer,
             IEnumerable<TInner> inner,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             org.apache.calcite.linq4j.JoinType joinType)
         {
@@ -1808,12 +1808,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 }
 
                 if (leftMatchCount == 0 && (generateNullsOnRight || name == nameof(org.apache.calcite.linq4j.JoinType.ANTI)))
-                    result.Add(resultSelector(left, default!));
+                    result.Add(resultSelector(left, default));
             }
 
             if (rightUnmatched != null)
                 for (var i = rightUnmatched.iterator(); i.hasNext();)
-                    result.Add(resultSelector(default!, (TInner)i.next()));
+                    result.Add(resultSelector(default, (TInner)i.next()));
 
             return result;
         }
@@ -1843,7 +1843,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         static IEnumerable<TResult> NestedLoopJoinOptimized<TSource, TInner, TResult>(
             IEnumerable<TSource> outer,
             IEnumerable<TInner> inner,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             org.apache.calcite.linq4j.JoinType joinType)
         {
@@ -1968,8 +1968,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </remarks>
         public static IEnumerable<TResult> CorrelateJoin<TSource, TInner, TResult>(
             IEnumerable<TSource> outer,
-            Func<TSource, IEnumerable<TInner>> inner,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource, IEnumerable<TInner>?> inner,
+            Func<TSource?, TInner?, TResult> resultSelector,
             org.apache.calcite.linq4j.JoinType joinType)
         {
             var name = joinType.name();
@@ -2000,11 +2000,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     }
 
                     if (semi && any)
-                        yield return resultSelector(row, default!);
+                        yield return resultSelector(row, default);
                     else if (anti && any == false)
-                        yield return resultSelector(row, default!);
+                        yield return resultSelector(row, default);
                     else if (any == false && nullsOnRight)
-                        yield return resultSelector(row, default!);
+                        yield return resultSelector(row, default);
                 }
             }
         }
@@ -2423,7 +2423,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             ArgumentNullException.ThrowIfNull(selector);
 
             foreach (var row in source)
-                foreach (var item in JavaSequences.FromJava<TResult>((org.apache.calcite.linq4j.Enumerable)selector.apply(row!)))
+                foreach (var item in JavaSequences.FromJava<TResult>((org.apache.calcite.linq4j.Enumerable)selector.apply(row)))
                     yield return item;
         }
 

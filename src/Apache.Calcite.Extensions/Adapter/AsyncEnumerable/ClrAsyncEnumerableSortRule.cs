@@ -43,13 +43,13 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var sort = (Sort)rel;
 
             // a sort carrying an offset or a fetch belongs to ClrAsyncEnumerableLimitRule, not to this one
             if (sort.offset != null || sort.fetch != null)
-                return null!;
+                return null;
 
             var input = sort.getInput();
 

@@ -35,19 +35,19 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref);
 
         /// <inheritdoc cref="PhysicalNode.passThroughTraits" />
-        Pair PhysicalNode.passThroughTraits(RelTraitSet required) => null!;
+        Pair? PhysicalNode.passThroughTraits(RelTraitSet required) => null;
 
         /// <inheritdoc cref="PhysicalNode.deriveTraits" />
-        Pair PhysicalNode.deriveTraits(RelTraitSet childTraits, int childId) => null!;
+        Pair? PhysicalNode.deriveTraits(RelTraitSet childTraits, int childId) => null;
 
         /// <inheritdoc cref="PhysicalNode.getDeriveMode" />
         DeriveMode PhysicalNode.getDeriveMode() => DeriveMode.LEFT_FIRST;
 
         /// <inheritdoc cref="PhysicalNode.passThrough" />
-        RelNode PhysicalNode.passThrough(RelTraitSet required) => PhysicalNode.__DefaultMethods.passThrough(this, required);
+        RelNode? PhysicalNode.passThrough(RelTraitSet required) => PhysicalNode.__DefaultMethods.passThrough(this, required);
 
         /// <inheritdoc cref="PhysicalNode.derive(RelTraitSet, int)" />
-        RelNode PhysicalNode.derive(RelTraitSet childTraits, int childId) => PhysicalNode.__DefaultMethods.derive(this, childTraits, childId);
+        RelNode? PhysicalNode.derive(RelTraitSet childTraits, int childId) => PhysicalNode.__DefaultMethods.derive(this, childTraits, childId);
 
         /// <inheritdoc cref="PhysicalNode.derive(java.util.List)" />
         java.util.List PhysicalNode.derive(java.util.List inputTraits) => PhysicalNode.__DefaultMethods.derive(this, inputTraits);

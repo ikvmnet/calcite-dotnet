@@ -39,7 +39,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var combine = (Combine)rel;
             var traitSet = combine.getTraitSet().replace(ClrAsyncEnumerableConvention.Instance);

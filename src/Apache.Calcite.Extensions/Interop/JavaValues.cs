@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 using Apache.Calcite.Extensions.Adapter.Enumerable;
@@ -27,7 +28,7 @@ namespace Apache.Calcite.Extensions.Interop
         /// <typeparam name="T"></typeparam>
         /// <param name="value"></param>
         /// <returns></returns>
-        public static T As<T>(object value)
+        public static T As<T>(object? value)
         {
             if (value is T typed)
                 return typed;
@@ -54,11 +55,15 @@ namespace Apache.Calcite.Extensions.Interop
         /// The other direction, and the one that matters more: handing back a boxed CLR int where the type
         /// factory says java.lang.Integer leaves two representations of one value loose in a plan, and whatever
         /// compares them fails.
+        ///
+        /// <para>Null is the one value it passes through, so a caller that has already ruled null out keeps
+        /// that knowledge across the call.</para>
         /// </remarks>
-        public static object From<T>(T value)
+        [return: NotNullIfNotNull(nameof(value))]
+        public static object? From<T>(T value)
         {
             if (value == null)
-                return null!;
+                return null;
 
             // the value's own type, not typeof(T). A boundary is crossed by a value, and the static type
             // parameter at these sites is nearly always object or a PhysType.RowType -- and a RowType is

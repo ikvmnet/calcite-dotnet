@@ -148,7 +148,7 @@ namespace Apache.Calcite.Extensions.Interop
             IEnumerator<TSource> enumerator = source.GetEnumerator();
 
             /// <inheritdoc />
-            public object current() => enumerator.Current!;
+            public object? current() => enumerator.Current;
 
             /// <inheritdoc />
             public bool moveNext() => enumerator.MoveNext();

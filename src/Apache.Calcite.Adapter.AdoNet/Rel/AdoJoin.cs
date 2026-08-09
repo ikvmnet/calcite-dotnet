@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 using java.util;
 
@@ -42,7 +42,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
         }
 
         /// <inheritdoc />
-        public override RelOptCost computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq)
+        public override RelOptCost? computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq)
         {
             return planner.getCostFactory().makeCost(mq.getRowCount(this).doubleValue(), 0, 0);
         }
@@ -50,8 +50,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
         /// <inheritdoc />
         public override double estimateRowCount(RelMetadataQuery mq)
         {
-            var lRowCount = mq.getRowCount(left)!;
-            var rRowCount = mq.getRowCount(right)!;
+            var lRowCount = mq.getRowCount(left);
+            var rRowCount = mq.getRowCount(right);
             return Math.Max(lRowCount.doubleValue(), rRowCount.doubleValue());
         }
 

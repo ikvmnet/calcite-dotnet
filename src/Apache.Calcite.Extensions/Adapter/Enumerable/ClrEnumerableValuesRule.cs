@@ -50,7 +50,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// a <c>RelCompositeTrait to RelCollation</c> cast failure. That failure is
         /// <see cref="ClrEnumerableValues.passThrough"/> having been missing, not this.</para>
         /// </remarks>
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var values = (Values)rel;
             var enumerableValues = ClrEnumerableValues.Create(values.getCluster(), values.getRowType(), values.getTuples());

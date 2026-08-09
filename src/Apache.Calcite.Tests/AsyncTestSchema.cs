@@ -32,7 +32,7 @@ namespace Apache.Calcite.Tests
         /// <summary>
         /// Partitions, ties, nulls and an order, so that a window has something to disagree over.
         /// </summary>
-        public static readonly object[][] Sales =
+        public static readonly object?[][] Sales =
         [
             [java.lang.Integer.valueOf(1), "EAST", java.lang.Integer.valueOf(10), "A"],
             [java.lang.Integer.valueOf(2), "EAST", java.lang.Integer.valueOf(20), "B"],
@@ -46,7 +46,7 @@ namespace Apache.Calcite.Tests
         /// Rows that arrive sorted by their first field, which is where a merge join and a merge union get
         /// the collation they are only ever chosen for.
         /// </summary>
-        public static readonly object[][] Sorted =
+        public static readonly object?[][] Sorted =
         [
             [java.lang.Integer.valueOf(1), "A"],
             [java.lang.Integer.valueOf(2), "B"],
@@ -67,11 +67,11 @@ namespace Apache.Calcite.Tests
         /// at twelve keys the map is a table of 16 and the copy a table of 32. <c>SALES</c> has six, which
         /// puts both at 16 and says nothing.
         /// </remarks>
-        public static readonly object[][] Wide = BuildWide();
+        public static readonly object?[][] Wide = BuildWide();
 
-        static object[][] BuildWide()
+        static object?[][] BuildWide()
         {
-            var rows = new object[12][];
+            var rows = new object?[12][];
             for (var i = 0; i < rows.Length; i++)
                 rows[i] = [string.Format("K{0:D2}", i + 1), java.lang.Integer.valueOf(i + 1)];
 
@@ -118,7 +118,7 @@ namespace Apache.Calcite.Tests
     /// <summary>
     /// A table of the synchronous convention over one of the shared row sets.
     /// </summary>
-    sealed class SyncRowsTable(object[][] rows, System.Func<RelDataTypeFactory, RelDataType> rowType, bool sorted) : AbstractTable, ScannableTable
+    sealed class SyncRowsTable(object?[][] rows, System.Func<RelDataTypeFactory, RelDataType> rowType, bool sorted) : AbstractTable, ScannableTable
     {
 
         /// <inheritdoc />
@@ -153,7 +153,7 @@ namespace Apache.Calcite.Tests
     /// this convention from the other one — every test would pass over a sequence that is asynchronous in
     /// name only, and an operator that dropped its continuation would look correct.
     /// </remarks>
-    sealed class AsyncRowsTable(object[][] rows, System.Func<RelDataTypeFactory, RelDataType> rowType, bool sorted) : AbstractTable, IClrAsyncScannableTable
+    sealed class AsyncRowsTable(object?[][] rows, System.Func<RelDataTypeFactory, RelDataType> rowType, bool sorted) : AbstractTable, IClrAsyncScannableTable
     {
 
         /// <summary>
@@ -198,9 +198,9 @@ namespace Apache.Calcite.Tests
         }
 
         /// <inheritdoc />
-        public IAsyncEnumerable<object[]> ScanAsync(DataContext root) => Rows();
+        public IAsyncEnumerable<object?[]> ScanAsync(DataContext root) => Rows();
 
-        async IAsyncEnumerable<object[]> Rows([EnumeratorCancellation] CancellationToken cancellationToken = default)
+        async IAsyncEnumerable<object?[]> Rows([EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             SawCancellableToken = cancellationToken.CanBeCanceled;
 

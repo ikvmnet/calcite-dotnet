@@ -38,7 +38,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var scan = (TableFunctionScan)rel;
             var traitSet = rel.getTraitSet().replace(ClrEnumerableConvention.Instance);

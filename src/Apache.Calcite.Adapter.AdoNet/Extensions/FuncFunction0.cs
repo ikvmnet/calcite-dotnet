@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 using org.apache.calcite.linq4j.function;
 
@@ -20,9 +20,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Extensions
             _func = func ?? throw new ArgumentNullException(nameof(func));
         }
 
-        public object apply()
+        public object? apply()
         {
-            return _func()!;
+            return _func();
         }
 
     }

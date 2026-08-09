@@ -252,7 +252,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                 var adderList = Expression.Variable(typeof(java.util.List), "accumulatorAdders");
                 var adderBody = new System.Collections.Generic.List<Expression>
                 {
-                    Expression.Assign(adderList, Expression.New(typeof(java.util.LinkedList).GetConstructor([])!)),
+                    Expression.Assign(adderList, Expression.New(LinkedListConstructor)),
                 };
 
                 for (int i = 0; i < adders.size(); i++)
@@ -266,7 +266,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             var lazyList = Expression.Variable(typeof(java.util.List), "lazyAccumulators");
             var body = new System.Collections.Generic.List<Expression>
             {
-                Expression.Assign(lazyList, Expression.New(typeof(java.util.LinkedList).GetConstructor([])!)),
+                Expression.Assign(lazyList, Expression.New(LinkedListConstructor)),
             };
 
             for (int i = 0; i < aggs.size(); i++)
@@ -341,22 +341,32 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         protected static readonly System.Reflection.ConstructorInfo SourceSorter = typeof(SourceSorter).GetConstructors()[0];
 
         /// <inheritdoc cref="BasicFactory" />
-        protected static readonly System.Reflection.MethodInfo CollectionAdd = typeof(java.util.List).GetMethod("add", [typeof(object)])!;
+        protected static readonly System.Reflection.ConstructorInfo LinkedListConstructor = typeof(java.util.LinkedList).GetConstructor([])
+            ?? throw new InvalidOperationException("java.util.LinkedList has no no-arg constructor.");
 
         /// <inheritdoc cref="BasicFactory" />
-        protected static readonly System.Reflection.MethodInfo AccInitializer = typeof(AggregateLambdaFactory).GetMethod("accumulatorInitializer")!;
+        protected static readonly System.Reflection.MethodInfo CollectionAdd = typeof(java.util.List).GetMethod("add", [typeof(object)])
+            ?? throw new InvalidOperationException("java.util.List has no add(Object).");
 
         /// <inheritdoc cref="BasicFactory" />
-        protected static readonly System.Reflection.MethodInfo AccAdder = typeof(AggregateLambdaFactory).GetMethod("accumulatorAdder")!;
+        protected static readonly System.Reflection.MethodInfo AccInitializer = typeof(AggregateLambdaFactory).GetMethod("accumulatorInitializer")
+            ?? throw new InvalidOperationException("AggregateLambdaFactory has no accumulatorInitializer().");
 
         /// <inheritdoc cref="BasicFactory" />
-        protected static readonly System.Reflection.MethodInfo ResultSelector = typeof(AggregateLambdaFactory).GetMethod("resultSelector")!;
+        protected static readonly System.Reflection.MethodInfo AccAdder = typeof(AggregateLambdaFactory).GetMethod("accumulatorAdder")
+            ?? throw new InvalidOperationException("AggregateLambdaFactory has no accumulatorAdder().");
 
         /// <inheritdoc cref="BasicFactory" />
-        protected static readonly System.Reflection.MethodInfo SingleGroupResultSelector = typeof(AggregateLambdaFactory).GetMethod("singleGroupResultSelector")!;
+        protected static readonly System.Reflection.MethodInfo ResultSelector = typeof(AggregateLambdaFactory).GetMethod("resultSelector")
+            ?? throw new InvalidOperationException("AggregateLambdaFactory has no resultSelector().");
 
         /// <inheritdoc cref="BasicFactory" />
-        protected static readonly System.Reflection.MethodInfo Function0Apply = typeof(Function0).GetMethod("apply")!;
+        protected static readonly System.Reflection.MethodInfo SingleGroupResultSelector = typeof(AggregateLambdaFactory).GetMethod("singleGroupResultSelector")
+            ?? throw new InvalidOperationException("AggregateLambdaFactory has no singleGroupResultSelector().");
+
+        /// <inheritdoc cref="BasicFactory" />
+        protected static readonly System.Reflection.MethodInfo Function0Apply = typeof(Function0).GetMethod("apply")
+            ?? throw new InvalidOperationException("Function0 has no apply().");
 
         /// <summary>
         /// What an aggregate implementor is told about the call it is implementing.
@@ -419,9 +429,9 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             }
 
             /// <inheritdoc />
-            public override RexNode rexFilterArgument()
+            public override RexNode? rexFilterArgument()
             {
-                return agg.call.filterArg < 0 ? null! : RexInputRef.of(agg.call.filterArg, inputPhysType.getRowType());
+                return agg.call.filterArg < 0 ? null : RexInputRef.of(agg.call.filterArg, inputPhysType.getRowType());
             }
 
             /// <inheritdoc />

@@ -52,7 +52,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// a <c>RelCompositeTrait to RelCollation</c> cast failure. That failure is
         /// <see cref="ClrAsyncEnumerableValues.passThrough"/> having been missing, not this.</para>
         /// </remarks>
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var values = (Values)rel;
             var enumerableValues = ClrAsyncEnumerableValues.Create(values.getCluster(), values.getRowType(), values.getTuples());

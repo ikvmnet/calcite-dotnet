@@ -52,7 +52,7 @@ namespace Apache.Calcite.Tests
         sealed class PeopleTable : AbstractTable, ScannableTable
         {
 
-            static readonly object[][] Rows =
+            static readonly object?[][] Rows =
             [
                 [java.lang.Integer.valueOf(1), "SMITH", java.lang.Integer.valueOf(30), java.lang.Integer.valueOf(5)],
                 [java.lang.Integer.valueOf(2), "JONES", java.lang.Integer.valueOf(40), null],

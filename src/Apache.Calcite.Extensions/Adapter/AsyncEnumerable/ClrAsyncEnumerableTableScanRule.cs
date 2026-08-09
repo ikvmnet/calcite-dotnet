@@ -57,7 +57,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// and an asynchronous table is exactly that, so the question the synchronous rule asks safely is one
         /// this one cannot ask at all.</para>
         /// </remarks>
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var scan = (TableScan)rel;
 

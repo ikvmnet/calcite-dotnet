@@ -177,7 +177,7 @@ namespace Apache.Calcite.Tests
         [TestMethod]
         public void ShouldReadANullCorrelatedSequenceAsEmpty()
         {
-            ClrEnumerableDefaults.CorrelateJoin<int, string, string>(new[] { 1, 2 }, _ => null!, (a, b) => $"{a}:{b ?? "null"}", JoinType.LEFT)
+            ClrEnumerableDefaults.CorrelateJoin<int, string, string>(new[] { 1, 2 }, _ => null, (a, b) => $"{a}:{b ?? "null"}", JoinType.LEFT)
                 .ToList()
                 .Should()
                 .Equal("1:null", "2:null");

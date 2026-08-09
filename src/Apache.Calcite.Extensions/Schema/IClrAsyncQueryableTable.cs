@@ -41,7 +41,8 @@ namespace Apache.Calcite.Extensions.Schema
         /// <summary>
         /// Returns the expression by which the plan reaches this table's rows.
         /// </summary>
-        /// <param name="schema">The schema the table was resolved in.</param>
+        /// <param name="schema">The schema the table was resolved in, which may be null for a table that
+        /// was not resolved through a catalog reader.</param>
         /// <param name="tableName">The name it was resolved by.</param>
         /// <returns>An expression whose type is
         /// <c>IAsyncEnumerable&lt;<see cref="ElementType"/>&gt;</c>.</returns>
@@ -60,7 +61,7 @@ namespace Apache.Calcite.Extensions.Schema
         /// downstream is Calcite's, and every boundary where a value crosses between the two runtimes is an
         /// adapter.</para>
         /// </remarks>
-        Expression GetAsyncExpression(SchemaPlus schema, string tableName);
+        Expression GetAsyncExpression(SchemaPlus? schema, string tableName);
 
     }
 

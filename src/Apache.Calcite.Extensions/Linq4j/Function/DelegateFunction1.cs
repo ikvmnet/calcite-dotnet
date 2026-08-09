@@ -22,7 +22,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Function
         readonly Func<TArg, TResult> function = function ?? throw new ArgumentNullException(nameof(function));
 
         /// <inheritdoc />
-        public object apply(object arg)
+        public object? apply(object? arg)
         {
             return JavaValues.From(function(JavaValues.As<TArg>(arg)));
         }

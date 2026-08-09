@@ -216,7 +216,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             public override Expression Record(Type rowClass, IReadOnlyList<Expression> expressions)
             {
                 if (expressions.Count == 0)
-                    return Expression.Field(null, UnitInstance);
+                    return UnitInstance;
 
                 var constructor = Constructor(rowClass, expressions.Count);
                 var parameters = constructor.GetParameters();
@@ -306,7 +306,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             public override Expression Record(Type rowClass, IReadOnlyList<Expression> expressions)
             {
                 if (expressions.Count == 0)
-                    return Expression.Field(null, ComparableEmptyList);
+                    return ComparableEmptyList;
 
                 return ClrEnumUtils.Convert(FlatList(expressions), typeof(java.util.List));
             }
@@ -458,16 +458,47 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             ClrTypes.Resolve(BuiltInMethod.LIST6.method)];
 
         /// <summary>
+        /// Returns the expression reading a Java <c>static final</c> field.
+        /// </summary>
+        /// <param name="declaring"></param>
+        /// <param name="name"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
+        /// <remarks>
+        /// <b>IKVM does not compile one to a field of that name.</b> It emits a property, over a backing field
+        /// it renames — <c>FlatLists.COMPARABLE_EMPTY_LIST</c> is a <c>COMPARABLE_EMPTY_LIST</c> property over
+        /// a <c>__&lt;&gt;COMPARABLE_EMPTY_LIST</c> field — so that reading it from C# still runs the class
+        /// initializer, which is what Java guarantees and what a bare field read would skip. Measured:
+        /// <c>GetField("COMPARABLE_EMPTY_LIST")</c> answers nothing.
+        ///
+        /// <para>So a static member is read as an expression rather than held as a <see cref="FieldInfo"/>,
+        /// and the two are tried in the order <see cref="ClrTypes.Resolve(Expression, J.PseudoField)"/> tries
+        /// them — field first, because a CLR field of ours is a field.</para>
+        /// </remarks>
+        static Expression StaticMember(Type declaring, string name)
+        {
+            const BindingFlags Static = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+
+            if (declaring.GetField(name, Static) is FieldInfo field)
+                return Expression.Field(null, field);
+
+            if (declaring.GetProperty(name, Static) is PropertyInfo property)
+                return Expression.Property(null, property);
+
+            throw new InvalidOperationException($"'{declaring}' has no static field or property '{name}'.");
+        }
+
+        /// <summary>
         /// <c>FlatLists.COMPARABLE_EMPTY_LIST</c>, which is the row of a type with no fields.
         /// </summary>
-        public static readonly FieldInfo ComparableEmptyList = ClrTypes.FromClass(BuiltInMethod.COMPARABLE_EMPTY_LIST.field.getDeclaringClass())
-            .GetField(BuiltInMethod.COMPARABLE_EMPTY_LIST.field.getName(), BindingFlags.Public | BindingFlags.Static)!;
+        public static readonly Expression ComparableEmptyList = StaticMember(
+            ClrTypes.FromClass(BuiltInMethod.COMPARABLE_EMPTY_LIST.field.getDeclaringClass()),
+            BuiltInMethod.COMPARABLE_EMPTY_LIST.field.getName());
 
         /// <summary>
         /// <c>Unit.INSTANCE</c>, which is the row of a custom type with no fields.
         /// </summary>
-        static readonly FieldInfo UnitInstance = typeof(org.apache.calcite.runtime.Unit)
-            .GetField("INSTANCE", BindingFlags.Public | BindingFlags.Static)!;
+        static readonly Expression UnitInstance = StaticMember(typeof(org.apache.calcite.runtime.Unit), "INSTANCE");
 
     }
 

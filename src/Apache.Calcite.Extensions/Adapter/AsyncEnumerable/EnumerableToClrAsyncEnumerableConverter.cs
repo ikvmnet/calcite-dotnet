@@ -53,11 +53,11 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
         /// <inheritdoc />
-        public override RelOptCost computeSelfCost(RelOptPlanner planner, org.apache.calcite.rel.metadata.RelMetadataQuery mq)
+        public override RelOptCost? computeSelfCost(RelOptPlanner planner, org.apache.calcite.rel.metadata.RelMetadataQuery mq)
         {
             var cost = base.computeSelfCost(planner, mq);
 
-            return cost == null ? null! : cost.multiplyBy(ClrAsyncEnumerableConvention.CostMultiplier);
+            return cost?.multiplyBy(ClrAsyncEnumerableConvention.CostMultiplier);
         }
 
         /// <inheritdoc />

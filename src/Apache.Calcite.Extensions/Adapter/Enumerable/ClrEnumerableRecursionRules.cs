@@ -38,7 +38,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var union = (RepeatUnion)rel;
             var traitSet = union.getTraitSet().replace(ClrEnumerableConvention.Instance);
@@ -86,7 +86,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var spool = (TableSpool)rel;
 

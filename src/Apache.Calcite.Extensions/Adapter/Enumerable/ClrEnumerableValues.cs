@@ -59,11 +59,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public RelNode passThrough(RelTraitSet required)
+        public RelNode? passThrough(RelTraitSet required)
         {
             var collation = required.getCollation();
             if (collation == null || collation.isDefault())
-                return null!;
+                return null;
 
             // a VALUES of 0 or 1 rows can be ordered by any collation
             if (tuples.size() > 1)
@@ -79,7 +79,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
                 // check whether the tuples are sorted by the required collations
                 if (ordering!.isOrdered(tuples) == false)
-                    return null!;
+                    return null;
             }
 
             // the tuples' order satisfies the collation, so a node carrying it is all that is needed

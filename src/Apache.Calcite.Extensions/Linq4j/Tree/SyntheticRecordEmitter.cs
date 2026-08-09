@@ -109,7 +109,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             var il = constructor.GetILGenerator();
 
             il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Call, typeof(SyntheticRecord).GetConstructor(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance, [])!);
+            il.Emit(OpCodes.Call, SyntheticRecordConstructor);
 
             for (int i = 0; i < parameters.Length; i++)
             {
@@ -120,6 +120,12 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
 
             il.Emit(OpCodes.Ret);
         }
+
+        /// <summary>
+        /// The base constructor every emitted record chains to.
+        /// </summary>
+        static readonly ConstructorInfo SyntheticRecordConstructor = typeof(SyntheticRecord).GetConstructor(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance, [])
+            ?? throw new InvalidOperationException($"{nameof(SyntheticRecord)} has no no-arg constructor.");
 
     }
 

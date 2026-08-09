@@ -61,11 +61,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public override RelOptCost computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq)
+        public override RelOptCost? computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq)
         {
             var cost = base.computeSelfCost(planner, mq);
 
-            return cost == null ? null! : cost.multiplyBy(factor);
+            return cost?.multiplyBy(factor);
         }
 
         /// <inheritdoc />
@@ -105,7 +105,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <c>Interpreter(DataContext, RelNode)</c>, which is what runs the input.
         /// </summary>
         static readonly System.Reflection.ConstructorInfo InterpreterConstructor =
-            typeof(Interpreter).GetConstructor([typeof(org.apache.calcite.DataContext), typeof(RelNode)])!;
+            typeof(Interpreter).GetConstructor([typeof(org.apache.calcite.DataContext), typeof(RelNode)])
+            ?? throw new System.InvalidOperationException("Interpreter has no (DataContext, RelNode) constructor.");
 
         /// <summary>
         /// <c>Linq4j.slice0</c>, which reads a sequence of one-column rows as a sequence of their values.

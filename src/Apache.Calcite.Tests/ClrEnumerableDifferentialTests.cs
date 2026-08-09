@@ -59,7 +59,7 @@ namespace Apache.Calcite.Tests
         sealed class SalesTable : AbstractTable, ScannableTable
         {
 
-            static readonly object[][] Rows =
+            static readonly object?[][] Rows =
             [
                 [java.lang.Integer.valueOf(1), "EAST", java.lang.Integer.valueOf(10), "A"],
                 [java.lang.Integer.valueOf(2), "EAST", java.lang.Integer.valueOf(20), "B"],
@@ -105,7 +105,7 @@ namespace Apache.Calcite.Tests
         sealed class SortedTable : AbstractTable, ScannableTable
         {
 
-            static readonly object[][] Rows =
+            static readonly object?[][] Rows =
             [
                 [java.lang.Integer.valueOf(1), "A"],
                 [java.lang.Integer.valueOf(2), "B"],
@@ -208,7 +208,7 @@ namespace Apache.Calcite.Tests
         sealed class WideTable : AbstractTable, ScannableTable
         {
 
-            static readonly object[][] Rows = BuildRows();
+            static readonly object?[][] Rows = BuildRows();
 
             static object[][] BuildRows()
             {
@@ -253,7 +253,7 @@ namespace Apache.Calcite.Tests
             const long Hour = 3600000L;
             const long Base = 1704067200000L;
 
-            static readonly object[][] Rows =
+            static readonly object?[][] Rows =
             [
                 [java.lang.Long.valueOf(Base), java.lang.Integer.valueOf(1)],
                 [java.lang.Long.valueOf(Base + (Hour / 6)), java.lang.Integer.valueOf(2)],

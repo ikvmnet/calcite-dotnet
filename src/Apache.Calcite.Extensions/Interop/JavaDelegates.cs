@@ -62,9 +62,11 @@ namespace Apache.Calcite.Extensions.Interop
             typeof(MH<,,,,,,,>),
             typeof(MH<,,,,,,,,>)];
 
-        static readonly MethodInfo LoadMethodType = typeof(ByteCodeHelper).GetMethod(nameof(ByteCodeHelper.LoadMethodType))!;
+        static readonly MethodInfo LoadMethodType = typeof(ByteCodeHelper).GetMethod(nameof(ByteCodeHelper.LoadMethodType))
+            ?? throw new InvalidOperationException($"'{nameof(ByteCodeHelper.LoadMethodType)}' is missing from {nameof(ByteCodeHelper)}.");
 
-        static readonly MethodInfo GetDelegateForInvokeExact = typeof(ByteCodeHelper).GetMethod(nameof(ByteCodeHelper.GetDelegateForInvokeExact))!;
+        static readonly MethodInfo GetDelegateForInvokeExact = typeof(ByteCodeHelper).GetMethod(nameof(ByteCodeHelper.GetDelegateForInvokeExact))
+            ?? throw new InvalidOperationException($"'{nameof(ByteCodeHelper.GetDelegateForInvokeExact)}' is missing from {nameof(ByteCodeHelper)}.");
 
         /// <summary>
         /// Returns a delegate of the given type that calls the given method or constructor.

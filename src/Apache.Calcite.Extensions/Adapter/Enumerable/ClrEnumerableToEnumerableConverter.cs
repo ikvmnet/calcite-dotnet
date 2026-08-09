@@ -71,11 +71,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// The same multiplier the other direction applies, for the same reason: what a converter costs is
         /// what the convention it produces costs against a typical one.
         /// </remarks>
-        public override RelOptCost computeSelfCost(RelOptPlanner planner, org.apache.calcite.rel.metadata.RelMetadataQuery mq)
+        public override RelOptCost? computeSelfCost(RelOptPlanner planner, org.apache.calcite.rel.metadata.RelMetadataQuery mq)
         {
             var cost = base.computeSelfCost(planner, mq);
 
-            return cost == null ? null! : cost.multiplyBy(EnumerableConvention.COST_MULTIPLIER);
+            return cost?.multiplyBy(EnumerableConvention.COST_MULTIPLIER);
         }
 
         /// <inheritdoc />
@@ -109,22 +109,22 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             .getDeclaredMethod(nameof(JavaPlans.Bind), [typeof(ClrPlan<IEnumerable>), typeof(DataContext)]);
 
         /// <inheritdoc />
-        public Pair deriveTraits(RelTraitSet childTraits, int childId) => EnumerableRel.__DefaultMethods.deriveTraits(this, childTraits, childId);
+        public Pair? deriveTraits(RelTraitSet childTraits, int childId) => EnumerableRel.__DefaultMethods.deriveTraits(this, childTraits, childId);
 
         /// <inheritdoc />
         public DeriveMode getDeriveMode() => EnumerableRel.__DefaultMethods.getDeriveMode(this);
 
         /// <inheritdoc />
-        public Pair passThroughTraits(RelTraitSet required) => EnumerableRel.__DefaultMethods.passThroughTraits(this, required);
+        public Pair? passThroughTraits(RelTraitSet required) => EnumerableRel.__DefaultMethods.passThroughTraits(this, required);
 
         /// <inheritdoc />
-        public RelNode derive(RelTraitSet childTraits, int childId) => PhysicalNode.__DefaultMethods.derive(this, childTraits, childId);
+        public RelNode? derive(RelTraitSet childTraits, int childId) => PhysicalNode.__DefaultMethods.derive(this, childTraits, childId);
 
         /// <inheritdoc />
         public java.util.List derive(java.util.List inputTraits) => PhysicalNode.__DefaultMethods.derive(this, inputTraits);
 
         /// <inheritdoc />
-        public RelNode passThrough(RelTraitSet required) => PhysicalNode.__DefaultMethods.passThrough(this, required);
+        public RelNode? passThrough(RelTraitSet required) => PhysicalNode.__DefaultMethods.passThrough(this, required);
 
     }
 

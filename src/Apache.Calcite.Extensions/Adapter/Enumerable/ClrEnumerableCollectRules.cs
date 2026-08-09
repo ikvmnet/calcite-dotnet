@@ -38,7 +38,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var collect = (Collect)rel;
             var input = collect.getInput();
@@ -79,7 +79,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var uncollect = (Uncollect)rel;
             var traitSet = uncollect.getTraitSet().replace(ClrEnumerableConvention.Instance);

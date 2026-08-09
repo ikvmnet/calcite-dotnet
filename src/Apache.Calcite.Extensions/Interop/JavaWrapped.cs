@@ -15,7 +15,7 @@ namespace Apache.Calcite.Extensions.Interop
     /// </remarks>
     /// <param name="comparer"></param>
     /// <param name="element"></param>
-    sealed class JavaWrapped(EqualityComparer comparer, object element) : java.lang.Object
+    sealed class JavaWrapped(EqualityComparer comparer, object? element) : java.lang.Object
     {
 
         /// <summary>
@@ -24,7 +24,7 @@ namespace Apache.Calcite.Extensions.Interop
         /// <param name="comparer"></param>
         /// <param name="element"></param>
         /// <returns></returns>
-        public static object Of(EqualityComparer? comparer, object element)
+        public static object? Of(EqualityComparer? comparer, object? element)
         {
             return comparer == null ? element : new JavaWrapped(comparer, element);
         }
@@ -34,7 +34,7 @@ namespace Apache.Calcite.Extensions.Interop
         /// </summary>
         /// <param name="element"></param>
         /// <returns></returns>
-        public static object Unwrap(object element)
+        public static object? Unwrap(object? element)
         {
             return element is JavaWrapped wrapped ? wrapped.Element : element;
         }
@@ -42,7 +42,7 @@ namespace Apache.Calcite.Extensions.Interop
         /// <summary>
         /// Gets the value wrapped.
         /// </summary>
-        public object Element => element;
+        public object? Element => element;
 
         /// <inheritdoc />
         public override int hashCode()
@@ -51,7 +51,7 @@ namespace Apache.Calcite.Extensions.Interop
         }
 
         /// <inheritdoc />
-        public override bool equals(object obj)
+        public override bool equals(object? obj)
         {
             return ReferenceEquals(this, obj) || (obj is JavaWrapped other && comparer.equal(element, other.Element));
         }

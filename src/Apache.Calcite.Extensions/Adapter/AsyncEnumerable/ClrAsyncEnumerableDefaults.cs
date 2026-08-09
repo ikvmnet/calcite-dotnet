@@ -498,11 +498,11 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             Func<TSource, TNsKey>? outerNullSafeKeySelector,
             Func<TInner, TNsKey>? innerNullSafeKeySelector,
             bool atMostOneNotNullSafeKey,
-            Func<TSource, java.lang.Boolean, TResult> resultSelector,
+            Func<TSource, java.lang.Boolean?, TResult> resultSelector,
             EqualityComparer? comparer,
             EqualityComparer? nullSafeComparer,
-            Func<TSource, TInner, java.lang.Boolean>? nonEquiPredicate,
-            Func<TSource, TInner, java.lang.Boolean> equiPredicate,
+            Func<TSource, TInner, java.lang.Boolean?>? nonEquiPredicate,
+            Func<TSource, TInner, java.lang.Boolean?> equiPredicate,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
 {
             ArgumentNullException.ThrowIfNull(outer);
@@ -531,7 +531,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
 
             await foreach (var row in (outer).WithCancellation(cancellationToken))
             {
-                var marker = java.lang.Boolean.FALSE;
+                java.lang.Boolean? marker = java.lang.Boolean.FALSE;
 
                 if (outerNullSafeKeySelector != null
                     && nullSafeKeys.contains(JavaWrapped.Of(nullSafeComparer, JavaValues.From(outerNullSafeKeySelector(row)))) == false)
@@ -549,7 +549,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                     if (atMostOneNotNullSafeKey)
                     {
                         // the one EQUALS key is null on this row, so every comparison it makes is unknown
-                        marker = null!;
+                        marker = null;
                     }
                     else
                     {
@@ -561,7 +561,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                             {
                                 if (equiPredicate(row, other) == null)
                                 {
-                                    marker = null!;
+                                    marker = null;
                                     break;
                                 }
                             }
@@ -584,7 +584,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                             var matched = nonEquiPredicate(row, other);
 
                             if (matched == null)
-                                marker = null!;
+                                marker = null;
                             else if (matched.booleanValue())
                             {
                                 marker = java.lang.Boolean.TRUE;
@@ -598,7 +598,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                     // nothing hashed to this key, but the build side holds rows whose key is null
                     if (atMostOneNotNullSafeKey)
                     {
-                        marker = null!;
+                        marker = null;
                     }
                     else
                     {
@@ -606,7 +606,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                         {
                             if (equiPredicate(row, other) == null)
                             {
-                                marker = null!;
+                                marker = null;
                                 break;
                             }
                         }
@@ -671,7 +671,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             IAsyncEnumerable<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             EqualityComparer? comparer,
             bool generateNullsOnLeft,
             bool generateNullsOnRight,
@@ -699,7 +699,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             IAsyncEnumerable<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             EqualityComparer? comparer,
             bool generateNullsOnLeft,
             bool generateNullsOnRight,
@@ -748,7 +748,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                 }
 
                 if (any == false && generateNullsOnRight)
-                    yield return resultSelector(row, default!);
+                    yield return resultSelector(row, default);
             }
 
             if (unmatched == null)
@@ -765,7 +765,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                 var key = i.next();
 
                 foreach (var other in (List<TInner>)lookup.get(key))
-                    yield return resultSelector(default!, other);
+                    yield return resultSelector(default, other);
             }
         }
 
@@ -786,7 +786,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             IAsyncEnumerable<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             EqualityComparer? comparer,
             bool generateNullsOnLeft,
             bool generateNullsOnRight,
@@ -833,14 +833,14 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                 }
 
                 if (any == false && generateNullsOnRight)
-                    yield return resultSelector(row, default!);
+                    yield return resultSelector(row, default);
             }
 
             if (unmatched == null)
                 yield break;
 
             foreach (var other in unmatched)
-                yield return resultSelector(default!, other);
+                yield return resultSelector(default, other);
         }
 
         /// <summary>
@@ -1016,7 +1016,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             IAsyncEnumerable<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> matchComparator,
             java.util.Comparator timestampComparator,
             bool emitNullsOnRight,
@@ -1087,7 +1087,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             }
 
             foreach (var row in (outerWithNullKeys))
-                yield return resultSelector(row, default!);
+                yield return resultSelector(row, default);
         }
 
 
@@ -1322,7 +1322,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource, TInner, bool>? predicate,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             org.apache.calcite.linq4j.JoinType joinType,
             java.util.Comparator? comparator,
             EqualityComparer? comparer,
@@ -1558,7 +1558,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
 
                 if (remainingLeft)
                 {
-                    yield return resultSelector(leftEnumerator.Current, default!);
+                    yield return resultSelector(leftEnumerator.Current, default);
 
                     if (await LeftMoveNext() == false)
                     {
@@ -1670,7 +1670,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             org.apache.calcite.linq4j.JoinType joinType,
             IAsyncEnumerable<TSource> outer,
             Func<java.util.List, IAsyncEnumerable<TInner>> inner,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             int batchSize,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -1761,7 +1761,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                         }
 
                         if (any == false && (isLeft || isAnti))
-                            yield return resultSelector(left, default!);
+                            yield return resultSelector(left, default);
                     }
                 }
             }
@@ -1795,8 +1795,8 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         public static async IAsyncEnumerable<TResult> LeftMarkNestedLoopJoin<TSource, TInner, TResult>(
             IAsyncEnumerable<TSource> outer,
             IAsyncEnumerable<TInner> inner,
-            Func<TSource, TInner, java.lang.Boolean> predicate,
-            Func<TSource, java.lang.Boolean, TResult> resultSelector,
+            Func<TSource, TInner, java.lang.Boolean?> predicate,
+            Func<TSource, java.lang.Boolean?, TResult> resultSelector,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
 {
             ArgumentNullException.ThrowIfNull(inner);
@@ -1824,9 +1824,9 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// </remarks>
         public static async IAsyncEnumerable<TResult> CorrelateLeftMarkJoin<TSource, TInner, TResult>(
             IAsyncEnumerable<TSource> outer,
-            Func<TSource, IAsyncEnumerable<TInner>> inner,
-            Func<TSource, TInner, java.lang.Boolean> predicate,
-            Func<TSource, java.lang.Boolean, TResult> resultSelector,
+            Func<TSource, IAsyncEnumerable<TInner>?> inner,
+            Func<TSource, TInner, java.lang.Boolean?> predicate,
+            Func<TSource, java.lang.Boolean?, TResult> resultSelector,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
 {
             await foreach (var row in LeftMarkJoin(outer, inner, predicate, resultSelector, cancellationToken).WithCancellation(cancellationToken))
@@ -1850,9 +1850,9 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// </remarks>
         static async IAsyncEnumerable<TResult> LeftMarkJoin<TSource, TInner, TResult>(
             IAsyncEnumerable<TSource> outer,
-            Func<TSource, IAsyncEnumerable<TInner>> inner,
-            Func<TSource, TInner, java.lang.Boolean> predicate,
-            Func<TSource, java.lang.Boolean, TResult> resultSelector,
+            Func<TSource, IAsyncEnumerable<TInner>?> inner,
+            Func<TSource, TInner, java.lang.Boolean?> predicate,
+            Func<TSource, java.lang.Boolean?, TResult> resultSelector,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(outer);
@@ -1862,7 +1862,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
 
             await foreach (var left in outer.WithCancellation(cancellationToken))
             {
-                var marker = java.lang.Boolean.FALSE;
+                java.lang.Boolean? marker = java.lang.Boolean.FALSE;
                 var rows = inner(left);
 
                 if (rows != null)
@@ -1872,7 +1872,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                         var matched = predicate(left, right);
 
                         if (matched == null)
-                            marker = null!;
+                            marker = null;
                         else if (matched.booleanValue())
                         {
                             marker = java.lang.Boolean.TRUE;
@@ -1912,7 +1912,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         public static IAsyncEnumerable<TResult> NestedLoopJoin<TSource, TInner, TResult>(
             IAsyncEnumerable<TSource> outer,
             IAsyncEnumerable<TInner> inner,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             org.apache.calcite.linq4j.JoinType joinType,
             CancellationToken cancellationToken = default)
@@ -1945,7 +1945,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         static async IAsyncEnumerable<TResult> NestedLoopJoinAsList<TSource, TInner, TResult>(
             IAsyncEnumerable<TSource> outer,
             IAsyncEnumerable<TInner> inner,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             org.apache.calcite.linq4j.JoinType joinType,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -2001,12 +2001,12 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                 }
 
                 if (leftMatchCount == 0 && (generateNullsOnRight || name == nameof(org.apache.calcite.linq4j.JoinType.ANTI)))
-                    result.Add(resultSelector(left, default!));
+                    result.Add(resultSelector(left, default));
             }
 
             if (rightUnmatched != null)
                 for (var i = rightUnmatched.iterator(); i.hasNext();)
-                    result.Add(resultSelector(default!, (TInner)i.next()));
+                    result.Add(resultSelector(default, (TInner)i.next()));
 
             foreach (var row in result)
                 yield return row;
@@ -2030,7 +2030,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         static IAsyncEnumerable<TResult> NestedLoopJoinOptimized<TSource, TInner, TResult>(
             IAsyncEnumerable<TSource> outer,
             IAsyncEnumerable<TInner> inner,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             org.apache.calcite.linq4j.JoinType joinType,
             CancellationToken cancellationToken = default)
@@ -2151,8 +2151,8 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// </remarks>
         public static IAsyncEnumerable<TResult> CorrelateJoin<TSource, TInner, TResult>(
             IAsyncEnumerable<TSource> outer,
-            Func<TSource, IAsyncEnumerable<TInner>> inner,
-            Func<TSource, TInner, TResult> resultSelector,
+            Func<TSource, IAsyncEnumerable<TInner>?> inner,
+            Func<TSource?, TInner?, TResult> resultSelector,
             org.apache.calcite.linq4j.JoinType joinType,
             CancellationToken cancellationToken = default)
         {
@@ -2184,11 +2184,11 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                     }
 
                     if (semi && any)
-                        yield return resultSelector(row, default!);
+                        yield return resultSelector(row, default);
                     else if (anti && any == false)
-                        yield return resultSelector(row, default!);
+                        yield return resultSelector(row, default);
                     else if (any == false && nullsOnRight)
-                        yield return resultSelector(row, default!);
+                        yield return resultSelector(row, default);
                 }
             }
         }
@@ -2592,7 +2592,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             // nothing about reading it can block. Awaiting it would mean an adapter over a Java sequence,
             // which is the async-over-sync this convention exists to refuse.
             await foreach (var row in source.WithCancellation(cancellationToken))
-                foreach (var item in JavaSequences.FromJava<TResult>((org.apache.calcite.linq4j.Enumerable)selector.apply(row!)))
+                foreach (var item in JavaSequences.FromJava<TResult>((org.apache.calcite.linq4j.Enumerable)selector.apply(row)))
                     yield return item;
         }
 

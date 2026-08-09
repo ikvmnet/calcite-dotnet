@@ -54,15 +54,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public org.apache.calcite.util.Pair passThroughTraits(RelTraitSet required)
+        public org.apache.calcite.util.Pair? passThroughTraits(RelTraitSet required)
         {
             if (isSimple(this) == false)
-                return null!;
+                return null;
 
             // a required trait set of another convention is refused rather than copied onto, for the reason
             // ClrEnumerableMergeJoin gives at more length
             if (required.getConvention() != getConvention())
-                return null!;
+                return null;
 
             var inputTraits = getInput().getTraitSet();
             var collation = required.getCollation() ?? throw new java.lang.NullPointerException($"collation trait is null, required traits are {required}");
@@ -93,7 +93,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             // the group keys do not cover the required keys, as in GROUP BY a, b ORDER BY a, b, c, and
             // nothing can be pushed down
-            return null!;
+            return null;
         }
 
         /// <inheritdoc />

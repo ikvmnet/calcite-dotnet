@@ -33,10 +33,10 @@ namespace Apache.Calcite.Extensions.Runtime
         Members Of() => ByType.GetOrAdd(GetType(), Members.For);
 
         /// <inheritdoc />
-        public bool equals(object other) => Of().IsEqual(this, other);
+        public bool equals(object? other) => Of().IsEqual(this, other);
 
         /// <inheritdoc />
-        public override bool Equals(object? other) => Of().IsEqual(this, other!);
+        public override bool Equals(object? other) => Of().IsEqual(this, other);
 
         /// <inheritdoc />
         public int hashCode() => Of().HashOf(this);
@@ -48,10 +48,10 @@ namespace Apache.Calcite.Extensions.Runtime
         public override string ToString() => Of().PrintOf(this);
 
         /// <inheritdoc />
-        public int compareTo(object other) => Of().CompareOf(this, other);
+        public int compareTo(object? other) => Of().CompareOf(this, other);
 
         /// <inheritdoc />
-        public int CompareTo(object? other) => Of().CompareOf(this, other!);
+        public int CompareTo(object? other) => Of().CompareOf(this, other);
 
         /// <summary>
         /// The four members of one record type.
@@ -60,17 +60,17 @@ namespace Apache.Calcite.Extensions.Runtime
         /// <param name="hash"></param>
         /// <param name="compare"></param>
         /// <param name="print"></param>
-        sealed class Members(Func<object, object, bool> isEqual, Func<object, int> hash, Func<object, object, int> compare, Func<object, string> print)
+        sealed class Members(Func<object, object?, bool> isEqual, Func<object, int> hash, Func<object, object?, int> compare, Func<object, string> print)
         {
 
             /// <summary>Compares two records field by field.</summary>
-            public Func<object, object, bool> IsEqual { get; } = isEqual;
+            public Func<object, object?, bool> IsEqual { get; } = isEqual;
 
             /// <summary>Accumulates a hash over the fields.</summary>
             public Func<object, int> HashOf { get; } = hash;
 
             /// <summary>Orders two records field by field.</summary>
-            public Func<object, object, int> CompareOf { get; } = compare;
+            public Func<object, object?, int> CompareOf { get; } = compare;
 
             /// <summary>Renders a record.</summary>
             public Func<object, string> PrintOf { get; } = print;
@@ -99,7 +99,7 @@ namespace Apache.Calcite.Extensions.Runtime
             /// <param name="type"></param>
             /// <param name="fields"></param>
             /// <returns></returns>
-            static Func<object, object, bool> BuildEquals(Type type, FieldInfo[] fields)
+            static Func<object, object?, bool> BuildEquals(Type type, FieldInfo[] fields)
             {
                 var left = Expression.Parameter(typeof(object), "o0");
                 var right = Expression.Parameter(typeof(object), "o1");
@@ -123,13 +123,14 @@ namespace Apache.Calcite.Extensions.Runtime
                         Expression.Block([that], Expression.Assign(that, Expression.Convert(right, type)), body),
                         Expression.Constant(false)));
 
-                return Expression.Lambda<Func<object, object, bool>>(test, left, right).Compile();
+                return Expression.Lambda<Func<object, object?, bool>>(test, left, right).Compile();
             }
 
             /// <summary>
             /// <c>Objects.equal</c>, which Calcite's generated equals uses for a reference field.
             /// </summary>
-            static readonly MethodInfo ObjectsEqual = typeof(com.google.common.@base.Objects).GetMethod("equal", [typeof(object), typeof(object)])!;
+            static readonly MethodInfo ObjectsEqual = typeof(com.google.common.@base.Objects).GetMethod("equal", [typeof(object), typeof(object)])
+                ?? throw new InvalidOperationException("Guava's Objects has no equal(Object, Object).");
 
             /// <summary>
             /// Builds <c>hashCode</c>, accumulating one field at a time.
@@ -191,7 +192,7 @@ namespace Apache.Calcite.Extensions.Runtime
             /// <param name="type"></param>
             /// <param name="fields"></param>
             /// <returns></returns>
-            static Func<object, object, int> BuildCompare(Type type, FieldInfo[] fields)
+            static Func<object, object?, int> BuildCompare(Type type, FieldInfo[] fields)
             {
                 var left = Expression.Parameter(typeof(object), "o0");
                 var right = Expression.Parameter(typeof(object), "o1");
@@ -220,14 +221,16 @@ namespace Apache.Calcite.Extensions.Runtime
 
                 body.Add(Expression.Label(end, Expression.Constant(0)));
 
-                return Expression.Lambda<Func<object, object, int>>(Expression.Block([self, that, c], body), left, right).Compile();
+                return Expression.Lambda<Func<object, object?, int>>(Expression.Block([self, that, c], body), left, right).Compile();
             }
 
             /// <summary>
             /// <c>Utilities.compare(Comparable, Comparable)</c>, reached by a method taking objects.
             /// </summary>
             static readonly MethodInfo ComparableCompare = typeof(Apache.Calcite.Extensions.Interop.JavaComparisons)
-                .GetMethod(nameof(Apache.Calcite.Extensions.Interop.JavaComparisons.Compare), [typeof(object), typeof(object)])!;
+                
+                .GetMethod(nameof(Apache.Calcite.Extensions.Interop.JavaComparisons.Compare), [typeof(object), typeof(object)])
+                ?? throw new InvalidOperationException("JavaComparisons has no Compare(object, object).");
 
             /// <summary>
             /// Brings a field to the type the comparison takes.
@@ -301,9 +304,11 @@ namespace Apache.Calcite.Extensions.Runtime
                     Expression.Block([self], Expression.Assign(self, Expression.Convert(value, type)), text), value).Compile();
             }
 
-            static readonly MethodInfo Concat = typeof(string).GetMethod(nameof(string.Concat), [typeof(string), typeof(string)])!;
+            static readonly MethodInfo Concat = typeof(string).GetMethod(nameof(string.Concat), [typeof(string), typeof(string)])
+                ?? throw new InvalidOperationException("String has no Concat(string, string).");
             // Objects.toString rather than String.valueOf, whose helper IKVM keeps internal; both render a null as "null"
-            static readonly MethodInfo ValueOf = typeof(java.util.Objects).GetMethod("toString", [typeof(object)])!;
+            static readonly MethodInfo ValueOf = typeof(java.util.Objects).GetMethod("toString", [typeof(object)])
+                ?? throw new InvalidOperationException("java.util.Objects has no toString(Object).");
 
         }
 

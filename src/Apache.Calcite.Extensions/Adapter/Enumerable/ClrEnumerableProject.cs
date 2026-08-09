@@ -53,18 +53,18 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public org.apache.calcite.util.Pair passThroughTraits(RelTraitSet required)
+        public org.apache.calcite.util.Pair? passThroughTraits(RelTraitSet required)
         {
             return ClrEnumerableTraitsUtils.PassThroughTraitsForProject(
                 required,
                 getProjects(),
                 getInput().getRowType(),
                 getInput().getCluster().getTypeFactory(),
-                getTraitSet())!;
+                getTraitSet());
         }
 
         /// <inheritdoc />
-        public org.apache.calcite.util.Pair deriveTraits(RelTraitSet childTraits, int childId)
+        public org.apache.calcite.util.Pair? deriveTraits(RelTraitSet childTraits, int childId)
         {
             return ClrEnumerableTraitsUtils.DeriveTraitsForProject(
                 childTraits,
@@ -72,7 +72,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 getProjects(),
                 getInput().getRowType(),
                 getInput().getCluster().getTypeFactory(),
-                getTraitSet())!;
+                getTraitSet());
         }
 
         /// <inheritdoc />
