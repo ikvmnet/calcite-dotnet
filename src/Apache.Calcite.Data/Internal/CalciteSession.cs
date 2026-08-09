@@ -404,12 +404,15 @@ namespace Apache.Calcite.Data.Internal
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="request"/> is <see langword="null"/>.</exception>
         /// <exception cref="CalciteException">Thrown when planning or execution fails.</exception>
         /// <remarks>
-        /// Synchronous, and <see cref="ExecuteNonQueryAsync"/> is this method in a completed task. There is
-        /// no asynchronous DML and there cannot be one: a table modification is not a node either of these
-        /// conventions implements, and only the synchronous one reaches Calcite's across a converter -- there
-        /// is no converter to <c>EnumerableConvention</c> from the asynchronous one and cannot be -- so a
-        /// write is planned into <c>ClrEnumerableConvention</c> whichever entry point asked for it, and the
-        /// connection's mode does not reach this path.
+        /// Synchronous, and <see cref="ExecuteNonQueryAsync"/> is this method in a completed task. The plan
+        /// is the connection's here as everywhere: a table modification is not a node either Clr convention
+        /// implements, so the modify itself is Calcite's <c>EnumerableTableModify</c> in both modes, and
+        /// under the asynchronous root its count row crosses <c>EnumerableToClrAsyncEnumerableConverter</c>
+        /// and completes synchronously — the drain never truly waits, but it blocks with the synchronization
+        /// context suppressed all the same, because correctness must not depend on what the sub-plan happens
+        /// to be. There is still no asynchronous DML in the node-level sense — the modify cannot suspend —
+        /// and the asynchronous root does not pretend otherwise; what it keeps is one plan per statement per
+        /// connection, whichever entry point asked.
         /// </remarks>
         public CalciteEnumerableResult ExecuteNonQuery(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {
@@ -421,7 +424,7 @@ namespace Apache.Calcite.Data.Internal
             var closeables = ActivateHooks(request.Hooks);
             try
             {
-                var signature = Plan(request);
+                var signature = Plan(request, async: !_synchronous);
                 Bind(request, signature, out var dataContext, out var cancelFlag);
 
                 var statementType = signature.StatementType;
@@ -441,23 +444,23 @@ namespace Apache.Calcite.Data.Internal
                 {
                     // DML (INSERT/UPDATE/DELETE/MERGE): drain the enumerator to trigger execution.
                     // Wire the cancellation token to the Calcite cancel flag only here, where we
-                    // are synchronously enumerating and need Calcite's check-points to be able to
-                    // interrupt the loop. The registration is scoped to this block only.
+                    // are enumerating and need Calcite's check-points to be able to interrupt the
+                    // loop. The registration is scoped to this block only.
                     // RelOptUtil.createDmlRowType gives DML one ROWCOUNT column, and
                     // Meta.CursorFactory.deduce answers OBJECT for a single column before it looks at
                     // the element type -- measured -- so the row is the boxed count itself and not an
                     // array holding it. The array branch below is for a plan that says otherwise.
                     recordsAffected = 0;
                     using var _ = cancellationToken.Register(() => cancelFlag.set(true));
-                    using var e = signature.Bind(dataContext).GetEnumerator();
-                    if (e.MoveNext())
-                    {
-                        var cur = e.Current;
-                        if (cur is object[] row && row.Length > 0)
-                            recordsAffected = ToInt64(row[0]);
-                        else if (cur != null)
-                            recordsAffected = ToInt64(cur);
-                    }
+
+                    var cur = _synchronous
+                        ? FirstRow(signature.Bind(dataContext))
+                        : FirstRow(signature.BindAsync(dataContext), cancellationToken);
+
+                    if (cur is object[] row && row.Length > 0)
+                        recordsAffected = ToInt64(row[0]);
+                    else if (cur != null)
+                        recordsAffected = ToInt64(cur);
                 }
 
                 return new CalciteEnumerableResult(signature, null, recordsAffected);
@@ -477,15 +480,78 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
+        /// Returns the first row of <paramref name="source"/>, or <see langword="null"/> where there is
+        /// none.
+        /// </summary>
+        static object? FirstRow(IEnumerable<object> source)
+        {
+            using var e = source.GetEnumerator();
+            return e.MoveNext() ? e.Current : null;
+        }
+
+        /// <summary>
+        /// Returns the first row of <paramref name="source"/>, or <see langword="null"/> where there is
+        /// none, blocking for it with the synchronization context suppressed before the plan runs — the
+        /// operators capture the context at suspension, inside the call, so the suppression has to precede
+        /// it. <c>CalciteAsyncEnumerableResult.Read</c> has the measurement.
+        /// </summary>
+        static object? FirstRow(IAsyncEnumerable<object> source, CancellationToken cancellationToken)
+        {
+            var context = SynchronizationContext.Current;
+            if (context is null)
+                return First(source, cancellationToken);
+
+            SynchronizationContext.SetSynchronizationContext(null);
+
+            try
+            {
+                return First(source, cancellationToken);
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(context);
+            }
+
+            static object? First(IAsyncEnumerable<object> source, CancellationToken cancellationToken)
+            {
+                var e = source.GetAsyncEnumerator(cancellationToken);
+                try
+                {
+                    return WaitMove(e.MoveNextAsync()) ? e.Current : null;
+                }
+                finally
+                {
+                    Wait(e.DisposeAsync());
+                }
+            }
+
+            static bool WaitMove(ValueTask<bool> task)
+            {
+                return task.IsCompletedSuccessfully ? task.Result : task.AsTask().GetAwaiter().GetResult();
+            }
+        }
+
+        /// <summary>
+        /// Waits for a disposal the caller cannot await.
+        /// </summary>
+        static void Wait(ValueTask task)
+        {
+            if (task.IsCompleted)
+                task.GetAwaiter().GetResult();
+            else
+                task.AsTask().GetAwaiter().GetResult();
+        }
+
+        /// <summary>
         /// Prepares and executes a DML, DDL, or SELECT statement and returns the number of rows affected.
         /// </summary>
         /// <param name="request">The execute request containing SQL text, parameters, timeout, and hooks.</param>
         /// <param name="cancellationToken">Token used to cancel execution.</param>
         /// <returns>A <see cref="CalciteResult"/> with <c>RecordsAffected</c> set and no row enumerator.</returns>
         /// <remarks>
-        /// <see cref="ExecuteNonQuery"/> in a completed task, for the reason that method gives: there is no
-        /// asynchronous DML to prepare. It is here so that a caller writing asynchronously has the method it
-        /// expects, not because anything about it awaits.
+        /// <see cref="ExecuteNonQuery"/> in a completed task, for the reason that method gives: a modify
+        /// cannot suspend, so there is nothing here to await. It is here so that a caller writing
+        /// asynchronously has the method it expects.
         /// </remarks>
         public Task<CalciteResult> ExecuteNonQueryAsync(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {

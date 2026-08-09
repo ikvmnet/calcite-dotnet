@@ -92,6 +92,79 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(1, affected);
         }
 
+        static readonly string SynchronousServerDdlConnectionString = new CalciteConnectionStringBuilder
+        {
+            Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
+            ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+            Schema = "adhoc",
+            Synchronous = true,
+        };
+
+        /// <summary>
+        /// The synchronous mode's DML drain, so both drains stay covered.
+        /// </summary>
+        [Fact]
+        public void ExecuteNonQuery_insert_should_return_row_count_in_synchronous_mode()
+        {
+            using var c = new CalciteConnection(SynchronousServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS \"dmlsync\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "INSERT INTO \"dmlsync\" VALUES (3)";
+            Assert.Equal(1, cmd.ExecuteNonQuery());
+        }
+
+        /// <summary>
+        /// A write plans under the asynchronous program: the modify stays Calcite's and the converter
+        /// carries its count row, exactly as any node the convention lacks is carried.
+        /// </summary>
+        [Fact]
+        public void Explain_insert_should_render_the_async_rooted_plan()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS \"dmlexplain\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "EXPLAIN PLAN FOR INSERT INTO \"dmlexplain\" VALUES (7)";
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+
+            var plan = r.GetValue(0)?.ToString() ?? "";
+            Assert.Contains("EnumerableToClrAsyncEnumerableConverter", plan);
+            Assert.Contains("TableModify", plan);
+        }
+
+        /// <summary>
+        /// The same INSERT through the reader path executes and reports its count row, so a write is one
+        /// plan on the connection whichever entry point asked.
+        /// </summary>
+        [Fact]
+        public void ExecuteReader_insert_should_run_and_report_the_count()
+        {
+            using var c = new CalciteConnection(ServerDdlConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS \"dmlreader\" (\"id\" INTEGER NOT NULL)";
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "INSERT INTO \"dmlreader\" VALUES (9)";
+            using (var r = cmd.ExecuteReader())
+            {
+                Assert.True(r.Read());
+                Assert.Equal("1", r.GetValue(0)?.ToString());
+            }
+
+            cmd.CommandText = "SELECT COUNT(*) FROM \"dmlreader\" WHERE \"id\" = 9";
+            Assert.Equal("1", cmd.ExecuteScalar()?.ToString());
+        }
+
         static readonly string SchemaPropertyOnlyConnectionString = new CalciteConnectionStringBuilder
         {
             // Model has NO defaultSchema — the connection-string Schema property is the sole source.

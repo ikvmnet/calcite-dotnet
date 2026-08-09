@@ -154,8 +154,11 @@ synchronous work — and `ExecuteReader` is the core with `CancellationToken.Non
 - DDL (`CREATE`, `ALTER`, `DROP`, `OTHER_DDL`, dispatched on `name()`) has already taken effect
   during prepare, so there is nothing to enumerate and the count is `0`.
 - `SELECT` reports `-1`, by ADO.NET convention.
-- DML drains the enumerator. Here — and only here, where the enumeration is synchronous and
-  Calcite's check-points can see it — the cancellation token is registered against the cancel flag,
+- DML drains the enumerator — of the connection's plan, exactly as the reader path prepares it. The
+  modify itself is Calcite's `EnumerableTableModify` in both modes, so under the asynchronous root
+  the count row crosses the converter and completes synchronously; the drain blocks with the
+  synchronization context suppressed all the same. Here — and only here, where the drain can see
+  Calcite's check-points — the cancellation token is registered against the cancel flag,
   scoped to the drain. Because the plan was prepared for `Object[]` rows, the single row's element
   `[0]` is the `ROWCOUNT BIGINT` column of `RelOptUtil.createDmlRowType`, read through a `ToInt64`
   that accepts a Java boxed number or a CLR primitive.
