@@ -183,17 +183,26 @@ returning rows, plus the `ElementType` the cursor factory is deduced from. It me
   schema, config and default schema path. `getDataContext()` returns a throwaway
   `StatementDataContext` with only the timestamp variables, which is what backs `RexExecutorImpl`
   for constant folding during optimisation — the same thing `CalciteConnectionImpl.ContextImpl`
-  does. `getRelRunner()` returns a **`ClrRelRunner`**, which plans through
-  `ClrPrepareImpl.PrepareRel` — the same `prepare2_` branch Calcite's own runner uses. Its one caller
-  is `ServerDdlExecutor.populate`, behind `CREATE MATERIALIZED VIEW` and `CREATE TABLE ... AS SELECT`;
-  while this threw, both statements failed *after* the table had been added to the schema.
-  `RelRunner.prepareStatement` is declared to return a `java.sql.PreparedStatement` and `populate`
-  uses two of its members, so `ClrRelPreparedStatement` implements `executeUpdate()` and `close()`
-  and throws from the other hundred-odd. Calcite answers with an `AvaticaPreparedStatement` built by
-  the connection's statement factory; there is no Avatica connection on this path.
-  **`populate` resolves its INSERT against `getRootSchema()` unconditionally**, so neither statement
-  works in a sub-schema — upstream's own limitation, pinned by
-  `CalciteViewTests.Materialized_view_in_a_sub_schema_is_not_supported_upstream`.
+  does. **`getRelRunner()` refuses, with a message naming what that costs.** Calcite's
+  `ContextImpl` unwraps the connection — the connection *is* the runner — and
+  `RelRunner.prepareStatement` is declared to return a `java.sql.PreparedStatement`. Its one caller is
+  `ServerDdlExecutor.populate`, which uses two members of it, so supporting it means a hundred-odd
+  members of a JDBC interface this project exists to not have. The planning half is already here:
+  `ClrPrepareImpl.PrepareRel` is the `prepare2_` branch Calcite's own runner uses, ready for a runner
+  that wants it. So `CREATE MATERIALIZED VIEW` and `CREATE TABLE ... AS SELECT` are unsupported, and
+  fail *after* `ServerDdlExecutor` has added the table — that ordering is upstream's. Both are pinned
+  by tests. `populate` also resolves its INSERT against `getRootSchema()` unconditionally, so neither
+  would work in a sub-schema even with a runner; that is a second, independent upstream limitation,
+  and it has its own test.
+
+  Note that **this is the only place JDBC is declined, not the only place it appears.** Expanding any
+  view goes through `MaterializedViewTable.MATERIALIZATION_CONNECTION`, a `public static final`
+  eagerly initialised from `DriverManager.getConnection("jdbc:calcite:")` and read unconditionally by
+  `ViewTableMacro.apply` — which is why `CalciteSession` registers the driver. That connection supplies
+  only config, type factory and a `DataContext`; `Schemas.makeContext` takes `getRootSchema()` from the
+  `schema` argument, so its own empty schema is never consulted. `makeContext` has a `connection == null`
+  branch that would use `CalcitePrepare.Dummy.peek()` instead — our context — but a `static final`
+  cannot be null, so that path is unreachable from a view.
 - **`StatementDataContext`** implements `DataContext` for execution. It holds the root schema, the
   type factory, the well-known per-statement variables (`utcTimestamp`, `currentTimestamp`,
   `localTimestamp`, `sysTimestamp`, `cancelFlag`, `queryTimeout`), the values stashed at plan time
@@ -376,7 +385,6 @@ src/
       ClrExplainResult.cs                 EXPLAIN, rendered at prepare time
       ClrExplainBindable.cs               …and yielded as one row
       PrepareContext.cs                   CalcitePrepare.Context
-      ClrRelRunner.cs                     RelRunner over a built plan, for populate
       StatementDataContext.cs             DataContext for execution
       Enumerable/
         ClrEnumerablePreparingStmt.cs     Convention, program, traits, compiler

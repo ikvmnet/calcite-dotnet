@@ -93,20 +93,28 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <summary>
-        /// Returns the runner Calcite uses to execute a plan it built itself.
+        /// Refuses to run a plan Calcite built itself.
         /// </summary>
         /// <remarks>
-        /// <c>CalciteConnectionImpl.ContextImpl.getRelRunner</c>, which unwraps the connection — the
-        /// connection <i>is</i> the runner there. There is no connection here, so this is
-        /// <see cref="ClrRelRunner"/>, which plans through <c>ClrPrepareImpl.PrepareRel</c>: the same
-        /// <c>prepare2_</c> branch Calcite's runner uses.
+        /// <c>CalciteConnectionImpl.ContextImpl.getRelRunner</c> unwraps the connection, the connection
+        /// being the runner. There is no connection here, and <c>RelRunner.prepareStatement</c> is declared
+        /// to return a <c>java.sql.PreparedStatement</c> — so implementing it means a hundred-odd members
+        /// of a JDBC interface this project exists to not have, for the two members
+        /// <c>ServerDdlExecutor.populate</c> calls.
         ///
-        /// <para>The one caller is <c>ServerDdlExecutor.populate</c>, behind
-        /// <c>CREATE MATERIALIZED VIEW</c> and <c>CREATE TABLE ... AS SELECT</c>.</para>
+        /// <para><c>populate</c> is the one caller, behind <c>CREATE MATERIALIZED VIEW</c> and
+        /// <c>CREATE TABLE ... AS SELECT</c>. Both are refused here, and both are refused
+        /// <i>after</i> <c>ServerDdlExecutor</c> has already added the table to the schema — that ordering
+        /// is upstream's and this cannot change it. The planning half is not the obstacle:
+        /// <c>ClrPrepareImpl.PrepareRel</c> is the <c>prepare2_</c> branch Calcite's own runner uses, and
+        /// is ready for a runner that wants it.</para>
         /// </remarks>
         public RelRunner getRelRunner()
         {
-            return new ClrRelRunner(this);
+            throw new UnsupportedOperationException(
+                "CREATE MATERIALIZED VIEW and CREATE TABLE ... AS SELECT are not supported: "
+                + "ServerDdlExecutor.populate loads their rows through a java.sql.PreparedStatement, "
+                + "which this provider does not implement. The table has already been created.");
         }
     }
 

@@ -493,17 +493,21 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// <c>CREATE TABLE ... AS SELECT</c> loads its rows through <c>ServerDdlExecutor.populate</c>,
-        /// which asks the prepare context for a <c>RelRunner</c> and runs an INSERT it built itself.
+        /// <c>CREATE TABLE ... AS SELECT</c> is refused, and the empty table is left behind.
         /// </summary>
         /// <remarks>
-        /// The same path as <c>CREATE MATERIALIZED VIEW</c>; see the materialized-view tests in
-        /// <see cref="CalciteViewTests"/> for why it needs the root schema. Before
-        /// <c>PrepareContext.getRelRunner</c> was implemented, both statements threw
-        /// <c>UnsupportedOperationException</c> — after the table had been added to the schema.
+        /// <c>ServerDdlExecutor</c> adds the table and then calls <c>populate</c> to fill it, and
+        /// <c>populate</c> loads rows through <c>context.getRelRunner().prepareStatement(rel)</c> — a
+        /// <c>java.sql.PreparedStatement</c>, which this provider does not implement. So the column
+        /// definitions survive and the rows do not. The ordering is upstream's; the refusal is
+        /// <c>PrepareContext.getRelRunner</c>'s, and its message says which statements are affected.
+        ///
+        /// <para><c>CREATE MATERIALIZED VIEW</c> is the same path — see
+        /// <c>CalciteViewTests.Create_materialized_view_should_be_refused_with_a_reason</c>. Asserted
+        /// rather than skipped so that implementing a runner shows up here as a failure.</para>
         /// </remarks>
         [Fact]
-        public void CreateTableAsSelect_should_copy_the_rows()
+        public void CreateTableAsSelect_should_be_refused_leaving_an_empty_table()
         {
             var rootDdl = new CalciteConnectionStringBuilder
             {
@@ -521,15 +525,13 @@ namespace Apache.Calcite.Data.Tests
             cmd.ExecuteNonQuery();
 
             cmd.CommandText = "CREATE TABLE \"ctas_dst\" AS SELECT \"id\" FROM \"ctas_src\"";
-            cmd.ExecuteNonQuery();
+            var ex = Assert.ThrowsAny<System.Exception>(() => cmd.ExecuteNonQuery());
+            Assert.Contains("CREATE TABLE ... AS SELECT", ex.ToString(), System.StringComparison.Ordinal);
 
-            cmd.CommandText = "SELECT \"id\" FROM \"ctas_dst\" ORDER BY \"id\"";
+            cmd.CommandText = "SELECT COUNT(*) FROM \"ctas_dst\"";
             using var reader2 = cmd.ExecuteReader();
             Assert.True(reader2.Read());
-            Assert.Equal(3, reader2.GetInt32(0));
-            Assert.True(reader2.Read());
-            Assert.Equal(4, reader2.GetInt32(0));
-            Assert.False(reader2.Read());
+            Assert.Equal(0L, reader2.GetInt64(0));
         }
 
     }

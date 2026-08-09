@@ -807,14 +807,26 @@ namespace Apache.Calcite.Data.Tests
         // ------------------------------------------------------------------------------------------
 
         /// <summary>
-        /// A materialized view is a real table holding a snapshot, and loading it needs a
-        /// <c>RelRunner</c>: <c>ServerDdlExecutor.populate</c> builds an INSERT and asks the prepare
-        /// context to run the plan. <c>PrepareContext.getRelRunner</c> threw until
-        /// <c>ClrRelRunner</c> was written, so the table was created and left empty — or rather, the
-        /// statement failed after the table had already been added to the schema.
+        /// <c>CREATE MATERIALIZED VIEW</c> is refused, and this pins why.
         /// </summary>
+        /// <remarks>
+        /// A materialized view is a real table holding a snapshot, so it has rows to load, and
+        /// <c>ServerDdlExecutor.populate</c> loads them by building an INSERT and calling
+        /// <c>context.getRelRunner().prepareStatement(rel).executeUpdate()</c>.
+        /// <c>RelRunner.prepareStatement</c> is declared to return a <c>java.sql.PreparedStatement</c>, and
+        /// this provider implements no JDBC, so <c>PrepareContext.getRelRunner</c> refuses.
+        ///
+        /// <para>The planning half is not what is missing — <c>ClrPrepareImpl.PrepareRel</c> is the
+        /// <c>prepare2_</c> branch Calcite's own runner uses. What is missing is a hundred-odd members of
+        /// <c>PreparedStatement</c> that exist so that two of them can be called.</para>
+        ///
+        /// <para><b>The table is created first and the statement fails after</b>, which is
+        /// <c>ServerDdlExecutor</c>'s ordering and not something this side can change; the assertion below
+        /// records it rather than pretending otherwise. <c>CREATE TABLE ... AS SELECT</c> shares the path —
+        /// see <c>CalciteDdlTests</c>.</para>
+        /// </remarks>
         [Fact]
-        public void Created_materialized_view_should_hold_its_rows()
+        public void Create_materialized_view_should_be_refused_with_a_reason()
         {
             using var c = new CalciteConnection(RootDdlConnectionString);
             c.Open();
@@ -824,89 +836,32 @@ namespace Apache.Calcite.Data.Tests
             cmd.ExecuteNonQuery();
             cmd.CommandText = "INSERT INTO \"mvsrc\" VALUES (1), (2)";
             cmd.ExecuteNonQuery();
+
             cmd.CommandText = "CREATE MATERIALIZED VIEW \"mv\" AS SELECT \"id\" FROM \"mvsrc\"";
-            cmd.ExecuteNonQuery();
+            var ex = Assert.ThrowsAny<Exception>(() => cmd.ExecuteNonQuery());
+            Assert.Contains("CREATE MATERIALIZED VIEW", ex.ToString(), StringComparison.Ordinal);
 
-            cmd.CommandText = "SELECT \"id\" FROM \"mv\" ORDER BY \"id\"";
-            using var r = cmd.ExecuteReader();
-
-            Assert.True(r.Read());
-            Assert.Equal(1, r.GetInt32(0));
-            Assert.True(r.Read());
-            Assert.Equal(2, r.GetInt32(0));
-            Assert.False(r.Read());
+            // upstream added the table before it tried to fill it, so the name now resolves and is empty
+            cmd.CommandText = "SELECT COUNT(*) FROM \"mv\"";
+            Assert.Equal(0L, Convert.ToInt64(cmd.ExecuteScalar()));
         }
 
         /// <summary>
-        /// A materialized view is a snapshot: a row written to the source afterwards is not in it. This is
-        /// the difference from <see cref="Created_view_should_see_rows_inserted_after_it_was_created"/>,
-        /// and it is also why the row count matters — an empty materialization would pass a test that only
-        /// checked the query planned.
-        /// </summary>
-        [Fact]
-        public void Materialized_view_should_not_see_later_rows()
-        {
-            using var c = new CalciteConnection(RootDdlConnectionString);
-            c.Open();
-            using var cmd = c.CreateCommand();
-
-            cmd.CommandText = "CREATE TABLE \"snapsrc\" (\"id\" INTEGER NOT NULL)";
-            cmd.ExecuteNonQuery();
-            cmd.CommandText = "INSERT INTO \"snapsrc\" VALUES (1)";
-            cmd.ExecuteNonQuery();
-            cmd.CommandText = "CREATE MATERIALIZED VIEW \"snapmv\" AS SELECT \"id\" FROM \"snapsrc\"";
-            cmd.ExecuteNonQuery();
-            cmd.CommandText = "INSERT INTO \"snapsrc\" VALUES (2)";
-            cmd.ExecuteNonQuery();
-
-            cmd.CommandText = "SELECT COUNT(*) FROM \"snapmv\"";
-            Assert.Equal(1L, Convert.ToInt64(cmd.ExecuteScalar()));
-
-            cmd.CommandText = "SELECT COUNT(*) FROM \"snapsrc\"";
-            Assert.Equal(2L, Convert.ToInt64(cmd.ExecuteScalar()));
-        }
-
-        /// <summary>
-        /// A materialized view is dropped as a table, not as a view — <c>ServerDdlExecutor</c> removes it
-        /// from the table map and deregisters its <c>MaterializationKey</c>.
-        /// </summary>
-        [Fact]
-        public void Dropped_materialized_view_should_no_longer_resolve()
-        {
-            using var c = new CalciteConnection(RootDdlConnectionString);
-            c.Open();
-            using var cmd = c.CreateCommand();
-
-            cmd.CommandText = "CREATE TABLE \"dropmvsrc\" (\"id\" INTEGER NOT NULL)";
-            cmd.ExecuteNonQuery();
-            cmd.CommandText = "INSERT INTO \"dropmvsrc\" VALUES (1)";
-            cmd.ExecuteNonQuery();
-            cmd.CommandText = "CREATE MATERIALIZED VIEW \"dropmv\" AS SELECT \"id\" FROM \"dropmvsrc\"";
-            cmd.ExecuteNonQuery();
-            cmd.CommandText = "DROP MATERIALIZED VIEW \"dropmv\"";
-            cmd.ExecuteNonQuery();
-
-            cmd.CommandText = "SELECT \"id\" FROM \"dropmv\"";
-            Assert.ThrowsAny<Exception>(() => cmd.ExecuteReader());
-        }
-
-        /// <summary>
-        /// A materialized view cannot be created in a sub-schema, and that is Calcite's limitation rather
-        /// than this project's.
+        /// In a sub-schema the same statement fails earlier, and for a different reason that is Calcite's
+        /// rather than this project's.
         /// </summary>
         /// <remarks>
-        /// <c>ServerDdlExecutor.populate</c> plans its INSERT through a <c>FrameworkConfig</c> whose default
-        /// schema is <c>context.getRootSchema().plus()</c> — the root, unconditionally. So neither the new
-        /// table nor the source table of the query resolves when either lives one level down, and the
-        /// statement fails at validation. Upstream never sees it: <c>ServerTest.connect()</c> opens a
+        /// <c>populate</c> plans its INSERT through a <c>FrameworkConfig</c> whose default schema is
+        /// <c>context.getRootSchema().plus()</c> — the root, unconditionally — so neither the new table nor
+        /// the source of the query resolves when either lives one level down, and it fails at validation
+        /// before any runner is asked for. Upstream never sees it: <c>ServerTest.connect()</c> opens a
         /// connection with no model, so everything it creates is in the root schema.
         ///
-        /// <para>This is asserted rather than skipped so that a fix upstream shows up here as a failure.
-        /// The fix is upstream's to make; there is nothing on this side to change, because
-        /// <c>getRootSchema()</c> has to return the root.</para>
+        /// <para>Worth keeping separate from the test above, because the two failures would not be fixed by
+        /// the same thing: a runner would not make this one work.</para>
         /// </remarks>
         [Fact]
-        public void Materialized_view_in_a_sub_schema_is_not_supported_upstream()
+        public void Materialized_view_in_a_sub_schema_fails_before_a_runner_is_asked_for()
         {
             using var c = new CalciteConnection(ServerDdlConnectionString);
             c.Open();
