@@ -110,7 +110,8 @@ namespace Apache.Calcite.Data.Internal
                 _rootSchemaPlus = _rootSchema.plus();
                 _config = new CalciteConnectionConfigImpl(BuildEngineProperties(options));
                 _typeFactory = new JavaTypeFactoryImpl();
-                _defaultSchemaPath = string.IsNullOrEmpty(modelDefaultSchema ?? options.Schema) ? [] : [modelDefaultSchema ?? options.Schema];
+                var defaultSchema = modelDefaultSchema ?? options.Schema;
+                _defaultSchemaPath = string.IsNullOrEmpty(defaultSchema) ? [] : [defaultSchema];
             }
             catch (Exception e) when (e is not CalciteException)
             {

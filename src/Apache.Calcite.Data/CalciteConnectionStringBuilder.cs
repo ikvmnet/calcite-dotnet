@@ -476,7 +476,7 @@ namespace Apache.Calcite.Data
             if (string.IsNullOrEmpty(value))
                 Remove(key);
             else
-                this[key] = value!;
+                this[key] = value;
         }
 
     }

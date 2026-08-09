@@ -37,9 +37,10 @@ namespace Apache.Calcite.Data.Internal
         {
             ThrowIfDisposed();
 
-            var moved = _enumerator is not null && _enumerator.MoveNext();
+            if (_enumerator is null || _enumerator.MoveNext() == false)
+                return Accept(null, false);
 
-            return Accept(moved ? _enumerator!.Current : null, moved);
+            return Accept(_enumerator.Current, true);
         }
 
         /// <inheritdoc />

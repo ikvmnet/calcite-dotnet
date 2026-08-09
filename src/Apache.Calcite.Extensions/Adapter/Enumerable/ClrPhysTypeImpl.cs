@@ -482,7 +482,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             switch (fields.size())
             {
                 case 0:
-                    return Expression.Lambda(Expression.Field(null, JavaRowFormatExtensions.ComparableEmptyList), v1);
+                    return Expression.Lambda(JavaRowFormatExtensions.ComparableEmptyList, v1);
 
                 case 1:
                     var field0 = JavaLists.Int(fields, 0);
@@ -523,7 +523,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var v1 = Expression.Parameter(javaRowClass, "v1");
             if (fields.isEmpty())
-                return Expression.Lambda(Expression.Field(null, JavaRowFormatExtensions.ComparableEmptyList), v1);
+                return Expression.Lambda(JavaRowFormatExtensions.ComparableEmptyList, v1);
 
             var list = FieldReferences(v1, fields);
 

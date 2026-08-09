@@ -37,7 +37,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var combine = (Combine)rel;
             var traitSet = combine.getTraitSet().replace(ClrEnumerableConvention.Instance);

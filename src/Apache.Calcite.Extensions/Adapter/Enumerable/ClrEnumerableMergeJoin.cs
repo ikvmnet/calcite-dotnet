@@ -158,10 +158,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <c>TopDownRuleDriver.convert</c> asserts cannot happen. Refusing a foreign convention outright is
         /// the guard; everything after it is the port.</para>
         /// </remarks>
-        public org.apache.calcite.util.Pair passThroughTraits(RelTraitSet required)
+        public org.apache.calcite.util.Pair? passThroughTraits(RelTraitSet required)
         {
             if (required.getConvention() != getConvention())
-                return null!;
+                return null;
 
             // the required collation keys can be a subset or a superset of the merge join keys
             var collation = GetCollation(required);
@@ -241,7 +241,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     com.google.common.collect.ImmutableList.of(required.replace(leftCollation), required.replace(rightCollation)));
             }
 
-            return null!;
+            return null;
         }
 
         static bool AllLessThan(java.util.List keys, int bound)
@@ -263,13 +263,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public org.apache.calcite.util.Pair deriveTraits(RelTraitSet childTraits, int childId)
+        public org.apache.calcite.util.Pair? deriveTraits(RelTraitSet childTraits, int childId)
         {
             var keyCount = joinInfo.leftKeys.size();
             var collation = GetCollation(childTraits);
             var colCount = collation.getFieldCollations().size();
             if (colCount < keyCount || keyCount == 0)
-                return null!;
+                return null;
 
             if (colCount > keyCount)
                 collation = RelCollations.of(collation.getFieldCollations().subList(0, keyCount));
@@ -278,7 +278,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var keySet = ImmutableBitSet.of(sourceKeys);
             var childCollationKeys = ImmutableBitSet.of(RelCollations.ordinals(collation));
             if (childCollationKeys.equals(keySet) == false)
-                return null!;
+                return null;
 
             var mapping = BuildMapping(childId == 0);
             var targetCollation = RexUtil.apply(mapping, collation);
@@ -371,7 +371,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public override RelOptCost computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq)
+        public override RelOptCost? computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq)
         {
             var rowCount = mq.getRowCount(this).doubleValue();
 

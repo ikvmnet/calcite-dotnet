@@ -236,7 +236,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         #region EnumerableRel
 
         /// <inheritdoc />
-        public Pair deriveTraits(RelTraitSet childTraits, int childId)
+        public Pair? deriveTraits(RelTraitSet childTraits, int childId)
         {
             return EnumerableRel.__DefaultMethods.deriveTraits(this, childTraits, childId);
         }
@@ -248,7 +248,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <inheritdoc />
-        public Pair passThroughTraits(RelTraitSet required)
+        public Pair? passThroughTraits(RelTraitSet required)
         {
             return EnumerableRel.__DefaultMethods.passThroughTraits(this, required);
         }
@@ -258,7 +258,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         #region PhysicalNode
 
         /// <inheritdoc />
-        public RelNode derive(RelTraitSet childTraits, int childId)
+        public RelNode? derive(RelTraitSet childTraits, int childId)
         {
             return PhysicalNode.__DefaultMethods.derive(this, childTraits, childId);
         }
@@ -270,7 +270,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <inheritdoc />
-        public RelNode passThrough(RelTraitSet required)
+        public RelNode? passThrough(RelTraitSet required)
         {
             return PhysicalNode.__DefaultMethods.passThrough(this, required);
         }

@@ -44,24 +44,24 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var join = (Join)rel;
 
             // a merge join stops at a null, and IS NOT DISTINCT FROM says two nulls are equal, so a
             // condition carrying one cannot be a merge join key
             if (RexUtil.findOperatorCall(SqlStdOperatorTable.IS_NOT_DISTINCT_FROM, join.getCondition()) != null)
-                return null!;
+                return null;
 
             var info = JoinInfo.createWithStrictEquality(join.getLeft(), join.getRight(), join.getCondition());
 
             // a merge join answers only some join types
             if (ClrEnumerableMergeJoin.IsMergeJoinSupported(join.getJoinType()) == false)
-                return null!;
+                return null;
 
             // a cartesian join could be merged too, and Calcite leaves it off for now
             if (info.pairs().isEmpty())
-                return null!;
+                return null;
 
             var newInputs = new java.util.ArrayList();
             var collations = new java.util.ArrayList();

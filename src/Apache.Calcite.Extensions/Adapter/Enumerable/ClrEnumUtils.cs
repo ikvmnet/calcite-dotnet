@@ -483,11 +483,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </remarks>
         public static Expression? GenerateCollatorExpression(org.apache.calcite.sql.SqlCollation? collation)
         {
-            var collator = collation?.getCollator();
-            if (collator == null)
+            if (collation == null || collation.getCollator() is not java.text.Collator collator)
                 return null;
 
-            var locale = collation!.getLocale();
+            var locale = collation.getLocale();
 
             return Expression.Call(null, GenerateCollator,
                 Expression.New(LocaleConstructor,
@@ -501,11 +500,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <c>Utilities.generateCollator</c>, and the locale it takes.
         /// </summary>
         static readonly MethodInfo GenerateCollator = typeof(org.apache.calcite.runtime.Utilities)
-            .GetMethod("generateCollator", BindingFlags.Public | BindingFlags.Static)!;
+            
+            .GetMethod("generateCollator", BindingFlags.Public | BindingFlags.Static)
+            ?? throw new InvalidOperationException("Utilities has no generateCollator().");
 
         /// <inheritdoc cref="GenerateCollator" />
         static readonly System.Reflection.ConstructorInfo LocaleConstructor = typeof(java.util.Locale)
-            .GetConstructor([typeof(string), typeof(string), typeof(string)])!;
+            
+            .GetConstructor([typeof(string), typeof(string), typeof(string)])
+            ?? throw new InvalidOperationException("java.util.Locale has no (String, String, String) constructor.");
 
         /// <summary>
         /// Converts between two primitives, and returns <paramref name="expression"/> when they agree.

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -64,6 +65,11 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// <see cref="DbCommand.CommandText"/> is declared <see cref="AllowNullAttribute"/>, so the override
+        /// says so too and turns a null into the empty text rather than refusing it.
+        /// </remarks>
+        [AllowNull]
         public override string CommandText
         {
             get => _commandText;

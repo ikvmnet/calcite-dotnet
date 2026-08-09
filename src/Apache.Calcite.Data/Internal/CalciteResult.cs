@@ -91,7 +91,7 @@ namespace Apache.Calcite.Data.Internal
         /// <returns>Whether there was a row.</returns>
         protected bool Accept(object? row, bool moved)
         {
-            _current = moved ? new CalciteResultRow(_columns, _signature.CursorFactory, row!) : null;
+            _current = moved ? new CalciteResultRow(_columns, _signature.CursorFactory, row) : null;
             return moved;
         }
 

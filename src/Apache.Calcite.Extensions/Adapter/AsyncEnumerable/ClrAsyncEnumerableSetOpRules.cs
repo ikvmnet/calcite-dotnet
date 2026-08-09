@@ -40,7 +40,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var union = (Union)rel;
             var traitSet = rel.getCluster().traitSet().replace(ClrAsyncEnumerableConvention.Instance);
@@ -83,7 +83,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var intersect = (Intersect)rel;
             var traitSet = intersect.getTraitSet().replace(ClrAsyncEnumerableConvention.Instance);
@@ -122,7 +122,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var minus = (Minus)rel;
             var traitSet = rel.getTraitSet().replace(ClrAsyncEnumerableConvention.Instance);

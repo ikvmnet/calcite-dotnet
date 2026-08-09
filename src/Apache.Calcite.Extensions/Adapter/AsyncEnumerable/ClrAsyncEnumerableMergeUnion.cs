@@ -87,7 +87,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             var sources = Expression.Variable(typeof(java.util.List), "mergeUnionInputs");
             var body = new List<Expression>
             {
-                Expression.Assign(sources, Expression.New(typeof(java.util.ArrayList).GetConstructor([])!)),
+                Expression.Assign(sources, Expression.New(ArrayListConstructor)),
             };
 
             for (int i = 0; i < getInputs().size(); i++)
@@ -116,7 +116,14 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             return implementor.Result(physType, Expression.Block(body[^1].Type, [sources], body));
         }
 
-        static readonly System.Reflection.MethodInfo CollectionAdd = typeof(java.util.List).GetMethod("add", [typeof(object)])!;
+        static readonly System.Reflection.ConstructorInfo ArrayListConstructor = typeof(java.util.ArrayList).GetConstructor([])
+            ?? throw new System.InvalidOperationException("java.util.ArrayList has no no-arg constructor.");
+
+        /// <summary>
+        /// <c>java.util.List.add</c>, which fills the list above.
+        /// </summary>
+        static readonly System.Reflection.MethodInfo CollectionAdd = typeof(java.util.List).GetMethod("add", [typeof(object)])
+            ?? throw new System.InvalidOperationException("java.util.List has no add(Object).");
 
     }
 

@@ -72,9 +72,12 @@ namespace Apache.Calcite.Extensions.Prepare
             return list;
         }
 
-        public List getObjectPath()
+        /// <remarks>
+        /// <c>@Nullable</c>, and null is what a context that is not preparing a view returns.
+        /// </remarks>
+        public List? getObjectPath()
         {
-            return null!;
+            return null;
         }
 
         public CalciteConnectionConfig config()

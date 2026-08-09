@@ -71,15 +71,15 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// preserve an ordering. Pushing a sort to the right does not help a right outer join either, because
         /// the unmatched right rows are produced together at the end.
         /// </remarks>
-        public org.apache.calcite.util.Pair passThroughTraits(RelTraitSet required)
+        public org.apache.calcite.util.Pair? passThroughTraits(RelTraitSet required)
         {
-            return ClrEnumerableTraitsUtils.PassThroughTraitsForJoin(required, joinType, getLeft().getRowType().getFieldCount(), getTraitSet())!;
+            return ClrEnumerableTraitsUtils.PassThroughTraitsForJoin(required, joinType, getLeft().getRowType().getFieldCount(), getTraitSet());
         }
 
         /// <inheritdoc />
-        public org.apache.calcite.util.Pair deriveTraits(RelTraitSet childTraits, int childId)
+        public org.apache.calcite.util.Pair? deriveTraits(RelTraitSet childTraits, int childId)
         {
-            return ClrEnumerableTraitsUtils.DeriveTraitsForJoin(childTraits, childId, joinType, getTraitSet(), getRight().getTraitSet())!;
+            return ClrEnumerableTraitsUtils.DeriveTraitsForJoin(childTraits, childId, joinType, getTraitSet(), getRight().getTraitSet());
         }
 
         /// <inheritdoc />
@@ -92,7 +92,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
         /// <inheritdoc />
-        public override RelOptCost computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq)
+        public override RelOptCost? computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq)
         {
             var rowCount = mq.getRowCount(this).doubleValue();
 

@@ -21,7 +21,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Function
         readonly Func<TResult> function = function ?? throw new ArgumentNullException(nameof(function));
 
         /// <inheritdoc />
-        public object apply() => JavaValues.From(function());
+        public object? apply() => JavaValues.From(function());
 
     }
 
@@ -39,7 +39,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Function
         readonly Func<T0, T1, TResult> function = function ?? throw new ArgumentNullException(nameof(function));
 
         /// <inheritdoc />
-        public object apply(object arg0, object arg1) => JavaValues.From(function(JavaValues.As<T0>(arg0), JavaValues.As<T1>(arg1)));
+        public object? apply(object? arg0, object? arg1) => JavaValues.From(function(JavaValues.As<T0>(arg0), JavaValues.As<T1>(arg1)));
 
     }
 
@@ -56,7 +56,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Function
         readonly Func<T0, TResult> function = function ?? throw new ArgumentNullException(nameof(function));
 
         /// <inheritdoc />
-        public object apply(object arg0) => JavaValues.From(function(JavaValues.As<T0>(arg0)));
+        public object? apply(object? arg0) => JavaValues.From(function(JavaValues.As<T0>(arg0)));
 
     }
 

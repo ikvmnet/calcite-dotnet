@@ -50,7 +50,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <c>QueryableTable</c> passes regardless, because Calcite's own test tables leave
         /// <c>getExpression</c> unimplemented and are still readable.
         /// </remarks>
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var scan = (TableScan)rel;
             var relOptTable = scan.getTable();
@@ -65,7 +65,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (table is QueryableTable || relOptTable.getExpression(typeof(object)) != null)
                 return ClrEnumerableTableScan.Create(scan.getCluster(), relOptTable);
 
-            return null!;
+            return null;
         }
 
     }

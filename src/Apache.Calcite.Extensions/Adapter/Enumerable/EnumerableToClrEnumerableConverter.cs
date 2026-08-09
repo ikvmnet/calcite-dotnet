@@ -44,11 +44,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public override RelOptCost computeSelfCost(RelOptPlanner planner, org.apache.calcite.rel.metadata.RelMetadataQuery mq)
+        public override RelOptCost? computeSelfCost(RelOptPlanner planner, org.apache.calcite.rel.metadata.RelMetadataQuery mq)
         {
             var cost = base.computeSelfCost(planner, mq);
 
-            return cost == null ? null! : cost.multiplyBy(ClrEnumerableConvention.CostMultiplier);
+            return cost?.multiplyBy(ClrEnumerableConvention.CostMultiplier);
         }
 
         /// <inheritdoc />

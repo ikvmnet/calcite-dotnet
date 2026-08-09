@@ -48,7 +48,7 @@ namespace Apache.Calcite.Extensions.Schema
         ///
         /// <para>The values in a row are Java's, as they are for every table Calcite reads.</para>
         /// </remarks>
-        Expression GetExpression(SchemaPlus schema, string tableName);
+        Expression GetExpression(SchemaPlus? schema, string tableName);
 
     }
 

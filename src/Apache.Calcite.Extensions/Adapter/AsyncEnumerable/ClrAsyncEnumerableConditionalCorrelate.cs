@@ -91,15 +91,15 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// Only a collation on the left input passes down, because the left input is always the outer loop
         /// and only it can keep an order.
         /// </remarks>
-        public Pair passThroughTraits(RelTraitSet required)
+        public Pair? passThroughTraits(RelTraitSet required)
         {
-            return ClrEnumerableTraitsUtils.PassThroughTraitsForJoin(required, getJoinType(), getLeft().getRowType().getFieldCount(), getTraitSet())!;
+            return ClrEnumerableTraitsUtils.PassThroughTraitsForJoin(required, getJoinType(), getLeft().getRowType().getFieldCount(), getTraitSet());
         }
 
         /// <inheritdoc />
-        public Pair deriveTraits(RelTraitSet childTraits, int childId)
+        public Pair? deriveTraits(RelTraitSet childTraits, int childId)
         {
-            return ClrEnumerableTraitsUtils.DeriveTraitsForJoin(childTraits, childId, getJoinType(), getTraitSet(), getRight().getTraitSet())!;
+            return ClrEnumerableTraitsUtils.DeriveTraitsForJoin(childTraits, childId, getJoinType(), getTraitSet(), getRight().getTraitSet());
         }
 
         /// <inheritdoc />

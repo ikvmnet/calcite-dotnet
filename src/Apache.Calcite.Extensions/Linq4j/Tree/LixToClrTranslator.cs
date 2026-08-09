@@ -576,13 +576,13 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
 
             return Expression.Block(typeof(void), [iterator, element],
                 Expression.Assign(iterator,
-                    Expression.Call(ClrEnumUtils.Convert(source, typeof(java.lang.Iterable)), typeof(java.lang.Iterable).GetMethod("iterator")!)),
+                    Expression.Call(ClrEnumUtils.Convert(source, typeof(java.lang.Iterable)), IterableIterator)),
                 Expression.Loop(
                     Expression.IfThenElse(
-                        Expression.Call(iterator, typeof(java.util.Iterator).GetMethod("hasNext")!),
+                        Expression.Call(iterator, IteratorHasNext),
                         Expression.Block(typeof(void),
                             Expression.Assign(element,
-                                ClrEnumUtils.Convert(Expression.Call(iterator, typeof(java.util.Iterator).GetMethod("next")!), element.Type)),
+                                ClrEnumUtils.Convert(Expression.Call(iterator, IteratorNext), element.Type)),
                             body),
                         Expression.Break(loop.Break)),
                     loop.Break,
@@ -1018,7 +1018,22 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Concatenation, which is what Java's <c>+</c> means when either side is a string.
         /// </summary>
-        static readonly MethodInfo Concat = typeof(string).GetMethod(nameof(string.Concat), [typeof(object), typeof(object)])!;
+        static readonly MethodInfo Concat = typeof(string).GetMethod(nameof(string.Concat), [typeof(object), typeof(object)])
+            ?? throw new InvalidOperationException("String has no Concat(object, object).");
+
+        /// <summary>
+        /// The three members a for-each over a <c>java.lang.Iterable</c> is written against.
+        /// </summary>
+        static readonly MethodInfo IterableIterator = typeof(java.lang.Iterable).GetMethod("iterator")
+            ?? throw new InvalidOperationException("java.lang.Iterable has no iterator().");
+
+        /// <inheritdoc cref="IterableIterator" />
+        static readonly MethodInfo IteratorHasNext = typeof(java.util.Iterator).GetMethod("hasNext")
+            ?? throw new InvalidOperationException("java.util.Iterator has no hasNext().");
+
+        /// <inheritdoc cref="IterableIterator" />
+        static readonly MethodInfo IteratorNext = typeof(java.util.Iterator).GetMethod("next")
+            ?? throw new InvalidOperationException("java.util.Iterator has no next().");
 
         /// <summary>
         /// The operators that assign to their left operand, which therefore must be left alone rather than
@@ -1129,6 +1144,9 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
 
                 default:
                     var op = Operator(expression.getNodeType());
+
+                    // null is the documented way to say "no conversion type", and these operators take none.
+                    // The parameter is annotated non-nullable all the same, so the suppression is the BCL's
                     return Expression.MakeUnary(op, Widen(operand), null!);
             }
         }

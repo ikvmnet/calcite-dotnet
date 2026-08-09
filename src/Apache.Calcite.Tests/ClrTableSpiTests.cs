@@ -71,7 +71,7 @@ namespace Apache.Calcite.Tests
             public override RelDataType getRowType(RelDataTypeFactory typeFactory) => AsyncTestRows.SortedRowType(typeFactory);
 
             /// <inheritdoc />
-            public Type ElementType => typeof(object[]);
+            public Type ElementType => typeof(object?[]);
 
             /// <inheritdoc />
             /// <remarks>
@@ -79,8 +79,8 @@ namespace Apache.Calcite.Tests
             /// through an interface call. Here it is a constant, which is the simplest expression that
             /// yields rows; a real table would inline a provider read.
             /// </remarks>
-            public Expression GetExpression(SchemaPlus schema, string tableName) =>
-                Expression.Constant(AsyncTestRows.Sorted, typeof(IEnumerable<object[]>));
+            public Expression GetExpression(SchemaPlus? schema, string tableName) =>
+                Expression.Constant(AsyncTestRows.Sorted, typeof(IEnumerable<object?[]>));
 
         }
 
@@ -94,10 +94,10 @@ namespace Apache.Calcite.Tests
             public override RelDataType getRowType(RelDataTypeFactory typeFactory) => AsyncTestRows.SortedRowType(typeFactory);
 
             /// <inheritdoc />
-            public Type ElementType => typeof(object[]);
+            public Type ElementType => typeof(object?[]);
 
             /// <inheritdoc />
-            public Expression GetAsyncExpression(SchemaPlus schema, string tableName) =>
+            public Expression GetAsyncExpression(SchemaPlus? schema, string tableName) =>
                 Expression.Call(null, RowsMethod, Expression.Default(typeof(CancellationToken)));
 
             static readonly System.Reflection.MethodInfo RowsMethod =
@@ -106,7 +106,7 @@ namespace Apache.Calcite.Tests
             /// <summary>
             /// The rows, suspending on each, so that a plan reading this really is asynchronous.
             /// </summary>
-            public static async IAsyncEnumerable<object[]> Rows([EnumeratorCancellation] CancellationToken cancellationToken = default)
+            public static async IAsyncEnumerable<object?[]> Rows([EnumeratorCancellation] CancellationToken cancellationToken = default)
             {
                 foreach (var row in AsyncTestRows.Sorted)
                 {

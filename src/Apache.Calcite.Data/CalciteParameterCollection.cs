@@ -56,7 +56,7 @@ namespace Apache.Calcite.Data
                 throw new ArgumentNullException(nameof(values));
 
             foreach (var v in values)
-                Add(v!);
+                _items.Add(AsParameter(v));
         }
 
         /// <inheritdoc />
@@ -169,7 +169,7 @@ namespace Apache.Calcite.Data
         /// </summary>
         internal IReadOnlyList<CalciteParameter> Items => _items;
 
-        static CalciteParameter AsParameter(object value)
+        static CalciteParameter AsParameter(object? value)
         {
             if (value is null)
                 throw new ArgumentNullException(nameof(value));

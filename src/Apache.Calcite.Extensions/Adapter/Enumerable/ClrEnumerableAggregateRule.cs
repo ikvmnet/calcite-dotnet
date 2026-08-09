@@ -38,7 +38,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var aggregate = (Aggregate)rel;
             var traitSet = rel.getCluster().traitSet().replace(ClrEnumerableConvention.Instance);
@@ -57,7 +57,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             {
                 // an aggregate this convention cannot implement is left for another rule, exactly as Calcite
                 // leaves one: refusing here rather than in Implement, which runs after a plan has been chosen
-                return null!;
+                return null;
             }
         }
 

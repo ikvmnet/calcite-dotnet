@@ -54,13 +54,13 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// collation is empty; Calcite's rule builds the node anyway and its <c>implement</c> then fails. A
         /// global aggregate has nothing to sort by and belongs to <see cref="ClrAsyncEnumerableAggregate"/>.
         /// </remarks>
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var agg = (Aggregate)rel;
             if (Aggregate.isSimple(agg) == false)
-                return null!;
+                return null;
             if (agg.getGroupSet().isEmpty())
-                return null!;
+                return null;
 
             var inputTraits = rel.getCluster().traitSet()
                 .replace(ClrAsyncEnumerableConvention.Instance)

@@ -40,7 +40,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var union = (RepeatUnion)rel;
             var traitSet = union.getTraitSet().replace(ClrAsyncEnumerableConvention.Instance);
@@ -88,7 +88,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var spool = (TableSpool)rel;
 

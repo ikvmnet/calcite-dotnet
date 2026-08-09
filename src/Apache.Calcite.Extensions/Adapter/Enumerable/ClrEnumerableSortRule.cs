@@ -41,13 +41,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             var sort = (Sort)rel;
 
             // a sort carrying an offset or a fetch belongs to ClrEnumerableLimitRule, not to this one
             if (sort.offset != null || sort.fetch != null)
-                return null!;
+                return null;
 
             var input = sort.getInput();
 

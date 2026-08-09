@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 
 using Apache.Calcite.Data.Internal;
 
@@ -85,6 +86,11 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// <see cref="DbParameter.ParameterName"/> is declared <see cref="AllowNullAttribute"/>, so the
+        /// override says so too and reads a null as no name.
+        /// </remarks>
+        [AllowNull]
         public override string ParameterName
         {
             get => _parameterName;
@@ -99,6 +105,8 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <inheritdoc cref="ParameterName" path="/remarks" />
+        [AllowNull]
         public override string SourceColumn
         {
             get => _sourceColumn;

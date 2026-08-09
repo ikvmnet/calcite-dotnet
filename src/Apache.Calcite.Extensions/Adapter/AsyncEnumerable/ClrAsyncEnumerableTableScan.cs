@@ -193,9 +193,9 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// Where a table had an index on the required collation keys this is where an index scan would be
         /// returned. There is none, and Calcite's own answer here is the same null.
         /// </remarks>
-        public RelNode passThrough(RelTraitSet required)
+        public RelNode? passThrough(RelTraitSet required)
         {
-            return null!;
+            return null;
         }
 
         /// <inheritdoc />
@@ -274,7 +274,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                 var names = table.getQualifiedName();
 
                 return queryable.GetAsyncExpression(
-                    ((org.apache.calcite.jdbc.CalciteSchema)table.unwrap(typeof(org.apache.calcite.jdbc.CalciteSchema)))?.plus()!,
+                    ((org.apache.calcite.jdbc.CalciteSchema)table.unwrap(typeof(org.apache.calcite.jdbc.CalciteSchema)))?.plus(),
                     (string)names.get(names.size() - 1))
                     ?? throw new java.lang.IllegalStateException($"{table}.GetExpression returned null");
             }

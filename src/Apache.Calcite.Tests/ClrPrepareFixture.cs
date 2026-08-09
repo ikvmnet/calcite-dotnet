@@ -32,7 +32,7 @@ namespace Apache.Calcite.Tests
         sealed class SalesTable : AbstractTable, ScannableTable
         {
 
-            static readonly object[][] Rows =
+            static readonly object?[][] Rows =
             [
                 [java.lang.Integer.valueOf(1), "EAST", java.lang.Integer.valueOf(10), "A"],
                 [java.lang.Integer.valueOf(2), "EAST", java.lang.Integer.valueOf(20), "B"],
@@ -65,7 +65,7 @@ namespace Apache.Calcite.Tests
         sealed class OneColumnTable : AbstractTable, ScannableTable
         {
 
-            static readonly object[][] Rows =
+            static readonly object?[][] Rows =
             [
                 [java.lang.Integer.valueOf(3)],
                 [java.lang.Integer.valueOf(1)],

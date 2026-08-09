@@ -54,11 +54,11 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
         /// <inheritdoc />
-        public org.apache.calcite.util.Pair passThroughTraits(RelTraitSet required)
+        public org.apache.calcite.util.Pair? passThroughTraits(RelTraitSet required)
         {
             var collation = required.getCollation();
             if (collation == null || collation == RelCollations.EMPTY)
-                return null!;
+                return null;
 
             var traits = getTraitSet().replace(collation);
 
@@ -66,11 +66,11 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
         /// <inheritdoc />
-        public org.apache.calcite.util.Pair deriveTraits(RelTraitSet childTraits, int childId)
+        public org.apache.calcite.util.Pair? deriveTraits(RelTraitSet childTraits, int childId)
         {
             var collation = childTraits.getCollation();
             if (collation == null || collation == RelCollations.EMPTY)
-                return null!;
+                return null;
 
             var traits = getTraitSet().replace(collation);
 

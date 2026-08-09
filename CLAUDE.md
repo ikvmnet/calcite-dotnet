@@ -42,10 +42,13 @@ operator audit against linq4j — 45 methods read side by side, 17 of them diver
   | 1.42 (referenced) | `EnumerableCombine`, `EnumerableConditionalCorrelate` and their rules, `EnumUtils.markJoinSelector` and the mark-join paths, `PhysType.generateNullAwareAccessor`, `JoinInfo.nullExclusionFlags` |
   | 1.43 (unreleased) | `org.apache.calcite.rel.core.Asof`, `FetchOffsetRoundingPolicy`, `RexImplementorTable(s)`, and `EnumerableTableModify`'s five private helpers — the UPDATE/DELETE/INSERT rewrite, CALCITE-7510 |
 
-  **1.43's DELETE cannot compile over a one-column table**, and two `CalciteDdlTests` are red for it
-  rather than skipped. CALCITE-7510 emits `(int) sinkRow` from a `sinkRow` declared `Object`; javac
-  accepts that and **Janino does not** — measured. The fix is upstream's: declare `sinkRow` as the row's
-  boxed type rather than `Object`.
+  **1.43's DELETE cannot compile over a one-column table** *under Janino*. CALCITE-7510 emits
+  `(int) sinkRow` from a `sinkRow` declared `Object`; javac accepts that and **Janino does not** — measured.
+  The fix is upstream's: declare `sinkRow` as the row's boxed type rather than `Object`. It costs this
+  project nothing, because `ClrEnumerablePrepare` translates Calcite's tree instead of compiling it. The two
+  `CalciteDdlTests` this held were skipped until `fc3621e` typed a scan's rows by the physical row type;
+  **they pass, and nothing in the suite is skipped.** The claim that they are red outlived the fix by four
+  commits in this file.
 
   **`AsofJoin` is neither** — `rel.core.AsofJoin`, `EnumerableAsofJoin` and `ENUMERABLE_ASOFJOIN_RULE` are
   all in 1.41, and a claim that it was 1.42 stood in this file for a while on the strength of the wrong
@@ -267,6 +270,13 @@ differential tests cannot use Calcite as the oracle for.
   ghost conversion only for the Java it compiles itself. `IComparable` is the way in, and
   `JavaComparisons` is where the `Utilities` comparisons that take a `Comparable` go through it.
   `PhysTypeImpl.generateComparator` casts to it purely to pick an overload out of the source text.
+- **A Java `static final` field is not a CLR field of that name.** IKVM emits a *property*, over a backing
+  field it renames to `__<>NAME`, so that reading it from C# still runs the class initializer the way Java
+  guarantees. `GetField("COMPARABLE_EMPTY_LIST")` on `FlatLists` answers nothing — measured.
+  `ClrTypes.Resolve(target, PseudoField)` tries field then property for this reason, and
+  `JavaRowFormatExtensions.StaticMember` does the same for the two constants a row of no fields is. Both of
+  those were `GetField(...)!` and had been null since they were written; nothing had reached a zero-field row,
+  so the suite was green over an NRE waiting to happen. `ZeroFieldRowTests` holds it now.
 - **Java enum ordinals are not stable across versions; names are.** Dispatch on `switch (x.name())` with
   `nameof(...)` labels. Never `ordinal()`, never IKVM's `__Enum` shadow.
 - **`(java.lang.Class)typeof(X)`, never `(java.lang.reflect.Type)typeof(X)`.**

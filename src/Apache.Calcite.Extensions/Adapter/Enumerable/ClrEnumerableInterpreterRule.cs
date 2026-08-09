@@ -46,7 +46,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public override RelNode convert(RelNode rel)
+        public override RelNode? convert(RelNode rel)
         {
             return ClrEnumerableInterpreter.Create(rel, 0.5d);
         }
