@@ -51,6 +51,16 @@ namespace Apache.Calcite.Adapter.AdoNet
                     return GetInt(reader, index);
                 case nameof(SqlTypeName.BIGINT):
                     return GetLong(reader, index);
+                // the unsigned types travel as joou values, which is what JavaTypeFactoryImpl.getJavaClass
+                // answers for them and what CalciteResultValue decodes at the other end
+                case nameof(SqlTypeName.UTINYINT):
+                    return GetUByte(reader, index);
+                case nameof(SqlTypeName.USMALLINT):
+                    return GetUShort(reader, index);
+                case nameof(SqlTypeName.UINTEGER):
+                    return GetUInt(reader, index);
+                case nameof(SqlTypeName.UBIGINT):
+                    return GetULong(reader, index);
                 case nameof(SqlTypeName.TIMESTAMP):
                     return GetTimestamp(reader, index);
                 case nameof(SqlTypeName.DATE):
@@ -93,9 +103,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <para>
         /// The width a provider declares a column in is not the width Calcite chose for it, and the typed
         /// accessors on <see cref="DbDataReader"/> cast rather than convert: <see cref="DbDataReader.GetInt16"/>
-        /// on SQL Server's <c>tinyint</c>, which only <c>SMALLINT</c> holds without loss, throws rather than
-        /// widening. Every one of these is a lossless widening of an integral or approximate value the
-        /// provider already decoded, so converting is what the mapping meant.
+        /// on a column the driver decoded as a <see cref="byte"/> throws rather than widening. Every one of
+        /// these is a lossless widening of an integral or approximate value the provider already decoded, so
+        /// converting is what the mapping meant.
         /// </para>
         /// <para>
         /// The cost is one boxed value per cell, which is what every one of these accessors was going to pay
@@ -132,8 +142,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <remarks>
         /// Calcite's <c>TINYINT</c> is signed, so this is an <see cref="sbyte"/> and not the <see cref="byte"/>
         /// the <see cref="DbDataReader.GetByte"/> accessor answers with. A provider whose own tiny integer is
-        /// unsigned — SQL Server's is — maps to <c>SMALLINT</c> rather than through here. Java's <c>byte</c>
-        /// is IKVM's <see cref="byte"/> and is unsigned, so the sign travels in the bits.
+        /// unsigned — SQL Server's is — maps to <c>UTINYINT</c> and comes through <see cref="GetUByte"/>
+        /// instead. Java's <c>byte</c> is IKVM's <see cref="byte"/> and is unsigned, so the sign travels in
+        /// the bits.
         /// </remarks>
         public static object? GetByte(DbDataReader reader, int index)
         {
@@ -171,6 +182,61 @@ namespace Apache.Calcite.Adapter.AdoNet
         public static object? GetLong(DbDataReader reader, int index)
         {
             return GetValueAs<long>(reader, index) is long value ? java.lang.Long.valueOf(value) : null;
+        }
+
+        /// <summary>
+        /// Gets an <see cref="org.joou.UByte"/>, which is what Calcite holds a <c>UTINYINT</c> in.
+        /// </summary>
+        /// <param name="reader"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The unsigned types are not a variation on the signed ones: <c>getJavaClass</c> answers a joou
+        /// <c>UByte</c>, <c>UShort</c>, <c>UInteger</c> or <c>ULong</c> rather than a <c>java.lang</c>
+        /// wrapper, and <c>CalciteResultValue</c> is written to decode exactly those. Handing over a
+        /// <see cref="java.lang.Short"/> instead would be a value of the wrong class for the type the row
+        /// declares. The widening overload is taken in each case so that the sign is never in question.
+        /// </remarks>
+        public static object? GetUByte(DbDataReader reader, int index)
+        {
+            return GetValueAs<byte>(reader, index) is byte value ? org.joou.UByte.valueOf((int)value) : null;
+        }
+
+        /// <summary>
+        /// Gets an <see cref="org.joou.UShort"/>, which is what Calcite holds a <c>USMALLINT</c> in.
+        /// </summary>
+        /// <param name="reader"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        public static object? GetUShort(DbDataReader reader, int index)
+        {
+            return GetValueAs<ushort>(reader, index) is ushort value ? org.joou.UShort.valueOf((int)value) : null;
+        }
+
+        /// <summary>
+        /// Gets an <see cref="org.joou.UInteger"/>, which is what Calcite holds a <c>UINTEGER</c> in.
+        /// </summary>
+        /// <param name="reader"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        public static object? GetUInt(DbDataReader reader, int index)
+        {
+            return GetValueAs<uint>(reader, index) is uint value ? org.joou.UInteger.valueOf((long)value) : null;
+        }
+
+        /// <summary>
+        /// Gets an <see cref="org.joou.ULong"/>, which is what Calcite holds a <c>UBIGINT</c> in.
+        /// </summary>
+        /// <param name="reader"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Through the decimal string, because the whole of the range is the point: <c>valueOf(long)</c>
+        /// refuses anything above <see cref="long.MaxValue"/>, which is half of what the type holds.
+        /// </remarks>
+        public static object? GetULong(DbDataReader reader, int index)
+        {
+            return GetValueAs<ulong>(reader, index) is ulong value ? org.joou.ULong.valueOf(value.ToString(CultureInfo.InvariantCulture)) : null;
         }
 
         /// <summary>

@@ -248,7 +248,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             {
                 SqlBit => DbType.Boolean,
                 // ODBC does not say whether the driver's tiny integer is signed, and SQL Server's is not:
-                // DbType.Byte is the unsigned one, which AdoTable widens to SMALLINT and so holds both
+                // DbType.Byte is the unsigned one, which AdoTable holds as a UTINYINT; a driver whose tiny
+                // integer really is signed loses the negative half, and ODBC gives no way to tell
                 SqlTinyint => DbType.Byte,
                 SqlSmallint => DbType.Int16,
                 SqlInteger => DbType.Int32,

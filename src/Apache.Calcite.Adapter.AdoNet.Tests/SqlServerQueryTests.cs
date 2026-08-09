@@ -237,8 +237,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
         [TestMethod]
         [DataRow("C_BIT", nameof(SqlTypeName.BOOLEAN))]
-        // the server's tinyint is unsigned 0..255 and Calcite's TINYINT is signed, so SMALLINT is what holds it
-        [DataRow("C_TINYINT", nameof(SqlTypeName.SMALLINT))]
+        // the server's tinyint is unsigned 0..255 and Calcite's TINYINT is signed, so UTINYINT is what holds it
+        [DataRow("C_TINYINT", nameof(SqlTypeName.UTINYINT))]
         [DataRow("C_SMALLINT", nameof(SqlTypeName.SMALLINT))]
         [DataRow("C_BIGINT", nameof(SqlTypeName.BIGINT))]
         [DataRow("C_DECIMAL", nameof(SqlTypeName.DECIMAL))]

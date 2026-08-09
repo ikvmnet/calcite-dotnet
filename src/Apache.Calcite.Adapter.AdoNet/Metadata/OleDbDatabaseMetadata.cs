@@ -254,7 +254,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             {
                 DbTypeBool => DbType.Boolean,
                 // DBTYPE_I1 is the signed one and DBTYPE_UI1 the unsigned; AdoTable holds the unsigned in a
-                // SMALLINT, TINYINT being signed
+                // UTINYINT, TINYINT being signed
                 DbTypeI1 => DbType.SByte,
                 DbTypeUi1 => DbType.Byte,
                 DbTypeI2 => DbType.Int16,
