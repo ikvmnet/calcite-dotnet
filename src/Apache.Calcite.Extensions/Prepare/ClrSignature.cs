@@ -127,6 +127,10 @@ namespace Apache.Calcite.Extensions.Prepare
         /// Either convention's, because a statement is described the same way whichever prepared it and this
         /// type reads nothing of the plan but its element type. <see cref="Bind"/> and
         /// <see cref="BindAsync"/> are where the two part company, and each refuses the other's.
+        ///
+        /// <para>An <c>EXPLAIN</c> is neither, and answers both: it never reached <c>implement</c>, so what
+        /// is held is a rendered string rather than a plan, and there is no pull behind it for an awaited
+        /// reader to hide.</para>
         /// </remarks>
         public IClrBindableBase? Bindable { get; }
 
@@ -172,6 +176,9 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <see cref="Bind"/> for a statement prepared into the asynchronous convention. It refuses a
         /// synchronous plan rather than wrapping one: an <see cref="IEnumerable{T}"/> behind an awaited
         /// interface is a blocking pull, and a caller that asked for this method asked not to have one.
+        ///
+        /// <para>An <c>EXPLAIN</c> passes, because <c>ClrExplainBindable</c> is both. Not an exception to
+        /// that rule — there is no plan behind it to pull.</para>
         /// </remarks>
         public IAsyncEnumerable<object> BindAsync(DataContext root)
         {

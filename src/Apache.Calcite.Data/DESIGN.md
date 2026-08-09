@@ -342,6 +342,14 @@ plan to bind.
 text and returns a `ClrExplainResult`; `Describe` wraps that text in a `ClrExplainBindable`, which
 yields one row.
 
+It is read by either reader, and `ClrExplainBindable` is the only bindable that is both an
+`IClrBindable` and an `IClrAsyncBindable`. Not a relaxation of the rule that each convention refuses
+the other's reader — an `EXPLAIN` is of neither convention, holding a string rather than a plan, so
+there is no pull for an awaited reader to hide. **Which convention gets explained is still decided
+by which method was called**, because the plan is optimized under that program before it is
+rendered: `ExecuteReaderAsync` on an `EXPLAIN` renders `ClrAsyncEnumerable*` nodes, and fails to
+plan wherever the query itself would.
+
 ---
 
 ## Direct Engine Access

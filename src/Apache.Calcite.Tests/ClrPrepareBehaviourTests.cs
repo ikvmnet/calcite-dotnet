@@ -45,6 +45,27 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
+        /// A one-column result is the value and a wider one is an array, whatever element type the caller
+        /// asked to prefer.
+        /// </summary>
+        /// <remarks>
+        /// <c>Meta.CursorFactory.deduce</c> answers <c>OBJECT</c> for a single column before it looks at the
+        /// class at all, so preparing with <c>Object[]</c> — which every caller here does — does not make a
+        /// one-column row an array. An <c>EXPLAIN</c> is one column, and so is DML's <c>ROWCOUNT</c>.
+        /// </remarks>
+        [TestMethod]
+        [DataRow("SELECT ID FROM SALES", "OBJECT")]
+        [DataRow("SELECT ID, REGION FROM SALES", "ARRAY")]
+        [DataRow("EXPLAIN PLAN FOR SELECT ID FROM SALES", "OBJECT")]
+        public void Cursor_style_should_follow_the_column_count(string sql, string expected)
+        {
+            var style = ClrPrepareFixture.WithContext(sql, (context, _) =>
+                new ClrPrepareImpl().Prepare(context, sql, (java.lang.Class)typeof(object[]), -1).CursorFactory.style.name());
+
+            Assert.AreEqual(expected, style, sql);
+        }
+
+        /// <summary>
         /// <c>getTypeName</c> rewrites seven interval names and renders the collection types by
         /// <c>toString</c>. Everything else is the SQL type's own name.
         /// </summary>

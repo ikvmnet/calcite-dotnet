@@ -101,6 +101,110 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
+        /// An EXPLAIN of a query over an asynchronous table renders the asynchronous plan, and is read
+        /// asynchronously.
+        /// </summary>
+        /// <remarks>
+        /// An <c>EXPLAIN</c> leaves <c>Prepare.prepareSql</c> before <c>implement</c>, so what the signature
+        /// carries is a rendered string and not a plan of either convention — but the plan it rendered was
+        /// optimized under whichever program was asked for, and <c>ExecuteReaderAsync</c> is the only way
+        /// that demand is stated. So the text names this convention's nodes.
+        ///
+        /// <para>It used to throw: <c>ClrExplainBindable</c> was an <c>IClrBindable</c> alone and
+        /// <c>ClrSignature.BindAsync</c> refused it as "prepared into a synchronous convention", which was
+        /// never true of an <c>EXPLAIN</c> and left a caller holding only <c>ExecuteReaderAsync</c> unable to
+        /// explain anything at all.</para>
+        /// </remarks>
+        [TestMethod]
+        public async Task ShouldExplainAnAsyncPlanAsynchronously()
+        {
+            var (c, table) = Open();
+            using (c)
+            {
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = "EXPLAIN PLAN FOR SELECT ID FROM SALES WHERE REGION = 'EAST'";
+
+                using var reader = await cmd.ExecuteReaderAsync();
+
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetString(0).Should().Contain("ClrAsyncEnumerable");
+                (await reader.ReadAsync()).Should().BeFalse("an EXPLAIN is one row");
+
+                table.Produced.Should().Be(0, "explaining a query does not run it");
+            }
+        }
+
+        /// <summary>
+        /// The same EXPLAIN over the same table renders a different plan depending on which reader asked
+        /// for it.
+        /// </summary>
+        /// <remarks>
+        /// A <see cref="SyncRowsTable"/> can be planned either way, so this is the whole of the point:
+        /// nothing in the SQL says which convention to explain, and <c>ExecuteReader</c> against
+        /// <c>ExecuteReaderAsync</c> is where that is decided — for an <c>EXPLAIN</c> exactly as for the
+        /// query it explains.
+        /// </remarks>
+        [TestMethod]
+        public async Task ShouldExplainTheConventionThatWasAskedFor()
+        {
+            using var c = new CalciteConnection(Model);
+            c.Open();
+            c.RootSchema.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false));
+
+            const string Sql = "EXPLAIN PLAN FOR SELECT K FROM SYNCONLY WHERE V = 'A'";
+
+            string synchronous;
+            using (var cmd = c.CreateCommand())
+            {
+                cmd.CommandText = Sql;
+                using var reader = cmd.ExecuteReader();
+                reader.Read().Should().BeTrue();
+                synchronous = reader.GetString(0);
+            }
+
+            string asynchronous;
+            using (var cmd = c.CreateCommand())
+            {
+                cmd.CommandText = Sql;
+                using var reader = await cmd.ExecuteReaderAsync();
+                (await reader.ReadAsync()).Should().BeTrue();
+                asynchronous = reader.GetString(0);
+            }
+
+            synchronous.Should().Contain("ClrEnumerable").And.NotContain("ClrAsyncEnumerable");
+            asynchronous.Should().Contain("ClrAsyncEnumerable");
+        }
+
+        /// <summary>
+        /// An EXPLAIN read as a scalar is the plan, by either method.
+        /// </summary>
+        /// <remarks>
+        /// <c>ExecuteScalar</c> and <c>ExecuteScalarAsync</c> are the reader path with one row and one column
+        /// taken off it — the same two demands for a convention, so the same two answers. A caller reaching
+        /// for the plan as a string is the likely one, and it is a column of a result set like any other:
+        /// <c>Meta.CursorFactory.deduce</c> makes a single column <c>OBJECT</c>, so the row <i>is</i> the
+        /// text.
+        /// </remarks>
+        [TestMethod]
+        public async Task ShouldExplainThroughExecuteScalar()
+        {
+            using var c = new CalciteConnection(Model);
+            c.Open();
+            c.RootSchema.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false));
+
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "EXPLAIN PLAN FOR SELECT K FROM SYNCONLY WHERE V = 'A'";
+
+            var synchronous = cmd.ExecuteScalar();
+            var asynchronous = await cmd.ExecuteScalarAsync();
+
+            synchronous.Should().BeOfType<string>()
+                .Which.Should().Contain("ClrEnumerable").And.NotContain("ClrAsyncEnumerable");
+            asynchronous.Should().BeOfType<string>()
+                .Which.Should().Contain("ClrAsyncEnumerable");
+        }
+
+        /// <summary>
         /// A query over an ordinary Calcite table plans asynchronously.
         /// </summary>
         /// <remarks>
