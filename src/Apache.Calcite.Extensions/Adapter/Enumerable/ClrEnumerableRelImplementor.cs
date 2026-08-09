@@ -44,12 +44,33 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="rexBuilder">The builder for row expressions, from the plan's cluster.</param>
         /// <param name="internalParameters">The map values are stashed into, which must be the one the
         /// <see cref="DataContext"/> will serve at run time.</param>
-        public ClrEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters)
+        public ClrEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters) :
+            this(rexBuilder, internalParameters, Expression.Parameter(typeof(DataContext), "root"))
+        {
+
+        }
+
+        /// <summary>
+        /// Initializes a new instance implementing a sub-plan of a plan already being implemented.
+        /// </summary>
+        /// <param name="rexBuilder">The builder for row expressions, from the plan's cluster.</param>
+        /// <param name="internalParameters">The map values are stashed into, which must be the one the
+        /// <see cref="DataContext"/> will serve at run time.</param>
+        /// <param name="root">The parameter the <see cref="DataContext"/> arrives by, which must be the one
+        /// the enclosing plan's lambda declares.</param>
+        /// <remarks>
+        /// A converter whose two sides are both <see cref="System.Linq.Expressions"/> splices the sub-plan
+        /// into the tree it is building rather than compiling it separately, so the sub-plan has to read the
+        /// <see cref="DataContext"/> by the parameter that tree already has. An implementor that made its own
+        /// would produce an expression referring to a parameter the enclosing lambda does not declare, which
+        /// fails at <c>Compile</c> rather than here.
+        /// </remarks>
+        public ClrEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, ParameterExpression root)
         {
             this.rexBuilder = rexBuilder ?? throw new ArgumentNullException(nameof(rexBuilder));
             this.map = internalParameters ?? throw new ArgumentNullException(nameof(internalParameters));
 
-            Root = Expression.Parameter(typeof(DataContext), "root");
+            Root = root ?? throw new ArgumentNullException(nameof(root));
             Translator = new LixToClrTranslator(map);
             Translator.Bind(DataContext.ROOT, Root);
 
@@ -247,6 +268,22 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         {
             foreach (var pair in corrVars)
                 enumerable.registerCorrelVariable(pair.Key, pair.Value.Parameter, pair.Value.Block, pair.Value.PhysType);
+        }
+
+        /// <summary>
+        /// Registers on the asynchronous convention's implementor every correlation variable in scope here.
+        /// </summary>
+        /// <param name="async"></param>
+        /// <remarks>
+        /// <see cref="ReplayCorrelVariables(EnumerableRelImplementor)"/> across the other converter, and for
+        /// the same reason: a sub-plan run on a second implementor finds that implementor's correlation
+        /// variables, which are none. Here the registration really is the same one — both implementors hold
+        /// the same kind of getter over the same block — so nothing is rebuilt.
+        /// </remarks>
+        internal void ReplayCorrelVariables(AsyncEnumerable.ClrAsyncEnumerableRelImplementor async)
+        {
+            foreach (var pair in corrVars)
+                async.RegisterCorrelVariable(pair.Key, pair.Value.Parameter, pair.Value.Block, pair.Value.PhysType);
         }
 
         /// <summary>

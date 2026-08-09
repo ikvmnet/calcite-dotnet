@@ -176,6 +176,17 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         public static readonly RelOptRule ClrEnumerableToEnumerableConverterRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableToEnumerableConverterRule.Create();
 
         /// <summary>
+        /// Rule that reads a plan of <see cref="ClrAsyncEnumerableConvention"/> as one of this convention.
+        /// </summary>
+        /// <remarks>
+        /// The converter it produces blocks a thread once per row, because an <c>IEnumerable</c> has nowhere
+        /// to suspend. It is in the list all the same: the alternative to a plan that blocks is a query that
+        /// does not plan, and the caller who asked for this convention over an asynchronous table asked for
+        /// the rows synchronously.
+        /// </remarks>
+        public static readonly RelOptRule ClrAsyncEnumerableToClrEnumerableConverterRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrAsyncEnumerableToClrEnumerableConverterRule.Create();
+
+        /// <summary>
         /// Rule that converts an aggregate over a sorted input to a
         /// <see cref="ClrEnumerableSortedAggregate"/>.
         /// </summary>
@@ -212,11 +223,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </summary>
         /// <remarks>
         /// The counterpart of <c>EnumerableRules.ENUMERABLE_RULES</c>, holding what that holds for the nodes
-        /// this convention has, plus the two converters that let one plan hold both conventions. Read through
-        /// <see cref="Rules"/>, as Calcite's is read through <c>rules()</c>.
+        /// this convention has, plus the three converters that let one plan hold this convention and another.
+        /// Read through <see cref="Rules"/>, as Calcite's is read through <c>rules()</c>.
         ///
         /// <para>Membership is Calcite's list, member for member: its 26 less the match and table modify
-        /// rules, plus the two converters. Match cannot be written at all; modification is out of scope, so a
+        /// rules, plus the three converters — both directions against <c>EnumerableConvention</c>, and the
+        /// one way in from <see cref="ClrAsyncEnumerableConvention"/>. Match cannot be written at all;
+        /// modification is out of scope, so a
         /// plan that writes is left to <c>EnumerableConvention</c>. The three rules Calcite declares as fields
         /// and leaves out of the list — limit-sort, sorted aggregate and batch nested loop join — are left out
         /// here too, and a caller who wants one adds it.</para>
@@ -249,6 +262,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             ClrEnumerableUncollectRule,
             EnumerableToClrEnumerableConverterRule,
             ClrEnumerableToEnumerableConverterRule,
+            ClrAsyncEnumerableToClrEnumerableConverterRule,
         ];
 
         /// <summary>

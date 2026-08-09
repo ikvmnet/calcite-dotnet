@@ -151,9 +151,13 @@ tree is smaller than the CLR's, so going the other way means deciding what to do
 no node for, and the answer for some of it will be "nothing". Worth doing when the boundary starts to
 matter; not before.
 
-Note the asynchronous convention needs none of this. It reads a Calcite sub-plan and never feeds one — no
-plan can put a Calcite node above an asynchronous one, because Calcite cannot read an
-`IClrAsyncScannableTable` — so it has no converter out and nothing to translate.
+Note the asynchronous convention needs none of this. It reads a Calcite sub-plan and never feeds one — there
+is no converter from it to `EnumerableConvention` and there cannot be, because Janino compiles generated
+source and generated source cannot await — so there is nothing on that side to translate. Its converters to
+and from `ClrEnumerableConvention` need no translation either: both sides are `System.Linq.Expressions` and
+both share `ClrPhysType`, so the sub-plan's expression is spliced into the tree being built and wrapped in
+one call. `ClrAsyncEnumerableToClrEnumerableConverter` is the one that costs something, and what it costs is
+a blocked thread per row rather than a compilation boundary.
 
 ## Audit findings: 45 operators, twelve agents, one method group each
 

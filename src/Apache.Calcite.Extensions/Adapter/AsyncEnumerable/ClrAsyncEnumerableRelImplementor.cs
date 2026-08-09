@@ -43,12 +43,31 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <param name="rexBuilder">The builder for row expressions, from the plan's cluster.</param>
         /// <param name="internalParameters">The map values are stashed into, which must be the one the
         /// <see cref="DataContext"/> will serve at run time.</param>
-        public ClrAsyncEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters)
+        public ClrAsyncEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters) :
+            this(rexBuilder, internalParameters, Expression.Parameter(typeof(DataContext), "root"))
+        {
+
+        }
+
+        /// <summary>
+        /// Initializes a new instance implementing a sub-plan of a plan already being implemented.
+        /// </summary>
+        /// <param name="rexBuilder">The builder for row expressions, from the plan's cluster.</param>
+        /// <param name="internalParameters">The map values are stashed into, which must be the one the
+        /// <see cref="DataContext"/> will serve at run time.</param>
+        /// <param name="root">The parameter the <see cref="DataContext"/> arrives by, which must be the one
+        /// the enclosing plan's lambda declares.</param>
+        /// <remarks>
+        /// <c>ClrEnumerableRelImplementor</c>'s overload of the same shape, and for the same reason: a
+        /// converter between the two Clr conventions splices the sub-plan into the tree it is building, so
+        /// the sub-plan has to read the <see cref="DataContext"/> by the parameter that tree already has.
+        /// </remarks>
+        public ClrAsyncEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, ParameterExpression root)
         {
             this.rexBuilder = rexBuilder ?? throw new ArgumentNullException(nameof(rexBuilder));
             this.map = internalParameters ?? throw new ArgumentNullException(nameof(internalParameters));
 
-            Root = Expression.Parameter(typeof(DataContext), "root");
+            Root = root ?? throw new ArgumentNullException(nameof(root));
             Translator = new LixToClrTranslator(map);
             Translator.Bind(DataContext.ROOT, Root);
 
@@ -213,6 +232,37 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
         /// <summary>
+        /// Registers on Calcite's implementor every correlation variable in scope here.
+        /// </summary>
+        /// <param name="enumerable"></param>
+        /// <remarks>
+        /// <c>ClrEnumerableRelImplementor.ReplayCorrelVariables</c>, which says why: a sub-plan run on a
+        /// second implementor finds that implementor's correlation variables, and they are none, so
+        /// <c>RexToLixTranslator.visitFieldAccess</c> reads a null getter. A sub-plan of Calcite's under a
+        /// correlate of this convention is exactly that case.
+        /// </remarks>
+        internal void ReplayCorrelVariables(EnumerableRelImplementor enumerable)
+        {
+            foreach (var pair in corrVars)
+                enumerable.registerCorrelVariable(pair.Key, pair.Value.Parameter, pair.Value.Block, pair.Value.PhysType);
+        }
+
+        /// <summary>
+        /// Registers on the synchronous convention's implementor every correlation variable in scope here.
+        /// </summary>
+        /// <param name="clr"></param>
+        /// <remarks>
+        /// <see cref="ReplayCorrelVariables(EnumerableRelImplementor)"/> across the other converter. Here the
+        /// registration really is the same one — both implementors hold the same kind of getter over the same
+        /// block — so nothing is rebuilt.
+        /// </remarks>
+        internal void ReplayCorrelVariables(ClrEnumerableRelImplementor clr)
+        {
+            foreach (var pair in corrVars)
+                clr.RegisterCorrelVariable(pair.Key, pair.Value.Parameter, pair.Value.Block, pair.Value.PhysType);
+        }
+
+        /// <summary>
         /// Creates the result a node's <c>Implement</c> returns.
         /// </summary>
         /// <param name="physType">How the rows are represented.</param>
@@ -237,8 +287,10 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// there: a check with a way out is a check only for the shapes that already pass.
         ///
         /// <para>Requiring the asynchronous interface specifically is also what keeps the two conventions
-        /// from meeting by accident. A synchronous sequence reaching a node of this convention is a
-        /// converter nobody wrote, and this is where it is caught.</para>
+        /// from meeting by accident. There is a converter between them —
+        /// <see cref="ClrEnumerableToClrAsyncEnumerableConverter"/> — and a synchronous sequence reaching a
+        /// node of this convention by any other route is a crossing the planner did not make and nobody
+        /// costed. This is where that is caught.</para>
         /// </remarks>
         static void RequireRowType(ClrPhysType physType, Expression expression)
         {
