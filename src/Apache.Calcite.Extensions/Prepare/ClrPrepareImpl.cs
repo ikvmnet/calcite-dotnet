@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 
 using Apache.Calcite.Extensions;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Prepare.AsyncEnumerable;
 using Apache.Calcite.Extensions.Runtime;
+using Apache.Calcite.Extensions.Rel.Metadata;
 using Apache.Calcite.Extensions.Prepare.Enumerable;
 
 using org.apache.calcite;
@@ -13,6 +15,7 @@ using org.apache.calcite.config;
 using org.apache.calcite.jdbc;
 using org.apache.calcite.plan;
 using org.apache.calcite.prepare;
+using org.apache.calcite.rel.metadata;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.rex;
 using org.apache.calcite.sql;
@@ -48,7 +51,7 @@ namespace Apache.Calcite.Extensions.Prepare
     /// <para>The type-and-column metadata below is ported rather than reused: every piece of it is a
     /// private static of <c>CalcitePrepareImpl</c>.</para>
     /// </remarks>
-    sealed class ClrPrepareImpl
+    public class ClrPrepareImpl
     {
 
         /// <summary>
@@ -61,9 +64,9 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <returns>The planned statement.</returns>
         /// <remarks>
         /// <c>CalcitePrepareImpl.prepare_</c> loops over <c>createPlannerFactories</c>, trying each planner
-        /// until one does not throw <c>CannotPlanException</c>. There is one factory here — Calcite's own
-        /// list holds exactly one too — so the loop is a single call, and a plan that cannot be found
-        /// throws rather than falling back.
+        /// until one does not throw <c>CannotPlanException</c>, and rethrowing the last failure when none
+        /// does. <see cref="CreatePlannerFactories"/> answers one factory, as Calcite's does; a subclass
+        /// that answers several gets the fallback.
         /// </remarks>
         public ClrSignature Prepare(CalcitePrepare.Context context, string sql, java.lang.reflect.Type elementType, long maxRowCount)
         {
@@ -106,10 +109,28 @@ namespace Apache.Calcite.Extensions.Prepare
                 typeFactory,
                 context.config());
 
-            var planner = CreatePlanner(context, async);
-            var preparingStmt = GetPreparingStmt(context, elementType, catalogReader, planner, async);
+            var plannerFactories = CreatePlannerFactories(async);
+            if (plannerFactories.Count == 0)
+                throw new InvalidOperationException("no planner factories");
 
-            return Prepare2(context, sql, elementType, maxRowCount, catalogReader, preparingStmt);
+            Exception? exception = null;
+
+            foreach (var plannerFactory in plannerFactories)
+            {
+                var planner = plannerFactory(context) ?? throw new InvalidOperationException("factory returned null planner");
+
+                try
+                {
+                    var preparingStmt = GetPreparingStmt(context, elementType, catalogReader, planner, async);
+                    return Prepare2(context, sql, elementType, maxRowCount, catalogReader, preparingStmt);
+                }
+                catch (RelOptPlanner.CannotPlanException e)
+                {
+                    exception = e;
+                }
+            }
+
+            throw exception!;
         }
 
         /// <summary>
@@ -175,9 +196,34 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <c>EnumerableConvention</c>, with a converter carrying its rows. That is how a table
         /// modification works here.
         /// </remarks>
-        RelOptPlanner CreatePlanner(CalcitePrepare.Context context, bool async = false)
+        protected virtual RelOptPlanner CreatePlanner(CalcitePrepare.Context context, bool async = false)
         {
-            var planner = new org.apache.calcite.plan.volcano.VolcanoPlanner(null, Contexts.of(context.config()));
+            return CreatePlanner(context, null, null, async);
+        }
+
+        /// <summary>
+        /// Creates a query planner over a given planner context and cost model, and initializes it with a
+        /// default set of rules.
+        /// </summary>
+        /// <param name="context">The schema, type factory and configuration to plan against.</param>
+        /// <param name="externalContext">The planner's context, or <see langword="null"/> for one over the
+        /// connection configuration.</param>
+        /// <param name="costFactory">The cost model, or <see langword="null"/> for the planner's own.</param>
+        /// <param name="async">Whether to plan into the asynchronous convention.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>CalcitePrepareImpl.createPlanner(Context, Context, RelOptCostFactory)</c>, which the one above
+        /// calls with neither.
+        /// </remarks>
+        protected virtual RelOptPlanner CreatePlanner(
+            CalcitePrepare.Context context,
+            org.apache.calcite.plan.Context? externalContext,
+            RelOptCostFactory? costFactory,
+            bool async)
+        {
+            externalContext ??= Contexts.of(context.config());
+
+            var planner = new org.apache.calcite.plan.volcano.VolcanoPlanner(costFactory, externalContext);
             planner.setExecutor(new RexExecutorImpl(DataContexts.EMPTY));
             planner.addRelTraitDef(ConventionTraitDef.INSTANCE);
 
@@ -198,13 +244,32 @@ namespace Apache.Calcite.Extensions.Prepare
                 foreach (var rule in ClrEnumerableRules.Rules())
                     planner.addRule(rule);
 
+            // lets a test add or remove rules, as it does upstream
+            org.apache.calcite.runtime.Hook.PLANNER.run(planner);
+
             return planner;
+        }
+
+        /// <summary>
+        /// Creates the planner factories to try, in order.
+        /// </summary>
+        /// <param name="async">Whether the planners are to plan into the asynchronous convention.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>CalcitePrepareImpl.createPlannerFactories</c>. The collection must not be empty and no factory
+        /// may answer null. More than one lets a subclass try a smaller, faster rule set first and fall back
+        /// to a costlier planner for a query it cannot plan; <see cref="Prepare"/> runs that fallback.
+        /// Calcite's factory is a linq4j <c>Function1</c> and this one is a delegate.
+        /// </remarks>
+        protected virtual IReadOnlyList<Func<CalcitePrepare.Context, RelOptPlanner>> CreatePlannerFactories(bool async)
+        {
+            return [context => CreatePlanner(context, async)];
         }
 
         /// <summary>
         /// Factory method for default convertlet table.
         /// </summary>
-        SqlRexConvertletTable CreateConvertletTable()
+        protected virtual SqlRexConvertletTable CreateConvertletTable()
         {
             return StandardConvertletTable.INSTANCE;
         }
@@ -212,15 +277,61 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Factory method for cluster.
         /// </summary>
-        RelOptCluster CreateCluster(RelOptPlanner planner, RexBuilder rexBuilder)
+        /// <remarks>
+        /// The cluster answers metadata through <see cref="ClrRelMetadataProvider"/> rather than
+        /// <c>JaninoRelMetadataProvider</c>, which <c>RelOptCluster.create</c> reaches by way of
+        /// <c>RelMetadataQuery.instance()</c>. The supplier is the only way in:
+        /// <c>RelMetadataQueryBase.THREAD_PROVIDERS</c> is typed to Janino's provider.
+        ///
+        /// <para>The provider is <c>DefaultRelMetadataProvider.INSTANCE</c>, which is the only one Calcite's
+        /// own prepare uses: <c>Prepare.getProgram</c> answers <c>Programs.standard()</c>, there is no
+        /// connection property for one, and no adapter ships one. An adapter's metadata arrives by the routes
+        /// that provider already reads — <c>estimateRowCount</c> and <c>computeSelfCost</c> on its rels, and
+        /// its tables' <c>Statistic</c>. Calcite's provider-level routes are dead upstream as well:
+        /// <c>setMetadataProvider</c> and <c>Programs.of(…, provider)</c> reach only
+        /// <c>THREAD_PROVIDERS</c>, which nothing but <c>RelMetadataQuery.instance()</c> reads, and the
+        /// providers a planner registers — <c>VolcanoRelMetadataProvider</c> and
+        /// <c>HepRelMetadataProvider</c> — are deprecated and answer <c>handlers</c> with an empty list.
+        /// <c>HepRelVertex</c> is a <c>DelegatingMetadataRel</c> now, and a <c>RelSubset</c> is answered by
+        /// the overloads the <c>RelMd*</c> classes declare for it.</para>
+        /// </remarks>
+        protected virtual RelOptCluster CreateCluster(RelOptPlanner planner, RexBuilder rexBuilder)
         {
-            return RelOptCluster.create(planner, rexBuilder);
+            var cluster = RelOptCluster.create(planner, rexBuilder);
+            cluster.setMetadataQuerySupplier(ClrRelMetadataProvider.QuerySupplier(DefaultRelMetadataProvider.INSTANCE));
+            cluster.invalidateMetadataQuery();
+            return cluster;
+        }
+
+        /// <summary>
+        /// Factory method for default SQL parser.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <returns></returns>
+        protected virtual SqlParser CreateParser(string sql)
+        {
+            return CreateParser(sql, ParserConfig());
+        }
+
+        /// <summary>
+        /// Factory method for SQL parser with a given configuration.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <param name="parserConfig"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Calcite has a third overload taking a <c>SqlParser.ConfigBuilder</c>, deprecated for removal
+        /// before 2.0 along with the builder it serves; it is not written.
+        /// </remarks>
+        protected virtual SqlParser CreateParser(string sql, SqlParser.Config parserConfig)
+        {
+            return SqlParser.create(sql, parserConfig);
         }
 
         /// <summary>
         /// Factory method for SQL parser configuration.
         /// </summary>
-        SqlParser.Config ParserConfig()
+        protected virtual SqlParser.Config ParserConfig()
         {
             return SqlParser.config();
         }
@@ -251,7 +362,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <c>CalcitePrepareImpl.getPreparingStmt</c>, deciding the row format the same way — an
         /// <c>Object[]</c> element type asks for an array and anything else asks for a custom row.
         /// </remarks>
-        ClrPreparingStmt GetPreparingStmt(CalcitePrepare.Context context, java.lang.reflect.Type elementType, CalciteCatalogReader catalogReader, RelOptPlanner planner, bool async = false)
+        protected virtual ClrPreparingStmt GetPreparingStmt(CalcitePrepare.Context context, java.lang.reflect.Type elementType, CalciteCatalogReader catalogReader, RelOptPlanner planner, bool async = false)
         {
             var typeFactory = context.getTypeFactory();
             var prefer = elementType == (java.lang.reflect.Type)(java.lang.Class)typeof(object[])
@@ -304,7 +415,7 @@ namespace Apache.Calcite.Extensions.Prepare
             SqlNode sqlNode;
             try
             {
-                sqlNode = SqlParser.create(sql, parseConfig).parseStmt();
+                sqlNode = CreateParser(sql, parseConfig).parseStmt();
             }
             catch (SqlParseException e)
             {

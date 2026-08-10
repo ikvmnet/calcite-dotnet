@@ -21,7 +21,7 @@ namespace Apache.Calcite.Extensions.Prepare
     /// reaches it only by being in the same package. And <see cref="RowType"/> is nullable, because an
     /// <c>EXPLAIN</c> of a type has none.</para>
     /// </remarks>
-    abstract class ClrPrepareResult
+    public abstract class ClrPrepareResult
     {
 
         /// <summary>

@@ -137,7 +137,7 @@ namespace Apache.Calcite.Tests
         {
             var physical = Plan(sql, rootSchema, ClrEnumerableConvention.Instance, rules, calcRules);
             var parameters = new java.util.HashMap();
-            var bindable = ClrEnumerableInterpretable.ToBindable(parameters, null, (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
+            var bindable = ClrEnumerableInterpretable.ToBindable(parameters, (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
 
             var rows = new List<string>();
             foreach (var row in bindable.Bind(new TestDataContext(rootSchema, parameters)))
@@ -153,7 +153,7 @@ namespace Apache.Calcite.Tests
         {
             var physical = Plan(sql, rootSchema, ClrAsyncEnumerableConvention.Instance, rules, calcRules);
             var parameters = new java.util.HashMap();
-            var bindable = ClrAsyncEnumerableInterpretable.ToBindable(parameters, null, (ClrAsyncEnumerableRel)physical, ClrEnumerablePrefer.Array);
+            var bindable = ClrAsyncEnumerableInterpretable.ToBindable(parameters, (ClrAsyncEnumerableRel)physical, ClrEnumerablePrefer.Array);
 
             var rows = new List<string>();
             await foreach (var row in bindable.Bind(new TestDataContext(rootSchema, parameters)))
@@ -334,7 +334,7 @@ namespace Apache.Calcite.Tests
 
             var physical = Plan("SELECT ID, LABEL FROM SALES", rootSchema, ClrEnumerableConvention.Instance, rules, calcRules);
             var parameters = new java.util.HashMap();
-            var bindable = ClrEnumerableInterpretable.ToBindable(parameters, null, (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
+            var bindable = ClrEnumerableInterpretable.ToBindable(parameters, (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
 
             using (var enumerator = bindable.Bind(new TestDataContext(rootSchema, parameters)).GetEnumerator())
             {

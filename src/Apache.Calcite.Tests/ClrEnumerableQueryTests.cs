@@ -154,7 +154,7 @@ namespace Apache.Calcite.Tests
             IClrBindable bindable;
             try
             {
-                bindable = ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), null, physical, ClrEnumerablePrefer.Array);
+                bindable = ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), physical, ClrEnumerablePrefer.Array);
             }
             catch (Exception e)
             {
@@ -191,51 +191,11 @@ namespace Apache.Calcite.Tests
 
             var project = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableProject.Create(physical, identity, physical.getRowType());
 
-            var act = () => ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), null, project, ClrEnumerablePrefer.Array);
+            var act = () => ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), project, ClrEnumerablePrefer.Array);
 
             act.Should().Throw<java.lang.IllegalStateException>()
                 .WithMessage("Unable to implement ClrEnumerableProject*")
                 .WithInnerException<java.lang.UnsupportedOperationException>();
-        }
-
-        /// <summary>
-        /// A Spark handler is refused rather than ignored.
-        /// </summary>
-        /// <remarks>
-        /// Calcite hands the generated class and its source to <c>SparkHandler.compile</c>. There is neither
-        /// here, so the parameter is taken — so that a caller's configuration is seen — and refused.
-        /// </remarks>
-        [TestMethod]
-        public void ShouldRefuseASparkHandler()
-        {
-            var (physical, _) = Plan("SELECT \"ID\", \"NAME\" FROM \"PEOPLE\"");
-
-            var act = () => ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), new EnabledSparkHandler(), physical, ClrEnumerablePrefer.Array);
-
-            act.Should().Throw<java.lang.UnsupportedOperationException>().WithMessage("*Spark*");
-        }
-
-        /// <summary>
-        /// A Spark handler that says it is on, which is the only thing asked of it before it is refused.
-        /// </summary>
-        sealed class EnabledSparkHandler : org.apache.calcite.jdbc.CalcitePrepare.SparkHandler
-        {
-
-            /// <inheritdoc />
-            public bool enabled() => true;
-
-            /// <inheritdoc />
-            public org.apache.calcite.rel.RelNode flattenTypes(RelOptPlanner planner, org.apache.calcite.rel.RelNode rootRel, bool restructure) => throw new java.lang.UnsupportedOperationException();
-
-            /// <inheritdoc />
-            public void registerRules(org.apache.calcite.jdbc.CalcitePrepare.SparkHandler.RuleSetBuilder builder) => throw new java.lang.UnsupportedOperationException();
-
-            /// <inheritdoc />
-            public org.apache.calcite.runtime.ArrayBindable compile(org.apache.calcite.linq4j.tree.ClassDeclaration expr, string s) => throw new java.lang.UnsupportedOperationException();
-
-            /// <inheritdoc />
-            public object sparkContext() => throw new java.lang.UnsupportedOperationException();
-
         }
 
         /// <summary>
@@ -289,7 +249,7 @@ namespace Apache.Calcite.Tests
 
             physical.Should().BeOfType<Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableCombine>();
 
-            var bindable = ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), null, physical, ClrEnumerablePrefer.Array);
+            var bindable = ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), physical, ClrEnumerablePrefer.Array);
 
             var rows = new List<object[]>();
             foreach (var current in bindable.Bind(new TestDataContext(rootSchema)))

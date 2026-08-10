@@ -153,6 +153,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         public Type RowType => javaRowClass;
 
         /// <inheritdoc />
+        public java.lang.reflect.Type JavaRowType => javaRowType;
+
+        /// <inheritdoc />
         public Type FieldType(int field) => format.JavaFieldClass(typeFactory, rowType, field);
 
         /// <inheritdoc />
