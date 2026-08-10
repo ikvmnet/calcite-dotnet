@@ -19,7 +19,7 @@ namespace Apache.Calcite.Extensions.Prepare
     internal sealed class StatementDataContext : DataContext
     {
 
-        readonly SchemaPlus _rootSchema;
+        readonly SchemaPlus? _rootSchema;
         readonly JavaTypeFactory _typeFactory;
         readonly IReadOnlyDictionary<string, object?> _vars;
         readonly IReadOnlyList<object?> _parameters;
@@ -27,7 +27,9 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="rootSchema"></param>
+        /// <param name="rootSchema">The schema the statement was planned against, or
+        /// <see langword="null"/> for a DDL signature, which has no plan to run —
+        /// <c>DataContextImpl</c>'s root schema is nullable for the same statement.</param>
         /// <param name="typeFactory"></param>
         /// <param name="cancelFlag"></param>
         /// <param name="queryTimeoutMillis"></param>
@@ -38,7 +40,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// the generated <c>bind(root)</c> method retrieves via <c>root.get(name)</c> at execution time.
         /// Pass <see langword="null"/> when constructing a throwaway planning-only context.
         /// </param>
-        public StatementDataContext(SchemaPlus rootSchema, JavaTypeFactory typeFactory, AtomicBoolean cancelFlag, long queryTimeoutMillis, IReadOnlyList<object?> parameters, java.util.Map? internalParameters = null)
+        public StatementDataContext(SchemaPlus? rootSchema, JavaTypeFactory typeFactory, AtomicBoolean cancelFlag, long queryTimeoutMillis, IReadOnlyList<object?> parameters, java.util.Map? internalParameters = null)
         {
             _rootSchema = rootSchema;
             _typeFactory = typeFactory;
@@ -72,9 +74,9 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <summary>
-        /// Returns the root schema of the current session.
+        /// Returns the schema the statement was planned against, or <see langword="null"/> for DDL.
         /// </summary>
-        public SchemaPlus getRootSchema() => _rootSchema;
+        public SchemaPlus? getRootSchema() => _rootSchema;
 
         /// <summary>
         /// Returns the <see cref="JavaTypeFactory"/> used to create Java type representations.
