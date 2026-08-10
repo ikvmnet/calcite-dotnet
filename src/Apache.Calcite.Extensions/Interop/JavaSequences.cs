@@ -38,17 +38,35 @@ namespace Apache.Calcite.Extensions.Interop
         {
             ArgumentNullException.ThrowIfNull(source);
 
-            var enumerator = source.enumerator();
+            // a linq4j sub-plan executes at enumerator() -- ResultSetEnumerable runs its JDBC statement
+            // there, AdoReaderEnumerable its DbCommand -- so the crossing calls it where the rest of the
+            // plan's acquisition happens: at GetEnumerator, closed by the owner whether or not a row was
+            // ever read
+            return new Runtime.ClrEnumerable<TSource>(() =>
+            {
+                var enumerator = source.enumerator();
+                return new Runtime.AcquiredEnumerator<TSource>(FromJavaRows<TSource>(enumerator), new JavaCloseable(enumerator));
+            });
+        }
 
-            try
-            {
-                while (enumerator.moveNext())
-                    yield return JavaValues.As<TSource>(enumerator.current());
-            }
-            finally
-            {
-                enumerator.close();
-            }
+        /// <summary>
+        /// The row loop of <see cref="FromJava"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TSource> FromJavaRows<TSource>(org.apache.calcite.linq4j.Enumerator enumerator)
+        {
+            while (enumerator.moveNext())
+                yield return JavaValues.As<TSource>(enumerator.current());
+        }
+
+        /// <summary>
+        /// Closes a linq4j enumerator from a disposal.
+        /// </summary>
+        sealed class JavaCloseable(org.apache.calcite.linq4j.Enumerator enumerator) : IDisposable
+        {
+
+            /// <inheritdoc />
+            public void Dispose() => enumerator.close();
+
         }
 
         /// <summary>
@@ -68,27 +86,50 @@ namespace Apache.Calcite.Extensions.Interop
         /// convention refuses, which is a caller blocked waiting. A plan reading a Calcite sub-plan this way
         /// is simply not asynchronous over that part of itself, and cannot be.</para>
         /// </remarks>
-        public static async IAsyncEnumerable<TSource> FromJavaAsync<TSource>(org.apache.calcite.linq4j.Enumerable source, [System.Runtime.CompilerServices.EnumeratorCancellation] System.Threading.CancellationToken cancellationToken = default)
+        public static IAsyncEnumerable<TSource> FromJavaAsync<TSource>(org.apache.calcite.linq4j.Enumerable source, System.Threading.CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(source);
 
-            var enumerator = source.enumerator();
-
-            try
+            // enumerator() runs at GetAsyncEnumerator for the reason FromJava gives; the token that
+            // matters is GetAsyncEnumerator's, which is the one the parameter used to combine with and
+            // every generated call site passes default for
+            return new Runtime.ClrAsyncEnumerable<TSource>(token =>
             {
-                while (enumerator.moveNext())
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
+                var enumerator = source.enumerator();
+                return new Runtime.AcquiredAsyncEnumerator<TSource>(FromJavaAsyncRows<TSource>(enumerator, token), new AsyncJavaCloseable(enumerator));
+            });
+        }
 
-                    yield return JavaValues.As<TSource>(enumerator.current());
-                }
-            }
-            finally
+        /// <summary>
+        /// The row loop of <see cref="FromJavaAsync"/>, over an enumerator the factory acquired. Nothing
+        /// here suspends, and that is the honest shape of it: the source is pulled, and an asynchronous
+        /// sequence that always completes synchronously costs a state machine and no thread.
+        /// </summary>
+        static async IAsyncEnumerator<TSource> FromJavaAsyncRows<TSource>(org.apache.calcite.linq4j.Enumerator enumerator, System.Threading.CancellationToken cancellationToken)
+        {
+            while (enumerator.moveNext())
             {
-                enumerator.close();
+                cancellationToken.ThrowIfCancellationRequested();
+
+                yield return JavaValues.As<TSource>(enumerator.current());
             }
 
             await System.Threading.Tasks.Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Closes a linq4j enumerator from an asynchronous disposal, which completes synchronously.
+        /// </summary>
+        sealed class AsyncJavaCloseable(org.apache.calcite.linq4j.Enumerator enumerator) : IAsyncDisposable
+        {
+
+            /// <inheritdoc />
+            public System.Threading.Tasks.ValueTask DisposeAsync()
+            {
+                enumerator.close();
+                return default;
+            }
+
         }
 
 

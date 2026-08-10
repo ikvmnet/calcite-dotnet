@@ -37,12 +37,22 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         {
             ArgumentNullException.ThrowIfNull(source);
 
+            // Enumerables.slice0 is select(elements -> elements[0]), and select acquires its source's
+            // enumerator inside enumerator() -- so obtaining this enumerator acquires the scan's
+            return source.Acquiring(e => Slice0Rows<TRow>(e));
+        }
+
+        /// <summary>
+        /// The row loop of <see cref="Slice0"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TRow> Slice0Rows<TRow>(IEnumerator<object[]> source)
+        {
             // the row came from a table and its fields are still Java's, so the field taken out of it is
             // converted rather than cast. Calcite's slice0 is Enumerable<E[]> to Enumerable<E> and needs
             // neither: a linq4j Enumerable erases its element type, so nothing downstream can tell what came
             // out, and a CLR sequence says so in its own type.
-            foreach (var row in source)
-                yield return JavaValues.As<TRow>(row[0]);
+            while (source.MoveNext())
+                yield return JavaValues.As<TRow>(source.Current[0]);
         }
 
         /// <summary>
@@ -65,9 +75,19 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(selector);
 
-            foreach (var row in source)
-                if (predicate == null || predicate(row))
-                    yield return selector(row);
+            // the generated enumerator acquires its input in a field initializer, which runs at
+            // enumerator() -- so obtaining this enumerator acquires the input's
+            return source.Acquiring(e => CalcRows(e, predicate, selector));
+        }
+
+        /// <summary>
+        /// The row loop of <see cref="Calc"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TResult> CalcRows<TSource, TResult>(IEnumerator<TSource> source, Func<TSource, bool>? predicate, Func<TSource, TResult> selector)
+        {
+            while (source.MoveNext())
+                if (predicate == null || predicate(source.Current))
+                    yield return selector(source.Current);
         }
 
         /// <summary>
@@ -79,7 +99,22 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <returns></returns>
         public static IEnumerable<TSource> Where<TSource>(IEnumerable<TSource> source, Func<TSource, bool> predicate)
         {
-            return source.Where(predicate);
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(predicate);
+
+            // EnumerableDefaults.where acquires source.enumerator() inside enumerator() -- not
+            // System.Linq's Where, whose iterator defers the acquisition to the first MoveNext
+            return source.Acquiring(e => WhereRows(e, predicate));
+        }
+
+        /// <summary>
+        /// The row loop of <see cref="Where"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TSource> WhereRows<TSource>(IEnumerator<TSource> source, Func<TSource, bool> predicate)
+        {
+            while (source.MoveNext())
+                if (predicate(source.Current))
+                    yield return source.Current;
         }
 
         /// <summary>
@@ -92,7 +127,21 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <returns></returns>
         public static IEnumerable<TResult> Select<TSource, TResult>(IEnumerable<TSource> source, Func<TSource, TResult> selector)
         {
-            return source.Select(selector);
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(selector);
+
+            // EnumerableDefaults.select acquires source.enumerator() in a field initializer, which runs at
+            // enumerator() -- not System.Linq's Select, whose iterator defers it to the first MoveNext
+            return source.Acquiring(e => SelectRows(e, selector));
+        }
+
+        /// <summary>
+        /// The row loop of <see cref="Select"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TResult> SelectRows<TSource, TResult>(IEnumerator<TSource> source, Func<TSource, TResult> selector)
+        {
+            while (source.MoveNext())
+                yield return selector(source.Current);
         }
 
         /// <summary>
@@ -111,9 +160,20 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </remarks>
         public static IEnumerable<TSource> OrderBy<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator)
         {
-            return comparator == null
-                ? source.OrderBy(keySelector)
-                : source.OrderBy(keySelector, Comparer<TKey>.Create((x, y) => comparator.compare(x, y)));
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(keySelector);
+
+            // EnumerableDefaults.orderBy drains its whole input into the TreeMap inside enumerator() --
+            // obtaining this enumerator runs the sort. The sort itself stays System.Linq's, which is stable
+            // exactly as the TreeMap-of-lists is; only when it runs moves.
+            return new ClrEnumerable<TSource>(() =>
+            {
+                var sorted = comparator == null
+                    ? source.OrderBy(keySelector).ToList()
+                    : source.OrderBy(keySelector, Comparer<TKey>.Create((x, y) => comparator.compare(x, y))).ToList();
+
+                return sorted.GetEnumerator();
+            });
         }
 
         /// <summary>
@@ -125,7 +185,30 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <returns></returns>
         public static IEnumerable<TSource> Skip<TSource>(IEnumerable<TSource> source, int count)
         {
-            return source.Skip(count);
+            ArgumentNullException.ThrowIfNull(source);
+
+            // EnumerableDefaults.skip is skipWhile over n < count, and SkipWhileEnumerator takes
+            // source.enumerator() eagerly -- acquisition at enumerator(), rows at moveNext
+            return source.Acquiring(e => SkipRows(e, count));
+        }
+
+        /// <summary>
+        /// The row loop of <see cref="Skip"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TSource> SkipRows<TSource>(IEnumerator<TSource> source, int count)
+        {
+            var n = 0;
+
+            while (source.MoveNext())
+            {
+                if (n < count)
+                {
+                    n++;
+                    continue;
+                }
+
+                yield return source.Current;
+            }
         }
 
         /// <summary>
@@ -151,12 +234,20 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         {
             ArgumentNullException.ThrowIfNull(source);
 
-            using var enumerator = source.GetEnumerator();
+            // TakeWhileLongEnumerator takes source.enumerator() eagerly -- acquisition at enumerator(),
+            // the drawn-but-untested row at moveNext
+            return source.Acquiring(e => TakeRows(e, count));
+        }
 
+        /// <summary>
+        /// The row loop of <see cref="Take"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TSource> TakeRows<TSource>(IEnumerator<TSource> source, int count)
+        {
             var n = -1;
 
-            while (enumerator.MoveNext() && ++n < count)
-                yield return enumerator.Current;
+            while (source.MoveNext() && ++n < count)
+                yield return source.Current;
         }
 
         /// <summary>
@@ -166,6 +257,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="source"></param>
         /// <param name="other"></param>
         /// <returns></returns>
+        /// <remarks>
+        /// System.Linq's, deliberately, because the timing matches: <c>Linq4j.CompositeEnumerable</c>'s
+        /// <c>enumerator()</c> acquires nothing of its sources — each is acquired at its turn inside
+        /// <c>moveNext</c> — and LINQ's <c>Concat</c> does the same. The one operator here whose deferral is
+        /// linq4j's own.
+        /// </remarks>
         public static IEnumerable<TSource> Concat<TSource>(IEnumerable<TSource> source, IEnumerable<TSource> other)
         {
             return source.Concat(other);
@@ -179,6 +276,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="other"></param>
         /// <param name="comparer"></param>
         /// <returns></returns>
+        /// <remarks>
+        /// Drains both inputs <b>at the call</b>, not at <c>GetEnumerator</c>, and that is linq4j's own
+        /// timing: <c>EnumerableDefaults.union</c> runs <c>source0.into(set)</c> in the method body and
+        /// returns <c>Linq4j.asEnumerable(set)</c>. <c>intersect</c>, <c>except</c> and <c>distinct</c> are
+        /// the same shape, so all four here are. Re-enumerating one of these replays the snapshot, in
+        /// linq4j exactly as here — do not move the drain into an enumerator factory in the name of the
+        /// acquisition rule; that would be a divergence, not a fix.
+        /// </remarks>
         public static IEnumerable<TSource> Union<TSource>(IEnumerable<TSource> source, IEnumerable<TSource> other, EqualityComparer? comparer)
         {
             // a java.util.HashSet, and not because the CLR has nothing to hold rows in: what a set operator
@@ -329,29 +434,60 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             ArgumentNullException.ThrowIfNull(outer);
             ArgumentNullException.ThrowIfNull(inner);
 
-            // the build side: one bucket per key, plus the set of null-safe keys seen. A null key goes into
-            // the map under null rather than being dropped, because the rows behind it are what say UNKNOWN
-            var lookup = new java.util.HashMap();
-            var nullSafeKeys = new java.util.HashSet();
-
-            foreach (var row in inner)
+            // leftMarkHashJoin builds its hash table inside enumerator() -- HashTableWithNullSafeKeySet.build
+            // drains the build side there -- and the probe side's enumerator is acquired there too
+            return new ClrEnumerable<TResult>(() =>
             {
-                var key = innerKeyNullAwareSelector(row);
-                var wrapped = key == null ? null : JavaWrapped.Of(comparer, JavaValues.From(key));
+                // the build side: one bucket per key, plus the set of null-safe keys seen. A null key goes
+                // into the map under null rather than being dropped, because the rows behind it are what say
+                // UNKNOWN
+                var lookup = new java.util.HashMap();
+                var nullSafeKeys = new java.util.HashSet();
 
-                if (lookup.get(wrapped) is not List<TInner> bucket)
-                    lookup.put(wrapped, bucket = []);
+                foreach (var row in inner)
+                {
+                    var key = innerKeyNullAwareSelector(row);
+                    var wrapped = key == null ? null : JavaWrapped.Of(comparer, JavaValues.From(key));
 
-                bucket.Add(row);
+                    if (lookup.get(wrapped) is not List<TInner> bucket)
+                        lookup.put(wrapped, bucket = []);
 
-                if (innerNullSafeKeySelector != null)
-                    nullSafeKeys.add(JavaWrapped.Of(nullSafeComparer, JavaValues.From(innerNullSafeKeySelector(row))));
-            }
+                    bucket.Add(row);
 
+                    if (innerNullSafeKeySelector != null)
+                        nullSafeKeys.add(JavaWrapped.Of(nullSafeComparer, JavaValues.From(innerNullSafeKeySelector(row))));
+                }
+
+                var e = outer.GetEnumerator();
+                return new AcquiredEnumerator<TResult>(
+                    LeftMarkHashJoinRows(
+                        e, outerKeyNullAwareSelector, outerNullSafeKeySelector, atMostOneNotNullSafeKey,
+                        resultSelector, comparer, nullSafeComparer, nonEquiPredicate, equiPredicate,
+                        lookup, nullSafeKeys), e);
+            });
+        }
+
+        /// <summary>
+        /// The probe loop of <see cref="LeftMarkHashJoin"/>, over the lookup the factory built.
+        /// </summary>
+        static IEnumerator<TResult> LeftMarkHashJoinRows<TSource, TInner, TKey, TNsKey, TResult>(
+            IEnumerator<TSource> outer,
+            Func<TSource, TKey> outerKeyNullAwareSelector,
+            Func<TSource, TNsKey>? outerNullSafeKeySelector,
+            bool atMostOneNotNullSafeKey,
+            Func<TSource, java.lang.Boolean?, TResult> resultSelector,
+            EqualityComparer? comparer,
+            EqualityComparer? nullSafeComparer,
+            Func<TSource, TInner, java.lang.Boolean?>? nonEquiPredicate,
+            Func<TSource, TInner, java.lang.Boolean?> equiPredicate,
+            java.util.HashMap lookup,
+            java.util.HashSet nullSafeKeys)
+        {
             var buildSideIsEmpty = lookup.isEmpty();
 
-            foreach (var row in outer)
+            while (outer.MoveNext())
             {
+                var row = outer.Current;
                 java.lang.Boolean? marker = java.lang.Boolean.FALSE;
 
                 if (outerNullSafeKeySelector != null
@@ -519,30 +655,53 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             bool generateNullsOnLeft,
             bool generateNullsOnRight)
         {
-            // the lookup is a java.util.HashMap, as linq4j's toLookup builds one: a right or a full join ends
-            // with the rows of the right input that matched nothing, and the order those come out in is this
-            // map's. See JavaHashingTests for why that order is the same in every process.
-            var lookup = new java.util.HashMap();
-
-            foreach (var row in inner)
+            // hashEquiJoin_'s enumerator() drains the build side into the lookup and acquires the probe
+            // side's enumerator, both before the first moveNext -- so does this factory
+            return new ClrEnumerable<TResult>(() =>
             {
-                var key = innerKeySelector(row);
+                // the lookup is a java.util.HashMap, as linq4j's toLookup builds one: a right or a full join
+                // ends with the rows of the right input that matched nothing, and the order those come out in
+                // is this map's. See JavaHashingTests for why that order is the same in every process.
+                var lookup = new java.util.HashMap();
 
-                // a null key is kept under a null key, as toLookup keeps one, and nothing probes it
-                var wrapped = key == null ? null : JavaWrapped.Of(comparer, JavaValues.From(key));
-                if (lookup.get(wrapped) is not List<TInner> bucket)
-                    lookup.put(wrapped, bucket = []);
+                foreach (var row in inner)
+                {
+                    var key = innerKeySelector(row);
 
-                bucket.Add(row);
-            }
+                    // a null key is kept under a null key, as toLookup keeps one, and nothing probes it
+                    var wrapped = key == null ? null : JavaWrapped.Of(comparer, JavaValues.From(key));
+                    if (lookup.get(wrapped) is not List<TInner> bucket)
+                        lookup.put(wrapped, bucket = []);
 
-            // every key the build side has, less the ones an outer row carries. Calcite keeps it this way
-            // round, and it matters where the lookup holds a key nothing probes: that key's rows are what a
-            // right or a full join owes against a null left.
-            var unmatched = generateNullsOnLeft ? new java.util.HashSet(lookup.keySet()) : null;
+                    bucket.Add(row);
+                }
 
-            foreach (var row in outer)
+                // every key the build side has, less the ones an outer row carries. Calcite keeps it this way
+                // round, and it matters where the lookup holds a key nothing probes: that key's rows are what
+                // a right or a full join owes against a null left.
+                var unmatched = generateNullsOnLeft ? new java.util.HashSet(lookup.keySet()) : null;
+
+                var e = outer.GetEnumerator();
+                return new AcquiredEnumerator<TResult>(
+                    HashEquiJoinRows(e, outerKeySelector, resultSelector, comparer, generateNullsOnRight, lookup, unmatched), e);
+            });
+        }
+
+        /// <summary>
+        /// The probe loop of <see cref="HashEquiJoin"/>, over the lookup and enumerator the factory built.
+        /// </summary>
+        static IEnumerator<TResult> HashEquiJoinRows<TSource, TInner, TKey, TResult>(
+            IEnumerator<TSource> outer,
+            Func<TSource, TKey> outerKeySelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
+            EqualityComparer? comparer,
+            bool generateNullsOnRight,
+            java.util.HashMap lookup,
+            java.util.HashSet? unmatched)
+        {
+            while (outer.MoveNext())
             {
+                var row = outer.Current;
                 var key = outerKeySelector(row);
                 var any = false;
 
@@ -606,26 +765,52 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             bool generateNullsOnRight,
             Func<TSource, TInner, bool> predicate)
         {
-            // read once, because a right or a full join walks it twice
-            IEnumerable<TInner> innerToLookUp = generateNullsOnLeft ? new List<TInner>(inner) : inner;
-
-            var lookup = new java.util.HashMap();
-
-            foreach (var row in innerToLookUp)
+            // hashJoinWithPredicate_'s enumerator() reads the build side, builds the lookup and the
+            // leftover list, and acquires the probe side's enumerator, all before the first moveNext --
+            // so does this factory
+            return new ClrEnumerable<TResult>(() =>
             {
-                var key = innerKeySelector(row);
+                // read once, because a right or a full join walks it twice
+                IEnumerable<TInner> innerToLookUp = generateNullsOnLeft ? new List<TInner>(inner) : inner;
 
-                var wrapped = key == null ? null : JavaWrapped.Of(comparer, JavaValues.From(key));
-                if (lookup.get(wrapped) is not List<TInner> bucket)
-                    lookup.put(wrapped, bucket = []);
+                var lookup = new java.util.HashMap();
 
-                bucket.Add(row);
-            }
+                foreach (var row in innerToLookUp)
+                {
+                    var key = innerKeySelector(row);
 
-            var unmatched = generateNullsOnLeft ? new List<TInner>(innerToLookUp) : null;
+                    var wrapped = key == null ? null : JavaWrapped.Of(comparer, JavaValues.From(key));
+                    if (lookup.get(wrapped) is not List<TInner> bucket)
+                        lookup.put(wrapped, bucket = []);
 
-            foreach (var row in outer)
+                    bucket.Add(row);
+                }
+
+                var unmatched = generateNullsOnLeft ? new List<TInner>(innerToLookUp) : null;
+
+                var e = outer.GetEnumerator();
+                return new AcquiredEnumerator<TResult>(
+                    HashJoinWithPredicateRows(e, outerKeySelector, resultSelector, comparer, generateNullsOnRight, predicate, lookup, unmatched), e);
+            });
+        }
+
+        /// <summary>
+        /// The probe loop of <see cref="HashJoinWithPredicate"/>, over the lookup and enumerator the
+        /// factory built.
+        /// </summary>
+        static IEnumerator<TResult> HashJoinWithPredicateRows<TSource, TInner, TKey, TResult>(
+            IEnumerator<TSource> outer,
+            Func<TSource, TKey> outerKeySelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
+            EqualityComparer? comparer,
+            bool generateNullsOnRight,
+            Func<TSource, TInner, bool> predicate,
+            java.util.HashMap lookup,
+            List<TInner>? unmatched)
+        {
+            while (outer.MoveNext())
             {
+                var row = outer.Current;
                 var key = outerKeySelector(row);
                 var any = false;
 
@@ -716,10 +901,27 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             EqualityComparer? comparer,
             bool anti)
         {
+            // semiEquiJoin_'s enumerator() acquires the outer enumerator eagerly; only the lookup is
+            // deferred, per the CALCITE-2909 note below
+            return outer.Acquiring(e => SemiEquiJoinRows(e, inner, outerKeySelector, innerKeySelector, comparer, anti));
+        }
+
+        /// <summary>
+        /// The probe loop of <see cref="SemiEquiJoin"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TSource> SemiEquiJoinRows<TSource, TInner, TKey>(
+            IEnumerator<TSource> outer,
+            IEnumerable<TInner> inner,
+            Func<TSource, TKey> outerKeySelector,
+            Func<TInner, TKey> innerKeySelector,
+            EqualityComparer? comparer,
+            bool anti)
+        {
             java.util.HashSet? keys = null;
 
-            foreach (var row in outer)
+            while (outer.MoveNext())
             {
+                var row = outer.Current;
                 if (keys == null)
                 {
                     var distinct = new java.util.HashSet();
@@ -760,10 +962,28 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             bool anti,
             Func<TSource, TInner, bool> predicate)
         {
+            // semiJoinWithPredicate_'s enumerator() acquires the outer enumerator eagerly; only the
+            // lookup is deferred, memoized to the first outer row
+            return outer.Acquiring(e => SemiJoinWithPredicateRows(e, inner, outerKeySelector, innerKeySelector, comparer, anti, predicate));
+        }
+
+        /// <summary>
+        /// The probe loop of <see cref="SemiJoinWithPredicate"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TSource> SemiJoinWithPredicateRows<TSource, TInner, TKey>(
+            IEnumerator<TSource> outer,
+            IEnumerable<TInner> inner,
+            Func<TSource, TKey> outerKeySelector,
+            Func<TInner, TKey> innerKeySelector,
+            EqualityComparer? comparer,
+            bool anti,
+            Func<TSource, TInner, bool> predicate)
+        {
             java.util.HashMap? lookup = null;
 
-            foreach (var row in outer)
+            while (outer.MoveNext())
             {
+                var row = outer.Current;
                 if (lookup == null)
                 {
                     lookup = new java.util.HashMap();
@@ -938,12 +1158,29 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             Function2 resultSelector,
             java.util.Comparator comparator)
         {
+            // SortedAggregateEnumerator's constructor acquires enumerable.enumerator() -- acquisition at
+            // enumerator(), the walk at moveNext
+            return source.Acquiring(e => SortedGroupByRows<TSource, TKey, TResult>(e, keySelector, accumulatorInitializer, accumulatorAdder, resultSelector, comparator));
+        }
+
+        /// <summary>
+        /// The group loop of <see cref="SortedGroupBy"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TResult> SortedGroupByRows<TSource, TKey, TResult>(
+            IEnumerator<TSource> source,
+            Func<TSource, TKey> keySelector,
+            Function0 accumulatorInitializer,
+            Function2 accumulatorAdder,
+            Function2 resultSelector,
+            java.util.Comparator comparator)
+        {
             object? accumulator = null;
             object? previousKey = null;
             var any = false;
 
-            foreach (var row in source)
+            while (source.MoveNext())
             {
+                var row = source.Current;
                 var key = JavaValues.From(keySelector(row));
 
                 if (any && comparator.compare(previousKey, key) != 0)
@@ -988,10 +1225,30 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             bool all,
             EqualityComparer? comparer)
         {
-            var inputs = new IEnumerator<TSource>[sources.size()];
-            for (int i = 0; i < inputs.Length; i++)
-                inputs[i] = ((IEnumerable<TSource>)sources.get(i)).GetEnumerator();
+            // MergeUnionEnumerator's constructor acquires every input's enumerator -- acquisition at
+            // enumerator(), the initial positioning at the first moveNext
+            return new ClrEnumerable<TSource>(() =>
+            {
+                var inputs = new IEnumerator<TSource>[sources.size()];
+                for (int i = 0; i < inputs.Length; i++)
+                    inputs[i] = ((IEnumerable<TSource>)sources.get(i)).GetEnumerator();
 
+                // the owner disposes every input, moved or not; the loop no longer needs its own finally
+                return new AcquiredEnumerator<TSource>(
+                    MergeUnionRows(inputs, sortKeySelector, sortComparator, all, comparer), inputs);
+            });
+        }
+
+        /// <summary>
+        /// The merge loop of <see cref="MergeUnion"/>, over enumerators the factory acquired.
+        /// </summary>
+        static IEnumerator<TSource> MergeUnionRows<TSource, TKey>(
+            IEnumerator<TSource>[] inputs,
+            Func<TSource, TKey> sortKeySelector,
+            java.util.Comparator sortComparator,
+            bool all,
+            EqualityComparer? comparer)
+        {
             var current = new TSource[inputs.Length];
             var finished = new bool[inputs.Length];
             var active = inputs.Length;
@@ -1047,47 +1304,39 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 return sortComparator.compare(JavaValues.From(sortKeySelector(a)), JavaValues.From(sortKeySelector(b)));
             }
 
-            try
-            {
-                for (int i = 0; i < inputs.Length; i++)
-                    Move(i);
+            for (int i = 0; i < inputs.Length; i++)
+                Move(i);
 
-                while (active > 0)
+            while (active > 0)
+            {
+                var candidate = -1;
+                for (int i = 0; i < current.Length; i++)
                 {
-                    var candidate = -1;
-                    for (int i = 0; i < current.Length; i++)
+                    if (finished[i] == false)
                     {
-                        if (finished[i] == false)
-                        {
-                            candidate = i;
-                            break;
-                        }
+                        candidate = i;
+                        break;
                     }
-
-                    if (active > 1)
-                    {
-                        for (int i = candidate + 1; i < current.Length; i++)
-                        {
-                            if (finished[i])
-                                continue;
-
-                            if (Compare(current[candidate], current[i]) > 0)
-                                candidate = i;
-                        }
-                    }
-
-                    var value = current[candidate];
-                    var emit = NotDuplicated(value);
-                    Move(candidate);
-
-                    if (emit)
-                        yield return value;
                 }
-            }
-            finally
-            {
-                foreach (var input in inputs)
-                    input.Dispose();
+
+                if (active > 1)
+                {
+                    for (int i = candidate + 1; i < current.Length; i++)
+                    {
+                        if (finished[i])
+                            continue;
+
+                        if (Compare(current[candidate], current[i]) > 0)
+                            candidate = i;
+                    }
+                }
+
+                var value = current[candidate];
+                var emit = NotDuplicated(value);
+                Move(candidate);
+
+                if (emit)
+                    yield return value;
             }
         }
 
@@ -1122,9 +1371,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="comparer">Decides whether two keys of one input are the same; null means they do.</param>
         /// <returns></returns>
         /// <remarks>
-        /// The counterpart of <c>EnumerableDefaults.mergeJoin</c>, statement for statement, as an iterator
-        /// rather than the enumerator with a state machine that Java needs. Both inputs are walked once and
-        /// only the rows of one key are held.
+        /// The counterpart of <c>EnumerableDefaults.mergeJoin</c>, statement for statement, holding its state
+        /// in <see cref="MergeJoinCursor{TSource, TInner, TKey, TResult}"/> the way linq4j's
+        /// <c>MergeJoinEnumerator</c> holds it. Both inputs are walked once and only the rows of one key are
+        /// held.
         ///
         /// <para>Two nulls must not compare equal, or a join of two null keys would return rows SQL says it
         /// does not. Calcite signals that out of its comparator by throwing, and catches it to advance the
@@ -1145,26 +1395,96 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (IsMergeJoinSupported(joinType) == false)
                 throw new java.lang.UnsupportedOperationException($"MergeJoin unsupported for join type {joinType}");
 
-            var name = joinType.name();
-            var isLeft = name == nameof(org.apache.calcite.linq4j.JoinType.LEFT);
-            var isAnti = name == nameof(org.apache.calcite.linq4j.JoinType.ANTI);
-            var isSemi = name == nameof(org.apache.calcite.linq4j.JoinType.SEMI);
-            var isLeftOrAnti = isLeft || isAnti;
-            var equality = JavaEqualityComparer<TKey>.Of(comparer);
+            // MergeJoinEnumerator's constructor acquires both enumerators and calls start(), which
+            // positions both cursors -- so the factory builds the cursor, and obtaining this enumerator
+            // reads each input as far as its first key run, exactly as linq4j's does
+            return new ClrEnumerable<TResult>(() =>
+            {
+                var cursor = new MergeJoinCursor<TSource, TInner, TKey, TResult>(
+                    outer, inner, outerKeySelector, innerKeySelector, predicate, resultSelector, joinType, comparator, comparer);
 
-            var lefts = new List<TSource>();
-            var rights = new List<TInner>();
-            var done = false;
-            var remainingLeft = false;
-            IEnumerable<TResult>? results = null;
+                return new AcquiredEnumerator<TResult>(cursor.Rows(), cursor.LeftEnumerator, cursor.RightEnumerator);
+            });
+        }
 
-            using var leftEnumerator = outer.GetEnumerator();
-            using var rightEnumerator = inner.GetEnumerator();
+        /// <summary>
+        /// The state of one merge join: linq4j's <c>MergeJoinEnumerator</c>, with the fields its anonymous
+        /// class holds and the methods it dispatches, and the same constructor-time <c>start()</c>.
+        /// </summary>
+        sealed class MergeJoinCursor<TSource, TInner, TKey, TResult>
+        {
+
+            internal readonly IEnumerator<TSource> LeftEnumerator;
+            internal readonly IEnumerator<TInner> RightEnumerator;
+
+            readonly Func<TSource, TKey> outerKeySelector;
+            readonly Func<TInner, TKey> innerKeySelector;
+            readonly Func<TSource, TInner, bool>? predicate;
+            readonly Func<TSource?, TInner?, TResult> resultSelector;
+            readonly org.apache.calcite.linq4j.JoinType joinType;
+            readonly java.util.Comparator? comparator;
+            readonly IEqualityComparer<TKey> equality;
+
+            readonly bool isLeft;
+            readonly bool isAnti;
+            readonly bool isSemi;
+            readonly bool isLeftOrAnti;
+
+            readonly List<TSource> lefts = [];
+            readonly List<TInner> rights = [];
+            bool done;
+            bool remainingLeft;
+            IEnumerable<TResult>? results;
+
+            internal MergeJoinCursor(
+                IEnumerable<TSource> outer,
+                IEnumerable<TInner> inner,
+                Func<TSource, TKey> outerKeySelector,
+                Func<TInner, TKey> innerKeySelector,
+                Func<TSource, TInner, bool>? predicate,
+                Func<TSource?, TInner?, TResult> resultSelector,
+                org.apache.calcite.linq4j.JoinType joinType,
+                java.util.Comparator? comparator,
+                EqualityComparer? comparer)
+            {
+                this.outerKeySelector = outerKeySelector;
+                this.innerKeySelector = innerKeySelector;
+                this.predicate = predicate;
+                this.resultSelector = resultSelector;
+                this.joinType = joinType;
+                this.comparator = comparator;
+                this.equality = JavaEqualityComparer<TKey>.Of(comparer);
+
+                var name = joinType.name();
+                isLeft = name == nameof(org.apache.calcite.linq4j.JoinType.LEFT);
+                isAnti = name == nameof(org.apache.calcite.linq4j.JoinType.ANTI);
+                isSemi = name == nameof(org.apache.calcite.linq4j.JoinType.SEMI);
+                isLeftOrAnti = isLeft || isAnti;
+
+                LeftEnumerator = outer.GetEnumerator();
+                RightEnumerator = inner.GetEnumerator();
+
+                // start(): position both cursors and settle the initial state
+                if (isLeftOrAnti)
+                {
+                    if (LeftMoveNext() == false)
+                        done = true;
+                    else if (RightMoveNext() == false)
+                        remainingLeft = true;
+                    else if (Advance() == false)
+                        done = true;
+                }
+                else if (LeftMoveNext() == false || RightMoveNext() == false || Advance() == false)
+                {
+                    done = true;
+                }
+            }
 
             // the left enumerator advanced, and onto a row whose key is not null — a LEFT join reads its
             // left input to the end whatever the keys are, because every row of it is a result
-            bool LeftMoveNext() => leftEnumerator.MoveNext() && (isLeft || outerKeySelector(leftEnumerator.Current) != null);
-            bool RightMoveNext() => rightEnumerator.MoveNext() && innerKeySelector(rightEnumerator.Current) != null;
+            bool LeftMoveNext() => LeftEnumerator.MoveNext() && (isLeft || outerKeySelector(LeftEnumerator.Current) != null);
+
+            bool RightMoveNext() => RightEnumerator.MoveNext() && innerKeySelector(RightEnumerator.Current) != null;
 
             int Compare(TKey a, TKey b)
             {
@@ -1188,9 +1508,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 lefts.Clear();
                 lefts.Add(left);
 
-                while (leftEnumerator.MoveNext())
+                while (LeftEnumerator.MoveNext())
                 {
-                    left = leftEnumerator.Current;
+                    left = LeftEnumerator.Current;
                     var leftKey2 = outerKeySelector(left);
                     if (leftKey2 == null && isLeft == false)
                         break;
@@ -1208,9 +1528,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 rights.Clear();
                 rights.Add(right);
 
-                while (rightEnumerator.MoveNext())
+                while (RightEnumerator.MoveNext())
                 {
-                    right = rightEnumerator.Current;
+                    right = RightEnumerator.Current;
                     var rightKey2 = innerKeySelector(right);
                     if (rightKey2 == null)
                         break;
@@ -1228,9 +1548,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             {
                 while (true)
                 {
-                    var left = leftEnumerator.Current;
+                    var left = LeftEnumerator.Current;
                     var leftKey = outerKeySelector(left);
-                    var right = rightEnumerator.Current;
+                    var right = RightEnumerator.Current;
                     var rightKey = innerKeySelector(right);
 
                     while (true)
@@ -1278,18 +1598,18 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                                 return true;
                             }
 
-                            if (leftEnumerator.MoveNext() == false)
+                            if (LeftEnumerator.MoveNext() == false)
                             {
                                 done = true;
                                 return false;
                             }
 
-                            left = leftEnumerator.Current;
+                            left = LeftEnumerator.Current;
                             leftKey = outerKeySelector(left);
                         }
                         else
                         {
-                            if (rightEnumerator.MoveNext() == false)
+                            if (RightEnumerator.MoveNext() == false)
                             {
                                 if (isLeftOrAnti)
                                 {
@@ -1301,7 +1621,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                                 return false;
                             }
 
-                            right = rightEnumerator.Current;
+                            right = RightEnumerator.Current;
                             rightKey = innerKeySelector(right);
                         }
                     }
@@ -1346,49 +1666,42 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 }
             }
 
-            if (isLeftOrAnti)
+            /// <summary>
+            /// The row loop, continuing from the state <c>start()</c> left.
+            /// </summary>
+            internal IEnumerator<TResult> Rows()
             {
-                if (LeftMoveNext() == false)
-                    done = true;
-                else if (RightMoveNext() == false)
-                    remainingLeft = true;
-                else if (Advance() == false)
-                    done = true;
-            }
-            else if (LeftMoveNext() == false || RightMoveNext() == false || Advance() == false)
-            {
-                done = true;
-            }
-
-            while (true)
-            {
-                if (results != null)
+                while (true)
                 {
-                    foreach (var row in results)
-                        yield return row;
-
-                    results = null;
-                }
-
-                if (remainingLeft)
-                {
-                    yield return resultSelector(leftEnumerator.Current, default);
-
-                    if (LeftMoveNext() == false)
+                    if (results != null)
                     {
-                        remainingLeft = false;
-                        done = true;
+                        foreach (var row in results)
+                            yield return row;
+
+                        results = null;
                     }
 
-                    continue;
+                    if (remainingLeft)
+                    {
+                        yield return resultSelector(LeftEnumerator.Current, default);
+
+                        if (LeftMoveNext() == false)
+                        {
+                            remainingLeft = false;
+                            done = true;
+                        }
+
+                        continue;
+                    }
+
+                    if (done)
+                        yield break;
+
+                    if (Advance() == false)
+                        yield break;
                 }
-
-                if (done)
-                    yield break;
-
-                if (Advance() == false)
-                    yield break;
             }
+
         }
 
         /// <summary>
@@ -1487,6 +1800,22 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             Func<TSource, TInner, bool> predicate,
             int batchSize)
         {
+            // correlateBatchJoin acquires the outer enumerator in a field initializer, which runs at
+            // enumerator(); each batch's right side is built and acquired at that batch's turn
+            return outer.Acquiring(e => CorrelateBatchJoinRows(joinType, e, inner, resultSelector, predicate, batchSize));
+        }
+
+        /// <summary>
+        /// The batch loop of <see cref="CorrelateBatchJoin"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TResult> CorrelateBatchJoinRows<TSource, TInner, TResult>(
+            org.apache.calcite.linq4j.JoinType joinType,
+            IEnumerator<TSource> enumerator,
+            Func<java.util.List, IEnumerable<TInner>> inner,
+            Func<TSource?, TInner?, TResult> resultSelector,
+            Func<TSource, TInner, bool> predicate,
+            int batchSize)
+        {
             var name = joinType.name();
             var isSemi = name == nameof(org.apache.calcite.linq4j.JoinType.SEMI);
             var isAnti = name == nameof(org.apache.calcite.linq4j.JoinType.ANTI);
@@ -1494,8 +1823,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var batch = new List<TSource>(batchSize);
             var rows = new List<TInner>();
-
-            using var enumerator = outer.GetEnumerator();
 
             // the right rows of the batch being read, held across the batch's first left row because that is
             // the only one that pulls from it
@@ -1662,8 +1989,23 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             ArgumentNullException.ThrowIfNull(predicate);
             ArgumentNullException.ThrowIfNull(resultSelector);
 
-            foreach (var left in outer)
+            // leftMarkJoinInternal acquires the outer enumerator in a field initializer, which runs at
+            // enumerator(); each right side is built and read at its left row's turn
+            return outer.Acquiring(e => LeftMarkJoinRows(e, inner, predicate, resultSelector));
+        }
+
+        /// <summary>
+        /// The row loop of <see cref="LeftMarkJoin"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TResult> LeftMarkJoinRows<TSource, TInner, TResult>(
+            IEnumerator<TSource> outer,
+            Func<TSource, IEnumerable<TInner>?> inner,
+            Func<TSource, TInner, java.lang.Boolean?> predicate,
+            Func<TSource, java.lang.Boolean?, TResult> resultSelector)
+        {
+            while (outer.MoveNext())
             {
+                var left = outer.Current;
                 java.lang.Boolean? marker = java.lang.Boolean.FALSE;
                 var rows = inner(left);
 
@@ -1854,11 +2196,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (name is nameof(org.apache.calcite.linq4j.JoinType.RIGHT) or nameof(org.apache.calcite.linq4j.JoinType.FULL))
                 throw new ArgumentException($"JoinType {name} is unsupported");
 
-            return Walk();
+            // nestedLoopJoinOptimized acquires the outer enumerator in a field initializer, which runs at
+            // enumerator(); each inner enumerator is acquired at its outer row's turn, inside moveNext
+            return outer.Acquiring(e => Walk(e));
 
-            IEnumerable<TResult> Walk()
+            IEnumerator<TResult> Walk(IEnumerator<TSource> outerEnumerator)
             {
-                var outerEnumerator = outer.GetEnumerator();
                 IEnumerator<TInner>? innerEnumerator = null;
                 var outerMatch = false; // whether the outerValue has matched an innerValue
                 var outerValue = default(TSource)!;
@@ -1936,7 +2279,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 }
                 finally
                 {
-                    outerEnumerator.Dispose();
+                    // the factory's owner disposes the outer; the inner in flight is this loop's own
                     innerEnumerator?.Dispose();
                 }
             }
@@ -1977,16 +2320,19 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (name is nameof(org.apache.calcite.linq4j.JoinType.RIGHT) or nameof(org.apache.calcite.linq4j.JoinType.FULL))
                 throw new ArgumentException($"JoinType {name} is not valid for correlation");
 
-            return Walk();
+            // correlateJoin acquires the outer enumerator in a field initializer, which runs at
+            // enumerator(); each inner sequence is built and acquired at its outer row's turn
+            return outer.Acquiring(e => Walk(e));
 
-            IEnumerable<TResult> Walk()
+            IEnumerator<TResult> Walk(IEnumerator<TSource> outerEnumerator)
             {
                 var semi = name == nameof(org.apache.calcite.linq4j.JoinType.SEMI);
                 var anti = name == nameof(org.apache.calcite.linq4j.JoinType.ANTI);
                 var nullsOnRight = name == nameof(org.apache.calcite.linq4j.JoinType.LEFT);
 
-                foreach (var row in outer)
+                while (outerEnumerator.MoveNext())
                 {
+                    var row = outerEnumerator.Current;
                     var any = false;
 
                     foreach (var other in inner(row) ?? [])
@@ -2422,8 +2768,18 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(selector);
 
-            foreach (var row in source)
-                foreach (var item in JavaSequences.FromJava<TResult>((org.apache.calcite.linq4j.Enumerable)selector.apply(row)))
+            // selectMany acquires the source enumerator in a field initializer, which runs at
+            // enumerator(); each row's sequence is built and acquired at its turn, inside moveNext
+            return source.Acquiring(e => SelectManyRows<TSource, TResult>(e, selector));
+        }
+
+        /// <summary>
+        /// The row loop of <see cref="SelectMany"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TResult> SelectManyRows<TSource, TResult>(IEnumerator<TSource> source, Function1 selector)
+        {
+            while (source.MoveNext())
+                foreach (var item in JavaSequences.FromJava<TResult>((org.apache.calcite.linq4j.Enumerable)selector.apply(source.Current)))
                     yield return item;
         }
 
@@ -2489,6 +2845,17 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </remarks>
         static IEnumerable<TSource> Ordered<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, int offset, int fetch)
         {
+            // linq4j reads the input into the tree map inside enumerator() -- obtaining this enumerator
+            // runs the bounded sort, and the offset trim with it
+            return new ClrEnumerable<TSource>(() => OrderedRows(source, keySelector, comparator, offset, fetch));
+        }
+
+        /// <summary>
+        /// The drain and trim of <see cref="Ordered"/>, run by the factory, returning an enumerator over
+        /// the finished map.
+        /// </summary>
+        static IEnumerator<TSource> OrderedRows<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, int offset, int fetch)
+        {
             var map = comparator == null ? new java.util.TreeMap() : new java.util.TreeMap(comparator);
             var size = 0L;
             var needed = fetch + (long)offset;
@@ -2553,11 +2920,19 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
                 // the offset is bigger than the number of rows in the map
                 if (found == false)
-                    yield break;
+                    return System.Linq.Enumerable.Empty<TSource>().GetEnumerator();
 
                 map.headMap(until, false).clear();
             }
 
+            return WalkOrdered<TSource>(map);
+        }
+
+        /// <summary>
+        /// Walks the finished map's values in order.
+        /// </summary>
+        static IEnumerator<TSource> WalkOrdered<TSource>(java.util.TreeMap map)
+        {
             for (var i = map.values().iterator(); i.hasNext();)
                 foreach (var row in (List<TSource>)i.next())
                     yield return row;
@@ -2655,10 +3030,21 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             ArgumentNullException.ThrowIfNull(collection);
             ArgumentNullException.ThrowIfNull(input);
 
+            // lazyCollectionSpool acquires the input enumerator in a field initializer, which runs at
+            // enumerator(); the write-back still happens where the input exhausts
+            return input.Acquiring(e => LazyCollectionSpoolRows(collection, e));
+        }
+
+        /// <summary>
+        /// The row loop of <see cref="LazyCollectionSpool"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TSource> LazyCollectionSpoolRows<TSource>(java.util.Collection collection, IEnumerator<TSource> input)
+        {
             var buffer = new List<TSource>();
 
-            foreach (var row in input)
+            while (input.MoveNext())
             {
+                var row = input.Current;
                 buffer.Add(row);
                 yield return row;
             }
@@ -2699,22 +3085,91 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             ArgumentNullException.ThrowIfNull(seed);
             ArgumentNullException.ThrowIfNull(iteration);
 
+            // repeatUnion acquires the seed enumerator in a field initializer, which runs at enumerator();
+            // the iterative part is acquired afresh each round. The state box is what close() reaches:
+            // linq4j runs the clean-up and closes both enumerators from close() whether or not a row was
+            // ever read, so the disposal lives with the state rather than in the loop's finally, which an
+            // unstarted iterator would never run.
+            return new ClrEnumerable<TSource>(() =>
+            {
+                var state = new RepeatUnionState<TSource>(seed.GetEnumerator(), cleanUp);
+                return new AcquiredEnumerator<TSource>(RepeatUnionRows(state, iteration, iterationLimit, all, comparer), state);
+            });
+        }
+
+        /// <summary>
+        /// What linq4j's repeat union enumerator holds and what its <c>close()</c> releases: the clean-up
+        /// first, then the two enumerators, once.
+        /// </summary>
+        sealed class RepeatUnionState<TSource> : IDisposable
+        {
+
+            internal readonly IEnumerator<TSource> SeedEnumerator;
+            internal IEnumerator<TSource>? IterativeEnumerator;
+
+            readonly Action? _cleanUp;
+            bool _disposed;
+
+            internal RepeatUnionState(IEnumerator<TSource> seedEnumerator, Action? cleanUp)
+            {
+                SeedEnumerator = seedEnumerator;
+                _cleanUp = cleanUp;
+            }
+
+            /// <inheritdoc />
+            public void Dispose()
+            {
+                if (_disposed)
+                    return;
+
+                _disposed = true;
+
+                // Calcite's `close()` in its order: the clean-up first, then the two enumerators
+                _cleanUp?.Invoke();
+                SeedEnumerator.Dispose();
+                IterativeEnumerator?.Dispose();
+            }
+
+        }
+
+        /// <summary>
+        /// The row loop of <see cref="RepeatUnion"/>, over the state the factory built.
+        /// </summary>
+        static IEnumerator<TSource> RepeatUnionRows<TSource>(RepeatUnionState<TSource> state, IEnumerable<TSource> iteration, int iterationLimit, bool all, EqualityComparer? comparer)
+        {
             var processed = all ? null : new HashSet<TSource>(JavaEqualityComparer<TSource>.Of(comparer));
 
             // Calcite's `current == DUMMY`. Set false wherever `checkValue` passed and Calcite assigned
             // `current`, and back to true wherever Calcite put the sentinel back.
             var currentIsDummy = true;
 
-            // the seed enumerator is held for the whole life of the sequence, as Calcite holds it -- it is
-            // closed in `close()` and not when the seed runs out
-            var seedEnumerator = seed.GetEnumerator();
-            IEnumerator<TSource>? iterativeEnumerator = null;
-
-            try
+            while (state.SeedEnumerator.MoveNext())
             {
-                while (seedEnumerator.MoveNext())
+                var value = state.SeedEnumerator.Current;
+
+                if (processed == null || processed.Add(value))
                 {
-                    var value = seedEnumerator.Current;
+                    currentIsDummy = false;
+                    yield return value;
+                }
+            }
+
+            // The sentinel is NOT put back here, and that is Calcite's, not an oversight of the
+            // transcription. A seed that emitted a row leaves `current` holding that row, so the first
+            // iterative round to produce nothing does not stop the sequence -- it goes round once more,
+            // and only the second empty round stops it. A recursive query whose step reads the working
+            // table row by row cannot tell, because an empty table gives an empty round either way; one
+            // whose step aggregates -- COUNT(*) yields a row over no rows -- can, and does.
+            for (var currentIteration = 0; ; currentIteration++)
+            {
+                if (iterationLimit >= 0 && currentIteration == iterationLimit)
+                    yield break;
+
+                state.IterativeEnumerator = iteration.GetEnumerator();
+
+                while (state.IterativeEnumerator.MoveNext())
+                {
+                    var value = state.IterativeEnumerator.Current;
 
                     if (processed == null || processed.Add(value))
                     {
@@ -2723,45 +3178,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     }
                 }
 
-                // The sentinel is NOT put back here, and that is Calcite's, not an oversight of the
-                // transcription. A seed that emitted a row leaves `current` holding that row, so the first
-                // iterative round to produce nothing does not stop the sequence -- it goes round once more,
-                // and only the second empty round stops it. A recursive query whose step reads the working
-                // table row by row cannot tell, because an empty table gives an empty round either way; one
-                // whose step aggregates -- COUNT(*) yields a row over no rows -- can, and does.
-                for (var currentIteration = 0; ; currentIteration++)
-                {
-                    if (iterationLimit >= 0 && currentIteration == iterationLimit)
-                        yield break;
+                if (currentIsDummy)
+                    yield break;
 
-                    iterativeEnumerator = iteration.GetEnumerator();
-
-                    while (iterativeEnumerator.MoveNext())
-                    {
-                        var value = iterativeEnumerator.Current;
-
-                        if (processed == null || processed.Add(value))
-                        {
-                            currentIsDummy = false;
-                            yield return value;
-                        }
-                    }
-
-                    if (currentIsDummy)
-                        yield break;
-
-                    currentIsDummy = true;
-                    iterativeEnumerator.Dispose();
-                    iterativeEnumerator = null;
-                }
-            }
-            finally
-            {
-                // Calcite's `close()` in its order: the clean-up first, then the two enumerators. A foreach
-                // would have disposed them first, which is the other way round.
-                cleanUp?.Invoke();
-                seedEnumerator.Dispose();
-                iterativeEnumerator?.Dispose();
+                currentIsDummy = true;
+                state.IterativeEnumerator.Dispose();
+                state.IterativeEnumerator = null;
             }
         }
 

@@ -249,6 +249,8 @@ Every plan is compiled into a `System.Linq.Expressions` tree and run as .NET cod
 
 There is nothing to configure and nothing to switch off. This provider owns the prepare pipeline rather than subclassing Calcite's: it never calls `CalcitePrepare.prepareSql`, and a statement never produces a Calcite `Bindable`. The rows a reader returns come from the compiled delegate's own enumerator, with nothing in between.
 
+Execute runs the plan; reading pulls rows. `ExecuteReader` obtains the plan's enumerator, and — as in Calcite's own linq4j — obtaining an enumerator is where each operator acquires its input, a sort drains, and an underlying source opens or executes its statement. A failing plan therefore throws at `ExecuteReader`, not at the first `Read`.
+
 A single plan may still use both engines. Anything the .NET convention has no rule for is planned by Calcite as usual, and rows cross between the two untouched.
 
 ## Diagnostics
