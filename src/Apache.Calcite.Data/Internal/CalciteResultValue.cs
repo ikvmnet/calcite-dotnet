@@ -189,7 +189,7 @@ namespace Apache.Calcite.Data.Internal
 
             {
                 if (_value is null) return DBNull.Value;
-                if (_value is string) return _value;
+                if (_value is string sv) return TrimCharPadding(sv);
                 if (_value is java.math.BigDecimal bd) return BigDecimalConverter.ToDecimal(bd);
                 if (_value is java.lang.Boolean b) return b.booleanValue();
                 if (_value is java.lang.Byte by) return (sbyte)by.byteValue();
@@ -234,9 +234,25 @@ namespace Apache.Calcite.Data.Internal
         {
             return _value switch
             {
-                string s => s,
+                string s => TrimCharPadding(s),
                 _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'String'"),
             };
+        }
+
+        /// <summary>
+        /// Removes the trailing pad spaces from a CHAR value.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// SQL pads a CHAR(n) value to its declared length, and Calcite's engine hands the padded value
+        /// back. The padding is storage, not data: a reader asked for the string wants the value that was
+        /// written, so the pad is removed at the boundary, the way most ADO.NET providers do. VARCHAR is
+        /// untouched -- its trailing spaces are data.
+        /// </remarks>
+        string TrimCharPadding(string value)
+        {
+            return _sqlType.name() == nameof(SqlTypeName.CHAR) ? value.TrimEnd(' ') : value;
         }
 
         /// <summary>
