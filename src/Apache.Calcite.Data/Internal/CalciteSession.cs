@@ -246,13 +246,15 @@ namespace Apache.Calcite.Data.Internal
         /// Mirrors the work done by <c>CalciteConnectionImpl.enumerable()</c> just before it calls
         /// <c>signature.enumerable(dataContext)</c>: bound parameters, stashed compile-time values
         /// from <c>signature.internalParameters</c>, cancel flag, and timeout are assembled into a
-        /// single <see cref="StatementDataContext"/>.
+        /// single <see cref="StatementDataContext"/> over <c>signature.rootSchema</c> — the snapshot
+        /// the statement was planned against, not the live root, so a statement executes against what
+        /// it planned against. Null for DDL, as upstream's is.
         /// </summary>
         void Bind(CalciteExecuteRequest request, ClrSignature signature, out DataContext dataContext, out AtomicBoolean cancelFlag)
         {
             cancelFlag = new AtomicBoolean(false);
             var boundParameters = ParameterBinder.Bind(request.Parameters);
-            dataContext = new StatementDataContext(_rootSchema.plus(), _typeFactory, cancelFlag, request.CommandTimeoutSeconds * 1000L, boundParameters, signature.InternalParameters);
+            dataContext = new StatementDataContext(signature.RootSchema?.plus(), _typeFactory, cancelFlag, request.CommandTimeoutSeconds * 1000L, boundParameters, signature.InternalParameters);
         }
 
         /// <summary>

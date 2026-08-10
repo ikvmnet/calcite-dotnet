@@ -21,6 +21,15 @@ namespace Apache.Calcite.Extensions.Prepare
     /// from any JDBC class. This is the boundary the Calcite planner uses to discover schemas,
     /// configuration, and the type factory.
     /// <para>
+    /// As there, the constructor stamps the moment of the prepare and takes
+    /// <c>createSnapshot(new LongSchemaVersion(now))</c> of the root schema: <c>getRootSchema()</c>
+    /// answers the snapshot, and the live root stays reachable only through
+    /// <c>getMutableRootSchema()</c>, which is where DDL executes. The snapshot is Calcite's, holes
+    /// included — <c>createSnapshot</c> shares the original's table and lattice maps so that
+    /// materializations can create tables on the fly, and a <c>Schema</c> is only as frozen as its
+    /// own <c>snapshot(version)</c> chooses to be.
+    /// </para>
+    /// <para>
     /// <c>getDataContext()</c> returns a minimal throwaway <see cref="DataContext"/> containing only
     /// the standard timestamp variables — exactly what <c>CalciteConnectionImpl.ContextImpl</c> does
     /// via <c>createDataContext(ImmutableMap.of(), rootSchema)</c>. It is used solely to back
@@ -32,6 +41,7 @@ namespace Apache.Calcite.Extensions.Prepare
     {
 
         readonly JavaTypeFactory _typeFactory;
+        readonly CalciteSchema _mutableRootSchema;
         readonly CalciteSchema _rootSchema;
         readonly CalciteConnectionConfig _config;
         readonly IReadOnlyList<string> _defaultSchemaPath;
@@ -43,7 +53,8 @@ namespace Apache.Calcite.Extensions.Prepare
             IReadOnlyList<string> defaultSchemaPath)
         {
             _typeFactory = typeFactory;
-            _rootSchema = rootSchema;
+            _mutableRootSchema = rootSchema;
+            _rootSchema = rootSchema.createSnapshot(new org.apache.calcite.schema.impl.LongSchemaVersion(java.lang.System.currentTimeMillis()));
             _config = config;
             _defaultSchemaPath = defaultSchemaPath;
         }
@@ -60,7 +71,7 @@ namespace Apache.Calcite.Extensions.Prepare
 
         public CalciteSchema getMutableRootSchema()
         {
-            return _rootSchema;
+            return _mutableRootSchema;
         }
 
         public List getDefaultSchemaPath()
