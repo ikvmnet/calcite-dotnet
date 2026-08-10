@@ -72,8 +72,19 @@ namespace Apache.Calcite.Data
         /// <inheritdoc />
         public override string ConnectionString => _connectionString;
 
+        /// <summary>
+        /// Gets or sets the plan cache factory applied to each connection this data source creates.
+        /// </summary>
+        /// <remarks>
+        /// A data source is created once and shared, which makes it the natural owner of a shared plan
+        /// cache: <c>PlanCacheFactory = CalcitePlanCacheFactory.From(new LruPlanCache(256))</c> gives
+        /// every connection it creates one capacity budget to share. Read when a connection is created;
+        /// a connection already handed out keeps the factory it was created with.
+        /// </remarks>
+        public CalcitePlanCacheFactory? PlanCacheFactory { get; set; }
+
         /// <inheritdoc />
-        protected override DbConnection CreateDbConnection() => new CalciteConnection(_connectionString);
+        protected override DbConnection CreateDbConnection() => new CalciteConnection(_connectionString) { PlanCacheFactory = PlanCacheFactory };
 
         /// <summary>
         /// Creates a new closed <see cref="CalciteConnection"/> bound to this data source's connection string.

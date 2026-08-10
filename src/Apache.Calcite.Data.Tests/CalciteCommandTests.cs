@@ -153,9 +153,19 @@ namespace Apache.Calcite.Data.Tests
         }
 
         [Fact]
-        public void Prepare_should_be_noop()
+        public void Prepare_should_require_an_open_connection()
         {
             using var cmd = new CalciteCommand();
+            Assert.Throws<InvalidOperationException>(() => cmd.Prepare());
+        }
+
+        [Fact]
+        public void Prepare_should_be_noop_without_a_plan_cache()
+        {
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (1)";
             cmd.Prepare();
         }
 

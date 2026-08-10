@@ -142,6 +142,8 @@ namespace Apache.Calcite.Extensions.Prepare
 
             org.apache.calcite.runtime.Hook.PLAN_BEFORE_IMPLEMENTATION.run(root);
 
+            RecordDependencies(root.rel);
+
             return Implement(root);
         }
 

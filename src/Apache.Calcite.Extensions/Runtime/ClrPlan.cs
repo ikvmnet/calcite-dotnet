@@ -27,7 +27,7 @@ namespace Apache.Calcite.Extensions.Runtime
     /// sequence has to be produced by calling out. Deferring the compile is what is available.</para>
     ///
     /// <para>It compiles at most once per prepared statement, because the converter stashes it in the
-    /// internal parameters and those belong to the <c>ClrSignature</c>. Two threads reaching an uncompiled
+    /// internal parameters and those belong to the <c>PreparedPlan</c>. Two threads reaching an uncompiled
     /// one at the same moment may both compile it; that is idempotent and cheaper than locking a path taken
     /// once.</para>
     /// </remarks>

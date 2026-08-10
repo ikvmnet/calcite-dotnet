@@ -41,6 +41,7 @@ namespace Apache.Calcite.Data
         ConnectionState _state = ConnectionState.Closed;
         bool _disposed;
         List<CalciteHookEntry>? _hooks;
+        CalcitePlanCacheFactory? _planCacheFactory;
 
         /// <summary>
         /// Registers a Calcite hook with a Java <see cref="Consumer"/> for the duration of every statement executed on this connection.
@@ -197,6 +198,36 @@ namespace Apache.Calcite.Data
             }
         }
 
+        /// <summary>
+        /// Gets or sets the factory that supplies this connection's plan cache.
+        /// </summary>
+        /// <remarks>
+        /// Consulted once, when the session is created on the first <see cref="Open"/>; like
+        /// <see cref="ConnectionString"/>, it cannot be changed after that. <see langword="null"/> means
+        /// the connection caches plans only if the connection string says so, through
+        /// <see cref="CalciteConnectionStringBuilder.PlanCacheSize"/>; when both are given, the factory
+        /// wins. <see cref="CalcitePlanCacheFactory.From"/> turns a cache instance into a factory, which
+        /// is how one bounded cache is shared across connections — capacity is shared, plans never are.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown when the factory is set after the connection has already been opened.
+        /// </exception>
+        public CalcitePlanCacheFactory? PlanCacheFactory
+        {
+            get => _planCacheFactory;
+            set
+            {
+                ThrowIfDisposed();
+                if (_session is not null)
+                    throw new InvalidOperationException(
+                        "The plan cache factory cannot be changed after the connection has been opened. " +
+                        "The Calcite session is fixed for the lifetime of this instance. " +
+                        "To use a different plan cache, create a new CalciteConnection.");
+
+                _planCacheFactory = value;
+            }
+        }
+
         /// <inheritdoc />
         /// <remarks>
         /// Calcite has no notion of a current database, so this property always returns <see cref="string.Empty"/>.
@@ -246,7 +277,7 @@ namespace Apache.Calcite.Data
             try
             {
                 // Session is created once on the first Open() and reused across Close/Open cycles.
-                _session ??= new CalciteSession(_options);
+                _session ??= new CalciteSession(_options, CreatePlanCache());
                 SetState(ConnectionState.Open);
             }
             catch
@@ -254,6 +285,19 @@ namespace Apache.Calcite.Data
                 SetState(ConnectionState.Closed);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Resolves the plan cache the session is created with: the factory's answer, the connection
+        /// string's private cache, or none.
+        /// </summary>
+        Extensions.Prepare.IPlanCache? CreatePlanCache()
+        {
+            if (_planCacheFactory is not null)
+                return _planCacheFactory.CreatePlanCache(this);
+
+            var size = _options.PlanCacheSize;
+            return size > 0 ? new Extensions.Prepare.LruPlanCache(size.Value) : null;
         }
 
         /// <summary>

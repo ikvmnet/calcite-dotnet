@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 using org.apache.calcite.jdbc;
 using org.apache.calcite.plan;
@@ -103,6 +104,57 @@ namespace Apache.Calcite.Extensions.Prepare
         {
             get => fieldOrigins ?? throw new InvalidOperationException("The statement has not been validated.");
             set => fieldOrigins = value;
+        }
+
+        /// <summary>
+        /// Gets the tables the optimized plan reads or writes, or <see langword="null"/> where one of them
+        /// could not be resolved to a schema table — and <see langword="null"/> for an <c>EXPLAIN</c>,
+        /// which never reaches the optimized plan this is read from.
+        /// </summary>
+        public IReadOnlyList<PlanDependency>? Dependencies { get; private set; }
+
+        /// <summary>
+        /// Records the tables <paramref name="rel"/> reads or writes, for a plan cache to validate a hit
+        /// against the live schema.
+        /// </summary>
+        /// <remarks>
+        /// Read from the optimized plan rather than from what the validator resolved, so a view has
+        /// already been expanded and contributes the tables its definition reads rather than itself. A
+        /// view <em>replaced on the schema directly</em> — not through DDL, which moves the cache's
+        /// generation — is therefore not detected; its base tables did not change. A table that does not
+        /// unwrap to a schema table cannot be validated later, so the whole plan is recorded as having no
+        /// dependencies, which a cache reads as uncacheable rather than as depending on nothing.
+        /// </remarks>
+        protected void RecordDependencies(RelNode rel)
+        {
+            var list = new List<PlanDependency>();
+            Dependencies = Collect(rel, list) ? list : null;
+        }
+
+        /// <summary>
+        /// Walks a plan, collecting each node's table. Returns whether every table found was resolvable.
+        /// </summary>
+        static bool Collect(RelNode node, List<PlanDependency> list)
+        {
+            if (node.getTable() is { } table)
+            {
+                var resolved = (org.apache.calcite.schema.Table?)table.unwrap((java.lang.Class)typeof(org.apache.calcite.schema.Table));
+                if (resolved is null)
+                    return false;
+
+                var names = table.getQualifiedName();
+                var path = new string[names.size()];
+                for (int i = 0; i < path.Length; i++)
+                    path[i] = (string)names.get(i);
+
+                list.Add(new PlanDependency(path, resolved));
+            }
+
+            for (var i = node.getInputs().iterator(); i.hasNext();)
+                if (Collect((RelNode)i.next(), list) == false)
+                    return false;
+
+            return true;
         }
 
         /// <summary>
@@ -246,6 +298,8 @@ namespace Apache.Calcite.Extensions.Prepare
                 root = root.withKind(sqlNodeOriginal.getKind());
 
             org.apache.calcite.runtime.Hook.PLAN_BEFORE_IMPLEMENTATION.run(root);
+
+            RecordDependencies(root.rel);
 
             return Implement(root);
         }

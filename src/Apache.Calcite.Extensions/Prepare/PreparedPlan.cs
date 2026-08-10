@@ -24,8 +24,15 @@ namespace Apache.Calcite.Extensions.Prepare
     /// bind this type to a constructor it gains nothing from. The members it contributes —
     /// <see cref="Sql"/>, <see cref="Parameters"/>, <see cref="InternalParameters"/>,
     /// <see cref="Columns"/>, <see cref="CursorFactory"/>, <see cref="StatementType"/> — are all here.</para>
+    ///
+    /// <para>The type is public and its members are not: an <see cref="IPlanCache"/> holds and returns
+    /// prepared plans without reading them, and the prepare pipeline that produces and runs them is not
+    /// part of the public API surface. The compiled plan takes everything per-execution — parameters,
+    /// timestamps, the cancel flag, the schema it resolves names against — through the
+    /// <see cref="DataContext"/> it is bound to, which is what makes one instance reusable across
+    /// executions.</para>
     /// </remarks>
-    sealed class ClrSignature
+    public sealed class PreparedPlan
     {
 
         /// <summary>
@@ -44,7 +51,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <param name="bindable">The compiled plan, or <see langword="null"/> where there is nothing to
         /// run — a DDL statement has already taken effect by the time this exists.</param>
         /// <param name="statementType">What kind of statement this is.</param>
-        public ClrSignature(
+        internal PreparedPlan(
             string sql,
             java.util.List parameters,
             java.util.Map internalParameters,
@@ -73,12 +80,12 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Gets the statement's text.
         /// </summary>
-        public string Sql { get; }
+        internal string Sql { get; }
 
         /// <summary>
         /// Gets one <see cref="AvaticaParameter"/> per dynamic parameter.
         /// </summary>
-        public java.util.List Parameters { get; }
+        internal java.util.List Parameters { get; }
 
         /// <summary>
         /// Gets the values the query reads through the <see cref="DataContext"/> rather than from the plan.
@@ -88,37 +95,37 @@ namespace Apache.Calcite.Extensions.Prepare
         /// Calcite's own signature carries <c>CalcitePreparingStmt</c>'s private field, which a subclass
         /// that overrides <c>implement</c> never writes to.
         /// </remarks>
-        public java.util.Map InternalParameters { get; }
+        internal java.util.Map InternalParameters { get; }
 
         /// <summary>
         /// Gets the result's row type, or <see langword="null"/> for DDL.
         /// </summary>
-        public RelDataType? RowType { get; }
+        internal RelDataType? RowType { get; }
 
         /// <summary>
         /// Gets one <see cref="ColumnMetaData"/> per result column.
         /// </summary>
-        public java.util.List Columns { get; }
+        internal java.util.List Columns { get; }
 
         /// <summary>
         /// Gets how a row is read back.
         /// </summary>
-        public Meta.CursorFactory CursorFactory { get; }
+        internal Meta.CursorFactory CursorFactory { get; }
 
         /// <summary>
         /// Gets the schema the statement was planned against.
         /// </summary>
-        public CalciteSchema? RootSchema { get; }
+        internal CalciteSchema? RootSchema { get; }
 
         /// <summary>
         /// Gets the collations the result is known to carry.
         /// </summary>
-        public java.util.List Collations { get; }
+        internal java.util.List Collations { get; }
 
         /// <summary>
         /// Gets the row limit, or a negative number for none.
         /// </summary>
-        public long MaxRowCount { get; }
+        internal long MaxRowCount { get; }
 
         /// <summary>
         /// Gets the compiled plan, or <see langword="null"/> where there is nothing to run.
@@ -132,12 +139,25 @@ namespace Apache.Calcite.Extensions.Prepare
         /// is held is a rendered string rather than a plan, and there is no pull behind it for an awaited
         /// reader to hide.</para>
         /// </remarks>
-        public IClrBindableBase? Bindable { get; }
+        internal IClrBindableBase? Bindable { get; }
 
         /// <summary>
         /// Gets what kind of statement this is.
         /// </summary>
-        public Meta.StatementType StatementType { get; }
+        internal Meta.StatementType StatementType { get; }
+
+        /// <summary>
+        /// Gets the tables the plan reads or writes, or <see langword="null"/> where they could not be
+        /// established.
+        /// </summary>
+        /// <remarks>
+        /// Recorded from the optimized plan, so a view contributes the tables its definition reads rather
+        /// than itself. <see cref="CachingPrepare"/> validates a cache hit against these — a name that no
+        /// longer resolves, or resolves to a different table instance, makes the plan stale — and declines
+        /// to store a plan whose dependencies are <see langword="null"/>, because such a plan cannot be
+        /// validated.
+        /// </remarks>
+        internal IReadOnlyList<PlanDependency>? Dependencies { get; set; }
 
         /// <summary>
         /// Runs the plan against a <see cref="DataContext"/> and returns its rows.
@@ -151,7 +171,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// past the signature to the bindable would silently lose that. In JDBC zero means no limit; here,
         /// as there, a negative number means no limit and zero is a limit of zero.
         /// </remarks>
-        public IEnumerable<object> Bind(DataContext root)
+        internal IEnumerable<object> Bind(DataContext root)
         {
             ArgumentNullException.ThrowIfNull(root);
 
@@ -180,7 +200,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <para>An <c>EXPLAIN</c> passes, because <c>ClrExplainBindable</c> is both. Not an exception to
         /// that rule — there is no plan behind it to pull.</para>
         /// </remarks>
-        public IAsyncEnumerable<object> BindAsync(DataContext root)
+        internal IAsyncEnumerable<object> BindAsync(DataContext root)
         {
             ArgumentNullException.ThrowIfNull(root);
 

@@ -23,7 +23,7 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="enumerator">The plan's enumerator, already given the caller's cancellation token,
         /// or <see langword="null"/> where there is nothing to read.</param>
         /// <param name="recordsAffected"></param>
-        public CalciteAsyncEnumerableResult(ClrSignature signature, IAsyncEnumerator<object>? enumerator, long recordsAffected = -1) :
+        public CalciteAsyncEnumerableResult(PreparedPlan signature, IAsyncEnumerator<object>? enumerator, long recordsAffected = -1) :
             base(signature, recordsAffected)
         {
             _enumerator = enumerator;

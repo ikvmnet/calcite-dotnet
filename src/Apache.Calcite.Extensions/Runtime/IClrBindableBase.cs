@@ -8,7 +8,7 @@ namespace Apache.Calcite.Extensions.Runtime
     /// </summary>
     /// <remarks>
     /// One member, because it is the only one a caller reads without knowing which convention prepared the
-    /// statement: <c>ClrSignature</c> holds a plan as this, and <c>ClrPrepareImpl.Describe</c> reads nothing
+    /// statement: <c>PreparedPlan</c> holds a plan as this, and <c>ClrPrepareImpl.Describe</c> reads nothing
     /// else off it. Binding is on <see cref="IClrBindable"/> and <see cref="IClrAsyncBindable"/>, because
     /// the two return different sequences and a common <c>Bind</c> could only return one neither of them
     /// wants.

@@ -39,6 +39,11 @@ namespace Apache.Calcite.Data
         public const string SynchronousKey = "Synchronous";
 
         /// <summary>
+        /// Connection string key for how many prepared plans the connection may cache.
+        /// </summary>
+        public const string PlanCacheSizeKey = "PlanCacheSize";
+
+        /// <summary>
         /// Connection string key for whether identifiers are matched case-sensitively.
         /// </summary>
         public const string CaseSensitiveKey = "CaseSensitive";
@@ -206,6 +211,29 @@ namespace Apache.Calcite.Data
                     Remove(SynchronousKey);
                 else
                     this[SynchronousKey] = value.Value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets how many prepared plans the connection may cache. Default is none.
+        /// </summary>
+        /// <remarks>
+        /// A provider option rather than an engine one, like <see cref="Synchronous"/>. A positive value
+        /// gives the session a private least-recently-used cache of that many plans, consulted by
+        /// statement text, so re-executing a statement skips parsing, validation and planning. Zero or
+        /// absent means every execution plans from scratch, which is also Calcite's own behavior.
+        /// <see cref="CalciteConnection.PlanCacheFactory"/> overrides this, for a cache of the caller's
+        /// own — including one shared between connections.
+        /// </remarks>
+        public int? PlanCacheSize
+        {
+            get => TryGetInt(PlanCacheSizeKey);
+            set
+            {
+                if (value is null)
+                    Remove(PlanCacheSizeKey);
+                else
+                    this[PlanCacheSizeKey] = value.Value;
             }
         }
 

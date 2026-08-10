@@ -10,7 +10,7 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Reads a prepared <see cref="ClrSignature"/>'s columns as an ADO.NET caller expects them.
+    /// Reads a prepared <see cref="PreparedPlan"/>'s columns as an ADO.NET caller expects them.
     /// </summary>
     /// <remarks>
     /// The columns are Avatica's <see cref="ColumnMetaData"/>, which is what the metadata port produces;
@@ -84,13 +84,13 @@ namespace Apache.Calcite.Data.Internal
             return typeof(object);
         }
 
-        readonly ClrSignature _signature;
+        readonly PreparedPlan _signature;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
         /// <param name="signature"></param>
-        public CalciteResultColumns(ClrSignature signature)
+        public CalciteResultColumns(PreparedPlan signature)
         {
             _signature = signature ?? throw new ArgumentNullException(nameof(signature));
         }

@@ -87,12 +87,16 @@ namespace Apache.Calcite.Data.Internal
         readonly CalciteConnectionConfig _config;
         readonly IReadOnlyList<string> _defaultSchemaPath;
         readonly bool _synchronous;
+        readonly IPlanCache? _planCache;
+        readonly CachingPrepare? _cachingPrepare;
         bool _disposed;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
         /// <param name="options">The connection string options.</param>
+        /// <param name="planCache">Where prepared plans are kept between executions, or
+        /// <see langword="null"/> to plan every statement from scratch.</param>
         /// <exception cref="ArgumentNullException"></exception>
         /// <exception cref="CalciteException"></exception>
         /// <remarks>
@@ -104,7 +108,7 @@ namespace Apache.Calcite.Data.Internal
         /// has no node for is still planned and run — implemented in <c>EnumerableConvention</c>, with a
         /// converter carrying its rows.
         /// </remarks>
-        public CalciteSession(CalciteConnectionStringBuilder options)
+        public CalciteSession(CalciteConnectionStringBuilder options, IPlanCache? planCache = null)
         {
             ArgumentNullException.ThrowIfNull(options);
 
@@ -117,6 +121,12 @@ namespace Apache.Calcite.Data.Internal
                 _synchronous = options.Synchronous ?? false;
                 var defaultSchema = modelDefaultSchema ?? options.Schema;
                 _defaultSchemaPath = string.IsNullOrEmpty(defaultSchema) ? [] : [defaultSchema];
+
+                if (planCache is not null)
+                {
+                    _planCache = planCache;
+                    _cachingPrepare = new CachingPrepare(planCache, new PlanCacheScope());
+                }
             }
             catch (Exception e) when (e is not CalciteException)
             {
@@ -196,6 +206,10 @@ namespace Apache.Calcite.Data.Internal
                 if (string.Equals(key, CalciteConnectionStringBuilder.SynchronousKey, StringComparison.OrdinalIgnoreCase))
                     continue;
 
+                // a provider option, not an engine one: it sizes the session's plan cache
+                if (string.Equals(key, CalciteConnectionStringBuilder.PlanCacheSizeKey, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
                 if (options.TryGetValue(key, out var v) && v is not null)
                     props.setProperty(KeyToProperty.TryGetValue(key, out var prop) ? prop.camelName() : key, v.ToString());
             }
@@ -219,21 +233,70 @@ namespace Apache.Calcite.Data.Internal
         public CalciteConnectionConfig Config => _config;
 
         /// <summary>
-        /// Parses and plans <paramref name="request"/>, returning the compiled <see cref="ClrSignature"/>.
+        /// Gets the plan cache the session was created with, or <see langword="null"/>.
+        /// </summary>
+        public IPlanCache? PlanCache => _planCache;
+
+        /// <summary>
+        /// Parses and plans <paramref name="request"/>, returning the compiled <see cref="PreparedPlan"/>.
         /// No execution state is created here.
         /// </summary>
         /// <remarks>
         /// The context is still pushed onto <c>CalcitePrepare.Dummy</c>'s thread-local stack, because
         /// Calcite's own parse-to-rel reads it from there.
+        ///
+        /// <para>A request carrying hooks does not meet the plan cache: a planning-phase hook can rewrite
+        /// what prepare produces — <c>SQL2REL_CONVERTER_CONFIG_BUILDER</c> does exactly that — and expects
+        /// to observe the phases as they run, and a cached plan would neither reflect the hooks nor fire
+        /// them.</para>
         /// </remarks>
-        ClrSignature Plan(CalciteExecuteRequest request, bool async = false)
+        PreparedPlan Plan(CalciteExecuteRequest request, bool async = false)
         {
             var ctx = new PrepareContext(_typeFactory, _rootSchema, _config, _defaultSchemaPath);
 
             CalcitePrepare.Dummy.push(ctx);
             try
             {
+                if (_cachingPrepare is not null && request.Hooks is null)
+                    return _cachingPrepare.Prepare(ctx, request.Sql, (java.lang.Class)typeof(java.lang.Object[]), -1, async);
+
                 return new ClrPrepareImpl().Prepare(ctx, request.Sql, (java.lang.Class)typeof(java.lang.Object[]), -1, async);
+            }
+            finally
+            {
+                CalcitePrepare.Dummy.pop(ctx);
+            }
+        }
+
+        /// <summary>
+        /// Plans a statement ahead of execution, so a later execute of the same text hits the plan cache.
+        /// </summary>
+        /// <remarks>
+        /// Nothing without a plan cache: there would be nowhere to keep the plan, and the next execute
+        /// would do the work again regardless. A request carrying hooks bypasses the cache, so there is
+        /// nothing to warm for it either. A DDL statement is refused <em>before</em> planning rather than
+        /// after, because in this engine — as in Calcite's own prepare — planning DDL executes it, and
+        /// <c>Prepare</c> must not have effects; the classification costs one extra parse, paid only by
+        /// callers who ask to prepare.
+        /// </remarks>
+        public void Prepare(CalciteExecuteRequest request)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            ThrowIfDisposed();
+
+            if (_cachingPrepare is null || request.Hooks is not null)
+                return;
+
+            var ctx = new PrepareContext(_typeFactory, _rootSchema, _config, _defaultSchemaPath);
+
+            CalcitePrepare.Dummy.push(ctx);
+            try
+            {
+                if (new ClrPrepareImpl().IsDdl(ctx, request.Sql))
+                    return;
+
+                _cachingPrepare.Prepare(ctx, request.Sql, (java.lang.Class)typeof(java.lang.Object[]), -1, !_synchronous);
             }
             finally
             {
@@ -248,7 +311,7 @@ namespace Apache.Calcite.Data.Internal
         /// from <c>signature.internalParameters</c>, cancel flag, and timeout are assembled into a
         /// single <see cref="StatementDataContext"/>.
         /// </summary>
-        void Bind(CalciteExecuteRequest request, ClrSignature signature, out DataContext dataContext, out AtomicBoolean cancelFlag)
+        void Bind(CalciteExecuteRequest request, PreparedPlan signature, out DataContext dataContext, out AtomicBoolean cancelFlag)
         {
             cancelFlag = new AtomicBoolean(false);
             var boundParameters = ParameterBinder.Bind(request.Parameters);
@@ -583,6 +646,10 @@ namespace Apache.Calcite.Data.Internal
         public void Dispose()
         {
             _disposed = true;
+
+            // a shared cache would otherwise hold this session's plans until eviction found them
+            if (_planCache is not null && _cachingPrepare is not null)
+                _planCache.Clear(_cachingPrepare.Scope);
         }
 
         void ThrowIfDisposed()

@@ -123,15 +123,28 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Plans each batch command now, so executing the batch hits the connection's plan cache. Without
+        /// a plan cache this does nothing, and a DDL statement is never planned from here — planning DDL
+        /// executes it, and <c>Prepare</c> must not have effects. <see cref="CalciteCommand.Prepare"/>
+        /// says the rest.
+        /// </remarks>
         public override void Prepare()
         {
-            // Phase 1: no preparation cache.
+            var session = GetOpenSession();
+
+            foreach (var command in _batchCommands.Items)
+                session.Prepare(CalciteExecuteRequest.From(command.CommandText, command.Parameters, _timeout));
         }
 
         /// <inheritdoc />
         public override Task PrepareAsync(CancellationToken cancellationToken = default)
         {
-            return cancellationToken.IsCancellationRequested ? Task.FromCanceled(cancellationToken) : Task.CompletedTask;
+            if (cancellationToken.IsCancellationRequested)
+                return Task.FromCanceled(cancellationToken);
+
+            Prepare();
+            return Task.CompletedTask;
         }
 
         /// <inheritdoc />

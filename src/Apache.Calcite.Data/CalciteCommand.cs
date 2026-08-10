@@ -239,9 +239,18 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Plans the statement now, so a later execute of the same text hits the connection's plan cache
+        /// instead of planning again. Without a plan cache —
+        /// <see cref="CalciteConnection.PlanCacheFactory"/> or
+        /// <see cref="CalciteConnectionStringBuilder.PlanCacheSize"/> — this does nothing, because there
+        /// would be nowhere to keep the plan. A DDL statement is never planned from here: in this engine,
+        /// as in Calcite's own prepare, planning DDL executes it, and <c>Prepare</c> must not have
+        /// effects.
+        /// </remarks>
         public override void Prepare()
         {
-            // Phase 1: no preparation cache.
+            GetOpenSession().Prepare(CalciteExecuteRequest.From(_commandText, _parameters, _commandTimeout, ResolveHooks()));
         }
 
         /// <inheritdoc />

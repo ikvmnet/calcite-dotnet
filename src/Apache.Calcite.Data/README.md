@@ -185,6 +185,40 @@ The Calcite session is created on the **first** `Open()` and reused for the life
 
 **A one-column result is the value, not a row of one.** `GetValue(0)` returns it directly.
 
+## Plan caching
+
+By default every execution parses, validates and plans from scratch — Calcite's own behavior. A plan
+cache makes re-executing a statement skip all of that: the compiled plan takes parameters, timestamps
+and schema lookups through its `DataContext` at execution time, so one plan serves every execution of
+the same text.
+
+Two ways to turn it on:
+
+```csharp
+// per-connection, from the connection string
+using var c = new CalciteConnection("Model=...;PlanCacheSize=64");
+
+// or a cache of your own — shared here, so many connections split one capacity budget
+var shared = new LruPlanCache(256);
+var factory = CalcitePlanCacheFactory.From(shared);
+connection.PlanCacheFactory = factory;   // before the first Open()
+```
+
+`PlanCacheFactory` wins when both are set, and is consulted once, when the session is created on the
+first `Open()`. A shared cache shares capacity only — plans are never served across connections. A
+caller-supplied `IPlanCache` implements retention and eviction and nothing else; what may be cached,
+what the key is, and whether a hit is still valid are the provider's decisions, so an implementation
+cannot cause a stale or wrong result, only a poor hit rate.
+
+What invalidates a cached plan: DDL executed on the connection moves every existing entry out of reach,
+and a table added, dropped or replaced directly on `RootSchema` is caught when the next hit is validated
+against the live schema. What is never cached: DDL (planning it executes it), `EXPLAIN`, and any request
+on a connection or command with hooks registered — hooks can rewrite planning, so a hooked request
+always plans fresh. `DbCommand.Prepare()` plans eagerly into the cache; on a DDL statement it does
+nothing rather than execute it early. One caveat owned and documented: a *view* replaced directly on the
+schema — not through DDL — is not detected, because a plan depends on the tables the view expanded to,
+which did not change.
+
 ## Connection string reference
 
 All keys are exposed as typed properties on `CalciteConnectionStringBuilder`. Keys are matched case-insensitively, and unknown keys are preserved and forwarded to the engine.
@@ -194,6 +228,7 @@ All keys are exposed as typed properties on `CalciteConnectionStringBuilder`. Ke
 | `Model` | `string` | — | Path to a Calcite model JSON file, or `inline:<json>` for an embedded model. |
 | `Schema` | `string` | — | Default schema name when identifiers are unqualified. |
 | `Synchronous` | `bool` | `false` | Plan queries in the synchronous convention instead of the asynchronous one. A provider option, not forwarded to the engine — see [Behaviour worth knowing](#behaviour-worth-knowing). |
+| `PlanCacheSize` | `int` | `0` | Cache up to this many prepared plans per connection, keyed by statement text, so re-executing a statement skips parsing, validation and planning. A provider option, not forwarded to the engine — see [Plan caching](#plan-caching). |
 | `Lex` | `string` | `ORACLE` | Lexical policy: `ORACLE`, `MYSQL`, `MYSQL_ANSI`, `SQL_SERVER`, `JAVA`, `BIG_QUERY`. |
 | `CaseSensitive` | `bool` | from `Lex` | Whether identifier lookup is case-sensitive. |
 | `Quoting` | `string` | from `Lex` | Quote style: `DOUBLE_QUOTE`, `BACK_TICK`, `BACK_TICK_BACKSLASH`, `BRACKET`. |

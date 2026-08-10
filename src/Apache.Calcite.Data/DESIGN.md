@@ -103,8 +103,9 @@ The connection's hooks and the command's are concatenated per request, connectio
 
 `CalciteSession` is the per-connection engine state, created on the first `CalciteConnection.Open()`
 and kept alive across `Close`/`Open` cycles — a schema registered on `RootSchema` or a table created
-by DDL survives a close. `Dispose` is what ends it, and only marks the session disposed so later
-execute calls throw `ObjectDisposedException`.
+by DDL survives a close. `Dispose` is what ends it: it marks the session disposed so later execute
+calls throw `ObjectDisposedException`, and clears the session's entries out of its plan cache, if it
+has one — a shared cache would otherwise hold a dead session's plans until eviction found them.
 
 Construction, from the `CalciteConnectionStringBuilder`:
 
@@ -124,10 +125,24 @@ Anything thrown here that is not already a `CalciteException` is wrapped in one.
 The session exposes three private steps and the execute entry points.
 
 **`Plan`** constructs a `PrepareContext`, pushes it onto `CalcitePrepare.Dummy`, and calls
-`ClrPrepareImpl.Prepare(ctx, sql, Object[], -1, async)`, returning a `ClrSignature`. The element
+`ClrPrepareImpl.Prepare(ctx, sql, Object[], -1, async)`, returning a `PreparedPlan`. The element
 type is what makes the pipeline ask for array-shaped rows; `-1` means no row limit; `async` is the
 connection's mode, `true` unless `Synchronous` was set. Nothing is executed and no per-statement
 state is created.
+
+When the session was created with an `IPlanCache` — the connection's `PlanCacheFactory`, or the
+`PlanCacheSize` key, another provider option excluded from the engine properties — `Plan` goes
+through `CachingPrepare` instead, which fronts the same call with a lookup keyed on the SQL text
+under the session's `PlanCacheScope` and its generation. A request carrying hooks never meets the
+cache: a planning-phase hook can rewrite what prepare produces and expects to observe the phases as
+they run, and a cached plan would do neither. `CachingPrepare` owns the rest of the correctness
+story — DDL bumps the generation and is never stored, `EXPLAIN` is never stored, and a hit is
+validated by resolving each table the plan recorded against the live schema and requiring the same
+instance, which is what catches a table added, dropped or replaced directly on `RootSchema`.
+
+**`Prepare`** is `DbCommand.Prepare()`'s half: with a cache and no hooks it plans the statement so
+the next execute hits, and it classifies the statement first — one extra parse — because planning
+DDL executes it, and `Prepare` must not have effects. Without a cache it does nothing.
 
 **`Bind`** builds the execution-time `DataContext`: a fresh `AtomicBoolean` cancel flag, the
 positional parameters converted by `ParameterBinder`, the command timeout in milliseconds, and
@@ -181,7 +196,7 @@ reused as they stand. The driver had to be replaced because its one exit is a `B
 | `ClrPrepareResult` | `Prepare.PreparedResult` | What preparing produces, less `getBindable`. |
 | `ClrEnumerablePrepareResult` | `PreparedResultImpl` (anonymous, in `implement`) | Carries an `IClrBindable`. |
 | `ClrExplainResult` / `ClrExplainBindable` | `Prepare.PreparedExplain` / `CalcitePreparedExplain.getBindable` | An `EXPLAIN`: the text is rendered at prepare time and yielded as one row. |
-| `ClrSignature` | `CalcitePrepare.CalciteSignature` | The planned statement, member for member, with `Bindable` swapped for `IClrBindable` and `enumerable` for `Bind`. |
+| `PreparedPlan` | `CalcitePrepare.CalciteSignature` | The planned statement, member for member, with `Bindable` swapped for `IClrBindable` and `enumerable` for `Bind`. |
 
 `ClrPrepareImpl.Prepare` is the entry point this provider uses. It creates a `VolcanoPlanner` with
 `RelOptUtil.registerDefaultRules` **plus** one convention's rules — `ClrAsyncEnumerableRules.Rules()`
@@ -192,15 +207,15 @@ table modification works here. `PrepareRel`, the second entry point, plans a `Re
 built rather than parsed; it is exercised by tests and not reached from this project.
 
 A DDL statement is executed inside `Prepare2` rather than planned, exactly as Calcite does. The
-`ClrSignature` it returns has no row type, no columns, a null bindable, `CursorFactory.OBJECT` and
+`PreparedPlan` it returns has no row type, no columns, a null bindable, `CursorFactory.OBJECT` and
 `StatementType.OTHER_DDL`.
 
 `Describe` builds one `AvaticaParameter` per dynamic parameter and one `ColumnMetaData` per result
 column, deduces the `CursorFactory` from the columns and the compiled plan's element type, and
-assembles the `ClrSignature`. All of that metadata is ported rather than reused: every piece of it
+assembles the `PreparedPlan`. All of that metadata is ported rather than reused: every piece of it
 is a private static of `CalcitePrepareImpl`.
 
-`ClrSignature.Bind(DataContext)` runs the plan and returns `IEnumerable<object>`, applying the row
+`PreparedPlan.Bind(DataContext)` runs the plan and returns `IEnumerable<object>`, applying the row
 limit when `MaxRowCount` is not negative — the limit lives on the signature, not on the bindable, so
 a caller reaching past it would silently lose it. This provider always passes `-1`.
 
@@ -243,7 +258,7 @@ returning rows, plus the `ElementType` the cursor factory is deduced from. It me
 
 ### 5. Result stream (`Internal/CalciteResult` and friends)
 
-`CalciteResult` is what an execute call hands back: the `ClrSignature`, a
+`CalciteResult` is what an execute call hands back: the `PreparedPlan`, a
 `CalciteResultColumns` built from it, the plan's enumerator, and a records-affected count. Two
 subclasses, one per convention — `CalciteEnumerableResult` over an `IEnumerator<object>`,
 `CalciteAsyncEnumerableResult` over an `IAsyncEnumerator<object>` — and both answer both `Read` and
@@ -344,7 +359,7 @@ type, the value and the SQL type. `BigDecimalConverter` carries `java.math.BigDe
    `ClrPrepareImpl.Prepare`, which parses, validates, converts to relational algebra, optimises into
    the connection's convention — `ClrAsyncEnumerableConvention` by default,
    `ClrEnumerableConvention` when the connection string says `Synchronous` — and compiles the chosen
-   plan to a delegate. The result is a `ClrSignature`.
+   plan to a delegate. The result is a `PreparedPlan`.
 6. **Bind.** Parameters are converted and assembled with the cancel flag, the timeout and the
    signature's internal parameters into a `StatementDataContext`.
 7. **Execute.** The plan's enumerator is taken — `BindAsync(...).GetAsyncEnumerator(token)` or
@@ -415,7 +430,7 @@ src/
       CalciteParameterValue.cs            (DbType, value) pair
       ParameterBinder.cs                  CLR value → Calcite runtime representation
       BigDecimalConverter.cs              decimal ↔ java.math.BigDecimal
-      CalciteResult.cs                    Row stream over a ClrSignature
+      CalciteResult.cs                    Row stream over a PreparedPlan
       CalciteResultColumns.cs             Avatica ColumnMetaData → ADO.NET column metadata
       CalciteResultRow.cs                 Column addressing within one row, by cursor style
       CalciteResultValue.cs               Final value conversion and typed getters
@@ -430,7 +445,7 @@ src/
       ClrPrepare.cs                       The algorithm, less any wiring
       ClrPreparingStmt.cs                 Cluster, validator, view expansion
       ClrPrepareResult.cs                 What preparing produces
-      ClrSignature.cs                     The planned statement
+      PreparedPlan.cs                     The planned statement
       ClrExplainResult.cs                 EXPLAIN, rendered at prepare time
       ClrExplainBindable.cs               …and yielded as one row
       PrepareContext.cs                   CalcitePrepare.Context
@@ -455,7 +470,7 @@ src/
   `ColumnMetaData`, `AvaticaParameter` and `Meta.*` are used as the metadata value types Calcite's
   prepare produces, and nothing more.
 - **No `Bindable` and no `PreparedResult` on the row path.** A plan is a compiled delegate behind
-  `IClrBindable`; `ClrSignature` and `ClrPrepareResult` exist because Calcite's equivalents are
+  `IClrBindable`; `PreparedPlan` and `ClrPrepareResult` exist because Calcite's equivalents are
   declared in terms of the linq4j types this convention does not produce.
 - **The ADO.NET surface owns no engine logic.** Everything that touches Calcite's planner is in
   `CalciteSession` and below it. The `Internal` types are reachable from the public surface; the

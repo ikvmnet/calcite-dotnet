@@ -37,7 +37,7 @@ namespace Apache.Calcite.Extensions.Prepare
     /// <para>What is replaced is the outer driver, because its one exit is a <c>Bindable</c>: it calls
     /// <c>preparedResult.getBindable(cursorFactory)</c> and puts the result in a <c>CalciteSignature</c>,
     /// whose only row-producing member binds it to a linq4j <c>Enumerable</c>. A plan of this convention is
-    /// a compiled delegate, so it leaves through <see cref="ClrSignature"/> instead.</para>
+    /// a compiled delegate, so it leaves through <see cref="PreparedPlan"/> instead.</para>
     ///
     /// <para>Nothing of Calcite's prepare is inherited. <c>Prepare.implement</c> is declared to return a
     /// <c>PreparedResult</c>, whose reason for existing is <c>getBindable</c> — a linq4j <c>Enumerable</c> —
@@ -65,7 +65,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// list holds exactly one too — so the loop is a single call, and a plan that cannot be found
         /// throws rather than falling back.
         /// </remarks>
-        public ClrSignature Prepare(CalcitePrepare.Context context, string sql, java.lang.reflect.Type elementType, long maxRowCount)
+        public PreparedPlan Prepare(CalcitePrepare.Context context, string sql, java.lang.reflect.Type elementType, long maxRowCount)
         {
             return Prepare(context, sql, elementType, maxRowCount, false);
         }
@@ -94,7 +94,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// throws, rather than the caller being handed a plan that would block a thread per row while looking
         /// asynchronous. A caller that wants the synchronous plan asks for it.</para>
         /// </remarks>
-        public ClrSignature Prepare(CalcitePrepare.Context context, string sql, java.lang.reflect.Type elementType, long maxRowCount, bool async)
+        public PreparedPlan Prepare(CalcitePrepare.Context context, string sql, java.lang.reflect.Type elementType, long maxRowCount, bool async)
         {
             ArgumentNullException.ThrowIfNull(context);
             ArgumentNullException.ThrowIfNull(sql);
@@ -124,7 +124,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <c>RelRunner</c>. The result is described from the plan's own row type, and the statement is
         /// always a SELECT — a plan carries no statement kind.
         /// </remarks>
-        public ClrSignature PrepareRel(CalcitePrepare.Context context, org.apache.calcite.rel.RelNode rel, long maxRowCount)
+        public PreparedPlan PrepareRel(CalcitePrepare.Context context, org.apache.calcite.rel.RelNode rel, long maxRowCount)
         {
             ArgumentNullException.ThrowIfNull(context);
             ArgumentNullException.ThrowIfNull(rel);
@@ -226,6 +226,54 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <summary>
+        /// Parses one statement, with the connection's parser configuration.
+        /// </summary>
+        /// <remarks>
+        /// The head of <c>prepare2_</c>, split out so a statement can be classified without being
+        /// prepared.
+        /// </remarks>
+        SqlNode Parse(CalcitePrepare.Context context, string sql)
+        {
+            var config = context.config();
+
+            var parseConfig = ParserConfig()
+                .withQuotedCasing(config.quotedCasing())
+                .withUnquotedCasing(config.unquotedCasing())
+                .withQuoting(config.quoting())
+                .withConformance((org.apache.calcite.sql.validate.SqlConformance)config.conformance())
+                .withCaseSensitive(config.caseSensitive());
+
+            var parserFactory = (SqlParserImplFactory)config.parserFactory((java.lang.Class)typeof(SqlParserImplFactory), null);
+            if (parserFactory != null)
+                parseConfig = parseConfig.withParserFactory(parserFactory);
+
+            try
+            {
+                return SqlParser.create(sql, parseConfig).parseStmt();
+            }
+            catch (SqlParseException e)
+            {
+                throw new java.lang.RuntimeException("parse failed: " + e.getMessage(), e);
+            }
+        }
+
+        /// <summary>
+        /// Returns whether a statement parses to DDL, without preparing it.
+        /// </summary>
+        /// <remarks>
+        /// For a caller that must not execute DDL by accident: preparing a DDL statement executes it,
+        /// exactly as Calcite's prepare does, so an ADO.NET <c>Prepare()</c> asks first. It costs one
+        /// extra parse, paid only for the statements it admits.
+        /// </remarks>
+        public bool IsDdl(CalcitePrepare.Context context, string sql)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+            ArgumentNullException.ThrowIfNull(sql);
+
+            return Parse(context, sql).getKind().belongsTo(SqlKind.DDL);
+        }
+
+        /// <summary>
         /// Executes a DDL statement.
         /// </summary>
         /// <remarks>
@@ -285,31 +333,11 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <c>CalcitePrepareImpl.prepare2_</c>, in its order, less the <c>queryable</c> and <c>rel</c>
         /// branches — this pipeline is reached with SQL text and nothing else.
         /// </remarks>
-        ClrSignature Prepare2(CalcitePrepare.Context context, string sql, java.lang.reflect.Type elementType, long maxRowCount, CalciteCatalogReader catalogReader, ClrPreparingStmt preparingStmt)
+        PreparedPlan Prepare2(CalcitePrepare.Context context, string sql, java.lang.reflect.Type elementType, long maxRowCount, CalciteCatalogReader catalogReader, ClrPreparingStmt preparingStmt)
         {
             var typeFactory = context.getTypeFactory();
-            var config = context.config();
 
-            var parseConfig = ParserConfig()
-                .withQuotedCasing(config.quotedCasing())
-                .withUnquotedCasing(config.unquotedCasing())
-                .withQuoting(config.quoting())
-                .withConformance((org.apache.calcite.sql.validate.SqlConformance)config.conformance())
-                .withCaseSensitive(config.caseSensitive());
-
-            var parserFactory = (SqlParserImplFactory)config.parserFactory((java.lang.Class)typeof(SqlParserImplFactory), null);
-            if (parserFactory != null)
-                parseConfig = parseConfig.withParserFactory(parserFactory);
-
-            SqlNode sqlNode;
-            try
-            {
-                sqlNode = SqlParser.create(sql, parseConfig).parseStmt();
-            }
-            catch (SqlParseException e)
-            {
-                throw new java.lang.RuntimeException("parse failed: " + e.getMessage(), e);
-            }
+            var sqlNode = Parse(context, sql);
 
             var statementType = GetStatementType(sqlNode.getKind());
 
@@ -321,7 +349,7 @@ namespace Apache.Calcite.Extensions.Prepare
             {
                 ExecuteDdl(context, sqlNode);
 
-                return new ClrSignature(
+                return new PreparedPlan(
                     sql,
                     com.google.common.collect.ImmutableList.of(),
                     new java.util.LinkedHashMap(),
@@ -364,7 +392,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// The tail of <c>prepare2_</c>, shared by both entry points because a statement is described the
         /// same way however its plan was arrived at.
         /// </remarks>
-        ClrSignature Describe(
+        PreparedPlan Describe(
             CalcitePrepare.Context context,
             string sql,
             RelDataType x,
@@ -405,7 +433,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 _ => throw new java.lang.IllegalStateException($"{preparedResult.GetType()} has no plan."),
             };
 
-            return new ClrSignature(
+            return new PreparedPlan(
                 sql,
                 parameters,
                 preparingStmt.InternalParameters,
@@ -416,7 +444,10 @@ namespace Apache.Calcite.Extensions.Prepare
                 preparedResult.Collations,
                 maxRowCount,
                 bindable,
-                statementType);
+                statementType)
+            {
+                Dependencies = preparingStmt.Dependencies,
+            };
         }
 
         /// <summary>

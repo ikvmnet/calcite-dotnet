@@ -177,7 +177,7 @@ namespace Apache.Calcite.Tests
 
         /// <summary>
         /// <c>maxRowCount</c> lives inside <c>CalciteSignature.enumerable</c> in Calcite and inside
-        /// <see cref="ClrSignature.Bind"/> here. Nothing else exercises it, because every caller in this
+        /// <see cref="PreparedPlan.Bind"/> here. Nothing else exercises it, because every caller in this
         /// project passes -1.
         /// </summary>
         [TestMethod]

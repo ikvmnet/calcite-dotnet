@@ -91,7 +91,9 @@ A Spark handler is not supported: `ToBindable` throws `UnsupportedOperationExcep
 
 The nodes (`ClrEnumerableCalc`, `ClrEnumerableHashJoin`, `ClrEnumerableWindow`, and the rest) and their rules are public too, so you can subclass or re-register them.
 
-**The SQL-text prepare pipeline is internal to these packages.** `ClrPrepareImpl`, `ClrSignature` and the rest of `Apache.Calcite.Extensions.Prepare` are not part of the public API surface — `Apache.Calcite.Data` reaches them through `InternalsVisibleTo`. To run SQL text, use `Apache.Calcite.Data`; to drive the planner directly, use the public types above.
+**The SQL-text prepare pipeline is internal to these packages.** `ClrPrepareImpl` and the rest of `Apache.Calcite.Extensions.Prepare` are not part of the public API surface — `Apache.Calcite.Data` reaches them through `InternalsVisibleTo`. To run SQL text, use `Apache.Calcite.Data`; to drive the planner directly, use the public types above.
+
+What the namespace does expose is the plan cache: `IPlanCache` is the contract a caller-supplied cache implements — retention and eviction only; admission, keying and hit validation stay in the pipeline — with `LruPlanCache` as the built-in bounded implementation, `PlanCacheKey`/`PlanCacheScope` as what entries are stored under, and `PreparedPlan` as the opaque handle a cache holds without reading. Associate one with a connection through `CalcitePlanCacheFactory` on `Apache.Calcite.Data`, or the `PlanCacheSize` connection-string key.
 
 ## `CalciteConnectionProperties`
 

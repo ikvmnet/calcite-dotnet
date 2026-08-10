@@ -8,7 +8,7 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Reads the rows of a prepared <see cref="ClrSignature"/>.
+    /// Reads the rows of a prepared <see cref="PreparedPlan"/>.
     /// </summary>
     /// <remarks>
     /// What a reader holds, and what both execute paths return. Everything about a <em>row</em> is here —
@@ -39,7 +39,7 @@ namespace Apache.Calcite.Data.Internal
     internal abstract class CalciteResult : IDisposable, IAsyncDisposable
     {
 
-        readonly ClrSignature _signature;
+        readonly PreparedPlan _signature;
         readonly CalciteResultColumns _columns;
         readonly long _recordsAffected;
 
@@ -51,7 +51,7 @@ namespace Apache.Calcite.Data.Internal
         /// </summary>
         /// <param name="signature"></param>
         /// <param name="recordsAffected"></param>
-        protected CalciteResult(ClrSignature signature, long recordsAffected)
+        protected CalciteResult(PreparedPlan signature, long recordsAffected)
         {
             ArgumentNullException.ThrowIfNull(signature);
 
