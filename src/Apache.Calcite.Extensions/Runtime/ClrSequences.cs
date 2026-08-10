@@ -59,17 +59,35 @@ namespace Apache.Calcite.Extensions.Runtime
         {
             ArgumentNullException.ThrowIfNull(source);
 
-            var enumerator = source.GetAsyncEnumerator(CancellationToken.None);
+            // acquisition is synchronous even on an asynchronous sequence -- GetAsyncEnumerator cannot
+            // await -- so the crossing acquires where the synchronous side's acquisition arrives, at
+            // GetEnumerator, and the owner block-disposes whether or not a row was ever read
+            return new ClrEnumerable<TSource>(() =>
+            {
+                var enumerator = source.GetAsyncEnumerator(CancellationToken.None);
+                return new AcquiredEnumerator<TSource>(ToEnumerableRows(enumerator), new BlockingDisposal<TSource>(enumerator));
+            });
+        }
 
-            try
-            {
-                while (BlockMoveNext(enumerator))
-                    yield return enumerator.Current;
-            }
-            finally
-            {
-                BlockDispose(enumerator);
-            }
+        /// <summary>
+        /// The row loop of <see cref="ToEnumerable{TSource}"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TSource> ToEnumerableRows<TSource>(IAsyncEnumerator<TSource> enumerator)
+        {
+            while (BlockMoveNext(enumerator))
+                yield return enumerator.Current;
+        }
+
+        /// <summary>
+        /// Disposes the acquired asynchronous enumerator by blocking for its disposal, with the context
+        /// suppressed before the call, as every wait here is.
+        /// </summary>
+        sealed class BlockingDisposal<TSource>(IAsyncEnumerator<TSource> enumerator) : IDisposable
+        {
+
+            /// <inheritdoc />
+            public void Dispose() => BlockDispose(enumerator);
+
         }
 
         /// <summary>
@@ -180,18 +198,51 @@ namespace Apache.Calcite.Extensions.Runtime
         /// <para>The trailing <c>await</c> is what makes the compiler accept an async iterator that has
         /// nothing to await, as <c>FromJavaAsync</c> does for the same reason.</para>
         /// </remarks>
-        public static async IAsyncEnumerable<TSource> ToAsyncEnumerable<TSource>(IEnumerable<TSource> source, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        public static IAsyncEnumerable<TSource> ToAsyncEnumerable<TSource>(IEnumerable<TSource> source, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(source);
 
-            foreach (var row in source)
+            // the synchronous sub-plan's whole acquisition cascade runs at its GetEnumerator -- a scan
+            // opens, a sort drains -- so the crossing acquires it at GetAsyncEnumerator, where the
+            // asynchronous side's acquisition arrives. The token that matters is GetAsyncEnumerator's;
+            // every generated call site passes default for the parameter.
+            return new ClrAsyncEnumerable<TSource>(token =>
+            {
+                var e = source.GetEnumerator();
+                return new AcquiredAsyncEnumerator<TSource>(ToAsyncEnumerableRows(e, token), new SynchronousDisposal(e));
+            });
+        }
+
+        /// <summary>
+        /// The row loop of <see cref="ToAsyncEnumerable{TSource}"/>, over an enumerator the factory
+        /// acquired.
+        /// </summary>
+        static async IAsyncEnumerator<TSource> ToAsyncEnumerableRows<TSource>(IEnumerator<TSource> source, CancellationToken cancellationToken)
+        {
+            while (source.MoveNext())
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                yield return row;
+                yield return source.Current;
             }
 
             await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Disposes the acquired synchronous enumerator from an asynchronous disposal, which completes
+        /// synchronously.
+        /// </summary>
+        sealed class SynchronousDisposal(IDisposable disposable) : IAsyncDisposable
+        {
+
+            /// <inheritdoc />
+            public ValueTask DisposeAsync()
+            {
+                disposable.Dispose();
+                return default;
+            }
+
         }
 
     }

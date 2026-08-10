@@ -100,6 +100,18 @@ them sooner" is not: that was `Window`'s laziness, filed under record-do-not-fix
 builds an `ArrayList` and returns `Linq4j.asEnumerable(list)`. Whether ours is better is not the question
 the port gets to answer.
 
+**Obtaining an enumerator runs the plan; `yield` defers it.** linq4j's operators acquire their source's
+enumerator inside `enumerator()` — `where` on the spot, `orderBy` draining its whole input there, the JDBC
+leaf executing its statement there — and deferral is the marked exception (the CALCITE-2909 memoized join
+lookups). A C# iterator method defers everything to its first `MoveNext`, acquisition included, so
+re-expressing an operator as one silently moved that seam, across the whole of both conventions, and no
+row-comparing test could see it. `ClrEnumerable` and `Acquiring` in `Runtime` put a factory where
+`enumerator()` is; the one sanctioned exception is a drain that must await, which acquires eagerly and
+drains in the first `MoveNextAsync`, stated at the site. Timing is held by `AcquisitionTimingTests`, which
+reads a counting leaf's acquisitions and its rows as two numbers — and note the operators whose eagerness
+is *call*-time are linq4j's own call-time drains (`union`, `distinct`, `asofJoin`, `groupBy`, the window,
+`nestedLoopJoinAsList`): do not "fix" them toward the factory.
+
 **A claim about how something fails is a claim to run.** Reasoning from a comparator's semantics gave "a
 CLR-boxed row element and a Java-boxed one compare unequal, their hashes agree, so a set operator quietly
 keeps both copies" — a description of a state no query reaches. One query over a table holding CLR-boxed

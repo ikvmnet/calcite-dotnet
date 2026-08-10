@@ -348,8 +348,11 @@ type, the value and the SQL type. `BigDecimalConverter` carries `java.math.BigDe
 6. **Bind.** Parameters are converted and assembled with the cancel flag, the timeout and the
    signature's internal parameters into a `StatementDataContext`.
 7. **Execute.** The plan's enumerator is taken — `BindAsync(...).GetAsyncEnumerator(token)` or
-   `Bind(...).GetEnumerator()` by mode — and wrapped in the matching `CalciteResult`. Nothing has
-   been enumerated yet.
+   `Bind(...).GetEnumerator()` by mode — and wrapped in the matching `CalciteResult`. Obtaining the
+   enumerator **runs** the plan, as it does in linq4j: every operator acquires its source's
+   enumerator there, a sort drains its input there, and a linq4j leaf executes its statement there —
+   so failures and side effects of starting the plan land at Execute. No row has been read; an
+   asynchronous drain that must await waits for the first `ReadAsync`.
 8. **Read.** `CalciteDataReader` pulls rows through `CalciteResult.ReadAsync`, and each accessor
    goes `CalciteResultRow` → `CalciteResultValue` → CLR value.
 9. **Dispose.** Disposing the reader disposes the result and its enumerator. Disposing the

@@ -449,18 +449,16 @@ namespace Apache.Calcite.Tests
         /// Nothing is read until the first <c>ReadAsync</c>.
         /// </summary>
         /// <remarks>
-        /// Which is why <c>ExecuteReaderAsync</c> has nothing to await and returns a completed task. It
-        /// parses, plans and compiles — all CPU, on the calling thread — and then composes the operator
-        /// chain, but every operator is an <c>async IAsyncEnumerable</c> iterator, so calling one builds a
-        /// state machine and runs none of it. <c>GetAsyncEnumerator</c> is the same. The table is not
-        /// touched.
-        ///
-        /// <para>So the answer to "could it yield" is that there is nothing there to yield on, rather than
-        /// that the work is hidden. The first suspension is inside the first <c>ReadAsync</c>.</para>
+        /// "Read" is the word doing the work. Execute acquires: <c>GetAsyncEnumerator</c> now chains down
+        /// the whole plan — <c>AcquisitionTimingTests</c> holds that a Calcite leaf's <c>enumerator()</c>
+        /// runs there — but this leaf is an <c>IClrAsyncScannableTable</c> whose <c>ScanAsync</c> is a C#
+        /// iterator, and an iterator's body, its counting included, runs nothing until the first
+        /// <c>MoveNextAsync</c>. So the table produces no row at Execute, which is this test's claim.
         ///
         /// <para>A table that did eager work in <c>ScanAsync</c> — opening a connection before returning the
         /// sequence — would be doing it synchronously, because <c>ScanAsync</c> returns an
-        /// <see cref="IAsyncEnumerable{T}"/> rather than a task. The place to do that work is the first
+        /// <see cref="IAsyncEnumerable{T}"/> rather than a task. The place for acquisition-time work is
+        /// <c>GetAsyncEnumerator</c>, which Execute now reaches; the place for awaited work is the first
         /// <c>MoveNextAsync</c>, which an iterator gives for free.</para>
         /// </remarks>
         [TestMethod]
