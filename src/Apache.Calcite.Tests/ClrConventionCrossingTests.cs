@@ -178,6 +178,31 @@ namespace Apache.Calcite.Tests
         /// when it is blocked on. A fixture that completed synchronously would exercise the fast path only
         /// and say nothing about the wait.
         /// </remarks>
+        /// <summary>
+        /// A convention is reached when the only route to it runs through a second converter.
+        /// </summary>
+        /// <remarks>
+        /// The two bridges registered make <c>Enumerable -&gt; ClrAsyncEnumerable -&gt; ClrEnumerable</c> the
+        /// only route to the root convention: the direct <c>Enumerable -&gt; ClrEnumerable</c> rule is left
+        /// out, so the second hop would have to be applied to the converter the first produced, and
+        /// <c>ConverterRule</c>'s operand refuses to stack a converter on a converter of the same trait def.
+        /// What is left is <c>ConventionTraitDef</c>'s conversion graph, which a rule enters only by
+        /// answering <c>isGuaranteed</c> — so without that this statement cannot be planned at all.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldBridgeThroughASecondConverter()
+        {
+            var rules = new List<RelOptRule>
+            {
+                ClrAsyncEnumerableRules.EnumerableToClrAsyncEnumerableConverterRule,
+                ClrEnumerableRules.ClrAsyncEnumerableToClrEnumerableConverterRule,
+            };
+
+            var rows = RunSync("SELECT K, V FROM SORTED WHERE K >= 2", Schema(), rules, []);
+
+            rows.Should().Equal(["2|B", "2|C", "4|D"]);
+        }
+
         [TestMethod]
         public void ShouldReadAnAsynchronousPlanSynchronously()
         {
