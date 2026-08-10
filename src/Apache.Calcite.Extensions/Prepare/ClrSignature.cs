@@ -25,7 +25,7 @@ namespace Apache.Calcite.Extensions.Prepare
     /// <see cref="Sql"/>, <see cref="Parameters"/>, <see cref="InternalParameters"/>,
     /// <see cref="Columns"/>, <see cref="CursorFactory"/>, <see cref="StatementType"/> — are all here.</para>
     /// </remarks>
-    sealed class ClrSignature
+    public sealed class ClrSignature
     {
 
         /// <summary>

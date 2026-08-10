@@ -87,6 +87,7 @@ namespace Apache.Calcite.Data.Internal
         readonly CalciteConnectionConfig _config;
         readonly IReadOnlyList<string> _defaultSchemaPath;
         readonly bool _synchronous;
+        readonly Func<ClrPrepareImpl> _prepareFactory;
         bool _disposed;
 
         /// <summary>
@@ -104,9 +105,11 @@ namespace Apache.Calcite.Data.Internal
         /// has no node for is still planned and run — implemented in <c>EnumerableConvention</c>, with a
         /// converter carrying its rows.
         /// </remarks>
-        public CalciteSession(CalciteConnectionStringBuilder options)
+        public CalciteSession(CalciteConnectionStringBuilder options, Func<ClrPrepareImpl>? prepareFactory = null)
         {
             ArgumentNullException.ThrowIfNull(options);
+
+            _prepareFactory = prepareFactory ?? (static () => new ClrPrepareImpl());
 
             try
             {
@@ -233,7 +236,7 @@ namespace Apache.Calcite.Data.Internal
             CalcitePrepare.Dummy.push(ctx);
             try
             {
-                return new ClrPrepareImpl().Prepare(ctx, request.Sql, (java.lang.Class)typeof(java.lang.Object[]), -1, async);
+                return _prepareFactory().Prepare(ctx, request.Sql, (java.lang.Class)typeof(java.lang.Object[]), -1, async);
             }
             finally
             {

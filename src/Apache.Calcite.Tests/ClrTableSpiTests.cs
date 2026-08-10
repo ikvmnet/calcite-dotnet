@@ -207,7 +207,7 @@ namespace Apache.Calcite.Tests
 
             if (async)
             {
-                var bindable = ClrAsyncEnumerableInterpretable.ToBindable(parameters, null, (ClrAsyncEnumerableRel)physical, ClrEnumerablePrefer.Array);
+                var bindable = ClrAsyncEnumerableInterpretable.ToBindable(parameters, (ClrAsyncEnumerableRel)physical, ClrEnumerablePrefer.Array);
                 var reader = bindable.Bind(context).GetAsyncEnumerator();
                 try
                 {
@@ -221,7 +221,7 @@ namespace Apache.Calcite.Tests
             }
             else
             {
-                var bindable = ClrEnumerableInterpretable.ToBindable(parameters, null, (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
+                var bindable = ClrEnumerableInterpretable.ToBindable(parameters, (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
                 foreach (var row in bindable.Bind(context))
                     rows.Add(Render(row));
             }

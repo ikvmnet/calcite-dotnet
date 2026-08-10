@@ -28,7 +28,7 @@ namespace Apache.Calcite.Extensions.Prepare
     /// in, the program that gets it there, and the compiler at the end. A subclass supplies those, and that
     /// is the whole of what a second convention writes.</para>
     /// </remarks>
-    abstract class ClrPreparingStmt : ClrPrepare, RelOptTable.ViewExpander
+    public abstract class ClrPreparingStmt : ClrPrepare, RelOptTable.ViewExpander
     {
 
         readonly CalciteSchema schema;
@@ -83,19 +83,13 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <remarks>
         /// <c>CalcitePreparingStmt.getSqlValidator</c>, which caches so that one statement cannot end up
         /// with two.
+        ///
+        /// <para>Protected there and protected internal here: the driver reads it, which Java allows because
+        /// <c>CalcitePreparingStmt</c> is a nested class of <c>CalcitePrepareImpl</c> and an outer class
+        /// reaches a nested one's protected members. <c>internal</c> is what says the same thing in .NET,
+        /// and it does not widen what a subclass outside this assembly can see.</para>
         /// </remarks>
-        protected override SqlValidator Validator => validator ??= CreateSqlValidator(CatalogReader, c => c);
-
-        /// <summary>
-        /// Gets the validator the statement was validated with, for the driver.
-        /// </summary>
-        /// <remarks>
-        /// Calcite's driver reads <c>getSqlValidator</c> even though it is protected, because
-        /// <c>CalcitePreparingStmt</c> is a nested class of <c>CalcitePrepareImpl</c> and Java lets an outer
-        /// class reach a nested one's protected members. C# has no equivalent, so the accessor is public
-        /// rather than the member's protection being widened.
-        /// </remarks>
-        public SqlValidator SqlValidator => Validator;
+        protected internal override SqlValidator SqlValidator => validator ??= CreateSqlValidator(CatalogReader, c => c);
 
         /// <summary>
         /// Prepares a plan that was built rather than parsed.
@@ -193,9 +187,8 @@ namespace Apache.Calcite.Extensions.Prepare
 
         /// <inheritdoc />
         /// <remarks>
-        /// <c>CalcitePreparingStmt.flattenTypes</c>, which flattens only under a Spark handler and otherwise
-        /// hands the plan back. This convention cannot use a Spark handler at all — it has no generated
-        /// class to give one — so this is the branch Calcite takes without one.
+        /// <c>CalcitePreparingStmt.flattenTypes</c>, whose default branch hands the plan back unchanged.
+        /// That is the branch this convention always takes.
         /// </remarks>
         protected override RelNode FlattenTypes(RelNode rootRel, bool restructure)
         {
@@ -252,7 +245,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <remarks>
         /// <c>CalcitePrepareImpl.createSqlValidator</c>, which is a private static there.
         /// </remarks>
-        SqlValidator CreateSqlValidator(CalciteCatalogReader catalogReader, Func<SqlValidator.Config, SqlValidator.Config> configTransform)
+        protected virtual SqlValidator CreateSqlValidator(CalciteCatalogReader catalogReader, Func<SqlValidator.Config, SqlValidator.Config> configTransform)
         {
             var connectionConfig = Context.config();
             var opTab0 = (SqlOperatorTable)connectionConfig.fun((java.lang.Class)typeof(SqlOperatorTable), org.apache.calcite.sql.fun.SqlStdOperatorTable.instance());

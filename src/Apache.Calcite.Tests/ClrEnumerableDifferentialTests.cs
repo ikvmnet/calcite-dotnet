@@ -438,7 +438,7 @@ namespace Apache.Calcite.Tests
             var parameters = new java.util.HashMap();
             var context = new TestDataContext(rootSchema, parameters);
             var source = physical is ClrEnumerableRel node
-                ? TestRows.Of(ClrEnumerableInterpretable.ToBindable(parameters, null, node, ClrEnumerablePrefer.Array), context)
+                ? TestRows.Of(ClrEnumerableInterpretable.ToBindable(parameters, node, ClrEnumerablePrefer.Array), context)
                 : TestRows.Of(EnumerableInterpretable.toBindable(parameters, null, (EnumerableRel)physical, EnumerableRel.Prefer.ARRAY), context);
 
             var rows = new List<string>();
@@ -519,7 +519,7 @@ namespace Apache.Calcite.Tests
             var parameters = new java.util.HashMap();
             var context = new TestDataContext(rootSchema, parameters);
             var source = physical is ClrEnumerableRel node
-                ? TestRows.Of(ClrEnumerableInterpretable.ToBindable(parameters, null, node, ClrEnumerablePrefer.Array), context)
+                ? TestRows.Of(ClrEnumerableInterpretable.ToBindable(parameters, node, ClrEnumerablePrefer.Array), context)
                 : TestRows.Of(EnumerableInterpretable.toBindable(parameters, null, (EnumerableRel)physical, EnumerableRel.Prefer.ARRAY), context);
 
             var rows = new List<string>();

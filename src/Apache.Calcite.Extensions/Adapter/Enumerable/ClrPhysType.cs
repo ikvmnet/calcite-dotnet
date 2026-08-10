@@ -53,6 +53,16 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         Type RowType { get; }
 
         /// <summary>
+        /// Gets the Java type a row of this physical type is, unboxed.
+        /// </summary>
+        /// <remarks>
+        /// <c>PhysType.getJavaRowType</c>. <see cref="RowType"/> is this boxed, because a CLR sequence states
+        /// its element type; this is the type factory's own answer, which is what a caller asking what a row
+        /// <em>is</em> — <c>Meta.CursorFactory.deduce</c>, say — wants.
+        /// </remarks>
+        java.lang.reflect.Type JavaRowType { get; }
+
+        /// <summary>
         /// Returns the CLR type used to store the field with the given ordinal.
         /// </summary>
         /// <param name="field"></param>

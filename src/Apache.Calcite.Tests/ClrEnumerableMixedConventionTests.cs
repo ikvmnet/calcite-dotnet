@@ -126,7 +126,7 @@ namespace Apache.Calcite.Tests
             var parameters = new java.util.HashMap();
             var context = new TestDataContext(rootSchema);
             var source = physical is ClrEnumerableRel clr
-                ? TestRows.Of(ClrEnumerableInterpretable.ToBindable(parameters, null, clr, ClrEnumerablePrefer.Array), context)
+                ? TestRows.Of(ClrEnumerableInterpretable.ToBindable(parameters, clr, ClrEnumerablePrefer.Array), context)
                 : TestRows.Of(EnumerableInterpretable.toBindable(parameters, null, (EnumerableRel)physical, EnumerableRel.Prefer.ARRAY), context);
 
             var rows = new List<object[]>();
@@ -188,7 +188,7 @@ namespace Apache.Calcite.Tests
             var physical = planner.transform(1, chosen.getTraitSet(), chosen);
 
             var rows = new List<object[]>();
-            var bindable = ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), null, (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
+            var bindable = ClrEnumerableInterpretable.ToBindable(new java.util.HashMap(), (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
 
             foreach (var current in bindable.Bind(new TestDataContext(rootSchema)))
                 rows.Add(current as object[] ?? [current]);

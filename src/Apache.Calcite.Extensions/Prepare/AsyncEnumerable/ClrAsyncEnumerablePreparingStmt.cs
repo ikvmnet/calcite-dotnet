@@ -85,7 +85,7 @@ namespace Apache.Calcite.Extensions.Prepare.AsyncEnumerable
 
             InternalParameters.put("_conformance", Context.config().conformance());
 
-            var bindable = ClrAsyncEnumerableInterpretable.ToBindable(InternalParameters, null, node, prefer);
+            var bindable = ClrAsyncEnumerableInterpretable.ToBindable(InternalParameters, node, prefer);
 
             var collations = root.collation.getFieldCollations().isEmpty()
                 ? (java.util.List)com.google.common.collect.ImmutableList.of()
@@ -101,10 +101,10 @@ namespace Apache.Calcite.Extensions.Prepare.AsyncEnumerable
                 isDml,
                 bindable,
                 // the type factory's answer, which is what the cursor factory is deduced from
-                org.apache.calcite.adapter.enumerable.PhysTypeImpl.of(
+                Apache.Calcite.Extensions.Adapter.Enumerable.ClrPhysTypeImpl.Of(
                     (org.apache.calcite.adapter.java.JavaTypeFactory)node.getCluster().getTypeFactory(),
                     node.getRowType(),
-                    prefer.PreferArray()).getJavaRowType());
+                    prefer.PreferArray()).JavaRowType);
         }
 
     }

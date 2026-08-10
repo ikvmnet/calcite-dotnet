@@ -88,7 +88,7 @@ namespace Apache.Calcite.Tests
             var physical = planner.transform(2, chosen.getTraitSet(), chosen);
 
             var parameters = new java.util.HashMap();
-            var bindable = ClrAsyncEnumerableInterpretable.ToBindable(parameters, null, (ClrAsyncEnumerableRel)physical, ClrEnumerablePrefer.Array);
+            var bindable = ClrAsyncEnumerableInterpretable.ToBindable(parameters, (ClrAsyncEnumerableRel)physical, ClrEnumerablePrefer.Array);
 
             return (bindable.Bind(new PlanDataContext(rootSchema, parameters)), leaf);
         }

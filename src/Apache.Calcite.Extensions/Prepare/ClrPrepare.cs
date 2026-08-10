@@ -36,7 +36,7 @@ namespace Apache.Calcite.Extensions.Prepare
     /// <c>Enumerable</c>. Our conventions compile to a delegate, so there is nothing to hand back through
     /// it. <see cref="ClrPrepareResult"/> is that interface without the member.</para>
     /// </remarks>
-    abstract class ClrPrepare
+    public abstract class ClrPrepare
     {
 
         readonly CalcitePrepare.Context context;
@@ -81,7 +81,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <c>Prepare.getSqlValidator</c>, abstract there as here: building one needs a type factory, which
         /// this half does not have.
         /// </remarks>
-        protected abstract SqlValidator Validator { get; }
+        protected internal abstract SqlValidator SqlValidator { get; }
 
         /// <summary>
         /// Gets or sets the row type of the statement's dynamic parameters.
@@ -183,7 +183,7 @@ namespace Apache.Calcite.Extensions.Prepare
             var configHolder = Holder.of(config);
             org.apache.calcite.runtime.Hook.SQL2REL_CONVERTER_CONFIG_BUILDER.run(configHolder);
 
-            var sqlToRelConverter = GetSqlToRelConverter(Validator, catalogReader, (SqlToRelConverter.Config)configHolder.get());
+            var sqlToRelConverter = GetSqlToRelConverter(SqlValidator, catalogReader, (SqlToRelConverter.Config)configHolder.get());
 
             SqlExplain? sqlExplain = null;
             if (sqlQuery.getKind() == SqlKind.EXPLAIN)
@@ -203,9 +203,9 @@ namespace Apache.Calcite.Extensions.Prepare
             root = root.withRel(checkedConv.visit(root.rel));
             org.apache.calcite.runtime.Hook.CONVERTED.run(root.rel);
 
-            var resultType = Validator.getValidatedNodeType(sqlQuery);
-            FieldOrigins = Validator.getFieldOrigins(sqlQuery);
-            ParameterRowType = Validator.getParameterRowType(sqlQuery);
+            var resultType = SqlValidator.getValidatedNodeType(sqlQuery);
+            FieldOrigins = SqlValidator.getFieldOrigins(sqlQuery);
+            ParameterRowType = SqlValidator.getParameterRowType(sqlQuery);
 
             // the logical plan, before view expansion, physical storage and decorrelation
             if (sqlExplain != null)
@@ -284,7 +284,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 .withExpand(((java.lang.Boolean)org.apache.calcite.prepare.Prepare.THREAD_EXPAND.get()).booleanValue())
                 .withInSubQueryThreshold(((java.lang.Integer)org.apache.calcite.prepare.Prepare.THREAD_INSUBQUERY_THRESHOLD.get()).intValue());
 
-            var converter = GetSqlToRelConverter(Validator, catalogReader, config);
+            var converter = GetSqlToRelConverter(SqlValidator, catalogReader, config);
             var ordered = root.collation.getFieldCollations().isEmpty() == false;
             var dml = SqlKind.DML.contains(root.kind);
 
