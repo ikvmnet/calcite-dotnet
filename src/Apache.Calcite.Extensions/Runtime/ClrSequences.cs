@@ -43,13 +43,17 @@ namespace Apache.Calcite.Extensions.Runtime
         /// consumer's only way out is to stop enumerating. Abandoning the sequence disposes the enumerator,
         /// which is what ends the asynchronous plan under it.</para>
         ///
-        /// <para><b>The synchronization context is suppressed for the length of each wait</b>, and that is
-        /// load bearing rather than tidy. The operators of the asynchronous convention await without
-        /// <c>ConfigureAwait(false)</c> — <c>await foreach (var row in source.WithCancellation(token))</c>
-        /// continues on the captured context — so a caller that blocked a thread carrying one would wait for
-        /// a continuation that can only run on the thread it is blocking. Nulling the context before the call
-        /// means there is nothing to capture and the continuation goes to the thread pool. Where there is no
-        /// context, which is every thread a query is normally read on, this costs one read.</para>
+        /// <para><b>The synchronization context is suppressed around each call, not around each wait</b>,
+        /// and the placement is load bearing rather than tidy. The operators of the asynchronous convention
+        /// await without <c>ConfigureAwait(false)</c> — <c>await foreach (var row in
+        /// source.WithCancellation(token))</c> continues on the captured context — and the capture happens at
+        /// the moment of suspension, which is inside <c>MoveNextAsync</c>'s synchronous phase, on this
+        /// thread, <em>before</em> the call returns and any wait begins. Measured: nulling the context after
+        /// the call had started still deadlocked under a context that cannot pump, because the continuation
+        /// had already been promised to it; nulling before the call completes, because there is nothing to
+        /// capture and the continuation goes to the thread pool. Where there is no context, which is every
+        /// thread a query is normally read on, this costs one read of
+        /// <see cref="SynchronizationContext.Current"/> per row.</para>
         /// </remarks>
         public static IEnumerable<TSource> ToEnumerable<TSource>(IAsyncEnumerable<TSource> source)
         {
@@ -59,12 +63,64 @@ namespace Apache.Calcite.Extensions.Runtime
 
             try
             {
-                while (Block(enumerator.MoveNextAsync()))
+                while (BlockMoveNext(enumerator))
                     yield return enumerator.Current;
             }
             finally
             {
-                Block(enumerator.DisposeAsync());
+                BlockDispose(enumerator);
+            }
+        }
+
+        /// <summary>
+        /// Advances <paramref name="enumerator"/>, blocking for the row, with the synchronization context
+        /// suppressed before <c>MoveNextAsync</c> runs.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="enumerator"></param>
+        /// <returns></returns>
+        static bool BlockMoveNext<TSource>(IAsyncEnumerator<TSource> enumerator)
+        {
+            var context = SynchronizationContext.Current;
+            if (context == null)
+                return Wait(enumerator.MoveNextAsync());
+
+            SynchronizationContext.SetSynchronizationContext(null);
+
+            try
+            {
+                return Wait(enumerator.MoveNextAsync());
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(context);
+            }
+        }
+
+        /// <summary>
+        /// Disposes <paramref name="enumerator"/>, blocking for completion, with the synchronization context
+        /// suppressed before <c>DisposeAsync</c> runs — an iterator's <c>finally</c> can suspend too.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="enumerator"></param>
+        static void BlockDispose<TSource>(IAsyncEnumerator<TSource> enumerator)
+        {
+            var context = SynchronizationContext.Current;
+            if (context == null)
+            {
+                Wait(enumerator.DisposeAsync());
+                return;
+            }
+
+            SynchronizationContext.SetSynchronizationContext(null);
+
+            try
+            {
+                Wait(enumerator.DisposeAsync());
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(context);
             }
         }
 
@@ -80,25 +136,9 @@ namespace Apache.Calcite.Extensions.Runtime
         /// <see cref="ValueTask{TResult}.AsTask"/>, which allocates. The completed case is the common one and
         /// skips that.
         /// </remarks>
-        static bool Block(ValueTask<bool> task)
+        static bool Wait(ValueTask<bool> task)
         {
-            if (task.IsCompletedSuccessfully)
-                return task.Result;
-
-            var context = SynchronizationContext.Current;
-            if (context == null)
-                return task.AsTask().GetAwaiter().GetResult();
-
-            SynchronizationContext.SetSynchronizationContext(null);
-
-            try
-            {
-                return task.AsTask().GetAwaiter().GetResult();
-            }
-            finally
-            {
-                SynchronizationContext.SetSynchronizationContext(context);
-            }
+            return task.IsCompletedSuccessfully ? task.Result : task.AsTask().GetAwaiter().GetResult();
         }
 
         /// <summary>
@@ -106,10 +146,10 @@ namespace Apache.Calcite.Extensions.Runtime
         /// </summary>
         /// <param name="task"></param>
         /// <remarks>
-        /// <see cref="Block(ValueTask{bool})"/> for the disposal, which has no value. The completed case is
+        /// <see cref="Wait(ValueTask{bool})"/> for the disposal, which has no value. The completed case is
         /// still awaited rather than dropped, because that is what observes a failure.
         /// </remarks>
-        static void Block(ValueTask task)
+        static void Wait(ValueTask task)
         {
             if (task.IsCompletedSuccessfully)
             {
@@ -117,23 +157,7 @@ namespace Apache.Calcite.Extensions.Runtime
                 return;
             }
 
-            var context = SynchronizationContext.Current;
-            if (context == null)
-            {
-                task.AsTask().GetAwaiter().GetResult();
-                return;
-            }
-
-            SynchronizationContext.SetSynchronizationContext(null);
-
-            try
-            {
-                task.AsTask().GetAwaiter().GetResult();
-            }
-            finally
-            {
-                SynchronizationContext.SetSynchronizationContext(context);
-            }
+            task.AsTask().GetAwaiter().GetResult();
         }
 
         /// <summary>

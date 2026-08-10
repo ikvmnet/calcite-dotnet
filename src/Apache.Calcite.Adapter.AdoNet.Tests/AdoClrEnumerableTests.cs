@@ -13,10 +13,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// </summary>
     /// <remarks>
     /// Every other test in this project opens <c>jdbc:calcite:</c> through <c>DriverManager</c>, which is
-    /// Calcite's connection and Calcite's prepare. None of them says anything about this path. The adapter
-    /// produces its rows through <c>AdoToEnumerableConverter</c>, a node of Calcite's convention, so a plan
-    /// over an ADO.NET schema is necessarily a mixed one: the adapter's own subtree in
-    /// <c>EnumerableConvention</c>, and a converter carrying its rows into this one.
+    /// Calcite's connection and Calcite's prepare. None of them says anything about this path. A plan over
+    /// an ADO.NET schema is necessarily a mixed one — the adapter's own subtree stays in its convention —
+    /// and the crossing depends on the connection's mode: by default the rows go through
+    /// <c>AdoToEnumerableConverter</c>, Calcite's convention, under the converter into the asynchronous one;
+    /// in synchronous mode the adapter converts straight into <c>ClrEnumerableConvention</c> through
+    /// <c>AdoToClrEnumerableConverter</c>, with no linq4j layer between.
     /// </remarks>
     [TestClass]
     public class AdoClrEnumerableTests
@@ -29,17 +31,27 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         public void Setup()
         {
             _sqlite = new SqliteFixture();
+            _connection = OpenConnection();
+        }
 
-            _connection = new CalciteConnection(new CalciteConnectionStringBuilder
+        /// <summary>
+        /// Opens a connection over the fixture's SQLite schema, in the mode asked for.
+        /// </summary>
+        CalciteConnection OpenConnection(bool synchronous = false)
+        {
+            var c = new CalciteConnection(new CalciteConnectionStringBuilder
             {
                 Lex = "JAVA",
                 CaseSensitive = false,
+                Synchronous = synchronous ? true : null,
             }.ToString());
 
-            _connection.Open();
+            c.Open();
 
-            var root = _connection.RootSchema;
+            var root = c.RootSchema;
             root.add("ADO", AdoSchema.Create(root, "ADO", _sqlite.DataSource, null, null));
+
+            return c;
         }
 
         [TestCleanup]
@@ -74,21 +86,57 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             return rows;
         }
 
-        [TestMethod]
-        public void ShouldConvertStraightIntoThisConvention()
+        /// <summary>
+        /// Returns the rendered plan for <paramref name="sql"/> on <paramref name="connection"/>.
+        /// </summary>
+        static string Explain(CalciteConnection connection, string sql)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "EXPLAIN PLAN FOR SELECT empno, name FROM ADO.emps WHERE deptno = 10";
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "EXPLAIN PLAN FOR " + sql;
 
             var plan = new System.Text.StringBuilder();
             using (var r = cmd.ExecuteReader())
                 while (r.Read())
                     plan.AppendLine(r.GetValue(0)?.ToString());
 
-            // one converter, and it is this convention's. Reaching AdoToEnumerableConverter instead would
-            // still answer correctly, by way of a second converter, and no other assertion here would notice.
-            StringAssert.Contains(plan.ToString(), "AdoToClrEnumerableConverter");
-            Assert.IsFalse(plan.ToString().Contains("AdoToEnumerableConverter"), plan.ToString());
+            return plan.ToString();
+        }
+
+        /// <summary>
+        /// In synchronous mode the adapter converts straight into the synchronous convention.
+        /// </summary>
+        /// <remarks>
+        /// One converter, and it is that convention's own. Reaching <c>AdoToEnumerableConverter</c> instead
+        /// would still answer correctly, by way of a second converter, and no other assertion here would
+        /// notice. The mode is pinned because the default plans asynchronously, where the routes tie on the
+        /// planner's row-count-only cost and the adapter's rows go through Calcite's converter —
+        /// <see cref="ShouldCarryTheAdapterIntoTheAsyncConvention"/> holds that plan.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldConvertStraightIntoThisConvention()
+        {
+            using var c = OpenConnection(synchronous: true);
+
+            var plan = Explain(c, "SELECT empno, name FROM ADO.emps WHERE deptno = 10");
+
+            StringAssert.Contains(plan, "AdoToClrEnumerableConverter");
+            Assert.IsFalse(plan.Contains("AdoToEnumerableConverter"), plan);
+        }
+
+        /// <summary>
+        /// By default the adapter's subtree is carried into the asynchronous convention, pushed down intact.
+        /// </summary>
+        /// <remarks>
+        /// The subtree under the converter is the adapter's own — an <c>AdoProject</c> rather than a scan
+        /// with the work done above it — so the crossing costs a wrapper and loses no pushdown.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldCarryTheAdapterIntoTheAsyncConvention()
+        {
+            var plan = Explain(_connection, "SELECT empno, name FROM ADO.emps WHERE deptno = 10");
+
+            StringAssert.Contains(plan, "EnumerableToClrAsyncEnumerableConverter");
+            StringAssert.Contains(plan, "AdoProject");
         }
 
         [TestMethod]

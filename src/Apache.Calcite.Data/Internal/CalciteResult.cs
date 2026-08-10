@@ -24,15 +24,17 @@ namespace Apache.Calcite.Data.Internal
     /// <c>DbDataReader</c> is a contract: a consumer that knows nothing but <c>DbDataReader</c> -- a
     /// micro-ORM, <c>DataTable.Load</c>, anything generic -- calls <c>Read</c>, and a provider whose reader
     /// throws there is not a provider. So a synchronous plan answers <c>ReadAsync</c> with a completed
-    /// task, and an asynchronous plan blocks in <c>Read</c>.</para>
+    /// task, and an asynchronous plan blocks in <c>Read</c>. Which plan a query gets is the connection's
+    /// mode, not the entry point's choice, so either crossing is the normal case rather than an edge.</para>
     ///
     /// <para>Neither is the sync-over-async this surface refuses, and the line is about who chose. A
     /// <em>plan's</em> internals can block too — <c>ClrAsyncEnumerableToClrEnumerableConverter</c> is exactly
     /// that, one blocked thread per row — and what makes it refusable there is that the planner would be
     /// choosing it, invisibly, on behalf of a caller who asked for nothing of the sort. That is why the
     /// prepare pipeline registers one convention's rules and not both, and so never produces a plan holding
-    /// one. Here the caller is choosing, in the open, at the boundary -- which is where every ADO.NET
-    /// provider blocks and what <c>Read</c> on an asynchronous source means.</para>
+    /// one. Here the block is at the boundary, where every ADO.NET provider blocks: it is what <c>Read</c>
+    /// on an asynchronous source means, and the asynchronous surface never blocks at all — a synchronous
+    /// part of a plan completes synchronously, which parks nothing.</para>
     /// </remarks>
     internal abstract class CalciteResult : IDisposable, IAsyncDisposable
     {

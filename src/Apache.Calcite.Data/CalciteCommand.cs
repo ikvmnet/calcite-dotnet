@@ -262,9 +262,9 @@ namespace Apache.Calcite.Data
 
         /// <inheritdoc />
         /// <remarks>
-        /// Reads the synchronous plan, rather than blocking on <see cref="ExecuteScalarAsync"/>. Doing the
-        /// latter would make an ordinary <c>ExecuteScalar</c> demand a table that can produce rows
-        /// asynchronously, which is not what a synchronous caller asked for.
+        /// The reader path with one row and one column taken off it, through <see cref="CalciteResult.Read"/>.
+        /// The plan is the connection's — mode, not entry point — so in the default mode this blocks per row
+        /// exactly as <c>Read</c> on the reader would, and in synchronous mode nothing here ever waits.
         /// </remarks>
         public override object? ExecuteScalar()
         {
@@ -293,10 +293,11 @@ namespace Apache.Calcite.Data
 
         /// <inheritdoc />
         /// <remarks>
-        /// Asks for a synchronous plan, because the reader it returns will be read with
-        /// <c>DbDataReader.Read</c>. A reader over an asynchronous plan answers that too, by blocking --
-        /// <c>CalciteResult</c> says why it has to -- and asking for the synchronous plan here is what keeps
-        /// a caller who never touched an <c>Async</c> method off that path.
+        /// The same plan <see cref="ExecuteDbDataReaderAsync"/> prepares — the convention is the
+        /// connection's mode, not the entry point's choice. In the default mode the reader answers
+        /// <c>Read</c> by blocking wherever the plan genuinely suspends, which is what <c>Read</c> over an
+        /// asynchronous source means; a connection whose consumers are synchronous can say
+        /// <see cref="CalciteConnectionStringBuilder.Synchronous"/> and get the plan that never waits.
         /// </remarks>
         protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
         {
@@ -306,17 +307,13 @@ namespace Apache.Calcite.Data
 
         /// <inheritdoc />
         /// <remarks>
-        /// Prepares into the asynchronous convention, and <b>throws where the query cannot be planned into
-        /// it</b>. The prepare pipeline puts one convention's rules on the planner and not the other's, so
-        /// although converters exist between the two Clr conventions, no plan prepared here mixes them and a
-        /// query the asynchronous rules cannot cover has nowhere to go. Preparing the synchronous plan
-        /// instead would hand back a reader that looks asynchronous and blocks a thread per row, which a
-        /// caller cannot tell from the outside. <see cref="ExecuteReader()"/> is how a caller asks for that
-        /// plan deliberately.
-        ///
-        /// <para>A table Calcite can scan is not that case: it is planned in <c>EnumerableConvention</c> and
-        /// <c>EnumerableToClrAsyncEnumerableConverter</c> carries its rows, which costs a state machine and
-        /// no thread.</para>
+        /// Prepares the connection's plan. By default that is the asynchronous convention, and everything
+        /// plans: an <c>IClrAsyncScannableTable</c> is scanned asynchronously, a table Calcite can scan is
+        /// read the way Calcite reads it and completes synchronously — a state machine and no thread — and
+        /// anything else is implemented in <c>EnumerableConvention</c> with a converter carrying its rows.
+        /// In synchronous mode this is the synchronous plan in a completed task, and a query touching a
+        /// table that can <em>only</em> produce rows asynchronously fails to plan — visibly, rather than
+        /// blocking behind a surface that looks asynchronous.
         /// </remarks>
         protected override async Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
         {

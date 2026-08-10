@@ -171,7 +171,9 @@ The Calcite session is created on the **first** `Open()` and reused for the life
 
 **`CommandType.Text` only.** Setting any other `CommandType` throws `NotSupportedException`. There is no stored-procedure concept in Calcite.
 
-**Cancellation is coarse.** A `CancellationToken` is observed before a statement is planned. On a DML statement it is also wired to Calcite's cancel flag while the rows are drained. It is **not** wired to a reader's enumeration — cancelling the token after `ExecuteReaderAsync` has returned does not stop `ReadAsync` from producing more rows. `DbCommand.Cancel()` is a no-op.
+**Every query is planned asynchronously unless the connection says otherwise.** The plan is the connection's, not the entry point's: by default it is built in the asynchronous convention, so `ReadAsync` is genuinely asynchronous wherever the schema can be, and a synchronous `Read` blocks per row only where the source really is asynchronous — which is what `Read` over an asynchronous source means in every ADO.NET provider. `Synchronous=true` plans in the synchronous convention instead: nothing ever waits, `ReadAsync` answers with completed tasks, and a query touching a table that can *only* produce rows asynchronously fails to plan.
+
+**Cancellation is per-statement.** A `CancellationToken` is observed before a statement is planned. On a DML statement it is wired to Calcite's cancel flag while the rows are drained. The token given to `ExecuteReaderAsync` also reaches the plan's enumerator, so cancelling it stops the leaf between rows; in `Synchronous` mode it is not wired to a reader's enumeration. `DbCommand.Cancel()` is a no-op.
 
 **`ExecuteNonQuery` return values** follow ADO.NET convention: `-1` for a `SELECT`, `0` for DDL, and the row count Calcite reports for `INSERT` / `UPDATE` / `DELETE` / `MERGE`.
 
@@ -191,6 +193,7 @@ All keys are exposed as typed properties on `CalciteConnectionStringBuilder`. Ke
 |-----|------|---------|-------------|
 | `Model` | `string` | — | Path to a Calcite model JSON file, or `inline:<json>` for an embedded model. |
 | `Schema` | `string` | — | Default schema name when identifiers are unqualified. |
+| `Synchronous` | `bool` | `false` | Plan queries in the synchronous convention instead of the asynchronous one. A provider option, not forwarded to the engine — see [Behaviour worth knowing](#behaviour-worth-knowing). |
 | `Lex` | `string` | `ORACLE` | Lexical policy: `ORACLE`, `MYSQL`, `MYSQL_ANSI`, `SQL_SERVER`, `JAVA`, `BIG_QUERY`. |
 | `CaseSensitive` | `bool` | from `Lex` | Whether identifier lookup is case-sensitive. |
 | `Quoting` | `string` | from `Lex` | Quote style: `DOUBLE_QUOTE`, `BACK_TICK`, `BACK_TICK_BACKSLASH`, `BRACKET`. |
@@ -261,7 +264,7 @@ cmd.RegisterHook(Hook.PROGRAM, /* ... */);
 
 Overloads accept a Java `Consumer`, a .NET `Action<object>`, or a primitive value to set as the hook's property. Connection hooks run before command hooks.
 
-`EXPLAIN PLAN FOR <query>` also works, and returns the rendered plan as a single row. It explains the plan the reader you called would have run: `ExecuteReader` renders `ClrEnumerable*` nodes and `ExecuteReaderAsync` renders `ClrAsyncEnumerable*` ones, since nothing in the SQL says which convention is wanted.
+`EXPLAIN PLAN FOR <query>` also works, and returns the rendered plan as a single row. It explains the plan the connection would run: `ClrAsyncEnumerable*` nodes by default, `ClrEnumerable*` ones when the connection string says `Synchronous` — the same plan from `ExecuteReader` and `ExecuteReaderAsync`, since the convention is the connection's choice rather than the entry point's.
 
 ## Accessing the Calcite engine directly
 

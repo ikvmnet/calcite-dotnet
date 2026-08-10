@@ -111,9 +111,9 @@ namespace Apache.Calcite.Data
         /// Blocks where the rows come from a plan of the asynchronous convention, and does not refuse:
         /// <c>DbDataReader.Read</c> is a contract a generic consumer calls, and a provider whose reader
         /// throws there is not a provider. <c>CalciteResult</c> has the argument, and
-        /// <c>CalciteAsyncEnumerableResult.Read</c> is where the block happens. The usual caution applies — a
-        /// synchronization context can deadlock on it — and a reader over an asynchronous plan has
-        /// <see cref="ReadAsync"/>.
+        /// <c>CalciteAsyncEnumerableResult.Read</c> is where the block happens — with the synchronization
+        /// context suppressed before the plan runs, so a thread carrying one does not wait on a continuation
+        /// promised to itself.
         /// </remarks>
         public override bool Read()
         {
@@ -178,13 +178,9 @@ namespace Apache.Calcite.Data
         /// <remarks>
         /// <b>Overridden, and it has to be.</b> <c>DbDataReader.CloseAsync</c> and <c>DisposeAsync</c> both
         /// fall back to the synchronous <see cref="Close"/> if a provider leaves them alone, which for a
-        /// plan of the asynchronous convention means <c>CalciteAsyncEnumerableResult.Release</c> — and that
-        /// can only finish a disposal the plan already completed synchronously. A table whose
-        /// <c>DisposeAsync</c> really suspends, because it is closing a connection or a channel, would have
-        /// had its disposal dropped.
-        ///
-        /// <para>So <c>await using</c> over a reader means what it says, and <c>using</c> still works: the
-        /// synchronous path is unchanged and is what a synchronous plan needs.</para>
+        /// plan of the asynchronous convention means <c>CalciteAsyncEnumerableResult.Release</c> — a block
+        /// per result rather than an await. The disposal completes either way; <c>await using</c> is the
+        /// one that suspends instead of parking a thread to do it.
         /// </remarks>
         public override async Task CloseAsync()
         {

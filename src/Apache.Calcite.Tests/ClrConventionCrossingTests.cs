@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
@@ -195,6 +197,72 @@ namespace Apache.Calcite.Tests
             var rows = await RunAsync("SELECT K, V FROM SORTED WHERE K >= 2", Schema(), rules, calcRules);
 
             rows.Should().Equal(["2|B", "2|C", "4|D"]);
+        }
+
+        /// <summary>
+        /// The blocking crossing completes on a thread carrying a synchronization context.
+        /// </summary>
+        /// <remarks>
+        /// The regression test for <c>ClrSequences</c>' suppression placement. The operators await without
+        /// <c>ConfigureAwait(false)</c>, and a continuation captures the context at the moment of
+        /// suspension — inside <c>MoveNextAsync</c>'s synchronous phase, before the converter has anything
+        /// to wait on. Measured with exactly this shape of context, one that queues and cannot pump while
+        /// its thread is blocked: nulling the context only around the wait deadlocked, nulling it before
+        /// each call completes. <c>AsyncRowsTable</c> awaits on every row, so every capture here would be
+        /// real.
+        ///
+        /// <para>The read runs on a dedicated background thread with a join timeout, so a regression fails
+        /// rather than hanging the suite.</para>
+        /// </remarks>
+        [TestMethod]
+        public void ShouldReadAnAsynchronousPlanSynchronouslyUnderASynchronizationContext()
+        {
+            var (rules, calcRules) = Both();
+
+            List<string>? rows = null;
+            Exception? error = null;
+
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    SynchronizationContext.SetSynchronizationContext(new NonPumpingContext());
+                    rows = RunSync("SELECT ID, LABEL FROM SALES WHERE ID > 3", Schema(), rules, calcRules);
+                }
+                catch (Exception e)
+                {
+                    error = e;
+                }
+            });
+
+            thread.IsBackground = true;
+            thread.Start();
+            thread.Join(TimeSpan.FromSeconds(30)).Should().BeTrue(
+                "a deadlock here means a continuation was captured by the context before it was suppressed");
+
+            error.Should().BeNull();
+            rows.Should().Equal(["4|D", "5|E", "6|F"]);
+        }
+
+        /// <summary>
+        /// A context that accepts posts and can never run them while its thread is blocked — the observable
+        /// shape of a blocked UI thread.
+        /// </summary>
+        sealed class NonPumpingContext : SynchronizationContext
+        {
+
+            /// <summary>
+            /// Queued to a loop nobody pumps: a continuation posted here never runs, exactly as one posted
+            /// to a blocked UI thread's message loop never runs.
+            /// </summary>
+            public override void Post(SendOrPostCallback d, object? state)
+            {
+
+            }
+
+            /// <inheritdoc />
+            public override SynchronizationContext CreateCopy() => this;
+
         }
 
         /// <summary>

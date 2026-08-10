@@ -34,6 +34,11 @@ namespace Apache.Calcite.Data
         public const string SchemaKey = "Schema";
 
         /// <summary>
+        /// Connection string key for whether the provider plans queries into the synchronous convention.
+        /// </summary>
+        public const string SynchronousKey = "Synchronous";
+
+        /// <summary>
         /// Connection string key for whether identifiers are matched case-sensitively.
         /// </summary>
         public const string CaseSensitiveKey = "CaseSensitive";
@@ -177,6 +182,31 @@ namespace Apache.Calcite.Data
         {
             get => TryGetString(SchemaKey);
             set => SetOrRemove(SchemaKey, value);
+        }
+
+        /// <summary>
+        /// Gets or sets whether queries are planned into the synchronous convention. Default is
+        /// <see langword="false"/>.
+        /// </summary>
+        /// <remarks>
+        /// A provider option rather than an engine one, the way Calcite's own connection can ask for the
+        /// bindable convention. By default every query is planned into the asynchronous convention, whichever
+        /// entry point asked — a table that cannot produce rows asynchronously is still planned, carried
+        /// across a converter, and that part of the plan completes synchronously. Setting this plans into the
+        /// synchronous convention instead, for both entry points: <c>ReadAsync</c> answers with completed
+        /// tasks, and a query touching a table that can <em>only</em> produce rows asynchronously fails to
+        /// plan.
+        /// </remarks>
+        public bool? Synchronous
+        {
+            get => TryGetBool(SynchronousKey);
+            set
+            {
+                if (value is null)
+                    Remove(SynchronousKey);
+                else
+                    this[SynchronousKey] = value.Value;
+            }
         }
 
         /// <summary>
