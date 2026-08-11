@@ -75,23 +75,26 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// Answers with a handler that refuses every rel, so that a query builds only the handlers it reaches.
+        /// Returns the handler of <paramref name="handlerClass"/>.
         /// </summary>
         /// <param name="handlerClass"></param>
         /// <returns></returns>
         /// <remarks>
-        /// What Janino's provider does, and for the same reason: <see cref="RelMetadataQuery"/> asks for all
-        /// twenty-seven when it is constructed, which is once per query, and a statement touches a third of
-        /// them. The refusal is caught there and answered by <see cref="revise"/>.
+        /// The handler itself, where Janino's provider answers a <c>java.lang.reflect.Proxy</c> that throws
+        /// <c>NoHandler</c> so that <see cref="revise"/> builds one only for the handlers a statement
+        /// reaches. That deferral buys Janino a Java compile it may not have to run; there is nothing here to
+        /// defer, because a handler is emitted once per provider and interface and then answered from a
+        /// dictionary.
+        ///
+        /// <para>The proxy was also a cost and a hazard. <see cref="RelMetadataQuery"/> asks for all
+        /// twenty-seven every time one is constructed, and the planner constructs one whenever a rule
+        /// transforms — so the proxy route meant twenty-seven dynamic proxy classes and reflection accessors
+        /// per transformation, built through IKVM's own <c>Reflection.Emit</c> path, which is where
+        /// <c>InvalidProgramException</c> was coming from.</para>
         /// </remarks>
         public MetadataHandler handler(java.lang.Class handlerClass)
         {
-            ArgumentNullException.ThrowIfNull(handlerClass);
-
-            return (MetadataHandler)java.lang.reflect.Proxy.newProxyInstance(
-                ((java.lang.Class)typeof(RelMetadataQuery)).getClassLoader(),
-                [handlerClass],
-                new Refusing());
+            return revise(handlerClass);
         }
 
         /// <summary>
@@ -159,21 +162,6 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
                 .Where(m => m.Name != "getDef" && m.IsAbstract && !m.IsStatic)
                 .OrderBy(m => m.Name, StringComparer.Ordinal)
                 .ToArray();
-        }
-
-        /// <summary>
-        /// The handler <see cref="handler"/> answers with, which refuses every rel it is asked about.
-        /// </summary>
-        sealed class Refusing : java.lang.reflect.InvocationHandler
-        {
-
-            /// <inheritdoc />
-            public object invoke(object proxy, java.lang.reflect.Method method, object[] args)
-            {
-                var r = (RelNode)args[0];
-                throw new MetadataHandlerProvider.NoHandler((java.lang.Class)r.GetType());
-            }
-
         }
 
         /// <summary>
