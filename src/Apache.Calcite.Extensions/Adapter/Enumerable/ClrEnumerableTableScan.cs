@@ -316,7 +316,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // the selector is the one Calcite writes, built against their physical type and translated whole.
             var calcite = PhysTypeImpl.of(implementor.TypeFactory, physType.RelRowType, physType.Format, false);
 
-            var row = J.Expressions.parameter(elementType, "row");
+            // the element type as linq4j has to name it. Calcite names the table's own, because a linq4j
+            // Enumerable erases its element and the physical type may have optimized to a format the sequence
+            // does not have -- a one column table declares Object[] and its physical type is SCALAR. That
+            // still holds; the one class it cannot cover is a row that is an instance of a CLR class, whose
+            // members Java cannot see at all, and there the same class named as a record type is the answer.
+            var row = J.Expressions.parameter(RowJavaType(), "row");
             var parameter = Expression.Parameter(element, "row");
             implementor.Translator.Bind(row, parameter);
 
@@ -325,13 +330,33 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             for (int i = 0; i < fieldCount; i++)
                 expressionList.add(FieldExpression(row, i, calcite, oldFormat));
 
+            // the row Calcite's record builds has the java row class, which is unboxed where a scalar row is a
+            // primitive; a sequence of this convention states its element type and ClrPhysType.RowType is that
+            // class boxed, so the two disagree by exactly one boxing. Calcite has nowhere for this to show --
+            // there is no Enumerable<int> in Java and javac inserts the conversion at the boundary -- and here
+            // it is a conversion the lambda has to carry, made the Java way as every other row element is.
             var rowType = physType.RowType;
             var selector = Expression.Lambda(
                 typeof(Func<,>).MakeGenericType(element, rowType),
-                implementor.Translator.Translate(calcite.record(expressionList)),
+                ClrEnumUtils.Convert(implementor.Translator.Translate(calcite.record(expressionList)), rowType),
                 parameter);
 
             return Expression.Call(null, ClrBuiltInMethod.Select.MakeGenericMethod(element, rowType), Source(element), selector);
+        }
+
+        /// <summary>
+        /// Returns the type linq4j names one element of this table's sequence by.
+        /// </summary>
+        /// <returns></returns>
+        /// <remarks>
+        /// <see cref="elementType"/>, except where a row is an instance of a CLR class: <c>getFields()</c> on
+        /// one is empty, so a row expression declared with the class sends
+        /// <c>JavaRowFormat.CUSTOM.field</c> to <c>Types.nthField</c> and out of bounds. The record type is
+        /// the same class by the only name that can be read by ordinal.
+        /// </remarks>
+        java.lang.reflect.Type RowJavaType()
+        {
+            return getRowType() is Clr.ClrRowType clr && clr.Clazz == elementType ? clr.RecordType : elementType;
         }
 
         /// <summary>

@@ -267,8 +267,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var leftCalcite = PhysTypeImpl.of(implementor.TypeFactory, leftPhysType.RelRowType, leftPhysType.Format, false);
             var rightCalcite = PhysTypeImpl.of(implementor.TypeFactory, rightPhysType.RelRowType, rightPhysType.Format, false);
 
-            var left_ = J.Expressions.parameter(leftCalcite.getJavaRowType(), "left");
-            var right_ = J.Expressions.parameter(rightCalcite.getJavaRowType(), "right");
+            var left_ = J.Expressions.parameter(leftPhysType.JavaRowType, "left");
+            var right_ = J.Expressions.parameter(rightPhysType.JavaRowType, "right");
 
             // the rows arrive boxed, because the sequence a join runs over is boxed for the selector, so the
             // predicate takes them boxed and unboxes on the way in
@@ -277,8 +277,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             // unboxed, because the linq4j parameter the Rex condition is built against is the Java row
             // class and the two have to be the same type for the binding to mean anything
-            var leftRow = Expression.Variable(ClrTypes.Resolve(leftCalcite.getJavaRowType()), "leftRow");
-            var rightRow = Expression.Variable(ClrTypes.Resolve(rightCalcite.getJavaRowType()), "rightRow");
+            var leftRow = Expression.Variable(ClrTypes.Resolve(leftPhysType.JavaRowType), "leftRow");
+            var rightRow = Expression.Variable(ClrTypes.Resolve(rightPhysType.JavaRowType), "rightRow");
             implementor.Translator.Bind(left_, leftRow);
             implementor.Translator.Bind(right_, rightRow);
 

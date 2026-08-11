@@ -117,10 +117,23 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             // a calc is Rex and nothing else: the condition and the projects are both Calcite's to
             // translate, and each takes its own physical type -- one to read a field of the input with, one
             // to read the storage types of the output off. So both are built here, where they are used.
+            //
+            // the output one builds the row as well, at the end of the block, which is a question about a
+            // row and so would otherwise be ClrPhysType.Record's. It cannot be: translateProjects declares
+            // its own variables in the BlockBuilder and the expressions it answers refer to them, so they
+            // cannot be translated one at a time -- the block crosses whole, and a block ends in one
+            // expression rather than a list. The row is therefore built in linq4j and translated with the
+            // rest, and TranslateBody below is what brings it to physType.RowType, which is the boxed one.
+            // The same seam is why the aggregates and the window call record on a Calcite physical type.
             var inputCalcite = PhysTypeImpl.of(typeFactory, result.PhysType.RelRowType, result.PhysType.Format, false);
             var outputCalcite = PhysTypeImpl.of(typeFactory, physType.RelRowType, physType.Format, false);
 
-            var inputJavaType = inputCalcite.getJavaRowType();
+            // the ClrPhysType's, not inputCalcite's. The two are the same call -- format.javaRowClass over the
+            // same row type and format -- for every row that is a record, an array, a list or a value, and
+            // they part only where the row is an instance of a CLR class: there the class has no fields Java
+            // can see, and what a row expression must be declared with is the record type. Which branch
+            // CUSTOM.field takes is decided by this line and nowhere else.
+            var inputJavaType = result.PhysType.JavaRowType;
             var inputType = result.PhysType.RowType;
             var outputType = physType.RowType;
 

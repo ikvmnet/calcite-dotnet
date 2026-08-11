@@ -142,6 +142,15 @@ read linq4j state slots; a table's own `getExpression(Queryable.class)`, which t
 linq4j; and the block Calcite's implementor produces for an `EnumerableConvention` sub-plan at a converter.
 Everything else is `System.Linq.Expressions` directly.
 
+**A block is the one thing composed before it is translated**, and the row it ends in is built in linq4j
+with it. `translateProjects` and an `AggImplementor` declare their own variables in the `BlockBuilder` and
+the expressions they answer refer to them, so those expressions cannot be translated one at a time; the
+block crosses whole, and a block ends in one expression rather than a list. So the calc, both aggregates
+and the window call `record` on a **Calcite** `PhysType` built beside the `ClrPhysType` — six sites, and
+they are not a lapse. `TranslateBody` is what brings the result to `ClrPhysType.RowType`, which is the
+boxed one. Everywhere the row is built from expressions of ours — the merge join's keys, `Values`,
+`ClrEnumUtils` — it is `ClrPhysType.Record`.
+
 **A physical type is not one of them.** `ClrPhysType` answers every question about a row in
 `System.Linq.Expressions` — it mirrors `PhysType` member for member and `ClrPhysTypeImpl` mirrors
 `PhysTypeImpl`, private helpers included — and `JavaRowFormatExtensions` answers the members of
@@ -160,6 +169,68 @@ other and so is its physical type; there is no adapter between them and none is 
 boundary. Calcite can leave the choice to its callers — there is no `Enumerable<int>` in Java, so the
 element is a reference whatever the physical type says, and javac inserts the conversion. Here it is
 decided once, and `ClrEnumerableRelImplementor.Result` refuses a sequence that disagrees.
+
+**A row of `Adapter/Clr` is a .NET object, and it has two Java identities.** The reflective adapter —
+`ClrReflectiveSchema` over any object, tables from its sequence-valued members — keeps the element type, so
+a query that projects nothing hands back your instances rather than copies (`ShouldHandBackTheObjectsThemselves`
+asserts reference equality). It has to, because **IKVM shows Java nothing of a .NET property**: measured,
+`getFields()` on a class of properties is *empty*, so `JavaTypeFactoryImpl.createType` over one answers
+`RecordType()` — a row of no columns — and says nothing, and `Types.nthField` throws. So building a row is
+`new_(clazz, …)` and wants the `java.lang.Class`, which rides on `ClrRowType : JavaRecordType` exactly as
+`createStructType(Class)` rides it for `ReflectiveSchema`; while *reading* a member goes through
+`JavaRowFormat.CUSTOM.field`, which branches on the declared type of the row **expression**, and so wants
+`ClrRecordType` — a `Types.RecordType` that is not a type at all but an index over the members, the only
+door into the by-ordinal branch. No type factory is subclassed and nothing is connection-wide.
+
+**So a row parameter is declared from `ClrPhysType.JavaRowType`, never from a Calcite `PhysType`'s
+`getJavaRowType()`.** The two are the same call for every row that is a record, an array, a list or a value —
+694 tests say so, the sweep changing nothing that was green — and part only for a CLR class. Both calcs, both
+aggregates, both sorted aggregates, both correlates, both conditional correlates, both batch nested loop
+joins, `ClrEnumUtils.GeneratePredicate` and both windows read it from the `ClrPhysType`; the window had to
+thread it through `WindowLoop`, `PartitionSelector`, `WindowRelInputGetter` and `ClrWinAggFrameResultContext`,
+none of which had a `ClrPhysType` in reach. **A Calcite `PhysType`'s `getJavaRowType()` in a new node is the
+bug this rule exists to stop**, and it fails as `IndexOutOfRange` inside `Types.nthField`, which names nothing.
+
+**The scan's reformat path had never run, and a one-column row is what reaches it.** `ToRows` passes the
+sequence straight through when the physical format is the one the element type already has, which is every
+table the suite had. `JavaRowFormat.optimize` turning a one-field CUSTOM row into SCALAR is what makes the two
+differ, and the path then held two defects at once: the row parameter was declared from the element *class*,
+and the selector returned Calcite's java row class where a sequence of this convention states the **boxed**
+one — `int` against `java.lang.Integer`. Calcite has nowhere for the second to show, there being no
+`Enumerable<int>` in Java and javac inserting the conversion at the boundary. `ShouldReadARowOfOneColumn`
+holds both. **A one-column row has now broken this convention three times**; add one to any new node's tests.
+
+**`EnumUtils.convert` will not cast to a record type, and says nothing about it.** `Types.needTypeCast`
+answers false for any `RecordType`, so the operand comes back unchanged. That is right where a record type is
+a variable's declared type and wrong where a value is an element of an `Object[]` — the window's partition
+array — and Calcite never meets it, a row of a class handing it a `Class`. Both windows write the cast
+themselves for a `ClrRecordType` and for nothing else; a synthetic record still gets none, which is Calcite's
+behaviour whether or not it is Calcite's intent.
+
+**Which of the two tables a type gets is `ClrTypeMapper.IsObjectRow`, and neither condition is taste.** Every
+member has to be one Calcite reads as it stands, because a field read of an object row is
+`Expression.Property` with nowhere to put a conversion; and the type has to have a constructor taking every
+member, because `CUSTOM.record` rebuilds a row with `new_(clazz, …)`. A positional record passes both and
+keeps its instances. Anything else — a `decimal`, a `DateTime`, an `int?`, or a class of settable properties
+— gets `ClrProjectingTable`, which reads each object once into an `object?[]` through a compiled
+`ClrRowConverter` and gives up object identity to do it. **A member is never silently dropped and never
+silently zero-column**: what cannot be converted is refused by name.
+
+**`ClrValues` is the adapter, and what each conversion answers is `getJavaClass`'s to say** — TIMESTAMP is a
+`long` of milliseconds, DATE an `int` of days, TIME an `int` of milliseconds in the day. The one policy in it
+is `DecimalScale`, six: a .NET `decimal` carries its scale per value and a column has one for all its rows,
+and the *normalisation* matters more than the number, because a group key is compared with
+`BigDecimal.equals`, which is scale sensitive — `1.10m` and `1.1m` would group apart otherwise.
+`ClrProjectingTableTests` asserts every conversion by comparing the column to the SQL literal it was written
+from, so **Calcite is the oracle and not arithmetic repeated in the test**; asserting the epoch offset would
+be the same sum `ClrValues` does, wrong the same way.
+
+**Nullability is Java's — a reference is nullable, a value type is not — deliberately.** The NRT annotations
+would give a better row type, `string` and `string?` differing where Java has to call every reference
+nullable, and nothing enforces them at run time. NOT NULL is a promise the planner generates code against, so
+reading them makes the row type a claim about the source rather than a fact about it. `int?` is the exception
+that costs nothing: it is a *type*, so it is honoured, and it is the one thing .NET says here that Java
+cannot.
 
 **`JavaCast` is for what Java the language converts and an expression tree will not** — boxing, unboxing,
 numeric promotion, `byte` sign extension. It is not a way to make one type into another where they ought

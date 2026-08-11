@@ -133,7 +133,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             // the getters registered below are ones Calcite's Rex translation reads the outer row through,
             // so they are given their physical type, built here from the three values ours carries
             var leftCalcite = PhysTypeImpl.of(implementor.TypeFactory, leftResult.PhysType.RelRowType, leftResult.PhysType.Format, false);
-            var corrVarType = leftCalcite.getJavaRowType();
+            var corrVarType = leftResult.PhysType.JavaRowType;
             var corrArgList = J.Expressions.parameter(java.lang.reflect.Modifier.FINAL, (java.lang.reflect.Type)(java.lang.Class)typeof(java.util.List), "corrList");
             var listParameter = Expression.Parameter(typeof(java.util.List), "corrList");
             implementor.Translator.Bind(corrArgList, listParameter);
