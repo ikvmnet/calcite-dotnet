@@ -364,6 +364,99 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
+        /// Every handler interface, which is how many a query asks for.
+        /// </summary>
+        static Type[] HandlerInterfaces()
+        {
+            return typeof(BuiltInMetadata).GetNestedTypes()
+                .Select(t => t.GetNestedType("Handler"))
+                .Where(t => t is not null)
+                .ToArray()!;
+        }
+
+        /// <summary>
+        /// Asking for a handler answers the handler, not a stand-in.
+        /// </summary>
+        /// <remarks>
+        /// Janino's provider answers <c>handler</c> with a <c>java.lang.reflect.Proxy</c> that throws, so
+        /// that a Java compile is deferred until a statement proves it needs one. Nothing here is worth
+        /// deferring, and the proxy was not free: a query builds one per handler interface, and the planner
+        /// builds a query per rule transformation.
+        /// </remarks>
+        [TestMethod]
+        public void Should_answer_with_the_handler_itself()
+        {
+            var handlerClass = (java.lang.Class)typeof(BuiltInMetadata.RowCount.Handler);
+
+            var handler = ClrRelMetadataProvider.Default.handler(handlerClass);
+
+            StringAssert.StartsWith(handler.GetType().Name, "GeneratedMetadata_");
+            Assert.AreSame(handler, ClrRelMetadataProvider.Default.revise(handlerClass));
+        }
+
+        /// <summary>
+        /// Returns an argument for <paramref name="parameter"/>, so that a method can be called at all.
+        /// </summary>
+        static object? Argument(ParameterInfo parameter, RelNode rel, RelMetadataQuery mq)
+        {
+            var type = parameter.ParameterType;
+
+            if (typeof(RelNode).IsAssignableFrom(type))
+                return rel;
+            if (type == typeof(RelMetadataQuery))
+                return mq;
+            if (type == typeof(int))
+                return 0;
+            if (type == typeof(bool))
+                return false;
+            if (type == typeof(ImmutableBitSet))
+                return ImmutableBitSet.of(0);
+            if (typeof(java.lang.Enum).IsAssignableFrom(type))
+                return ((Array)type.GetMethod("values", BindingFlags.Public | BindingFlags.Static)!.Invoke(null, null)!).GetValue(0);
+
+            return null;
+        }
+
+        /// <summary>
+        /// Every method of every handler interface is emitted correctly and answers what Janino's answers.
+        /// </summary>
+        /// <remarks>
+        /// A body that is emitted but never called is never verified: the runtime resolves it on the first
+        /// call, and malformed IL surfaces as <c>InvalidProgramException</c> then and not before. Three of
+        /// the interfaces — Measure, FunctionalDependency and InputFieldsUsed — are reached by no query in
+        /// this suite, so this calls all of them by hand rather than waiting for one that does.
+        /// </remarks>
+        [TestMethod]
+        public void Should_emit_every_handler_method_callably()
+        {
+            var cluster = Cluster();
+            var rel = Plan(cluster);
+
+            var differences = new List<string>();
+
+            foreach (var handlerInterface in HandlerInterfaces())
+            {
+                var handlerClass = (java.lang.Class)handlerInterface;
+                var clr = ClrRelMetadataProvider.Default.revise(handlerClass);
+                var janino = JaninoRelMetadataProvider.DEFAULT.revise(handlerClass);
+
+                foreach (var method in handlerInterface.GetMethods().Where(m => m.IsAbstract && !m.IsStatic))
+                {
+                    var clrQuery = new RelMetadataQuery(ClrRelMetadataProvider.Default);
+                    var janinoQuery = new RelMetadataQuery(JaninoRelMetadataProvider.DEFAULT);
+
+                    var ours = Answer(_ => method.Invoke(clr, method.GetParameters().Select(p => Argument(p, rel, clrQuery)).ToArray()), clrQuery);
+                    var theirs = Answer(_ => method.Invoke(janino, method.GetParameters().Select(p => Argument(p, rel, janinoQuery)).ToArray()), janinoQuery);
+
+                    if (ours != theirs)
+                        differences.Add($"{handlerInterface.DeclaringType!.Name}.{method.Name}: janino={theirs} clr={ours}");
+                }
+            }
+
+            Assert.AreEqual(0, differences.Count, string.Join(Environment.NewLine, differences));
+        }
+
+        /// <summary>
         /// A handler that asks the question it is answering.
         /// </summary>
         public class CyclicRowCount : MetadataHandler
