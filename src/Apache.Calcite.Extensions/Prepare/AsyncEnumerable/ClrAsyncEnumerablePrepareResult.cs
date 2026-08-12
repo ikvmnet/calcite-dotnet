@@ -16,11 +16,7 @@ namespace Apache.Calcite.Extensions.Prepare.AsyncEnumerable
     /// <summary>
     /// A statement of the <see cref="ClrAsyncEnumerableConvention"/> calling convention, prepared and compiled.
     /// </summary>
-    /// <remarks>
-    /// What <c>CalcitePreparingStmt.implement</c> returns from its anonymous <c>PreparedResultImpl</c>,
-    /// carrying an <see cref="IClrAsyncBindable"/> where that carries a <c>Bindable</c>.
-    /// </remarks>
-    sealed class ClrAsyncEnumerablePrepareResult : ClrPrepareResult
+    sealed class ClrAsyncEnumerablePrepareResult : ClrPrepare.PreparedResultImpl
     {
 
         /// <summary>
@@ -35,11 +31,20 @@ namespace Apache.Calcite.Extensions.Prepare.AsyncEnumerable
             TableModify.Operation? tableModOp,
             bool isDml,
             IClrAsyncBindable bindable,
-            java.lang.reflect.Type javaElementType) :
+            System.Type elementType) :
             base(rowType, parameterRowType, fieldOrigins, collations, rootRel, tableModOp, isDml)
         {
             Bindable = bindable ?? throw new ArgumentNullException(nameof(bindable));
-            this.javaElementType = javaElementType ?? throw new ArgumentNullException(nameof(javaElementType));
+            this.elementType = elementType ?? throw new ArgumentNullException(nameof(elementType));
+        }
+
+        /// <inheritdoc />
+        public override string Code => throw new java.lang.UnsupportedOperationException();
+
+        /// <inheritdoc />
+        public override Apache.Calcite.Extensions.Runtime.IClrBindableBase GetBindable(org.apache.calcite.avatica.Meta.CursorFactory cursorFactory)
+        {
+            return Bindable;
         }
 
         /// <summary>
@@ -48,14 +53,9 @@ namespace Apache.Calcite.Extensions.Prepare.AsyncEnumerable
         public IClrAsyncBindable Bindable { get; }
 
         /// <inheritdoc />
-        /// <remarks>
-        /// The type factory's own answer, kept apart from the bindable's. A compiled plan states its rows in
-        /// CLR types; <c>Meta.CursorFactory.deduce</c> wants the <c>java.lang.Class</c> the row type was
-        /// built from, and converting one back would be answering a question with a translation of itself.
-        /// </remarks>
-        public override java.lang.reflect.Type? ElementType => javaElementType;
+        public override System.Type? ElementType => elementType;
 
-        readonly java.lang.reflect.Type javaElementType;
+        readonly System.Type elementType;
 
     }
 

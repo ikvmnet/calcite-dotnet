@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 
+using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Prepare;
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -30,6 +32,18 @@ namespace Apache.Calcite.Tests
     {
 
         /// <summary>
+        /// Puts a convention's rules on the planner the plan was built with, which is the planner
+        /// <c>Prepare.optimize</c> reads off the root and therefore the one that chooses.
+        /// </summary>
+        static RelNode Stocked(RelNode rel, bool async = false)
+        {
+            foreach (var rule in async ? ClrAsyncEnumerableRules.Rules() : ClrEnumerableRules.Rules())
+                rel.getCluster().getPlanner().addRule(rule);
+
+            return rel;
+        }
+
+        /// <summary>
         /// Builds a plan with <see cref="RelBuilder"/>, runs it, and renders its rows.
         /// </summary>
         /// <param name="build"></param>
@@ -42,8 +56,8 @@ namespace Apache.Calcite.Tests
                     .defaultSchema(rootSchema.plus())
                     .build();
 
-                var rel = build(RelBuilder.create(config));
-                var signature = new ClrPrepareImpl().PrepareRel(context, rel, -1);
+                var rel = Stocked(build(RelBuilder.create(config)));
+                var signature = new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of(rel), typeof(object[]), -1);
 
                 var rows = new List<string>();
                 foreach (var row in signature.Bind(context.getDataContext()))
@@ -111,17 +125,53 @@ namespace Apache.Calcite.Tests
             ClrPrepareFixture.WithContext("", (context, rootSchema) =>
             {
                 var config = Frameworks.newConfigBuilder().defaultSchema(rootSchema.plus()).build();
-                var rel = RelBuilder.create(config).scan("SALES").build();
+                var rel = Stocked(RelBuilder.create(config).scan("SALES").build());
 
-                var signature = new ClrPrepareImpl().PrepareRel(context, rel, -1);
+                var signature = new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of(rel), typeof(object[]), -1);
 
                 Assert.AreEqual(0, signature.Parameters.size());
                 Assert.AreEqual(nameof(org.apache.calcite.avatica.Meta.StatementType.SELECT), signature.StatementType.name());
                 Assert.AreEqual(4, signature.Columns.size());
-                Assert.IsNotNull(signature.Bindable);
+                Assert.IsNotNull(signature.Bind(context.getDataContext()));
 
                 return 0;
             });
+        }
+
+        /// <summary>
+        /// A built plan reaches the asynchronous convention too.
+        /// </summary>
+        /// <remarks>
+        /// <c>PrepareRel</c> named <c>ClrEnumerableRules</c> and constructed <c>ClrEnumerablePreparingStmt</c>
+        /// directly, so it planned synchronously whatever a caller asked for — it calls neither
+        /// <c>CreatePlanner</c> nor <c>GetPreparingStmt</c>, which is where the convention is chosen, and the
+        /// commit that wired the asynchronous convention through the pipeline therefore went straight past
+        /// it. A connection plans asynchronously by default, so <c>BindAsync</c> would have refused the
+        /// signature this returned.
+        /// </remarks>
+        [TestMethod]
+        public async System.Threading.Tasks.Task Should_run_a_built_plan_asynchronously()
+        {
+            var rows = await ClrPrepareFixture.WithContext("", (context, rootSchema) =>
+            {
+                var config = Frameworks.newConfigBuilder().defaultSchema(rootSchema.plus()).build();
+                var rel = Stocked(RelBuilder.create(config).scan("NUMS").build(), async: true);
+
+                var signature = new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of(rel), typeof(object[]), -1, true);
+
+                return Collect(signature.BindAsync(context.getDataContext()));
+            });
+
+            CollectionAssert.AreEquivalent(new[] { "3", "1", "2" }, rows);
+
+            static async System.Threading.Tasks.Task<List<string>> Collect(IAsyncEnumerable<object> source)
+            {
+                var rows = new List<string>();
+                await foreach (var row in source)
+                    rows.Add(row is object[] a ? string.Join("|", System.Linq.Enumerable.Select(a, c => c?.ToString() ?? "null")) : row?.ToString() ?? "null");
+
+                return rows;
+            }
         }
 
         /// <summary>
@@ -133,9 +183,9 @@ namespace Apache.Calcite.Tests
             var rows = ClrPrepareFixture.WithContext("", (context, rootSchema) =>
             {
                 var config = Frameworks.newConfigBuilder().defaultSchema(rootSchema.plus()).build();
-                var rel = RelBuilder.create(config).scan("SALES").build();
+                var rel = Stocked(RelBuilder.create(config).scan("SALES").build());
 
-                var signature = new ClrPrepareImpl().PrepareRel(context, rel, 2);
+                var signature = new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of(rel), typeof(object[]), 2);
 
                 var list = new List<object>();
                 foreach (var row in signature.Bind(context.getDataContext()))

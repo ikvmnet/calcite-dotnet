@@ -1,12 +1,11 @@
 using System;
 using System.Collections.Generic;
 
-using Apache.Calcite.Extensions;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Prepare.AsyncEnumerable;
-using Apache.Calcite.Extensions.Runtime;
-using Apache.Calcite.Extensions.Rel.Metadata;
 using Apache.Calcite.Extensions.Prepare.Enumerable;
+using Apache.Calcite.Extensions.Rel.Metadata;
+using Apache.Calcite.Extensions.Runtime;
 
 using org.apache.calcite;
 using org.apache.calcite.adapter.java;
@@ -15,14 +14,15 @@ using org.apache.calcite.config;
 using org.apache.calcite.jdbc;
 using org.apache.calcite.plan;
 using org.apache.calcite.prepare;
+using org.apache.calcite.rel;
 using org.apache.calcite.rel.metadata;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.rex;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.parser;
 using org.apache.calcite.sql.type;
+using org.apache.calcite.sql.validate;
 using org.apache.calcite.sql2rel;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Extensions.Prepare
 {
@@ -31,76 +31,44 @@ namespace Apache.Calcite.Extensions.Prepare
     /// Parses, plans and compiles a statement into the <see cref="ClrEnumerableConvention"/> calling
     /// convention.
     /// </summary>
-    /// <remarks>
-    /// The counterpart of <c>CalcitePrepareImpl</c>'s driver — <c>prepare_</c> and <c>prepare2_</c> — and
-    /// nothing more. <c>Prepare</c> and <c>CalcitePrepareImpl.CalcitePreparingStmt</c> are reused as they
-    /// are, so validation, sql-to-rel, field trimming, view expansion, materialization registration and
-    /// <c>optimize</c> are Calcite's, untouched.
-    ///
-    /// <para>What is replaced is the outer driver, because its one exit is a <c>Bindable</c>: it calls
-    /// <c>preparedResult.getBindable(cursorFactory)</c> and puts the result in a <c>CalciteSignature</c>,
-    /// whose only row-producing member binds it to a linq4j <c>Enumerable</c>. A plan of this convention is
-    /// a compiled delegate, so it leaves through <see cref="ClrSignature"/> instead.</para>
-    ///
-    /// <para>Nothing of Calcite's prepare is inherited. <c>Prepare.implement</c> is declared to return a
-    /// <c>PreparedResult</c>, whose reason for existing is <c>getBindable</c> — a linq4j <c>Enumerable</c> —
-    /// and these conventions compile to a delegate. So the pipeline is <see cref="ClrPreparingStmt"/> and
-    /// the factory methods below are ours, which is also what lets a second convention reuse them:
-    /// everything here is the same for both, and only the preparing statement differs.</para>
-    ///
-    /// <para>The type-and-column metadata below is ported rather than reused: every piece of it is a
-    /// private static of <c>CalcitePrepareImpl</c>.</para>
-    /// </remarks>
-    public class ClrPrepareImpl
+    public class ClrPrepareImpl : IClrPrepare
     {
 
         /// <summary>
-        /// Plans and compiles one statement.
+        /// Plans and compiles one query.
         /// </summary>
         /// <param name="context">The schema, type factory and configuration to plan against.</param>
-        /// <param name="sql">The statement's text.</param>
+        /// <param name="query">The statement's text, or a plan that was built rather than parsed.</param>
         /// <param name="elementType">What a caller wants a row to be. <c>Object[]</c> asks for an array.</param>
         /// <param name="maxRowCount">The row limit, or a negative number for none.</param>
         /// <returns>The planned statement.</returns>
-        /// <remarks>
-        /// <c>CalcitePrepareImpl.prepare_</c> loops over <c>createPlannerFactories</c>, trying each planner
-        /// until one does not throw <c>CannotPlanException</c>, and rethrowing the last failure when none
-        /// does. <see cref="CreatePlannerFactories"/> answers one factory, as Calcite's does; a subclass
-        /// that answers several gets the fallback.
-        /// </remarks>
-        public ClrSignature Prepare(CalcitePrepare.Context context, string sql, java.lang.reflect.Type elementType, long maxRowCount)
+        public IClrPrepare.Signature PrepareSql(CalcitePrepare.Context context, IClrPrepare.Query query, System.Type elementType, long maxRowCount)
         {
-            return Prepare(context, sql, elementType, maxRowCount, false);
+            return PrepareSql(context, query, elementType, maxRowCount, false);
         }
 
         /// <summary>
-        /// Plans and compiles one statement into one of the two conventions.
+        /// Plans and compiles one query into one of the two conventions.
         /// </summary>
         /// <param name="context">The schema, type factory and configuration to plan against.</param>
-        /// <param name="sql">The statement's text.</param>
+        /// <param name="query">The statement's text, or a plan that was built rather than parsed.</param>
         /// <param name="elementType">What a caller wants a row to be. <c>Object[]</c> asks for an array.</param>
         /// <param name="maxRowCount">The row limit, or a negative number for none.</param>
         /// <param name="async">Whether to prepare into the asynchronous convention.</param>
         /// <returns>The planned statement.</returns>
-        /// <remarks>
-        /// The whole of what the two conventions differ by here is which rules go on the planner and which
-        /// preparing statement is built, which is what <c>ClrPreparingStmt</c> already scopes: the
-        /// convention, the program, the root traits and the compiler are a convention's own and nothing else
-        /// is. Parsing, DDL, the statement kind, the parameter and column metadata and the cursor factory
-        /// are shared, and this is the same method for both rather than a second copy of it.
-        ///
-        /// <para><b>Neither plan can fall through to the other convention here</b>, and that is a matter of
-        /// which rules are registered rather than of what exists. <see cref="CreatePlanner"/> puts one
-        /// convention's rules on the planner and not the other's, so although a converter exists in each
-        /// direction, no node of the other convention is ever produced for one to match. A query touching a
-        /// table that cannot produce rows asynchronously therefore does not plan asynchronously — the planner
-        /// throws, rather than the caller being handed a plan that would block a thread per row while looking
-        /// asynchronous. A caller that wants the synchronous plan asks for it.</para>
-        /// </remarks>
-        public ClrSignature Prepare(CalcitePrepare.Context context, string sql, java.lang.reflect.Type elementType, long maxRowCount, bool async)
+        public IClrPrepare.Signature PrepareSql(CalcitePrepare.Context context, IClrPrepare.Query query, System.Type elementType, long maxRowCount, bool async)
         {
             ArgumentNullException.ThrowIfNull(context);
-            ArgumentNullException.ThrowIfNull(sql);
+            ArgumentNullException.ThrowIfNull(query);
+
+            return Prepare_(context, query, elementType, maxRowCount, async);
+        }
+
+        /// <summary>
+        /// Tries each planner in turn, and rethrows the last failure when none can plan the statement.
+        /// </summary>
+        IClrPrepare.Signature Prepare_(CalcitePrepare.Context context, IClrPrepare.Query query, System.Type elementType, long maxRowCount, bool async)
+        {
 
             var typeFactory = context.getTypeFactory();
             var catalogReader = new CalciteCatalogReader(
@@ -122,7 +90,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 try
                 {
                     var preparingStmt = GetPreparingStmt(context, elementType, catalogReader, planner, async);
-                    return Prepare2(context, sql, elementType, maxRowCount, catalogReader, preparingStmt);
+                    return Prepare2_(context, query, elementType, maxRowCount, catalogReader, preparingStmt);
                 }
                 catch (RelOptPlanner.CannotPlanException e)
                 {
@@ -134,68 +102,10 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <summary>
-        /// Plans and compiles a relational expression that was built rather than parsed.
-        /// </summary>
-        /// <param name="context">The schema, type factory and configuration to plan against.</param>
-        /// <param name="rel">The plan to run.</param>
-        /// <param name="maxRowCount">The row limit, or a negative number for none.</param>
-        /// <returns>The planned statement.</returns>
-        /// <remarks>
-        /// <c>CalcitePrepareImpl.prepare2_</c>'s <c>query.rel</c> branch, which Calcite reaches through
-        /// <c>RelRunner</c>. The result is described from the plan's own row type, and the statement is
-        /// always a SELECT — a plan carries no statement kind.
-        /// </remarks>
-        public ClrSignature PrepareRel(CalcitePrepare.Context context, org.apache.calcite.rel.RelNode rel, long maxRowCount)
-        {
-            ArgumentNullException.ThrowIfNull(context);
-            ArgumentNullException.ThrowIfNull(rel);
-
-            var typeFactory = context.getTypeFactory();
-            var catalogReader = new CalciteCatalogReader(
-                context.getRootSchema(),
-                context.getDefaultSchemaPath(),
-                typeFactory,
-                context.config());
-
-            // the plan arrives in its caller's cluster, and Optimize runs on that cluster's planner —
-            // Prepare.optimize reads the planner off the root rather than being handed one. So the rules go
-            // on that planner rather than on one of our own, and the preparing statement shares the cluster,
-            // or field trimming would build nodes the planner has never seen. PlannerRulesProgram installs
-            // nothing by design, so if they are not here they are nowhere.
-            var cluster = rel.getCluster();
-            var planner = cluster.getPlanner();
-
-            RelOptUtil.registerDefaultRules(planner, context.config().materializationsEnabled(), false);
-
-            foreach (var rule in ClrEnumerableRules.Rules())
-                planner.addRule(rule);
-
-            var preparingStmt = new ClrEnumerablePreparingStmt(
-                context,
-                catalogReader,
-                context.getRootSchema(),
-                cluster,
-                CreateConvertletTable(),
-                ClrEnumerablePrefer.Array);
-
-            var x = rel.getRowType();
-            var preparedResult = preparingStmt.PrepareRel(rel, x);
-
-            return Describe(context, org.apache.calcite.plan.RelOptUtil.toString(rel), x, maxRowCount,
-                preparingStmt, preparedResult, Meta.StatementType.SELECT);
-        }
-
-        /// <summary>
         /// Creates the planner, with Calcite's default rules and this convention's.
         /// </summary>
         /// <param name="context"></param>
         /// <returns></returns>
-        /// <remarks>
-        /// Calcite's planner with this convention's rules added. Calcite's own stay on it, so a statement
-        /// this convention has no node for is still planned and run — implemented in
-        /// <c>EnumerableConvention</c>, with a converter carrying its rows. That is how a table
-        /// modification works here.
-        /// </remarks>
         protected virtual RelOptPlanner CreatePlanner(CalcitePrepare.Context context, bool async = false)
         {
             return CreatePlanner(context, null, null, async);
@@ -211,10 +121,6 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <param name="costFactory">The cost model, or <see langword="null"/> for the planner's own.</param>
         /// <param name="async">Whether to plan into the asynchronous convention.</param>
         /// <returns></returns>
-        /// <remarks>
-        /// <c>CalcitePrepareImpl.createPlanner(Context, Context, RelOptCostFactory)</c>, which the one above
-        /// calls with neither.
-        /// </remarks>
         protected virtual RelOptPlanner CreatePlanner(
             CalcitePrepare.Context context,
             org.apache.calcite.plan.Context? externalContext,
@@ -255,12 +161,6 @@ namespace Apache.Calcite.Extensions.Prepare
         /// </summary>
         /// <param name="async">Whether the planners are to plan into the asynchronous convention.</param>
         /// <returns></returns>
-        /// <remarks>
-        /// <c>CalcitePrepareImpl.createPlannerFactories</c>. The collection must not be empty and no factory
-        /// may answer null. More than one lets a subclass try a smaller, faster rule set first and fall back
-        /// to a costlier planner for a query it cannot plan; <see cref="Prepare"/> runs that fallback.
-        /// Calcite's factory is a linq4j <c>Function1</c> and this one is a delegate.
-        /// </remarks>
         protected virtual IReadOnlyList<Func<CalcitePrepare.Context, RelOptPlanner>> CreatePlannerFactories(bool async)
         {
             return [context => CreatePlanner(context, async)];
@@ -277,24 +177,6 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Factory method for cluster.
         /// </summary>
-        /// <remarks>
-        /// The cluster answers metadata through <see cref="ClrRelMetadataProvider"/> rather than
-        /// <c>JaninoRelMetadataProvider</c>, which <c>RelOptCluster.create</c> reaches by way of
-        /// <c>RelMetadataQuery.instance()</c>. The supplier is the only way in:
-        /// <c>RelMetadataQueryBase.THREAD_PROVIDERS</c> is typed to Janino's provider.
-        ///
-        /// <para>The provider is <c>DefaultRelMetadataProvider.INSTANCE</c>, which is the only one Calcite's
-        /// own prepare uses: <c>Prepare.getProgram</c> answers <c>Programs.standard()</c>, there is no
-        /// connection property for one, and no adapter ships one. An adapter's metadata arrives by the routes
-        /// that provider already reads — <c>estimateRowCount</c> and <c>computeSelfCost</c> on its rels, and
-        /// its tables' <c>Statistic</c>. Calcite's provider-level routes are dead upstream as well:
-        /// <c>setMetadataProvider</c> and <c>Programs.of(…, provider)</c> reach only
-        /// <c>THREAD_PROVIDERS</c>, which nothing but <c>RelMetadataQuery.instance()</c> reads, and the
-        /// providers a planner registers — <c>VolcanoRelMetadataProvider</c> and
-        /// <c>HepRelMetadataProvider</c> — are deprecated and answer <c>handlers</c> with an empty list.
-        /// <c>HepRelVertex</c> is a <c>DelegatingMetadataRel</c> now, and a <c>RelSubset</c> is answered by
-        /// the overloads the <c>RelMd*</c> classes declare for it.</para>
-        /// </remarks>
         protected virtual RelOptCluster CreateCluster(RelOptPlanner planner, RexBuilder rexBuilder)
         {
             var cluster = RelOptCluster.create(planner, rexBuilder);
@@ -319,10 +201,6 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <param name="sql"></param>
         /// <param name="parserConfig"></param>
         /// <returns></returns>
-        /// <remarks>
-        /// Calcite has a third overload taking a <c>SqlParser.ConfigBuilder</c>, deprecated for removal
-        /// before 2.0 along with the builder it serves; it is not written.
-        /// </remarks>
         protected virtual SqlParser CreateParser(string sql, SqlParser.Config parserConfig)
         {
             return SqlParser.create(sql, parserConfig);
@@ -339,11 +217,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Executes a DDL statement.
         /// </summary>
-        /// <remarks>
-        /// <c>CalcitePrepareImpl.executeDdl</c>: the parser factory off the configuration, then its
-        /// executor. It reads nothing else of the prepare.
-        /// </remarks>
-        void ExecuteDdl(CalcitePrepare.Context context, SqlNode node)
+        public virtual void ExecuteDdl(CalcitePrepare.Context context, SqlNode node)
         {
             var config = context.config();
             var parserFactory = (SqlParserImplFactory)config.parserFactory((java.lang.Class)typeof(SqlParserImplFactory), org.apache.calcite.sql.parser.impl.SqlParserImpl.FACTORY);
@@ -358,14 +232,10 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <param name="catalogReader"></param>
         /// <param name="planner"></param>
         /// <returns></returns>
-        /// <remarks>
-        /// <c>CalcitePrepareImpl.getPreparingStmt</c>, deciding the row format the same way — an
-        /// <c>Object[]</c> element type asks for an array and anything else asks for a custom row.
-        /// </remarks>
-        protected virtual ClrPreparingStmt GetPreparingStmt(CalcitePrepare.Context context, java.lang.reflect.Type elementType, CalciteCatalogReader catalogReader, RelOptPlanner planner, bool async = false)
+        protected virtual PreparingStmt GetPreparingStmt(CalcitePrepare.Context context, System.Type elementType, CalciteCatalogReader catalogReader, RelOptPlanner planner, bool async = false)
         {
             var typeFactory = context.getTypeFactory();
-            var prefer = elementType == (java.lang.reflect.Type)(java.lang.Class)typeof(object[])
+            var prefer = elementType == typeof(object[])
                 ? ClrEnumerablePrefer.Array
                 : ClrEnumerablePrefer.Custom;
 
@@ -373,6 +243,7 @@ namespace Apache.Calcite.Extensions.Prepare
 
             if (async)
                 return new ClrAsyncEnumerablePreparingStmt(
+                    this,
                     context,
                     catalogReader,
                     context.getRootSchema(),
@@ -381,6 +252,7 @@ namespace Apache.Calcite.Extensions.Prepare
                     prefer);
 
             return new ClrEnumerablePreparingStmt(
+                this,
                 context,
                 catalogReader,
                 context.getRootSchema(),
@@ -392,99 +264,87 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Parses, plans, compiles and describes one statement.
         /// </summary>
-        /// <remarks>
-        /// <c>CalcitePrepareImpl.prepare2_</c>, in its order, less the <c>queryable</c> and <c>rel</c>
-        /// branches — this pipeline is reached with SQL text and nothing else.
-        /// </remarks>
-        ClrSignature Prepare2(CalcitePrepare.Context context, string sql, java.lang.reflect.Type elementType, long maxRowCount, CalciteCatalogReader catalogReader, ClrPreparingStmt preparingStmt)
+        IClrPrepare.Signature Prepare2_(CalcitePrepare.Context context, IClrPrepare.Query query, System.Type elementType, long maxRowCount, CalciteCatalogReader catalogReader, PreparingStmt preparingStmt)
         {
             var typeFactory = context.getTypeFactory();
             var config = context.config();
 
-            var parseConfig = ParserConfig()
-                .withQuotedCasing(config.quotedCasing())
-                .withUnquotedCasing(config.unquotedCasing())
-                .withQuoting(config.quoting())
-                .withConformance((org.apache.calcite.sql.validate.SqlConformance)config.conformance())
-                .withCaseSensitive(config.caseSensitive());
-
-            var parserFactory = (SqlParserImplFactory)config.parserFactory((java.lang.Class)typeof(SqlParserImplFactory), null);
-            if (parserFactory != null)
-                parseConfig = parseConfig.withParserFactory(parserFactory);
-
-            SqlNode sqlNode;
-            try
-            {
-                sqlNode = CreateParser(sql, parseConfig).parseStmt();
-            }
-            catch (SqlParseException e)
-            {
-                throw new java.lang.RuntimeException("parse failed: " + e.getMessage(), e);
-            }
-
-            var statementType = GetStatementType(sqlNode.getKind());
-
-            org.apache.calcite.runtime.Hook.PARSE_TREE.run(new object[] { sql, sqlNode });
-
-            // a DDL statement has already taken effect once this returns: it is executed here rather than
-            // planned, exactly as Calcite does, and there is nothing left to bind
-            if (sqlNode.getKind().belongsTo(SqlKind.DDL))
-            {
-                ExecuteDdl(context, sqlNode);
-
-                return new ClrSignature(
-                    sql,
-                    com.google.common.collect.ImmutableList.of(),
-                    new java.util.LinkedHashMap(),
-                    null,
-                    com.google.common.collect.ImmutableList.of(),
-                    Meta.CursorFactory.OBJECT,
-                    null,
-                    com.google.common.collect.ImmutableList.of(),
-                    -1,
-                    null,
-                    Meta.StatementType.OTHER_DDL);
-            }
-
-            var preparedResult = preparingStmt.PrepareSql(sqlNode, sqlNode, true);
-
             RelDataType x;
-            switch (sqlNode.getKind().name())
+            ClrPrepare.IPreparedResult preparedResult;
+            Meta.StatementType statementType;
+
+            if (query.Sql is { } sql)
             {
-                case nameof(SqlKind.INSERT):
-                case nameof(SqlKind.DELETE):
-                case nameof(SqlKind.UPDATE):
-                case nameof(SqlKind.MERGE):
-                case nameof(SqlKind.EXPLAIN):
-                    // getValidatedNodeType is wrong for DML, which is Calcite's own note
-                    x = RelOptUtil.createDmlRowType(sqlNode.getKind(), typeFactory);
-                    break;
-                default:
-                    x = preparingStmt.SqlValidator.getValidatedNodeType(sqlNode);
-                    break;
+                var parseConfig = ParserConfig()
+                    .withQuotedCasing(config.quotedCasing())
+                    .withUnquotedCasing(config.unquotedCasing())
+                    .withQuoting(config.quoting())
+                    .withConformance((org.apache.calcite.sql.validate.SqlConformance)config.conformance())
+                    .withCaseSensitive(config.caseSensitive());
+
+                var parserFactory = (SqlParserImplFactory)config.parserFactory((java.lang.Class)typeof(SqlParserImplFactory), null);
+                if (parserFactory != null)
+                    parseConfig = parseConfig.withParserFactory(parserFactory);
+
+                SqlNode sqlNode;
+                try
+                {
+                    sqlNode = CreateParser(sql, parseConfig).parseStmt();
+                }
+                catch (SqlParseException e)
+                {
+                    throw new java.lang.RuntimeException("parse failed: " + e.getMessage(), e);
+                }
+
+                statementType = GetStatementType(sqlNode.getKind());
+
+                org.apache.calcite.runtime.Hook.PARSE_TREE.run(new object[] { sql, sqlNode });
+
+                // a DDL statement has already taken effect once this returns: it is executed here rather than
+                // planned, exactly as Calcite does, and there is nothing left to bind
+                if (sqlNode.getKind().belongsTo(SqlKind.DDL))
+                {
+                    ExecuteDdl(context, sqlNode);
+
+                    return new IClrPrepare.Signature(
+                        sql,
+                        com.google.common.collect.ImmutableList.of(),
+                        new java.util.LinkedHashMap(),
+                        null,
+                        com.google.common.collect.ImmutableList.of(),
+                        Meta.CursorFactory.OBJECT,
+                        null,
+                        com.google.common.collect.ImmutableList.of(),
+                        -1,
+                        null,
+                        Meta.StatementType.OTHER_DDL);
+                }
+
+                preparedResult = preparingStmt.PrepareSql(sqlNode, (java.lang.Class)typeof(java.lang.Object), preparingStmt.SqlValidator, true);
+
+                switch (sqlNode.getKind().name())
+                {
+                    case nameof(SqlKind.INSERT):
+                    case nameof(SqlKind.DELETE):
+                    case nameof(SqlKind.UPDATE):
+                    case nameof(SqlKind.MERGE):
+                    case nameof(SqlKind.EXPLAIN):
+                        // getValidatedNodeType is wrong for DML, which is Calcite's own note
+                        x = RelOptUtil.createDmlRowType(sqlNode.getKind(), typeFactory);
+                        break;
+                    default:
+                        x = preparingStmt.SqlValidator.getValidatedNodeType(sqlNode);
+                        break;
+                }
             }
+            else
+            {
+                var rel = query.Rel ?? throw new java.lang.IllegalStateException("a query is text or a plan");
 
-            return Describe(context, sql, x, maxRowCount, preparingStmt, preparedResult, statementType);
-        }
-
-        /// <summary>
-        /// Describes a prepared statement for a caller: its parameters, its columns, how a row is read back,
-        /// and the plan that produces the rows.
-        /// </summary>
-        /// <remarks>
-        /// The tail of <c>prepare2_</c>, shared by both entry points because a statement is described the
-        /// same way however its plan was arrived at.
-        /// </remarks>
-        ClrSignature Describe(
-            CalcitePrepare.Context context,
-            string sql,
-            RelDataType x,
-            long maxRowCount,
-            ClrPreparingStmt preparingStmt,
-            ClrPrepareResult preparedResult,
-            Meta.StatementType statementType)
-        {
-            var typeFactory = context.getTypeFactory();
+                x = rel.getRowType();
+                preparedResult = preparingStmt.PrepareRel(rel, x);
+                statementType = GetStatementType(preparedResult);
+            }
 
             var parameters = new java.util.ArrayList();
             for (var i = preparedResult.ParameterRowType.getFieldList().iterator(); i.hasNext();)
@@ -504,29 +364,26 @@ namespace Apache.Calcite.Extensions.Prepare
 
             var jdbcType = MakeStruct(typeFactory, x);
             var columns = GetColumnMetaDataList((JavaTypeFactory)typeFactory, x, jdbcType, preparedResult.FieldOrigins);
-            var cursorFactory = Meta.CursorFactory.deduce(columns, preparedResult.ElementType as java.lang.Class);
 
-            // an EXPLAIN never reaches Implement, so there is no plan behind it — the rendered text is the
-            // result, and the cursor factory decides whether the one row is an array or the text itself
-            IClrBindableBase? bindable = preparedResult switch
-            {
-                ClrEnumerablePrepareResult clr => clr.Bindable,
-                ClrAsyncEnumerablePrepareResult clr => clr.Bindable,
-                ClrExplainResult explain => new ClrExplainBindable(explain.Explanation, cursorFactory),
-                _ => throw new java.lang.IllegalStateException($"{preparedResult.GetType()} has no plan."),
-            };
+            // Typed is on PreparedResultImpl and not on the interface, so this tests for it before reading;
+            // an EXPLAIN has no element type and the factory is deduced from the columns alone. This is also
+            // the one place a row class leaves .NET: Meta.CursorFactory.deduce is Avatica's and takes a
+            // java.lang.Class, and everything above holds the CLR type.
+            var rowClass = (preparedResult as ClrPrepare.PreparedResultImpl)?.ElementType;
+            var resultClazz = rowClass is null ? null : ikvm.runtime.Util.getFriendlyClassFromType(rowClass);
+            var cursorFactory = Meta.CursorFactory.deduce(columns, resultClazz);
 
-            return new ClrSignature(
-                sql,
+            return new IClrPrepare.Signature(
+                query.Sql,
                 parameters,
                 preparingStmt.InternalParameters,
-                x,
+                jdbcType,
                 columns,
                 cursorFactory,
                 context.getRootSchema(),
-                preparedResult.Collations,
+                (preparedResult as ClrPrepare.PreparedResultImpl)?.Collations ?? (java.util.List)com.google.common.collect.ImmutableList.of(),
                 maxRowCount,
-                bindable,
+                preparedResult.GetBindable(cursorFactory),
                 statementType);
         }
 
@@ -543,6 +400,14 @@ namespace Apache.Calcite.Extensions.Prepare
             nameof(SqlKind.MERGE) => Meta.StatementType.IS_DML,
             _ => Meta.StatementType.SELECT,
         };
+
+        /// <summary>
+        /// Deduces the broad type of statement from a prepared result.
+        /// </summary>
+        static Meta.StatementType GetStatementType(ClrPrepare.IPreparedResult preparedResult)
+        {
+            return preparedResult.IsDml ? Meta.StatementType.IS_DML : Meta.StatementType.SELECT;
+        }
 
         /// <summary>
         /// Builds one <see cref="ColumnMetaData"/> per field.
@@ -568,7 +433,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// </summary>
         static ColumnMetaData MetaData(JavaTypeFactory typeFactory, int ordinal, string fieldName, RelDataType type, RelDataType? fieldType, java.util.List? origins)
         {
-            var avaticaType = AvaticaTypeOf(typeFactory, type, fieldType);
+            var avaticaType = AvaticaType(typeFactory, type, fieldType);
 
             return new ColumnMetaData(
                 ordinal,
@@ -596,7 +461,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Returns the Avatica type of a field, descending into a component or a struct.
         /// </summary>
-        static ColumnMetaData.AvaticaType AvaticaTypeOf(JavaTypeFactory typeFactory, RelDataType type, RelDataType? fieldType)
+        static ColumnMetaData.AvaticaType AvaticaType(JavaTypeFactory typeFactory, RelDataType type, RelDataType? fieldType)
         {
             string typeName;
             if (type is org.apache.calcite.sql.type.MeasureSqlType)
@@ -611,7 +476,7 @@ namespace Apache.Calcite.Extensions.Prepare
 
             if (type.getComponentType() != null)
             {
-                var componentType = AvaticaTypeOf(typeFactory, type.getComponentType(), null);
+                var componentType = AvaticaType(typeFactory, type.getComponentType(), null);
                 var clazz = typeFactory.getJavaClass(type.getComponentType());
                 var rep = ColumnMetaData.Rep.of(clazz) ?? throw new java.lang.IllegalStateException($"no Rep for {clazz}");
 
@@ -692,9 +557,6 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Returns the type name in string form, without precision, scale or nullability.
         /// </summary>
-        /// <remarks>
-        /// "DECIMAL" not "DECIMAL(7, 2)"; "INTEGER" not "JavaType(int)".
-        /// </remarks>
         static string GetTypeName(RelDataType type)
         {
             var sqlTypeName = type.getSqlTypeName();
@@ -723,6 +585,202 @@ namespace Apache.Calcite.Extensions.Prepare
         static RelDataType MakeStruct(RelDataTypeFactory typeFactory, RelDataType type)
         {
             return type.isStruct() ? type : typeFactory.builder().add("$0", type).build();
+        }
+
+
+        /// <summary>
+        /// A statement being prepared against a Calcite schema.
+        /// </summary>
+        public abstract class PreparingStmt : ClrPrepare, RelOptTable.ViewExpander
+        {
+
+            readonly ClrPrepareImpl prepare;
+            readonly CalciteSchema schema;
+            readonly RelOptCluster cluster;
+            readonly RexBuilder rexBuilder;
+            readonly JavaTypeFactory typeFactory;
+            readonly SqlRexConvertletTable convertletTable;
+
+            /// <summary>
+            /// The values the query reads through the <c>DataContext</c> rather than from the plan.
+            /// </summary>
+            readonly java.util.Map internalParameters = new java.util.LinkedHashMap();
+
+            SqlValidator? validator;
+
+            /// <summary>
+            /// Initializes a new instance.
+            /// </summary>
+            protected PreparingStmt(
+                ClrPrepareImpl prepare,
+                CalcitePrepare.Context context,
+                CalciteCatalogReader catalogReader,
+                CalciteSchema schema,
+                RelOptCluster cluster,
+                Convention resultConvention,
+                SqlRexConvertletTable convertletTable) :
+                base(context, catalogReader, resultConvention)
+            {
+                this.prepare = prepare ?? throw new ArgumentNullException(nameof(prepare));
+                this.schema = schema ?? throw new ArgumentNullException(nameof(schema));
+                this.cluster = cluster ?? throw new ArgumentNullException(nameof(cluster));
+                this.convertletTable = convertletTable ?? throw new ArgumentNullException(nameof(convertletTable));
+
+                rexBuilder = cluster.getRexBuilder();
+                typeFactory = (JavaTypeFactory)cluster.getTypeFactory();
+            }
+
+            /// <summary>
+            /// Gets the cluster the plan is built in.
+            /// </summary>
+            protected RelOptCluster Cluster => cluster;
+
+            /// <summary>
+            /// Gets the values the query reads through the <c>DataContext</c> rather than from the plan.
+            /// </summary>
+            public java.util.Map InternalParameters => internalParameters;
+
+            /// <inheritdoc />
+            protected internal override SqlValidator SqlValidator => validator ??= CreateSqlValidator(CatalogReader, c => c);
+
+            /// <summary>
+            /// Prepares a plan that was built rather than parsed.
+            /// </summary>
+            /// <param name="rel">The plan to run.</param>
+            /// <param name="resultType">The row type a caller wants the result described as.</param>
+            /// <returns>The compiled statement.</returns>
+            public ClrPrepare.IPreparedResult PrepareRel(RelNode rel, RelDataType resultType)
+            {
+                ArgumentNullException.ThrowIfNull(rel);
+                ArgumentNullException.ThrowIfNull(resultType);
+
+                Init((java.lang.Class)typeof(java.lang.Object));
+
+                var rowType = rel.getRowType();
+                var fields = org.apache.calcite.util.Pair.zip(
+                    org.apache.calcite.util.ImmutableIntList.identity(rowType.getFieldCount()),
+                    rowType.getFieldNames());
+
+                var collation = rel is org.apache.calcite.rel.core.Sort sort
+                    ? sort.collation
+                    : RelCollations.EMPTY;
+
+                var root = new RelRoot(rel, resultType, SqlKind.SELECT, fields, collation, com.google.common.collect.ImmutableList.of());
+
+                // no validation happened, so there is nothing to say about where a field came from or what
+                // parameters the statement takes — which is what Calcite records here too
+                var jdbcType = MakeStruct(rexBuilder.getTypeFactory(), resultType);
+                FieldOrigins = java.util.Collections.nCopies(jdbcType.getFieldCount(), null);
+                ParameterRowType = rexBuilder.getTypeFactory().builder().build();
+
+                root = root.withRel(FlattenTypes(root.rel, true));
+                root = TrimUnusedFields(root);
+
+                // empty for both, as Calcite's prepare_(Supplier, RelDataType) passes them: a plan that arrived
+                // built is not a candidate for substitution
+                root = Optimize(root, com.google.common.collect.ImmutableList.of(), com.google.common.collect.ImmutableList.of());
+
+                org.apache.calcite.runtime.Hook.PLAN_BEFORE_IMPLEMENTATION.run(root);
+
+                return Implement(root);
+            }
+
+            /// <inheritdoc />
+            protected override void Init(java.lang.Class runtimeContextClass)
+            {
+
+            }
+
+            /// <inheritdoc />
+            protected override java.util.List GetMaterializations()
+            {
+                return com.google.common.collect.ImmutableList.of();
+            }
+
+            /// <inheritdoc />
+            protected override java.util.List GetLattices()
+            {
+                return org.apache.calcite.schema.Schemas.getLatticeEntries(schema);
+            }
+
+            /// <inheritdoc />
+            public override RelNode FlattenTypes(RelNode rootRel, bool restructure)
+            {
+                return rootRel;
+            }
+
+            /// <inheritdoc />
+            protected override RelNode Decorrelate(SqlToRelConverter sqlToRelConverter, SqlNode query, RelNode rootRel)
+            {
+                return sqlToRelConverter.decorrelate(query, rootRel);
+            }
+
+            /// <inheritdoc />
+            protected override SqlToRelConverter GetSqlToRelConverter(SqlValidator validator, org.apache.calcite.prepare.Prepare.CatalogReader catalogReader, SqlToRelConverter.Config config)
+            {
+                config = config.withTopDownGeneralDecorrelationEnabled(Context.config().topDownGeneralDecorrelationEnabled());
+
+                return new SqlToRelConverter(this, validator, catalogReader, cluster, convertletTable, config);
+            }
+
+            /// <inheritdoc />
+            protected override ClrPrepare.IPreparedResult CreatePreparedExplanation(
+                RelDataType? resultType,
+                RelDataType parameterRowType,
+                RelRoot? root,
+                SqlExplainFormat format,
+                SqlExplainLevel detailLevel)
+            {
+                return new ClrPrepare.PreparedExplain(resultType, parameterRowType, root, format, detailLevel);
+            }
+
+            /// <summary>
+            /// Creates the validator.
+            /// </summary>
+            protected virtual SqlValidator CreateSqlValidator(CalciteCatalogReader catalogReader, Func<SqlValidator.Config, SqlValidator.Config> configTransform)
+            {
+                var connectionConfig = Context.config();
+                var opTab0 = (SqlOperatorTable)connectionConfig.fun((java.lang.Class)typeof(SqlOperatorTable), org.apache.calcite.sql.fun.SqlStdOperatorTable.instance());
+
+                var list = new java.util.ArrayList();
+                list.add(opTab0);
+                list.add(catalogReader);
+
+                var opTab = org.apache.calcite.sql.util.SqlOperatorTables.chain(list);
+
+                var config = configTransform(
+                    SqlValidator.Config.DEFAULT
+                        .withLenientOperatorLookup(connectionConfig.lenientOperatorLookup())
+                        .withConformance(connectionConfig.conformance())
+                        .withDefaultNullCollation(connectionConfig.defaultNullCollation())
+                        .withIdentifierExpansion(true));
+
+                return new CalciteSqlValidator(opTab, catalogReader, typeFactory, config);
+            }
+
+            /// <inheritdoc />
+            public RelRoot expandView(RelDataType rowType, string queryString, java.util.List schemaPath, java.util.List viewPath)
+            {
+                var parser = prepare.CreateParser(queryString);
+
+                SqlNode sqlNode;
+                try
+                {
+                    sqlNode = parser.parseQuery();
+                }
+                catch (SqlParseException e)
+                {
+                    throw new java.lang.RuntimeException("parse failed", e);
+                }
+
+                var viewCatalogReader = CatalogReader.withSchemaPath(schemaPath);
+                var viewValidator = CreateSqlValidator(viewCatalogReader, c => c.withEmbeddedQuery(true));
+                var config = SqlToRelConverter.config().withTrimUnusedFields(true);
+                var sqlToRelConverter = GetSqlToRelConverter(viewValidator, viewCatalogReader, config);
+
+                return sqlToRelConverter.convertQuery(sqlNode, true, true);
+            }
+
         }
 
     }

@@ -147,7 +147,7 @@ namespace Apache.Calcite.Tests
         /// that demand is stated. So the text names this convention's nodes.
         ///
         /// <para>It used to throw: <c>ClrExplainBindable</c> was an <c>IClrBindable</c> alone and
-        /// <c>ClrSignature.BindAsync</c> refused it as "prepared into a synchronous convention", which was
+        /// <c>IClrPrepare.Signature.BindAsync</c> refused it as "prepared into a synchronous convention", which was
         /// never true of an <c>EXPLAIN</c> and left a caller holding only <c>ExecuteReaderAsync</c> unable to
         /// explain anything at all.</para>
         /// </remarks>
