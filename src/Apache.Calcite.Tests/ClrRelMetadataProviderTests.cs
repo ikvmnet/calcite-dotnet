@@ -298,7 +298,7 @@ namespace Apache.Calcite.Tests
             JaninoRelMetadataProvider.clearStaticCache();
 
             ClrPrepareFixture.WithContext(sql, (context, _) =>
-                new Apache.Calcite.Extensions.Prepare.ClrPrepareImpl().Prepare(context, sql, (java.lang.Class)typeof(object[]), -1));
+                new Apache.Calcite.Extensions.Prepare.ClrPrepareImpl().PrepareSql(context, Apache.Calcite.Extensions.Prepare.IClrPrepare.Query.Of(sql), typeof(object[]), -1));
 
             Assert.AreEqual(0L, cache.size(), "Janino generated a metadata handler while preparing.");
         }
@@ -358,7 +358,7 @@ namespace Apache.Calcite.Tests
 
             CountingRowCount.Asked = 0;
             ClrPrepareFixture.WithContext(sql, (context, _) =>
-                new PrepareWithProvider(chained).Prepare(context, sql, (java.lang.Class)typeof(object[]), -1));
+                new PrepareWithProvider(chained).PrepareSql(context, Apache.Calcite.Extensions.Prepare.IClrPrepare.Query.Of(sql), typeof(object[]), -1));
 
             Assert.IsTrue(CountingRowCount.Asked > 0, "the provider the prepare installed was never asked.");
         }

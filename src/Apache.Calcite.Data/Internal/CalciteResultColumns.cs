@@ -10,7 +10,7 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Reads a prepared <see cref="ClrSignature"/>'s columns as an ADO.NET caller expects them.
+    /// Reads a prepared <see cref="IClrPrepare.Signature"/>'s columns as an ADO.NET caller expects them.
     /// </summary>
     /// <remarks>
     /// The columns are Avatica's <see cref="ColumnMetaData"/>, which is what the metadata port produces;
@@ -84,13 +84,13 @@ namespace Apache.Calcite.Data.Internal
             return typeof(object);
         }
 
-        readonly ClrSignature _signature;
+        readonly IClrPrepare.Signature _signature;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
         /// <param name="signature"></param>
-        public CalciteResultColumns(ClrSignature signature)
+        public CalciteResultColumns(IClrPrepare.Signature signature)
         {
             _signature = signature ?? throw new ArgumentNullException(nameof(signature));
         }
@@ -147,7 +147,7 @@ namespace Apache.Calcite.Data.Internal
         /// <returns></returns>
         public SqlTypeName GetSqlType(int index)
         {
-            var rowType = _signature.RowType ?? throw new InvalidOperationException($"{_signature.Sql} has no row type.");
+            var rowType = _signature.RowType ?? throw new InvalidOperationException($"{_signature.Sql ?? "The statement"} has no row type.");
             var field = (org.apache.calcite.rel.type.RelDataTypeField)rowType.getFieldList().get(index);
             return field.getType().getSqlTypeName();
         }

@@ -171,11 +171,13 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <param name="traitSet">The traits the root already carries.</param>
         /// <returns></returns>
         /// <remarks>
-        /// <c>Prepare.getDesiredRootTraitSet</c>: the root's own traits with the convention replaced, then
-        /// simplified. The simplify is load bearing — it collapses the composite collation a VALUES of
-        /// several rows carries, which the planner would otherwise cast to a single <c>RelCollation</c> and
-        /// fail on. The collation is replaced rather than dropped, or <c>SortRemoveRule</c> takes an ORDER BY
-        /// away as unwanted.
+        /// For a caller driving the planner itself, which has a trait set rather than a <c>RelRoot</c>. The
+        /// prepare pipeline does not come through here — <c>ClrPrepare.GetDesiredRootTraitSet</c> is
+        /// <c>Prepare.getDesiredRootTraitSet</c> and additionally replaces the collation the query asked for,
+        /// which is a property of the root and not of a trait set.
+        ///
+        /// <para>The simplify is load bearing — it collapses the composite collation a VALUES of several rows
+        /// carries, which the planner would otherwise cast to a single <c>RelCollation</c> and fail on.</para>
         /// </remarks>
         public static RelTraitSet DesiredRootTraitSet(RelTraitSet traitSet)
         {

@@ -82,7 +82,7 @@ namespace Apache.Calcite.Tests
         {
             return ClrPrepareFixture.WithContext(sql, (context, _) =>
             {
-                var signature = new ClrPrepareImpl().Prepare(context, sql, (java.lang.Class)typeof(object[]), -1);
+                var signature = new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of(sql), typeof(object[]), -1);
 
                 var columns = new List<string>();
                 for (int i = 0; i < signature.Columns.size(); i++)
@@ -164,7 +164,7 @@ namespace Apache.Calcite.Tests
         public void Cursor_factory_should_match_calcite(string sql)
         {
             var clr = ClrPrepareFixture.WithContext(sql, (context, _) =>
-                new ClrPrepareImpl().Prepare(context, sql, (java.lang.Class)typeof(object[]), -1).CursorFactory.style.name());
+                new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of(sql), typeof(object[]), -1).CursorFactory.style.name());
 
             var calcite = ClrPrepareFixture.WithContext(sql, (context, _) =>
             {
@@ -177,7 +177,7 @@ namespace Apache.Calcite.Tests
 
         /// <summary>
         /// <c>maxRowCount</c> lives inside <c>CalciteSignature.enumerable</c> in Calcite and inside
-        /// <see cref="ClrSignature.Bind"/> here. Nothing else exercises it, because every caller in this
+        /// <see cref="IClrPrepare.Signature.Bind"/> here. Nothing else exercises it, because every caller in this
         /// project passes -1.
         /// </summary>
         [TestMethod]

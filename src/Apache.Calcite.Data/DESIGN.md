@@ -188,7 +188,7 @@ reused as they stand. The driver had to be replaced because its one exit is a `B
 when the `async` parameter says so, `ClrEnumerableRules.Rules()` otherwise, and never both — so
 Calcite's own rules stay on the planner and a statement the chosen convention has no node for is
 still planned and run in `EnumerableConvention`, with a converter carrying its rows. That is how a
-table modification works here. `PrepareRel`, the second entry point, plans a `RelNode` that was
+table modification works here. `ClrPrepareQuery.Of(RelNode)` selects the branch that plans a `RelNode` that was
 built rather than parsed; it is exercised by tests and not reached from this project.
 
 A DDL statement is executed inside `Prepare2` rather than planned, exactly as Calcite does. The
@@ -219,7 +219,7 @@ returning rows, plus the `ElementType` the cursor factory is deduced from. It me
   `RelRunner.prepareStatement` is declared to return a `java.sql.PreparedStatement`. Its one caller is
   `ServerDdlExecutor.populate`, which uses two members of it, so supporting it means a hundred-odd
   members of a JDBC interface this project exists to not have. The planning half is already here:
-  `ClrPrepareImpl.PrepareRel` is the `prepare2_` branch Calcite's own runner uses, ready for a runner
+  `ClrPrepareImpl.Prepare` over a `ClrPrepareQuery.Of(rel)` is the `prepare2_` branch Calcite's own runner uses, ready for a runner
   that wants it. So `CREATE MATERIALIZED VIEW` and `CREATE TABLE ... AS SELECT` are unsupported, and
   fail *after* `ServerDdlExecutor` has added the table — that ordering is upstream's. Both are pinned
   by tests. `populate` also resolves its INSERT against `getRootSchema()` unconditionally, so neither

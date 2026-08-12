@@ -222,21 +222,21 @@ namespace Apache.Calcite.Data.Internal
         public CalciteConnectionConfig Config => _config;
 
         /// <summary>
-        /// Parses and plans <paramref name="request"/>, returning the compiled <see cref="ClrSignature"/>.
+        /// Parses and plans <paramref name="request"/>, returning the compiled <see cref="IClrPrepare.Signature"/>.
         /// No execution state is created here.
         /// </summary>
         /// <remarks>
         /// The context is still pushed onto <c>CalcitePrepare.Dummy</c>'s thread-local stack, because
         /// Calcite's own parse-to-rel reads it from there.
         /// </remarks>
-        ClrSignature Plan(CalciteExecuteRequest request, bool async = false)
+        IClrPrepare.Signature Plan(CalciteExecuteRequest request, bool async = false)
         {
             var ctx = new PrepareContext(_typeFactory, _rootSchema, _config, _defaultSchemaPath);
 
             CalcitePrepare.Dummy.push(ctx);
             try
             {
-                return _prepareFactory().Prepare(ctx, request.Sql, (java.lang.Class)typeof(java.lang.Object[]), -1, async);
+                return _prepareFactory().PrepareSql(ctx, IClrPrepare.Query.Of(request.Sql), typeof(object[]), -1, async);
             }
             finally
             {
@@ -253,11 +253,11 @@ namespace Apache.Calcite.Data.Internal
         /// the statement was planned against, not the live root, so a statement executes against what
         /// it planned against. Null for DDL, as upstream's is.
         /// </summary>
-        void Bind(CalciteExecuteRequest request, ClrSignature signature, out DataContext dataContext, out AtomicBoolean cancelFlag)
+        void Bind(CalciteExecuteRequest request, IClrPrepare.Signature signature, out DataContext dataContext, out AtomicBoolean cancelFlag)
         {
             cancelFlag = new AtomicBoolean(false);
             var boundParameters = ParameterBinder.Bind(request.Parameters);
-            dataContext = new StatementDataContext(signature.RootSchema?.plus(), _typeFactory, cancelFlag, request.CommandTimeoutSeconds * 1000L, boundParameters, signature.InternalParameters);
+            dataContext = new StatementDataContext(signature.RootSchema, _typeFactory, _config, _defaultSchemaPath, cancelFlag, request.CommandTimeoutSeconds * 1000L, boundParameters, signature.InternalParameters);
         }
 
         /// <summary>

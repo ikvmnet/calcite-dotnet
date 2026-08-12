@@ -26,7 +26,7 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="enumerator">The plan's enumerator, or <see langword="null"/> where there is nothing
         /// to read — a DDL statement has already taken effect, and a DML one reports a count.</param>
         /// <param name="recordsAffected"></param>
-        public CalciteEnumerableResult(ClrSignature signature, IEnumerator<object>? enumerator, long recordsAffected = -1) :
+        public CalciteEnumerableResult(IClrPrepare.Signature signature, IEnumerator<object>? enumerator, long recordsAffected = -1) :
             base(signature, recordsAffected)
         {
             _enumerator = enumerator;

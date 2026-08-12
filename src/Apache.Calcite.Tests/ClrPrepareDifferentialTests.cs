@@ -47,7 +47,7 @@ namespace Apache.Calcite.Tests
         {
             return ClrPrepareFixture.WithContext(sql, (context, _) =>
             {
-                var signature = new ClrPrepareImpl().Prepare(context, sql, (java.lang.Class)typeof(object[]), maxRowCount);
+                var signature = new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of(sql), typeof(object[]), maxRowCount);
 
                 var rows = new List<string>();
                 foreach (var row in signature.Bind(context.getDataContext()))

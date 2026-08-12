@@ -352,7 +352,7 @@ namespace Apache.Calcite.Data.Tests
         /// being a <c>DriverManager.getConnection("jdbc:calcite:")</c> held in a <c>static final</c>, so its
         /// configuration is the default one. <c>CalcitePrepareImpl.parse_</c> builds the catalog reader and
         /// the validator from it, so <c>fun</c>, <c>conformance</c> and <c>caseSensitive</c> never reach a
-        /// view definition, even though <c>ClrPreparingStmt.expandView</c> uses the real configuration when
+        /// view definition, even though <c>ClrPrepareImpl.PreparingStmt.expandView</c> uses the real configuration when
         /// the view is later expanded into a plan.
         ///
         /// <para><b>Measured against stock Calcite, and it does the same.</b> A plain
@@ -1080,7 +1080,7 @@ namespace Apache.Calcite.Data.Tests
         /// <c>RelRunner.prepareStatement</c> is declared to return a <c>java.sql.PreparedStatement</c>, and
         /// this provider implements no JDBC, so <c>PrepareContext.getRelRunner</c> refuses.
         ///
-        /// <para>The planning half is not what is missing — <c>ClrPrepareImpl.PrepareRel</c> is the
+        /// <para>The planning half is not what is missing — <c>ClrPrepareImpl.Prepare</c> over a <c>IClrPrepare.Query.Of(rel)</c> is the
         /// <c>prepare2_</c> branch Calcite's own runner uses. What is missing is a hundred-odd members of
         /// <c>PreparedStatement</c> that exist so that two of them can be called.</para>
         ///

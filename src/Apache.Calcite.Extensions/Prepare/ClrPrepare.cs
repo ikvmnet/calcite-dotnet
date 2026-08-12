@@ -1,5 +1,6 @@
 using System;
 
+using org.apache.calcite.avatica;
 using org.apache.calcite.jdbc;
 using org.apache.calcite.plan;
 using org.apache.calcite.prepare;
@@ -19,23 +20,6 @@ namespace Apache.Calcite.Extensions.Prepare
     /// <summary>
     /// Takes a statement from a parse tree to a compiled plan.
     /// </summary>
-    /// <remarks>
-    /// Our counterpart of <c>Prepare</c>, and split from <see cref="ClrPreparingStmt"/> where Calcite splits
-    /// them. This half is the algorithm — convert, checked arithmetic, flatten, decorrelate, trim, optimize,
-    /// implement, with the two <c>EXPLAIN</c> exits where Calcite has them — and knows nothing of a cluster,
-    /// a schema or a convertlet table. Those belong to the class below it.
-    ///
-    /// <para>The split is worth keeping even though Calcite has exactly one subclass of <c>Prepare</c>. What
-    /// it separates is real: this class cannot reach a <c>CalciteSchema</c> or a <c>RelOptCluster</c>, and it
-    /// is where a preparing statement backed by something other than a <c>CalcitePrepare.Context</c> would
-    /// part company. It also keeps the port diffable — when <c>Prepare.prepareSql</c> changes upstream, the
-    /// change lands in one file here rather than having to be found inside a larger one.</para>
-    ///
-    /// <para>It is written rather than derived because <c>Prepare.implement</c> is declared to return a
-    /// <c>PreparedResult</c>, an interface whose reason for existing is <c>getBindable</c> — a linq4j
-    /// <c>Enumerable</c>. Our conventions compile to a delegate, so there is nothing to hand back through
-    /// it. <see cref="ClrPrepareResult"/> is that interface without the member.</para>
-    /// </remarks>
     public abstract class ClrPrepare
     {
 
@@ -75,21 +59,18 @@ namespace Apache.Calcite.Extensions.Prepare
         protected Convention ResultConvention => resultConvention;
 
         /// <summary>
+        /// Prepares this object for a statement whose runtime context is <paramref name="runtimeContextClass"/>.
+        /// </summary>
+        protected abstract void Init(java.lang.Class runtimeContextClass);
+
+        /// <summary>
         /// Gets the validator the statement is validated with.
         /// </summary>
-        /// <remarks>
-        /// <c>Prepare.getSqlValidator</c>, abstract there as here: building one needs a type factory, which
-        /// this half does not have.
-        /// </remarks>
         protected internal abstract SqlValidator SqlValidator { get; }
 
         /// <summary>
         /// Gets or sets the row type of the statement's dynamic parameters.
         /// </summary>
-        /// <remarks>
-        /// Settable by the subclass because <c>prepare_</c> assigns it directly for a plan that was never
-        /// validated, as Calcite's does.
-        /// </remarks>
         protected RelDataType ParameterRowType
         {
             get => parameterRowType ?? throw new InvalidOperationException("The statement has not been validated.");
@@ -113,18 +94,24 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Returns the traits the root of the plan must satisfy.
         /// </summary>
-        protected abstract RelTraitSet GetDesiredRootTraitSet(RelRoot root);
+        protected virtual RelTraitSet GetDesiredRootTraitSet(RelRoot root)
+        {
+            return root.rel.getTraitSet()
+                .replace(ResultConvention)
+                .replace(root.collation)
+                .simplify();
+        }
 
         /// <summary>
         /// Compiles the chosen plan.
         /// </summary>
         /// <param name="root">The root of the plan, which is of <see cref="ResultConvention"/>.</param>
-        protected abstract ClrPrepareResult Implement(RelRoot root);
+        protected abstract IPreparedResult Implement(RelRoot root);
 
         /// <summary>
         /// Renders a plan or a type, for an <c>EXPLAIN</c>.
         /// </summary>
-        protected abstract ClrPrepareResult CreatePreparedExplanation(
+        protected abstract IPreparedResult CreatePreparedExplanation(
             RelDataType? resultType,
             RelDataType parameterRowType,
             RelRoot? root,
@@ -142,7 +129,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Flattens structured types.
         /// </summary>
-        protected abstract RelNode FlattenTypes(RelNode rootRel, bool restructure);
+        public abstract RelNode FlattenTypes(RelNode rootRel, bool restructure);
 
         /// <summary>
         /// Removes correlation from a plan.
@@ -155,9 +142,20 @@ namespace Apache.Calcite.Extensions.Prepare
         protected abstract java.util.List GetMaterializations();
 
         /// <summary>
-        /// Returns the lattices the planner may use.
+        /// Returns the lattices the planner may use, as <c>CalciteSchema.LatticeEntry</c>.
         /// </summary>
         protected abstract java.util.List GetLattices();
+
+        /// <summary>
+        /// Prepares a parsed statement that was not rewritten before it arrived.
+        /// </summary>
+        /// <param name="sqlQuery">The statement, which an <c>EXPLAIN</c> is unwrapped from.</param>
+        /// <param name="needsValidation">Whether the statement still has to be validated.</param>
+        /// <returns>The compiled statement, or the rendered plan where it was an <c>EXPLAIN</c>.</returns>
+        public IPreparedResult PrepareSql(SqlNode sqlQuery, java.lang.Class runtimeContextClass, SqlValidator validator, bool needsValidation)
+        {
+            return PrepareSql(sqlQuery, sqlQuery, runtimeContextClass, validator, needsValidation);
+        }
 
         /// <summary>
         /// Prepares a parsed statement.
@@ -166,13 +164,14 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <param name="sqlNodeOriginal">The statement as parsed, before that unwrapping.</param>
         /// <param name="needsValidation">Whether the statement still has to be validated.</param>
         /// <returns>The compiled statement, or the rendered plan where it was an <c>EXPLAIN</c>.</returns>
-        /// <remarks>
-        /// <c>Prepare.prepareSql</c>, step for step.
-        /// </remarks>
-        public ClrPrepareResult PrepareSql(SqlNode sqlQuery, SqlNode sqlNodeOriginal, bool needsValidation)
+        public IPreparedResult PrepareSql(SqlNode sqlQuery, SqlNode sqlNodeOriginal, java.lang.Class runtimeContextClass, SqlValidator validator, bool needsValidation)
         {
             ArgumentNullException.ThrowIfNull(sqlQuery);
             ArgumentNullException.ThrowIfNull(sqlNodeOriginal);
+            ArgumentNullException.ThrowIfNull(runtimeContextClass);
+            ArgumentNullException.ThrowIfNull(validator);
+
+            Init(runtimeContextClass);
 
             var config = SqlToRelConverter.config()
                 .withTrimUnusedFields(true)
@@ -183,7 +182,7 @@ namespace Apache.Calcite.Extensions.Prepare
             var configHolder = Holder.of(config);
             org.apache.calcite.runtime.Hook.SQL2REL_CONVERTER_CONFIG_BUILDER.run(configHolder);
 
-            var sqlToRelConverter = GetSqlToRelConverter(SqlValidator, catalogReader, (SqlToRelConverter.Config)configHolder.get());
+            var sqlToRelConverter = GetSqlToRelConverter(validator, catalogReader, (SqlToRelConverter.Config)configHolder.get());
 
             SqlExplain? sqlExplain = null;
             if (sqlQuery.getKind() == SqlKind.EXPLAIN)
@@ -203,9 +202,9 @@ namespace Apache.Calcite.Extensions.Prepare
             root = root.withRel(checkedConv.visit(root.rel));
             org.apache.calcite.runtime.Hook.CONVERTED.run(root.rel);
 
-            var resultType = SqlValidator.getValidatedNodeType(sqlQuery);
-            FieldOrigins = SqlValidator.getFieldOrigins(sqlQuery);
-            ParameterRowType = SqlValidator.getParameterRowType(sqlQuery);
+            var resultType = validator.getValidatedNodeType(sqlQuery);
+            FieldOrigins = validator.getFieldOrigins(sqlQuery);
+            ParameterRowType = validator.getParameterRowType(sqlQuery);
 
             // the logical plan, before view expansion, physical storage and decorrelation
             if (sqlExplain != null)
@@ -234,11 +233,11 @@ namespace Apache.Calcite.Extensions.Prepare
             // the physical plan, after decorrelation
             if (sqlExplain != null)
             {
-                root = Optimize(root);
+                root = Optimize(root, GetMaterializations(), GetLattices());
                 return CreatePreparedExplanation(null, ParameterRowType, root, sqlExplain.getFormat(), sqlExplain.getDetailLevel());
             }
 
-            root = Optimize(root);
+            root = Optimize(root, GetMaterializations(), GetLattices());
 
             // a DML rewritten to other DML — UPDATE to MERGE — keeps the rewrite's kind; anything else —
             // CALL to SELECT — keeps the kind it was parsed as
@@ -253,30 +252,54 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Runs the program, which is what chooses a plan.
         /// </summary>
-        /// <remarks>
-        /// <c>Prepare.optimize</c>. The planner is read off the root rather than held, which is why a plan
-        /// handed in from elsewhere is optimized by whichever planner built it.
-        /// </remarks>
-        protected RelRoot Optimize(RelRoot root)
+        protected RelRoot Optimize(RelRoot root, java.util.List materializations, java.util.List lattices)
         {
+            ArgumentNullException.ThrowIfNull(materializations);
+            ArgumentNullException.ThrowIfNull(lattices);
+
             var planner = root.rel.getCluster().getPlanner();
             planner.setExecutor(new RexExecutorImpl(context.getDataContext()));
 
-            var materializations = GetMaterializations();
-            var lattices = GetLattices();
+            // Calcite converts each Materialization to a RelOptMaterialization here, and that loop cannot be
+            // written: Prepare.Materialization's fields are package private and starRelOptTable is private,
+            // so IKVM makes every one of them unreachable. Nothing is lost, because GetMaterializations
+            // answers an empty list for a reason of its own — CalciteMaterializer cannot be reached either.
+            var materializationList = new java.util.ArrayList(materializations.size());
+
+            var latticeList = new java.util.ArrayList(lattices.size());
+            for (var i = lattices.iterator(); i.hasNext();)
+            {
+                var lattice = (CalciteSchema.LatticeEntry)i.next();
+                var starTable = lattice.getStarTable();
+                var starRelOptTable = org.apache.calcite.prepare.RelOptTableImpl.create(
+                    catalogReader,
+                    starTable.getTable().getRowType(context.getTypeFactory()),
+                    starTable,
+                    null);
+
+                latticeList.add(new RelOptLattice(lattice.getLattice(), starRelOptTable));
+            }
+
             var desiredTraits = GetDesiredRootTraitSet(root);
 
-            return root.withRel(GetProgram().run(planner, root.rel, desiredTraits, materializations, lattices));
+            return root.withRel(Program().run(planner, root.rel, desiredTraits, materializationList, latticeList));
+
+            // Prepare.getProgram consults Hook.PROGRAM before answering, so that a test can swap the whole
+            // program. It can afford to put that inside getProgram because its own is concrete and no
+            // subclass overrides it; ours is abstract, because the program is one of the four things a
+            // convention supplies. So the hook is read at the one place the program is used instead.
+            Program Program()
+            {
+                var holder = Holder.empty();
+                org.apache.calcite.runtime.Hook.PROGRAM.run(holder);
+
+                return holder.get() as Program ?? GetProgram();
+            }
         }
 
         /// <summary>
         /// Trims the fields no one reads.
         /// </summary>
-        /// <remarks>
-        /// <c>Prepare.trimUnusedFields</c>. It builds a second converter because the trim runs with
-        /// <c>trimUnusedFields</c> decided per plan by <see cref="ShouldTrim"/> rather than by the config the
-        /// query was converted with.
-        /// </remarks>
         protected RelRoot TrimUnusedFields(RelRoot root)
         {
             var config = SqlToRelConverter.config()
@@ -294,21 +317,15 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Returns whether a plan is worth trimming.
         /// </summary>
-        /// <remarks>
-        /// <c>Prepare.shouldTrim</c>: trimming a bare projection would leave nothing behind.
-        /// </remarks>
-        protected static bool ShouldTrim(RelNode rootRel)
+        static bool ShouldTrim(RelNode rootRel)
         {
-            return rootRel is not org.apache.calcite.rel.logical.LogicalProject;
+            return ((java.lang.Boolean)org.apache.calcite.prepare.Prepare.THREAD_TRIM.get()).booleanValue()
+                || RelOptUtil.countJoins(rootRel) < 2;
         }
 
         /// <summary>
         /// Returns which modification a DML statement performs.
         /// </summary>
-        /// <remarks>
-        /// <c>Prepare.mapTableModOp</c>, which is protected there and belongs to this half rather than to a
-        /// convention's.
-        /// </remarks>
         protected static TableModify.Operation? MapTableModOp(bool isDml, SqlKind sqlKind)
         {
             if (isDml == false)
@@ -322,6 +339,181 @@ namespace Apache.Calcite.Extensions.Prepare
                 nameof(SqlKind.UPDATE) => TableModify.Operation.UPDATE,
                 _ => null,
             };
+        }
+
+
+        /// <summary>
+        /// What preparing a statement produces.
+        /// </summary>
+        public interface IPreparedResult
+        {
+
+            /// <summary>
+            /// Gets the code preparation generated.
+            /// </summary>
+            string Code { get; }
+
+            /// <summary>
+            /// Gets whether the statement modifies data, in which case the result is one row of one column
+            /// holding the number of rows affected.
+            /// </summary>
+            bool IsDml { get; }
+
+            /// <summary>
+            /// Gets which modification a DML statement performs, or <see langword="null"/> where it is not one.
+            /// </summary>
+            TableModify.Operation? TableModOp { get; }
+
+            /// <summary>
+            /// Gets, per result field, the origin of the field as a four-element list of database, schema, table
+            /// and column.
+            /// </summary>
+            java.util.List FieldOrigins { get; }
+
+            /// <summary>
+            /// Gets a record type whose fields are the statement's dynamic parameters.
+            /// </summary>
+            RelDataType ParameterRowType { get; }
+
+            /// <summary>
+            /// Returns the plan that produces the rows.
+            /// </summary>
+            /// <param name="cursorFactory">How a row is read back.</param>
+            Apache.Calcite.Extensions.Runtime.IClrBindableBase GetBindable(Meta.CursorFactory cursorFactory);
+
+        }
+
+        /// <summary>
+        /// A prepared result that came from a plan: the storage every such result has.
+        /// </summary>
+        public abstract class PreparedResultImpl : IPreparedResult
+        {
+
+            /// <summary>
+            /// Initializes a new instance.
+            /// </summary>
+            protected PreparedResultImpl(
+                RelDataType? rowType,
+                RelDataType parameterRowType,
+                java.util.List fieldOrigins,
+                java.util.List collations,
+                RelNode? rootRel,
+                TableModify.Operation? tableModOp,
+                bool isDml)
+            {
+                RowType = rowType;
+                ParameterRowType = parameterRowType ?? throw new ArgumentNullException(nameof(parameterRowType));
+                FieldOrigins = fieldOrigins ?? throw new ArgumentNullException(nameof(fieldOrigins));
+                Collations = collations ?? throw new ArgumentNullException(nameof(collations));
+                RootRel = rootRel;
+                TableModOp = tableModOp;
+                IsDml = isDml;
+            }
+
+            /// <summary>
+            /// Gets the row type of the result.
+            /// </summary>
+            public RelDataType? RowType { get; }
+
+            /// <summary>
+            /// Gets the physical row type of the prepared statement.
+            /// </summary>
+            public RelDataType? PhysicalRowType => RowType;
+
+            /// <inheritdoc />
+            public RelDataType ParameterRowType { get; }
+
+            /// <inheritdoc />
+            public java.util.List FieldOrigins { get; }
+
+            /// <summary>
+            /// Gets the collations the result is known to carry.
+            /// </summary>
+            public java.util.List Collations { get; }
+
+            /// <summary>
+            /// Gets the root of the plan.
+            /// </summary>
+            public RelNode? RootRel { get; }
+
+            /// <inheritdoc />
+            public TableModify.Operation? TableModOp { get; }
+
+            /// <inheritdoc />
+            public bool IsDml { get; }
+
+            /// <inheritdoc />
+            public abstract string Code { get; }
+
+            /// <inheritdoc />
+            public abstract Apache.Calcite.Extensions.Runtime.IClrBindableBase GetBindable(Meta.CursorFactory cursorFactory);
+
+            /// <summary>
+            /// Gets the Java type of one row, which decides how a row is read back.
+            /// </summary>
+            public abstract System.Type? ElementType { get; }
+
+        }
+
+        /// <summary>
+        /// An <c>EXPLAIN</c>, prepared.
+        /// </summary>
+        public sealed class PreparedExplain : IPreparedResult
+        {
+
+            readonly RelDataType? rowType;
+            readonly RelRoot? root;
+            readonly SqlExplainFormat format;
+            readonly SqlExplainLevel detailLevel;
+
+            /// <summary>
+            /// Initializes a new instance.
+            /// </summary>
+            /// <param name="rowType">The type to render, where the <c>EXPLAIN</c> is of a type.</param>
+            /// <param name="parameterRowType">The statement's dynamic parameters.</param>
+            /// <param name="root">The plan to render, where the <c>EXPLAIN</c> is of a plan.</param>
+            /// <param name="format">How the plan is rendered.</param>
+            /// <param name="detailLevel">How much of the plan is rendered.</param>
+            public PreparedExplain(
+                RelDataType? rowType,
+                RelDataType parameterRowType,
+                RelRoot? root,
+                SqlExplainFormat format,
+                SqlExplainLevel detailLevel)
+            {
+                this.rowType = rowType;
+                this.root = root;
+                this.format = format ?? throw new ArgumentNullException(nameof(format));
+                this.detailLevel = detailLevel ?? throw new ArgumentNullException(nameof(detailLevel));
+
+                ParameterRowType = parameterRowType ?? throw new ArgumentNullException(nameof(parameterRowType));
+            }
+
+            /// <inheritdoc />
+            public string Code =>
+                root == null
+                    ? rowType == null ? "rowType is null" : RelOptUtil.dumpType(rowType)
+                    : RelOptUtil.dumpPlan("", root.rel, format, detailLevel);
+
+            /// <inheritdoc />
+            public RelDataType ParameterRowType { get; }
+
+            /// <inheritdoc />
+            public java.util.List FieldOrigins =>
+                java.util.Collections.singletonList(java.util.Collections.nCopies(4, null));
+
+            /// <inheritdoc />
+            public bool IsDml => false;
+
+            /// <inheritdoc />
+            public TableModify.Operation? TableModOp => null;
+
+            /// <inheritdoc />
+            public Apache.Calcite.Extensions.Runtime.IClrBindableBase GetBindable(Meta.CursorFactory cursorFactory)
+            {
+                return new ClrExplainBindable(Code, cursorFactory);
+            }
+
         }
 
     }
