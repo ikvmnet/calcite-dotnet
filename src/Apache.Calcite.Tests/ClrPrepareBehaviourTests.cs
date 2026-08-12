@@ -302,6 +302,111 @@ namespace Apache.Calcite.Tests
                 "the map the plan was built against reaches the caller");
         }
 
+        /// <summary>
+        /// The six statements <c>SIMPLE_SQLS</c> names skip planning and answer one row of one column
+        /// called <c>EXPR$0</c>.
+        /// </summary>
+        /// <remarks>
+        /// <c>prepare_</c> tests <c>SIMPLE_SQLS.contains(query.sql)</c> before it builds a catalog reader,
+        /// and <c>simplePrepare</c> answers a signature over <c>ImmutableList.of(1)</c>. The column is
+        /// <c>SqlUtil.deriveAliasFromOrdinal(0)</c>, and the row is a <c>java.lang.Integer</c> because a
+        /// one-column result is the value.
+        /// </remarks>
+        [TestMethod]
+        [DataRow("SELECT 1")]
+        [DataRow("select 1")]
+        [DataRow("SELECT 1 FROM DUAL")]
+        [DataRow("select 1 from dual")]
+        [DataRow("values 1")]
+        [DataRow("VALUES 1")]
+        public void A_simple_statement_should_skip_planning(string sql)
+        {
+            var (columns, rows) = ClrPrepareFixture.WithContext(sql, (context, _) =>
+            {
+                var signature = new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of(sql), typeof(object[]), -1);
+
+                return (signature.Columns, new List<object>(signature.Bind(context.getDataContext())));
+            });
+
+            Assert.AreEqual(1, columns.size());
+            Assert.AreEqual("EXPR$0", ((ColumnMetaData)columns.get(0)).columnName);
+            CollectionAssert.AreEqual(new object[] { java.lang.Integer.valueOf(1) }, rows);
+        }
+
+        /// <summary>
+        /// A statement <c>SIMPLE_SQLS</c> does not name is planned, and answers what the fast path would
+        /// have.
+        /// </summary>
+        /// <remarks>
+        /// The fast path is a short cut and not a different answer, which is the only thing about it worth
+        /// holding: <c>SELECT 1</c> is named and <c>SELECT  1</c>, two spaces, is not.
+        /// </remarks>
+        [TestMethod]
+        public void A_statement_the_fast_path_misses_should_answer_the_same()
+        {
+            var rows = ClrPrepareFixture.WithContext("SELECT  1", (context, _) =>
+            {
+                var signature = new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of("SELECT  1"), typeof(object[]), -1);
+
+                return new List<object>(signature.Bind(context.getDataContext()));
+            });
+
+            CollectionAssert.AreEqual(new object[] { java.lang.Integer.valueOf(1) }, rows);
+        }
+
+        /// <summary>
+        /// <c>AGGREGATE</c> over a measure is expanded, which is what the <c>measure</c> pass does and
+        /// nothing else in the pipeline does.
+        /// </summary>
+        /// <remarks>
+        /// <c>Programs.measure</c> is <c>MeasureRules</c> guarded by <c>containsAggM2v</c> — a plan holding
+        /// an <c>AGG_M2V</c> aggregate call, which is what <c>AGGREGATE(m)</c> converts to. It is one of the
+        /// six passes <c>Programs.standard</c> runs, and without it the planner cannot implement the call.
+        /// The shape is <c>measure.iq</c>'s: <c>GROUP BY ()</c> is implicit under <c>AGGREGATE</c>.
+        /// </remarks>
+        [TestMethod]
+        public void An_aggregate_over_a_measure_should_be_expanded()
+        {
+            const string sql = "SELECT AGGREGATE(m) AS a FROM (SELECT REGION, AVG(AMOUNT) AS MEASURE m FROM SALES)";
+
+            var rows = ClrPrepareFixture.WithContext(sql, (context, _) =>
+            {
+                var signature = new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of(sql), typeof(object[]), -1);
+
+                return new List<object>(signature.Bind(context.getDataContext()));
+            },
+            p => p.setProperty("fun", "calcite"));
+
+            // 10, 20, 20, 30, null, 10 -- AVG over the five that are not null, in INTEGER arithmetic
+            CollectionAssert.AreEqual(new object[] { java.lang.Integer.valueOf(18) }, rows);
+        }
+
+        /// <summary>
+        /// A correlated sub-query is decorrelated under <c>topDownGeneralDecorrelationEnabled</c>, which is
+        /// the flag that turns off the decorrelation <c>prepareSql</c> does.
+        /// </summary>
+        /// <remarks>
+        /// <c>Prepare.prepareSql</c> decorrelates only when <c>forceDecorrelate</c> is set and this flag is
+        /// not, because the flag's decorrelation belongs to <c>DecorrelateProgram</c>, which
+        /// <c>Programs.standard</c> runs and which dispatches to <c>TopDownGeneralDecorrelator</c>. Both
+        /// halves have to be there or the query is planned with its correlation intact.
+        /// </remarks>
+        [TestMethod]
+        public void A_correlated_sub_query_should_decorrelate_top_down()
+        {
+            const string sql = "SELECT ID FROM SALES s WHERE AMOUNT > (SELECT AVG(AMOUNT) FROM SALES t WHERE t.REGION = s.REGION)";
+
+            var plan = ClrPrepareFixture.WithContext(sql, (context, _) =>
+            {
+                var signature = new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of("EXPLAIN PLAN FOR " + sql), typeof(object[]), -1);
+
+                return (string)new List<object>(signature.Bind(context.getDataContext()))[0];
+            },
+            p => p.setProperty("topDownGeneralDecorrelationEnabled", "true"));
+
+            StringAssert.DoesNotMatch(plan, new System.Text.RegularExpressions.Regex("Correlate"), plan);
+        }
+
     }
 
 }

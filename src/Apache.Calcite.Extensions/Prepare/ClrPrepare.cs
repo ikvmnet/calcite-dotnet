@@ -66,7 +66,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Gets the validator the statement is validated with.
         /// </summary>
-        protected internal abstract SqlValidator SqlValidator { get; }
+        protected abstract SqlValidator SqlValidator { get; }
 
         /// <summary>
         /// Gets or sets the row type of the statement's dynamic parameters.
@@ -89,7 +89,27 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Returns the program that takes a logical plan to <see cref="ResultConvention"/>.
         /// </summary>
-        protected abstract Program GetProgram();
+        protected virtual Program GetProgram()
+        {
+            // allow a test to override the default program
+            var holder = Holder.empty();
+            org.apache.calcite.runtime.Hook.PROGRAM.run(holder);
+            if (holder.get() is Program holderValue)
+                return holderValue;
+
+            return GetStandardProgram();
+        }
+
+        /// <summary>
+        /// Returns this convention's counterpart of <c>Programs.standard</c>.
+        /// </summary>
+        /// <remarks>
+        /// <c>Prepare.getProgram</c> ends in the constant <c>Programs.standard()</c>, there being one calling
+        /// convention to plan into. There are two here and their last two passes differ, so the constant is a
+        /// method. Everything else about <c>getProgram</c> is unchanged — the hook is read here rather than at
+        /// the call site, and <see cref="Optimize"/> calls nothing else.
+        /// </remarks>
+        protected abstract Program GetStandardProgram();
 
         /// <summary>
         /// Returns the traits the root of the plan must satisfy.
@@ -244,8 +264,6 @@ namespace Apache.Calcite.Extensions.Prepare
             if (root.kind.belongsTo(SqlKind.DML) == false)
                 root = root.withKind(sqlNodeOriginal.getKind());
 
-            org.apache.calcite.runtime.Hook.PLAN_BEFORE_IMPLEMENTATION.run(root);
-
             return Implement(root);
         }
 
@@ -282,19 +300,9 @@ namespace Apache.Calcite.Extensions.Prepare
 
             var desiredTraits = GetDesiredRootTraitSet(root);
 
-            return root.withRel(Program().run(planner, root.rel, desiredTraits, materializationList, latticeList));
+            var program = GetProgram();
 
-            // Prepare.getProgram consults Hook.PROGRAM before answering, so that a test can swap the whole
-            // program. It can afford to put that inside getProgram because its own is concrete and no
-            // subclass overrides it; ours is abstract, because the program is one of the four things a
-            // convention supplies. So the hook is read at the one place the program is used instead.
-            Program Program()
-            {
-                var holder = Holder.empty();
-                org.apache.calcite.runtime.Hook.PROGRAM.run(holder);
-
-                return holder.get() as Program ?? GetProgram();
-            }
+            return root.withRel(program.run(planner, root.rel, desiredTraits, materializationList, latticeList));
         }
 
         /// <summary>
@@ -393,19 +401,21 @@ namespace Apache.Calcite.Extensions.Prepare
             /// Initializes a new instance.
             /// </summary>
             protected PreparedResultImpl(
-                RelDataType? rowType,
+                RelDataType rowType,
                 RelDataType parameterRowType,
                 java.util.List fieldOrigins,
                 java.util.List collations,
-                RelNode? rootRel,
+                RelNode rootRel,
                 TableModify.Operation? tableModOp,
                 bool isDml)
             {
-                RowType = rowType;
+                ArgumentNullException.ThrowIfNull(collations);
+
+                RowType = rowType ?? throw new ArgumentNullException(nameof(rowType));
                 ParameterRowType = parameterRowType ?? throw new ArgumentNullException(nameof(parameterRowType));
                 FieldOrigins = fieldOrigins ?? throw new ArgumentNullException(nameof(fieldOrigins));
-                Collations = collations ?? throw new ArgumentNullException(nameof(collations));
-                RootRel = rootRel;
+                Collations = com.google.common.collect.ImmutableList.copyOf(collations);
+                RootRel = rootRel ?? throw new ArgumentNullException(nameof(rootRel));
                 TableModOp = tableModOp;
                 IsDml = isDml;
             }
@@ -413,12 +423,13 @@ namespace Apache.Calcite.Extensions.Prepare
             /// <summary>
             /// Gets the row type of the result.
             /// </summary>
-            public RelDataType? RowType { get; }
+            public RelDataType RowType { get; }
 
             /// <summary>
-            /// Gets the physical row type of the prepared statement.
+            /// Gets the physical row type of the prepared statement, which the validator's need not be
+            /// identical to — its field names may have been made unique.
             /// </summary>
-            public RelDataType? PhysicalRowType => RowType;
+            public RelDataType PhysicalRowType => RowType;
 
             /// <inheritdoc />
             public RelDataType ParameterRowType { get; }
@@ -434,7 +445,7 @@ namespace Apache.Calcite.Extensions.Prepare
             /// <summary>
             /// Gets the root of the plan.
             /// </summary>
-            public RelNode? RootRel { get; }
+            public RelNode RootRel { get; }
 
             /// <inheritdoc />
             public TableModify.Operation? TableModOp { get; }
@@ -449,16 +460,20 @@ namespace Apache.Calcite.Extensions.Prepare
             public abstract Apache.Calcite.Extensions.Runtime.IClrBindableBase GetBindable(Meta.CursorFactory cursorFactory);
 
             /// <summary>
-            /// Gets the Java type of one row, which decides how a row is read back.
+            /// Gets the type of one row, which decides how a row is read back.
             /// </summary>
-            public abstract System.Type? ElementType { get; }
+            /// <remarks>
+            /// <c>Typed.getElementType</c>, which <c>PreparedResultImpl</c> declares abstract and the
+            /// interface does not carry.
+            /// </remarks>
+            public abstract System.Type ElementType { get; }
 
         }
 
         /// <summary>
-        /// An <c>EXPLAIN</c>, prepared.
+        /// An <c>EXPLAIN PLAN</c> statement, prepared. It is always good to have an explanation prepared.
         /// </summary>
-        public sealed class PreparedExplain : IPreparedResult
+        public abstract class PreparedExplain : IPreparedResult
         {
 
             readonly RelDataType? rowType;
@@ -474,7 +489,7 @@ namespace Apache.Calcite.Extensions.Prepare
             /// <param name="root">The plan to render, where the <c>EXPLAIN</c> is of a plan.</param>
             /// <param name="format">How the plan is rendered.</param>
             /// <param name="detailLevel">How much of the plan is rendered.</param>
-            public PreparedExplain(
+            protected PreparedExplain(
                 RelDataType? rowType,
                 RelDataType parameterRowType,
                 RelRoot? root,
@@ -509,10 +524,7 @@ namespace Apache.Calcite.Extensions.Prepare
             public TableModify.Operation? TableModOp => null;
 
             /// <inheritdoc />
-            public Apache.Calcite.Extensions.Runtime.IClrBindableBase GetBindable(Meta.CursorFactory cursorFactory)
-            {
-                return new ClrExplainBindable(Code, cursorFactory);
-            }
+            public abstract Apache.Calcite.Extensions.Runtime.IClrBindableBase GetBindable(Meta.CursorFactory cursorFactory);
 
         }
 

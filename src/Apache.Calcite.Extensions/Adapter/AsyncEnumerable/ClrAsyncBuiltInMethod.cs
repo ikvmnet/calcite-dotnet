@@ -64,9 +64,13 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         public static readonly MethodInfo Skip = Of(nameof(ClrAsyncEnumerableDefaults.Skip));
 
         /// <summary>
-        /// <see cref="ClrAsyncEnumerableDefaults.Take"/>.
+        /// <c>ClrAsyncEnumerableDefaults.Take</c>.
         /// </summary>
-        public static readonly MethodInfo Take = Of(nameof(ClrAsyncEnumerableDefaults.Take));
+        /// <remarks>
+        /// The <c>int</c> overload, as <c>ClrBuiltInMethod.Take</c> is; a plan's fetch is an <c>int</c>. The
+        /// <c>long</c> one is the row limit a caller asks a prepared statement for.
+        /// </remarks>
+        public static readonly MethodInfo Take = Of(nameof(ClrAsyncEnumerableDefaults.Take), null, typeof(int), typeof(System.Threading.CancellationToken));
 
         /// <summary>
         /// <see cref="ClrAsyncEnumerableDefaults.OrderByWithFetchAndOffset"/>.
@@ -280,14 +284,48 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
         /// <summary>
-        /// Returns the named operator.
+        /// Returns the named operator, picked out by parameter type where the name is overloaded.
         /// </summary>
         /// <param name="name"></param>
+        /// <param name="parameterTypes">One entry per parameter, <see langword="null"/> where the parameter
+        /// is generic and so has no <see cref="Type"/> to name. Empty where the name is enough.</param>
         /// <returns></returns>
-        static MethodInfo Of(string name)
+        /// <remarks>
+        /// <c>ClrBuiltInMethod.Of</c>'s, for the same reason: a name alone does not pick an overload, and
+        /// <see cref="Type.GetMethod(string, BindingFlags)"/> throws on the ambiguity.
+        /// </remarks>
+        static MethodInfo Of(string name, params Type?[] parameterTypes)
         {
-            return typeof(ClrAsyncEnumerableDefaults).GetMethod(name, BindingFlags.Public | BindingFlags.Static)
-                ?? throw new InvalidOperationException($"'{name}' is missing from {nameof(ClrAsyncEnumerableDefaults)}.");
+            MethodInfo? found = null;
+
+            foreach (var method in typeof(ClrAsyncEnumerableDefaults).GetMethods(BindingFlags.Public | BindingFlags.Static))
+            {
+                if (method.Name != name || Matches(method) == false)
+                    continue;
+
+                if (found != null)
+                    throw new InvalidOperationException($"'{name}' is ambiguous in {nameof(ClrAsyncEnumerableDefaults)}; name its parameter types.");
+
+                found = method;
+            }
+
+            return found ?? throw new InvalidOperationException($"'{name}' is missing from {nameof(ClrAsyncEnumerableDefaults)}.");
+
+            bool Matches(MethodInfo method)
+            {
+                if (parameterTypes.Length == 0)
+                    return true;
+
+                var parameters = method.GetParameters();
+                if (parameters.Length != parameterTypes.Length)
+                    return false;
+
+                for (var i = 0; i < parameters.Length; i++)
+                    if (parameterTypes[i] != null && parameters[i].ParameterType != parameterTypes[i])
+                        return false;
+
+                return true;
+            }
         }
 
     }

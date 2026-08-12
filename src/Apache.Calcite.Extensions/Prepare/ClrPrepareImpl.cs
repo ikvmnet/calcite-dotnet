@@ -35,6 +35,19 @@ namespace Apache.Calcite.Extensions.Prepare
     {
 
         /// <summary>
+        /// The statements <see cref="SimplePrepare"/> answers without planning.
+        /// </summary>
+        static readonly HashSet<string> SIMPLE_SQLS =
+        [
+            "SELECT 1",
+            "select 1",
+            "SELECT 1 FROM DUAL",
+            "select 1 from dual",
+            "values 1",
+            "VALUES 1",
+        ];
+
+        /// <summary>
         /// Plans and compiles one query.
         /// </summary>
         /// <param name="context">The schema, type factory and configuration to plan against.</param>
@@ -69,6 +82,8 @@ namespace Apache.Calcite.Extensions.Prepare
         /// </summary>
         IClrPrepare.Signature Prepare_(CalcitePrepare.Context context, IClrPrepare.Query query, System.Type elementType, long maxRowCount, bool async)
         {
+            if (query.Sql is { } simpleSql && SIMPLE_SQLS.Contains(simpleSql))
+                return SimplePrepare(context, simpleSql);
 
             var typeFactory = context.getTypeFactory();
             var catalogReader = new CalciteCatalogReader(
@@ -246,19 +261,48 @@ namespace Apache.Calcite.Extensions.Prepare
                     this,
                     context,
                     catalogReader,
+                    typeFactory,
                     context.getRootSchema(),
+                    prefer,
                     cluster,
-                    CreateConvertletTable(),
-                    prefer);
+                    CreateConvertletTable());
 
             return new ClrEnumerablePreparingStmt(
                 this,
                 context,
                 catalogReader,
+                typeFactory,
                 context.getRootSchema(),
+                prefer,
                 cluster,
-                CreateConvertletTable(),
-                prefer);
+                CreateConvertletTable());
+        }
+
+        /// <summary>
+        /// Quickly prepares a simple statement, circumventing the usual preparation process.
+        /// </summary>
+        static IClrPrepare.Signature SimplePrepare(CalcitePrepare.Context context, string sql)
+        {
+            var typeFactory = context.getTypeFactory();
+            var x = typeFactory.builder().add(SqlUtil.deriveAliasFromOrdinal(0), SqlTypeName.INTEGER).build();
+            var origins = java.util.Collections.nCopies(x.getFieldCount(), null);
+            var columns = GetColumnMetaDataList(typeFactory, x, x, origins);
+            var cursorFactory = Meta.CursorFactory.deduce(columns, null);
+
+            return new IClrPrepare.Signature(
+                sql,
+                com.google.common.collect.ImmutableList.of(),
+                com.google.common.collect.ImmutableMap.of(),
+                x,
+                columns,
+                cursorFactory,
+                context.getRootSchema(),
+                com.google.common.collect.ImmutableList.of(),
+                -1,
+                // Calcite's one row is Linq4j.asEnumerable(ImmutableList.of(1)), so the value is a
+                // java.lang.Integer; a one-column result is the value rather than a one-element row
+                new ClrSimpleBindable(java.lang.Integer.valueOf(1)),
+                Meta.StatementType.SELECT);
         }
 
         /// <summary>
@@ -309,7 +353,7 @@ namespace Apache.Calcite.Extensions.Prepare
                     return new IClrPrepare.Signature(
                         sql,
                         com.google.common.collect.ImmutableList.of(),
-                        new java.util.LinkedHashMap(),
+                        com.google.common.collect.ImmutableMap.of(),
                         null,
                         com.google.common.collect.ImmutableList.of(),
                         Meta.CursorFactory.OBJECT,
@@ -320,7 +364,9 @@ namespace Apache.Calcite.Extensions.Prepare
                         Meta.StatementType.OTHER_DDL);
                 }
 
-                preparedResult = preparingStmt.PrepareSql(sqlNode, (java.lang.Class)typeof(java.lang.Object), preparingStmt.SqlValidator, true);
+                var validator = preparingStmt.CreateSqlValidator(catalogReader, c => c);
+
+                preparedResult = preparingStmt.PrepareSql(sqlNode, (java.lang.Class)typeof(java.lang.Object), validator, true);
 
                 switch (sqlNode.getKind().name())
                 {
@@ -333,7 +379,7 @@ namespace Apache.Calcite.Extensions.Prepare
                         x = RelOptUtil.createDmlRowType(sqlNode.getKind(), typeFactory);
                         break;
                     default:
-                        x = preparingStmt.SqlValidator.getValidatedNodeType(sqlNode);
+                        x = validator.getValidatedNodeType(sqlNode);
                         break;
                 }
             }
@@ -407,6 +453,31 @@ namespace Apache.Calcite.Extensions.Prepare
         static Meta.StatementType GetStatementType(ClrPrepare.IPreparedResult preparedResult)
         {
             return preparedResult.IsDml ? Meta.StatementType.IS_DML : Meta.StatementType.SELECT;
+        }
+
+        /// <summary>
+        /// Builds the validator a statement is validated with.
+        /// </summary>
+        static SqlValidator CreateSqlValidator(CalcitePrepare.Context context, CalciteCatalogReader catalogReader, Func<SqlValidator.Config, SqlValidator.Config> configTransform)
+        {
+            var opTab0 = (SqlOperatorTable)context.config().fun((java.lang.Class)typeof(SqlOperatorTable), org.apache.calcite.sql.fun.SqlStdOperatorTable.instance());
+
+            var list = new java.util.ArrayList();
+            list.add(opTab0);
+            list.add(catalogReader);
+
+            var opTab = org.apache.calcite.sql.util.SqlOperatorTables.chain(list);
+            var typeFactory = context.getTypeFactory();
+            var connectionConfig = context.config();
+
+            var config = configTransform(
+                SqlValidator.Config.DEFAULT
+                    .withLenientOperatorLookup(connectionConfig.lenientOperatorLookup())
+                    .withConformance(connectionConfig.conformance())
+                    .withDefaultNullCollation(connectionConfig.defaultNullCollation())
+                    .withIdentifierExpansion(true));
+
+            return new CalciteSqlValidator(opTab, catalogReader, typeFactory, config);
         }
 
         /// <summary>
@@ -594,28 +665,35 @@ namespace Apache.Calcite.Extensions.Prepare
         public abstract class PreparingStmt : ClrPrepare, RelOptTable.ViewExpander
         {
 
+            readonly RelOptPlanner planner;
+            readonly RexBuilder rexBuilder;
             readonly ClrPrepareImpl prepare;
             readonly CalciteSchema schema;
-            readonly RelOptCluster cluster;
-            readonly RexBuilder rexBuilder;
-            readonly JavaTypeFactory typeFactory;
+            readonly RelDataTypeFactory typeFactory;
             readonly SqlRexConvertletTable convertletTable;
+            readonly ClrEnumerablePrefer prefer;
+            readonly RelOptCluster cluster;
 
             /// <summary>
             /// The values the query reads through the <c>DataContext</c> rather than from the plan.
             /// </summary>
             readonly java.util.Map internalParameters = new java.util.LinkedHashMap();
 
+            int expansionDepth;
+
             SqlValidator? validator;
 
             /// <summary>
-            /// Initializes a new instance.
+            /// Initializes a new instance. Override this and <see cref="CreateSqlValidator"/> to supply
+            /// custom validation logic.
             /// </summary>
             protected PreparingStmt(
                 ClrPrepareImpl prepare,
                 CalcitePrepare.Context context,
                 CalciteCatalogReader catalogReader,
+                RelDataTypeFactory typeFactory,
                 CalciteSchema schema,
+                ClrEnumerablePrefer prefer,
                 RelOptCluster cluster,
                 Convention resultConvention,
                 SqlRexConvertletTable convertletTable) :
@@ -623,11 +701,12 @@ namespace Apache.Calcite.Extensions.Prepare
             {
                 this.prepare = prepare ?? throw new ArgumentNullException(nameof(prepare));
                 this.schema = schema ?? throw new ArgumentNullException(nameof(schema));
+                this.prefer = prefer;
                 this.cluster = cluster ?? throw new ArgumentNullException(nameof(cluster));
+                this.planner = cluster.getPlanner();
+                this.rexBuilder = cluster.getRexBuilder();
+                this.typeFactory = typeFactory ?? throw new ArgumentNullException(nameof(typeFactory));
                 this.convertletTable = convertletTable ?? throw new ArgumentNullException(nameof(convertletTable));
-
-                rexBuilder = cluster.getRexBuilder();
-                typeFactory = (JavaTypeFactory)cluster.getTypeFactory();
             }
 
             /// <summary>
@@ -636,12 +715,27 @@ namespace Apache.Calcite.Extensions.Prepare
             protected RelOptCluster Cluster => cluster;
 
             /// <summary>
+            /// Gets the planner that chooses the plan.
+            /// </summary>
+            protected RelOptPlanner Planner => planner;
+
+            /// <summary>
+            /// Gets the representation a consumer of the plan would prefer its rows to arrive in.
+            /// </summary>
+            protected ClrEnumerablePrefer Prefer => prefer;
+
+            /// <summary>
+            /// Gets the type factory the statement is prepared with.
+            /// </summary>
+            protected RelDataTypeFactory TypeFactory => typeFactory;
+
+            /// <summary>
             /// Gets the values the query reads through the <c>DataContext</c> rather than from the plan.
             /// </summary>
             public java.util.Map InternalParameters => internalParameters;
 
             /// <inheritdoc />
-            protected internal override SqlValidator SqlValidator => validator ??= CreateSqlValidator(CatalogReader, c => c);
+            protected override SqlValidator SqlValidator => validator ??= CreateSqlValidator(CatalogReader, c => c);
 
             /// <summary>
             /// Prepares a plan that was built rather than parsed.
@@ -680,8 +774,6 @@ namespace Apache.Calcite.Extensions.Prepare
                 // built is not a candidate for substitution
                 root = Optimize(root, com.google.common.collect.ImmutableList.of(), com.google.common.collect.ImmutableList.of());
 
-                org.apache.calcite.runtime.Hook.PLAN_BEFORE_IMPLEMENTATION.run(root);
-
                 return Implement(root);
             }
 
@@ -712,6 +804,17 @@ namespace Apache.Calcite.Extensions.Prepare
             /// <inheritdoc />
             protected override RelNode Decorrelate(SqlToRelConverter sqlToRelConverter, SqlNode query, RelNode rootRel)
             {
+                if (Context.config().topDownGeneralDecorrelationEnabled())
+                {
+                    // Calcite writes this as sqlToRelConverter.config(), which reads as the converter's own
+                    // configuration and is not: SqlToRelConverter has no instance config() and Java resolves
+                    // the call to the static factory through the instance reference. So the builder is the
+                    // default one, and C# has to say so
+                    var relBuilder = SqlToRelConverter.config().getRelBuilderFactory().create(rootRel.getCluster(), null);
+
+                    return org.apache.calcite.sql2rel.TopDownGeneralDecorrelator.decorrelateQuery(rootRel, relBuilder);
+                }
+
                 return sqlToRelConverter.decorrelate(query, rootRel);
             }
 
@@ -731,36 +834,26 @@ namespace Apache.Calcite.Extensions.Prepare
                 SqlExplainFormat format,
                 SqlExplainLevel detailLevel)
             {
-                return new ClrPrepare.PreparedExplain(resultType, parameterRowType, root, format, detailLevel);
+                return new ClrPreparedExplain(resultType, parameterRowType, root, format, detailLevel);
             }
 
             /// <summary>
-            /// Creates the validator.
+            /// Creates the validator. Override this and this class to supply custom validation logic.
             /// </summary>
-            protected virtual SqlValidator CreateSqlValidator(CalciteCatalogReader catalogReader, Func<SqlValidator.Config, SqlValidator.Config> configTransform)
+            /// <remarks>
+            /// <c>protected internal</c> rather than <c>protected</c>: Java's protected is also package
+            /// access, and <see cref="Prepare2_"/> is the caller that relies on it.
+            /// </remarks>
+            protected internal virtual SqlValidator CreateSqlValidator(org.apache.calcite.prepare.Prepare.CatalogReader catalogReader, Func<SqlValidator.Config, SqlValidator.Config> configTransform)
             {
-                var connectionConfig = Context.config();
-                var opTab0 = (SqlOperatorTable)connectionConfig.fun((java.lang.Class)typeof(SqlOperatorTable), org.apache.calcite.sql.fun.SqlStdOperatorTable.instance());
-
-                var list = new java.util.ArrayList();
-                list.add(opTab0);
-                list.add(catalogReader);
-
-                var opTab = org.apache.calcite.sql.util.SqlOperatorTables.chain(list);
-
-                var config = configTransform(
-                    SqlValidator.Config.DEFAULT
-                        .withLenientOperatorLookup(connectionConfig.lenientOperatorLookup())
-                        .withConformance(connectionConfig.conformance())
-                        .withDefaultNullCollation(connectionConfig.defaultNullCollation())
-                        .withIdentifierExpansion(true));
-
-                return new CalciteSqlValidator(opTab, catalogReader, typeFactory, config);
+                return ClrPrepareImpl.CreateSqlValidator(Context, (CalciteCatalogReader)catalogReader, configTransform);
             }
 
             /// <inheritdoc />
             public RelRoot expandView(RelDataType rowType, string queryString, java.util.List schemaPath, java.util.List viewPath)
             {
+                expansionDepth++;
+
                 var parser = prepare.CreateParser(queryString);
 
                 SqlNode sqlNode;
@@ -777,8 +870,39 @@ namespace Apache.Calcite.Extensions.Prepare
                 var viewValidator = CreateSqlValidator(viewCatalogReader, c => c.withEmbeddedQuery(true));
                 var config = SqlToRelConverter.config().withTrimUnusedFields(true);
                 var sqlToRelConverter = GetSqlToRelConverter(viewValidator, viewCatalogReader, config);
+                var root = sqlToRelConverter.convertQuery(sqlNode, true, true);
 
-                return sqlToRelConverter.convertQuery(sqlNode, true, true);
+                --expansionDepth;
+
+                return root;
+            }
+
+        }
+
+        /// <summary>
+        /// An <c>EXPLAIN</c> statement, prepared and ready to execute.
+        /// </summary>
+        sealed class ClrPreparedExplain : ClrPrepare.PreparedExplain
+        {
+
+            /// <summary>
+            /// Initializes a new instance.
+            /// </summary>
+            public ClrPreparedExplain(
+                RelDataType? resultType,
+                RelDataType parameterRowType,
+                RelRoot? root,
+                SqlExplainFormat format,
+                SqlExplainLevel detailLevel) :
+                base(resultType, parameterRowType, root, format, detailLevel)
+            {
+
+            }
+
+            /// <inheritdoc />
+            public override IClrBindableBase GetBindable(Meta.CursorFactory cursorFactory)
+            {
+                return new ClrExplainBindable(Code, cursorFactory);
             }
 
         }

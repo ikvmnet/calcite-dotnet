@@ -48,9 +48,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         public static readonly MethodInfo Skip = Of(nameof(ClrEnumerableDefaults.Skip));
 
         /// <summary>
-        /// <see cref="ClrEnumerableDefaults.Take"/>.
+        /// <see cref="ClrEnumerableDefaults.Take{TSource}(System.Collections.Generic.IEnumerable{TSource}, int)"/>.
         /// </summary>
-        public static readonly MethodInfo Take = Of(nameof(ClrEnumerableDefaults.Take));
+        /// <remarks>
+        /// The <c>int</c> overload, which is <c>BuiltInMethod.TAKE</c>; a plan's fetch is an <c>int</c>. The
+        /// <c>long</c> one is the row limit a caller asks a prepared statement for.
+        /// </remarks>
+        public static readonly MethodInfo Take = Of(nameof(ClrEnumerableDefaults.Take), null, typeof(int));
 
         /// <summary>
         /// <see cref="ClrEnumerableDefaults.Concat"/>.
@@ -220,14 +224,50 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             ?? throw new InvalidOperationException($"'{nameof(JavaSequences.ToJava)}' is missing.");
 
         /// <summary>
-        /// Returns the named operator.
+        /// Returns the named operator, picked out by parameter type where the name is overloaded.
         /// </summary>
         /// <param name="name"></param>
+        /// <param name="parameterTypes">One entry per parameter, <see langword="null"/> where the parameter
+        /// is generic and so has no <see cref="Type"/> to name. Empty where the name is enough.</param>
         /// <returns></returns>
-        static MethodInfo Of(string name)
+        /// <remarks>
+        /// <c>BuiltInMethod</c> names a method by its parameter types — <c>TAKE(ExtendedEnumerable.class,
+        /// "take", int.class)</c> — because a name alone does not pick an overload, and
+        /// <c>EnumerableDefaults.take</c> has two. <see cref="Type.GetMethod(string, BindingFlags)"/> throws
+        /// on the ambiguity rather than reporting it, so the choice is made here.
+        /// </remarks>
+        static MethodInfo Of(string name, params Type?[] parameterTypes)
         {
-            return typeof(ClrEnumerableDefaults).GetMethod(name, BindingFlags.Public | BindingFlags.Static)
-                ?? throw new InvalidOperationException($"'{name}' is missing from {nameof(ClrEnumerableDefaults)}.");
+            MethodInfo? found = null;
+
+            foreach (var method in typeof(ClrEnumerableDefaults).GetMethods(BindingFlags.Public | BindingFlags.Static))
+            {
+                if (method.Name != name || Matches(method) == false)
+                    continue;
+
+                if (found != null)
+                    throw new InvalidOperationException($"'{name}' is ambiguous in {nameof(ClrEnumerableDefaults)}; name its parameter types.");
+
+                found = method;
+            }
+
+            return found ?? throw new InvalidOperationException($"'{name}' is missing from {nameof(ClrEnumerableDefaults)}.");
+
+            bool Matches(MethodInfo method)
+            {
+                if (parameterTypes.Length == 0)
+                    return true;
+
+                var parameters = method.GetParameters();
+                if (parameters.Length != parameterTypes.Length)
+                    return false;
+
+                for (var i = 0; i < parameters.Length; i++)
+                    if (parameterTypes[i] != null && parameters[i].ParameterType != parameterTypes[i])
+                        return false;
+
+                return true;
+            }
         }
 
     }
