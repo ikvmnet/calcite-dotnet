@@ -285,11 +285,43 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         }
 
         /// <summary>
-        /// The row loop of <see cref="Take"/>, over an enumerator the factory acquired.
+        /// The row loop of <see cref="Take{TSource}(IAsyncEnumerable{TSource}, int, CancellationToken)"/>,
+        /// over an enumerator the factory acquired.
         /// </summary>
         static async IAsyncEnumerator<TSource> TakeRows<TSource>(IAsyncEnumerator<TSource> source, int count)
         {
             var n = -1;
+
+            while (await source.MoveNextAsync() && ++n < count)
+                yield return source.Current;
+        }
+
+        /// <summary>
+        /// Takes a number of rows.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="count"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <see cref="ClrEnumerableDefaults.Take{TSource}(IEnumerable{TSource}, long)"/>, which is
+        /// <c>EnumerableDefaults.take(source, long)</c>.
+        /// </remarks>
+        public static IAsyncEnumerable<TSource> Take<TSource>(IAsyncEnumerable<TSource> source, long count, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+
+            return source.Acquiring((e, token) => TakeRows(e, count));
+        }
+
+        /// <summary>
+        /// The row loop of <see cref="Take{TSource}(IAsyncEnumerable{TSource}, long, CancellationToken)"/>,
+        /// over an enumerator the factory acquired.
+        /// </summary>
+        static async IAsyncEnumerator<TSource> TakeRows<TSource>(IAsyncEnumerator<TSource> source, long count)
+        {
+            var n = -1L;
 
             while (await source.MoveNextAsync() && ++n < count)
                 yield return source.Current;

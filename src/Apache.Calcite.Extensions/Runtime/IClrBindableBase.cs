@@ -8,8 +8,8 @@ namespace Apache.Calcite.Extensions.Runtime
     /// </summary>
     /// <remarks>
     /// One member, because it is the only one a caller reads without knowing which convention prepared the
-    /// statement: <c>IClrPrepare.Signature</c> holds a plan as this, and <c>ClrPrepareImpl.Describe</c> reads nothing
-    /// else off it. Binding is on <see cref="IClrBindable"/> and <see cref="IClrAsyncBindable"/>, because
+    /// statement: <c>IClrPrepare.Signature</c> holds a plan as this, and <c>ClrPrepareImpl.Prepare2_</c> reads
+    /// nothing else off it. Binding is on <see cref="IClrBindable"/> and <see cref="IClrAsyncBindable"/>, because
     /// the two return different sequences and a common <c>Bind</c> could only return one neither of them
     /// wants.
     ///
@@ -26,7 +26,7 @@ namespace Apache.Calcite.Extensions.Runtime
         /// The counterpart of <c>Typed.getElementType</c>, as a <see cref="Type"/> rather than a
         /// <c>java.lang.reflect.Type</c>. A compiled plan is a delegate over CLR types and its rows are CLR
         /// objects; what the type factory called the row is the prepare pipeline's business, and
-        /// <c>ClrPrepareResult.ElementType</c> is where that answer stays for
+        /// <c>ClrPrepare.PreparedResultImpl.ElementType</c> is where that answer stays for
         /// <c>Meta.CursorFactory.deduce</c>. Handing a Java type out of a runtime interface would make every
         /// caller convert one back.
         /// </remarks>

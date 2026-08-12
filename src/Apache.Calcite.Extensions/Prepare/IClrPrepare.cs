@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 
+using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Runtime;
 
 using org.apache.calcite;
@@ -86,7 +88,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// A planned statement: everything a caller needs to describe the result, plus the compiled plan that
         /// produces its rows.
         /// </summary>
-        public sealed class Signature
+        public sealed class Signature : Meta.Signature
         {
 
             /// <summary>
@@ -116,35 +118,30 @@ namespace Apache.Calcite.Extensions.Prepare
                 java.util.List collations,
                 long maxRowCount,
                 IClrBindableBase? bindable,
-                Meta.StatementType statementType)
+                Meta.StatementType statementType) :
+                base(columns, sql, parameters, internalParameters, cursorFactory, statementType)
             {
-                Sql = sql;
-                Parameters = parameters ?? throw new ArgumentNullException(nameof(parameters));
-                InternalParameters = internalParameters ?? throw new ArgumentNullException(nameof(internalParameters));
                 RowType = rowType;
-                Columns = columns ?? throw new ArgumentNullException(nameof(columns));
-                CursorFactory = cursorFactory ?? throw new ArgumentNullException(nameof(cursorFactory));
                 RootSchema = rootSchema;
                 Collations = collations ?? throw new ArgumentNullException(nameof(collations));
                 this.maxRowCount = maxRowCount;
                 this.bindable = bindable;
-                StatementType = statementType ?? throw new ArgumentNullException(nameof(statementType));
             }
 
             /// <summary>
             /// Gets the statement's text.
             /// </summary>
-            public string? Sql { get; }
+            public string? Sql => sql;
 
             /// <summary>
             /// Gets one <see cref="AvaticaParameter"/> per dynamic parameter.
             /// </summary>
-            public java.util.List Parameters { get; }
+            public java.util.List Parameters => parameters;
 
             /// <summary>
             /// Gets the values the query reads through the <see cref="DataContext"/> rather than from the plan.
             /// </summary>
-            public java.util.Map InternalParameters { get; }
+            public java.util.Map InternalParameters => internalParameters;
 
             /// <summary>
             /// Gets the result's row type, or <see langword="null"/> for DDL.
@@ -154,12 +151,12 @@ namespace Apache.Calcite.Extensions.Prepare
             /// <summary>
             /// Gets one <see cref="ColumnMetaData"/> per result column.
             /// </summary>
-            public java.util.List Columns { get; }
+            public java.util.List Columns => columns;
 
             /// <summary>
             /// Gets how a row is read back.
             /// </summary>
-            public Meta.CursorFactory CursorFactory { get; }
+            public Meta.CursorFactory CursorFactory => cursorFactory;
 
             /// <summary>
             /// Gets the schema the statement was planned against.
@@ -178,7 +175,7 @@ namespace Apache.Calcite.Extensions.Prepare
             /// <summary>
             /// Gets what kind of statement this is.
             /// </summary>
-            public Meta.StatementType StatementType { get; }
+            public Meta.StatementType StatementType => statementType;
 
             /// <summary>
             /// Runs the plan against a <see cref="DataContext"/> and returns its rows.
@@ -197,7 +194,12 @@ namespace Apache.Calcite.Extensions.Prepare
 
                 var rows = sync.Bind(root);
 
-                return maxRowCount < 0 ? rows : Take(rows, maxRowCount);
+                // apply the limit; in JDBC 0 means "no limit", but for us -1 means "no limit" and 0 is a
+                // valid limit
+                if (maxRowCount >= 0)
+                    rows = ClrEnumerableDefaults.Take(rows, maxRowCount);
+
+                return rows;
             }
 
             /// <summary>
@@ -218,48 +220,12 @@ namespace Apache.Calcite.Extensions.Prepare
 
                 var rows = async.Bind(root);
 
-                return maxRowCount < 0 ? rows : TakeAsync(rows, maxRowCount);
-            }
+                // apply the limit; in JDBC 0 means "no limit", but for us -1 means "no limit" and 0 is a
+                // valid limit
+                if (maxRowCount >= 0)
+                    rows = ClrAsyncEnumerableDefaults.Take(rows, maxRowCount);
 
-            /// <summary>
-            /// Yields at most <paramref name="count"/> rows.
-            /// </summary>
-            static async IAsyncEnumerable<object> TakeAsync(IAsyncEnumerable<object> source, long count)
-            {
-                if (count <= 0)
-                    yield break;
-
-                var taken = 0L;
-
-                await foreach (var row in source)
-                {
-                    yield return row;
-
-                    if (++taken >= count)
-                        yield break;
-                }
-            }
-
-            /// <summary>
-            /// Yields at most <paramref name="count"/> rows.
-            /// </summary>
-            /// <param name="source"></param>
-            /// <param name="count"></param>
-            /// <returns></returns>
-            static IEnumerable<object> Take(IEnumerable<object> source, long count)
-            {
-                if (count <= 0)
-                    yield break;
-
-                var taken = 0L;
-
-                foreach (var row in source)
-                {
-                    yield return row;
-
-                    if (++taken >= count)
-                        yield break;
-                }
+                return rows;
             }
 
         }

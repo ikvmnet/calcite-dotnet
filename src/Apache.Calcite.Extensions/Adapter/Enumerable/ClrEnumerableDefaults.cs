@@ -240,11 +240,42 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <summary>
-        /// The row loop of <see cref="Take"/>, over an enumerator the factory acquired.
+        /// The row loop of <see cref="Take{TSource}(IEnumerable{TSource}, int)"/>, over an enumerator the
+        /// factory acquired.
         /// </summary>
         static IEnumerator<TSource> TakeRows<TSource>(IEnumerator<TSource> source, int count)
         {
             var n = -1;
+
+            while (source.MoveNext() && ++n < count)
+                yield return source.Current;
+        }
+
+        /// <summary>
+        /// Takes a number of rows.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>EnumerableDefaults.take(source, long)</c>, which is <c>takeWhileLong</c> where the other is
+        /// <c>takeWhile</c>. Same operator, a counter wide enough for a row limit.
+        /// </remarks>
+        public static IEnumerable<TSource> Take<TSource>(IEnumerable<TSource> source, long count)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+
+            return source.Acquiring(e => TakeRows(e, count));
+        }
+
+        /// <summary>
+        /// The row loop of <see cref="Take{TSource}(IEnumerable{TSource}, long)"/>, over an enumerator the
+        /// factory acquired.
+        /// </summary>
+        static IEnumerator<TSource> TakeRows<TSource>(IEnumerator<TSource> source, long count)
+        {
+            var n = -1L;
 
             while (source.MoveNext() && ++n < count)
                 yield return source.Current;

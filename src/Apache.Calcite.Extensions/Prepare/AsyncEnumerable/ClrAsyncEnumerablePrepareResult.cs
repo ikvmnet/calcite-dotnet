@@ -53,7 +53,7 @@ namespace Apache.Calcite.Extensions.Prepare.AsyncEnumerable
         public IClrAsyncBindable Bindable { get; }
 
         /// <inheritdoc />
-        public override System.Type? ElementType => elementType;
+        public override System.Type ElementType => elementType;
 
         readonly System.Type elementType;
 

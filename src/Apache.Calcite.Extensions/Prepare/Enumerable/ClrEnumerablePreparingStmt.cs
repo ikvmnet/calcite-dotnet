@@ -1,9 +1,12 @@
 using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Runtime;
 
 using org.apache.calcite.jdbc;
 using org.apache.calcite.plan;
 using org.apache.calcite.prepare;
 using org.apache.calcite.rel;
+using org.apache.calcite.rel.metadata;
+using org.apache.calcite.rel.type;
 using org.apache.calcite.rex;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql2rel;
@@ -18,8 +21,6 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable
     sealed class ClrEnumerablePreparingStmt : ClrPrepareImpl.PreparingStmt
     {
 
-        readonly ClrEnumerablePrefer prefer;
-
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
@@ -27,20 +28,30 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable
             ClrPrepareImpl prepare,
             CalcitePrepare.Context context,
             CalciteCatalogReader catalogReader,
+            RelDataTypeFactory typeFactory,
             CalciteSchema schema,
+            ClrEnumerablePrefer prefer,
             RelOptCluster cluster,
-            SqlRexConvertletTable convertletTable,
-            ClrEnumerablePrefer prefer) :
-            base(prepare, context, catalogReader, schema, cluster, ClrEnumerableConvention.Instance, convertletTable)
+            SqlRexConvertletTable convertletTable) :
+            base(prepare, context, catalogReader, typeFactory, schema, prefer, cluster, ClrEnumerableConvention.Instance, convertletTable)
         {
-            this.prefer = prefer;
+
         }
 
         /// <inheritdoc />
-        protected override Program GetProgram()
+        /// <remarks>
+        /// <c>Programs.standard()</c>'s six passes, in its order. The last two are this convention's:
+        /// <c>PlannerRules</c> is the planner pass written out, and <c>PlannerCalcRules</c> is
+        /// <c>calc(metadataProvider)</c> with this convention's calc rules added to
+        /// <c>RelOptRules.CALC_RULES</c>.
+        /// </remarks>
+        protected override Program GetStandardProgram()
         {
             return Programs.sequence(
                 ClrEnumerablePrograms.SubQuery(),
+                Programs.decorrelate(),
+                Programs.measure(DefaultRelMetadataProvider.INSTANCE),
+                Programs.trim(),
                 ClrEnumerablePrograms.PlannerRules(),
                 ClrEnumerablePrograms.PlannerCalcRules());
         }
@@ -48,6 +59,8 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable
         /// <inheritdoc />
         protected override ClrPrepare.IPreparedResult Implement(RelRoot root)
         {
+            org.apache.calcite.runtime.Hook.PLAN_BEFORE_IMPLEMENTATION.run(root);
+
             var resultType = root.rel.getRowType();
             var isDml = root.kind.belongsTo(SqlKind.DML);
 
@@ -64,9 +77,17 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable
                 node = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableCalc.Create(node, program);
             }
 
-            InternalParameters.put("_conformance", Context.config().conformance());
-
-            var bindable = ClrEnumerableInterpretable.ToBindable(InternalParameters, node, prefer);
+            IClrBindable bindable;
+            try
+            {
+                org.apache.calcite.prepare.Prepare.CatalogReader.THREAD_LOCAL.set(CatalogReader);
+                InternalParameters.put("_conformance", Context.config().conformance());
+                bindable = ClrEnumerableInterpretable.ToBindable(InternalParameters, node, Prefer);
+            }
+            finally
+            {
+                org.apache.calcite.prepare.Prepare.CatalogReader.THREAD_LOCAL.remove();
+            }
 
             var collations = root.collation.getFieldCollations().isEmpty()
                 ? (java.util.List)com.google.common.collect.ImmutableList.of()
@@ -85,7 +106,7 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable
                 ClrPhysTypeImpl.Of(
                     (org.apache.calcite.adapter.java.JavaTypeFactory)node.getCluster().getTypeFactory(),
                     node.getRowType(),
-                    prefer.PreferArray()).RowType);
+                    Prefer.PreferArray()).RowType);
         }
 
     }

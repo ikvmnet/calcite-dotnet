@@ -91,13 +91,15 @@ namespace Apache.Calcite.Tests
         /// <typeparam name="T"></typeparam>
         /// <param name="sql">The statement, for the caller's own use.</param>
         /// <param name="body"></param>
+        /// <param name="connectionProperties">Set on the connection configuration after the defaults, for a
+        /// test whose subject is a connection property.</param>
         /// <returns></returns>
         /// <remarks>
         /// The context is pushed onto <c>CalcitePrepare.Dummy</c>'s thread-local stack for the length of the
         /// call, because Calcite's parse-to-rel reads it from there. A fresh schema per call, so one test
         /// cannot see another's plan cache.
         /// </remarks>
-        public static T WithContext<T>(string sql, Func<CalcitePrepare.Context, CalciteSchema, T> body)
+        public static T WithContext<T>(string sql, Func<CalcitePrepare.Context, CalciteSchema, T> body, Action<java.util.Properties>? connectionProperties = null)
         {
             ArgumentNullException.ThrowIfNull(body);
 
@@ -111,6 +113,7 @@ namespace Apache.Calcite.Tests
             var properties = new java.util.Properties();
             properties.setProperty("lex", "JAVA");
             properties.setProperty("caseSensitive", "false");
+            connectionProperties?.Invoke(properties);
             var config = new CalciteConnectionConfigImpl(properties);
 
             var context = new PrepareContext(typeFactory, rootSchema, config, []);
