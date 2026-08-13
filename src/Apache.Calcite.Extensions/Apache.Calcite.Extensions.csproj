@@ -36,12 +36,13 @@
              have. Every test in that project then fails in a type initializer. -->
         <!-- json-path's published POM declares no jackson dependency at all (json-path/JsonPath#1082), so
              its jackson-based providers would compile against hard-throwing stubs and Calcite's JSON
-             functions would fail with NoClassDefFoundError. Declare the missing edge; the version matches
-             the jackson-databind that calcite-core itself manages. -->
+             functions would fail with NoClassDefFoundError. Declare the missing edge, optional like
+             json-path's own bundled descriptor intends, so the version sorts ahead when the closure asks
+             for jackson. The version matches the jackson-databind that calcite-core itself manages. -->
         <MavenReference Include="org.apache.calcite:calcite-core" Version="1.42.0">
             <Dependencies>
-                com.jayway.jsonpath:json-path/com.fasterxml.jackson.core:jackson-databind:2.18.6;
-                com.jayway.jsonpath:json-path/com.fasterxml.jackson.core:jackson-core:2.18.6
+                com.jayway.jsonpath:json-path/com.fasterxml.jackson.core:jackson-databind:2.18.6,optional=true;
+                com.jayway.jsonpath:json-path/com.fasterxml.jackson.core:jackson-core:2.18.6,optional=true
             </Dependencies>
         </MavenReference>
         <MavenReference Include="org.jooq:joou-java-6" Version="0.9.5" />
