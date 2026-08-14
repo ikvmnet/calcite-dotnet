@@ -29,7 +29,7 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="System.Data.OleDb" Version="8.0.1" />
+        <PackageReference Include="System.Data.OleDb" Version="10.0.11" />
         <!-- json-path's published POM declares no jackson dependency at all (json-path/JsonPath#1082);
              declare the missing edge, optional like json-path's own bundled descriptor intends, so the
              version sorts ahead when the closure asks for jackson. The version matches the

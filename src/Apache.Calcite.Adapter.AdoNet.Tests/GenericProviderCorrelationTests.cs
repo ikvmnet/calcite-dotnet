@@ -288,7 +288,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [TestMethod]
         public void TheOleDbDriverCannotBindAZonedTimestamp()
         {
-            var thrown = Assert.ThrowsException<NotSupportedException>(() => CorrelatedRows(OleDb, """
+            var thrown = Assert.Throws<NotSupportedException>(() => CorrelatedRows(OleDb, """
                 SELECT T.ID FROM ADO.TYPES T
                 WHERE EXISTS (SELECT 1 FROM ADO.TYPES T2 WHERE T2.C_DATETIMEOFFSET = T.C_DATETIMEOFFSET)
                 """));

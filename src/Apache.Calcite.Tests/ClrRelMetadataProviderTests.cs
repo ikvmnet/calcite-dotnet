@@ -267,7 +267,7 @@ namespace Apache.Calcite.Tests
             var mq = new RelMetadataQuery(ClrRelMetadataProvider.Of(chained));
             Assert.AreEqual(7d, mq.getRowCount(values).doubleValue(), 0.0001);
 
-            var refused = Assert.ThrowsException<java.lang.RuntimeException>(
+            var refused = Assert.Throws<java.lang.RuntimeException>(
                 () => JaninoRelMetadataProvider.of(chained).revise(handlerClass));
             StringAssert.Contains(refused.ToString(), "cli");
         }
@@ -490,7 +490,7 @@ namespace Apache.Calcite.Tests
 
             var mq = new RelMetadataQuery(ClrRelMetadataProvider.Of(source));
 
-            Assert.ThrowsException<CyclicMetadataException>(() => mq.getRowCount(values));
+            Assert.Throws<CyclicMetadataException>(() => mq.getRowCount(values));
             Assert.AreEqual(0, mq.map.row(values).size(), "the rel's row was left behind.");
         }
 
@@ -513,7 +513,7 @@ namespace Apache.Calcite.Tests
 
             Assert.AreEqual(7d, mq.getRowCount(values).doubleValue(), 0.0001);
 
-            var refused = Assert.ThrowsException<java.lang.IllegalArgumentException>(() => mq.getMaxRowCount(values));
+            var refused = Assert.Throws<java.lang.IllegalArgumentException>(() => mq.getMaxRowCount(values));
             StringAssert.Contains(refused.Message, "No handler for method");
             StringAssert.Contains(refused.Message, "catch-all");
         }
