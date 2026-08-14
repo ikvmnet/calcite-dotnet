@@ -92,6 +92,32 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
+        /// Creates a new instance over a <see cref="DbProviderFactory"/> and a connection string.
+        /// </summary>
+        /// <remarks>
+        /// This is the route for a provider that ships no <see cref="DbDataSource"/>, which is every
+        /// provider this adapter carries metadata for: Microsoft.Data.Sqlite, Microsoft.Data.SqlClient,
+        /// System.Data.Odbc and System.Data.OleDb all inherit the throwing
+        /// <see cref="DbProviderFactory.CreateDataSource"/>, so there is no data source to ask them for.
+        /// </remarks>
+        /// <param name="parentSchema"></param>
+        /// <param name="name"></param>
+        /// <param name="factory"></param>
+        /// <param name="connectionString"></param>
+        /// <param name="databaseName"></param>
+        /// <param name="schemaName"></param>
+        /// <returns></returns>
+        public static AdoSchema Create(SchemaPlus? parentSchema, string name, DbProviderFactory factory, string connectionString, string? databaseName, string? schemaName)
+        {
+            ArgumentNullException.ThrowIfNull(factory);
+            ArgumentNullException.ThrowIfNull(connectionString);
+
+            var dataSource = new DbProviderFactoryDataSource(factory, connectionString);
+            var metadata = AdoDatabaseMetadataFactoryImpl.Instance.Create(dataSource);
+            return Create(parentSchema, name, new DbProviderAdoDataSource(factory, connectionString, metadata), databaseName, schemaName);
+        }
+
+        /// <summary>
         /// Creates a new instance.
         /// </summary>
         /// <param name="parentSchema"></param>
@@ -219,7 +245,7 @@ namespace Apache.Calcite.Adapter.AdoNet
                     throw new AdoCalciteException("Required missing property 'adoConnectionString'.");
 
                 var dbFactory = DbProviderFactories.GetFactory(adoProviderName);
-                var dbDataSource = dbFactory.CreateDataSource(adoConnectionString);
+                var dbDataSource = new DbProviderFactoryDataSource(dbFactory, adoConnectionString);
                 adoDataSource = new DbProviderAdoDataSource(dbFactory, adoConnectionString, adoDatabaseMetadata ?? adoDatabaseMetadataFactory.Create(dbDataSource));
                 if (adoDataSource is null)
                     throw new AdoCalciteException("Failed to instantiate DbDataSource from adoProviderName and adoConnectionString.");
