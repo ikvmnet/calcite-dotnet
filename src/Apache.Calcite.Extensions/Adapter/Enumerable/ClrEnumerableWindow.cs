@@ -213,8 +213,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 Hoist(translator, variables, body, keyComparator_, collationComparator ?? throw new java.lang.NullPointerException("keyComparator"), typeof(java.util.Comparator));
             }
 
-            var loop = new WindowLoop(inputCalcite);
-            var inputGetter = new WindowRelInputGetter(loop.Row, inputCalcite, result.PhysType.RelRowType.getFieldCount(), translatedConstants);
+            var loop = new WindowLoop(inputCalcite, inputPhysType.JavaRowType);
+            var inputGetter = new WindowRelInputGetter(loop.Row, inputCalcite, inputPhysType.JavaRowType, result.PhysType.RelRowType.getFieldCount(), translatedConstants);
 
             // the output row is every input field, and then whatever each aggregate last computed
             var inputFieldCount = inputPhysType.RelRowType.getFieldCount();
@@ -279,7 +279,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var frame = new java.util.function.DelegateFunction<J.BlockBuilder, WinAggFrameResultContext>(
                 block => new ClrWinAggFrameResultContext(
-                    block, typeFactory, implementor.Conformance, inputCalcite, result.PhysType.RelRowType.getFieldCount(),
+                    block, typeFactory, implementor.Conformance, inputCalcite, inputPhysType.JavaRowType, result.PhysType.RelRowType.getFieldCount(),
                     translatedConstants, comparator_, loop.Rows, loop.Index, loop.Start, loop.End, min_, loop.MaxX,
                     loop.HasRows, loop.FrameRowCount, loop.PartitionRowCount, loop.Position));
 
@@ -323,7 +323,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var selector = loop.Lambda(translator, selectorBuilder.toBlock(), outputType, accType);
 
             // the partition key, which is the one thing here that reads a row outside the loop
-            var partitionSelector = PartitionSelector(translator, inputCalcite, group, sourceType);
+            var partitionSelector = PartitionSelector(translator, inputCalcite, inputPhysType.JavaRowType, group, sourceType);
             var keyType = partitionSelector?.ReturnType ?? typeof(object);
 
             return Expression.Call(null,
@@ -385,12 +385,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// The key <c>getPartitionIterator</c> builds, which is a synthetic record for several keys and the
         /// field itself for one.
         /// </remarks>
-        static LambdaExpression? PartitionSelector(LixToClrTranslator translator, PhysType inputPhysType, Group group, Type sourceType)
+        static LambdaExpression? PartitionSelector(LixToClrTranslator translator, PhysType inputPhysType, java.lang.reflect.Type javaRowType, Group group, Type sourceType)
         {
             if (group.keys.isEmpty())
                 return null;
 
-            var v_ = J.Expressions.parameter(inputPhysType.getJavaRowType(), "v");
+            var v_ = J.Expressions.parameter(javaRowType, "v");
             var selector = inputPhysType.selector(v_, group.keys.asList(), JavaRowFormat.CUSTOM);
 
             var builder = new J.BlockBuilder();
@@ -419,7 +419,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // the rows arrive boxed, because the partition they go into is an Object[], so the row is unboxed
             // on the way in exactly as a join's predicate unboxes its two
             var parameter = Expression.Parameter(sourceType, "v");
-            var row = Expression.Variable(ClrTypes.Resolve(inputPhysType.getJavaRowType()), "v");
+            var row = Expression.Variable(ClrTypes.Resolve(javaRowType), "v");
             translator.Bind(v_, row);
 
             // the key is a map's, so a key that is a primitive is boxed the way the type factory says: what
@@ -685,7 +685,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// lambda assigns from the <see cref="WindowFrame"/> it is given. That is the same thing a row
         /// parameter is everywhere else in this convention.
         /// </remarks>
-        sealed class WindowLoop(PhysType inputPhysType)
+        sealed class WindowLoop(PhysType inputPhysType, java.lang.reflect.Type javaRowType)
         {
 
             static readonly java.lang.reflect.Type IntType = J.Primitive.INT.primitiveClass;
@@ -719,7 +719,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             public J.ParameterExpression Position { get; } = J.Expressions.parameter(IntType, "j");
 
             /// <summary>The row being evaluated.</summary>
-            public J.ParameterExpression Row { get; } = J.Expressions.parameter(inputPhysType.getJavaRowType(), "row");
+            public J.ParameterExpression Row { get; } = J.Expressions.parameter(javaRowType, "row");
 
             /// <summary>The accumulator, which is not known until its record type has been built.</summary>
             public J.ParameterExpression? Accumulator { get; set; }
@@ -735,7 +735,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             public LambdaExpression Lambda(LixToClrTranslator translator, J.BlockStatement block, Type returnType, Type? accumulatorType)
             {
                 var frame = Expression.Parameter(typeof(WindowFrame), "frame");
-                var rowType = ClrTypes.Resolve(inputPhysType.getJavaRowType());
+                var rowType = ClrTypes.Resolve(javaRowType);
 
                 // fresh variables each time, because a lambda declares its own and two of them are siblings
                 var rows = Expression.Variable(typeof(object[]), "rows");
@@ -802,7 +802,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <remarks>
         /// <c>EnumerableWindow.WindowRelInputGetter</c>, which is private.
         /// </remarks>
-        sealed class WindowRelInputGetter(J.Expression row, PhysType rowPhysType, int actualInputFieldCount, java.util.List constants) : RexToLixTranslator.InputGetter
+        sealed class WindowRelInputGetter(J.Expression row, PhysType rowPhysType, java.lang.reflect.Type javaRowType, int actualInputFieldCount, java.util.List constants) : RexToLixTranslator.InputGetter
         {
 
             /// <inheritdoc />
@@ -876,6 +876,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             JavaTypeFactory typeFactory,
             SqlConformance conformance,
             PhysType inputPhysType,
+            java.lang.reflect.Type javaRowType,
             int actualInputFieldCount,
             java.util.List constants,
             J.Expression comparator,
@@ -897,7 +898,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 return RexToLixTranslator.forAggregation(
                     typeFactory,
                     block,
-                    new WindowRelInputGetter(GetRow(rowIndex), inputPhysType, actualInputFieldCount, constants),
+                    new WindowRelInputGetter(GetRow(rowIndex), inputPhysType, javaRowType, actualInputFieldCount, constants),
                     conformance);
             }
 
@@ -956,7 +957,21 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             /// <returns></returns>
             J.Expression GetRow(J.Expression rowIndex)
             {
-                return block.append("jRow", EnumUtils.convert(J.Expressions.arrayIndex(rows, rowIndex), inputPhysType.getJavaRowType()));
+                // EnumUtils.convert declines a row of a CLR class, and quietly: Types.needTypeCast answers
+                // false for any RecordType, so the operand comes back as it went in and the row stays an
+                // Object -- which then reaches CUSTOM.field and asks Object.class for its fields. The rule is
+                // right where a record type is the declared type of a variable, a synthetic record carrying
+                // its own and a cast being noise; it is wrong here, where the value is an element of an
+                // Object[] and there is nothing else to say what it is. Calcite never meets it, a row of a
+                // class handing it a Class and needTypeCast then answering true.
+                //
+                // So the cast is written for our record type and for nothing else. A synthetic record still
+                // goes through EnumUtils and still gets no cast, which is Calcite's behaviour whether or not
+                // it is Calcite's intent.
+                var element = (J.Expression)J.Expressions.arrayIndex(rows, rowIndex);
+                return block.append("jRow", javaRowType is Clr.ClrRecordType
+                    ? J.Expressions.convert_(element, javaRowType)
+                    : EnumUtils.convert(element, javaRowType));
             }
 
             /// <summary>

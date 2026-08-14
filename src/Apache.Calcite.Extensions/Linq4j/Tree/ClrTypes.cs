@@ -39,6 +39,11 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             {
                 java.lang.Class c => FromClass(c),
                 org.apache.calcite.jdbc.JavaTypeFactoryImpl.SyntheticRecordType r => SyntheticRecordEmitter.Emit(r),
+
+                // the opposite direction to the one above: a synthetic record names a type that has to be
+                // emitted, and this names one that already exists and only had to be described by ordinal
+                // because Java cannot see a .NET property
+                Adapter.Clr.ClrRecordType r => r.ClrType,
                 java.lang.reflect.ParameterizedType p => FromParameterizedType(p),
                 java.lang.reflect.GenericArrayType g => Resolve(g.getGenericComponentType()).MakeArrayType(),
                 _ => throw new NotSupportedException($"Cannot resolve a CLR type for '{type}' ({type.GetType()}).")
@@ -305,8 +310,17 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             if (info != null)
                 return Expression.Field(info.IsStatic ? null : target, info);
 
-            // IKVM exposes a .NET property to Java as a field of the same name, so a linq4j tree reaching one
-            // of ours reads it the same way it reads a Java field
+            // a Java `static final` field is not a CLR field of that name. IKVM emits a property over a
+            // backing field it renames to __<>NAME, so that reading it still runs the class initializer the
+            // way Java guarantees, and a tree naming such a field lands here with nothing to find.
+            // `Unit.INSTANCE` -- what Calcite's own CUSTOM.record answers for a row of no fields -- is one;
+            // JavaRowFormatExtensions.StaticMember measured that and FlatLists.COMPARABLE_EMPTY_LIST both.
+            //
+            // it is *not* that a .NET property is visible to Java as a field, which this said for a while.
+            // Measured: a class whose members are properties answers nothing at all from getFields(). A
+            // property is a get_/set_ method pair to Java and its backing field is private under a mangled
+            // name, so nothing reaches here by naming one -- a row whose fields are .NET properties has to
+            // name them through a Types.RecordType rather than a Class to be reachable by name.
             var property = declaring.GetProperty(name, All);
             if (property != null)
                 return Expression.Property(property.GetMethod?.IsStatic == true ? null : target, property);

@@ -120,7 +120,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // the getter registered below is one Calcite's Rex translation reads the outer row through,
             // so it is given their physical type, built here from the three values ours carries
             var leftCalcite = PhysTypeImpl.of(implementor.TypeFactory, leftResult.PhysType.RelRowType, leftResult.PhysType.Format, false);
-            var corrArg = J.Expressions.parameter(java.lang.reflect.Modifier.FINAL, leftCalcite.getJavaRowType(), getCorrelVariable());
+            var corrArg = J.Expressions.parameter(java.lang.reflect.Modifier.FINAL, leftResult.PhysType.JavaRowType, getCorrelVariable());
 
             var corrParameter = Expression.Parameter(leftResult.PhysType.RowType, getCorrelVariable());
             implementor.Translator.Bind(corrArg, corrParameter);

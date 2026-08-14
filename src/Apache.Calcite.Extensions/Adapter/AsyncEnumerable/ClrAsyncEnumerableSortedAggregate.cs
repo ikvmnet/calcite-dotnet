@@ -142,7 +142,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                     implementor.Translator.TranslateBody(initBlock.toBlock(), accType)),
                 accType);
 
-            var in_ = J.Expressions.parameter(inputCalcite.getJavaRowType(), "in");
+            var in_ = J.Expressions.parameter(inputPhysType.JavaRowType, "in");
             var acc_ = J.Expressions.parameter(accPhysType.getJavaRowType(), "acc");
             var inParameter = Expression.Parameter(sourceType, "in");
             var accParameter = Expression.Parameter(accType, "acc");

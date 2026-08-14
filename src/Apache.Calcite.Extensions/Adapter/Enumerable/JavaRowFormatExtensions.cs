@@ -198,7 +198,25 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         {
 
             /// <inheritdoc />
-            public override java.lang.reflect.Type JavaRowType(JavaTypeFactory typeFactory, RelDataType rowType) => typeFactory.getJavaClass(rowType);
+            /// <remarks>
+            /// A row that is an instance of a CLR class answers with its record type rather than with the
+            /// class, because what this names is what a row <em>expression</em> gets declared with, and
+            /// <c>JavaRowFormat.CUSTOM.field</c> reads a member of a class through <c>getFields()[i]</c> —
+            /// which a .NET class answers nothing from. The record type takes the by-ordinal branch instead.
+            /// Both resolve to the same CLR type, so <see cref="ClrPhysType.RowType"/> is unchanged either
+            /// way; it is only the route to a member that differs.
+            ///
+            /// <para>Calcite's own <c>PhysTypeImpl</c>, built beside this one wherever the shared Rex
+            /// machinery takes one, still gets the class from <c>getJavaClass</c> — and wants it, that being
+            /// what <c>record</c> constructs.</para>
+            /// </remarks>
+            public override java.lang.reflect.Type JavaRowType(JavaTypeFactory typeFactory, RelDataType rowType)
+            {
+                if (rowType is Clr.ClrRowType clr)
+                    return clr.RecordType;
+
+                return typeFactory.getJavaClass(rowType);
+            }
 
             /// <inheritdoc />
             public override Type JavaFieldClass(JavaTypeFactory typeFactory, RelDataType rowType, int index)
