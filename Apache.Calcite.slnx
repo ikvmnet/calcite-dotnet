@@ -1,0 +1,29 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".gitattributes" />
+    <File Path=".github/workflows/Apache.Calcite.yml" />
+    <File Path=".gitignore" />
+    <File Path=".gitmodules" />
+    <File Path="Apache.Calcite.dist.msbuildproj" />
+    <File Path="CLAUDE.md" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Build.targets" />
+    <File Path="GitVersion.yml" />
+    <File Path="global.json" />
+    <File Path="icon.png" />
+    <File Path="LICENSE.txt" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Apache.Calcite.Adapter.AdoNet.Tests/Apache.Calcite.Adapter.AdoNet.Tests.csproj" />
+    <Project Path="src/Apache.Calcite.Adapter.AdoNet/Apache.Calcite.Adapter.AdoNet.csproj" />
+    <Project Path="src/Apache.Calcite.Data.Tests/Apache.Calcite.Data.Tests.csproj" />
+    <Project Path="src/Apache.Calcite.Data/Apache.Calcite.Data.csproj" />
+    <Project Path="src/Apache.Calcite.Extensions/Apache.Calcite.Extensions.csproj" />
+    <Project Path="src/Apache.Calcite.Tests/Apache.Calcite.Tests.csproj" />
+  </Folder>
+  <Folder Name="/src/dist/">
+    <Project Path="src/dist-nuget/dist-nuget.csproj" />
+    <Project Path="src/dist-tests/dist-tests.csproj" />
+  </Folder>
+</Solution>

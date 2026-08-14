@@ -17,7 +17,7 @@ operator audit against linq4j — 45 methods read side by side, 17 of them diver
 
 ## Building
 
-- Build the **solution**: `dotnet build Apache.Calcite.sln`. A bare `dotnet build` fails — more than one
+- Build the **solution**: `dotnet build Apache.Calcite.slnx`. A bare `dotnet build` fails — more than one
   project in the root.
 - **The check that matters is `ClrEnumerableDifferentialTests`.** It runs the same SQL through this
   convention and through `EnumerableConvention` and requires the same rows. Every defect worth having
@@ -62,8 +62,11 @@ operator audit against linq4j — 45 methods read side by side, 17 of them diver
   `EnumerableRules.ENUMERABLE_RULES` in the assembly — measured by counting the planner's rules across the
   call — and the tag's text of that method gives no sign of it until its last third.
 - `global.json` has `rollForward: latestMajor`, so builds pick the **.NET 11 preview SDK**, not 10.0.302.
-  That SDK's `dotnet sln add` also rewrites every project with x64/x86 configurations — edit the solution
-  by hand.
+  That SDK's `dotnet sln add` rewrote every project with x64/x86 configurations while the solution was a
+  `.sln`. It does **not** under the `.slnx` — measured, by round-tripping a project through
+  `dotnet sln remove` and `add` and hashing every csproj either side. It does still misreport: re-adding a
+  project failed naming a *different* project as the conflict, so read the solution after rather than the
+  command's output.
 
 ## Apache.Calcite.Extensions: the rules that hold
 

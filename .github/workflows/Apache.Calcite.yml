@@ -45,7 +45,7 @@ jobs:
         GITHUB_REPOS: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: NuGet Restore
-      run: dotnet restore Apache.Calcite.sln
+      run: dotnet restore Apache.Calcite.slnx
     - name: Build
       run: |
         dotnet msbuild /m /bl \
