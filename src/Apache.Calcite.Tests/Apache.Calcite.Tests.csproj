@@ -1,4 +1,4 @@
-<Project Sdk="MSTest.Sdk/3.10.4">
+﻿<Project Sdk="MSTest.Sdk/4.3.3">
 
     <PropertyGroup>
         <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
@@ -13,14 +13,23 @@
         <PackageReference Include="IKVM" Version="8.15.0" />
         <PackageReference Include="IKVM.Java.Extensions" Version="8.15.0" />
         <PackageReference Include="IKVM.Jdbc.Data" Version="1.0.13" />
-        <PackageReference Include="IKVM.Maven.Sdk" Version="1.11.0">
+        <PackageReference Include="IKVM.Maven.Sdk" Version="1.12.0">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
     </ItemGroup>
 
     <ItemGroup>
-        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.42.0" />
+        <!-- json-path's published POM declares no jackson dependency at all (json-path/JsonPath#1082);
+             declare the missing edge, optional like json-path's own bundled descriptor intends, so the
+             version sorts ahead when the closure asks for jackson. The version matches the
+             jackson-databind that calcite-core itself manages. -->
+        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.42.0">
+            <Dependencies>
+                com.jayway.jsonpath:json-path/com.fasterxml.jackson.core:jackson-databind:2.18.6,optional=true;
+                com.jayway.jsonpath:json-path/com.fasterxml.jackson.core:jackson-core:2.18.6,optional=true
+            </Dependencies>
+        </MavenReference>
         <!-- Smalls.fibonacciTableWithLimit100 is a one-column table function written in Java, and the only
              oracle ClrEnumerableRowFormatTests can have: Janino cannot name a CLR class, so a table function
              of this project's own gives EnumerableConvention no plan to compare against. -->

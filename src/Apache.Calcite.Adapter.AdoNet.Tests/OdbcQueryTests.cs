@@ -242,7 +242,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         {
             Assert.AreEqual(nameof(SqlTypeName.TIME), Fields("TYPES")["C_TIME"].getSqlTypeName().name());
 
-            var thrown = Assert.ThrowsException<ArgumentException>(() => Rows("SELECT C_TIME FROM ADO.TYPES"));
+            var thrown = Assert.Throws<ArgumentException>(() => Rows("SELECT C_TIME FROM ADO.TYPES"));
             StringAssert.Contains(thrown.Message, "SS_TIME_EX");
         }
 

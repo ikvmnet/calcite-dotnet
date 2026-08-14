@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
@@ -15,12 +15,12 @@
     <ItemGroup>
         <PackageReference Include="IKVM" Version="8.15.0" />
         <PackageReference Include="IKVM.Java.Extensions" Version="8.15.0" />
-        <PackageReference Include="IKVM.Maven.Sdk" Version="1.11.0">
+        <PackageReference Include="IKVM.Maven.Sdk" Version="1.12.0">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
-        <PackageReference Include="coverlet.collector" Version="6.0.4">
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+        <PackageReference Include="coverlet.collector" Version="10.0.1">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
@@ -29,7 +29,16 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.43.0-SNAPSHOT" />
+        <!-- json-path's published POM declares no jackson dependency at all (json-path/JsonPath#1082);
+             declare the missing edge, optional like json-path's own bundled descriptor intends, so the
+             version sorts ahead when the closure asks for jackson. The version matches the
+             jackson-databind that calcite-core itself manages. -->
+        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.43.0-SNAPSHOT">
+            <Dependencies>
+                com.jayway.jsonpath:json-path/com.fasterxml.jackson.core:jackson-databind:2.18.6,optional=true;
+                com.jayway.jsonpath:json-path/com.fasterxml.jackson.core:jackson-core:2.18.6,optional=true
+            </Dependencies>
+        </MavenReference>
         <MavenReference Include="org.apache.calcite:calcite-server" Version="1.43.0-SNAPSHOT" />
     </ItemGroup>
 
