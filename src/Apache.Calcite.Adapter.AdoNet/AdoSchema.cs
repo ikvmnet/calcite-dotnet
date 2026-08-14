@@ -109,12 +109,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <returns></returns>
         public static AdoSchema Create(SchemaPlus? parentSchema, string name, DbProviderFactory factory, string connectionString, string? databaseName, string? schemaName)
         {
-            ArgumentNullException.ThrowIfNull(factory);
-            ArgumentNullException.ThrowIfNull(connectionString);
-
-            var dataSource = new DbProviderFactoryDataSource(factory, connectionString);
-            var metadata = AdoDatabaseMetadataFactoryImpl.Instance.Create(dataSource);
-            return Create(parentSchema, name, new DbProviderAdoDataSource(factory, connectionString, metadata), databaseName, schemaName);
+            return Create(parentSchema, name, new DbProviderFactoryDataSource(factory, connectionString), databaseName, schemaName);
         }
 
         /// <summary>
