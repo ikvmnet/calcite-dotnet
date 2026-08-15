@@ -91,11 +91,11 @@ namespace Apache.Calcite.Tests
             var planner = Frameworks.getPlanner(config);
             var logical = planner.rel(planner.validate(planner.parse(sql))).project();
 
-            // Standard() is three passes, in this order: sub-query expansion, the planner, then the calc rules.
-            var expanded = planner.transform(0, logical.getTraitSet(), logical);
-            var traits = ClrEnumerablePrograms.DesiredRootTraitSet(planner.getEmptyTraitSet());
-            var chosen = planner.transform(1, traits, expanded);
-            var physical = (ClrEnumerableRel)planner.transform(2, chosen.getTraitSet(), chosen);
+            // Standard() is one program, as Programs.standard() is, so this is one transform.
+            // the logical root's own traits, not an empty set: they carry the collation the ORDER BY produced,
+            // and SortRemoveRule takes the sort away as unwanted if the required traits do not ask for it
+            var traits = ClrEnumerablePrograms.DesiredRootTraitSet(logical.getTraitSet());
+            var physical = (ClrEnumerableRel)planner.transform(0, traits, logical);
 
             // the root is a node of this convention; build its plan and compile it
             var implementor = new ClrEnumerableRelImplementor(

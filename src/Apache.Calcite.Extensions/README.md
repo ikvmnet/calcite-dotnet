@@ -44,11 +44,11 @@ var config = Frameworks.newConfigBuilder()
 var planner = Frameworks.getPlanner(config);
 var logical = planner.rel(planner.validate(planner.parse(sql))).project();
 
-// Standard() is three passes, in this order: sub-query expansion, the planner, then the calc rules.
-var expanded = planner.transform(0, logical.getTraitSet(), logical);
-var traits = ClrEnumerablePrograms.DesiredRootTraitSet(planner.getEmptyTraitSet());
-var chosen = planner.transform(1, traits, expanded);
-var physical = (ClrEnumerableRel)planner.transform(2, chosen.getTraitSet(), chosen);
+// Standard() is one program, as Programs.standard() is, so this is one transform.
+// the logical root's own traits, not an empty set: they carry the collation the ORDER BY produced,
+// and SortRemoveRule takes the sort away as unwanted if the required traits do not ask for it
+var traits = ClrEnumerablePrograms.DesiredRootTraitSet(logical.getTraitSet());
+var physical = (ClrEnumerableRel)planner.transform(0, traits, logical);
 
 // the root is a node of this convention; build its plan and compile it
 var implementor = new ClrEnumerableRelImplementor(
@@ -66,9 +66,10 @@ foreach (var current in plan(dataContext))
 
 `ClrEnumerableInterpretable.ToBindable(...)` is the alternative ending: it does the same work and hands back an `IClrBindable`, which you bind to a `DataContext` and enumerate. Use the implementor when you want the `LambdaExpression` itself.
 
-Two things about `ClrEnumerablePrograms.Standard()` are deliberate and worth knowing before you substitute your own program list:
+Three things about `ClrEnumerablePrograms.Standard()` are deliberate and worth knowing before you substitute your own program:
 
 - **The calc rules are a separate pass.** `VolcanoCost.isLt` compares row counts and nothing else, so a project and a calc are never cheaper than one another and the planner keeps whichever it saw first. Rewriting unconditionally afterwards as a hep pass is what makes a project's refusal to implement itself safe. `Programs.standard()` does the same thing for the same reason.
+- **The planner pass registers Calcite's rules, then this convention's.** `Programs.standard()` installs none and plans with whatever is on the planner, which works because `RelOptUtil.registerDefaultRules` has already put Calcite's there. Nothing has heard of this convention, so `Rules()` registers — but it registers Calcite's set *as well as* ours, not instead of it. Dropping Calcite's takes with it the logical rewrites that belong to no convention, and `AVG`, every `DISTINCT` aggregate and every `OVER` window each need one of those before any planner sees them. It is also what lets a node this convention has no rule for be planned in `EnumerableConvention` and carried across a converter.
 - **There is no decorrelation.** `Programs.standard()` runs one, and it rewrites a correlated sub-query into a join before the planner sees it — which is the node `ClrEnumerableCorrelate` exists to implement. Leaving it out is what puts a correlate on a plan at all.
 
 A Spark handler is not supported: `ToBindable` throws `UnsupportedOperationException` if one is enabled, because a Spark handler compiles generated Java source and a plan of this convention is an expression tree.
@@ -78,7 +79,7 @@ A Spark handler is not supported: `ToBindable` throws `UnsupportedOperationExcep
 | Type | Purpose |
 |------|---------|
 | `ClrEnumerableConvention` | The calling convention itself. `ClrEnumerableConvention.Instance` is the singleton trait. |
-| `ClrEnumerablePrograms` | The planner passes: `Standard()`, and the individual `SubQuery()` / `Rules()` / `CalcRules()` passes. Also `DesiredRootTraitSet`. |
+| `ClrEnumerablePrograms` | The program a query is planned with: `Standard()`, and the individual `SubQuery()` / `Rules()` / `CalcRules()` passes it sequences. Also `DesiredRootTraitSet`. |
 | `ClrEnumerableRules` | The convention's rules: `Rules()` and `CalcRules()`. Add these to a planner you built yourself. |
 | `ClrEnumerableRelImplementor` | Builds the expression tree for a plan. `ImplementRoot` returns a `LambdaExpression`. |
 | `ClrEnumerableInterpretable` | `ToBindable` — implement, compile, and return an `IClrBindable`. |
