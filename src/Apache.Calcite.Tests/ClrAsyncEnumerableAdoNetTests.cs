@@ -83,8 +83,8 @@ namespace Apache.Calcite.Tests
         /// <remarks>
         /// The plan is the connection's — asynchronous by default — and <c>Read</c> blocks on it per row,
         /// which is what <c>Read</c> over an asynchronous source means and where every ADO.NET provider
-        /// blocks. The refusal this test used to hold belongs to the mode now:
-        /// <see cref="ShouldRefuseAnAsyncOnlyTableInSynchronousMode"/>.
+        /// blocks. Synchronous mode reaches the same table the long way round:
+        /// <see cref="ShouldBridgeAnAsyncOnlyTableInSynchronousMode"/>.
         /// </remarks>
         [TestMethod]
         public void ShouldReadAnAsyncOnlyTableSynchronously()
@@ -106,34 +106,54 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// In synchronous mode a query over an asynchronous-only table fails to plan, from either entry
-        /// point.
+        /// In synchronous mode a query over an asynchronous-only table is planned across the converter and
+        /// blocked on, from either entry point.
         /// </summary>
         /// <remarks>
         /// An <c>IClrAsyncScannableTable</c> is not a <c>ScannableTable</c>, so neither the synchronous
-        /// convention nor Calcite's own has a scan for it, and the synchronous planner is given no rule that
-        /// would put the scan in the asynchronous convention for
-        /// <c>ClrAsyncEnumerableToClrEnumerableConverter</c> to carry. That is the mode's trade: a
-        /// connection that said <see cref="CalciteConnectionStringBuilder.Synchronous"/> asked for plans
-        /// that never wait, so a query that could only wait fails visibly rather than blocking behind the
-        /// mode's back — and it fails from <c>ExecuteReaderAsync</c> too, because the mode is the
-        /// connection's rather than the entry point's.
+        /// convention nor Calcite's own has a scan for it. The planner carries both Clr conventions whichever
+        /// mode the connection is in — the mode decides the convention demanded of the root and nothing else
+        /// — so the scan is planned in <c>ClrAsyncEnumerableConvention</c> and
+        /// <c>ClrAsyncEnumerableToClrEnumerableConverter</c> carries its rows up to the synchronous root.
+        /// <c>Read</c> blocks there per row, which is what <c>Read</c> over an asynchronous source means.
+        ///
+        /// <para>This mode used to refuse such a query, and the refusal was one by omission: the synchronous
+        /// planner was simply given no rule that could reach the other convention. The same omission would
+        /// have refused any schema whose own rules target the convention the mode did not choose, which the
+        /// prepare pipeline has no way to know. Both rule sets are registered either way now, and the mode
+        /// means what it says — the root is <c>ClrEnumerableConvention</c> and <c>ReadAsync</c> answers with
+        /// completed tasks.</para>
         ///
         /// <para>A schema may hold both kinds of table; it is the individual query that is one or the
         /// other.</para>
         /// </remarks>
         [TestMethod]
-        public async Task ShouldRefuseAnAsyncOnlyTableInSynchronousMode()
+        public async Task ShouldBridgeAnAsyncOnlyTableInSynchronousMode()
         {
             using var c = new CalciteConnection(SynchronousModel);
             c.Open();
-            c.RootSchema.add("SALES", new AsyncRowsTable(AsyncTestRows.Sales, AsyncTestRows.SalesRowType, false));
+
+            var table = new AsyncRowsTable(AsyncTestRows.Sales, AsyncTestRows.SalesRowType, false);
+            c.RootSchema.add("SALES", table);
 
             using var cmd = c.CreateCommand();
             cmd.CommandText = "SELECT ID FROM SALES ORDER BY ID";
 
-            cmd.Invoking(x => x.ExecuteReader()).Should().Throw<Exception>();
-            await cmd.Awaiting(x => x.ExecuteReaderAsync()).Should().ThrowAsync<Exception>();
+            var rows = new List<int>();
+            using (var reader = cmd.ExecuteReader())
+                while (reader.Read())
+                    rows.Add(reader.GetInt32(0));
+
+            rows.Should().Equal([1, 2, 3, 4, 5, 6]);
+            table.Produced.Should().Be(6, "the rows come from the asynchronous table, across the converter");
+
+            // and from the asynchronous entry point, which in this mode answers with completed tasks
+            var asyncRows = new List<int>();
+            using (var reader = await cmd.ExecuteReaderAsync())
+                while (await reader.ReadAsync())
+                    asyncRows.Add(reader.GetInt32(0));
+
+            asyncRows.Should().Equal([1, 2, 3, 4, 5, 6]);
         }
 
         /// <summary>

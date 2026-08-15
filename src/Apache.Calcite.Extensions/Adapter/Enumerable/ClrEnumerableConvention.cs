@@ -14,7 +14,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// as a compiled <see cref="System.Linq.Expressions"/> tree rather than as generated Java source.
     ///
     /// <para>Register <see cref="ClrEnumerableRules.Rules"/> with the planner and ask for this convention on
-    /// the root; <see cref="ClrEnumerablePrograms"/> has the passes that takes. The root of the plan that
+    /// the root, then run <see cref="ClrEnumerableRules.CalcRules"/> as a second pass, which is what
+    /// <c>Programs.standard</c> does with Calcite's own. The root of the plan that
     /// comes out is a <see cref="ClrEnumerableRel"/>, and
     /// <see cref="ClrEnumerableRelImplementor.ImplementRoot"/> turns it into a lambda to compile. A plan may
     /// hold nodes of both conventions — converters exist in each direction and rows cross untouched.</para>

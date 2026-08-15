@@ -348,11 +348,13 @@ namespace Apache.Calcite.Data.Internal
         /// <c>EnumerableConvention</c> with a converter carrying its rows. Nothing on the asynchronous
         /// surface ever parks a thread waiting for a row.
         ///
-        /// <para><see cref="CalciteConnectionStringBuilder.Synchronous"/> plans into
-        /// <c>ClrEnumerableConvention</c> instead, for both entry points: <c>ReadAsync</c> answers with
-        /// completed tasks, and a query touching a table that can <em>only</em> produce rows asynchronously
-        /// fails to plan — the prepare pipeline registers one convention's rules and not the other's, so the
-        /// failure is visible rather than a block the planner chose invisibly.</para>
+        /// <para><see cref="CalciteConnectionStringBuilder.Synchronous"/> demands
+        /// <c>ClrEnumerableConvention</c> of the root instead, for both entry points, and <c>ReadAsync</c>
+        /// answers with completed tasks. It is a choice of root and not of rule set: the prepare pipeline
+        /// registers both conventions whichever mode is asked for, so a query touching a table that can
+        /// <em>only</em> produce rows asynchronously is still planned, reached across a converter, and
+        /// <c>Read</c> blocks there. Registering one convention and not the other would refuse a schema
+        /// whose own rules target the other, which nothing here can rule out.</para>
         /// </remarks>
         CalciteResult ExecuteReaderCore(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {

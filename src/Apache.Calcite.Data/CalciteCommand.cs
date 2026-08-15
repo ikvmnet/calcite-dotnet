@@ -297,7 +297,10 @@ namespace Apache.Calcite.Data
         /// connection's mode, not the entry point's choice. In the default mode the reader answers
         /// <c>Read</c> by blocking wherever the plan genuinely suspends, which is what <c>Read</c> over an
         /// asynchronous source means; a connection whose consumers are synchronous can say
-        /// <see cref="CalciteConnectionStringBuilder.Synchronous"/> and get the plan that never waits.
+        /// <see cref="CalciteConnectionStringBuilder.Synchronous"/> and get a plan rooted in the synchronous
+        /// convention instead. That is a choice of root and not a promise never to wait: where the schema
+        /// itself can only produce rows asynchronously, the plan still reaches it across a converter and
+        /// <c>Read</c> blocks there.
         /// </remarks>
         protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
         {

@@ -118,11 +118,22 @@ namespace Apache.Calcite.Tests
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add("PEOPLE", new PeopleTable());
 
-            // the three passes this convention needs, which the library names now rather than every caller
-            // spelling them out
+            var calcRules = new java.util.ArrayList();
+            foreach (var rule in ClrEnumerableRules.CalcRules())
+                calcRules.add(rule);
+
+            // what the prepare pipeline runs: Programs.standard itself, and then Programs.calc once more
+            // over this convention's list -- added to Calcite's calc pass, which standard still runs, not
+            // put in its place. A Frameworks planner carries Calcite's default rules and has never heard of
+            // this convention, so the rules go on in front -- which is what ClrPrepareImpl.CreatePlanner
+            // does for a prepared statement
             var config = Frameworks.newConfigBuilder()
                 .defaultSchema(rootSchema)
-                .programs(ClrEnumerablePrograms.Standard())
+                .programs(
+                    Programs.sequence(
+                        new AddRulesProgram(ClrEnumerableRules.Rules()),
+                        Programs.standard(),
+                        Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)))
                 .build();
 
             var planner = Frameworks.getPlanner(config);
@@ -130,14 +141,11 @@ namespace Apache.Calcite.Tests
             var validated = planner.validate(parsed);
             var logical = planner.rel(validated).project();
 
-            // the passes Programs.standard makes, less the decorrelation: a sub-query has to be expanded
-            // before the planner sees it, because a filter carrying one is refused as Calcite refuses it, and
-            // leaving the correlate in place is what puts ClrEnumerableCorrelate on the plan at all
-            var expanded = planner.transform(0, logical.getTraitSet(), logical);
-
-            var traitSet = ClrEnumerablePrograms.DesiredRootTraitSet(planner.getEmptyTraitSet());
-            var chosen = planner.transform(1, traitSet, expanded);
-            var physical = (ClrEnumerableRel)planner.transform(2, chosen.getTraitSet(), chosen);
+            // Prepare.getDesiredRootTraitSet: the root's own traits with the convention replaced, then
+            // simplified -- an empty set asks for no collation and SortRemoveRule takes an ORDER BY away as
+            // unwanted. One program, so one transform, exactly as Programs.standard is driven.
+            var traitSet = logical.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify();
+            var physical = (ClrEnumerableRel)planner.transform(0, traitSet, logical);
 
             return (physical, rootSchema);
         }
@@ -353,6 +361,124 @@ namespace Apache.Calcite.Tests
             rows[0][0].Should().Be(java.lang.Integer.valueOf(90));
             rows[0][1].Should().Be(java.lang.Integer.valueOf(20));
             rows[0][2].Should().Be(java.lang.Integer.valueOf(40));
+        }
+
+        /// <summary>
+        /// A correlate survives the shipped program, which runs Calcite's decorrelation.
+        /// </summary>
+        /// <remarks>
+        /// The decorrelation was left out of the shipped program for a while, on the grounds that it would
+        /// rewrite every correlated sub-query into a join and leave <c>ClrEnumerableCorrelate</c> unreachable.
+        /// A scalar sub-query and an EXISTS do become joins — which is what Calcite means to happen, and what
+        /// the prepare pipeline has always done — but an UNNEST over a correlation variable cannot be
+        /// decorrelated at all, so the correlate stays. This is that shape, and it asserts the node by name
+        /// rather than only the rows, because the rows alone would not say which plan produced them.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldCorrelateThroughTheShippedProgram()
+        {
+            const string sql = "SELECT t.\"x\", u.\"y\" FROM (VALUES (1, ARRAY[10,20]), (2, ARRAY[30])) AS t(\"x\", \"xs\"), UNNEST(t.\"xs\") AS u(\"y\")";
+
+            var (physical, _) = Plan(sql);
+            RelOptUtil.toString(physical).Should().Contain("Correlate", "the decorrelation cannot take an UNNEST of a correlation variable apart");
+
+            var rows = Run(sql);
+
+            rows.Should().HaveCount(3);
+            rows.Select(r => string.Join("|", r.Select(v => v?.ToString()))).Should().Equal("1|10", "1|20", "2|30");
+        }
+
+        /// <summary>
+        /// A correlated sub-query becomes a join through the shipped program.
+        /// </summary>
+        /// <remarks>
+        /// The other side of the same measurement, and the reason to run the decorrelation rather than leave
+        /// it out: without it this stays a correlate, which is a nested loop over the outer rows where
+        /// Calcite would have given a join.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldDecorrelateASubQueryThroughTheShippedProgram()
+        {
+            const string sql = "SELECT \"ID\" FROM \"PEOPLE\" a WHERE \"AGE\" = (SELECT MAX(\"AGE\") FROM \"PEOPLE\" b WHERE b.\"BONUS\" IS NULL OR a.\"ID\" = b.\"ID\")";
+
+            var (physical, _) = Plan(sql);
+            RelOptUtil.toString(physical).Should().NotContain("Correlate", "Calcite's decorrelation should have made this a join");
+        }
+
+        // Three shapes the shipped program could not plan at all until Rules() stopped clearing the planner.
+        // Each needs a logical rewrite that belongs to no convention and that Calcite registers by default,
+        // so each was a CannotPlanException the moment ofRules threw Calcite's rules away. Nothing here went
+        // through Standard(), so nothing said so: the differential suites register the three rules by hand.
+
+        /// <summary>
+        /// AVG through the shipped program.
+        /// </summary>
+        /// <remarks>
+        /// <c>RexImpTable</c> has no implementor for AVG in any convention, in any type.
+        /// <c>AGGREGATE_REDUCE_FUNCTIONS</c> is what turns it into a <c>$SUM0</c> over a <c>COUNT</c>, and it
+        /// lives in <c>RelOptRules.BASE_RULES</c> rather than in any convention's set.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAverageThroughTheShippedProgram()
+        {
+            var rows = Run("SELECT AVG(\"AGE\") FROM \"PEOPLE\"");
+
+            rows.Should().HaveCount(1);
+            rows[0][0].Should().Be(java.lang.Integer.valueOf(30));
+        }
+
+        /// <summary>
+        /// A DISTINCT aggregate through the shipped program.
+        /// </summary>
+        /// <remarks>
+        /// Both conventions refuse a distinct call outright, as <c>EnumerableAggregate</c> does.
+        /// <c>AGGREGATE_EXPAND_DISTINCT_AGGREGATES</c> is what takes the DISTINCT off first.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldCountDistinctThroughTheShippedProgram()
+        {
+            var rows = Run("SELECT COUNT(DISTINCT \"NAME\") FROM \"PEOPLE\"");
+
+            rows.Should().HaveCount(1);
+            rows[0][0].Should().Be(java.lang.Long.valueOf(3L));
+        }
+
+        /// <summary>
+        /// A window through the shipped program.
+        /// </summary>
+        /// <remarks>
+        /// The one that mattered most: a project holding an OVER is refused by both conventions and becomes a
+        /// <c>LogicalWindow</c> by <c>PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW</c> first, so with that rule gone
+        /// no window function could be planned through the shipped program at all — while the whole
+        /// <c>ClrEnumerableWindow</c> suite stayed green over a harness that registers it.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldWindowThroughTheShippedProgram()
+        {
+            var rows = Run("SELECT \"ID\", SUM(\"AGE\") OVER (ORDER BY \"ID\") FROM \"PEOPLE\" ORDER BY \"ID\"");
+
+            rows.Should().HaveCount(3);
+            rows.Select(r => r[1]).Should().Equal(
+                java.lang.Integer.valueOf(30),
+                java.lang.Integer.valueOf(70),
+                java.lang.Integer.valueOf(90));
+        }
+
+        /// <summary>
+        /// A node this convention has no rule for, through the shipped program.
+        /// </summary>
+        /// <remarks>
+        /// The other half of keeping Calcite's rules. There is no table function node here, so the planner
+        /// takes Calcite's and a converter carries the rows across — which <c>Programs.ofRules</c> made
+        /// impossible, Calcite's rules having been cleared away.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldFallBackToCalciteThroughTheShippedProgram()
+        {
+            var rows = Run("SELECT COUNT(*) FROM \"PEOPLE\" WHERE \"AGE\" > 25");
+
+            rows.Should().HaveCount(1);
+            rows[0][0].Should().Be(java.lang.Long.valueOf(2L));
         }
 
         [TestMethod]

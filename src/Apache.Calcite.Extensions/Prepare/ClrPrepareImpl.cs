@@ -92,7 +92,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 typeFactory,
                 context.config());
 
-            var plannerFactories = CreatePlannerFactories(async);
+            var plannerFactories = CreatePlannerFactories();
             if (plannerFactories.Count == 0)
                 throw new InvalidOperationException("no planner factories");
 
@@ -117,13 +117,13 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <summary>
-        /// Creates the planner, with Calcite's default rules and this convention's.
+        /// Creates the planner, with Calcite's default rules and both of this project's conventions'.
         /// </summary>
         /// <param name="context"></param>
         /// <returns></returns>
-        protected virtual RelOptPlanner CreatePlanner(CalcitePrepare.Context context, bool async = false)
+        protected virtual RelOptPlanner CreatePlanner(CalcitePrepare.Context context)
         {
-            return CreatePlanner(context, null, null, async);
+            return CreatePlanner(context, null, null);
         }
 
         /// <summary>
@@ -134,13 +134,11 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <param name="externalContext">The planner's context, or <see langword="null"/> for one over the
         /// connection configuration.</param>
         /// <param name="costFactory">The cost model, or <see langword="null"/> for the planner's own.</param>
-        /// <param name="async">Whether to plan into the asynchronous convention.</param>
         /// <returns></returns>
         protected virtual RelOptPlanner CreatePlanner(
             CalcitePrepare.Context context,
             org.apache.calcite.plan.Context? externalContext,
-            RelOptCostFactory? costFactory,
-            bool async)
+            RelOptCostFactory? costFactory)
         {
             externalContext ??= Contexts.of(context.config());
 
@@ -153,17 +151,9 @@ namespace Apache.Calcite.Extensions.Prepare
 
             planner.setTopDownOpt(context.config().topDownOpt());
 
-            // enableBindable is false, as it is on a connection that has not asked for the interpreter.
-            // Calcite reads that flag only to choose BindableConvention as its own result convention, which
-            // is not a choice available here
-            RelOptUtil.registerDefaultRules(planner, context.config().materializationsEnabled(), false);
-
-            if (async)
-                foreach (var rule in Apache.Calcite.Extensions.Adapter.AsyncEnumerable.ClrAsyncEnumerableRules.Rules())
-                    planner.addRule(rule);
-            else
-                foreach (var rule in ClrEnumerableRules.Rules())
-                    planner.addRule(rule);
+            Apache.Calcite.Extensions.Plan.ClrRelOptUtil.RegisterDefaultRules(
+                planner,
+                context.config().materializationsEnabled());
 
             // lets a test add or remove rules, as it does upstream
             org.apache.calcite.runtime.Hook.PLANNER.run(planner);
@@ -174,11 +164,10 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Creates the planner factories to try, in order.
         /// </summary>
-        /// <param name="async">Whether the planners are to plan into the asynchronous convention.</param>
         /// <returns></returns>
-        protected virtual IReadOnlyList<Func<CalcitePrepare.Context, RelOptPlanner>> CreatePlannerFactories(bool async)
+        protected virtual IReadOnlyList<Func<CalcitePrepare.Context, RelOptPlanner>> CreatePlannerFactories()
         {
-            return [context => CreatePlanner(context, async)];
+            return [context => CreatePlanner(context)];
         }
 
         /// <summary>

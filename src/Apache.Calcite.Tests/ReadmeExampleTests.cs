@@ -83,19 +83,30 @@ namespace Apache.Calcite.Tests
             var dataContext = new ExampleDataContext(rootSchema);
 
             // ---- README example begins ----
+            var calcRules = new java.util.ArrayList();
+            foreach (var rule in ClrEnumerableRules.CalcRules())
+                calcRules.add(rule);
+
+            // Programs.standard(), with this convention's rules put on the planner in front of it -- a
+            // Frameworks planner carries Calcite's alone -- and its calc rules run afterwards, which is
+            // Programs.calc once more over this convention's list. standard's own calc pass still runs
             var config = Frameworks.newConfigBuilder()
                 .defaultSchema(rootSchema)
-                .programs(ClrEnumerablePrograms.Standard())
+                .programs(
+                    Programs.sequence(
+                        new AddRulesProgram(ClrEnumerableRules.Rules()),
+                        Programs.standard(),
+                        Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)))
                 .build();
 
             var planner = Frameworks.getPlanner(config);
             var logical = planner.rel(planner.validate(planner.parse(sql))).project();
 
-            // Standard() is three passes, in this order: sub-query expansion, the planner, then the calc rules.
-            var expanded = planner.transform(0, logical.getTraitSet(), logical);
-            var traits = ClrEnumerablePrograms.DesiredRootTraitSet(planner.getEmptyTraitSet());
-            var chosen = planner.transform(1, traits, expanded);
-            var physical = (ClrEnumerableRel)planner.transform(2, chosen.getTraitSet(), chosen);
+            // one sequence, so one transform, exactly as Programs.standard is driven.
+            // the logical root's own traits, not an empty set: they carry the collation the ORDER BY produced,
+            // and SortRemoveRule takes the sort away as unwanted if the required traits do not ask for it
+            var traits = logical.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify();
+            var physical = (ClrEnumerableRel)planner.transform(0, traits, logical);
 
             // the root is a node of this convention; build its plan and compile it
             var implementor = new ClrEnumerableRelImplementor(
