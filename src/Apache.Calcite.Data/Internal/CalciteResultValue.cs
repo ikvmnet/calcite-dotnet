@@ -240,7 +240,10 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Implements the GetChar operation.
+        /// Implements the GetChar operation. A <c>CHAR</c> column means a character: Calcite's
+        /// runtime representation of the character family is a string, so the value converts
+        /// when the SQL type is <c>CHAR</c> and the string holds exactly one character. Any
+        /// other SQL type or length is not a character and does not convert.
         /// </summary>
         /// <returns></returns>
         public char GetChar()
@@ -248,6 +251,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Character c => c.charValue(),
+                string s when _sqlType == SqlTypeName.CHAR && s.Length == 1 => s[0],
                 _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Char'"),
             };
         }
