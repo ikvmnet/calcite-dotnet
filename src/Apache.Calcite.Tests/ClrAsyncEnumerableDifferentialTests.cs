@@ -515,6 +515,13 @@ namespace Apache.Calcite.Tests
         public Task ShouldAgreeOnACube() =>
             Same("SELECT REGION, LABEL, COUNT(*) FROM SALES GROUP BY CUBE(REGION, LABEL) ORDER BY 1, 2");
 
+        // Eight key fields, which is the arity that builds the key through FlatLists.copyOf over an array of
+        // Comparable. See ClrEnumerableDifferentialTests.ShouldAgreeOnARollupOverEveryColumn.
+
+        [TestMethod]
+        public Task ShouldAgreeOnARollupOverEveryColumn() =>
+            Same("SELECT ID, REGION, AMOUNT, LABEL, COUNT(*) FROM SALES GROUP BY ROLLUP(ID, REGION, AMOUNT, LABEL) ORDER BY 1, 2, 3, 4, 5");
+
         [TestMethod]
         public Task ShouldAgreeOnAnAntiJoin() =>
             Same("SELECT ID FROM SALES WHERE ID NOT IN (SELECT K FROM SORTED WHERE K IS NOT NULL)");
