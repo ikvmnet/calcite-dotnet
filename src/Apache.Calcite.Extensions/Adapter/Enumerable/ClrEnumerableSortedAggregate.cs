@@ -124,7 +124,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var aggs = new java.util.ArrayList();
             for (int i = 0; i < getAggCallList().size(); i++)
-                aggs.add(new AggImpState(i, (AggregateCall)getAggCallList().get(i), false));
+                aggs.add(new ClrAggImpState(i, (AggregateCall)getAggCallList().get(i), false));
 
             var initExpressions = new java.util.ArrayList();
             var initBlock = new J.BlockBuilder();
@@ -164,8 +164,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             for (int i = 0; i < aggs.size(); i++)
             {
-                var agg = (AggImpState)aggs.get(i);
-                results.add(agg.implementor.implementResult(agg.context, new AggResultContextImpl(resultBlock, agg.call, agg.state, key_, keyPhysType)));
+                var agg = (ClrAggImpState)aggs.get(i);
+                results.add(agg.Implementor.implementResult(agg.context, new AggResultContextImpl(resultBlock, agg.call, agg.state, key_, keyPhysType)));
             }
 
             resultBlock.add(J.Expressions.return_(null, outputCalcite.record(results)));

@@ -79,6 +79,24 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
+        /// Values in a column of type ANY, whose Java class is <c>Object</c>.
+        /// </summary>
+        /// <remarks>
+        /// A provider type the ADO.NET adapter has no <c>SqlTypeName</c> for arrives as ANY, so an
+        /// aggregate over one of these has to accumulate a value whose type is only known at run time. The
+        /// same rows as <c>ClrEnumerableDifferentialTests.AnysTable</c>, which is what makes the
+        /// synchronous convention an oracle for this one.
+        /// </remarks>
+        public static readonly object?[][] Anys =
+        [
+            [java.lang.Integer.valueOf(1), "EAST", java.lang.Integer.valueOf(10), "b"],
+            [java.lang.Integer.valueOf(2), "EAST", java.lang.Double.valueOf(20.5), "a"],
+            [java.lang.Integer.valueOf(3), "WEST", java.lang.Integer.valueOf(30), "d"],
+            [java.lang.Integer.valueOf(4), "WEST", null, null],
+            [java.lang.Integer.valueOf(5), "WEST", java.lang.Integer.valueOf(5), "c"],
+        ];
+
+        /// <summary>
         /// Returns the WIDE row type.
         /// </summary>
         public static RelDataType WideRowType(RelDataTypeFactory typeFactory)
@@ -110,6 +128,19 @@ namespace Apache.Calcite.Tests
             return typeFactory.builder()
                 .add("K", typeFactory.createSqlType(SqlTypeName.INTEGER))
                 .add("V", typeFactory.createSqlType(SqlTypeName.VARCHAR))
+                .build();
+        }
+
+        /// <summary>
+        /// Returns the ANYS row type.
+        /// </summary>
+        public static RelDataType AnysRowType(RelDataTypeFactory typeFactory)
+        {
+            return typeFactory.builder()
+                .add("ID", typeFactory.createSqlType(SqlTypeName.INTEGER))
+                .add("K", typeFactory.createSqlType(SqlTypeName.VARCHAR))
+                .add("V", typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.ANY), true))
+                .add("S", typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.ANY), true))
                 .build();
         }
 

@@ -54,12 +54,14 @@ namespace Apache.Calcite.Tests
                 rootSchema.add("SALES", new AsyncRowsTable(AsyncTestRows.Sales, AsyncTestRows.SalesRowType, false));
                 rootSchema.add("SORTED", new AsyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, true));
                 rootSchema.add("WIDE", new AsyncRowsTable(AsyncTestRows.Wide, AsyncTestRows.WideRowType, false));
+                rootSchema.add("ANYS", new AsyncRowsTable(AsyncTestRows.Anys, AsyncTestRows.AnysRowType, false));
             }
             else
             {
                 rootSchema.add("SALES", new SyncRowsTable(AsyncTestRows.Sales, AsyncTestRows.SalesRowType, false));
                 rootSchema.add("SORTED", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, true));
                 rootSchema.add("WIDE", new SyncRowsTable(AsyncTestRows.Wide, AsyncTestRows.WideRowType, false));
+                rootSchema.add("ANYS", new SyncRowsTable(AsyncTestRows.Anys, AsyncTestRows.AnysRowType, false));
             }
 
             // a table function, which this convention has no node for: Calcite plans it and the converter
@@ -374,6 +376,53 @@ namespace Apache.Calcite.Tests
 
         [TestMethod]
         public Task ShouldAgreeOnAGrandTotal() => Same("SELECT SUM(AMOUNT), MIN(ID), MAX(ID) FROM SALES");
+
+        // MIN, MAX, SUM and AVG over a column of type ANY, whose Java class is Object. Neither convention
+        // gets these from Calcite — ClrAnyAggImplementors says why and ClrEnumerableDifferentialTests asserts
+        // the answers — so what is checked here is the thing this harness is for: that the asynchronous
+        // convention gives what the synchronous one gives, mixed numeric types, strings and an empty group
+        // included.
+
+        [TestMethod]
+        public Task ShouldAgreeOnAggregatingAnAnyColumn() => SameThrough("ClrAsyncEnumerableAggregate", "SELECT MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS");
+
+        [TestMethod]
+        public Task ShouldAgreeOnAGroupedAggregateOverAnAnyColumn() => SameThrough("ClrAsyncEnumerableAggregate", "SELECT K, MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS GROUP BY K ORDER BY K");
+
+        [TestMethod]
+        public Task ShouldAgreeOnAggregatingAnAnyColumnOfStrings() => Same("SELECT MIN(S), MAX(S) FROM ANYS");
+
+        [TestMethod]
+        public Task ShouldAgreeOnAggregatingAnEmptyAnyColumn() => Same("SELECT MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS WHERE K = 'NORTH'");
+
+        [TestMethod]
+        public Task ShouldAgreeOnWindowingAnAggregateOverAnAnyColumn() => SameThrough("ClrAsyncEnumerableWindow", "SELECT ID, MIN(V) OVER (PARTITION BY K), MAX(V) OVER (PARTITION BY K), SUM(V) OVER (PARTITION BY K) FROM ANYS ORDER BY ID");
+
+        [TestMethod]
+        public Task ShouldAgreeOnARunningTotalOverAnAnyColumn() => SameThrough("ClrAsyncEnumerableWindow", "SELECT ID, SUM(V) OVER (ORDER BY ID) FROM ANYS ORDER BY ID");
+
+        [TestMethod]
+        public Task ShouldAgreeOnTakingAnyValueOfAnAnyColumn() => SameThrough("ClrAsyncEnumerableAggregate", "SELECT ANY_VALUE(V), ANY_VALUE(S) FROM ANYS");
+
+        [TestMethod]
+        public Task ShouldAgreeOnDeviatingOverAnAnyColumn() => Same("SELECT VAR_POP(V), VAR_SAMP(V) FROM ANYS");
+
+        [TestMethod]
+        public Task ShouldAgreeOnFilteringAnAggregateOverAnAnyColumn() => Same("SELECT MIN(V) FILTER (WHERE ID > 1), SUM(V) FILTER (WHERE K = 'EAST') FROM ANYS");
+
+        // and the same column read every way that already worked
+
+        [TestMethod]
+        public Task ShouldAgreeOnScanningAnAnyColumn() => Same("SELECT K, V, S FROM ANYS");
+
+        [TestMethod]
+        public Task ShouldAgreeOnCountingAnAnyColumn() => Same("SELECT K, COUNT(V), COUNT(*) FROM ANYS GROUP BY K ORDER BY K");
+
+        [TestMethod]
+        public Task ShouldAgreeOnAggregatingACastAnyColumn() => Same("SELECT MIN(CAST(V AS INTEGER)), MAX(CAST(V AS INTEGER)), SUM(CAST(V AS INTEGER)), AVG(CAST(V AS INTEGER)) FROM ANYS");
+
+        [TestMethod]
+        public Task ShouldAgreeOnAGroupedAggregateOverACastAnyColumn() => Same("SELECT K, MIN(CAST(V AS INTEGER)), SUM(CAST(V AS INTEGER)) FROM ANYS GROUP BY K ORDER BY K");
 
         [TestMethod]
         public Task ShouldAgreeOnDistinct() => Same("SELECT DISTINCT REGION FROM SALES");

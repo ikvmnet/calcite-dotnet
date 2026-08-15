@@ -190,6 +190,57 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
+        /// A table with a column of type ANY, whose Java class is <c>Object</c> and whose values therefore
+        /// carry no type the plan can read.
+        /// </summary>
+        /// <remarks>
+        /// Not a curiosity: a provider type the ADO.NET adapter has no <c>SqlTypeName</c> for arrives as
+        /// ANY, so this is the shape a column of an unmapped type has. Every other fixture here declares a
+        /// concrete type, so until now nothing asked an aggregate to accumulate over a value whose type is
+        /// only known at run time.
+        ///
+        /// <para>An ordinary INTEGER key in front, so that a window over this table has something to order
+        /// by that is not itself ANY. Three shapes after it, on purpose. <c>V</c> mixes a <c>java.lang.Integer</c> with a
+        /// <c>java.lang.Double</c>, which is the ordinary case for a document store and the one a comparison
+        /// through <c>Comparable.compareTo</c> throws on; <c>S</c> holds strings, which are orderable and not
+        /// addable; and both have a null, so that an aggregate has one to skip.</para>
+        /// </remarks>
+        sealed class AnysTable : AbstractTable, ScannableTable
+        {
+
+            static readonly object?[][] Rows =
+            [
+                [java.lang.Integer.valueOf(1), "EAST", java.lang.Integer.valueOf(10), "b"],
+                [java.lang.Integer.valueOf(2), "EAST", java.lang.Double.valueOf(20.5), "a"],
+                [java.lang.Integer.valueOf(3), "WEST", java.lang.Integer.valueOf(30), "d"],
+                [java.lang.Integer.valueOf(4), "WEST", null, null],
+                [java.lang.Integer.valueOf(5), "WEST", java.lang.Integer.valueOf(5), "c"],
+            ];
+
+            /// <inheritdoc />
+            public override RelDataType getRowType(RelDataTypeFactory typeFactory)
+            {
+                return typeFactory.builder()
+                    .add("ID", typeFactory.createSqlType(SqlTypeName.INTEGER))
+                    .add("K", typeFactory.createSqlType(SqlTypeName.VARCHAR))
+                    .add("V", typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.ANY), true))
+                    .add("S", typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.ANY), true))
+                    .build();
+            }
+
+            /// <inheritdoc />
+            public org.apache.calcite.linq4j.Enumerable scan(DataContext root)
+            {
+                var list = new java.util.ArrayList();
+                foreach (var row in Rows)
+                    list.add(row);
+
+                return Linq4j.asEnumerable(list);
+            }
+
+        }
+
+        /// <summary>
         /// A table of twelve distinct keys, which is the one row count at which a hash join's leftovers can
         /// come out in the wrong order.
         /// </summary>
@@ -332,6 +383,7 @@ namespace Apache.Calcite.Tests
             rootSchema.add("SORTED", new SortedTable());
             rootSchema.add("SCALARS", new ScalarsTable());
             rootSchema.add("WIDE", new WideTable());
+            rootSchema.add("ANYS", new AnysTable());
             rootSchema.add("FIB", org.apache.calcite.schema.impl.TableFunctionImpl.create(org.apache.calcite.util.Smalls.FIBONACCI_LIMIT_100_TABLE_METHOD));
 
             // A CUSTOM-format fixture, which every other table here is not. HrSchema's rows are instances of
@@ -802,6 +854,211 @@ namespace Apache.Calcite.Tests
         /// </summary>
         [TestMethod]
         public void ShouldAgreeOnAGroupBysOwnOrder() => Same("SELECT \"REGION\", COUNT(*) FROM \"SALES\" GROUP BY \"REGION\"");
+
+        // MIN, MAX, SUM and AVG over a column of type ANY, whose Java class is Object.
+        //
+        // Not Same: Calcite cannot run any of these, so there is no oracle to compare against and the answers
+        // are asserted by hand, exactly as they are for a .NET user-defined function. What Calcite does with
+        // them is held separately by ShouldStillBeBeyondCalcite below, which is the test that says when to
+        // come back here — the day Calcite implements these, these answers are what its own should be
+        // compared against.
+        //
+        // The values are BigDecimal wherever SqlFunctions.plusAny and divideAny have been through them, which
+        // is what Calcite's ANY arithmetic answers for a scalar + as well.
+
+        [TestMethod]
+        public void ShouldAggregateAnAnyColumn() => Gives("SELECT MIN(\"V\"), MAX(\"V\"), SUM(\"V\"), AVG(\"V\") FROM \"ANYS\"", "5|30|65.5|16.375");
+
+        [TestMethod]
+        public void ShouldGroupAnAggregateOverAnAnyColumn() => Gives("SELECT \"K\", MIN(\"V\"), MAX(\"V\"), SUM(\"V\"), AVG(\"V\") FROM \"ANYS\" GROUP BY \"K\" ORDER BY \"K\"", "EAST|10|20.5|30.5|15.25", "WEST|5|30|35|17.5");
+
+        /// <summary>
+        /// MIN and MAX over an ANY column holding two numeric classes.
+        /// </summary>
+        /// <remarks>
+        /// The case that decides the comparison. <c>SqlFunctions.lesser</c>, which
+        /// <c>RexImpTable.MinMaxImplementor</c> calls, compares through <c>Comparable.compareTo</c> and throws
+        /// on an <c>Integer</c> against a <c>Double</c>; <c>ltAny</c> compares the two as BigDecimal, which is
+        /// what a scalar <c>&lt;</c> over ANY already does. A schema of ANY columns is usually a document
+        /// store, where one path holding both is the ordinary case rather than the odd one.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAggregateAnAnyColumnOfMixedNumericTypes() => Gives("SELECT MIN(\"V\"), MAX(\"V\") FROM \"ANYS\" WHERE \"K\" = 'EAST'", "10|20.5");
+
+        /// <summary>
+        /// MIN and MAX over an ANY column holding strings.
+        /// </summary>
+        /// <remarks>
+        /// A <see cref="string"/> is what IKVM gives <c>java.lang.Comparable</c> to as a ghost, so a value of
+        /// one reaching a comparison is worth a test of its own. Nothing casts to <c>Comparable</c> here —
+        /// <c>ltAny</c> takes two <c>Object</c>s — which is the whole reason the ghost cannot bite.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAggregateAnAnyColumnOfStrings() => Gives("SELECT MIN(\"S\"), MAX(\"S\") FROM \"ANYS\"", "a|d");
+
+        /// <summary>
+        /// An aggregate over an ANY column of a group with no rows in it.
+        /// </summary>
+        /// <remarks>
+        /// <c>StrictAggImplementor</c> decides this and neither implementor here overrides it: SUM is nullable
+        /// and answers null over an empty set, and MIN and MAX do the same. The accumulator being null is also
+        /// what MIN reads as "no row yet", so the two meanings meet here.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAggregateAnEmptyAnyColumn() => Gives("SELECT MIN(\"V\"), MAX(\"V\"), SUM(\"V\"), AVG(\"V\") FROM \"ANYS\" WHERE \"K\" = 'NORTH'", "<null>|<null>|<null>|<null>");
+
+        /// <summary>
+        /// SUM over an ANY column holding something that cannot be added.
+        /// </summary>
+        /// <remarks>
+        /// Calcite's refusal, reached from the accumulator rather than from a scalar <c>+</c>:
+        /// <c>plusAny</c> throws for anything but two numbers, and this convention does not soften that. A
+        /// query that adds up a document path holding text should say so rather than answer.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldRefuseToSumAnAnyColumnOfStrings()
+        {
+            var act = () => Run("SELECT SUM(\"S\") FROM \"ANYS\"", true);
+
+            act.Should().Throw<java.lang.RuntimeException>().WithMessage("*arithmetic*");
+        }
+
+        /// <summary>
+        /// MIN, MAX and SUM over an ANY column in a window.
+        /// </summary>
+        /// <remarks>
+        /// The same implementors, reached the other way. <c>RexImpTable</c> answers a window context with the
+        /// regular implementor for any function that has no window implementor of its own, and none of these
+        /// three has one, so <c>ClrEnumerableWindow</c> asks for and gets the ANY substitution — but it asks
+        /// through its own code rather than through the aggregate's, which is why this is worth running.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldWindowAnAggregateOverAnAnyColumn()
+        {
+            Gives("SELECT \"ID\", MIN(\"V\") OVER (PARTITION BY \"K\"), MAX(\"V\") OVER (PARTITION BY \"K\"), SUM(\"V\") OVER (PARTITION BY \"K\") FROM \"ANYS\" ORDER BY \"ID\"",
+                "1|10|20.5|30.5",
+                "2|10|20.5|30.5",
+                "3|5|30|35",
+                "4|5|30|35",
+                "5|5|30|35");
+        }
+
+        [TestMethod]
+        public void ShouldRunARunningTotalOverAnAnyColumn()
+        {
+            Gives("SELECT \"ID\", SUM(\"V\") OVER (ORDER BY \"ID\") FROM \"ANYS\" ORDER BY \"ID\"",
+                "1|10",
+                "2|30.5",
+                "3|60.5",
+                "4|60.5",
+                "5|65.5");
+        }
+
+        /// <summary>
+        /// ANY_VALUE over an ANY column.
+        /// </summary>
+        /// <remarks>
+        /// The same implementor as MAX, upstream and here: <c>RexImpTable</c> answers ANY_VALUE with
+        /// <c>MinMaxImplementor</c>, which asks whether the kind is MIN and takes the other branch when it is
+        /// not. So the value is the largest rather than an arbitrary one, and that is Calcite's choice being
+        /// followed rather than a decision made here.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldTakeAnyValueOfAnAnyColumn() => Gives("SELECT ANY_VALUE(\"V\"), ANY_VALUE(\"S\") FROM \"ANYS\"", "30|d");
+
+        /// <summary>
+        /// The deviations and the variances over an ANY column.
+        /// </summary>
+        /// <remarks>
+        /// None of these has an implementor in any convention, in any type. <c>AGGREGATE_REDUCE_FUNCTIONS</c>
+        /// rewrites each into sums of the value and of its square over a count, so they cost nothing beyond
+        /// SUM working — but that means they are only reachable while it does, and a test says so rather than
+        /// leaving it to be rediscovered.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldDeviateOverAnAnyColumn() => Gives("SELECT VAR_POP(\"V\"), VAR_SAMP(\"V\") FROM \"ANYS\"", "93.171875|124.2291666666667");
+
+        /// <summary>
+        /// An aggregate over an ANY column carrying a FILTER.
+        /// </summary>
+        /// <remarks>
+        /// The filter is <c>StrictAggImplementor</c>'s business rather than an implementor's — it folds into
+        /// the same condition the null check builds — so this works for the same reason the null does. Worth
+        /// a row of its own because Calcite cannot run it, and so the differential suite cannot say it.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldFilterAnAggregateOverAnAnyColumn() => Gives("SELECT MIN(\"V\") FILTER (WHERE \"ID\" > 1), SUM(\"V\") FILTER (WHERE \"K\" = 'EAST') FROM \"ANYS\"", "5|30.5");
+
+        /// <summary>
+        /// A DISTINCT aggregate over an ANY column.
+        /// </summary>
+        /// <remarks>
+        /// Both conventions refuse a distinct call outright, exactly as <c>EnumerableAggregate</c> does, and
+        /// <c>AGGREGATE_EXPAND_DISTINCT_AGGREGATES</c> is what takes the DISTINCT off before either sees it.
+        /// So this measures the rule reaching an ANY column rather than anything in the implementors.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAggregateDistinctlyOverAnAnyColumn() => Gives("SELECT COUNT(DISTINCT \"V\"), SUM(DISTINCT \"V\") FROM \"ANYS\"", "4|65.5");
+
+        /// <summary>
+        /// Requires that these are still queries Calcite itself cannot run.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <remarks>
+        /// The other half of asserting an answer by hand. The four queries above have no oracle only for as
+        /// long as <c>EnumerableConvention</c> cannot implement them, and if that changes this goes red and
+        /// says so — which is the moment to compare the two conventions row by row rather than to discover
+        /// from a user that they disagree. It is not an assertion that Calcite ought to fail.
+        /// </remarks>
+        static void StillBeyondCalcite(string sql)
+        {
+            Failure(() => Run(sql, false)).Should().NotBeNull(
+                "Calcite still cannot implement '{0}'; now that it can, the answers this convention gives should be compared against its own", sql);
+        }
+
+        /// <summary>
+        /// Runs a query and returns what it threw, or null if it did not throw.
+        /// </summary>
+        static Exception? Failure(Func<List<string>> run)
+        {
+            try
+            {
+                run();
+                return null;
+            }
+            catch (Exception e)
+            {
+                return e;
+            }
+        }
+
+        [TestMethod]
+        public void ShouldStillBeBeyondCalcite()
+        {
+            StillBeyondCalcite("SELECT MIN(\"V\") FROM \"ANYS\"");
+            StillBeyondCalcite("SELECT MAX(\"V\") FROM \"ANYS\"");
+            StillBeyondCalcite("SELECT SUM(\"V\") FROM \"ANYS\"");
+            StillBeyondCalcite("SELECT AVG(\"V\") FROM \"ANYS\"");
+            StillBeyondCalcite("SELECT ANY_VALUE(\"V\") FROM \"ANYS\"");
+            StillBeyondCalcite("SELECT VAR_POP(\"V\") FROM \"ANYS\"");
+            StillBeyondCalcite("SELECT MIN(\"V\") FILTER (WHERE \"ID\" > 1) FROM \"ANYS\"");
+            StillBeyondCalcite("SELECT \"K\", MIN(\"V\"), SUM(\"V\") FROM \"ANYS\" GROUP BY \"K\"");
+        }
+
+        // and the same column read every way that already worked, so that a change here is known to be about
+        // the aggregate rather than about the column, the fixture or the scan
+
+        [TestMethod]
+        public void ShouldAgreeOnScanningAnAnyColumn() => Same("SELECT \"K\", \"V\", \"S\" FROM \"ANYS\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnCountingAnAnyColumn() => Same("SELECT \"K\", COUNT(\"V\"), COUNT(*) FROM \"ANYS\" GROUP BY \"K\" ORDER BY \"K\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnAggregatingACastAnyColumn() => Same("SELECT MIN(CAST(\"V\" AS INTEGER)), MAX(CAST(\"V\" AS INTEGER)), SUM(CAST(\"V\" AS INTEGER)), AVG(CAST(\"V\" AS INTEGER)) FROM \"ANYS\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnAGroupedAggregateOverACastAnyColumn() => Same("SELECT \"K\", MIN(CAST(\"V\" AS INTEGER)), SUM(CAST(\"V\" AS INTEGER)) FROM \"ANYS\" GROUP BY \"K\" ORDER BY \"K\"");
 
         [TestMethod]
         public void ShouldAgreeOnAGlobalAggregate() => Same("SELECT COUNT(*), SUM(\"AMOUNT\"), AVG(\"AMOUNT\") FROM \"SALES\"");
