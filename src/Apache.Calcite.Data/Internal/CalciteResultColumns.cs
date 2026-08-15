@@ -111,13 +111,17 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Gets the name of the column.
+        /// Gets the name of the column: the label — what an <c>AS</c> alias names the result
+        /// column — falling back to the underlying column name when no label is present. Two
+        /// projections of the same column under different aliases are distinct result columns,
+        /// and the origin name would report them as duplicates.
         /// </summary>
         /// <param name="index"></param>
         /// <returns></returns>
         public string GetName(int index)
         {
-            return GetColumn(index).columnName;
+            var column = GetColumn(index);
+            return string.IsNullOrEmpty(column.label) ? column.columnName : column.label;
         }
 
         /// <summary>

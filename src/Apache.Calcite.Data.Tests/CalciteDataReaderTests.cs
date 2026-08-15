@@ -176,6 +176,19 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(typeof(string), r.GetFieldType(1));
         }
 
+        [Fact]
+        public void GetName_should_return_alias_label()
+        {
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT \"x\", \"x\" AS \"Foo\" FROM (VALUES (1)) AS t(\"x\")";
+            using var r = cmd.ExecuteReader();
+
+            Assert.Equal("x", r.GetName(0));
+            Assert.Equal("Foo", r.GetName(1));
+        }
+
     }
 
 }
