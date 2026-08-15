@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Reflection;
 
+using Apache.Calcite.Extensions.Linq4j.Tree;
+
 using org.apache.calcite.runtime;
 
 namespace Apache.Calcite.Extensions.Runtime
@@ -211,10 +213,6 @@ namespace Apache.Calcite.Extensions.Runtime
                 {
                     // a field the runtime cannot compare is skipped, exactly as Calcite skips one whose
                     // compare method does not exist: a record is not always used as a sorting key
-                    //
-                    // Calcite reads Types.RecordField.nullable() here and calls compareNullsLast for a
-                    // nullable field, which a CLR field does not carry and this does not follow. A null in a
-                    // reference field therefore throws where Calcite orders it last. Measured.
                     var compare = Compare(field.FieldType);
                     if (compare == null)
                         continue;
@@ -243,38 +241,34 @@ namespace Apache.Calcite.Extensions.Runtime
             }
 
             /// <summary>
-            /// Returns the <c>Utilities.compare</c> overload that takes a value of the given type, or null when
+            /// Returns the <c>Utilities</c> method that compares a value of the given type, or null where
             /// there is none.
             /// </summary>
             /// <param name="type"></param>
             /// <returns></returns>
+            /// <remarks>
+            /// Calcite names the class and the method and lets <c>Types.lookupMethod</c> bind the overload
+            /// from the argument types, and answers a <c>NoSuchMethodException</c> where none does — which is
+            /// what leaves a field of a type nothing compares out of <c>compareTo</c>, an <see cref="object"/>
+            /// being one, since it is not a <c>Comparable</c>. <see cref="ClrTypes.Resolve(Type, string,
+            /// Type[])"/> is that resolution, and it throws where Calcite's throws.
+            ///
+            /// <para>Calcite reads <c>Types.RecordField.nullable()</c> and names <c>compareNullsLast</c> for a
+            /// nullable field. That flag is not on a CLR field — <c>SyntheticRecordEmitter</c> drops it, and
+            /// it cannot be recovered from the type, a String field being nullable through one of the
+            /// factory's two paths and not the other — so the name here is always <c>compare</c>, and a null
+            /// in a reference field throws where Calcite orders it last. Measured.</para>
+            /// </remarks>
             static MethodInfo? Compare(Type type)
             {
-                MethodInfo? general = null;
-
-                foreach (var candidate in Hashes)
+                try
                 {
-                    if (candidate.Name != "compare")
-                        continue;
-
-                    var parameters = candidate.GetParameters();
-                    if (parameters.Length != 2 || parameters[0].ParameterType != parameters[1].ParameterType)
-                        continue;
-
-                    if (parameters[1].ParameterType == type)
-                        return candidate;
-
-                    // the general overload takes a java.lang.Comparable, and IComparable is the CLR type that
-                    // names: IKVM declares java.lang.Comparable as an interface of its own deriving from it,
-                    // but erases the parameter to IComparable in every signature it compiles
-                    // and the field has to be one, which is what Types.lookupMethod asks: Object is a
-                    // reference type and is not assignable to Comparable, so Calcite finds no overload for a
-                    // field of one and leaves it out of compareTo
-                    if (parameters[1].ParameterType == typeof(IComparable) && typeof(IComparable).IsAssignableFrom(type))
-                        general = candidate;
+                    return ClrTypes.Resolve(typeof(Utilities), "compare", [type, type]);
                 }
-
-                return general;
+                catch (NotSupportedException)
+                {
+                    return null;
+                }
             }
 
             /// <summary>
