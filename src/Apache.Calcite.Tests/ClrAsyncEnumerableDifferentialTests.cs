@@ -401,6 +401,15 @@ namespace Apache.Calcite.Tests
         [TestMethod]
         public Task ShouldAgreeOnARunningTotalOverAnAnyColumn() => SameThrough("ClrAsyncEnumerableWindow", "SELECT ID, SUM(V) OVER (ORDER BY ID) FROM ANYS ORDER BY ID");
 
+        [TestMethod]
+        public Task ShouldAgreeOnTakingAnyValueOfAnAnyColumn() => SameThrough("ClrAsyncEnumerableAggregate", "SELECT ANY_VALUE(V), ANY_VALUE(S) FROM ANYS");
+
+        [TestMethod]
+        public Task ShouldAgreeOnDeviatingOverAnAnyColumn() => Same("SELECT VAR_POP(V), VAR_SAMP(V) FROM ANYS");
+
+        [TestMethod]
+        public Task ShouldAgreeOnFilteringAnAggregateOverAnAnyColumn() => Same("SELECT MIN(V) FILTER (WHERE ID > 1), SUM(V) FILTER (WHERE K = 'EAST') FROM ANYS");
+
         // and the same column read every way that already worked
 
         [TestMethod]

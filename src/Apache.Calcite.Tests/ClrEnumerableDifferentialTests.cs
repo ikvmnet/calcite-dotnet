@@ -955,6 +955,52 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
+        /// ANY_VALUE over an ANY column.
+        /// </summary>
+        /// <remarks>
+        /// The same implementor as MAX, upstream and here: <c>RexImpTable</c> answers ANY_VALUE with
+        /// <c>MinMaxImplementor</c>, which asks whether the kind is MIN and takes the other branch when it is
+        /// not. So the value is the largest rather than an arbitrary one, and that is Calcite's choice being
+        /// followed rather than a decision made here.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldTakeAnyValueOfAnAnyColumn() => Gives("SELECT ANY_VALUE(\"V\"), ANY_VALUE(\"S\") FROM \"ANYS\"", "30|d");
+
+        /// <summary>
+        /// The deviations and the variances over an ANY column.
+        /// </summary>
+        /// <remarks>
+        /// None of these has an implementor in any convention, in any type. <c>AGGREGATE_REDUCE_FUNCTIONS</c>
+        /// rewrites each into sums of the value and of its square over a count, so they cost nothing beyond
+        /// SUM working — but that means they are only reachable while it does, and a test says so rather than
+        /// leaving it to be rediscovered.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldDeviateOverAnAnyColumn() => Gives("SELECT VAR_POP(\"V\"), VAR_SAMP(\"V\") FROM \"ANYS\"", "93.171875|124.2291666666667");
+
+        /// <summary>
+        /// An aggregate over an ANY column carrying a FILTER.
+        /// </summary>
+        /// <remarks>
+        /// The filter is <c>StrictAggImplementor</c>'s business rather than an implementor's — it folds into
+        /// the same condition the null check builds — so this works for the same reason the null does. Worth
+        /// a row of its own because Calcite cannot run it, and so the differential suite cannot say it.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldFilterAnAggregateOverAnAnyColumn() => Gives("SELECT MIN(\"V\") FILTER (WHERE \"ID\" > 1), SUM(\"V\") FILTER (WHERE \"K\" = 'EAST') FROM \"ANYS\"", "5|30.5");
+
+        /// <summary>
+        /// A DISTINCT aggregate over an ANY column.
+        /// </summary>
+        /// <remarks>
+        /// Both conventions refuse a distinct call outright, exactly as <c>EnumerableAggregate</c> does, and
+        /// <c>AGGREGATE_EXPAND_DISTINCT_AGGREGATES</c> is what takes the DISTINCT off before either sees it.
+        /// So this measures the rule reaching an ANY column rather than anything in the implementors.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAggregateDistinctlyOverAnAnyColumn() => Gives("SELECT COUNT(DISTINCT \"V\"), SUM(DISTINCT \"V\") FROM \"ANYS\"", "4|65.5");
+
+        /// <summary>
         /// Requires that these are still queries Calcite itself cannot run.
         /// </summary>
         /// <param name="sql"></param>
@@ -993,6 +1039,9 @@ namespace Apache.Calcite.Tests
             StillBeyondCalcite("SELECT MAX(\"V\") FROM \"ANYS\"");
             StillBeyondCalcite("SELECT SUM(\"V\") FROM \"ANYS\"");
             StillBeyondCalcite("SELECT AVG(\"V\") FROM \"ANYS\"");
+            StillBeyondCalcite("SELECT ANY_VALUE(\"V\") FROM \"ANYS\"");
+            StillBeyondCalcite("SELECT VAR_POP(\"V\") FROM \"ANYS\"");
+            StillBeyondCalcite("SELECT MIN(\"V\") FILTER (WHERE \"ID\" > 1) FROM \"ANYS\"");
             StillBeyondCalcite("SELECT \"K\", MIN(\"V\"), SUM(\"V\") FROM \"ANYS\" GROUP BY \"K\"");
         }
 

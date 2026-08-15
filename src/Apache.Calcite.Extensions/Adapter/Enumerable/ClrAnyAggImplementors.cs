@@ -12,8 +12,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 {
 
     /// <summary>
-    /// The aggregate implementors this project adds for a column of type ANY, and the state that carries one
-    /// in place of the implementor <c>RexImpTable</c> would have answered.
+    /// The aggregate implementors this project adds for a column of type ANY.
     /// </summary>
     /// <remarks>
     /// Not a port. Calcite cannot aggregate over ANY either, and the two ways it fails are both measured in
@@ -23,7 +22,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// over two <c>Object</c>s. Both fail before a row is read, so <c>EnumerableConvention</c> forms a plan for
     /// MIN, MAX, SUM and AVG over an ANY column and then cannot implement it. There is nothing upstream to
     /// reproduce, which is why these are an addition rather than a defect, and why the differential tests
-    /// cannot use Calcite as the oracle for them.
+    /// cannot use Calcite as the oracle for them. <see cref="ClrAggImpState"/> is what carries one to the
+    /// node that writes with it.
     ///
     /// <para>What the addition reaches for is Calcite's own, though. A value of type ANY carries its type at
     /// run time and nowhere else, so the operation has to be chosen per value, and <c>SqlFunctions</c> already
@@ -44,41 +44,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     {
 
         /// <summary>
-        /// Returns the state of one aggregate call, holding the implementor that call is to be written with.
-        /// </summary>
-        /// <param name="aggIdx"></param>
-        /// <param name="call"></param>
-        /// <param name="windowContext"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// <c>new AggImpState(...)</c> for every node of both conventions. It exists because
-        /// <c>AggImpState.implementor</c> is final and is filled from <c>RexImpTable.INSTANCE</c> by the
-        /// constructor, so an implementor of ours cannot be put there: the substitution travels beside the
-        /// state rather than in it, and <see cref="Implementor"/> is where every site reads it.
-        /// </remarks>
-        public static AggImpState State(int aggIdx, AggregateCall call, bool windowContext)
-        {
-            return new ClrAggImpState(aggIdx, call, windowContext);
-        }
-
-        /// <summary>
-        /// Returns the implementor an aggregate call is to be written with.
-        /// </summary>
-        /// <param name="agg"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// <c>agg.implementor</c> everywhere except where the call's type is ANY, and one instance per call
-        /// rather than one per read: <c>StrictAggImplementor</c> works out its state size and whether it has
-        /// to track an empty set in <c>getStateType</c> and reads both back in <c>implementAdd</c> and
-        /// <c>implementResult</c>, so an implementor built afresh at each phase would answer from a state that
-        /// had never been sized.
-        /// </remarks>
-        public static AggImplementor Implementor(this AggImpState agg)
-        {
-            return agg is ClrAggImpState state ? state.Implementor : agg.implementor;
-        }
-
-        /// <summary>
         /// Returns the implementor to write a call of type ANY with, or null where there is none.
         /// </summary>
         /// <param name="call"></param>
@@ -89,9 +54,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <c>info.returnType()</c>, and an ANY return type is what makes it <c>Object</c>. MIN, MAX and SUM
         /// all return the type they read, so for these three the two are the same type anyway.
         ///
-        /// <para>COUNT is not here and needs nothing: it never looks at the value.</para>
+        /// <para>COUNT is not here and needs nothing: it never looks at the value. Nor are the aggregates
+        /// whose implementors already work over an <c>Object</c> — <c>COLLECT</c>, <c>MODE</c>,
+        /// <c>ARG_MIN</c>, <c>ARG_MAX</c>, <c>LISTAGG</c> and <c>JSON_ARRAYAGG</c> all run over ANY untouched,
+        /// in Calcite as well. What is left out and could be added is <c>BIT_AND</c> and <c>BIT_OR</c>, which
+        /// have no <c>Object</c> overload in <c>SqlFunctions</c> and no <c>*Any</c> counterpart to reach for
+        /// either.</para>
         /// </remarks>
-        static AggImplementor? For(AggregateCall call)
+        internal static AggImplementor? For(AggregateCall call)
         {
             if (call.getType().getSqlTypeName() != SqlTypeName.ANY)
                 return null;
@@ -101,39 +71,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             {
                 nameof(SqlKind.MIN) => new ClrAnyMinMaxImplementor(true),
                 nameof(SqlKind.MAX) => new ClrAnyMinMaxImplementor(false),
+
+                // ANY_VALUE is MinMaxImplementor upstream too, and takes its MAX branch: the implementor asks
+                // whether the kind is MIN and this is not it
+                nameof(SqlKind.ANY_VALUE) => new ClrAnyMinMaxImplementor(false),
+
                 nameof(SqlKind.SUM) or nameof(SqlKind.SUM0) => new ClrAnySumImplementor(),
                 _ => null,
             };
-        }
-
-        /// <summary>
-        /// An <c>AggImpState</c> that carries the implementor its call is to be written with.
-        /// </summary>
-        /// <remarks>
-        /// Calcite never sees one of these: every <c>AggImpState</c> either convention builds is built here,
-        /// and the only code that reads the implementor back is this project's own aggregate, sorted aggregate
-        /// and window.
-        /// </remarks>
-        sealed class ClrAggImpState : AggImpState
-        {
-
-            /// <summary>
-            /// Initializes a new instance.
-            /// </summary>
-            /// <param name="aggIdx"></param>
-            /// <param name="call"></param>
-            /// <param name="windowContext"></param>
-            public ClrAggImpState(int aggIdx, AggregateCall call, bool windowContext) :
-                base(aggIdx, call, windowContext)
-            {
-                // one substitution serves a window as well, because a window context falls through to the
-                // regular implementor for any function without one of its own, and none of these three has one
-                Implementor = For(call) ?? implementor;
-            }
-
-            /// <inheritdoc cref="ClrAnyAggImplementors.Implementor" />
-            public AggImplementor Implementor { get; }
-
         }
 
         /// <summary>

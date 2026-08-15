@@ -182,7 +182,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 if (call.ignoreNulls())
                     throw new java.lang.UnsupportedOperationException("IGNORE NULLS not supported");
 
-                aggs.add(ClrAnyAggImplementors.State(aggIdx, call, true));
+                aggs.add(new ClrAggImpState(aggIdx, call, true));
             }
 
             // the output of this group is its input plus one field per aggregate
@@ -190,7 +190,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             typeBuilder.addAll(inputPhysType.RelRowType.getFieldList());
             for (int i = 0; i < aggs.size(); i++)
             {
-                var agg = (AggImpState)aggs.get(i);
+                var agg = (ClrAggImpState)aggs.get(i);
 
                 // [CALCITE-4326] NullPointerException possible in EnumerableWindow when agg.call.name is null
                 typeBuilder.add(agg.call.name ?? throw new java.lang.NullPointerException($"agg.call.name for {agg.call}"), agg.call.type);
@@ -240,7 +240,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // out of a lambda rather than something mutated where it was declared
             for (int i = 0, slot = 0; i < aggs.size(); i++)
             {
-                var agg = (AggImpState)aggs.get(i);
+                var agg = (ClrAggImpState)aggs.get(i);
 
                 var state = new java.util.ArrayList(agg.state.size());
                 for (int j = 0; j < agg.state.size(); j++)
@@ -288,16 +288,16 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var resetBuilder = new J.BlockBuilder();
             for (int i = 0; i < aggs.size(); i++)
             {
-                var agg = (AggImpState)aggs.get(i);
-                agg.Implementor().implementReset(agg.context,
+                var agg = (ClrAggImpState)aggs.get(i);
+                agg.Implementor.implementReset(agg.context,
                     new WinAggResetContextImpl(resetBuilder, agg.state, loop.Index, loop.Start, loop.End, loop.HasRows, loop.FrameRowCount, loop.PartitionRowCount));
             }
 
             var addBuilder = new J.BlockBuilder();
             for (int i = 0; i < aggs.size(); i++)
             {
-                var agg = (AggImpState)aggs.get(i);
-                agg.Implementor().implementAdd(agg.context,
+                var agg = (ClrAggImpState)aggs.get(i);
+                agg.Implementor.implementAdd(agg.context,
                     new ClrWinAggAddContext(addBuilder, agg.state, frame, loop.Position, RexArguments(agg, result.PhysType.RelRowType, constants)));
             }
 
@@ -487,11 +487,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         {
             for (int i = 0; i < aggs.size(); i++)
             {
-                var agg = (AggImpState)aggs.get(i);
+                var agg = (ClrAggImpState)aggs.get(i);
                 agg.context = new ClrWinAggContext(agg, typeFactory, result.PhysType.RelRowType, constants, exclusion);
 
                 var aggName = ClrEnumerableAggregateBase.AggName(agg);
-                var state = agg.Implementor().getStateType(agg.context);
+                var state = agg.Implementor.getStateType(agg.context);
 
                 var decls = new java.util.ArrayList(state.size());
                 for (int j = 0; j < state.size(); j++)
@@ -521,7 +521,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 stateTypes.add(aggHolderType);
                 initExpressions.add(aggRes);
 
-                agg.Implementor().implementReset(agg.context, new WinAggResetContextImpl(initBlock, agg.state, null, null, null, null, null, null));
+                agg.Implementor.implementReset(agg.context, new WinAggResetContextImpl(initBlock, agg.state, null, null, null, null, null, null));
             }
         }
 
@@ -545,15 +545,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             for (int i = 0; i < aggs.size(); i++)
             {
-                var agg = (AggImpState)aggs.get(i);
+                var agg = (ClrAggImpState)aggs.get(i);
 
-                var needCache = agg.Implementor() is not WinAggImplementor implementor || implementor.needCacheWhenFrameIntact();
+                var needCache = agg.Implementor is not WinAggImplementor implementor || implementor.needCacheWhenFrameIntact();
                 if (needCache ^ cachedBlock)
                     continue;
 
                 nonEmpty = true;
 
-                var res = agg.Implementor().implementResult(agg.context,
+                var res = agg.Implementor.implementResult(agg.context,
                     new ClrWinAggResultContext(builder, agg.state, frame, RexArguments(agg, inputRowType, constants)));
 
                 // several count(a) and count(b) might share the result

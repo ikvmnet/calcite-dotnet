@@ -189,6 +189,7 @@ namespace Apache.Calcite.Tests
             "SELECT MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS",
             "SELECT K, MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS GROUP BY K",
             "SELECT MIN(S), MAX(S) FROM ANYS",
+            "SELECT ANY_VALUE(V), VAR_POP(V), MIN(V) FILTER (WHERE ID > 1) FROM ANYS",
             "SELECT ID, MIN(V) OVER (PARTITION BY K), SUM(V) OVER (ORDER BY ID) FROM ANYS",
         ];
 
