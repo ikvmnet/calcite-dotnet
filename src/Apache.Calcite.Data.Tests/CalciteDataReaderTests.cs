@@ -196,6 +196,45 @@ namespace Apache.Calcite.Data.Tests
         }
 
         [Fact]
+        public void GetChar_should_convert_single_character_char_column()
+        {
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES CAST('a' AS CHAR(1))";
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+
+            Assert.Equal('a', r.GetChar(0));
+        }
+
+        [Fact]
+        public void GetChar_should_refuse_char_column_longer_than_one()
+        {
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES CAST('ab' AS CHAR(2))";
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+
+            Assert.Throws<InvalidCastException>(() => r.GetChar(0));
+        }
+
+        [Fact]
+        public void GetChar_should_refuse_varchar_column_of_length_one()
+        {
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES CAST('a' AS VARCHAR(1))";
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+
+            Assert.Throws<InvalidCastException>(() => r.GetChar(0));
+        }
+
+        [Fact]
         public void GetName_should_return_alias_label()
         {
             using var c = new CalciteConnection(ServerDdlConnectionString);
