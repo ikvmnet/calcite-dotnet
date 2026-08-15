@@ -211,6 +211,10 @@ namespace Apache.Calcite.Extensions.Runtime
                 {
                     // a field the runtime cannot compare is skipped, exactly as Calcite skips one whose
                     // compare method does not exist: a record is not always used as a sorting key
+                    //
+                    // Calcite reads Types.RecordField.nullable() here and calls compareNullsLast for a
+                    // nullable field, which a CLR field does not carry and this does not follow. A null in a
+                    // reference field therefore throws where Calcite orders it last. Measured.
                     var compare = Compare(field.FieldType);
                     if (compare == null)
                         continue;
@@ -223,14 +227,6 @@ namespace Apache.Calcite.Extensions.Runtime
 
                 return Expression.Lambda<Func<object, object?, int>>(Expression.Block([self, that, c], body), left, right).Compile();
             }
-
-            /// <summary>
-            /// <c>Utilities.compare(Comparable, Comparable)</c>, reached by a method taking objects.
-            /// </summary>
-            static readonly MethodInfo ComparableCompare = typeof(Apache.Calcite.Extensions.Interop.JavaComparisons)
-                
-                .GetMethod(nameof(Apache.Calcite.Extensions.Interop.JavaComparisons.Compare), [typeof(object), typeof(object)])
-                ?? throw new InvalidOperationException("JavaComparisons has no Compare(object, object).");
 
             /// <summary>
             /// Brings a field to the type the comparison takes.
@@ -268,15 +264,17 @@ namespace Apache.Calcite.Extensions.Runtime
                     if (parameters[1].ParameterType == type)
                         return candidate;
 
-                    if (parameters[1].ParameterType == typeof(java.lang.Comparable) && type.IsValueType == false)
+                    // the general overload takes a java.lang.Comparable, and IComparable is the CLR type that
+                    // names: IKVM declares java.lang.Comparable as an interface of its own deriving from it,
+                    // but erases the parameter to IComparable in every signature it compiles
+                    // and the field has to be one, which is what Types.lookupMethod asks: Object is a
+                    // reference type and is not assignable to Comparable, so Calcite finds no overload for a
+                    // field of one and leaves it out of compareTo
+                    if (parameters[1].ParameterType == typeof(IComparable) && typeof(IComparable).IsAssignableFrom(type))
                         general = candidate;
                 }
 
-                // the general overload takes a java.lang.Comparable, which IKVM gives a string as a ghost
-                // interface: the CLR type system does not see it, so an Expression.Convert to it throws where
-                // Java's cast would have passed. The same call reached through a method taking an object does
-                // the conversion in compiled C#, where IKVM emits the check.
-                return general == null ? null : ComparableCompare;
+                return general;
             }
 
             /// <summary>
