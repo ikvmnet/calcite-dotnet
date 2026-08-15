@@ -1089,6 +1089,15 @@ namespace Apache.Calcite.Tests
         public void ShouldAgreeOnGroupingSetsOwnOrder() =>
             Same("SELECT \"REGION\", COUNT(*) FROM \"SALES\" GROUP BY GROUPING SETS ((\"REGION\"), ())");
 
+        // A grouping set over four columns keys on eight fields -- one per column and one indicator per column
+        // -- and a row of more than six is the only one FlatLists.copyOf builds, over an array whose element
+        // type Calcite names as Comparable. That is the arity at which a VARCHAR group column reaches the
+        // ghost interface, so no grouping set over three columns or fewer covers it.
+
+        [TestMethod]
+        public void ShouldAgreeOnARollupOverEveryColumn() =>
+            Same("SELECT \"ID\", \"REGION\", \"AMOUNT\", \"LABEL\", COUNT(*) FROM \"SALES\" GROUP BY ROLLUP(\"ID\", \"REGION\", \"AMOUNT\", \"LABEL\") ORDER BY 1, 2, 3, 4, 5");
+
         [TestMethod]
         public void ShouldAgreeOnTheGroupingFunction() =>
             Same("SELECT \"REGION\", GROUPING(\"REGION\"), COUNT(*) FROM \"SALES\" GROUP BY ROLLUP(\"REGION\") ORDER BY 1, 2");

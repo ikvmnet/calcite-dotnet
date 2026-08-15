@@ -341,11 +341,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     return Expression.Call(null, FlatListOf[expressions.Count - 2], arguments);
                 }
 
+                // Calcite writes newArrayInit(Comparable.class, ...), and IKVM erases a java.lang.Comparable
+                // to IComparable in every signature it compiles, copyOf's parameter included. The two differ
+                // in what they accept: a string has IComparable and has java.lang.Comparable only as a ghost.
                 var elements = new Expression[expressions.Count];
                 for (int i = 0; i < elements.Length; i++)
-                    elements[i] = ClrEnumUtils.Convert(expressions[i], typeof(java.lang.Comparable));
+                    elements[i] = ClrEnumUtils.Convert(expressions[i], typeof(IComparable));
 
-                return Expression.Call(null, FlatListCopyOf, Expression.NewArrayInit(typeof(java.lang.Comparable), elements));
+                return Expression.Call(null, FlatListCopyOf, Expression.NewArrayInit(typeof(IComparable), elements));
             }
 
         }
