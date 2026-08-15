@@ -18,7 +18,8 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
     /// the same Rex translation, the same synthetic records.
     ///
     /// <para>Register <see cref="ClrAsyncEnumerableRules.Rules"/> with the planner and ask for this
-    /// convention on the root; <see cref="ClrAsyncEnumerablePrograms"/> has the passes that takes. The root
+    /// convention on the root, then run <see cref="ClrAsyncEnumerableRules.CalcRules"/> as a second pass,
+    /// which is what <c>Programs.standard</c> does with Calcite's own. The root
     /// of the plan that comes out is a <see cref="ClrAsyncEnumerableRel"/>, and
     /// <see cref="ClrAsyncEnumerableRelImplementor.ImplementRoot"/> turns it into a lambda to compile.</para>
     ///

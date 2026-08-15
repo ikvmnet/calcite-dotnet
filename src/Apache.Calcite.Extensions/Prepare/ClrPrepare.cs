@@ -89,6 +89,21 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Returns the program that takes a logical plan to <see cref="ResultConvention"/>.
         /// </summary>
+        /// <remarks>
+        /// <c>Prepare.getProgram</c> — <c>Programs.standard()</c> with one pass appended, and nothing of
+        /// <c>standard</c>'s taken away, replaced or reordered. Every rule list <c>standard</c> holds is
+        /// Calcite's, so the one thing it cannot do is a pass whose rules name a convention it has never
+        /// heard of: its calc pass is <c>RelOptRules.CALC_RULES</c>, three of whose nine name
+        /// <c>EnumerableConvention</c>'s nodes. The appended pass is those three per convention, over both,
+        /// the five they share with Calcite going in once.
+        ///
+        /// <para>These cannot be planner rules instead. A calc and the project it came from have the same
+        /// row count and <c>VolcanoCost.isLt</c> compares nothing else, cpu and io being dead code behind
+        /// <c>if (true)</c>, so neither is ever cheaper and the planner keeps whichever it saw first. Nor
+        /// would most of the list match: <c>VolcanoPlanner.addRule</c> does not register a
+        /// <c>TransformationRule</c>'s operand against a <c>PhysicalNode</c>, and every node of both
+        /// conventions is one.</para>
+        /// </remarks>
         protected virtual Program GetProgram()
         {
             // allow a test to override the default program
@@ -97,19 +112,18 @@ namespace Apache.Calcite.Extensions.Prepare
             if (holder.get() is Program holderValue)
                 return holderValue;
 
-            return GetStandardProgram();
-        }
+            var calcRules = new java.util.ArrayList();
+            foreach (var rule in Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableRules.CalcRules())
+                calcRules.add(rule);
 
-        /// <summary>
-        /// Returns this convention's counterpart of <c>Programs.standard</c>.
-        /// </summary>
-        /// <remarks>
-        /// <c>Prepare.getProgram</c> ends in the constant <c>Programs.standard()</c>, there being one calling
-        /// convention to plan into. There are two here and their last two passes differ, so the constant is a
-        /// method. Everything else about <c>getProgram</c> is unchanged — the hook is read here rather than at
-        /// the call site, and <see cref="Optimize"/> calls nothing else.
-        /// </remarks>
-        protected abstract Program GetStandardProgram();
+            foreach (var rule in Apache.Calcite.Extensions.Adapter.AsyncEnumerable.ClrAsyncEnumerableRules.CalcRules())
+                if (calcRules.contains(rule) == false)
+                    calcRules.add(rule);
+
+            return Programs.sequence(
+                Programs.standard(),
+                Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE));
+        }
 
         /// <summary>
         /// Returns the traits the root of the plan must satisfy.

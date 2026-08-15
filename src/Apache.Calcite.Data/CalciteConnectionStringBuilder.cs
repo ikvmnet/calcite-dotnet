@@ -193,9 +193,14 @@ namespace Apache.Calcite.Data
         /// bindable convention. By default every query is planned into the asynchronous convention, whichever
         /// entry point asked — a table that cannot produce rows asynchronously is still planned, carried
         /// across a converter, and that part of the plan completes synchronously. Setting this plans into the
-        /// synchronous convention instead, for both entry points: <c>ReadAsync</c> answers with completed
-        /// tasks, and a query touching a table that can <em>only</em> produce rows asynchronously fails to
-        /// plan.
+        /// synchronous convention instead, for both entry points, and <c>ReadAsync</c> answers with completed
+        /// tasks.
+        ///
+        /// <para>It chooses the convention the root must be in, and nothing else. The planner carries both
+        /// either way, so a query touching a table that can <em>only</em> produce rows asynchronously is
+        /// still planned — reached across a converter, with <c>Read</c> blocking there. It has to be that
+        /// way round: a schema may bring rules of its own, and a planner holding one convention would refuse
+        /// an adapter written against the other for no reason the caller could see.</para>
         /// </remarks>
         public bool? Synchronous
         {

@@ -214,8 +214,51 @@ value was boxed.
 **`Rules()` and `CalcRules()` are two passes, not one.** `VolcanoCost.isLt` compares the row count and
 nothing else — cpu and io are dead code behind `if (true)` — so a project and a calc are never cheaper
 than one another and the planner keeps whichever it saw first. `Programs.standard` runs the calc rules
-afterwards as a hep pass. A caller must do the same, must run `Programs.subQuery` before the planner, and
-— to reach `ClrEnumerableCorrelate` at all — must **not** decorrelate.
+afterwards as a hep pass. A caller must do the same, and must run `Programs.subQuery` before the planner.
+**It should decorrelate**, and the claim here that it must not — on the grounds that decorrelation would
+leave `ClrEnumerableCorrelate` unreachable — was false and stood for a while. Measured: a scalar sub-query
+and an `EXISTS` do become joins, which is what Calcite means and what the prepare pipeline has always
+done, but an `UNNEST` over a correlation variable cannot be decorrelated and keeps its correlate. That is
+how Calcite reaches its own `EnumerableCorrelate` under `Programs.standard` too. Leaving the pass out
+bought nothing and cost every correlated sub-query the join Calcite would have given it.
+
+**There is no program of this project's own, and there is nothing for one to do.** `ClrPrepare.GetProgram`
+is `Prepare.getProgram` — `Programs.sequence(Programs.standard(), Programs.hep(calcRules, true, provider))`,
+Calcite's program as it stands with one pass added after it. **One member, and nothing overrides it.** The
+calc list is both conventions' — the five they share with Calcite going in once — so the program is the same
+for every statement, the convention a statement ends in being the result convention demanded of the root and
+nothing in the program. There is no second hook and no per-convention override; `Hook.PROGRAM` replaces the
+whole of it, as upstream.
+
+**Nothing of `standard`'s is replaced**, `Programs.calc` included: that pass is `RelOptRules.CALC_RULES`, it
+still runs, and it still has work, because a plan may hold nodes of any of the three conventions. `standard`'s
+planner pass installs no rules and plans with whatever the planner carries; the calc pass is the only one that
+knows a convention by name, and it can only be *added* to. Our list is Calcite's rule for rule with the three
+that name a node swapped, per convention, so four of the five shared rules cannot match by then
+(`FILTER_TO_CALC` and `PROJECT_TO_CALC` want a `LogicalFilter` and a `LogicalProject`, the two calc merges want
+a `LogicalCalc` input) and `CALC_MERGE` is the one that earns the second run, matching any `Calc` over any
+`Calc`. **The reason it cannot go on the planner is not only cost.** `VolcanoPlanner.addRule` skips registering
+a `TransformationRule`'s operand against any `PhysicalNode`, and every node of both conventions is one — so
+`CALC_MERGE`, `FILTER_TO_CALC`, `PROJECT_TO_CALC` and the two calc merges would sit on the planner and never
+match a node of ours. The `VolcanoCost` argument (row count only, cpu and io dead behind `if (true)`) is true
+and is the weaker half.
+
+**`ClrRelOptUtil.RegisterDefaultRules` registers both Clr conventions, always, and the mode chooses only
+the root's trait.** It is `RelOptUtil.registerDefaultRules` and then both `Rules()` lists — the whole of the
+job a caller driving its own planner has, which `ClrPrepareImpl.CreatePlanner` and the tests each used to
+spell out. `CreatePlanner` used to branch on `async` and register one convention. That was wrong for a reason
+no test could see: a schema may bring rules of its own, and nothing here can tell which convention an
+adapter's rules target, so a half-loaded planner refuses such an adapter for no visible reason. It also left
+both cross-convention converters inert — each list holds the converter *into* its own convention, whose
+in-trait no rule on a one-convention planner can produce. The consequence is real and deliberate:
+`Synchronous=true` no longer refuses an async-only table, it bridges to it and `Read` blocks there, and
+`ShouldBridgeAnAsyncOnlyTableInSynchronousMode` holds that. The old refusal was one by omission, not a check.
+`EnumerableRules.TO_INTERPRETER` is registered by Calcite's call and `ClrEnumerableInterpreterRule` is not
+registered by ours, so an interpreted node still lands in `EnumerableConvention` under a converter.
+
+A caller driving a `Frameworks` planner has the same job and only that job — get the rules on first
+(`AddRulesProgram` in the tests), then run `Programs.standard` — and two classes that spelled `standard`'s six
+passes out by hand, `ClrEnumerablePrograms` and `ClrAsyncEnumerablePrograms`, are gone.
 
 **A join boxes its rows.** Calcite builds the selector and predicate against boxed rows because linq4j's
 `Function2` and `Predicate2` erase to `Object`, and because an outer join compares a row to null. A

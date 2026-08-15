@@ -40,24 +40,6 @@ namespace Apache.Calcite.Extensions.Prepare.AsyncEnumerable
         }
 
         /// <inheritdoc />
-        /// <remarks>
-        /// <c>Programs.standard()</c>'s six passes, in its order. The last two are this convention's:
-        /// <c>PlannerRules</c> is the planner pass written out, and <c>PlannerCalcRules</c> is
-        /// <c>calc(metadataProvider)</c> with this convention's calc rules added to
-        /// <c>RelOptRules.CALC_RULES</c>.
-        /// </remarks>
-        protected override Program GetStandardProgram()
-        {
-            return Programs.sequence(
-                ClrAsyncEnumerablePrograms.SubQuery(),
-                Programs.decorrelate(),
-                Programs.measure(DefaultRelMetadataProvider.INSTANCE),
-                Programs.trim(),
-                ClrAsyncEnumerablePrograms.PlannerRules(),
-                ClrAsyncEnumerablePrograms.PlannerCalcRules());
-        }
-
-        /// <inheritdoc />
         protected override ClrPrepare.IPreparedResult Implement(RelRoot root)
         {
             org.apache.calcite.runtime.Hook.PLAN_BEFORE_IMPLEMENTATION.run(root);
