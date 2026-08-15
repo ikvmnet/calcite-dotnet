@@ -56,12 +56,41 @@ namespace Apache.Calcite.Tests
             return rows;
         }
 
+        /// <summary>
+        /// The same, in the shape of the ANYS table: an INTEGER key and two columns of type ANY.
+        /// </summary>
+        /// <remarks>
+        /// Every fourth row holds a <c>java.lang.Double</c> where the others hold an <c>Integer</c>, which is
+        /// the mixture <c>ClrAnyAggImplementors</c> reaches <c>SqlFunctions.ltAny</c> for. A fold that is only
+        /// ever handed one class would not exercise it.
+        /// </remarks>
+        static object[][] ManyAnys(int count)
+        {
+            var rows = new object[count][];
+            for (int i = 0; i < count; i++)
+                rows[i] = [
+                    java.lang.Integer.valueOf(i),
+                    "R" + (i % 4),
+                    i % 4 == 0 ? java.lang.Double.valueOf(i + 0.5) : java.lang.Integer.valueOf(i),
+                    "S" + (i % 7)];
+
+            return rows;
+        }
+
+        static (IAsyncEnumerable<object> Rows, AsyncRowsTable Leaf) PlanAny(string sql, int rowCount)
+        {
+            return Plan(sql, "ANYS", new AsyncRowsTable(ManyAnys(rowCount), AsyncTestRows.AnysRowType, false));
+        }
+
         static (IAsyncEnumerable<object> Rows, AsyncRowsTable Leaf) Plan(string sql, int rowCount)
         {
-            var leaf = new AsyncRowsTable(Many(rowCount), AsyncTestRows.SortedRowType, false);
+            return Plan(sql, "SORTED", new AsyncRowsTable(Many(rowCount), AsyncTestRows.SortedRowType, false));
+        }
 
+        static (IAsyncEnumerable<object> Rows, AsyncRowsTable Leaf) Plan(string sql, string name, AsyncRowsTable leaf)
+        {
             var rootSchema = Frameworks.createRootSchema(true);
-            rootSchema.add("SORTED", leaf);
+            rootSchema.add(name, leaf);
 
             var rules = new java.util.ArrayList();
             var calcRules = new java.util.ArrayList();
@@ -201,6 +230,74 @@ namespace Apache.Calcite.Tests
 
             cancelled.Should().BeTrue();
             leaf.Produced.Should().BeLessThan(10_000);
+        }
+
+        /// <summary>
+        /// The same, for an aggregate over a column of type ANY.
+        /// </summary>
+        /// <remarks>
+        /// The question this answers is whether the implementors <c>ClrAnyAggImplementors</c> substitutes for
+        /// MIN, MAX and SUM over ANY changed how the asynchronous convention reads its input. They cannot —
+        /// an implementor writes only the fold, which is a function of an accumulator and a row in either
+        /// convention and in Calcite's, and the draining belongs to the operator — but "cannot" is a claim
+        /// about code that was just changed, so it is measured: a fold that blocked, or that drained its
+        /// input before the token was consulted, would read all ten thousand rows and then succeed.
+        /// </remarks>
+        [TestMethod]
+        public async Task ShouldCancelWhileAnAggregateOverAnAnyColumnIsStillFolding()
+        {
+            var (rows, leaf) = PlanAny("SELECT K, MIN(V), MAX(V), SUM(V), AVG(V), MIN(S) FROM ANYS GROUP BY K", 10_000);
+
+            using var cancellation = new CancellationTokenSource();
+
+            leaf.OnRow = n => { if (n == 50) cancellation.Cancel(); };
+
+            var cancelled = false;
+
+            try
+            {
+                await foreach (var row in rows.WithCancellation(cancellation.Token))
+                {
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                cancelled = true;
+            }
+
+            cancelled.Should().BeTrue();
+            leaf.SawCancellableToken.Should().BeTrue("the leaf must receive the caller's token through the aggregate");
+            leaf.Produced.Should().BeLessThan(10_000);
+        }
+
+        /// <summary>
+        /// An aggregate over an ANY column suspends while it folds, rather than running to completion in one
+        /// synchronous step.
+        /// </summary>
+        /// <remarks>
+        /// Cancellation says the token is seen; this says the plan really gives the thread back. The leaf
+        /// awaits <c>Task.Yield</c> per row, so a fold that drained it without ever suspending would have to
+        /// have blocked on it — and the first <c>MoveNextAsync</c> would then complete already finished.
+        /// </remarks>
+        [TestMethod]
+        public async Task ShouldFoldAnAnyColumnWithoutBlocking()
+        {
+            var (rows, leaf) = PlanAny("SELECT MIN(V), MAX(V), SUM(V) FROM ANYS", 5_000);
+
+            var enumerator = rows.GetAsyncEnumerator();
+
+            try
+            {
+                var moving = enumerator.MoveNextAsync();
+                moving.IsCompleted.Should().BeFalse("a fold over a leaf that suspends per row cannot finish synchronously");
+
+                (await moving).Should().BeTrue();
+                leaf.Produced.Should().Be(5_000, "the whole input should have been folded by the time the one row arrives");
+            }
+            finally
+            {
+                await enumerator.DisposeAsync();
+            }
         }
 
         /// <summary>

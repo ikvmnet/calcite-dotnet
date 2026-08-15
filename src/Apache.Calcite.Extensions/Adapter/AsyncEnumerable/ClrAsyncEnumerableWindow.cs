@@ -184,7 +184,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                 if (call.ignoreNulls())
                     throw new java.lang.UnsupportedOperationException("IGNORE NULLS not supported");
 
-                aggs.add(new AggImpState(aggIdx, call, true));
+                aggs.add(ClrAnyAggImplementors.State(aggIdx, call, true));
             }
 
             // the output of this group is its input plus one field per aggregate
@@ -291,7 +291,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             for (int i = 0; i < aggs.size(); i++)
             {
                 var agg = (AggImpState)aggs.get(i);
-                agg.implementor.implementReset(agg.context,
+                agg.Implementor().implementReset(agg.context,
                     new WinAggResetContextImpl(resetBuilder, agg.state, loop.Index, loop.Start, loop.End, loop.HasRows, loop.FrameRowCount, loop.PartitionRowCount));
             }
 
@@ -299,7 +299,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             for (int i = 0; i < aggs.size(); i++)
             {
                 var agg = (AggImpState)aggs.get(i);
-                agg.implementor.implementAdd(agg.context,
+                agg.Implementor().implementAdd(agg.context,
                     new ClrWinAggAddContext(addBuilder, agg.state, frame, loop.Position, RexArguments(agg, result.PhysType.RelRowType, constants)));
             }
 
@@ -492,7 +492,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                 agg.context = new ClrWinAggContext(agg, typeFactory, result.PhysType.RelRowType, constants, exclusion);
 
                 var aggName = ClrAsyncEnumerableAggregateBase.AggName(agg);
-                var state = agg.implementor.getStateType(agg.context);
+                var state = agg.Implementor().getStateType(agg.context);
 
                 var decls = new java.util.ArrayList(state.size());
                 for (int j = 0; j < state.size(); j++)
@@ -522,7 +522,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                 stateTypes.add(aggHolderType);
                 initExpressions.add(aggRes);
 
-                agg.implementor.implementReset(agg.context, new WinAggResetContextImpl(initBlock, agg.state, null, null, null, null, null, null));
+                agg.Implementor().implementReset(agg.context, new WinAggResetContextImpl(initBlock, agg.state, null, null, null, null, null, null));
             }
         }
 
@@ -548,13 +548,13 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             {
                 var agg = (AggImpState)aggs.get(i);
 
-                var needCache = agg.implementor is not WinAggImplementor implementor || implementor.needCacheWhenFrameIntact();
+                var needCache = agg.Implementor() is not WinAggImplementor implementor || implementor.needCacheWhenFrameIntact();
                 if (needCache ^ cachedBlock)
                     continue;
 
                 nonEmpty = true;
 
-                var res = agg.implementor.implementResult(agg.context,
+                var res = agg.Implementor().implementResult(agg.context,
                     new ClrWinAggResultContext(builder, agg.state, frame, RexArguments(agg, inputRowType, constants)));
 
                 // several count(a) and count(b) might share the result

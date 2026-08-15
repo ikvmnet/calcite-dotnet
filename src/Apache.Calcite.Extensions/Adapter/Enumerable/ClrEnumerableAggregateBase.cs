@@ -143,7 +143,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 var agg = (AggImpState)aggs.get(i);
                 agg.context = new ClrAggContext(agg, typeFactory, inputRowType, groupSet, groupSets);
 
-                var state = agg.implementor.getStateType(agg.context);
+                var state = agg.Implementor().getStateType(agg.context);
                 if (state.isEmpty())
                 {
                     agg.state = com.google.common.collect.ImmutableList.of();
@@ -163,7 +163,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
                 agg.state = decls;
                 initExpressions.addAll(decls);
-                agg.implementor.implementReset(agg.context, new AggResultContextImpl(initBlock, agg.call, decls, null, null));
+                agg.Implementor().implementReset(agg.context, new AggResultContextImpl(initBlock, agg.call, decls, null, null));
             }
 
             return aggStateTypes;
@@ -200,7 +200,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 agg.state = accumulator;
                 stateOffset += stateSize;
 
-                agg.implementor.implementAdd(agg.context, new ClrAggAddContext(builder, accumulator, agg, inputPhysType, in_, typeFactory, implementor.Conformance));
+                agg.Implementor().implementAdd(agg.context, new ClrAggAddContext(builder, accumulator, agg, inputPhysType, in_, typeFactory, implementor.Conformance));
                 builder.add(J.Expressions.return_(null, acc_));
 
                 adders.add(
