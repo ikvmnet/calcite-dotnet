@@ -353,6 +353,48 @@ namespace Apache.Calcite.Tests
             rows[0][2].Should().Be(java.lang.Integer.valueOf(40));
         }
 
+        /// <summary>
+        /// A correlate survives the shipped program, which runs Calcite's decorrelation.
+        /// </summary>
+        /// <remarks>
+        /// The decorrelation was left out of the shipped program for a while, on the grounds that it would
+        /// rewrite every correlated sub-query into a join and leave <c>ClrEnumerableCorrelate</c> unreachable.
+        /// A scalar sub-query and an EXISTS do become joins — which is what Calcite means to happen, and what
+        /// the prepare pipeline has always done — but an UNNEST over a correlation variable cannot be
+        /// decorrelated at all, so the correlate stays. This is that shape, and it asserts the node by name
+        /// rather than only the rows, because the rows alone would not say which plan produced them.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldCorrelateThroughTheShippedProgram()
+        {
+            const string sql = "SELECT t.\"x\", u.\"y\" FROM (VALUES (1, ARRAY[10,20]), (2, ARRAY[30])) AS t(\"x\", \"xs\"), UNNEST(t.\"xs\") AS u(\"y\")";
+
+            var (physical, _) = Plan(sql);
+            RelOptUtil.toString(physical).Should().Contain("Correlate", "the decorrelation cannot take an UNNEST of a correlation variable apart");
+
+            var rows = Run(sql);
+
+            rows.Should().HaveCount(3);
+            rows.Select(r => string.Join("|", r.Select(v => v?.ToString()))).Should().Equal("1|10", "1|20", "2|30");
+        }
+
+        /// <summary>
+        /// A correlated sub-query becomes a join through the shipped program.
+        /// </summary>
+        /// <remarks>
+        /// The other side of the same measurement, and the reason to run the decorrelation rather than leave
+        /// it out: without it this stays a correlate, which is a nested loop over the outer rows where
+        /// Calcite would have given a join.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldDecorrelateASubQueryThroughTheShippedProgram()
+        {
+            const string sql = "SELECT \"ID\" FROM \"PEOPLE\" a WHERE \"AGE\" = (SELECT MAX(\"AGE\") FROM \"PEOPLE\" b WHERE b.\"BONUS\" IS NULL OR a.\"ID\" = b.\"ID\")";
+
+            var (physical, _) = Plan(sql);
+            RelOptUtil.toString(physical).Should().NotContain("Correlate", "Calcite's decorrelation should have made this a join");
+        }
+
         // Three shapes the shipped program could not plan at all until Rules() stopped clearing the planner.
         // Each needs a logical rewrite that belongs to no convention and that Calcite registers by default,
         // so each was a CannotPlanException the moment ofRules threw Calcite's rules away. Nothing here went

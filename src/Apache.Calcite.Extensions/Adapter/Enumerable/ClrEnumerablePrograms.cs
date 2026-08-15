@@ -28,10 +28,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// <c>Programs.standard</c> says the same thing about its own: "second planner pass to do physical
     /// tweaks, this the first time that EnumerableCalcRel is introduced".</para>
     ///
-    /// <para><b>There is no decorrelation.</b> <c>Programs.standard</c> runs one, and it rewrites a
-    /// correlated sub-query into a join before the planner sees it — which is exactly the node
-    /// <see cref="ClrEnumerableCorrelate"/> exists to implement. Leaving it out is what puts a correlate
-    /// on a plan at all.</para>
+    /// <para><b>The decorrelation is Calcite's and is run.</b> It was left out for a while, on the grounds
+    /// that it rewrites a correlated sub-query into a join and so would leave
+    /// <see cref="ClrEnumerableCorrelate"/> unreachable. That is not so, and was measured: a scalar
+    /// sub-query and an EXISTS do become joins, but an UNNEST over a correlation variable cannot be
+    /// decorrelated and keeps its correlate, which is how Calcite reaches its own
+    /// <c>EnumerableCorrelate</c> under <c>Programs.standard</c> too. Leaving the pass out therefore bought
+    /// nothing and cost every correlated sub-query the join Calcite would have given it.</para>
     ///
     /// <para>A caller who wants something else builds its own list; this is the one that matches what the
     /// differential tests measure, which is the only configuration this convention is known to be correct
@@ -49,9 +52,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// One <see cref="Program"/>, as <c>Programs.standard</c> is one, so that a caller drives it the way
         /// a caller drives Calcite's: <c>planner.transform(0, traits, logical)</c>, once. The passes inside
         /// are a <c>Programs.sequence</c>, which is also what <c>standard</c> is, and they are
-        /// <c>standard</c>'s own in <c>standard</c>'s order — sub-query expansion, measure, field trimming,
-        /// the planner, the calc rules — with the decorrelation left out for the reason this class's remarks
-        /// give. The prepare pipeline sequences the same list.
+        /// <c>standard</c>'s own six in <c>standard</c>'s order. The prepare pipeline sequences the same
+        /// list.
         ///
         /// <para>The calc pass is <see cref="PlannerCalcRules"/> rather than <see cref="CalcRules"/>,
         /// because <see cref="Rules"/> leaves Calcite's rules on the planner and so a plan can hold nodes of
@@ -63,10 +65,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         {
             metadataProvider ??= DefaultRelMetadataProvider.INSTANCE;
 
-            // Programs.standard's six, in its order, less the decorrelation. Measure and trim are Calcite's
-            // own and are taken as they are; the prepare pipeline sequences the same six.
+            // Programs.standard's six, in its order. Every one but the last two is Calcite's own, taken as
+            // it is; the prepare pipeline sequences the same list.
             return Programs.sequence(
                 SubQuery(metadataProvider),
+                Programs.decorrelate(),
                 Programs.measure(metadataProvider),
                 Programs.trim(),
                 Rules(),
@@ -115,7 +118,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </remarks>
         public static Program Rules()
         {
-            return new RulesProgram();
+            return new RuleSetProgram();
         }
 
         /// <summary>
@@ -126,7 +129,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// steps <see cref="Rules"/> describes. It is the pass the differential tests plan under, so what is
         /// shipped and what is measured are the same configuration.
         /// </remarks>
-        sealed class RulesProgram : Program
+        sealed class RuleSetProgram : Program
         {
 
             /// <inheritdoc />

@@ -214,8 +214,13 @@ value was boxed.
 **`Rules()` and `CalcRules()` are two passes, not one.** `VolcanoCost.isLt` compares the row count and
 nothing else — cpu and io are dead code behind `if (true)` — so a project and a calc are never cheaper
 than one another and the planner keeps whichever it saw first. `Programs.standard` runs the calc rules
-afterwards as a hep pass. A caller must do the same, must run `Programs.subQuery` before the planner, and
-— to reach `ClrEnumerableCorrelate` at all — must **not** decorrelate.
+afterwards as a hep pass. A caller must do the same, and must run `Programs.subQuery` before the planner.
+**It should decorrelate**, and the claim here that it must not — on the grounds that decorrelation would
+leave `ClrEnumerableCorrelate` unreachable — was false and stood for a while. Measured: a scalar sub-query
+and an `EXISTS` do become joins, which is what Calcite means and what the prepare pipeline has always
+done, but an `UNNEST` over a correlation variable cannot be decorrelated and keeps its correlate. That is
+how Calcite reaches its own `EnumerableCorrelate` under `Programs.standard` too. Leaving the pass out
+bought nothing and cost every correlated sub-query the join Calcite would have given it.
 
 **A join boxes its rows.** Calcite builds the selector and predicate against boxed rows because linq4j's
 `Function2` and `Predicate2` erase to `Object`, and because an outer join compares a row to null. A
