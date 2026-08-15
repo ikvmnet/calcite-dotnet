@@ -111,17 +111,20 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Gets the name of the column: the label — what an <c>AS</c> alias names the result
-        /// column — falling back to the underlying column name when no label is present. Two
-        /// projections of the same column under different aliases are distinct result columns,
-        /// and the origin name would report them as duplicates.
+        /// Gets the name of the column: the label — what an <c>AS</c> alias names the result column.
         /// </summary>
+        /// <remarks>
+        /// This is JDBC's <c>getColumnLabel</c> and it is what ADO.NET's <c>GetName</c> means. The
+        /// origin <c>columnName</c> is the wrong answer: two projections of one table column under
+        /// different aliases share it, so the result schema reports a duplicate name and a consumer
+        /// keying by it fails. The label is always set — the metadata is built one column per field
+        /// of the validated row type, and the label is that field's name.
+        /// </remarks>
         /// <param name="index"></param>
         /// <returns></returns>
         public string GetName(int index)
         {
-            var column = GetColumn(index);
-            return string.IsNullOrEmpty(column.label) ? column.columnName : column.label;
+            return GetColumn(index).label;
         }
 
         /// <summary>

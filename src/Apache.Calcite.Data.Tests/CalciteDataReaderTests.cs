@@ -1,5 +1,6 @@
 using System;
 using System.Data;
+using System.Data.Common;
 
 
 using Xunit;
@@ -10,7 +11,25 @@ namespace Apache.Calcite.Data.Tests
     public class CalciteDataReaderTests
     {
 
+        static CalciteDataReaderTests()
+        {
+            ikvm.runtime.Startup.addBootClassPathAssembly(typeof(org.apache.calcite.server.ServerDdlExecutor).Assembly);
+        }
+
         const string MultiRowQuery = "SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(x, y)";
+
+        /// <summary>
+        /// A column origin needs a real table, and DDL is how this suite gets one; see
+        /// <see cref="CalciteDdlTests"/>. Everything else here queries <c>VALUES</c>, which is nothing's
+        /// origin: Calcite gives such a column the alias as its <c>columnName</c> as well as its label,
+        /// so the two agree and a name test over a derived table cannot tell them apart.
+        /// </summary>
+        static readonly string ServerDdlConnectionString = new CalciteConnectionStringBuilder
+        {
+            Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
+            ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+            Schema = "adhoc",
+        };
 
         [Fact]
         public void Should_enumerate_all_rows()
@@ -179,14 +198,29 @@ namespace Apache.Calcite.Data.Tests
         [Fact]
         public void GetName_should_return_alias_label()
         {
-            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            using var c = new CalciteConnection(ServerDdlConnectionString);
             c.Open();
+
+            using (var ddl = c.CreateCommand())
+            {
+                ddl.CommandText = "CREATE TABLE IF NOT EXISTS \"labeltest\" (\"PostalCode\" INTEGER NOT NULL, \"City\" VARCHAR(64))";
+                ddl.ExecuteNonQuery();
+            }
+
             using var cmd = c.CreateCommand();
-            cmd.CommandText = "SELECT \"x\", \"x\" AS \"Foo\" FROM (VALUES (1)) AS t(\"x\")";
+            cmd.CommandText = "SELECT \"PostalCode\", \"PostalCode\" AS \"Foo\", \"City\" FROM \"labeltest\"";
             using var r = cmd.ExecuteReader();
 
-            Assert.Equal("x", r.GetName(0));
+            // both projections have PostalCode as their origin column, so the origin name reports the
+            // first two as one name; the label is what tells them apart, and a consumer keying the
+            // schema by name — EF Core's FromSqlQueryingEnumerable.BuildIndexMap — throws on the duplicate
+            Assert.Equal("PostalCode", r.GetName(0));
             Assert.Equal("Foo", r.GetName(1));
+            Assert.Equal("City", r.GetName(2));
+
+            // GetOrdinal and GetSchemaTable read the same accessor
+            Assert.Equal(1, r.GetOrdinal("Foo"));
+            Assert.Equal("Foo", r.GetSchemaTable().Rows[1][SchemaTableColumn.ColumnName]);
         }
 
     }
