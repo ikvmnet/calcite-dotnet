@@ -134,10 +134,15 @@ namespace Apache.Calcite.Adapter.AdoNet
             // real type factory." RelDataTypeImpl.proto is typeFactory -> typeFactory.copyType(t), so
             // that holds.
             //
-            // It lives on the table rather than on the schema because AdoTable holds an AdoDataSource
-            // where JdbcTable holds its JdbcSchema and delegates through supplyProto. The memoized
-            // supplier is upstream's; only the body's home moved, and there is no AdoSchema member to
-            // delegate to.
+            // It lives on the table rather than on the schema, where upstream keeps it and reaches it
+            // through JdbcTable.supplyProto. JdbcSchema owns the method because JDBC's column metadata
+            // is DatabaseMetaData.getColumns off a connection the schema opens, and the schema is the
+            // only place with the means. ADO.NET has no DatabaseMetaData -- GetSchema("Columns") differs
+            // per provider and ODBC and OleDb cannot reliably say what they are -- so this adapter owns
+            // the SPI instead, AdoDatabaseMetadata.GetFields on the data source. Once the metadata hangs
+            // there, a schema-side method would take the table name and use nothing of its own, and
+            // AdoSchema and AdoTable hold the same four fields as it is. The memoized supplier is
+            // upstream's; only the body's home follows the metadata.
             //
             // Ours, not upstream's: copying is not re-deriving. createSqlType clamped precision and
             // scale against DEFAULT's limits here, and copyType carries the clamped type across rather
