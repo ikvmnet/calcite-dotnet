@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Data.Common;
 
 namespace Apache.Calcite.Data
@@ -446,8 +446,35 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Gets or sets the type system class name.
+        /// Gets or sets the type system, named as a .NET type. Default is Calcite's own type system.
         /// </summary>
+        /// <remarks>
+        /// A type with a public parameterless constructor is named by itself,
+        /// <c>Namespace.Type, Assembly</c>. The name goes to <see cref="System.Type.GetType(string)"/>,
+        /// which searches the provider assembly and the core library and nowhere else, so a type from
+        /// anywhere else carries its assembly. A type system written in Java is named through its IKVM
+        /// projection the same way.
+        ///
+        /// <para>An existing instance held in a static member is named
+        /// <c>[Namespace.Type, Assembly]::Member</c>, as PowerShell and MSBuild property functions write
+        /// it. The member may be a field, a property or a parameterless method. This is how Calcite's own
+        /// type systems are reached, they being anonymous classes behind static fields and so having no
+        /// type to name:
+        /// <c>[org.apache.calcite.sql.dialect.PostgresqlSqlDialect, calcite.core]::POSTGRESQL_TYPE_SYSTEM</c>.
+        /// Calcite's own <c>Type#MEMBER</c> spelling is read too.</para>
+        ///
+        /// <para>Where no member is named but the type carries a static <c>Instance</c> or
+        /// <c>INSTANCE</c> member, that instance is used in preference to the constructor. Note that
+        /// these names contain a comma, so they have to be quoted in the connection string.</para>
+        ///
+        /// <para>A type system decides two different things, and only one of them moves the type a query
+        /// answers. The limits — <c>getMaxPrecision</c> and its neighbours — change what is representable
+        /// and where a value overflows. The derivations — <c>deriveSumType</c>, <c>deriveAvgAggType</c>,
+        /// the decimal arithmetic types — change the derived <c>SqlTypeName</c>, and so the runtime type
+        /// a reader answers: Calcite's default <c>deriveSumType</c> answers the argument type, so
+        /// <c>SUM</c> of an <c>INTEGER</c> column reads back as an <see cref="int"/>, and a type system
+        /// that widens it to <c>BIGINT</c> makes the same query read back as a <see cref="long"/>.</para>
+        /// </remarks>
         public string? TypeSystem
         {
             get => TryGetString(TypeSystemKey);

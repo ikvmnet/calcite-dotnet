@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Data;
 using System.Threading;
 
@@ -128,6 +128,12 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <returns></returns>
         RelProtoDataType GetRowProtoDataType(string? databaseName, string? schemaName, string tableName)
         {
+            // Temporary type factory, just for the duration of this method. Allowable because we are
+            // creating a proto-type, not a type; before being used, the proto-type will be copied into a
+            // real type factory, RelDataTypeImpl.proto answering typeFactory -> typeFactory.copyType(t).
+            // Note that copying is not re-deriving: precision and scale were clamped against DEFAULT's
+            // limits here, so a connection's own type system does not widen a column read from an ADO
+            // source. That is JdbcSchema.getRelDataType's behaviour and this is a port of it.
             var typeFactory = new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
             var types = typeFactory.builder();
 

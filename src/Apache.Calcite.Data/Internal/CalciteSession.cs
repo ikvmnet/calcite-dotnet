@@ -1,3 +1,11 @@
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+
+using Apache.Calcite.Extensions.Prepare;
+
 using com.google.common.collect;
 
 using java.util;
@@ -8,22 +16,11 @@ using org.apache.calcite.adapter.java;
 using org.apache.calcite.avatica;
 using org.apache.calcite.config;
 using org.apache.calcite.jdbc;
-using org.apache.calcite.linq4j;
 using org.apache.calcite.model;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.runtime;
 using org.apache.calcite.schema;
 using org.apache.calcite.schema.impl;
-
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Reflection;
-using System.Threading;
-using System.Threading.Tasks;
-
-using Apache.Calcite.Extensions.Prepare;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Data.Internal
 {
@@ -99,19 +96,35 @@ namespace Apache.Calcite.Data.Internal
         /// </summary>
         /// <param name="options">The connection string options.</param>
         /// <param name="rootSchema">Root schema, or null.</param>
-        /// <param name="typeFactory">Type factory, or null.</param>
+        /// <param name="typeFactory">Type factory, or null. See the remarks for why this is the concrete type.</param>
         /// <param name="prepareFactory">Prepare factory, or null for <see cref="ClrPrepareImpl"/>.</param>
         /// <exception cref="ArgumentNullException"></exception>
         /// <exception cref="CalciteException"></exception>
         /// <remarks>
         /// The body is <c>CalciteConnectionImpl</c>'s constructor, statement for statement — the config, the
-        /// prepare factory, the type factory resolved from the <c>typeSystem</c> property under the
+        /// prepare factory, the type factory resolved from the <c>typeSystem</c> property (by
+        /// <see cref="ClrPlugin"/>, this provider naming a plugin in .NET rather than in Java) under the
         /// conformance's ragged-union wrapper, the root schema, and the conformance-gated <c>DUAL</c> view —
         /// followed by the model step the JDBC driver runs after construction, in that order, so a model can
         /// overwrite <c>DUAL</c> and never the reverse. The injection pair is upstream's too: an injected
         /// <paramref name="typeFactory"/> bypasses both the configured type system and the ragged-union
         /// wrapper, an injected <paramref name="rootSchema"/> is used verbatim, and <c>DUAL</c> is added to an
-        /// injected root all the same.
+        /// injected root all the same. Nothing in the provider passes either yet: they are the seam a
+        /// session needs to be built over a root schema and a type factory it does not own, which is what
+        /// sharing one session across several connections would require. Tests are the only callers today.
+        ///
+        /// <para>The one deviation is that <paramref name="typeFactory"/> is the concrete
+        /// <see cref="JavaTypeFactoryImpl"/> where upstream takes the <c>JavaTypeFactory</c> interface,
+        /// because both conventions require the implementation and not the interface. Every grouped
+        /// aggregate and every window builds its accumulator from <c>createSyntheticType</c> and then
+        /// matches the result against <c>JavaTypeFactoryImpl.SyntheticRecordType</c> — a nested class of
+        /// the implementation — which is Calcite's own coupling, <c>EnumerableAggregateBase</c> having the
+        /// same <c>instanceof</c>. What differs here is the consequence: Calcite writes the type's name
+        /// into Java source for Janino to resolve, while <c>ClrTypes.Resolve</c> has to answer a CLR type
+        /// and throws where it cannot. A foreign <c>getJavaClass</c> is out of reach for the same reason —
+        /// the Java classes a row may carry are the closed set that method names, and the conventions box
+        /// and unbox against exactly that set. Taking the interface here would advertise a freedom no
+        /// plan of either convention can honour.</para>
         ///
         /// <para>Every query is planned into one of the two Clr conventions and run as a compiled expression
         /// tree — which one is the connection's choice, the way Calcite's own connection can ask for the
@@ -121,17 +134,14 @@ namespace Apache.Calcite.Data.Internal
         /// has no node for is still planned and run — implemented in <c>EnumerableConvention</c>, with a
         /// converter carrying its rows.</para>
         /// </remarks>
-        public CalciteSession(
-            CalciteConnectionStringBuilder options,
-            CalciteSchema? rootSchema = null,
-            JavaTypeFactory? typeFactory = null,
-            Func<ClrPrepareImpl>? prepareFactory = null)
+        public CalciteSession(CalciteConnectionStringBuilder options, CalciteSchema? rootSchema = null, JavaTypeFactoryImpl? typeFactory = null, Func<ClrPrepareImpl>? prepareFactory = null)
         {
             ArgumentNullException.ThrowIfNull(options);
 
             try
             {
                 var cfg = new CalciteConnectionConfigImpl(BuildEngineProperties(options));
+
                 _prepareFactory = prepareFactory ?? (static () => new ClrPrepareImpl());
                 if (typeFactory != null)
                 {
@@ -139,14 +149,15 @@ namespace Apache.Calcite.Data.Internal
                 }
                 else
                 {
-                    RelDataTypeSystem typeSystem = TypeSystemPlugin(options.TypeSystem);
+                    var typeSystem = ClrPlugin.Resolve(options.TypeSystem, RelDataTypeSystem.DEFAULT);
                     if (cfg.conformance().shouldConvertRaggedUnionTypesToVarying())
-                    {
                         typeSystem = new RaggedUnionDelegatingTypeSystem(typeSystem);
-                    }
+
                     _typeFactory = new JavaTypeFactoryImpl(typeSystem);
                 }
+
                 _rootSchema = rootSchema != null ? rootSchema : CalciteSchema.createRootSchema(true);
+
                 // Add dual table metadata when isSupportedDualTable return true
                 if (cfg.conformance().isSupportedDualTable())
                 {
@@ -197,105 +208,6 @@ namespace Apache.Calcite.Data.Internal
                 return true;
             }
 
-        }
-
-        /// <summary>
-        /// Resolves the <c>TypeSystem</c> connection string option to a <see cref="RelDataTypeSystem"/>.
-        /// </summary>
-        /// <param name="className">The type system's type name, or <see langword="null"/>.</param>
-        /// <returns>The resolved type system, or <see cref="RelDataTypeSystem.DEFAULT"/> where none is named.</returns>
-        /// <remarks>
-        /// Upstream this is <c>cfg.typeSystem(RelDataTypeSystem.class, RelDataTypeSystem.DEFAULT)</c>, which
-        /// is <c>ConnectionConfigImpl.pluginConverter</c> — an unset property answers the default instance —
-        /// over <c>AvaticaUtils.instantiatePlugin</c>, mirrored here statement for statement: the
-        /// <c>#FIELD</c> static-member form, the <c>INSTANCE</c> field tried before the assignability check,
-        /// then the public default constructor. The deviation is the language the name is written in: this
-        /// provider's connection string names a CLR type, so <c>Class.forName</c> is
-        /// <see cref="Type.GetType(string)"/> — which reaches a Java-defined type system through its IKVM
-        /// projection's name all the same — and a static member is read field then property, because a Java
-        /// <c>static final</c> surfaces as a CLR property under IKVM.
-        /// </remarks>
-        static RelDataTypeSystem TypeSystemPlugin(string? className)
-        {
-            if (string.IsNullOrEmpty(className))
-                return RelDataTypeSystem.DEFAULT;
-
-            string? right = null;
-            string? left = null;
-            object? value = null;
-
-            // Given a static field, say "com.example.MyClass#FOO_INSTANCE", return
-            // the value of that static field.
-            if (className.Contains('#'))
-            {
-                int i = className.IndexOf('#');
-                left = className.Substring(0, i);
-                right = className.Substring(i + 1);
-                var clazz = Type.GetType(left) ?? throw new InvalidOperationException(
-                    $"Property '{className}' not valid as '{left}' was not found as a CLR type");
-                if (TryStaticMember(clazz, right, out var fieldValue) == false)
-                    throw new InvalidOperationException(
-                        $"Property '{className}' not valid as there is no '{right}' field in the class of '{left}'");
-                if (fieldValue is java.lang.ThreadLocal threadLocal)
-                    value = threadLocal.get();
-                else
-                    value = fieldValue;
-                return value as RelDataTypeSystem ?? throw new InvalidOperationException(
-                    $"Property '{className}' not valid as cannot convert {value?.GetType().FullName ?? "null"} to {typeof(RelDataTypeSystem).FullName}");
-            }
-            else
-            {
-                var clazz = Type.GetType(className) ?? throw new InvalidOperationException(
-                    $"Property '{className}' not valid as '{className}' was not found as a CLR type");
-                // We assume that if there is an INSTANCE field it is static and
-                // has the right type.
-                if (TryStaticMember(clazz, "INSTANCE", out value))
-                    return value as RelDataTypeSystem ?? throw new InvalidOperationException(
-                        $"Property '{className}' not valid as cannot convert {value?.GetType().FullName ?? "null"} to {typeof(RelDataTypeSystem).FullName}");
-                if (!typeof(RelDataTypeSystem).IsAssignableFrom(clazz))
-                    throw new InvalidOperationException(
-                        $"Property '{className}' not valid for plugin type {typeof(RelDataTypeSystem).FullName}");
-                var constructor = clazz.GetConstructor(Type.EmptyTypes) ?? throw new InvalidOperationException(
-                    $"Property '{className}' not valid as the default constructor is necessary, but not found in the class of '{className}'");
-
-                try
-                {
-                    return (RelDataTypeSystem)constructor.Invoke(null);
-                }
-                catch (TargetInvocationException e)
-                {
-                    throw new InvalidOperationException(
-                        $"Property '{className}' not valid. The exception info here : {e.InnerException?.Message ?? e.Message}", e);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Reads a public static member, trying field then property, because a Java <c>static final</c>
-        /// surfaces as a CLR property under IKVM.
-        /// </summary>
-        /// <param name="type">The type holding the member.</param>
-        /// <param name="name">The member name.</param>
-        /// <param name="value">The member's value, where found.</param>
-        /// <returns><see langword="true"/> where the member exists.</returns>
-        static bool TryStaticMember(Type type, string name, out object? value)
-        {
-            var field = type.GetField(name, BindingFlags.Public | BindingFlags.Static);
-            if (field is not null)
-            {
-                value = field.GetValue(null);
-                return true;
-            }
-
-            var property = type.GetProperty(name, BindingFlags.Public | BindingFlags.Static);
-            if (property is not null)
-            {
-                value = property.GetValue(null);
-                return true;
-            }
-
-            value = null;
-            return false;
         }
 
         /// <summary>
@@ -353,8 +265,8 @@ namespace Apache.Calcite.Data.Internal
                 if (string.Equals(key, CalciteConnectionStringBuilder.SynchronousKey, StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                // a provider option, not an engine one: it names a CLR type, resolved by TypeSystemPlugin,
-                // and nothing in calcite-core reads the engine property but the constructor line this ports
+                // a provider option, not an engine one: it names a .NET type, resolved by ClrPlugin, and
+                // nothing in calcite-core reads the engine property but the constructor line this ports
                 if (string.Equals(key, CalciteConnectionStringBuilder.TypeSystemKey, StringComparison.OrdinalIgnoreCase))
                     continue;
 
