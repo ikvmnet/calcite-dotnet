@@ -31,15 +31,13 @@ using Apache.Calcite.Adapter.AdoNet;
 using Apache.Calcite.Data;
 using Microsoft.Data.Sqlite;
 
-// 1. Any DbDataSource will do. The matching metadata provider is chosen for you.
-var dataSource = SqliteFactory.Instance.CreateDataSource("Data Source=sales.db");
-
-// 2. Open a Calcite connection and attach the schema.
+// 1. Open a Calcite connection.
 await using var conn = new CalciteConnection("Lex=JAVA;CaseSensitive=false");
 await conn.OpenAsync();
 
+// 2. Attach the database. A provider factory and a connection string are all it takes.
 var root = conn.RootSchema;
-root.add("ADO", AdoSchema.Create(root, "ADO", dataSource, null, null));
+root.add("ADO", AdoSchema.Create(root, "ADO", SqliteFactory.Instance, "Data Source=sales.db", null, null));
 
 // 3. Query it.
 await using var cmd = conn.CreateCommand();
@@ -51,7 +49,7 @@ while (await reader.ReadAsync())
     Console.WriteLine(reader.GetString(0));
 ```
 
-The last two arguments to `AdoSchema.Create` are the database and schema name to restrict discovery to; pass `null` for either to take the source's default. Overloads accept an `AdoDataSource`, an `AdoDatabaseMetadata`, or an `AdoDatabaseMetadataFactory` where you need to choose the metadata provider yourself.
+The last two arguments to `AdoSchema.Create` are the database and schema name to restrict discovery to; pass `null` for either to take the source's default. Overloads take a .NET 7+ `DbDataSource`, or an `AdoDataSource`, where you have one already — note that none of the providers below ships a `DbDataSource`, so the factory and connection string above is the usual way in.
 
 ## Quick start — JSON model
 
@@ -109,8 +107,8 @@ Federating across unrelated databases is the point of the adapter:
 
 ```csharp
 var root = conn.RootSchema;
-root.add("SQL",    AdoSchema.Create(root, "SQL",    sqlServerDataSource, null, null));
-root.add("SQLITE", AdoSchema.Create(root, "SQLITE", sqliteDataSource,    null, null));
+root.add("SQL",    AdoSchema.Create(root, "SQL",    SqlClientFactory.Instance, sqlServerConnectionString, null, null));
+root.add("SQLITE", AdoSchema.Create(root, "SQLITE", SqliteFactory.Instance,    sqliteConnectionString,    null, null));
 
 await using var cmd = conn.CreateCommand();
 cmd.CommandText = """
@@ -125,7 +123,7 @@ Each side is pushed to its own database as far as it can go, and the join runs i
 
 ## Provider support
 
-`AdoDatabaseMetadataFactoryImpl` — the default, used when you do not name one — inspects the connection the data source produces and selects a metadata provider:
+The adapter inspects the connection the data source produces and selects how to describe it. Nothing needs configuring for these:
 
 | Connection type | Discovery | Dialect |
 |---|---|---|

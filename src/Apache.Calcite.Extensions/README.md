@@ -100,8 +100,7 @@ Strongly-typed .NET properties over a Calcite `java.util.Properties` map. Instea
 
 ```csharp
 using Apache.Calcite.Extensions.Config;
-using java.util;
-using org.apache.calcite.avatica.util;
+using org.apache.calcite.config;
 
 var props = new CalciteConnectionProperties();
 

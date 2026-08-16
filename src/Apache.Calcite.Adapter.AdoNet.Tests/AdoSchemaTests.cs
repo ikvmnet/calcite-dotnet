@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using org.apache.calcite.jdbc;
@@ -6,6 +7,7 @@ using org.apache.calcite.sql.type;
 
 using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
@@ -219,6 +221,51 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         {
             var metadata = Metadata.AdoDatabaseMetadataFactoryImpl.Instance.Create(_sqlite.DataSource);
             Assert.IsNotNull(metadata.Dialect);
+        }
+
+        #endregion
+
+        #region Provider factories
+
+        /// <summary>
+        /// Registers the SQLite factory under the invariant name a model would use, once for the process.
+        /// </summary>
+        static void RegisterSqliteFactory()
+        {
+            if (DbProviderFactories.TryGetFactory("Microsoft.Data.Sqlite", out _) == false)
+                DbProviderFactories.RegisterFactory("Microsoft.Data.Sqlite", SqliteFactory.Instance);
+        }
+
+        /// <summary>
+        /// A factory and a connection string are all a caller has for every provider this adapter carries
+        /// metadata for: none of them ships a <see cref="DbDataSource"/>, so none of them overrides
+        /// <see cref="DbProviderFactory.CreateDataSource"/>, whose base throws.
+        /// </summary>
+        [TestMethod]
+        public void AProviderFactoryAndConnectionStringBuildASchema()
+        {
+            var schema = AdoSchema.Create(_root, "FACTORY", SqliteFactory.Instance, _sqlite.DataSource.ConnectionString, null, null);
+
+            Assert.IsInstanceOfType<AdoTable>(schema.tables().get("EMPS"));
+        }
+
+        /// <summary>
+        /// The operand pair a JSON model names. It reached its metadata through
+        /// <see cref="DbProviderFactory.CreateDataSource"/>, so naming SQLite — or SQL Server, ODBC or
+        /// OLE DB — in a model threw rather than building a schema, and no test came through here.
+        /// </summary>
+        [TestMethod]
+        public void AnOperandOfProviderNameAndConnectionStringBuildsASchema()
+        {
+            RegisterSqliteFactory();
+
+            var operand = new java.util.HashMap();
+            operand.put("adoProviderName", "Microsoft.Data.Sqlite");
+            operand.put("adoConnectionString", _sqlite.DataSource.ConnectionString);
+
+            var schema = AdoSchema.Create(_root, "MODEL", operand);
+
+            Assert.IsInstanceOfType<AdoTable>(schema.tables().get("EMPS"));
         }
 
         #endregion
