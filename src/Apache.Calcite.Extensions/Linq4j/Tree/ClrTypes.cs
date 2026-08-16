@@ -38,7 +38,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             return type switch
             {
                 java.lang.Class c => FromClass(c),
-                org.apache.calcite.jdbc.JavaTypeFactoryImpl.SyntheticRecordType r => SyntheticRecordEmitter.Emit(r),
+                org.apache.calcite.jdbc.JavaTypeFactoryImpl.SyntheticRecordType r => SyntheticRecordEmitter.ClassDecl(r),
                 java.lang.reflect.ParameterizedType p => FromParameterizedType(p),
                 java.lang.reflect.GenericArrayType g => Resolve(g.getGenericComponentType()).MakeArrayType(),
                 _ => throw new NotSupportedException($"Cannot resolve a CLR type for '{type}' ({type.GetType()}).")
@@ -149,9 +149,16 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <returns></returns>
         /// <exception cref="NotSupportedException"></exception>
         /// <remarks>
-        /// The same resolution as <see cref="Rebind"/>, where there is no method to start from. Calcite names
-        /// a class and a method and nothing more — <c>Expressions.call(Utilities.class, "compareNullsFirst",
-        /// args)</c> — and lets javac choose the overload from the argument expressions of the source it emits.
+        /// <c>Types.lookupMethod</c>, which is where <c>Expressions.call(Utilities.class, "compareNullsFirst",
+        /// args)</c> ends up: Calcite names a class and a method and nothing more, and the overload is bound
+        /// from the argument types — the one whose parameters are exactly these, else the first they are
+        /// assignable to, else a <c>NoSuchMethodException</c> the caller may catch.
+        ///
+        /// <para>Assignability is <c>Types.assignableFrom</c>: a subclass, or a widening between two
+        /// primitives, and <b>nothing else</b>. It is not <see cref="Accepts"/>, which also counts a box and
+        /// its primitive as fitting — that is right for <see cref="Rebind"/>, whose caller converts every
+        /// argument to its parameter, and wrong here, where the call is emitted as it stands. Under it a
+        /// <c>java.lang.Integer</c> binds <c>hash(int, Object)</c>, which is what Calcite binds.</para>
         /// </remarks>
         public static MethodInfo Resolve(Type declaring, string name, Type[] arguments)
         {
@@ -164,7 +171,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 return exact;
 
             foreach (var candidate in declaring.GetMethods(BindingFlags.Public | BindingFlags.Static))
-                if (candidate.Name == name && Accepts(candidate, arguments))
+                if (candidate.Name == name && AllAssignable(candidate, arguments))
                     return candidate;
 
             throw new NotSupportedException($"No overload of {name} on {declaring} accepts the given arguments.");
@@ -246,6 +253,40 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                     return candidate;
 
             return method;
+        }
+
+        /// <summary>
+        /// Returns whether every argument is assignable to the parameter it would be passed as.
+        /// </summary>
+        /// <param name="method"></param>
+        /// <param name="arguments"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>Types.allAssignable</c> over <c>Types.assignableFrom</c>, which is a subclass or a widening
+        /// between two primitives and nothing further. Calcite's varargs arm has nothing to answer here: a
+        /// method IKVM compiled from a Java varargs one takes the array.
+        /// </remarks>
+        static bool AllAssignable(MethodInfo method, Type[] arguments)
+        {
+            var parameters = method.GetParameters();
+            if (parameters.Length != arguments.Length)
+                return false;
+
+            for (int i = 0; i < parameters.Length; i++)
+            {
+                var parameter = parameters[i].ParameterType;
+                if (parameter.IsAssignableFrom(arguments[i]))
+                    continue;
+
+                var to = ClrPrimitive.Of(parameter);
+                var from = ClrPrimitive.Of(arguments[i]);
+                if (to != null && from != null && to.assignableFrom(from))
+                    continue;
+
+                return false;
+            }
+
+            return true;
         }
 
         /// <summary>
