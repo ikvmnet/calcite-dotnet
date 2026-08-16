@@ -467,13 +467,21 @@ namespace Apache.Calcite.Data
         /// <c>INSTANCE</c> member, that instance is used in preference to the constructor. Note that
         /// these names contain a comma, so they have to be quoted in the connection string.</para>
         ///
-        /// <para>A type system decides two different things, and only one of them moves the type a query
-        /// answers. The limits — <c>getMaxPrecision</c> and its neighbours — change what is representable
-        /// and where a value overflows. The derivations — <c>deriveSumType</c>, <c>deriveAvgAggType</c>,
-        /// the decimal arithmetic types — change the derived <c>SqlTypeName</c>, and so the runtime type
-        /// a reader answers: Calcite's default <c>deriveSumType</c> answers the argument type, so
-        /// <c>SUM</c> of an <c>INTEGER</c> column reads back as an <see cref="int"/>, and a type system
-        /// that widens it to <c>BIGINT</c> makes the same query read back as a <see cref="long"/>.</para>
+        /// <para>A type system is <c>RelDataTypeSystem</c>, the policy object a
+        /// <c>RelDataTypeFactory</c> consults, and it decides more than its name suggests. The limits —
+        /// <c>getMaxPrecision</c> and its neighbours — change what is representable and where a value
+        /// overflows. The derivations — <c>deriveSumType</c>, <c>deriveAvgAggType</c>, the decimal
+        /// arithmetic types — change the derived <c>SqlTypeName</c>, and so the runtime type a reader
+        /// answers: Calcite's default <c>deriveSumType</c> answers the argument type, so <c>SUM</c> of an
+        /// <c>INTEGER</c> column reads back as an <see cref="int"/>, and a type system that widens it to
+        /// <c>BIGINT</c> makes the same query read back as a <see cref="long"/>.</para>
+        ///
+        /// <para>And <c>roundingMode</c> changes computed values rather than types at all.
+        /// <c>RexToLixTranslator</c> writes it into the tree it generates for a numeric cast, so it is
+        /// the type system that decides a cast to a narrower decimal truncates — <c>RoundingMode.DOWN</c>
+        /// by default — and it reaches both Clr conventions, the Rex machinery being shared. Note also
+        /// that <c>isSchemaCaseSensitive</c> does not decide how a schema is looked up, which is
+        /// <c>CalciteConnectionConfig.caseSensitive</c>; its readers uniquify struct field names.</para>
         /// </remarks>
         public string? TypeSystem
         {
