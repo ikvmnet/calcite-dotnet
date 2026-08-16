@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 using Apache.Calcite.Adapter.AdoNet.Rel;
 
@@ -30,7 +30,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="table"></param>
         /// <param name="adoTable"></param>
         internal AdoTableScan(RelOptCluster cluster, List hints, RelOptTable table, AdoTable adoTable) :
-            base(cluster, cluster.traitSetOf(adoTable.Convention), hints, table)
+            base(cluster, cluster.traitSetOf(adoTable.Schema.Convention), hints, table)
         {
             _adoTable = adoTable ?? throw new ArgumentNullException(nameof(adoTable));
         }

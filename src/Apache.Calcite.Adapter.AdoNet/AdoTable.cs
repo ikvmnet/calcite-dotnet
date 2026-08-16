@@ -68,24 +68,11 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Gets the schema holding this table, which is <c>JdbcTable.jdbcSchema</c>.
+        /// Gets the schema holding this table, which is <c>JdbcTable.jdbcSchema</c>. The data source, the
+        /// convention and the dialect are read through it, <c>JdbcTable</c> carrying no accessor of its
+        /// own for any of the three.
         /// </summary>
         public AdoSchema Schema => _schema;
-
-        /// <summary>
-        /// Gets the ADO data source.
-        /// </summary>
-        public AdoDataSource DataSource => _schema.DataSource;
-
-        /// <summary>
-        /// Gets the ADO convention.
-        /// </summary>
-        public AdoConvention Convention => _schema.Convention;
-
-        /// <summary>
-        /// Gets the SQL dialect.
-        /// </summary>
-        public SqlDialect Dialect => _schema.Convention.Dialect;
 
         /// <inheritdoc />
         public override Schema.TableType getJdbcTableType() => _tableType;

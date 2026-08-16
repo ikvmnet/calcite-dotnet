@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using org.apache.calcite.jdbc;
 using org.apache.calcite.rel.type;
@@ -125,7 +125,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [TestMethod]
         public void ATableKnowsItsDataSource()
         {
-            Assert.IsNotNull(((AdoTable)Table("EMPS")).DataSource);
+            Assert.IsNotNull(((AdoTable)Table("EMPS")).Schema.DataSource);
         }
 
         #endregion
