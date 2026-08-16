@@ -96,7 +96,7 @@ namespace Apache.Calcite.Data.Internal
         /// </summary>
         /// <param name="options">The connection string options.</param>
         /// <param name="rootSchema">Root schema, or null.</param>
-        /// <param name="typeFactory">Type factory, or null. See the remarks for why this is the concrete type.</param>
+        /// <param name="typeFactory">Type factory, or null. See the remarks for what the conventions require of one.</param>
         /// <param name="prepareFactory">Prepare factory, or null for <see cref="ClrPrepareImpl"/>.</param>
         /// <exception cref="ArgumentNullException"></exception>
         /// <exception cref="CalciteException"></exception>
@@ -113,18 +113,21 @@ namespace Apache.Calcite.Data.Internal
         /// session needs to be built over a root schema and a type factory it does not own, which is what
         /// sharing one session across several connections would require. Tests are the only callers today.
         ///
-        /// <para>The one deviation is that <paramref name="typeFactory"/> is the concrete
-        /// <see cref="JavaTypeFactoryImpl"/> where upstream takes the <c>JavaTypeFactory</c> interface,
-        /// because both conventions require the implementation and not the interface. Every grouped
+        /// <para>Both conventions require more of <paramref name="typeFactory"/> than its interface says,
+        /// and the requirement is stated rather than typed because no type expresses it. Every grouped
         /// aggregate and every window builds its accumulator from <c>createSyntheticType</c> and then
-        /// matches the result against <c>JavaTypeFactoryImpl.SyntheticRecordType</c> — a nested class of
-        /// the implementation — which is Calcite's own coupling, <c>EnumerableAggregateBase</c> having the
-        /// same <c>instanceof</c>. What differs here is the consequence: Calcite writes the type's name
-        /// into Java source for Janino to resolve, while <c>ClrTypes.Resolve</c> has to answer a CLR type
-        /// and throws where it cannot. A foreign <c>getJavaClass</c> is out of reach for the same reason —
-        /// the Java classes a row may carry are the closed set that method names, and the conventions box
-        /// and unbox against exactly that set. Taking the interface here would advertise a freedom no
-        /// plan of either convention can honour.</para>
+        /// matches the result against <c>JavaTypeFactoryImpl.SyntheticRecordType</c>, a nested class of
+        /// the implementation — Calcite's own coupling, <c>EnumerableAggregateBase</c> having the same
+        /// <c>instanceof</c> — and <c>ClrTypes.Resolve</c> has to answer a CLR type for whatever comes
+        /// back, throwing where it cannot. Calcite survives further, writing the type's name into Java
+        /// source for Janino to resolve. The same goes for <c>getJavaClass</c>, whose closed set of Java
+        /// classes is what the conventions box and unbox against.</para>
+        ///
+        /// <para>Naming <c>JavaTypeFactoryImpl</c> here would not enforce any of that — a subclass
+        /// overriding <c>createSyntheticType</c> satisfies the parameter and still breaks the plan —
+        /// while <c>_typeFactory</c>, <see cref="TypeFactory"/>, <c>PrepareContext</c> and everything in
+        /// <c>Apache.Calcite.Extensions</c> that consumes one are declared against the interface. A
+        /// narrower door onto a pipeline typed the other way buys nothing and reads as though it did.</para>
         ///
         /// <para>Every query is planned into one of the two Clr conventions and run as a compiled expression
         /// tree — which one is the connection's choice, the way Calcite's own connection can ask for the
@@ -134,7 +137,7 @@ namespace Apache.Calcite.Data.Internal
         /// has no node for is still planned and run — implemented in <c>EnumerableConvention</c>, with a
         /// converter carrying its rows.</para>
         /// </remarks>
-        public CalciteSession(CalciteConnectionStringBuilder options, CalciteSchema? rootSchema = null, JavaTypeFactoryImpl? typeFactory = null, Func<ClrPrepareImpl>? prepareFactory = null)
+        public CalciteSession(CalciteConnectionStringBuilder options, CalciteSchema? rootSchema = null, JavaTypeFactory? typeFactory = null, Func<ClrPrepareImpl>? prepareFactory = null)
         {
             ArgumentNullException.ThrowIfNull(options);
 

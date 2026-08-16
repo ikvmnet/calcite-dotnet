@@ -128,12 +128,21 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <returns></returns>
         RelProtoDataType GetRowProtoDataType(string? databaseName, string? schemaName, string tableName)
         {
-            // Temporary type factory, just for the duration of this method. Allowable because we are
+            // This is JdbcSchema.getRelDataType's body, and upstream's comment on the line below is:
+            // "Temporary type factory, just for the duration of this method. Allowable because we're
             // creating a proto-type, not a type; before being used, the proto-type will be copied into a
-            // real type factory, RelDataTypeImpl.proto answering typeFactory -> typeFactory.copyType(t).
-            // Note that copying is not re-deriving: precision and scale were clamped against DEFAULT's
-            // limits here, so a connection's own type system does not widen a column read from an ADO
-            // source. That is JdbcSchema.getRelDataType's behaviour and this is a port of it.
+            // real type factory." RelDataTypeImpl.proto is typeFactory -> typeFactory.copyType(t), so
+            // that holds.
+            //
+            // It lives on the table rather than on the schema because AdoTable holds an AdoDataSource
+            // where JdbcTable holds its JdbcSchema and delegates through supplyProto. The memoized
+            // supplier is upstream's; only the body's home moved, and there is no AdoSchema member to
+            // delegate to.
+            //
+            // Ours, not upstream's: copying is not re-deriving. createSqlType clamped precision and
+            // scale against DEFAULT's limits here, and copyType carries the clamped type across rather
+            // than deriving it again, so a connection's own type system does not widen a column read
+            // from an ADO source. Reasoned from those two members; no test covers it.
             var typeFactory = new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
             var types = typeFactory.builder();
 
