@@ -1,3 +1,13 @@
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+
+using Apache.Calcite.Extensions.Prepare;
+
+using com.google.common.collect;
+
 using java.util;
 using java.util.concurrent.atomic;
 
@@ -6,19 +16,11 @@ using org.apache.calcite.adapter.java;
 using org.apache.calcite.avatica;
 using org.apache.calcite.config;
 using org.apache.calcite.jdbc;
-using org.apache.calcite.linq4j;
 using org.apache.calcite.model;
+using org.apache.calcite.rel.type;
 using org.apache.calcite.runtime;
 using org.apache.calcite.schema;
-
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
-
-using Apache.Calcite.Extensions.Prepare;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
+using org.apache.calcite.schema.impl;
 
 namespace Apache.Calcite.Data.Internal
 {
@@ -77,7 +79,6 @@ namespace Apache.Calcite.Data.Internal
             [CalciteConnectionStringBuilder.SchemaTypeKey] = CalciteConnectionProperty.SCHEMA_TYPE,
             [CalciteConnectionStringBuilder.SparkKey] = CalciteConnectionProperty.SPARK,
             [CalciteConnectionStringBuilder.TimeZoneKey] = CalciteConnectionProperty.TIME_ZONE,
-            [CalciteConnectionStringBuilder.TypeSystemKey] = CalciteConnectionProperty.TYPE_SYSTEM,
             [CalciteConnectionStringBuilder.TypeCoercionKey] = CalciteConnectionProperty.TYPE_COERCION,
         };
 
@@ -94,29 +95,89 @@ namespace Apache.Calcite.Data.Internal
         /// Initializes a new instance.
         /// </summary>
         /// <param name="options">The connection string options.</param>
+        /// <param name="rootSchema">Root schema, or null.</param>
+        /// <param name="typeFactory">Type factory, or null. See the remarks for what the conventions require of one.</param>
+        /// <param name="prepareFactory">Prepare factory, or null for <see cref="ClrPrepareImpl"/>.</param>
         /// <exception cref="ArgumentNullException"></exception>
         /// <exception cref="CalciteException"></exception>
         /// <remarks>
-        /// Every query is planned into one of the two Clr conventions and run as a compiled expression tree —
-        /// which one is the connection's choice, the way Calcite's own connection can ask for the bindable
-        /// convention. The default is <c>ClrAsyncEnumerableConvention</c>;
+        /// The body is <c>CalciteConnectionImpl</c>'s constructor, statement for statement — the config, the
+        /// prepare factory, the type factory resolved from the <c>typeSystem</c> property (by
+        /// <see cref="ClrPlugin"/>, this provider naming a plugin in .NET rather than in Java) under the
+        /// conformance's ragged-union wrapper, the root schema, and the conformance-gated <c>DUAL</c> view —
+        /// followed by the model step the JDBC driver runs after construction, in that order, so a model can
+        /// overwrite <c>DUAL</c> and never the reverse. The injection pair is upstream's too: an injected
+        /// <paramref name="typeFactory"/> bypasses both the configured type system and the ragged-union
+        /// wrapper, an injected <paramref name="rootSchema"/> is used verbatim, and <c>DUAL</c> is added to an
+        /// injected root all the same. Nothing in the provider passes either yet: they are the seam a
+        /// session needs to be built over a root schema and a type factory it does not own, which is what
+        /// sharing one session across several connections would require. Tests are the only callers today.
+        ///
+        /// <para>Both conventions require more of <paramref name="typeFactory"/> than its interface says,
+        /// and the requirement is stated rather than typed because no type expresses it. Every grouped
+        /// aggregate and every window builds its accumulator from <c>createSyntheticType</c> and then
+        /// matches the result against <c>JavaTypeFactoryImpl.SyntheticRecordType</c>, a nested class of
+        /// the implementation — Calcite's own coupling, <c>EnumerableAggregateBase</c> having the same
+        /// <c>instanceof</c> — and <c>ClrTypes.Resolve</c> has to answer a CLR type for whatever comes
+        /// back, throwing where it cannot. Calcite survives further, writing the type's name into Java
+        /// source for Janino to resolve. The same goes for <c>getJavaClass</c>, whose closed set of Java
+        /// classes is what the conventions box and unbox against.</para>
+        ///
+        /// <para>Naming <c>JavaTypeFactoryImpl</c> here would not enforce any of that — a subclass
+        /// overriding <c>createSyntheticType</c> satisfies the parameter and still breaks the plan —
+        /// while <c>_typeFactory</c>, <see cref="TypeFactory"/>, <c>PrepareContext</c> and everything in
+        /// <c>Apache.Calcite.Extensions</c> that consumes one are declared against the interface. A
+        /// narrower door onto a pipeline typed the other way buys nothing and reads as though it did.</para>
+        ///
+        /// <para>Every query is planned into one of the two Clr conventions and run as a compiled expression
+        /// tree — which one is the connection's choice, the way Calcite's own connection can ask for the
+        /// bindable convention. The default is <c>ClrAsyncEnumerableConvention</c>;
         /// <see cref="CalciteConnectionStringBuilder.Synchronous"/> asks for <c>ClrEnumerableConvention</c>
         /// instead. Either way Calcite's own rules stay on the planner, so a statement the chosen convention
         /// has no node for is still planned and run — implemented in <c>EnumerableConvention</c>, with a
-        /// converter carrying its rows.
+        /// converter carrying its rows.</para>
         /// </remarks>
-        public CalciteSession(CalciteConnectionStringBuilder options, Func<ClrPrepareImpl>? prepareFactory = null)
+        public CalciteSession(CalciteConnectionStringBuilder options, CalciteSchema? rootSchema = null, JavaTypeFactory? typeFactory = null, Func<ClrPrepareImpl>? prepareFactory = null)
         {
             ArgumentNullException.ThrowIfNull(options);
 
-            _prepareFactory = prepareFactory ?? (static () => new ClrPrepareImpl());
-
             try
             {
-                _rootSchema = BuildRootSchema(options, out var modelDefaultSchema);
+                var cfg = new CalciteConnectionConfigImpl(BuildEngineProperties(options));
+
+                _prepareFactory = prepareFactory ?? (static () => new ClrPrepareImpl());
+                if (typeFactory != null)
+                {
+                    _typeFactory = typeFactory;
+                }
+                else
+                {
+                    var typeSystem = ClrPlugin.Resolve(options.TypeSystem, RelDataTypeSystem.DEFAULT);
+                    if (cfg.conformance().shouldConvertRaggedUnionTypesToVarying())
+                        typeSystem = new RaggedUnionDelegatingTypeSystem(typeSystem);
+
+                    _typeFactory = new JavaTypeFactoryImpl(typeSystem);
+                }
+
+                _rootSchema = rootSchema != null ? rootSchema : CalciteSchema.createRootSchema(true);
+
+                // Add dual table metadata when isSupportedDualTable return true
+                if (cfg.conformance().isSupportedDualTable())
+                {
+                    SchemaPlus schemaPlus = _rootSchema.plus();
+                    // Dual table contains one row with a value X
+                    schemaPlus.add(
+                        "DUAL", ViewTable.viewMacro(schemaPlus, "VALUES ('X')",
+                        ImmutableList.of(), null, java.lang.Boolean.valueOf(false)));
+                }
+                _config = cfg;
                 _rootSchemaPlus = _rootSchema.plus();
-                _config = new CalciteConnectionConfigImpl(BuildEngineProperties(options));
-                _typeFactory = new JavaTypeFactoryImpl();
+
+                // the driver's ModelHandler step, run after the constructor's work as upstream runs it
+                string? modelDefaultSchema = null;
+                if (string.IsNullOrEmpty(options.Model) == false)
+                    ApplyModel(_rootSchema, options.Model, out modelDefaultSchema);
+
                 _synchronous = options.Synchronous ?? false;
                 var defaultSchema = modelDefaultSchema ?? options.Schema;
                 _defaultSchemaPath = string.IsNullOrEmpty(defaultSchema) ? [] : [defaultSchema];
@@ -128,20 +189,28 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Builds the root schema based on the provided connection options, applying any specified model and determining the default schema path.
+        /// The anonymous <c>DelegatingTypeSystem</c> subclass of <c>CalciteConnectionImpl</c>'s constructor,
+        /// named because C# has no anonymous classes. One override, nothing else.
         /// </summary>
-        /// <param name="options"></param>
-        /// <param name="defaultSchema"></param>
-        /// <returns></returns>
-        CalciteSchema BuildRootSchema(CalciteConnectionStringBuilder options, out string? defaultSchema)
+        sealed class RaggedUnionDelegatingTypeSystem : DelegatingTypeSystem
         {
-            var rootSchema = CalciteSchema.createRootSchema(addMetadataSchema: true);
-            defaultSchema = null;
 
-            if (string.IsNullOrEmpty(options.Model) == false)
-                ApplyModel(rootSchema, options.Model, out defaultSchema);
+            /// <summary>
+            /// Initializes a new instance.
+            /// </summary>
+            /// <param name="typeSystem">The type system to delegate to.</param>
+            public RaggedUnionDelegatingTypeSystem(RelDataTypeSystem typeSystem) :
+                base(typeSystem)
+            {
 
-            return rootSchema;
+            }
+
+            /// <inheritdoc />
+            public override bool shouldConvertRaggedUnionTypesToVarying()
+            {
+                return true;
+            }
+
         }
 
         /// <summary>
@@ -197,6 +266,11 @@ namespace Apache.Calcite.Data.Internal
 
                 // a provider option, not an engine one: it chooses the convention the session plans into
                 if (string.Equals(key, CalciteConnectionStringBuilder.SynchronousKey, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // a provider option, not an engine one: it names a .NET type, resolved by ClrPlugin, and
+                // nothing in calcite-core reads the engine property but the constructor line this ports
+                if (string.Equals(key, CalciteConnectionStringBuilder.TypeSystemKey, StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 if (options.TryGetValue(key, out var v) && v is not null)

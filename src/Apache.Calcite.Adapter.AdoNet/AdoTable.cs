@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Data;
 using System.Threading;
 
@@ -38,8 +38,7 @@ namespace Apache.Calcite.Adapter.AdoNet
 
         readonly java.util.function.Supplier protoRowTypeSupplier;
 
-        readonly AdoDataSource _dataSource;
-        readonly AdoConvention _convention;
+        readonly AdoSchema _schema;
         readonly string? _databaseName;
         readonly string? _schemaName;
         readonly string _tableName;
@@ -50,20 +49,18 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="convention"></param>
+        /// <param name="schema"></param>
         /// <param name="databaseName"></param>
         /// <param name="schemaName"></param>
         /// <param name="tableName"></param>
         /// <param name="tableType"></param>
         /// <exception cref="ArgumentNullException"></exception>
-        internal AdoTable(AdoDataSource dataSource, AdoConvention convention, string? databaseName, string? schemaName, string tableName, Schema.TableType tableType) :
+        internal AdoTable(AdoSchema schema, string? databaseName, string? schemaName, string tableName, Schema.TableType tableType) :
             base((Class)typeof(object[]))
         {
-            protoRowTypeSupplier = Suppliers.memoize(new FuncSupplier<RelProtoDataType>(GetRowProtoDataType));
+            protoRowTypeSupplier = Suppliers.memoize(new FuncSupplier<RelProtoDataType>(SupplyProto));
 
-            _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-            _convention = convention ?? throw new ArgumentNullException(nameof(convention));
+            _schema = schema ?? throw new ArgumentNullException(nameof(schema));
             _databaseName = databaseName;
             _schemaName = schemaName;
             _tableName = tableName ?? throw new ArgumentNullException(nameof(tableName));
@@ -71,19 +68,11 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Gets the ADO data source.
+        /// Gets the schema holding this table, which is <c>JdbcTable.jdbcSchema</c>. The data source, the
+        /// convention and the dialect are read through it, <c>JdbcTable</c> carrying no accessor of its
+        /// own for any of the three.
         /// </summary>
-        public AdoDataSource DataSource => _dataSource;
-
-        /// <summary>
-        /// Gets the ADO convention.
-        /// </summary>
-        public AdoConvention Convention => _convention;
-
-        /// <summary>
-        /// Gets the SQL dialect.
-        /// </summary>
-        public SqlDialect Dialect => _convention.Dialect;
+        public AdoSchema Schema => _schema;
 
         /// <inheritdoc />
         public override Schema.TableType getJdbcTableType() => _tableType;
@@ -110,118 +99,14 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Gets the <see cref="RelProtoDataType"/> for the row type of this table.
+        /// Supplies the <see cref="RelProtoDataType"/> the memoized supplier holds, which is
+        /// <c>JdbcTable.supplyProto</c> — the schema derives it, the table asks.
         /// </summary>
         /// <returns></returns>
         /// <exception cref="AdoCalciteException"></exception>
-        RelProtoDataType GetRowProtoDataType()
+        RelProtoDataType SupplyProto()
         {
-            return GetRowProtoDataType(_databaseName, _schemaName, _tableName);
-        }
-
-        /// <summary>
-        /// Gets the <see cref="RelProtoDataType"/> for a given table.
-        /// </summary>
-        /// <param name="databaseName"></param>
-        /// <param name="schemaName"></param>
-        /// <param name="tableName"></param>
-        /// <returns></returns>
-        RelProtoDataType GetRowProtoDataType(string? databaseName, string? schemaName, string tableName)
-        {
-            var typeFactory = new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
-            var types = typeFactory.builder();
-
-            // derive a type for each field
-            foreach (var field in _dataSource.Metadata.GetFields(databaseName, schemaName, tableName))
-            {
-                if (field.Name is null)
-                    throw new AdoCalciteException("Null value encountered for field name.");
-
-                types.add(field.Name, GetSqlType(typeFactory, field.DbType, field.Precision ?? -1, field.Scale ?? -1, field.Size ?? -1)).nullable(field.Nullable);
-            }
-
-            return RelDataTypeImpl.proto(types.build());
-        }
-
-        /// <summary>
-        /// Transforms a <see cref="DbType"/> and its various additional information into a <see cref="RelDataType"/>.
-        /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <param name="dbType"></param>
-        /// <param name="precision"></param>
-        /// <param name="scale"></param>
-        /// <param name="size"></param>
-        /// <returns></returns>
-        /// <exception cref="AdoCalciteException"></exception>
-        RelDataType GetSqlType(RelDataTypeFactory typeFactory, DbType dbType, int precision, int scale, int size)
-        {
-            switch (dbType)
-            {
-                case DbType.AnsiString:
-                    return typeFactory.createSqlType(SqlTypeName.VARCHAR, size);
-                case DbType.Binary:
-                    return typeFactory.createSqlType(SqlTypeName.VARBINARY, size);
-                // DbType.Byte is the unsigned 0..255 one and TINYINT is signed, so the top half of its range
-                // comes back negative: SQL Server's tinyint 200 read as a TINYINT is -56. UTINYINT is the
-                // type that holds it, as USMALLINT holds a UInt16 below — and as ParameterBinder already
-                // says on the way in, binding a DbType.Byte as a joou UByte
-                case DbType.Byte:
-                    return typeFactory.createSqlType(SqlTypeName.UTINYINT);
-                case DbType.Boolean:
-                    return typeFactory.createSqlType(SqlTypeName.BOOLEAN);
-                // the scale money carries in every provider that has a distinct type for it
-                case DbType.Currency:
-                    return typeFactory.createSqlType(SqlTypeName.DECIMAL, 19, 4);
-                case DbType.Date:
-                    return typeFactory.createSqlType(SqlTypeName.DATE);
-                case DbType.DateTime:
-                    return typeFactory.createSqlType(SqlTypeName.TIMESTAMP);
-                case DbType.Decimal:
-                    return typeFactory.createSqlType(SqlTypeName.DECIMAL, precision, scale);
-                case DbType.Double:
-                    return typeFactory.createSqlType(SqlTypeName.DOUBLE);
-                case DbType.Guid:
-                    return typeFactory.createSqlType(SqlTypeName.CHAR, 36);
-                case DbType.Int16:
-                    return typeFactory.createSqlType(SqlTypeName.SMALLINT);
-                case DbType.Int32:
-                    return typeFactory.createSqlType(SqlTypeName.INTEGER);
-                case DbType.Int64:
-                    return typeFactory.createSqlType(SqlTypeName.BIGINT);
-                // OTHER is the escape hatch the reader already understands: a column of unknown type is
-                // passed through rather than making the whole table unreadable
-                case DbType.Object:
-                    return typeFactory.createSqlType(SqlTypeName.OTHER);
-                case DbType.SByte:
-                    return typeFactory.createSqlType(SqlTypeName.TINYINT);
-                // REAL is four bytes in Calcite, as it is in SQL; DOUBLE is eight
-                case DbType.Single:
-                    return typeFactory.createSqlType(SqlTypeName.REAL);
-                case DbType.String:
-                    return typeFactory.createSqlType(SqlTypeName.VARCHAR, size);
-                case DbType.Time:
-                    return typeFactory.createSqlType(SqlTypeName.TIME);
-                case DbType.UInt16:
-                    return typeFactory.createSqlType(SqlTypeName.USMALLINT);
-                case DbType.UInt32:
-                    return typeFactory.createSqlType(SqlTypeName.UINTEGER);
-                case DbType.UInt64:
-                    return typeFactory.createSqlType(SqlTypeName.UBIGINT);
-                case DbType.VarNumeric:
-                    return typeFactory.createSqlType(SqlTypeName.DECIMAL, precision, scale);
-                case DbType.AnsiStringFixedLength:
-                    return typeFactory.createSqlType(SqlTypeName.CHAR, size);
-                case DbType.StringFixedLength:
-                    return typeFactory.createSqlType(SqlTypeName.CHAR, size);
-                case DbType.Xml:
-                    return typeFactory.createSqlType(SqlTypeName.VARCHAR, size);
-                case DbType.DateTime2:
-                    return typeFactory.createSqlType(SqlTypeName.TIMESTAMP);
-                case DbType.DateTimeOffset:
-                    return typeFactory.createSqlType(SqlTypeName.TIMESTAMP_TZ);
-            }
-
-            throw new AdoCalciteException($"Unsupported database type: {dbType}.");
+            return _schema.GetRelDataType(_databaseName, _schemaName, _tableName);
         }
 
         /// <summary>
@@ -231,7 +116,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         internal SqlString GenerateSqlString()
         {
             var node = new SqlSelect(SqlParserPos.ZERO, SqlNodeList.EMPTY, SqlNodeList.SINGLETON_STAR, FullyQualifiedTableName, null, null, null, null, null, null, null, null, null);
-            var config = SqlPrettyWriter.config().withAlwaysUseParentheses(true).withDialect(_convention.Dialect);
+            var config = SqlPrettyWriter.config().withAlwaysUseParentheses(true).withDialect(_schema.Convention.Dialect);
             var writer = new SqlPrettyWriter(config);
             node.unparse(writer, 0, 0);
             return writer.toSqlString();
@@ -283,7 +168,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         {
             var typeFactory = root.getTypeFactory();
             var sql = GenerateSql();
-            return AdoEnumerable.CreateReader(_dataSource, sql.getSql(), AdoUtils.CreateObjectArrayRowBuilderFactory(getRowType(typeFactory).getFieldList()));
+            return AdoEnumerable.CreateReader(_schema.DataSource, sql.getSql(), AdoUtils.CreateObjectArrayRowBuilderFactory(getRowType(typeFactory).getFieldList()));
         }
 
         /// <summary>
@@ -294,7 +179,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         {
             var selectList = SqlNodeList.SINGLETON_STAR;
             var node = new SqlSelect(SqlParserPos.ZERO, SqlNodeList.EMPTY, selectList, FullyQualifiedTableName, null, null, null, null, null, null, null, null, null);
-            var config = SqlPrettyWriter.config().withAlwaysUseParentheses(true).withDialect(_convention.Dialect);
+            var config = SqlPrettyWriter.config().withAlwaysUseParentheses(true).withDialect(_schema.Convention.Dialect);
             var writer = new SqlPrettyWriter(config);
             node.unparse(writer, 0, 0);
             return writer.toSqlString();
@@ -303,10 +188,10 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <inheritdoc />
         public override object unwrap(Class aClass)
         {
-            if (aClass.isInstance(_dataSource))
-                return aClass.cast(_dataSource);
-            else if (aClass.isInstance(_convention.Dialect))
-                return aClass.cast(_convention.Dialect);
+            if (aClass.isInstance(_schema.DataSource))
+                return aClass.cast(_schema.DataSource);
+            else if (aClass.isInstance(_schema.Convention.Dialect))
+                return aClass.cast(_schema.Convention.Dialect);
             else
                 return base.unwrap(aClass);
         }

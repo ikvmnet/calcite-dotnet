@@ -1,4 +1,7 @@
 ﻿using System;
+using org.apache.calcite.sql.type;
+using org.apache.calcite.rel.type;
+using System.Data;
 using System.Data.Common;
 using System.Threading;
 
@@ -70,7 +73,7 @@ namespace Apache.Calcite.Adapter.AdoNet
             {
                 foreach (var table in _schema.DataSource.Metadata.GetTables(_schema.DatabaseName, _schema.SchemaName))
                     if (table.Name == name)
-                        return new AdoTable(_schema.DataSource, _schema.Convention, table.DatabaseName, table.SchemaName, table.Name, Schema.TableType.TABLE);
+                        return new AdoTable(_schema, table.DatabaseName, table.SchemaName, table.Name, Schema.TableType.TABLE);
 
                 return null;
             }
@@ -274,6 +277,143 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// Gets the schema refered to by this <see cref="AdoSchema"/>.
         /// </summary>
         public string? SchemaName => _schemaName;
+
+        /// <summary>
+        /// Gets the <see cref="RelProtoDataType"/> of a table, acquiring the column metadata first. This
+        /// is <c>JdbcSchema.getRelDataType</c>'s three-argument overload, which opens a connection to
+        /// reach <c>DatabaseMetaData</c>; the data source already carries ours.
+        /// </summary>
+        /// <param name="databaseName"></param>
+        /// <param name="schemaName"></param>
+        /// <param name="tableName"></param>
+        /// <returns></returns>
+        /// <exception cref="AdoCalciteException"></exception>
+        internal RelProtoDataType GetRelDataType(string? databaseName, string? schemaName, string tableName)
+        {
+            return GetRelDataType(_dataSource.Metadata, databaseName, schemaName, tableName);
+        }
+
+        /// <summary>
+        /// Derives the <see cref="RelProtoDataType"/> of a table from column metadata.
+        /// </summary>
+        /// <param name="databaseName"></param>
+        /// <param name="schemaName"></param>
+        /// <param name="tableName"></param>
+        /// <returns></returns>
+        internal RelProtoDataType GetRelDataType(AdoDatabaseMetadata metaData, string? databaseName, string? schemaName, string tableName)
+        {
+            // This is JdbcSchema.getRelDataType's body, and upstream's comment on the line below is:
+            // "Temporary type factory, just for the duration of this method. Allowable because we're
+            // creating a proto-type, not a type; before being used, the proto-type will be copied into a
+            // real type factory." RelDataTypeImpl.proto is typeFactory -> typeFactory.copyType(t), so
+            // that holds.
+            //
+            // The one place this cannot follow upstream is where the column metadata comes from. JDBC
+            // reads DatabaseMetaData.getColumns off a connection the schema opens, and ADO.NET has no
+            // DatabaseMetaData -- GetSchema("Columns") differs per provider, and ODBC and OleDb cannot
+            // reliably say what they are -- so this adapter owns that SPI as AdoDatabaseMetadata. It
+            // takes the place of DatabaseMetaData in the parameter list, and the overload above acquires
+            // it where upstream opens a connection.
+            //
+            // Ours, not upstream's: copying is not re-deriving. createSqlType clamped precision and
+            // scale against DEFAULT's limits here, and copyType carries the clamped type across rather
+            // than deriving it again, so a connection's own type system does not widen a column read
+            // from an ADO source. Reasoned from those two members; no test covers it.
+            var typeFactory = new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
+            var types = typeFactory.builder();
+
+            // derive a type for each field
+            foreach (var field in metaData.GetFields(databaseName, schemaName, tableName))
+            {
+                if (field.Name is null)
+                    throw new AdoCalciteException("Null value encountered for field name.");
+
+                types.add(field.Name, SqlType(typeFactory, field.DbType, field.Precision ?? -1, field.Scale ?? -1, field.Size ?? -1)).nullable(field.Nullable);
+            }
+
+            return RelDataTypeImpl.proto(types.build());
+        }
+
+        /// <summary>
+        /// Transforms a <see cref="DbType"/> and its various additional information into a <see cref="RelDataType"/>. This is <c>JdbcSchema.sqlType</c>.
+        /// </summary>
+        /// <param name="typeFactory"></param>
+        /// <param name="dbType"></param>
+        /// <param name="precision"></param>
+        /// <param name="scale"></param>
+        /// <param name="size"></param>
+        /// <returns></returns>
+        /// <exception cref="AdoCalciteException"></exception>
+        static RelDataType SqlType(RelDataTypeFactory typeFactory, DbType dbType, int precision, int scale, int size)
+        {
+            switch (dbType)
+            {
+                case DbType.AnsiString:
+                    return typeFactory.createSqlType(SqlTypeName.VARCHAR, size);
+                case DbType.Binary:
+                    return typeFactory.createSqlType(SqlTypeName.VARBINARY, size);
+                // DbType.Byte is the unsigned 0..255 one and TINYINT is signed, so the top half of its range
+                // comes back negative: SQL Server's tinyint 200 read as a TINYINT is -56. UTINYINT is the
+                // type that holds it, as USMALLINT holds a UInt16 below — and as ParameterBinder already
+                // says on the way in, binding a DbType.Byte as a joou UByte
+                case DbType.Byte:
+                    return typeFactory.createSqlType(SqlTypeName.UTINYINT);
+                case DbType.Boolean:
+                    return typeFactory.createSqlType(SqlTypeName.BOOLEAN);
+                // the scale money carries in every provider that has a distinct type for it
+                case DbType.Currency:
+                    return typeFactory.createSqlType(SqlTypeName.DECIMAL, 19, 4);
+                case DbType.Date:
+                    return typeFactory.createSqlType(SqlTypeName.DATE);
+                case DbType.DateTime:
+                    return typeFactory.createSqlType(SqlTypeName.TIMESTAMP);
+                case DbType.Decimal:
+                    return typeFactory.createSqlType(SqlTypeName.DECIMAL, precision, scale);
+                case DbType.Double:
+                    return typeFactory.createSqlType(SqlTypeName.DOUBLE);
+                case DbType.Guid:
+                    return typeFactory.createSqlType(SqlTypeName.CHAR, 36);
+                case DbType.Int16:
+                    return typeFactory.createSqlType(SqlTypeName.SMALLINT);
+                case DbType.Int32:
+                    return typeFactory.createSqlType(SqlTypeName.INTEGER);
+                case DbType.Int64:
+                    return typeFactory.createSqlType(SqlTypeName.BIGINT);
+                // OTHER is the escape hatch the reader already understands: a column of unknown type is
+                // passed through rather than making the whole table unreadable
+                case DbType.Object:
+                    return typeFactory.createSqlType(SqlTypeName.OTHER);
+                case DbType.SByte:
+                    return typeFactory.createSqlType(SqlTypeName.TINYINT);
+                // REAL is four bytes in Calcite, as it is in SQL; DOUBLE is eight
+                case DbType.Single:
+                    return typeFactory.createSqlType(SqlTypeName.REAL);
+                case DbType.String:
+                    return typeFactory.createSqlType(SqlTypeName.VARCHAR, size);
+                case DbType.Time:
+                    return typeFactory.createSqlType(SqlTypeName.TIME);
+                case DbType.UInt16:
+                    return typeFactory.createSqlType(SqlTypeName.USMALLINT);
+                case DbType.UInt32:
+                    return typeFactory.createSqlType(SqlTypeName.UINTEGER);
+                case DbType.UInt64:
+                    return typeFactory.createSqlType(SqlTypeName.UBIGINT);
+                case DbType.VarNumeric:
+                    return typeFactory.createSqlType(SqlTypeName.DECIMAL, precision, scale);
+                case DbType.AnsiStringFixedLength:
+                    return typeFactory.createSqlType(SqlTypeName.CHAR, size);
+                case DbType.StringFixedLength:
+                    return typeFactory.createSqlType(SqlTypeName.CHAR, size);
+                case DbType.Xml:
+                    return typeFactory.createSqlType(SqlTypeName.VARCHAR, size);
+                case DbType.DateTime2:
+                    return typeFactory.createSqlType(SqlTypeName.TIMESTAMP);
+                case DbType.DateTimeOffset:
+                    return typeFactory.createSqlType(SqlTypeName.TIMESTAMP_TZ);
+            }
+
+            throw new AdoCalciteException($"Unsupported database type: {dbType}.");
+        }
 
         /// <inheritdoc />
         public override Lookup tables()
