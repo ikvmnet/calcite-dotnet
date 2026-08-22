@@ -1,7 +1,8 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Apache.Calcite.Data.Common;
 using Apache.Calcite.Extensions.Prepare;
 
 namespace Apache.Calcite.Data.Internal
@@ -22,12 +23,13 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
+        /// <param name="registry">The connection's type mapping.</param>
         /// <param name="signature"></param>
         /// <param name="enumerator">The plan's enumerator, or <see langword="null"/> where there is nothing
         /// to read — a DDL statement has already taken effect, and a DML one reports a count.</param>
         /// <param name="recordsAffected"></param>
-        public CalciteEnumerableResult(IClrPrepare.Signature signature, IEnumerator<object>? enumerator, long recordsAffected = -1) :
-            base(signature, recordsAffected)
+        public CalciteEnumerableResult(ClrTypeRegistry registry, IClrPrepare.Signature signature, IEnumerator<object>? enumerator, long recordsAffected = -1) :
+            base(registry, signature, recordsAffected)
         {
             _enumerator = enumerator;
         }

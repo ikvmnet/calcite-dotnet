@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
@@ -11,6 +11,8 @@ using org.apache.calcite.adapter.java;
 using org.apache.calcite.config;
 using org.apache.calcite.runtime;
 using org.apache.calcite.schema;
+
+using Apache.Calcite.Data.Common;
 
 namespace Apache.Calcite.Data
 {
@@ -37,6 +39,7 @@ namespace Apache.Calcite.Data
     {
 
         CalciteConnectionStringBuilder _options = new();
+        readonly ClrTypeMapper _typeMapper = new();
         CalciteSession? _session;
         ConnectionState _state = ConnectionState.Closed;
         bool _disposed;
@@ -246,7 +249,7 @@ namespace Apache.Calcite.Data
             try
             {
                 // Session is created once on the first Open() and reused across Close/Open cycles.
-                _session ??= new CalciteSession(_options);
+                _session ??= new CalciteSession(_options, typeMapper: _typeMapper);
                 SetState(ConnectionState.Open);
             }
             catch
@@ -418,6 +421,17 @@ namespace Apache.Calcite.Data
         /// </remarks>
         /// <exception cref="InvalidOperationException">Thrown when the connection is not open.</exception>
         public SchemaPlus RootSchema => RequireSession().RootSchema;
+
+        /// <summary>
+        /// Gets the CLR type mapping this connection reads and writes values through.
+        /// </summary>
+        /// <remarks>
+        /// A resolver put in front of this chain decides which .NET type a column is seen as and how values
+        /// cross in both directions. The chain is read once, when the connection first opens, because what a
+        /// Calcite type is held in is the session type factory's answer and the mapping is bound to it — so
+        /// register before <see cref="Open"/> and not after.
+        /// </remarks>
+        public ClrTypeMapper TypeMapper => _typeMapper;
 
         /// <summary>
         /// Gets the <see cref="JavaTypeFactory"/> used by this connection's Calcite engine.

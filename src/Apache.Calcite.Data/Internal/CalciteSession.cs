@@ -1,9 +1,10 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Apache.Calcite.Data.Common;
 using Apache.Calcite.Extensions.Prepare;
 
 using com.google.common.collect;
@@ -85,6 +86,7 @@ namespace Apache.Calcite.Data.Internal
         readonly CalciteSchema _rootSchema;
         readonly SchemaPlus _rootSchemaPlus;
         readonly JavaTypeFactory _typeFactory;
+        readonly ClrTypeRegistry _typeRegistry;
         readonly CalciteConnectionConfig _config;
         readonly IReadOnlyList<string> _defaultSchemaPath;
         readonly bool _synchronous;
@@ -98,6 +100,7 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="rootSchema">Root schema, or null.</param>
         /// <param name="typeFactory">Type factory, or null. See the remarks for what the conventions require of one.</param>
         /// <param name="prepareFactory">Prepare factory, or null for <see cref="ClrPrepareImpl"/>.</param>
+        /// <param name="typeMapper">CLR type mapping, or null for the built-in one.</param>
         /// <exception cref="ArgumentNullException"></exception>
         /// <exception cref="CalciteException"></exception>
         /// <remarks>
@@ -137,7 +140,7 @@ namespace Apache.Calcite.Data.Internal
         /// has no node for is still planned and run — implemented in <c>EnumerableConvention</c>, with a
         /// converter carrying its rows.</para>
         /// </remarks>
-        public CalciteSession(CalciteConnectionStringBuilder options, CalciteSchema? rootSchema = null, JavaTypeFactory? typeFactory = null, Func<ClrPrepareImpl>? prepareFactory = null)
+        public CalciteSession(CalciteConnectionStringBuilder options, CalciteSchema? rootSchema = null, JavaTypeFactory? typeFactory = null, Func<ClrPrepareImpl>? prepareFactory = null, ClrTypeMapper? typeMapper = null)
         {
             ArgumentNullException.ThrowIfNull(options);
 
@@ -158,6 +161,10 @@ namespace Apache.Calcite.Data.Internal
 
                     _typeFactory = new JavaTypeFactoryImpl(typeSystem);
                 }
+
+                // bound to whichever factory won, injected or configured: what a Calcite type is held in is
+                // that factory's answer, and a mapping is checked against it
+                _typeRegistry = (typeMapper ?? new ClrTypeMapper()).Bind(_typeFactory);
 
                 _rootSchema = rootSchema != null ? rootSchema : CalciteSchema.createRootSchema(true);
 
@@ -291,6 +298,11 @@ namespace Apache.Calcite.Data.Internal
         public JavaTypeFactory TypeFactory => _typeFactory;
 
         /// <summary>
+        /// Gets the CLR type mapping this session reads and writes values through.
+        /// </summary>
+        public ClrTypeRegistry TypeRegistry => _typeRegistry;
+
+        /// <summary>
         /// Gets the configuration settings for the Calcite connection.
         /// </summary>
         public CalciteConnectionConfig Config => _config;
@@ -330,7 +342,7 @@ namespace Apache.Calcite.Data.Internal
         void Bind(CalciteExecuteRequest request, IClrPrepare.Signature signature, out DataContext dataContext, out AtomicBoolean cancelFlag)
         {
             cancelFlag = new AtomicBoolean(false);
-            var boundParameters = ParameterBinder.Bind(request.Parameters);
+            var boundParameters = ParameterBinder.Bind(_typeRegistry, signature, request.Parameters);
             dataContext = new StatementDataContext(signature.RootSchema, _typeFactory, _config, _defaultSchemaPath, cancelFlag, request.CommandTimeoutSeconds * 1000L, boundParameters, signature.InternalParameters);
         }
 
@@ -449,7 +461,7 @@ namespace Apache.Calcite.Data.Internal
                     if (!IsDdl(signature.StatementType))
                         enumerator = signature.Bind(dataContext).GetEnumerator();
 
-                    return new CalciteEnumerableResult(signature, enumerator, 0);
+                    return new CalciteEnumerableResult(_typeRegistry, signature, enumerator, 0);
                 }
                 else
                 {
@@ -457,7 +469,7 @@ namespace Apache.Calcite.Data.Internal
                     if (!IsDdl(signature.StatementType))
                         enumerator = signature.BindAsync(dataContext).GetAsyncEnumerator(cancellationToken);
 
-                    return new CalciteAsyncEnumerableResult(signature, enumerator, 0);
+                    return new CalciteAsyncEnumerableResult(_typeRegistry, signature, enumerator, 0);
                 }
             }
             catch (CalciteException)
@@ -544,7 +556,7 @@ namespace Apache.Calcite.Data.Internal
                         recordsAffected = ToInt64(cur);
                 }
 
-                return new CalciteEnumerableResult(signature, null, recordsAffected);
+                return new CalciteEnumerableResult(_typeRegistry, signature, null, recordsAffected);
             }
             catch (CalciteException)
             {

@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Apache.Calcite.Data.Common;
 using Apache.Calcite.Extensions.Prepare;
 
 namespace Apache.Calcite.Data.Internal
@@ -19,12 +20,13 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
+        /// <param name="registry">The connection's type mapping.</param>
         /// <param name="signature"></param>
         /// <param name="enumerator">The plan's enumerator, already given the caller's cancellation token,
         /// or <see langword="null"/> where there is nothing to read.</param>
         /// <param name="recordsAffected"></param>
-        public CalciteAsyncEnumerableResult(IClrPrepare.Signature signature, IAsyncEnumerator<object>? enumerator, long recordsAffected = -1) :
-            base(signature, recordsAffected)
+        public CalciteAsyncEnumerableResult(ClrTypeRegistry registry, IClrPrepare.Signature signature, IAsyncEnumerator<object>? enumerator, long recordsAffected = -1) :
+            base(registry, signature, recordsAffected)
         {
             _enumerator = enumerator;
         }

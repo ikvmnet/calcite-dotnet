@@ -1,4 +1,4 @@
-# Apache.Calcite.Data — Design
+﻿# Apache.Calcite.Data — Design
 
 `Apache.Calcite.Data` is an ADO.NET provider for Apache Calcite. It exposes Calcite to .NET
 applications through the standard `System.Data.Common` abstractions while running Calcite's parser,
@@ -256,23 +256,23 @@ enumerator (DDL, or a non-query) reads as an empty result. `Dispose` completes t
 disposal — blocking for it on the asynchronous result, under the same suppression — and holds
 nothing else.
 
-`CalciteResultColumns` reads the signature's Avatica `ColumnMetaData` list — name, nullability,
-provider type name — and maps each to a CLR type. The SQL type name takes precedence over the
-runtime representation for date, time and binary columns, because Calcite's `rep` there is the
-internal storage form (`int` days, `long` millis, `ByteString`) rather than what an ADO.NET consumer
-expects. Unsigned SQL types map to the unsigned CLR types. `GetSqlType` reads the signature's
-`RelDataType` instead, and throws where there is none.
+`CalciteResultColumns` reads the signature's Avatica `ColumnMetaData` list for name and nullability,
+and asks the connection's `ClrTypeRegistry` — see §8 — which CLR type each column is seen as. It asks
+about the signature's `RelDataType` rather than the `ColumnMetaData`, because a `ColumnMetaData.Rep`
+is Avatica's summary of the storage form and drops the facets. A signature carries a row type
+wherever it carries columns; the one that does not is DDL, whose column list is empty.
 
 `CalciteResultRow` addresses a column within one row without copying it, dispatching on the cursor
 factory's style: `OBJECT` (a one-column result is the value, so only ordinal `0` is valid), `ARRAY`,
 or `LIST`. Any other style throws `NotSupportedException`.
 
 `CalciteResultValue` is the final conversion, from what Calcite produced to what the caller asked
-for: `GetValue` for the reader's untyped path, `GetFieldValue<T>` for the generic one, and a typed
-getter per ADO.NET accessor. Each typed getter is strict — it accepts the representations Calcite
-actually produces for that SQL type and throws `InvalidCastException` otherwise, naming the runtime
-type, the value and the SQL type. `BigDecimalConverter` carries `java.math.BigDecimal` to and from
-`decimal`.
+for. `GetValue` is the registry's mapping for the column's type. `GetFieldValue<T>` asks the registry
+for the mapping of that pair of types first — which is how a caller reaches a type of its own — and
+falls back to the typed getters for the pairs no mapping names. Each typed getter is strict: it
+accepts the representations Calcite actually produces for that SQL type and throws
+`InvalidCastException` otherwise, naming the runtime type, the value and the SQL type. A `BIGINT` is
+therefore not read as an `int` merely because both are integers.
 
 `CalciteDataReader` holds an array of `CalciteResult`s and delegates every accessor to
 `ActiveResult.Current.GetValue(ordinal)`. `NextResult` disposes the result it leaves and advances.
@@ -280,17 +280,21 @@ type, the value and the SQL type. `BigDecimalConverter` carries `java.math.BigDe
 ### 6. Parameters
 
 - `CalciteParameter` / `CalciteParameterCollection` implement the ADO.NET parameter model. Where
-  `DbType` was not set explicitly it is inferred from the value's CLR type by `CalciteTypeMap`.
+  `DbType` was not set explicitly it is inferred from the value's CLR type by `DbTypeMap`.
 - `CalciteParameterValue` is the `(DbType, object?)` pair carried into the request.
 - `CalciteExecuteRequest` is the payload the session executes: SQL text, an
   `ImmutableArray<CalciteParameterValue>` in placeholder order, the command timeout in seconds, and
   the request's hooks. It also carries `ClampToInt32`, which the `ExecuteNonQuery` surfaces use to
   narrow a `long` row count.
-- `ParameterBinder` converts each value to the representation Calcite's runtime expects — Java boxed
-  primitives, `BigDecimal`, `ByteString`, `joou` unsigned types, and the internal forms for
-  temporals: days since epoch for `DATE`, milliseconds since epoch for `TIMESTAMP`, milliseconds
-  since midnight for `TIME`. Where the `DbType` is `Object` or unrecognised it infers from the CLR
-  type instead.
+- `ParameterBinder` decides only which question to ask the registry, the conversion itself being the
+  same table the reader answers with. **The Calcite type is the validator's, not the caller's.**
+  Calcite refuses a placeholder whose type it cannot infer from the SQL around it — `VALUES (?)` is an
+  illegal use of a dynamic parameter — so by the time there is a plan every parameter has a type, and
+  `Signature.ParameterRowType` carries it. The caller's `DbType` (or, where none was stated, the
+  value's own CLR type) is the other half of the lookup: it selects among the mappings written for
+  that Calcite type, and falls back to whatever that type is written as. Binding `DbType.Date` to a
+  placeholder Calcite inferred as `TIMESTAMP` used to hand the plan a count of days in an `Integer`
+  where it read a count of milliseconds from a `Long`, and threw partway through the scan.
 
 ### 7. Metadata and configuration
 
@@ -314,10 +318,50 @@ type, the value and the SQL type. `BigDecimalConverter` carries `java.math.BigDe
   eager, because `TABLE_TYPE` comes from `Table.getJdbcTableType()` and typing a view means expanding
   it; short-cutting that from the macro's class would be a guess, since `ViewTableMacro.apply` is
   overridable and `MaterializedViewTable.MaterializedViewTableMacro` overrides it.
-- `CalciteTypeMap` maps between `DbType` and CLR types for the parameter surface. Result columns do
-  not go through it; `CalciteResultColumns` maps those from the Avatica metadata.
+- `DbTypeMap` says which CLR type a `DbType` names, and which `DbType` names a CLR type. Naming only:
+  which *Calcite* type a `DbType` names is nobody's question, the adapter answering it in
+  `AdoSchema.SqlType` and a parameter arriving as the type the validator inferred.
 
-### 8. Diagnostics and errors
+### 8. Type mapping (`Apache.Calcite.Data.Common`)
+
+Which .NET type a Calcite type is seen as, and the conversions across that boundary in both
+directions, are one question asked in four places: binding a parameter, reading a result column,
+reading a provider's `DbDataReader` into a plan, and typing a table. It was four tables and they
+disagreed — the adapter typed a provider `uniqueidentifier` as `CHAR(36)` while the parameter binder
+wrote a `Guid` as a bare string, and the reader converted a width where the binder cast it. They are
+now one, in a project both this assembly and the adapter reference.
+
+- **`ClrTypeMapping`** is one CLR type's relationship to one Calcite type: the type it presents, the
+  Calcite type it presents, and `ToCalcite` / `FromCalcite`.
+- **`IClrTypeResolver`** is the whole extension point — one method, `GetMapping(clrType, relType,
+  context)`, either type optional, `null` to pass the question on. `ClrTypeMappingCollection` is a
+  declarative table of entries and serves as a resolver on its own; `ClrTypeMatch` says whether an
+  entry is what a Calcite type reads back as, what a CLR type is written as, both, or only reachable
+  when a caller names both.
+- **`ClrTypeMapper`** is the chain, and `CalciteConnection.TypeMapper` is where a caller prepends its
+  own. It is read once, when the connection first opens.
+- **`ClrTypeRegistry`** is that chain bound to the session's `JavaTypeFactory`, caching resolutions
+  by CLR type for writes and by Calcite type for reads.
+
+**The type factory is the authority on what holds a value, and a mapping is checked against it.**
+`JavaTypeFactory.getJavaClass` decides the runtime class of a value, and that answer is not fixed: a
+schema that types a column with `createJavaType` carries its own class through the whole plan, ahead
+of every `SqlTypeName` the switch in `JavaTypeFactoryImpl` knows, and under IKVM that class can be a
+CLR one. So `ClrTypeMapping.RepresentationType` is computed from the factory rather than declared,
+and the first value a mapping converts is checked against it — a mapping that answers a `TIMESTAMP`
+with a `DateTime` instead of a `java.lang.Long` fails at the boundary rather than inside a plan,
+several frames away, as a comparator refusing two representations of one value. The check runs once
+per mapping, mappings being cached per pair of types.
+
+**A mapping of a caller's own cannot reach a plan `EnumerableConvention` compiles.** That route is
+Java source Janino compiles, and the call it writes into a generated reader names
+`AdoReaderUtil.GetDbReaderValue` with a `SqlTypeName` constant — there is nowhere in it to put a CLR
+object. Worse, Janino resolves that call by reflecting over the whole class and loading the type of
+every member it declares, so a single signature naming `ClrTypeRegistry` broke every generated
+reader. Everything a caller's mapping passes through therefore lives on `AdoReaderMapping`, and
+`AdoReaderUtil` stays within what Janino can load.
+
+### 9. Diagnostics and errors
 
 - `CalciteException` is the provider's exception type. The session wraps every non-`CalciteException`
   planning or execution failure in one, so a caller sees a single error type.
@@ -414,18 +458,29 @@ src/
     CalciteException.cs                   DbException
     Internal/
       CalciteSession.cs                   Per-connection engine state; plan, bind, execute
+      -- the type mapping is in Apache.Calcite.Data.Common; see below
       CalciteExecuteRequest.cs            Execute payload
       CalciteParameterValue.cs            (DbType, value) pair
-      ParameterBinder.cs                  CLR value → Calcite runtime representation
-      BigDecimalConverter.cs              decimal ↔ java.math.BigDecimal
+      ParameterBinder.cs                  Which question a parameter asks the type mapping
+      DbTypeMap.cs                        DbType <-> CLR type, for the parameter surface
       CalciteResult.cs                    Row stream over a ClrSignature
-      CalciteResultColumns.cs             Avatica ColumnMetaData → ADO.NET column metadata
+      CalciteResultColumns.cs             Column metadata, CLR types from the type mapping
       CalciteResultRow.cs                 Column addressing within one row, by cursor style
       CalciteResultValue.cs               Final value conversion and typed getters
-      CalciteTypeMap.cs                   DbType ↔ CLR type, for parameters
       CalciteSchemaInfo.cs                GetSchema collections
       CalciteHookEntry.cs                 (Hook, Consumer) pair
       CalciteColumn.cs                    Unreferenced
+
+  Apache.Calcite.Data.Common/             What this and the adapter both need
+    ClrTypeMapping.cs                     One CLR type against one Calcite type, and its conversions
+    IClrTypeResolver.cs                   The extension point
+    ClrTypeMappingCollection.cs           A table of mappings, and the rule that picks one
+    ClrTypeMatch.cs                       Which lookups an entry answers
+    ClrTypeMapper.cs                      The chain, and where a caller prepends
+    ClrTypeRegistry.cs                    The chain bound to a type factory, with caching
+    DefaultClrTypeResolver.cs             The mappings that hold without registering anything
+    CalciteValues.cs                      The conversions those are made of
+    BigDecimalConverter.cs                decimal <-> java.math.BigDecimal
 
   Apache.Calcite.Extensions/              The convention and the prepare pipeline
     Prepare/

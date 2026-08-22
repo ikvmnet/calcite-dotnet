@@ -1,24 +1,42 @@
-using System;
+﻿using System;
 using System.Data;
 
 namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Centralizes mappings between Calcite SQL types, CLR types, and ADO.NET <see cref="DbType"/> values.
+    /// What a <see cref="DbType"/> names, in Calcite's terms and in .NET's.
     /// </summary>
-    internal static class CalciteTypeMap
+    /// <remarks>
+    /// <para>
+    /// Naming only. <see cref="DbType"/> is ADO.NET's thirty-value vocabulary for talking about a type and
+    /// it converts nothing: a caller who writes <see cref="DbType.Date"/> has said which Calcite type they
+    /// mean, and the mapping for that type is what carries the value. Npgsql separates the two for the same
+    /// reason, an <c>IDbTypeResolver</c> answering names and the converter chain answering values, and it
+    /// is worth keeping apart here because the alternative is what this replaces — a
+    /// <see cref="DbType"/>-keyed conversion table in the ADO.NET surface and a second one in the adapter,
+    /// which disagreed about <see cref="DbType.Byte"/> until both were read side by side.
+    /// </para>
+    /// <para>
+    /// Which Calcite type a <see cref="DbType"/> names is not here and is nobody's question: the adapter
+    /// answers it in <c>AdoSchema.SqlType</c>, a port of <c>JdbcSchema.sqlType</c>, and a parameter is
+    /// carried across as the type the validator inferred for its placeholder rather than as one built from
+    /// a name the caller supplied. What is left is which CLR type the caller meant, which is what the type
+    /// mapping is then asked about.
+    /// </para>
+    /// </remarks>
+    internal static class DbTypeMap
     {
 
         /// <summary>
-        /// Returns the <see cref="DbType"/> that best represents the supplied CLR type.
+        /// Returns the <see cref="DbType"/> that names a CLR type, or <see cref="DbType.Object"/> where
+        /// none does.
         /// </summary>
         /// <param name="clrType"></param>
         /// <returns></returns>
         public static DbType ToDbType(Type clrType)
         {
-            if (clrType is null)
-                throw new ArgumentNullException(nameof(clrType));
+            ArgumentNullException.ThrowIfNull(clrType);
 
             var t = Nullable.GetUnderlyingType(clrType) ?? clrType;
 
@@ -48,7 +66,7 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns the canonical CLR type for the supplied <see cref="DbType"/>.
+        /// Returns the CLR type a <see cref="DbType"/> names.
         /// </summary>
         /// <param name="dbType"></param>
         /// <returns></returns>
