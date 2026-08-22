@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <LangVersion>Preview</LangVersion>
+        <Nullable>enable</Nullable>
+        <Description>What the Apache Calcite ADO.NET provider and the ADO.NET adapter both need. The CLR type mapping: which .NET type a Calcite SQL type is seen as, and the conversions across that boundary in both directions, through a chain of resolvers a caller can extend.</Description>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageIcon>icon.png</PackageIcon>
+        <PackageTags>apache;calcite;ado.net;sql;types;ikvm</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\" />
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Apache.Calcite.Data" />
+        <InternalsVisibleTo Include="Apache.Calcite.Adapter.AdoNet" />
+        <InternalsVisibleTo Include="Apache.Calcite.Data.Common.Tests" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Apache.Calcite.Extensions\Apache.Calcite.Extensions.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="IKVM" Version="8.15.0" />
+        <PackageReference Include="IKVM.Java.Extensions" Version="8.15.0" />
+        <PackageReference Include="IKVM.Maven.Sdk" Version="1.12.0">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.42.0" />
+        <MavenReference Include="org.jooq:joou-java-6" Version="0.9.5" />
+    </ItemGroup>
+
+</Project>

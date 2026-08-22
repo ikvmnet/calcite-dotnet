@@ -1,10 +1,11 @@
 using System;
 
-using org.apache.calcite.avatica;
-using org.apache.calcite.jdbc;
-using org.apache.calcite.sql.type;
-
+using Apache.Calcite.Data.Common;
 using Apache.Calcite.Extensions.Prepare;
+
+using org.apache.calcite.avatica;
+using org.apache.calcite.rel.type;
+using org.apache.calcite.sql.type;
 
 namespace Apache.Calcite.Data.Internal
 {
@@ -13,87 +14,34 @@ namespace Apache.Calcite.Data.Internal
     /// Reads a prepared <see cref="IClrPrepare.Signature"/>'s columns as an ADO.NET caller expects them.
     /// </summary>
     /// <remarks>
-    /// The columns are Avatica's <see cref="ColumnMetaData"/>, which is what the metadata port produces;
-    /// <see cref="MapClrType(ColumnMetaData.AvaticaType)"/> is where that becomes a CLR type.
+    /// Which CLR type a column is seen as comes from the connection's <see cref="ClrTypeRegistry"/>, so that
+    /// the answer here and the conversion a value goes through are the same decision. The signature's row
+    /// type is what the registry is asked about rather than the Avatica <see cref="ColumnMetaData"/>: a
+    /// <c>ColumnMetaData.Rep</c> is Avatica's summary of the storage form and drops the facets, and a
+    /// registry entry may be written for a type the summary cannot express. A signature carries a row type
+    /// wherever it carries columns — the one that does not is DDL, whose column list is empty.
     /// </remarks>
     internal readonly struct CalciteResultColumns
     {
 
-        /// <summary>
-        /// Maps a SQL type described by an AvaticaType to the corresponding Common Language Runtime (CLR) type used by DO.NET consumers.
-        /// This is not necessarily the final and only type that can be retrieved from any connection, only the primary type advertised by
-        /// the connection.
-        /// </summary>
-        /// <returns>A Type object representing the CLR type that corresponds to the specified SQL type.</returns>
-        public static Type MapClrType(ColumnMetaData.AvaticaType type)
-        {
-            // The SQL type name takes precedence for date/time/binary because Calcite's runtime
-            // representation (rep) is the internal storage form (int days, long ms, ByteString),
-            // not the public CLR type expected by ADO.NET consumers.
-
-            switch (type.name)
-            {
-                case "DATE":
-                case "TIMESTAMP":
-                    return typeof(DateTime);
-                case "TIMESTAMP WITH LOCAL TIME ZONE":
-                case "TIMESTAMP WITH TIME ZONE":
-                case "TIME WITH LOCAL TIME ZONE":
-                case "TIME WITH TIME ZONE":
-                    return typeof(DateTimeOffset);
-                case "TIME":
-                    return typeof(TimeSpan);
-                case "BINARY":
-                case "VARBINARY":
-                    return typeof(byte[]);
-                case "TINYINT UNSIGNED":
-                case "UTINYINT":
-                    return typeof(byte);
-                case "SMALLINT UNSIGNED":
-                case "USMALLINT":
-                    return typeof(ushort);
-                case "INTEGER UNSIGNED":
-                case "UINTEGER":
-                    return typeof(uint);
-                case "BIGINT UNSIGNED":
-                case "UBIGINT":
-                    return typeof(ulong);
-            }
-
-            return MapClrType(type.rep);
-        }
-
-        /// <summary>
-        /// Maps a column representation to its corresponding Common Language Runtime (CLR) type.
-        /// </summary>
-        public static Type MapClrType(ColumnMetaData.Rep rep)
-        {
-            if (rep == ColumnMetaData.Rep.PRIMITIVE_BOOLEAN || rep == ColumnMetaData.Rep.BOOLEAN) return typeof(bool);
-            if (rep == ColumnMetaData.Rep.PRIMITIVE_BYTE || rep == ColumnMetaData.Rep.BYTE) return typeof(sbyte);
-            if (rep == ColumnMetaData.Rep.PRIMITIVE_SHORT || rep == ColumnMetaData.Rep.SHORT) return typeof(short);
-            if (rep == ColumnMetaData.Rep.PRIMITIVE_INT || rep == ColumnMetaData.Rep.INTEGER) return typeof(int);
-            if (rep == ColumnMetaData.Rep.PRIMITIVE_LONG || rep == ColumnMetaData.Rep.LONG) return typeof(long);
-            if (rep == ColumnMetaData.Rep.PRIMITIVE_FLOAT || rep == ColumnMetaData.Rep.FLOAT) return typeof(float);
-            if (rep == ColumnMetaData.Rep.PRIMITIVE_DOUBLE || rep == ColumnMetaData.Rep.DOUBLE) return typeof(double);
-            if (rep == ColumnMetaData.Rep.NUMBER) return typeof(decimal);
-            if (rep == ColumnMetaData.Rep.STRING || rep == ColumnMetaData.Rep.CHARACTER) return typeof(string);
-            if (rep == ColumnMetaData.Rep.JAVA_SQL_DATE || rep == ColumnMetaData.Rep.JAVA_UTIL_DATE || rep == ColumnMetaData.Rep.JAVA_SQL_TIMESTAMP) return typeof(DateTime);
-            if (rep == ColumnMetaData.Rep.JAVA_SQL_TIME) return typeof(TimeSpan);
-            if (rep == ColumnMetaData.Rep.BYTE_STRING) return typeof(byte[]);
-
-            return typeof(object);
-        }
-
         readonly IClrPrepare.Signature _signature;
+        readonly ClrTypeRegistry _registry;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
+        /// <param name="registry"></param>
         /// <param name="signature"></param>
-        public CalciteResultColumns(IClrPrepare.Signature signature)
+        public CalciteResultColumns(ClrTypeRegistry registry, IClrPrepare.Signature signature)
         {
+            _registry = registry ?? throw new ArgumentNullException(nameof(registry));
             _signature = signature ?? throw new ArgumentNullException(nameof(signature));
         }
+
+        /// <summary>
+        /// Gets the type mapping this result is read through.
+        /// </summary>
+        public ClrTypeRegistry Registry => _registry;
 
         /// <summary>
         /// Gets the count of columns in the result set.
@@ -128,13 +76,24 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
+        /// Gets the Calcite type of the column.
+        /// </summary>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        public RelDataType GetRelType(int index)
+        {
+            var rowType = _signature.RowType ?? throw new InvalidOperationException($"{_signature.Sql ?? "The statement"} has no row type.");
+            return ((RelDataTypeField)rowType.getFieldList().get(index)).getType();
+        }
+
+        /// <summary>
         /// Gets the <see cref="Type"/> of the column.
         /// </summary>
         /// <param name="index"></param>
         /// <returns></returns>
         public Type GetClrType(int index)
         {
-            return MapClrType(GetColumn(index).type);
+            return _registry.GetClrType(GetRelType(index));
         }
 
         /// <summary>
@@ -154,9 +113,7 @@ namespace Apache.Calcite.Data.Internal
         /// <returns></returns>
         public SqlTypeName GetSqlType(int index)
         {
-            var rowType = _signature.RowType ?? throw new InvalidOperationException($"{_signature.Sql ?? "The statement"} has no row type.");
-            var field = (org.apache.calcite.rel.type.RelDataTypeField)rowType.getFieldList().get(index);
-            return field.getType().getSqlTypeName();
+            return GetRelType(index).getSqlTypeName();
         }
 
         /// <summary>

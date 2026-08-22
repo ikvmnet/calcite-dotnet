@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Apache.Calcite.Data.Common;
 using Apache.Calcite.Extensions.Prepare;
 
 namespace Apache.Calcite.Data.Internal
@@ -49,14 +50,16 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
+        /// <param name="registry">The connection's type mapping.</param>
         /// <param name="signature"></param>
         /// <param name="recordsAffected"></param>
-        protected CalciteResult(IClrPrepare.Signature signature, long recordsAffected)
+        protected CalciteResult(ClrTypeRegistry registry, IClrPrepare.Signature signature, long recordsAffected)
         {
+            ArgumentNullException.ThrowIfNull(registry);
             ArgumentNullException.ThrowIfNull(signature);
 
             _signature = signature;
-            _columns = new CalciteResultColumns(signature);
+            _columns = new CalciteResultColumns(registry, signature);
             _recordsAffected = recordsAffected;
         }
 

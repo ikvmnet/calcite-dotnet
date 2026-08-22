@@ -1,4 +1,4 @@
-# Apache.Calcite for .NET
+﻿# Apache.Calcite for .NET
 
 Apache Calcite under IKVM, with an ADO.NET adapter, an ADO.NET client surface, and
 `Apache.Calcite.Extensions` — calling conventions that execute a plan as `System.Linq.Expressions`
@@ -10,6 +10,7 @@ instead of Janino, and the prepare pipeline that gets a statement to one.
 |---|---|
 | `Apache.Calcite.Adapter.AdoNet` | pushes a plan down to an ADO.NET provider |
 | `Apache.Calcite.Data` | the `DbConnection` / `DbCommand` surface |
+| `Apache.Calcite.Data.Common` | the CLR type mapping both of those need: which .NET type a Calcite type is seen as, and the conversions across that boundary, through a chain of resolvers a caller extends |
 | `Apache.Calcite.Extensions` | `ClrEnumerableConvention` and `ClrAsyncEnumerableConvention`, the prepare pipeline, and the IKVM interop helpers |
 
 `TODO.md` has the outstanding work on the ADO.NET adapter, sized and reasoned, and the findings of the
@@ -320,6 +321,40 @@ names a CLR class `cli.Namespace.Type`; `EnumerableConvention` writes that name 
 and Janino does not resolve a `cli.` name, so the plan fails to compile — for a grouped aggregate and a
 windowed one alike. A tree holds the method rather than its name. So a UDF is the one thing the
 differential tests cannot use Calcite as the oracle for.
+
+## The type mapping
+
+**`getJavaClass` is the authority on what holds a value, and it is not fixed.** A mapping states which
+.NET type it presents and the two conversions; what it may not state is the runtime class Calcite holds
+the value in, because that is `JavaTypeFactory.getJavaClass`'s answer and a schema is entitled to change
+it. `createJavaType(clazz)` produces a `RelDataType` that *carries* the class, and `getJavaClass` returns
+it verbatim from its first branch, ahead of the `SqlTypeName` switch — under IKVM that class can be a CLR
+one, and `ClrTypes.FromClass` resolves it straight back. So `ClrTypeMapping.RepresentationType` is
+computed from the factory and the first value a mapping converts is checked against it.
+
+**Overriding `getJavaClass` is a trap; `createJavaType` is the hook.** An override is session-global, and
+Calcite's own generated code is written against the internal representation of each `SqlTypeName` —
+`SqlFunctions.internalToTimestamp`, `EnumUtils.convert`, every `RexImpTable` entry. Change what a
+`TIMESTAMP` is held in and every builtin touching one breaks. `createJavaType` does not fight the switch
+because it precedes it, at the cost of `SqlTypeName.OTHER`: `JavaToSqlTypeConversionRules` is an
+`ImmutableMap` behind a private singleton, so an unlisted class is `OTHER`, which has a null family and no
+operators. That is a pass-through column and nothing else — and one only these conventions can run, since
+`EnumerableConvention` would write `cli.Namespace.Type` into Java source and Janino does not resolve a
+`cli.` name.
+
+**A class generated code names is a class Janino reflects over entirely.** Resolving
+`cli.Apache.Calcite.Adapter.AdoNet.AdoReaderUtil.GetDbReaderValue` makes Janino load the type of every
+member that class declares, so one signature naming a type its classloader cannot reach breaks every
+generated reader — measured, with `Cannot load class "cli.Apache.Calcite.Data.Common.ClrTypeRegistry"`
+from a call that does not mention it. Anything a caller's mapping travels through lives on
+`AdoReaderMapping` for that reason. A `using` is not a member signature and is fine.
+
+**A mapping is two independent defaults, not one relaxation.** Which .NET type a Calcite type reads back
+as and which Calcite type a .NET value is written as are separate facts: `DateTime` is what a `DATE`
+column answers with and never what a bare `DateTime` is written as, that being `TIMESTAMP`; `Guid` is what
+a caller writing one means and never what a `CHAR(36)` answers with. Npgsql spends a three-valued
+`MatchRequirement` plus a fallback pass on this; `ClrTypeMatch` is two flags because here they really are
+two facts.
 
 ## Traps
 

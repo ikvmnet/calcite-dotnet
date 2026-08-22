@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 using Apache.Calcite.Extensions.Adapter.Enumerable;
@@ -283,6 +283,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 com.google.common.collect.ImmutableList.of(),
                 com.google.common.collect.ImmutableMap.of(),
                 x,
+                null,
                 columns,
                 cursorFactory,
                 context.getRootSchema(),
@@ -343,6 +344,7 @@ namespace Apache.Calcite.Extensions.Prepare
                         sql,
                         com.google.common.collect.ImmutableList.of(),
                         com.google.common.collect.ImmutableMap.of(),
+                        null,
                         null,
                         com.google.common.collect.ImmutableList.of(),
                         Meta.CursorFactory.OBJECT,
@@ -413,6 +415,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 parameters,
                 preparingStmt.InternalParameters,
                 jdbcType,
+                preparedResult.ParameterRowType,
                 columns,
                 cursorFactory,
                 context.getRootSchema(),

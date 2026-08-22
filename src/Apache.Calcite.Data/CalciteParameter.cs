@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 
@@ -63,7 +63,7 @@ namespace Apache.Calcite.Data
         /// <inheritdoc />
         public override DbType DbType
         {
-            get => _dbTypeSet ? _dbType : (_value is null ? DbType.Object : CalciteTypeMap.ToDbType(_value.GetType()));
+            get => _dbTypeSet ? _dbType : (_value is null ? DbType.Object : Internal.DbTypeMap.ToDbType(_value.GetType()));
             set
             {
                 _dbType = value;
