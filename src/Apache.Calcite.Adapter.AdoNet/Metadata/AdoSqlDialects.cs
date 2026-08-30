@@ -2,8 +2,11 @@ using System;
 using System.Data;
 using System.Data.Common;
 
+using org.apache.calcite.rel.type;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.dialect;
+using org.apache.calcite.sql.parser;
+using org.apache.calcite.sql.type;
 
 namespace Apache.Calcite.Adapter.AdoNet.Metadata
 {
@@ -123,7 +126,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         }
 
         /// <summary>
-        /// <see cref="MssqlSqlDialect"/>, and the one thing it does not say about SQL Server.
+        /// <see cref="MssqlSqlDialect"/>, and the two things it does not say about SQL Server.
         /// </summary>
         /// <param name="context"></param>
         /// <remarks>
@@ -141,6 +144,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// Calcite rather than a reproduction of it, which the adapter is entitled to make: it generates SQL
         /// for a server to run, and the server is the authority on what it accepts.
         /// </para>
+        /// <para>
+        /// The second is what an unbounded string casts to — see <see cref="Mssql.getCastSpec"/>, which is
+        /// the same kind of correction and made for the same reason.
+        /// </para>
         /// </remarks>
         sealed class Mssql(SqlDialect.Context context) : MssqlSqlDialect(context)
         {
@@ -149,6 +156,81 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             public override bool supportsGroupByLiteral()
             {
                 return false;
+            }
+
+            /// <inheritdoc />
+            /// <remarks>
+            /// <para>
+            /// A Calcite <c>VARCHAR</c> with no precision is unbounded, and <c>SqlDialect.getCastSpec</c>
+            /// writes it as the bare keyword, its precision being the type system's
+            /// <c>PRECISION_NOT_SPECIFIED</c>. A bare <c>varchar</c> in T-SQL is not unbounded: it is one
+            /// character in a declaration and <em>thirty</em> in a <c>CAST</c> or <c>CONVERT</c>. So the
+            /// cast that meant "no limit" silently becomes a thirty character one.
+            /// </para>
+            /// <para>
+            /// Where the conversion cannot fit it raises rather than truncates and reads as a type problem
+            /// in the caller's data — <c>CAST(&lt;uniqueidentifier&gt; AS VARCHAR)</c> is "Insufficient
+            /// result space to convert uniqueidentifier value to char", a GUID being thirty-six. Where it
+            /// fits it truncates: the same cast over a long <c>nvarchar</c> returns the first thirty
+            /// characters and raises nothing. And it is not contained to a query that writes the cast, since
+            /// comparing an unbounded string against a bounded column makes Calcite's coercion widen the
+            /// column back to unbounded, so a caller who stated a length in a view still gets it.
+            /// </para>
+            /// <para>
+            /// <c>varchar(max)</c> is SQL Server's own unbounded form and is what the type means.
+            /// <c>CHAR</c> goes to the same place rather than to a <c>char(max)</c>, there being no such
+            /// thing in T-SQL and nothing for a fixed length with no length to pad to; it is reachable
+            /// because a type system may leave <c>CHAR</c>'s precision unspecified, which
+            /// <c>MssqlSqlDialect.MSSQL_TYPE_SYSTEM</c> is itself one that does — CALCITE-6565 made bare
+            /// <c>CHAR</c> the intended rendering, and thirty is what the server reads it as.
+            /// <c>VARBINARY</c> and <c>BINARY</c> are the same rule over bytes.
+            /// </para>
+            /// <para>
+            /// <see cref="SqlAlienSystemTypeNameSpec"/> is how a dialect states a type name of the product
+            /// rather than of Calcite — Postgres writes <c>double precision</c> through it — and it unparses
+            /// the alias alone, which is what puts the <c>(MAX)</c> where a precision would otherwise go.
+            /// </para>
+            /// </remarks>
+            public override SqlNode getCastSpec(RelDataType type)
+            {
+                if (UnboundedTypeName(type) is string typeAlias)
+                    return new SqlDataTypeSpec(
+                        new SqlAlienSystemTypeNameSpec(typeAlias, type.getSqlTypeName(), SqlParserPos.ZERO),
+                        SqlParserPos.ZERO);
+
+                return base.getCastSpec(type);
+            }
+
+            /// <summary>
+            /// Returns the T-SQL type an unbounded <paramref name="type"/> has to be written as, or
+            /// <see langword="null"/> where Calcite's own answer stands.
+            /// </summary>
+            /// <param name="type"></param>
+            /// <returns></returns>
+            /// <remarks>
+            /// The <c>AbstractSqlType</c> test is <c>SqlDialect.getCastSpec</c>'s own: it is the branch that
+            /// reads a precision at all, and anything else goes to <c>SqlTypeUtil.convertTypeToSpec</c>
+            /// whole.
+            /// </remarks>
+            static string? UnboundedTypeName(RelDataType type)
+            {
+                if (type is not AbstractSqlType)
+                    return null;
+
+                if (type.getSqlTypeName() is not SqlTypeName typeName)
+                    return null;
+
+                var typeAlias = typeName.name() switch
+                {
+                    nameof(SqlTypeName.CHAR) or nameof(SqlTypeName.VARCHAR) => "VARCHAR(MAX)",
+                    nameof(SqlTypeName.BINARY) or nameof(SqlTypeName.VARBINARY) => "VARBINARY(MAX)",
+                    _ => null,
+                };
+
+                if (typeAlias is null)
+                    return null;
+
+                return type.getPrecision() == RelDataType.PRECISION_NOT_SPECIFIED ? typeAlias : null;
             }
 
         }

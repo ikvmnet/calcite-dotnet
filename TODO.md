@@ -152,6 +152,18 @@ surface whether or not the operation succeeds.
   true and `SqlImplementor.visitRoot` only runs `AggregateProjectConstantToDummyJoinRule` when the dialect
   has asked for it. Postgres, Redshift and Informix each override it. `AdoSqlDialects.Mssql` says it here;
   the fix belongs in Calcite.
+- **Upstream, and worth reporting**: `SqlDialect.getCastSpec` writes an unbounded `VARCHAR` as the bare
+  keyword, and a bare `varchar` in T-SQL is not unbounded — it is one character in a declaration and thirty
+  in a `CAST`. So `CAST(<uniqueidentifier> AS VARCHAR)` is "Insufficient result space to convert
+  uniqueidentifier value to char" and the same cast over a long `nvarchar` returns its first thirty
+  characters with no error at all — both measured. `MssqlSqlDialect` does not override `getCastSpec`, and
+  CALCITE-6565 made bare `CHAR` the intended rendering for SQL Server, which has the same defect.
+  `AdoSqlDialects.Mssql` writes `VARCHAR(MAX)` / `VARBINARY(MAX)` for the unbounded case here; the fix
+  belongs in Calcite. Found while there and not fixed: SQL Server's `varchar` tops out at 8000 and
+  `MSSQL_TYPE_SYSTEM` inherits `getMaxPrecision` of 65536, so a stated length between the two is written
+  out as it stands and the server refuses it — measured, `CAST('a' AS varchar(20000))` is "The size (20000)
+  given to the type 'varchar' exceeds the maximum allowed for any data type (8000)". The clamp is not one
+  number: `nvarchar` stops at 4000, and nothing in the dialect distinguishes the two today.
 
 ## Translate a CLR expression tree into a linq4j one
 
