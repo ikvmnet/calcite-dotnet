@@ -827,9 +827,10 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <param name="exclusion"></param>
         /// <remarks>
         /// The anonymous <c>WinAggContext</c> of <c>declareAndResetState</c>. A window has no grouping, so the
-        /// four members about one refuse, exactly as Calcite's does.
+        /// four members about one refuse, exactly as Calcite's does. It is not sealed only because
+        /// <c>ignoreNulls</c> has to be virtual — see that member.
         /// </remarks>
-        sealed class ClrWinAggContext(AggImpState agg, JavaTypeFactory typeFactory, RelDataType inputRowType, java.util.List constants, RexWindowExclusion exclusion) : WinAggContext
+        class ClrWinAggContext(AggImpState agg, JavaTypeFactory typeFactory, RelDataType inputRowType, java.util.List constants, RexWindowExclusion exclusion) : WinAggContext
         {
 
             /// <inheritdoc />
@@ -861,6 +862,24 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
 
             /// <inheritdoc />
             public RexWindowExclusion getExclude() => exclusion;
+
+            /// <summary>
+            /// Whether the window function ignores NULL values, that is, whether the call carries
+            /// IGNORE NULLS.
+            /// </summary>
+            /// <returns></returns>
+            /// <remarks>
+            /// <c>WinAggContext.ignoreNulls</c>, which CALCITE-7701 added in 1.43. This project compiles
+            /// against 1.42, where the interface has no such member, so the compiler cannot see this as an
+            /// implementation and emits it non-virtual — and a non-virtual method never fills an interface
+            /// slot, so under a 1.43 calcite-core the runtime refuses to load the class at all:
+            /// <c>Method 'ignoreNulls' in type 'ClrWinAggContext' does not have an implementation</c>.
+            /// Declaring it virtual, which costs the class its <c>sealed</c>, lets the runtime bind it to
+            /// the slot when it meets the newer interface, and costs nothing when it meets the older one.
+            /// IGNORE NULLS is still refused before any of this runs, so the answer is always false today;
+            /// it reads the call, as Calcite's does, for when that guard lifts.
+            /// </remarks>
+            public virtual bool ignoreNulls() => agg.call.ignoreNulls();
 
         }
 

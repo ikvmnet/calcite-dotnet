@@ -68,6 +68,31 @@ namespace Apache.Calcite.Data.Tests
         }
 
         [Fact]
+        public void Window_aggregate_should_run_through_the_clr_convention()
+        {
+            // This project resolves calcite-core 1.43, and 1.43's WinAggContext has a member 1.42's does
+            // not. The class the convention hands to a window implementor is written against 1.42, so a
+            // member it does not carry is a type that will not load here at all, and every window query
+            // fails before it runs. Any window query is the guard.
+            using var c = Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT x, SUM(x) OVER (ORDER BY x) FROM (VALUES (1), (2), (4)) AS t(x) ORDER BY x";
+
+            using var r = cmd.ExecuteReader();
+
+            Assert.True(r.Read());
+            Assert.Equal(1, r.GetInt32(0));
+            Assert.Equal(1, r.GetInt32(1));
+            Assert.True(r.Read());
+            Assert.Equal(2, r.GetInt32(0));
+            Assert.Equal(3, r.GetInt32(1));
+            Assert.True(r.Read());
+            Assert.Equal(4, r.GetInt32(0));
+            Assert.Equal(7, r.GetInt32(1));
+            Assert.False(r.Read());
+        }
+
+        [Fact]
         public void Scalar_of_one_column_should_be_the_value()
         {
             using var c = Open();
