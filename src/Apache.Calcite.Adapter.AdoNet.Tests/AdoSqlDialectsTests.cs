@@ -2,10 +2,12 @@ using Apache.Calcite.Adapter.AdoNet.Metadata;
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
+using org.apache.calcite.rel.type;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.dialect;
 using org.apache.calcite.sql.parser;
 using org.apache.calcite.sql.pretty;
+using org.apache.calcite.sql.type;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -37,6 +39,31 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
             return writer.toSqlString().getSql();
         }
+
+        /// <summary>
+        /// Returns what a dialect writes for the target type of a cast.
+        /// </summary>
+        /// <param name="dialect"></param>
+        /// <param name="type"></param>
+        /// <returns></returns>
+        static string CastSpec(SqlDialect dialect, RelDataType type)
+        {
+            var writer = new SqlPrettyWriter(SqlPrettyWriter.config().withDialect(dialect));
+            dialect.getCastSpec(type).unparse(writer, 0, 0);
+
+            return writer.toSqlString().getSql().Trim();
+        }
+
+        /// <summary>
+        /// Builds types the way a connection does, from the default type system.
+        /// </summary>
+        static readonly RelDataTypeFactory Types = new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
+
+        /// <summary>
+        /// Builds types from the type system <see cref="MssqlSqlDialect"/> carries, which is the one that
+        /// leaves a <c>CHAR</c> with no precision.
+        /// </summary>
+        static readonly RelDataTypeFactory MssqlTypes = new SqlTypeFactoryImpl(MssqlSqlDialect.MSSQL_TYPE_SYSTEM);
 
         #region Product
 
@@ -170,6 +197,122 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         {
             Assert.IsFalse(AdoSqlDialects.For("PostgreSQL", "16.0").supportsGroupByLiteral(), "Postgres says so itself");
             Assert.IsTrue(AdoSqlDialects.For("MySQL", "8.0").supportsGroupByLiteral(), "MySQL can");
+        }
+
+        #endregion
+
+        #region Unbounded strings
+
+        /// <summary>
+        /// A Calcite <c>VARCHAR</c> with no precision is unbounded, and the bare keyword SQL Server reads it
+        /// as is thirty characters in a cast — so <c>CAST(&lt;uniqueidentifier&gt; AS VARCHAR)</c> is
+        /// "Insufficient result space to convert uniqueidentifier value to char" and the same cast over a
+        /// long string returns its first thirty characters with no error at all.
+        /// </summary>
+        [TestMethod]
+        public void AnUnboundedVarcharBecomesVarcharMax()
+        {
+            Assert.AreEqual("VARCHAR(MAX)", CastSpec(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), Types.createSqlType(SqlTypeName.VARCHAR)));
+        }
+
+        /// <summary>
+        /// And the answer this corrects, so that the test says what it is for: Calcite writes the keyword
+        /// alone, which is a different type on the server.
+        /// </summary>
+        [TestMethod]
+        public void CalcitesOwnAnswerIsTheBareKeyword()
+        {
+            Assert.AreEqual("VARCHAR", CastSpec(MssqlSqlDialect.DEFAULT, Types.createSqlType(SqlTypeName.VARCHAR)));
+        }
+
+        /// <summary>
+        /// The correction is to the unbounded case alone: a stated length is what the caller asked for and
+        /// is written as it stands.
+        /// </summary>
+        [TestMethod]
+        [DataRow(nameof(SqlTypeName.VARCHAR), 36, "VARCHAR(36)")]
+        [DataRow(nameof(SqlTypeName.CHAR), 36, "CHAR(36)")]
+        [DataRow(nameof(SqlTypeName.VARBINARY), 16, "VARBINARY(16)")]
+        [DataRow(nameof(SqlTypeName.BINARY), 4, "BINARY(4)")]
+        public void AStatedLengthIsLeftAlone(string typeName, int precision, string expected)
+        {
+            var type = Types.createSqlType(SqlTypeName.valueOf(typeName), precision);
+            Assert.AreEqual(expected, CastSpec(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), type));
+        }
+
+        /// <summary>
+        /// <c>varbinary</c> carries the same rule over bytes, and <c>VARBINARY</c>'s default precision is
+        /// unspecified for the same reason <c>VARCHAR</c>'s is.
+        /// </summary>
+        [TestMethod]
+        public void AnUnboundedVarbinaryBecomesVarbinaryMax()
+        {
+            Assert.AreEqual("VARBINARY(MAX)", CastSpec(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), Types.createSqlType(SqlTypeName.VARBINARY)));
+        }
+
+        /// <summary>
+        /// A <c>CHAR</c> reaches the same rendering where the type system leaves its precision unspecified —
+        /// CALCITE-6565 made the bare keyword the intended answer for SQL Server, and the server reads it as
+        /// thirty. There is no <c>char(max)</c> in T-SQL, and a fixed length with no length has nothing to
+        /// pad to.
+        /// </summary>
+        [TestMethod]
+        public void AnUnboundedCharBecomesVarcharMax()
+        {
+            var type = MssqlTypes.createSqlType(SqlTypeName.CHAR);
+            Assert.AreEqual("CHAR", CastSpec(MssqlSqlDialect.DEFAULT, type), "the answer being corrected");
+            Assert.AreEqual("VARCHAR(MAX)", CastSpec(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), type));
+        }
+
+        /// <summary>
+        /// Under the default type system a <c>CHAR</c> has a precision of one, so nothing changes for it.
+        /// </summary>
+        [TestMethod]
+        public void ACharOfTheDefaultTypeSystemKeepsItsOne()
+        {
+            Assert.AreEqual("CHAR(1)", CastSpec(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), Types.createSqlType(SqlTypeName.CHAR)));
+        }
+
+        /// <summary>
+        /// Nothing else is touched.
+        /// </summary>
+        [TestMethod]
+        public void AnotherTypeKeepsCalcitesAnswer()
+        {
+            var dialect = AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382");
+
+            Assert.AreEqual("INTEGER", CastSpec(dialect, Types.createSqlType(SqlTypeName.INTEGER)));
+            Assert.AreEqual("DECIMAL(12, 3)", CastSpec(dialect, Types.createSqlType(SqlTypeName.DECIMAL, 12, 3)));
+        }
+
+        /// <summary>
+        /// And the correction is SQL Server's alone. The bare keyword is a different default per product:
+        /// SQLite ignores a length entirely, and Postgres reads a bare <c>varchar</c> as unbounded, which is
+        /// what Calcite means. The claim is that no length was written, rather than that the whole spec is
+        /// the keyword: SQLite says it supports a character set, so Calcite names one after it.
+        /// </summary>
+        [TestMethod]
+        [DataRow("SQLite")]
+        [DataRow("PostgreSQL")]
+        public void AnotherProductKeepsTheBareKeyword(string productName)
+        {
+            var spec = CastSpec(AdoSqlDialects.For(productName, "1.0"), Types.createSqlType(SqlTypeName.VARCHAR));
+
+            StringAssert.StartsWith(spec, "VARCHAR");
+            Assert.IsFalse(spec.Contains('('), $"a length was written where the bare keyword is right: {spec}");
+        }
+
+        /// <summary>
+        /// A driver that only says what is behind it reaches the same corrected dialect, which is what
+        /// carries the fix to ODBC and OLE DB over SQL Server.
+        /// </summary>
+        [TestMethod]
+        [DataRow("Microsoft SQL Server")]
+        [DataRow("microsoft sql server")]
+        [DataRow("Microsoft SQL Server Enterprise Edition")]
+        public void AnyNameThatSelectsSqlServerGetsTheCorrection(string productName)
+        {
+            Assert.AreEqual("VARCHAR(MAX)", CastSpec(AdoSqlDialects.For(productName, "10.50.1600"), Types.createSqlType(SqlTypeName.VARCHAR)));
         }
 
         #endregion
