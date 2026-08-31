@@ -23,7 +23,7 @@ Calcite normally executes a query by generating Java source and compiling it at 
 This package replaces that step. A query plan is compiled into a `System.Linq.Expressions` tree and turned into a delegate, so:
 
 - **No Java compiler runs when you prepare a statement.**
-- **A .NET method can be a SQL function.** Janino cannot resolve the `cli.`-prefixed name IKVM gives a CLR class, so a .NET user-defined function does not work under Calcite's own engine. It works here.
+- **A .NET method can be a SQL function, and no class name is written out.** Calcite's own engine reaches one only through the class-loader stamp `IKVM.Maven.Sdk` puts on `calcite-core`, which IKVM 8.14.0 and 8.15.0 could not read — under those a .NET user-defined function had no plan under `EnumerableConvention` at all, Janino refusing the `cli.`-prefixed name IKVM gives a CLR class. IKVM 8.16.0 fixes it; here it never mattered, because nothing writes a name.
 
 `ClrEnumerableConvention` mirrors Calcite's `EnumerableConvention` node for node and uses the same row types, and converter rules exist in both directions. A plan may hold nodes of both conventions: anything this convention has no rule for is planned by Calcite as usual, and rows cross between the two untouched.
 

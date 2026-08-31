@@ -18,8 +18,8 @@
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
         <PackageReference Include="FastExpressionCompiler.LightExpression" Version="5.4.1" />
         <PackageReference Include="FluentAssertions" Version="8.10.0" />
-        <PackageReference Include="IKVM" Version="8.15.0" />
-        <PackageReference Include="IKVM.Java.Extensions" Version="8.15.0" />
+        <PackageReference Include="IKVM" Version="8.16.0" />
+        <PackageReference Include="IKVM.Java.Extensions" Version="8.16.0" />
         <PackageReference Include="IKVM.Jdbc.Data" Version="1.0.13" />
         <PackageReference Include="IKVM.Maven.Sdk" Version="1.12.0">
             <PrivateAssets>all</PrivateAssets>
@@ -38,9 +38,11 @@
                 com.jayway.jsonpath:json-path/com.fasterxml.jackson.core:jackson-core:2.18.6,optional=true
             </Dependencies>
         </MavenReference>
-        <!-- Smalls.fibonacciTableWithLimit100 is a one-column table function written in Java, and the only
-             oracle ClrEnumerableRowFormatTests can have: Janino cannot name a CLR class, so a table function
-             of this project's own gives EnumerableConvention no plan to compare against. -->
+        <!-- Smalls.fibonacciTableWithLimit100 is a one-column table function written in Java, and was the
+             only oracle ClrEnumerableRowFormatTests could have: Janino could not name a CLR class under IKVM
+             8.14.0 or 8.15.0, so a table function of this project's own gave EnumerableConvention no plan to
+             compare against. IKVM 8.16.0 fixed that; this stays because it is what the tests are written
+             against. -->
         <MavenReference Include="org.apache.calcite:calcite-testkit" Version="1.42.0" />
         <MavenReference Include="org.apache.calcite:calcite-server" Version="1.42.0" />
     </ItemGroup>

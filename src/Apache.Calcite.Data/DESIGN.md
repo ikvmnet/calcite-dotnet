@@ -385,9 +385,11 @@ providing a JDBC-style `unwrap`. This keeps the contract typed and discoverable 
 advanced consumers register schemas, tables, functions and views on `RootSchema`, build types with
 `TypeFactory`, and inspect resolved configuration through `Config`.
 
-A user-defined function written in .NET works here and in no plan Janino compiles: IKVM names a CLR
-class `cli.Namespace.Type`, which `EnumerableConvention` would write into generated Java source and
-Janino cannot resolve. This convention holds the method rather than its name.
+A user-defined function written in .NET works here without a class name being written out at all: IKVM
+names a CLR class `cli.Namespace.Type`, which `EnumerableConvention` writes into generated Java source,
+and this convention holds the method rather than its name. Janino resolves such a name through the
+class-loader stamp `IKVM.Maven.Sdk` puts on `calcite-core`, which IKVM 8.14.0 and 8.15.0 could not read —
+under those there was no plan for one under `EnumerableConvention` at all. IKVM 8.16.0 fixes it.
 
 The prepare and plan APIs are not exposed on the ADO.NET surface. A caller who wants them references
 `Apache.Calcite.Extensions` and uses `ClrPrepareImpl` directly.

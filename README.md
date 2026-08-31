@@ -30,7 +30,7 @@ dotnet add package Apache.Calcite.Adapter.AdoNet
 
 With it, the prepare pipeline that takes a statement from SQL text to such a plan, and the interop helpers both need — including `CalciteConnectionProperties`, a strongly-typed wrapper over Calcite's `java.util.Properties`, so you can configure the engine with compile-time-safe .NET properties instead of raw string keys.
 
-Because the plan holds a method rather than its name, a user-defined function written in .NET runs in this convention — Janino cannot resolve the `cli.`-prefixed class name IKVM gives a CLR type, so such a query has no plan under `EnumerableConvention`.
+The plan holds a method rather than its name, so a user-defined function written in .NET runs in this convention without a class name ever being written out. Calcite's own engine runs one too, as long as IKVM can read the class-loader stamp `IKVM.Maven.Sdk` puts on `calcite-core`: IKVM 8.14.0 and 8.15.0 could not, so Janino could not resolve the `cli.`-prefixed name IKVM gives a CLR type and such a query had no plan under `EnumerableConvention` at all. IKVM 8.16.0 fixes that, so the difference between the two engines is the compile rather than the capability.
 
 Targets .NET 8, and is verified on .NET 8 and .NET 10.
 
