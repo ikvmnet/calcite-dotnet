@@ -1,8 +1,8 @@
-using System;
+﻿using System;
 
 using Xunit;
 
-namespace Apache.Calcite.Data.Internal.Tests
+namespace Apache.Calcite.Data.Common.Tests
 {
 
     public class BigDecimalConverterTests

@@ -19,6 +19,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <ProjectReference Include="..\Apache.Calcite.Data.Common\Apache.Calcite.Data.Common.csproj" />
         <ProjectReference Include="..\Apache.Calcite.Extensions\Apache.Calcite.Extensions.csproj" />
     </ItemGroup>
 

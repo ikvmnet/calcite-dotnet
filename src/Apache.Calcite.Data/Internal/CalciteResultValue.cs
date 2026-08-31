@@ -1,5 +1,8 @@
 ﻿using System;
 
+using Apache.Calcite.Data.Common;
+
+using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
 
 namespace Apache.Calcite.Data.Internal
@@ -14,17 +17,22 @@ namespace Apache.Calcite.Data.Internal
 
         static readonly DateTime UnixEpoch = new(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
+        readonly ClrTypeRegistry _registry;
+        readonly RelDataType _relType;
         readonly SqlTypeName _sqlType;
         readonly object? _value;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="sqlType"></param>
+        /// <param name="registry">The connection's type mapping.</param>
+        /// <param name="relType">The Calcite type of the column the value came from.</param>
         /// <param name="value"></param>
-        public CalciteResultValue(SqlTypeName sqlType, object? value)
+        public CalciteResultValue(ClrTypeRegistry registry, RelDataType relType, object? value)
         {
-            _sqlType = sqlType;
+            _registry = registry;
+            _relType = relType;
+            _sqlType = relType.getSqlTypeName();
             _value = value;
         }
 
@@ -59,6 +67,12 @@ namespace Apache.Calcite.Data.Internal
             // Fast path for direct assignable
             if (target.IsInstanceOfType(_value))
                 return (T)_value;
+
+            // a conversion the mapping states for this pair of types, which is also how a caller reaches a
+            // type of their own. The getters below remain for the pairs no mapping names, and are strict on
+            // purpose: a BIGINT is not read as an int merely because both are integers
+            if (_registry.GetMapping(target, _relType) is ClrTypeMapping mapping && mapping.FromCalcite(_value) is T mapped)
+                return mapped;
 
             // Handle common ADO.NET types
             if (target == typeof(string))
@@ -119,99 +133,7 @@ namespace Apache.Calcite.Data.Internal
             if (_value is null)
                 return DBNull.Value;
 
-            switch (_sqlType.name())
-            {
-                case nameof(SqlTypeName.DATE):
-                    {
-                        return _value switch
-                        {
-                            java.lang.Integer i => UnixEpoch.AddDays(i.intValue()),
-                            java.lang.Number n => UnixEpoch.AddDays(n.longValue()),
-                            java.sql.Date d => UnixEpoch.AddMilliseconds(d.getTime()),
-                            _ => _value,
-                        };
-                    }
-                case nameof(SqlTypeName.TIME):
-                    {
-                        return _value switch
-                        {
-                            java.lang.Integer i => TimeSpan.FromMilliseconds(i.intValue()),
-                            java.lang.Number n => TimeSpan.FromMilliseconds(n.longValue()),
-                            java.sql.Time t => TimeSpan.FromMilliseconds(t.getTime()),
-                            _ => _value,
-                        };
-                    }
-                case nameof(SqlTypeName.TIME_WITH_LOCAL_TIME_ZONE):
-                case nameof(SqlTypeName.TIME_TZ):
-                    {
-                        // Calcite's wire form is a count of milliseconds-since-midnight; the offset is
-                        // not carried per-row, so surface as DateTimeOffset at the epoch date with UTC offset
-                        // (matches IKVM.Jdbc's OffsetTime path which anchors at 0001-01-01).
-                        return _value switch
-                        {
-                            java.lang.Integer i => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(i.intValue())),
-                            java.lang.Number n => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(n.longValue())),
-                            java.sql.Time t => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(t.getTime())),
-                            _ => _value,
-                        };
-                    }
-                case nameof(SqlTypeName.TIMESTAMP):
-                    {
-                        return _value switch
-                        {
-                            java.lang.Number n => UnixEpoch.AddMilliseconds(n.longValue()),
-                            java.sql.Timestamp ts => UnixEpoch.AddMilliseconds(ts.getTime()),
-                            _ => _value,
-                        };
-                    }
-                case nameof(SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE):
-                case nameof(SqlTypeName.TIMESTAMP_TZ):
-                    {
-                        // UTC instant; surface as DateTimeOffset with UTC offset.
-                        return _value switch
-                        {
-                            java.lang.Number n => new DateTimeOffset(UnixEpoch.AddMilliseconds(n.longValue()), TimeSpan.Zero),
-                            java.sql.Timestamp ts => new DateTimeOffset(UnixEpoch.AddMilliseconds(ts.getTime()), TimeSpan.Zero),
-                            _ => _value,
-                        };
-                    }
-                case nameof(SqlTypeName.BINARY):
-                case nameof(SqlTypeName.VARBINARY):
-                    {
-                        return _value switch
-                        {
-                            org.apache.calcite.avatica.util.ByteString bs => bs.getBytes(),
-                            byte[] b => b,
-                            _ => _value,
-                        };
-                    }
-            }
-
-            {
-                if (_value is null) return DBNull.Value;
-                if (_value is string) return _value;
-                if (_value is java.math.BigDecimal bd) return BigDecimalConverter.ToDecimal(bd);
-                if (_value is java.lang.Boolean b) return b.booleanValue();
-                if (_value is java.lang.Byte by) return (sbyte)by.byteValue();
-                if (_value is java.lang.Short sh) return sh.shortValue();
-                if (_value is java.lang.Integer i) return i.intValue();
-                if (_value is java.lang.Long l) return l.longValue();
-                if (_value is java.lang.Float f) return f.floatValue();
-                if (_value is java.lang.Double d) return d.doubleValue();
-                if (_value is java.lang.Character c) return c.charValue();
-                if (_value is java.sql.Timestamp ts) return UnixEpoch.AddMilliseconds(ts.getTime());
-                if (_value is java.sql.Date dt) return UnixEpoch.AddMilliseconds(dt.getTime());
-                if (_value is java.sql.Time tm) return TimeSpan.FromMilliseconds(tm.getTime());
-                if (_value is org.apache.calcite.avatica.util.ByteString bs) return bs.getBytes();
-                // joou unsigned integer types: Calcite may return these when unsigned columns are
-                // read. Map each to its natural unsigned CLR counterpart.
-                if (_value is org.joou.UByte ub) return (byte)ub.byteValue();
-                if (_value is org.joou.UShort us) return (ushort)us.shortValue();
-                if (_value is org.joou.UInteger ui) return (uint)ui.intValue();
-                if (_value is org.joou.ULong ul) return (ulong)ul.longValue();
-            }
-
-            return _value;
+            return _registry.FromCalcite(null, _relType, _value) ?? DBNull.Value;
         }
 
         /// <summary>

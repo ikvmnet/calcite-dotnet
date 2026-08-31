@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
@@ -99,6 +99,8 @@ namespace Apache.Calcite.Extensions.Prepare
             /// <param name="internalParameters">Values the query reads through the <see cref="DataContext"/>
             /// rather than from the plan. This must be the map the plan was built against.</param>
             /// <param name="rowType">The result's row type, or <see langword="null"/> for DDL.</param>
+            /// <param name="parameterRowType">A record type whose fields are the statement's dynamic
+            /// parameters, in placeholder order, or <see langword="null"/> where there are none to describe.</param>
             /// <param name="columns">One <see cref="ColumnMetaData"/> per result column.</param>
             /// <param name="cursorFactory">How a row is read back.</param>
             /// <param name="rootSchema">The schema the statement was planned against.</param>
@@ -112,6 +114,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 java.util.List parameters,
                 java.util.Map internalParameters,
                 RelDataType? rowType,
+                RelDataType? parameterRowType,
                 java.util.List columns,
                 Meta.CursorFactory cursorFactory,
                 CalciteSchema? rootSchema,
@@ -122,6 +125,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 base(columns, sql, parameters, internalParameters, cursorFactory, statementType)
             {
                 RowType = rowType;
+                ParameterRowType = parameterRowType;
                 RootSchema = rootSchema;
                 Collations = collations ?? throw new ArgumentNullException(nameof(collations));
                 this.maxRowCount = maxRowCount;
@@ -147,6 +151,18 @@ namespace Apache.Calcite.Extensions.Prepare
             /// Gets the result's row type, or <see langword="null"/> for DDL.
             /// </summary>
             public RelDataType? RowType { get; }
+
+            /// <summary>
+            /// Gets a record type whose fields are the statement's dynamic parameters, in placeholder order,
+            /// or <see langword="null"/> where there are none to describe.
+            /// </summary>
+            /// <remarks>
+            /// What the validator inferred for each <c>?</c>, which is the type the plan will read that slot
+            /// as. It is not necessarily the type the caller named: a caller states a <c>DbType</c> and
+            /// Calcite states what the SQL around the placeholder requires, and where those disagree it is
+            /// this one the value has to arrive as.
+            /// </remarks>
+            public RelDataType? ParameterRowType { get; }
 
             /// <summary>
             /// Gets one <see cref="ColumnMetaData"/> per result column.

@@ -2,7 +2,7 @@ using System;
 using System.Buffers.Binary;
 
 
-namespace Apache.Calcite.Data.Internal
+namespace Apache.Calcite.Data.Common
 {
 
     /// <summary>
@@ -16,9 +16,10 @@ namespace Apache.Calcite.Data.Internal
     /// <see cref="java.math.BigInteger"/>'s two's-complement byte representation, avoiding any
     /// string round-trip.
     /// </remarks>
-    internal static class BigDecimalConverter
+    public static class BigDecimalConverter
     {
 
+        /// <summary>Converts a decimal to the BigDecimal Calcite holds one in.</summary>
         public static java.math.BigDecimal ToBigDecimal(decimal value)
         {
             // Read the four-int decimal layout directly into a stack buffer.
@@ -40,6 +41,7 @@ namespace Apache.Calcite.Data.Internal
             return new java.math.BigDecimal(unscaled, scale);
         }
 
+        /// <summary>Converts the BigDecimal Calcite holds a decimal in back to one.</summary>
         public static decimal ToDecimal(java.math.BigDecimal value)
         {
             // System.Decimal requires scale in [0, 28]; normalize first.
