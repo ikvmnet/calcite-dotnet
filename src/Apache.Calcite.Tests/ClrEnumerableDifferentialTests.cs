@@ -388,10 +388,10 @@ namespace Apache.Calcite.Tests
 
             // A CUSTOM-format fixture, which every other table here is not. HrSchema's rows are instances of
             // a Java class, so a scan of it yields a synthetic record rather than an Object[] and
-            // PhysType.record, fieldReference and the join selector all take the other branch. It has to be
-            // Java rather than one of this project's own classes for the same reason MY_SUM does: Janino
-            // cannot name a CLR class, so a CLR-backed table would leave EnumerableConvention with no plan to
-            // compare against.
+            // PhysType.record, fieldReference and the join selector all take the other branch. It is Calcite's
+            // own schema rather than one of this project's classes because Janino could not name a CLR class
+            // under IKVM 8.14.0 or 8.15.0, which left EnumerableConvention with no plan to compare against.
+            // 8.16.0 fixed that, so it is no longer a constraint on the fixture.
             rootSchema.add("HR", new org.apache.calcite.adapter.java.ReflectiveSchema(new org.apache.calcite.test.schemata.hr.HrSchema()));
 
             // the hierarchy CALCITE-4054 is about, which is a recursive query whose step is a correlate over
@@ -1564,24 +1564,34 @@ namespace Apache.Calcite.Tests
         [TestMethod]
         public void ShouldAgreeOnLagWithAnOffsetAndDefault() => Same("SELECT \"ID\", LAG(\"AMOUNT\", 2, -1) OVER (ORDER BY \"ID\") FROM \"SALES\" ORDER BY \"ID\"");
 
-        // The two below are the only ones asserted by hand, because Calcite cannot answer them. A user-defined
-        // function written in C# is a class IKVM names cli.Apache.Calcite.Tests.SumAggregate;
-        // EnumerableConvention writes that name into generated Java source, and Janino does not resolve a
-        // cli. name, so its plan fails to compile. This convention holds the method itself rather than its
-        // name, so it runs — which makes these the one place a hand-written expectation is the only check
-        // available, and the values are SQL's rather than anything either convention produced.
+        // The two below were the only ones asserted by hand, because Calcite could not answer them. A
+        // user-defined function written in C# is a class IKVM names cli.Apache.Calcite.Tests.SumAggregate;
+        // EnumerableConvention writes that name into generated Java source, and Janino resolves it through
+        // the class-loader stamp IKVM.Maven.Sdk puts on calcite-core — which IKVM 8.14.0 and 8.15.0 could
+        // not read, so the plan failed to compile. This convention holds the method itself rather than its
+        // name, so it ran either way. 8.16.0 reads the stamp again and Calcite runs the same query, measured
+        // at one commit either side, so these are differential like the rest. The hand-written rows stay as
+        // a second oracle, being SQL's answer rather than either convention's.
 
         // running sum over ORDER BY ID, which the default RANGE frame makes a prefix, with the null skipped
         [TestMethod]
-        public void ShouldRunAUserDefinedWindowAggregate() =>
-            Gives("SELECT \"ID\", MY_SUM(\"AMOUNT\") OVER (ORDER BY \"ID\") FROM \"SALES\" ORDER BY \"ID\"",
-                "1|10", "2|30", "3|50", "4|80", "5|80", "6|85");
+        public void ShouldRunAUserDefinedWindowAggregate()
+        {
+            const string sql = "SELECT \"ID\", MY_SUM(\"AMOUNT\") OVER (ORDER BY \"ID\") FROM \"SALES\" ORDER BY \"ID\"";
+
+            Same(sql);
+            Gives(sql, "1|10", "2|30", "3|50", "4|80", "5|80", "6|85");
+        }
 
         // EAST is 10 + 20 + 20 and WEST is 30 + 5, the null contributing nothing
         [TestMethod]
-        public void ShouldRunAUserDefinedAggregate() =>
-            Gives("SELECT \"REGION\", MY_SUM(\"AMOUNT\") FROM \"SALES\" GROUP BY \"REGION\" ORDER BY \"REGION\"",
-                "EAST|50", "WEST|35");
+        public void ShouldRunAUserDefinedAggregate()
+        {
+            const string sql = "SELECT \"REGION\", MY_SUM(\"AMOUNT\") FROM \"SALES\" GROUP BY \"REGION\" ORDER BY \"REGION\"";
+
+            Same(sql);
+            Gives(sql, "EAST|50", "WEST|35");
+        }
 
         // SORTED advertises a collation, so Calcite plans these with EnumerableMergeJoin where it plans the
         // same query over SALES with a hash join. This convention has no merge join yet, so what these
@@ -1831,11 +1841,18 @@ namespace Apache.Calcite.Tests
         // all EnumerableMatch generates: implementPattern handles a literal and a concatenation and throws on
         // anything else, so *, + and | never reach a plan in either convention.
 
-        // A table function is a class too, so the same thing holds as for MY_SUM: Janino cannot name a CLR
-        // class, so EnumerableConvention has no plan for these and there is nothing to compare against. The
-        // function yields one to n, which is what is asserted.
+        // A table function is a class too, so the same thing holds as for MY_SUM: Janino could not name a CLR
+        // class under IKVM 8.14.0 or 8.15.0, so EnumerableConvention had no plan for these and there was
+        // nothing to compare against. 8.16.0 names one, so this is differential like the rest; the function
+        // yields one to n, which the hand-written rows still assert.
         [TestMethod]
-        public void ShouldRunATableFunction() => Gives("SELECT * FROM TABLE(NUMBERS(3))", "1", "2", "3");
+        public void ShouldRunATableFunction()
+        {
+            const string sql = "SELECT * FROM TABLE(NUMBERS(3))";
+
+            Same(sql);
+            Gives(sql, "1", "2", "3");
+        }
 
         // A join over a one-column table function puts a sort on it, and that is EnumerableSort's defect:
         // it optimises the scan's ARRAY to SCALAR and hands the Object[] rows on unchanged. Refused rather

@@ -26,8 +26,10 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
     /// <para>So a metadata call is a virtual call into a method that tests the rel's class, calls the
     /// handler's own method directly, and reads and writes the query's table — the same instructions the
     /// generated Java compiles to, with no delegate, no argument array and no boxing that Java would not
-    /// do. What Janino cannot do is name a CLR class: the generated source spells out the handler and every
-    /// rel class, and IKVM's name for one of ours begins <c>cli.</c>, which it refuses.</para>
+    /// do, and without a Java compiler running. Nothing here writes a name either: the generated source
+    /// spells out the handler and every rel class, and IKVM's name for one of ours begins <c>cli.</c>,
+    /// which Janino resolves only where IKVM can read the class-loader stamp on <c>calcite-core</c> — not
+    /// under IKVM 8.14.0 or 8.15.0, and again from 8.16.0.</para>
     ///
     /// <para>Two things are not literal. The keys and lookup tables cannot be constants of an emitted method,
     /// so they are held in one array the constructor takes rather than in a field each. And the catch is

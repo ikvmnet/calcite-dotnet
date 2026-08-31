@@ -244,13 +244,17 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// A metadata handler written in .NET answers here, and does not compile under Janino.
+        /// A metadata handler written in .NET answers here, and answers through Janino too.
         /// </summary>
         /// <remarks>
         /// The generated source names the handler class and the rel class the way Java names them, and IKVM's
-        /// name for a CLR class begins <c>cli.</c>. Janino answers "Cannot determine simple type name cli",
-        /// which is what stops a .NET user-defined function under <c>EnumerableConvention</c> as well. It is
-        /// the reason this provider exists; the compile it saves is the other one.
+        /// name for a CLR class begins <c>cli.</c>. Janino resolves one through the class loader
+        /// <c>IKVM.Maven.Sdk</c> stamps onto <c>calcite-core</c>, which walks every loaded assembly — no
+        /// <c>addBootClassPathAssembly</c> call is needed here. IKVM 8.14.0 and 8.15.0 could not read that
+        /// stamp, so Janino answered "Cannot determine simple type name cli" and this provider was the only
+        /// way such a handler could answer at all; 8.16.0 reads it again, measured at one commit either side.
+        /// What remains of the reason is the compile, which
+        /// <see cref="Should_prepare_without_compiling_a_handler"/> holds.
         /// </remarks>
         [TestMethod]
         public void Should_take_a_handler_written_in_dotnet()
@@ -267,9 +271,10 @@ namespace Apache.Calcite.Tests
             var mq = new RelMetadataQuery(ClrRelMetadataProvider.Of(chained));
             Assert.AreEqual(7d, mq.getRowCount(values).doubleValue(), 0.0001);
 
-            var refused = Assert.Throws<java.lang.RuntimeException>(
-                () => JaninoRelMetadataProvider.of(chained).revise(handlerClass));
-            StringAssert.Contains(refused.ToString(), "cli");
+            Assert.IsNotNull(JaninoRelMetadataProvider.of(chained).revise(handlerClass));
+
+            var janino = new RelMetadataQuery(JaninoRelMetadataProvider.of(chained));
+            Assert.AreEqual(7d, janino.getRowCount(values).doubleValue(), 0.0001);
         }
 
         /// <summary>

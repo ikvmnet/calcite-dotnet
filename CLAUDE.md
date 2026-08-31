@@ -315,11 +315,25 @@ outrank an outer variable of its name, it makes it unreachable, and Calcite reli
 `row_` the input row and `row_` the `MemoryFactory.Memory` around it. Neither ran for want of that scope,
 and it was described in this file before it was in the code.
 
-**A user-defined function written in .NET runs in this convention and in no plan Janino compiles.** IKVM
-names a CLR class `cli.Namespace.Type`; `EnumerableConvention` writes that name into generated Java source
-and Janino does not resolve a `cli.` name, so the plan fails to compile — for a grouped aggregate and a
-windowed one alike. A tree holds the method rather than its name. So a UDF is the one thing the
-differential tests cannot use Calcite as the oracle for.
+**"Janino cannot name a CLR class" was an IKVM regression, not a fact about Janino, and it is fixed.** The
+claim stood in seven places here: IKVM names a CLR class `cli.Namespace.Type`, `EnumerableConvention` writes
+that name into generated Java source, and Janino answered "Cannot determine simple type name cli", so a .NET
+UDF, table function or metadata handler had no plan under Calcite's own engine. What actually happened is
+narrower. `IKVM.Maven.Sdk` stamps every `MavenReference` assembly with
+`CustomAssemblyClassLoaderAttribute(AppDomainAssemblyClassLoader)`, and Janino compiles against
+`calcite-core`'s own loader — that loader walks every loaded assembly and answers `cli.` names.
+`CustomAssemblyClassLoaderAttribute` was made **`internal`** in 8.14.0 by the IKVM.Reflection-into-CoreLib
+move, and `RuntimeAssemblyClassLoader.GetCustomClassLoader` reads it with
+`Assembly.GetCustomAttributes(type, false)`, which the CLR skips when the attribute type is not visible
+outside its own assembly. The stamp was in the metadata and unreadable, so calcite-core fell back to a
+per-assembly loader that sees nobody else's types. **8.16.0 makes it public again** (ikvm `e0a12705b3`,
+ikvm#723); it was public at 8.13.0, and this repo has only ever been on 8.14.0 and 8.15.0 — the whole of the
+broken window. Measured at one commit either side: at 8.15 `revise` throws and the UDF queries fail to
+compile; at 8.16 the handler compiles and `MY_SUM` and `NUMBERS` give the same rows in both conventions, so
+those three tests are differential like the rest. A tree still holds the method rather than its name, so
+this convention never cared — but the *capability* argument is gone, and what is left of
+`ClrRelMetadataProvider`'s reason is the compile it saves. Note the loader only sees assemblies already
+loaded in the AppDomain, and setting `MavenClassLoader` empty turns it off.
 
 ## Traps
 
