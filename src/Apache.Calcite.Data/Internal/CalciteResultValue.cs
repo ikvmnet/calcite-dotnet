@@ -192,8 +192,8 @@ namespace Apache.Calcite.Data.Internal
             {
                 if (_value is null) return DBNull.Value;
                 if (_value is string) return _value;
-                if (_value is java.math.BigDecimal bd) return BigDecimalConverter.ToDecimal(bd);
-                if (_value is java.util.UUID uu) return UuidConverter.ToGuid(uu);
+                if (_value is java.math.BigDecimal bd) return JavaDecimals.ToDecimal(bd);
+                if (_value is java.util.UUID uu) return JavaUuids.ToGuid(uu);
                 if (_value is java.lang.Boolean b) return b.booleanValue();
                 if (_value is java.lang.Byte by) return (sbyte)by.byteValue();
                 if (_value is java.lang.Short sh) return sh.shortValue();
@@ -375,7 +375,7 @@ namespace Apache.Calcite.Data.Internal
         {
             return _value switch
             {
-                java.math.BigDecimal bd => BigDecimalConverter.ToDecimal(bd),
+                java.math.BigDecimal bd => JavaDecimals.ToDecimal(bd),
                 _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Decimal'"),
             };
         }
@@ -416,7 +416,7 @@ namespace Apache.Calcite.Data.Internal
         {
             return _value switch
             {
-                java.util.UUID u => UuidConverter.ToGuid(u),
+                java.util.UUID u => JavaUuids.ToGuid(u),
                 string s when Guid.TryParse(s, out _) => Guid.Parse(s),
                 _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Guid'"),
             };
@@ -521,7 +521,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 org.joou.ULong ul => (ulong)ul.longValue(),
-                java.math.BigDecimal bd => (ulong)BigDecimalConverter.ToDecimal(bd),
+                java.math.BigDecimal bd => (ulong)JavaDecimals.ToDecimal(bd),
                 java.lang.Number n => (ulong)n.longValue(),
                 _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'UInt64'"),
             };

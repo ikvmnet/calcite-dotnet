@@ -14,7 +14,7 @@ namespace Apache.Calcite.Extensions.Interop
     /// <see cref="Guid"/> reads and writes them in that order under <c>bigEndian</c>. The halves are
     /// transferred directly, avoiding any string round-trip.
     /// </remarks>
-    internal static class UuidConverter
+    internal static class JavaUuids
     {
 
         /// <summary>

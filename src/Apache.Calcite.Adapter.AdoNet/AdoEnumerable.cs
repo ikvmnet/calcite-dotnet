@@ -265,13 +265,17 @@ namespace Apache.Calcite.Adapter.AdoNet
                 java.lang.Float f => f.floatValue(),
                 java.lang.Double d => d.doubleValue(),
                 java.lang.Character c => c.charValue(),
-                java.math.BigDecimal m => decimal.Parse(m.toString(), System.Globalization.CultureInfo.InvariantCulture),
+                // through the byte transfer, not through toString(): BigDecimal writes itself in scientific
+                // notation once the adjusted exponent falls below -6 or the scale goes negative -- 0.0000001
+                // is "1E-7" -- and decimal.Parse(string, IFormatProvider) is NumberStyles.Number, which does
+                // not allow an exponent. Measured: every such value was a FormatException
+                java.math.BigDecimal m => JavaDecimals.ToDecimal(m),
                 org.apache.calcite.avatica.util.ByteString bs => bs.getBytes(),
                 // Calcite holds a UUID as a java.util.UUID, which SqlClient refuses outright: "No mapping
                 // exists from object type java.util.UUID to a known managed provider native type". A Guid
                 // is what a provider binds against a uniqueidentifier, and the transfer is the sixteen
                 // bytes rather than the text
-                java.util.UUID u => UuidConverter.ToGuid(u),
+                java.util.UUID u => JavaUuids.ToGuid(u),
                 // the unsigned types travel as joou values, and no provider knows those either. Each is
                 // unwrapped to the narrowest CLR type every provider binds: SqlClient takes a byte but none
                 // of ushort, uint or ulong, so the wider three go to the signed type that holds their range

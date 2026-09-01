@@ -449,6 +449,31 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             Assert.IsFalse(results.next(), "and only that one");
         }
 
+        /// <summary>
+        /// A <c>DECIMAL</c> parameter small enough that <c>BigDecimal.toString()</c> writes it in scientific
+        /// notation, which the text route this boundary used could not read back: <c>0.0000001</c> is
+        /// <c>1E-7</c>, and <c>decimal.Parse(string, IFormatProvider)</c> is <c>NumberStyles.Number</c>,
+        /// which does not allow an exponent. Measured, before the byte transfer: <c>FormatException: The
+        /// input string '1E-7' was not in a correct format</c>.
+        /// </summary>
+        /// <remarks>
+        /// <c>0.000001</c> writes itself plainly and parses; the threshold is an adjusted exponent below
+        /// -6, which is <c>BigDecimal.toString</c>'s own rule, and a negative scale writes an exponent at
+        /// any magnitude. Nothing about the value is out of range for a <see cref="decimal"/> — it is only
+        /// how the intermediate text is spelt, which is why no existing decimal test saw it.
+        /// </remarks>
+        [TestMethod]
+        public void ADecimalParameterBelowTheExponentThresholdIsBound()
+        {
+            using var statement = _connection.prepareStatement("SELECT ID FROM ADO.TYPES WHERE C_DECIMAL > ?");
+            statement.setBigDecimal(1, new java.math.BigDecimal("0.0000001"));
+
+            var results = statement.executeQuery();
+            Assert.IsTrue(results.next(), "the one row with a decimal in it");
+            Assert.AreEqual(1, results.getInt(1));
+            Assert.IsFalse(results.next(), "and only that one");
+        }
+
         #endregion
 
     }

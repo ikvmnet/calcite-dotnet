@@ -10,7 +10,7 @@ namespace Apache.Calcite.Tests.Interop
 {
 
     [TestClass]
-    public class UuidConverterTests
+    public class JavaUuidsTests
     {
 
         [TestMethod]
@@ -24,8 +24,8 @@ namespace Apache.Calcite.Tests.Interop
         {
             var value = Guid.Parse(literal);
 
-            var uuid = UuidConverter.ToUuid(value);
-            var back = UuidConverter.ToGuid(uuid);
+            var uuid = JavaUuids.ToUuid(value);
+            var back = JavaUuids.ToGuid(uuid);
 
             back.Should().Be(value);
         }
@@ -42,7 +42,7 @@ namespace Apache.Calcite.Tests.Interop
             // the byte order is the one the canonical 8-4-4-4-12 text writes, so a transfer that
             // got either half or their order wrong would show up here
             value.ToString("D").Should().Be(literal);
-            UuidConverter.ToUuid(value).toString().Should().Be(literal);
+            JavaUuids.ToUuid(value).toString().Should().Be(literal);
         }
 
         [TestMethod]
@@ -54,8 +54,8 @@ namespace Apache.Calcite.Tests.Interop
         {
             var value = java.util.UUID.fromString(literal);
 
-            var guid = UuidConverter.ToGuid(value);
-            var back = UuidConverter.ToUuid(guid);
+            var guid = JavaUuids.ToGuid(value);
+            var back = JavaUuids.ToUuid(guid);
 
             back.Should().Be(value);
         }
