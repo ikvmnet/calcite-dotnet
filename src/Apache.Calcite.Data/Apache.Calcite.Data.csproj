@@ -24,10 +24,12 @@
     <ItemGroup>
         <PackageReference Include="IKVM" Version="8.16.0" />
         <PackageReference Include="IKVM.Java.Extensions" Version="8.16.0" />
-        <PackageReference Include="IKVM.Maven.Sdk" Version="1.12.0">
-            <PrivateAssets>all</PrivateAssets>
-            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-        </PackageReference>
+        <!-- Not PrivateAssets, deliberately. This package ships only buildTransitive, which is the folder that
+             carries build assets to consumers; marking it private disables the one mechanism it has, and a project
+             that references ours then compiles and fails at run time with `Could not load file or assembly
+             'calcite.core'`. The default PrivateAssets keeps `build` to ourselves and lets buildTransitive through,
+             which is what we want. -->
+        <PackageReference Include="IKVM.Maven.Sdk" Version="1.12.0" />
         <!-- json-path's published POM declares no jackson dependency at all (json-path/JsonPath#1082);
              declare the missing edge, optional like json-path's own bundled descriptor intends, so its
              jackson providers compile against the real assembly and the version sorts ahead when the
