@@ -191,6 +191,7 @@ namespace Apache.Calcite.Data.Internal
                 if (_value is null) return DBNull.Value;
                 if (_value is string) return _value;
                 if (_value is java.math.BigDecimal bd) return BigDecimalConverter.ToDecimal(bd);
+                if (_value is java.util.UUID uu) return UuidConverter.ToGuid(uu);
                 if (_value is java.lang.Boolean b) return b.booleanValue();
                 if (_value is java.lang.Byte by) return (sbyte)by.byteValue();
                 if (_value is java.lang.Short sh) return sh.shortValue();
@@ -404,14 +405,16 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Implements the GetGuid operation. Calcite has no native UUID type; only valid when the
-        /// underlying value is a string in canonical GUID form.
+        /// Implements the GetGuid operation. Calcite's runtime representation of <c>UUID</c> is a
+        /// <see cref="java.util.UUID"/>; a value carried as a string in canonical GUID form
+        /// converts as well, which is what a character column holding one gives.
         /// </summary>
         /// <returns></returns>
         public Guid GetGuid()
         {
             return _value switch
             {
+                java.util.UUID u => UuidConverter.ToGuid(u),
                 string s when Guid.TryParse(s, out _) => Guid.Parse(s),
                 _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Guid'"),
             };
