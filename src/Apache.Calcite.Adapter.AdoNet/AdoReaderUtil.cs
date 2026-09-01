@@ -231,12 +231,15 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="index"></param>
         /// <returns></returns>
         /// <remarks>
-        /// Through the decimal string, because the whole of the range is the point: <c>valueOf(long)</c>
-        /// refuses anything above <see cref="long.MaxValue"/>, which is half of what the type holds.
+        /// The bits, read unsigned. This went through the decimal string on the grounds that
+        /// <c>valueOf(long)</c> refuses anything above <see cref="long.MaxValue"/> and so could not carry
+        /// half of what the type holds; that is not what it does. Measured: <c>valueOf(-1L)</c> is
+        /// 18446744073709551615, the overload taking the argument's bits rather than its value, which is
+        /// the whole range and the same representation joou stores.
         /// </remarks>
         public static object? GetULong(DbDataReader reader, int index)
         {
-            return GetValueAs<ulong>(reader, index) is ulong value ? org.joou.ULong.valueOf(value.ToString(CultureInfo.InvariantCulture)) : null;
+            return GetValueAs<ulong>(reader, index) is ulong value ? org.joou.ULong.valueOf(unchecked((long)value)) : null;
         }
 
         /// <summary>
