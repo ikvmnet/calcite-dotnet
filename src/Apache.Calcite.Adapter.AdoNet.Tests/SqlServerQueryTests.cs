@@ -424,6 +424,58 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
         #endregion
 
+        #region Parameters
+
+        /// <summary>
+        /// A <c>UUID</c> bound as a parameter reaches the provider as a <see cref="Guid"/>. Calcite holds
+        /// one as a <c>java.util.UUID</c>, and handing that to SqlClient unconverted is
+        /// <c>No mapping exists from object type java.util.UUID to a known managed provider native
+        /// type</c> — measured, on every shape a comparison against a GUID column takes.
+        /// </summary>
+        /// <remarks>
+        /// The gap was one-directional and that is why it lasted: reading the same column always worked,
+        /// <see cref="AUniqueIdentifierComesBackAsItsText"/> holding that, and a literal comparison carries
+        /// no parameter at all. Only a bound value goes through the conversion this pins.
+        /// </remarks>
+        [TestMethod]
+        public void AUuidParameterIsBoundAsAGuid()
+        {
+            using var statement = _connection.prepareStatement("SELECT ID FROM ADO.TYPES WHERE C_GUID = ?");
+            statement.setObject(1, java.util.UUID.fromString("3f2504e0-4f89-11d3-9a0c-0305e82c3301"));
+
+            var results = statement.executeQuery();
+            Assert.IsTrue(results.next(), "the row the parameter names");
+            Assert.AreEqual(1, results.getInt(1));
+            Assert.IsFalse(results.next(), "and only that one");
+        }
+
+        /// <summary>
+        /// A <c>DECIMAL</c> parameter small enough that <c>BigDecimal.toString()</c> writes it in scientific
+        /// notation, which the text route this boundary used could not read back: <c>0.0000001</c> is
+        /// <c>1E-7</c>, and <c>decimal.Parse(string, IFormatProvider)</c> is <c>NumberStyles.Number</c>,
+        /// which does not allow an exponent. Measured, before the byte transfer: <c>FormatException: The
+        /// input string '1E-7' was not in a correct format</c>.
+        /// </summary>
+        /// <remarks>
+        /// <c>0.000001</c> writes itself plainly and parses; the threshold is an adjusted exponent below
+        /// -6, which is <c>BigDecimal.toString</c>'s own rule, and a negative scale writes an exponent at
+        /// any magnitude. Nothing about the value is out of range for a <see cref="decimal"/> — it is only
+        /// how the intermediate text is spelt, which is why no existing decimal test saw it.
+        /// </remarks>
+        [TestMethod]
+        public void ADecimalParameterBelowTheExponentThresholdIsBound()
+        {
+            using var statement = _connection.prepareStatement("SELECT ID FROM ADO.TYPES WHERE C_DECIMAL > ?");
+            statement.setBigDecimal(1, new java.math.BigDecimal("0.0000001"));
+
+            var results = statement.executeQuery();
+            Assert.IsTrue(results.next(), "the one row with a decimal in it");
+            Assert.AreEqual(1, results.getInt(1));
+            Assert.IsFalse(results.next(), "and only that one");
+        }
+
+        #endregion
+
     }
 
 }

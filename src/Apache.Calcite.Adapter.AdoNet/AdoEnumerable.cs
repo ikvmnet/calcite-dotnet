@@ -3,6 +3,7 @@ using System.Data.Common;
 
 using Apache.Calcite.Adapter.AdoNet.Extensions;
 using Apache.Calcite.Adapter.AdoNet.Metadata;
+using Apache.Calcite.Extensions.Interop;
 
 using org.apache.calcite;
 using org.apache.calcite.linq4j;
@@ -135,14 +136,17 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="dataSource">The source whose syntax names a parameter for this provider.</param>
         /// <param name="indexes">The variable index behind each parameter, in parameter order.</param>
         /// <param name="typeNames">The <see cref="org.apache.calcite.sql.type.SqlTypeName"/> name behind each parameter, in the same order, or a null where none was recorded.</param>
-        /// <param name="context">The context the values are read from, one per correlation variable.</param>
+        /// <param name="context">The context the values are read from.</param>
         /// <returns></returns>
         /// <remarks>
-        /// Reached from the code the converter generates, once per execution of the inner side of a
-        /// correlated join. The context is an <see cref="AdoCorrelationDataContext"/> closed over the outer
-        /// row, so reading <c>?N</c> yields that row's value. The type names travel beside the indexes
-        /// because a value alone cannot be bound: a <c>DATE</c> leaves the plan as a day count in a
-        /// <see cref="java.lang.Integer"/>, and only the type says it is not simply an <c>INTEGER</c>.
+        /// Reached from the code the converter generates, once per execution of the pushed-down statement.
+        /// The context is an <see cref="AdoCorrelationDataContext"/> closed over the outer row of a
+        /// correlated join, so reading a <c>?N</c> at or above its offset yields that row's value; every
+        /// lower index is a dynamic parameter of the statement itself and comes from the context the
+        /// statement was bound with, which is what a <c>WHERE key = ?</c> pushed down to the provider
+        /// carries. The type names travel beside the indexes because a value alone cannot be bound: a
+        /// <c>DATE</c> leaves the plan as a day count in a <see cref="java.lang.Integer"/>, and only the
+        /// type says it is not simply an <c>INTEGER</c>.
         /// </remarks>
         public static DbCommandEnricher CreateEnricher(AdoDataSource dataSource, java.util.List indexes, java.util.List typeNames, DataContext context)
         {
@@ -243,7 +247,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="value"></param>
         /// <returns></returns>
         /// <remarks>
-        /// A correlation value comes out of the plan in Calcite's representation, which is a boxed Java
+        /// A parameter value comes out of the plan in Calcite's representation, which is a boxed Java
         /// type. No ADO.NET provider knows what a <see cref="java.lang.Long"/> is, so it is unwrapped to
         /// the .NET value it stands for. This is the inverse of what <see cref="AdoReaderUtil"/> does on
         /// the way in.
@@ -261,8 +265,17 @@ namespace Apache.Calcite.Adapter.AdoNet
                 java.lang.Float f => f.floatValue(),
                 java.lang.Double d => d.doubleValue(),
                 java.lang.Character c => c.charValue(),
-                java.math.BigDecimal m => decimal.Parse(m.toString(), System.Globalization.CultureInfo.InvariantCulture),
+                // through the byte transfer, not through toString(): BigDecimal writes itself in scientific
+                // notation once the adjusted exponent falls below -6 or the scale goes negative -- 0.0000001
+                // is "1E-7" -- and decimal.Parse(string, IFormatProvider) is NumberStyles.Number, which does
+                // not allow an exponent. Measured: every such value was a FormatException
+                java.math.BigDecimal m => JavaDecimals.ToDecimal(m),
                 org.apache.calcite.avatica.util.ByteString bs => bs.getBytes(),
+                // Calcite holds a UUID as a java.util.UUID, which SqlClient refuses outright: "No mapping
+                // exists from object type java.util.UUID to a known managed provider native type". A Guid
+                // is what a provider binds against a uniqueidentifier, and the transfer is the sixteen
+                // bytes rather than the text
+                java.util.UUID u => JavaUuids.ToGuid(u),
                 // the unsigned types travel as joou values, and no provider knows those either. Each is
                 // unwrapped to the narrowest CLR type every provider binds: SqlClient takes a byte but none
                 // of ushort, uint or ulong, so the wider three go to the signed type that holds their range

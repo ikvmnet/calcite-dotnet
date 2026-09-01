@@ -2,7 +2,7 @@ using System;
 using System.Buffers.Binary;
 
 
-namespace Apache.Calcite.Data.Internal
+namespace Apache.Calcite.Extensions.Interop
 {
 
     /// <summary>
@@ -16,7 +16,7 @@ namespace Apache.Calcite.Data.Internal
     /// <see cref="java.math.BigInteger"/>'s two's-complement byte representation, avoiding any
     /// string round-trip.
     /// </remarks>
-    internal static class BigDecimalConverter
+    internal static class JavaDecimals
     {
 
         public static java.math.BigDecimal ToBigDecimal(decimal value)
