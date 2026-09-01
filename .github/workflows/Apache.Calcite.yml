@@ -222,8 +222,16 @@ jobs:
       env:
         GITHUB_REPOS: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    # Same run, same artifact, both feeds. Gating this on a tag while the GitHub push above runs on
+    # every build is what let one version name two different assemblies: GitVersion labels main `pre.N`,
+    # which is the shape a release tag also takes, so the tag build re-derives a version GitHub Packages
+    # already holds from an earlier main build and skips it as a duplicate -- leaving nuget.org with the
+    # tag build and GitHub Packages with the main build under `2.0.0-pre.9`. A consumer restoring from
+    # both feeds can then get Apache.Calcite.Data compiled against a Signature that the
+    # Apache.Calcite.Extensions beside it does not carry. Publishing from the run that already built the
+    # package removes the second build, so there is nothing left to disagree.
     - name: Push NuGet
-      if: github.ref_type == 'tag'
+      if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref_type == 'tag')
       shell: pwsh
       run: dotnet nuget push dist/nuget/*.nupkg --source $env:NUGET_REPOS --api-key $env:NUGET_TOKEN --skip-duplicate
       env:
