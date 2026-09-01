@@ -341,6 +341,22 @@ namespace Apache.Calcite.Data.Tests
         // ------------------------------------------------------------------------------------
 
         [Fact]
+        public void Output_Uuid_should_round_trip_as_Guid()
+        {
+            using var r = ExecuteSingleRow("VALUES (UUID 'cccccccc-0000-0000-0000-000000000001')");
+            // Calcite's runtime representation of UUID is a java.util.UUID; it surfaces as a Guid.
+            Assert.Equal(new Guid("cccccccc-0000-0000-0000-000000000001"), r.GetGuid(0));
+            Assert.Equal(new Guid("cccccccc-0000-0000-0000-000000000001"), (Guid)r.GetValue(0));
+        }
+
+        [Fact]
+        public void Output_Uuid_cast_from_a_string_should_round_trip_as_Guid()
+        {
+            using var r = ExecuteSingleRow("VALUES (CAST(CAST('cccccccc-0000-0000-0000-000000000001' AS VARCHAR) AS UUID))");
+            Assert.Equal(new Guid("cccccccc-0000-0000-0000-000000000001"), r.GetGuid(0));
+        }
+
+        [Fact]
         public void Parameter_Boolean_should_round_trip()
         {
             AssertParameterRoundTrip("BOOLEAN", DbType.Boolean, true);
@@ -424,6 +440,12 @@ namespace Apache.Calcite.Data.Tests
         public void Parameter_Binary_should_round_trip()
         {
             AssertParameterRoundTrip("VARBINARY", DbType.Binary, new byte[] { 1, 2, 3, 4 });
+        }
+
+        [Fact]
+        public void Parameter_Guid_should_round_trip()
+        {
+            AssertParameterRoundTrip("UUID", DbType.Guid, new Guid("cccccccc-0000-0000-0000-000000000001"));
         }
 
         [Fact]
@@ -602,6 +624,8 @@ namespace Apache.Calcite.Data.Tests
                 Assert.Equal(dt, ((DateTime)actual!).ToUniversalTime());
             else if (value is string s)
                 Assert.Equal(s, ((string)actual!).TrimEnd());
+            else if (value is Guid g)
+                Assert.Equal(g, (Guid)actual!);
             else
                 Assert.Equal(value, Convert.ChangeType(actual, value.GetType()));
         }
