@@ -190,12 +190,10 @@ jobs:
     - test
     runs-on: ubuntu-latest
     env:
-      # One switch for the GitHub release and the nuget.org push together, so a build cannot reach one
-      # and not the other. main carries it by default: only a push from the run that built the package
-      # puts the same assembly on both feeds, and a later run cannot, because GitHub Packages already
-      # holds the version and skips it as a duplicate. The workflow_dispatch input forces the same pair
-      # from any ref, for a branch that does not publish on its own or to retry a run that failed here.
-      PUBLISH: ${{ github.ref_type == 'tag' || github.ref == 'refs/heads/main' || inputs.publish == true }}
+      # One switch for the GitHub release and the nuget.org push together, so neither happens without the
+      # other. Nothing reaches nuget.org implicitly: either a tag drives the build, or the run was asked
+      # for it by hand. The GitHub Packages push below is not gated by this and still runs on every build.
+      PUBLISH: ${{ github.ref_type == 'tag' || inputs.publish == true }}
     steps:
     - name: Checkout Source
       uses: actions/checkout@v7
@@ -242,14 +240,16 @@ jobs:
       env:
         GITHUB_REPOS: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    # Same run, same artifact, both feeds. Gating this on a tag while the GitHub push above runs on
-    # every build is what let one version name two different assemblies: GitVersion labels main `pre.N`,
-    # which is the shape a release tag also takes, so the tag build re-derives a version GitHub Packages
-    # already holds from an earlier main build and skips it as a duplicate -- leaving nuget.org with the
-    # tag build and GitHub Packages with the main build under `2.0.0-pre.9`. A consumer restoring from
-    # both feeds can then get Apache.Calcite.Data compiled against a Signature that the
-    # Apache.Calcite.Extensions beside it does not carry. Publishing from the run that already built the
-    # package removes the second build, so there is nothing left to disagree.
+    # --skip-duplicate so a version nuget.org already carries is a no-op here rather than a failure.
+    #
+    # Be aware that this run has rebuilt the package. GitVersion labels main `pre.N`, the same shape a
+    # release tag takes, so the version this pushes is one GitHub Packages already received from the
+    # build that produced it, and skipped as a duplicate when this run pushed above. The two feeds then
+    # carry different assemblies under one version -- which is how `2.0.0-pre.9` came to be a build from
+    # August on GitHub Packages and a September one on nuget.org, and how a consumer restoring from both
+    # gets Apache.Calcite.Data compiled against a Signature the Apache.Calcite.Extensions beside it does
+    # not carry. Publishing the artifact the original run built, rather than a rebuild of it, is what
+    # would close that.
     - name: Push NuGet
       if: env.PUBLISH == 'true'
       shell: pwsh
