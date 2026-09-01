@@ -1,5 +1,7 @@
 ﻿using System;
 
+using Apache.Calcite.Extensions.Interop;
+
 using org.apache.calcite.sql.type;
 
 namespace Apache.Calcite.Data.Internal

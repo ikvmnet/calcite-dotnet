@@ -424,6 +424,33 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
         #endregion
 
+        #region Parameters
+
+        /// <summary>
+        /// A <c>UUID</c> bound as a parameter reaches the provider as a <see cref="Guid"/>. Calcite holds
+        /// one as a <c>java.util.UUID</c>, and handing that to SqlClient unconverted is
+        /// <c>No mapping exists from object type java.util.UUID to a known managed provider native
+        /// type</c> — measured, on every shape a comparison against a GUID column takes.
+        /// </summary>
+        /// <remarks>
+        /// The gap was one-directional and that is why it lasted: reading the same column always worked,
+        /// <see cref="AUniqueIdentifierComesBackAsItsText"/> holding that, and a literal comparison carries
+        /// no parameter at all. Only a bound value goes through the conversion this pins.
+        /// </remarks>
+        [TestMethod]
+        public void AUuidParameterIsBoundAsAGuid()
+        {
+            using var statement = _connection.prepareStatement("SELECT ID FROM ADO.TYPES WHERE C_GUID = ?");
+            statement.setObject(1, java.util.UUID.fromString("3f2504e0-4f89-11d3-9a0c-0305e82c3301"));
+
+            var results = statement.executeQuery();
+            Assert.IsTrue(results.next(), "the row the parameter names");
+            Assert.AreEqual(1, results.getInt(1));
+            Assert.IsFalse(results.next(), "and only that one");
+        }
+
+        #endregion
+
     }
 
 }

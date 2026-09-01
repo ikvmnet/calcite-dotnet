@@ -2,7 +2,7 @@ using System;
 using System.Buffers.Binary;
 
 
-namespace Apache.Calcite.Data.Internal
+namespace Apache.Calcite.Extensions.Interop
 {
 
     /// <summary>

@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 
+using Apache.Calcite.Extensions.Interop;
+
 using org.apache.calcite.avatica.util;
 
 
