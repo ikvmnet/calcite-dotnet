@@ -2,6 +2,11 @@ name: calcite-dotnet
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish this build to nuget.org, creating the GitHub release if one does not exist.
+        type: boolean
+        default: false
   push:
     branches:
     - main
@@ -184,6 +189,11 @@ jobs:
     needs:
     - test
     runs-on: ubuntu-latest
+    env:
+      # One switch for the GitHub release and the nuget.org push together, so neither happens without the
+      # other. Nothing reaches nuget.org implicitly: either a tag drives the build, or the run was asked
+      # for it by hand. The GitHub Packages push below is not gated by this and still runs on every build.
+      PUBLISH: ${{ github.ref_type == 'tag' || inputs.publish == true }}
     steps:
     - name: Checkout Source
       uses: actions/checkout@v7
@@ -205,15 +215,23 @@ jobs:
       with:
         name: nuget
         path: dist/nuget
+    # `commit` is what lets this run from a branch: with no tag of this name yet the action creates one
+    # there, which is the tag that no longer has to be made by hand. Where the tag does already exist and
+    # carries a release -- an explicit tag build, or a re-run -- allowUpdates keeps that from failing and
+    # updates it in place instead, omitBodyDuringUpdate leaves notes written by hand alone, and
+    # replacesArtifacts refreshes the packages rather than colliding with the ones already attached.
     - name: Create Release
-      if: github.ref_type == 'tag'
+      if: env.PUBLISH == 'true'
       uses: ncipollo/release-action@v1
       with:
         tag: ${{ steps.GitVersion.outputs.semVer }}
+        commit: ${{ github.sha }}
         allowUpdates: true
         omitBodyDuringUpdate: true
+        replacesArtifacts: true
         artifacts: dist/nuget/*.nupkg,dist/nuget/*.snupkg
-        makeLatest: true
+        prerelease: ${{ contains(steps.GitVersion.outputs.semVer, '-') }}
+        makeLatest: ${{ !contains(steps.GitVersion.outputs.semVer, '-') }}
         token: ${{ secrets.GITHUB_TOKEN }}
     - name: Push NuGet (GitHub)
       if: github.event_name != 'pull_request'
@@ -222,8 +240,18 @@ jobs:
       env:
         GITHUB_REPOS: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    # --skip-duplicate so a version nuget.org already carries is a no-op here rather than a failure.
+    #
+    # Be aware that this run has rebuilt the package. GitVersion labels main `pre.N`, the same shape a
+    # release tag takes, so the version this pushes is one GitHub Packages already received from the
+    # build that produced it, and skipped as a duplicate when this run pushed above. The two feeds then
+    # carry different assemblies under one version -- which is how `2.0.0-pre.9` came to be a build from
+    # August on GitHub Packages and a September one on nuget.org, and how a consumer restoring from both
+    # gets Apache.Calcite.Data compiled against a Signature the Apache.Calcite.Extensions beside it does
+    # not carry. Publishing the artifact the original run built, rather than a rebuild of it, is what
+    # would close that.
     - name: Push NuGet
-      if: github.ref_type == 'tag'
+      if: env.PUBLISH == 'true'
       shell: pwsh
       run: dotnet nuget push dist/nuget/*.nupkg --source $env:NUGET_REPOS --api-key $env:NUGET_TOKEN --skip-duplicate
       env:
