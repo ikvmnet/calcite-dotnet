@@ -37,6 +37,48 @@ namespace Apache.Calcite.Geography.Sql.Type
         public static readonly SqlReturnTypeInference Geometry = new GeometryReturnTypeInference();
 
         /// <summary>
+        /// Returns the type the type factory gives a Java class, which is how Calcite's own spatial
+        /// functions are typed.
+        /// </summary>
+        /// <param name="clazz"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A function declared through a schema is typed by <c>createJavaType</c> over the return type of the
+        /// method behind it, so <c>ST_ASTEXT</c> is <c>JavaType(String)</c> and not <c>VARCHAR(2000)</c>.
+        /// Naming the class rather than picking a <c>SqlTypeName</c> and a precision is what keeps an
+        /// <c>ST_GEOG_</c> operator typed exactly as the <c>ST_</c> one it mirrors.
+        /// </remarks>
+        public static SqlReturnTypeInference Of(java.lang.Class clazz)
+        {
+            return new JavaReturnTypeInference(clazz);
+        }
+
+        /// <summary>
+        /// Returns <c>DOUBLE</c>.
+        /// </summary>
+        public static readonly SqlReturnTypeInference Double = Of((java.lang.Class)typeof(java.lang.Double));
+
+        /// <summary>
+        /// Returns <c>INTEGER</c>.
+        /// </summary>
+        public static readonly SqlReturnTypeInference Integer = Of((java.lang.Class)typeof(java.lang.Integer));
+
+        /// <summary>
+        /// Returns <c>BOOLEAN</c>.
+        /// </summary>
+        public static readonly SqlReturnTypeInference Boolean = Of((java.lang.Class)typeof(java.lang.Boolean));
+
+        /// <summary>
+        /// Returns <c>VARCHAR</c>.
+        /// </summary>
+        public static readonly SqlReturnTypeInference Text = Of((java.lang.Class)typeof(string));
+
+        /// <summary>
+        /// Returns <c>VARBINARY</c>.
+        /// </summary>
+        public static readonly SqlReturnTypeInference Binary = Of((java.lang.Class)typeof(org.apache.calcite.avatica.util.ByteString));
+
+        /// <summary>
         /// The half of <c>SqlReturnTypeInference</c> that is the same whatever the type is.
         /// </summary>
         /// <remarks>
@@ -56,6 +98,23 @@ namespace Apache.Calcite.Geography.Sql.Type
             public SqlReturnTypeInference orElse(SqlReturnTypeInference transform)
             {
                 return ReturnTypes.chain(this, transform);
+            }
+
+        }
+
+        sealed class JavaReturnTypeInference : ReturnTypeInference
+        {
+
+            readonly java.lang.Class clazz;
+
+            public JavaReturnTypeInference(java.lang.Class clazz)
+            {
+                this.clazz = clazz;
+            }
+
+            public override RelDataType inferReturnType(SqlOperatorBinding opBinding)
+            {
+                return opBinding.getTypeFactory().createJavaType(clazz);
             }
 
         }

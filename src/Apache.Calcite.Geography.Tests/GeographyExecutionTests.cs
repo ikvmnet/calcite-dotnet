@@ -42,7 +42,7 @@ namespace Apache.Calcite.Geography.Tests
         /// </summary>
         /// <param name="sql"></param>
         /// <returns></returns>
-        static List<object?[]> Run(string sql)
+        internal static List<object?[]> Run(string sql)
         {
             java.lang.Class.forName("org.apache.calcite.jdbc.Driver");
 

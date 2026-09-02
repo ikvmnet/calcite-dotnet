@@ -103,6 +103,30 @@ Both arities are Calcite's. The SRID a caller may name has to be 4326 and anythi
 | `ST_GEOG_INTERSECTS(GEOGRAPHY, GEOGRAPHY)` | any point in common |
 | `ST_GEOG_ISVALID(GEOGRAPHY)` | valid on the sphere |
 
+**Reading a geography.** Accessors, which read or rearrange coordinates without interpreting the space between them, so each is a delegation to the very JTS method Calcite's `ST_*` of that name calls.
+
+| | |
+| --- | --- |
+| ordinates | `ST_GEOG_X`, `ST_GEOG_Y`, `ST_GEOG_Z` |
+| bounds | `ST_GEOG_XMIN`, `ST_GEOG_XMAX`, `ST_GEOG_YMIN`, `ST_GEOG_YMAX`, `ST_GEOG_ZMIN`, `ST_GEOG_ZMAX` |
+| shape | `ST_GEOG_DIMENSION`, `ST_GEOG_COORDDIM`, `ST_GEOG_GEOMETRYTYPE`, `ST_GEOG_GEOMETRYTYPECODE`, `ST_GEOG_ISEMPTY`, `ST_GEOG_IS3D`, `ST_GEOG_ISCLOSED`, `ST_GEOG_SRID` |
+| counts | `ST_GEOG_NPOINTS`, `ST_GEOG_NUMPOINTS`, `ST_GEOG_NUMGEOMETRIES`, `ST_GEOG_NUMINTERIORRING`, `ST_GEOG_NUMINTERIORRINGS` |
+| parts | `ST_GEOG_STARTPOINT`, `ST_GEOG_ENDPOINT`, `ST_GEOG_POINTN`, `ST_GEOG_GEOMETRYN`, `ST_GEOG_EXTERIORRING`, `ST_GEOG_INTERIORRING`, `ST_GEOG_BOUNDARY`, `ST_GEOG_HOLES` |
+| comparison | `ST_GEOG_ORDERINGEQUALS` |
+
+`ST_GEOG_XMIN` and its four relatives are computed structurally and are wrong in the usual way for anything crossing the antimeridian, where the least longitude of a shape spanning the seam is not its westmost point. That is inherited from the planar reading rather than introduced here.
+
+**Every format, both ways.** A reader and a writer for each.
+
+| | reads | writes |
+| --- | --- | --- |
+| WKT | `ST_GEOG_GEOMFROMTEXT`, `ST_GEOG_GEOMFROMWKT` | `ST_GEOG_ASTEXT`, `ST_GEOG_ASWKT` |
+| EWKT | `ST_GEOG_GEOMFROMEWKT` | `ST_GEOG_ASEWKT` |
+| WKB | `ST_GEOG_GEOMFROMWKB` | `ST_GEOG_ASBINARY`, `ST_GEOG_ASWKB` |
+| EWKB | `ST_GEOG_GEOMFROMEWKB` | `ST_GEOG_ASEWKB` |
+| GeoJSON | `ST_GEOG_GEOMFROMGEOJSON` | `ST_GEOG_ASGEOJSON` |
+| GML | `ST_GEOG_GEOMFROMGML` | `ST_GEOG_ASGML` |
+
 Each answers `NULL` for a `NULL` argument.
 
 What these *mean* is what Calcite means, with the plane swapped for the sphere: `ST_Within` is `geom1.within(geom2)`, so `ST_GEOG_WITHIN` is the DE-9IM relation and not containment — a point on a polygon's boundary is not within it. `GeographyDifferentialTests` runs every one of them against Calcite's over shapes small enough that the two models must agree, which is what holds them to that.

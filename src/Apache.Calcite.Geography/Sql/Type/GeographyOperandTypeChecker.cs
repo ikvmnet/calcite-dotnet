@@ -168,6 +168,7 @@ namespace Apache.Calcite.Geography.Sql.Type
                 GeographyOperand.Geometry => GeographyTypes.IsGeometry(type),
                 GeographyOperand.Character => SqlTypeUtil.inCharFamily(type),
                 GeographyOperand.Numeric => SqlTypeUtil.isNumeric(type),
+                GeographyOperand.Binary => SqlTypeUtil.isBinary(type),
                 _ => false,
             };
         }
@@ -180,6 +181,7 @@ namespace Apache.Calcite.Geography.Sql.Type
                 GeographyOperand.Geometry => GeographyTypes.GeometryOf(typeFactory),
                 GeographyOperand.Character => typeFactory.createSqlType(SqlTypeName.VARCHAR),
                 GeographyOperand.Numeric => typeFactory.createSqlType(SqlTypeName.DOUBLE),
+                GeographyOperand.Binary => typeFactory.createSqlType(SqlTypeName.VARBINARY),
                 _ => throw new NotSupportedException($"No type for '{operand}'."),
             };
         }
@@ -192,6 +194,7 @@ namespace Apache.Calcite.Geography.Sql.Type
                 GeographyOperand.Geometry => "GEOMETRY",
                 GeographyOperand.Character => "CHARACTER",
                 GeographyOperand.Numeric => "NUMERIC",
+                GeographyOperand.Binary => "BINARY",
                 _ => throw new NotSupportedException($"No name for '{operand}'."),
             };
         }
