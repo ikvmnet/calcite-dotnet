@@ -62,6 +62,11 @@ namespace Apache.Calcite.Data.Internal
                 case "BINARY":
                 case "VARBINARY":
                     return typeof(byte[]);
+                // Calcite's runtime representation of a UUID is a java.util.UUID, whose rep is OBJECT
+                // like every class Avatica has no name of its own for, so the rep cannot say what this
+                // is and the SQL type name has to
+                case "UUID":
+                    return typeof(Guid);
                 case "TINYINT UNSIGNED":
                 case "UTINYINT":
                     return typeof(byte);

@@ -295,7 +295,8 @@ nothing else.
 provider type name — and maps each to a CLR type. The SQL type name takes precedence over the
 runtime representation for date, time and binary columns, because Calcite's `rep` there is the
 internal storage form (`int` days, `long` millis, `ByteString`) rather than what an ADO.NET consumer
-expects. Unsigned SQL types map to the unsigned CLR types. The JDBC ordinal takes precedence over
+expects, and for `UUID`, whose rep is `OBJECT` like every class Avatica has no name of its own for,
+so the rep cannot say what it is at all. Unsigned SQL types map to the unsigned CLR types. The JDBC ordinal takes precedence over
 both for a collection: Avatica puts the *component's* rep on an array type, so an `INTEGER ARRAY`
 reports `PRIMITIVE_INT` and would otherwise be read as an `int`; the answers are `int[]` and, for a
 struct, `object[]`. `GetRelType` reads the signature's `RelDataType` instead, and throws where there
