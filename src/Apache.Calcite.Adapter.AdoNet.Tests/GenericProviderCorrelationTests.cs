@@ -293,9 +293,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <para>
         /// The comparison runs on the server against <c>ID</c>, whose two values are 1 and 2: -56 is below
         /// both and 200 is above both, so the answer is one row where the sign survived the binding and
-        /// none where it did not. <c>C_TINYINT</c> cannot be the other side of it — comparing a
+        /// none where it did not. <c>C_TINYINT</c> cannot be the other side of it: ordering a
         /// <c>TINYINT</c> against a <c>UTINYINT</c> casts to an unsigned type, which the MSSQL dialect
-        /// writes as a bare <c>UNSIGNED</c> that T-SQL will not parse.
+        /// writes as a bare <c>UNSIGNED</c> that T-SQL will not parse — measured on this <c>&lt;</c>. The
+        /// equality form is written differently and does parse, so the limit is on the comparison and not
+        /// on the pair of types.
         /// </para>
         /// </remarks>
         /// <param name="provider"></param>

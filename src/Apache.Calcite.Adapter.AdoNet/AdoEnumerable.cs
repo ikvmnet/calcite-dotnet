@@ -247,10 +247,21 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="value"></param>
         /// <returns></returns>
         /// <remarks>
+        /// <para>
         /// A parameter value comes out of the plan in Calcite's representation, which is a boxed Java
         /// type. No ADO.NET provider knows what a <see cref="java.lang.Long"/> is, so it is unwrapped to
-        /// the .NET value it stands for. This is the inverse of what <see cref="AdoReaderUtil"/> does on
-        /// the way in.
+        /// the .NET value it stands for, roughly inverting what <see cref="AdoReaderUtil"/> does on the
+        /// way in. Roughly, because the type chosen is the narrowest one every provider will bind and not
+        /// the narrowest one that holds the value: an <c>sbyte</c>, a <c>ushort</c>, a <c>uint</c> and a
+        /// <c>ulong</c> are none of them bindable, so each widens.
+        /// </para>
+        /// <para>
+        /// This settles what the value is and nothing about what it is bound as.
+        /// <see cref="SetParameter"/> sets no <see cref="System.Data.DbType"/>, so the provider infers one
+        /// from the CLR type, and a cast the dialect wrote around the marker names Calcite's type rather
+        /// than the provider's — a <c>TINYINT</c> being signed in Calcite and unsigned on SQL Server.
+        /// Neither is decidable from a value.
+        /// </para>
         /// </remarks>
         static object? ToProviderValue(object? value)
         {
