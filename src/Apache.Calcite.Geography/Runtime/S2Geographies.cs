@@ -115,7 +115,11 @@ namespace Apache.Calcite.Geography.Runtime
         static bool IsValidLine(LineString line)
         {
             var vertices = ToPath(line);
-            if (vertices is null)
+
+            // a line of one distinct place is no line, which S2 does not mind and JTS does. The length is
+            // checked after the conversion because that is where a repeated coordinate is dropped, so
+            // LINESTRING(0 0, 0 0) arrives here as one vertex rather than two.
+            if (vertices is null || vertices.Length < 2)
                 return false;
 
             // the list overload is an instance method on this S2 release, so the polyline has to exist first;
@@ -416,19 +420,17 @@ namespace Apache.Calcite.Geography.Runtime
                     if (a.Dimension == 2)
                         return true;
 
-                    if (a.Dimension == 1)
-                    {
-                        foreach (var (p, q) in a.Edges)
-                            foreach (var middle in b.Pieces(p, q))
-                                if (b.ContainsInterior(middle))
-                                    return true;
-
-                        return false;
-                    }
-
+                    // every part of a, not only the parts of its own dimension: a collection of a point and a
+                    // line is one-dimensional, and it is within a polygon whose boundary its line runs along
+                    // as long as the point is inside, because the point is part of the interior of a too
                     foreach (var point in a.points)
                         if (b.ContainsInterior(point))
                             return true;
+
+                    foreach (var (p, q) in a.Edges)
+                        foreach (var middle in b.Pieces(p, q))
+                            if (b.ContainsInterior(middle))
+                                return true;
 
                     return false;
 
@@ -688,7 +690,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <returns></returns>
         static S2Point[]? ToPoints(Coordinate[] coordinates, int count)
         {
-            var points = new S2Point[count];
+            var points = new List<S2Point>(count);
 
             for (var i = 0; i < count; i++)
             {
@@ -696,10 +698,20 @@ namespace Apache.Calcite.Geography.Runtime
                 if (latLng.isValid() == false)
                     return null;
 
-                points[i] = latLng.toPoint();
+                var point = latLng.toPoint();
+
+                // A repeated coordinate is a zero-length edge, and S2 will not have one: S2Loop and
+                // S2Polyline both call themselves invalid over adjacent duplicates, which would take the area
+                // off a polygon that JTS and Calcite both consider perfectly valid — ToLoop would answer null
+                // and the geography would keep its rings and lose its polygon. JTS reads the repeat as
+                // notation rather than as geometry, and so does this.
+                if (points.Count > 0 && points[^1].equals(point))
+                    continue;
+
+                points.Add(point);
             }
 
-            return points;
+            return [.. points];
         }
 
         /// <summary>
@@ -737,11 +749,11 @@ namespace Apache.Calcite.Geography.Runtime
             if (count > 1 && coordinates[0].equals2D(coordinates[count - 1]))
                 count--;
 
-            if (count < 3)
-                return null;
-
             var vertices = ToPoints(coordinates, count);
-            if (vertices is null)
+
+            // after the conversion, because a repeated coordinate is dropped there and a ring written with
+            // one has fewer vertices than it has coordinates
+            if (vertices is null || vertices.Length < 3)
                 return null;
 
             var loop = new S2Loop(ToList(vertices));

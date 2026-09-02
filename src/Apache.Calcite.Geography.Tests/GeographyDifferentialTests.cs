@@ -62,6 +62,34 @@ namespace Apache.Calcite.Geography.Tests
             "POLYGON((0.01 0.01, 0.02 0.01, 0.02 0.02, 0.01 0.02, 0.01 0.01))",
             "POLYGON((0 0, 0.006 0, 0.006 0.006, 0 0.006, 0 0), (0.002 0.002, 0.004 0.002, 0.004 0.004, 0.002 0.004, 0.002 0.002))",
             "MULTIPOLYGON(((0 0, 0.002 0, 0.002 0.002, 0 0.002, 0 0)), ((0.004 0.004, 0.006 0.004, 0.006 0.006, 0.004 0.006, 0.004 0.004)))",
+            // two lines meeting end to end, which is the container a line is covered by in two pieces
+            "MULTILINESTRING((0 0, 0.002 0), (0.002 0, 0.004 0))",
+            // a line half inside a polygon and half out of it
+            "LINESTRING(0.002 0.002, 0.008 0.002)",
+            // a square meeting another only at a corner
+            "POLYGON((0.004 0.004, 0.006 0.004, 0.006 0.006, 0.004 0.006, 0.004 0.004))",
+            // dimensions mixed in one geography
+            "GEOMETRYCOLLECTION(POINT(0.001 0.001), LINESTRING(0.002 0, 0.004 0))",
+            // negative coordinates, where a sign carried the wrong way would show
+            "POINT(-0.001 -0.001)",
+            "POLYGON((-0.002 -0.002, 0.002 -0.002, 0.002 0.002, -0.002 0.002, -0.002 -0.002))",
+        ];
+
+        /// <summary>
+        /// Shapes that are not valid, for the one operation that has something to say about them.
+        /// </summary>
+        /// <remarks>
+        /// They are kept out of the pairwise set deliberately: what a relation means over an invalid geometry
+        /// is not defined by either model, so a disagreement there would say nothing.
+        /// </remarks>
+        static readonly string[] degenerate =
+        [
+            // a line that goes nowhere
+            "LINESTRING(0 0, 0 0)",
+            // a bow tie, whose edges cross
+            "POLYGON((0 0, 0.004 0.004, 0.004 0, 0 0.004, 0 0))",
+            // a ring with a repeated vertex
+            "POLYGON((0 0, 0.004 0, 0.004 0, 0.004 0.004, 0 0.004, 0 0))",
         ];
 
         static Geometry Wkt(string wkt)
@@ -74,9 +102,22 @@ namespace Apache.Calcite.Geography.Tests
         /// </summary>
         /// <param name="geodesic"></param>
         /// <param name="planar"></param>
-        static void Differ(Func<Geometry, Geometry, java.lang.Boolean?> geodesic, Func<Geometry, Geometry, bool> planar)
+        /// <param name="refusals">How many of the pairs Calcite is expected to refuse to answer.</param>
+        /// <remarks>
+        /// A pair Calcite throws on has no answer to compare against and is skipped, but the number of them
+        /// is asserted rather than left open: a change that made Calcite refuse everything would otherwise
+        /// turn this suite green by emptying it. What is refused is a geometry collection reaching
+        /// <c>Geometry.relate</c>, which calls <c>checkNotGeometryCollection</c> — a multi-point, a
+        /// multi-line and a multi-polygon are not collections by that test, and <c>contains</c> does not
+        /// always reach <c>relate</c>, since it answers a rectangular container through
+        /// <c>RectangleContains</c> first. So it is particular pairs rather than particular shapes, and
+        /// <see cref="ShouldAnswerWithinOverACollectionWhereCalciteRefuses"/> pins what this convention says
+        /// about one of them.
+        /// </remarks>
+        static void Differ(Func<Geometry, Geometry, java.lang.Boolean?> geodesic, Func<Geometry, Geometry, bool> planar, int refusals)
         {
             var differences = new List<string>();
+            var refused = 0;
 
             foreach (var left in shapes)
             {
@@ -85,8 +126,19 @@ namespace Apache.Calcite.Geography.Tests
                     var a = Wkt(left);
                     var b = Wkt(right);
 
+                    bool theirs;
+
+                    try
+                    {
+                        theirs = planar(a, b);
+                    }
+                    catch (java.lang.IllegalArgumentException)
+                    {
+                        refused++;
+                        continue;
+                    }
+
                     var ours = geodesic(a, b)!.booleanValue();
-                    var theirs = planar(a, b);
 
                     if (ours != theirs)
                         differences.Add($"{left} / {right}: ours {ours}, Calcite {theirs}");
@@ -94,18 +146,52 @@ namespace Apache.Calcite.Geography.Tests
             }
 
             differences.Should().BeEmpty(string.Join("\n", differences));
+            refused.Should().Be(refusals);
         }
 
         [TestMethod]
         public void ShouldAgreeOnWithin()
         {
-            Differ(GeographyFunctions.Within, SpatialTypeFunctions.ST_Within);
+            Differ(GeographyFunctions.Within, SpatialTypeFunctions.ST_Within, refusals: 6);
         }
 
         [TestMethod]
         public void ShouldAgreeOnIntersects()
         {
-            Differ(GeographyFunctions.Intersects, SpatialTypeFunctions.ST_Intersects);
+            Differ(GeographyFunctions.Intersects, SpatialTypeFunctions.ST_Intersects, refusals: 0);
+        }
+
+        /// <summary>
+        /// A geometry collection is answered rather than refused.
+        /// </summary>
+        /// <remarks>
+        /// A deliberate divergence, and of the same kind as the one in <c>GeographyFunctions.DWithin</c>:
+        /// Calcite cannot answer this at all, and reproducing an inability buys nothing. The container is the
+        /// donut rather than a square because <c>Geometry.contains</c> answers a rectangular one through
+        /// <c>RectangleContains</c> without reaching the relate that refuses collections — the refusal is a
+        /// property of the pair and not of the collection.
+        ///
+        /// <para>The collection is a point inside the donut and a line lying along its southern edge, so
+        /// every part of it lies in the donut, and the interiors meet at the point even though the line only
+        /// touches the boundary. That is the answer JTS would give if its relate handled mixed
+        /// dimensions.</para>
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAnswerWithinOverACollectionWhereCalciteRefuses()
+        {
+            var collection = Wkt("GEOMETRYCOLLECTION(POINT(0.001 0.001), LINESTRING(0.002 0, 0.004 0))");
+            var donut = Wkt("POLYGON((0 0, 0.006 0, 0.006 0.006, 0 0.006, 0 0), (0.002 0.002, 0.004 0.002, 0.004 0.004, 0.002 0.004, 0.002 0.002))");
+
+            var refused = () => SpatialTypeFunctions.ST_Within(collection, donut);
+            refused.Should().Throw<java.lang.IllegalArgumentException>().WithMessage("*GeometryCollection*");
+
+            GeographyFunctions.Within(collection, donut)!.booleanValue().Should().BeTrue();
+
+            // the line alone touches only the boundary, so its interior never meets the interior of the
+            // donut and it is not within it — which Calcite can answer, and does answer the same way
+            var line = Wkt("LINESTRING(0.002 0, 0.004 0)");
+            GeographyFunctions.Within(line, donut)!.booleanValue().Should().BeFalse();
+            SpatialTypeFunctions.ST_Within(line, donut).Should().BeFalse();
         }
 
         [TestMethod]
@@ -113,7 +199,7 @@ namespace Apache.Calcite.Geography.Tests
         {
             var differences = new List<string>();
 
-            foreach (var shape in shapes)
+            foreach (var shape in System.Linq.Enumerable.Concat(shapes, degenerate))
             {
                 var geography = Wkt(shape);
                 var ours = GeographyFunctions.IsValid(geography)!.booleanValue();

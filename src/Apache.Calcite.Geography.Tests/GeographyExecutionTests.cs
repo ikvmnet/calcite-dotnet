@@ -123,6 +123,64 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
+        /// Every operator the table declares, run.
+        /// </summary>
+        /// <remarks>
+        /// Declaring an operator and running one are different things, and the gap between them is where a
+        /// body whose parameters cannot be reached from generated code hides — the <c>BigDecimal</c> that
+        /// stops Calcite's own <c>ST_DWITHIN</c> being called with <c>2.0</c> is exactly that shape of defect,
+        /// and it was found by running rather than by declaring. So each of the twelve declarations is called
+        /// here at least once, and the ones that answer a geography are wrapped in one that answers a value a
+        /// result set can carry.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldRunEveryOperator()
+        {
+            var cases = new (string Sql, object Expected)[]
+            {
+                ("ST_GEOG_ISVALID(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'))", true),
+                ("ST_GEOG_ISVALID(ST_GEOG_GEOMFROMWKT('POINT(0 0)'))", true),
+                ("ST_GEOG_ISVALID(ST_GEOG_GEOMFROMTEXT('POINT(0 0)', 4326))", true),
+                ("ST_GEOG_ISVALID(ST_GEOG_GEOMFROMWKT('POINT(0 0)', 4326))", true),
+                ("ST_GEOG_ISVALID(ST_GEOG_GEOMFROMGEOJSON('{\"type\":\"Point\",\"coordinates\":[0,0]}'))", true),
+                ("ST_GEOG_ISVALID(ST_GEOM_ASGEOG(ST_GEOMFROMTEXT('POINT(0 0)')))", true),
+                ("ST_ASTEXT(ST_GEOG_ASGEOM(ST_GEOG_GEOMFROMTEXT('POINT(0 0)')))", "POINT (0 0)"),
+                ("ST_GEOG_DISTANCE(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), ST_GEOG_GEOMFROMTEXT('POINT(0 0)'))", 0.0),
+                ("ST_GEOG_DWITHIN(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), ST_GEOG_GEOMFROMTEXT('POINT(1 0)'), 200000.0)", true),
+                ("ST_GEOG_WITHIN(ST_GEOG_GEOMFROMTEXT('POINT(1 1)'), ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
+                ("ST_GEOG_INTERSECTS(ST_GEOG_GEOMFROMTEXT('POINT(1 1)'), ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
+                ("ST_GEOG_ISVALID(ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
+            };
+
+            var failures = new List<string>();
+
+            foreach (var (sql, expected) in cases)
+            {
+                try
+                {
+                    var rows = Run($"SELECT {sql}");
+                    var answer = rows[0][0];
+
+                    var same = expected switch
+                    {
+                        bool b => answer is java.lang.Boolean j && j.booleanValue() == b,
+                        double d => answer is java.lang.Number n && Math.Abs(n.doubleValue() - d) < 1e-6,
+                        _ => Equals(answer?.ToString(), expected.ToString()),
+                    };
+
+                    if (same == false)
+                        failures.Add($"{sql}: answered {answer}, wanted {expected}");
+                }
+                catch (Exception e)
+                {
+                    failures.Add($"{sql}: {e.Message}");
+                }
+            }
+
+            failures.Should().BeEmpty(string.Join("\n", failures));
+        }
+
+        /// <summary>
         /// A table of two rows, each holding a geography a degree apart on the equator.
         /// </summary>
         sealed class GeographyTable : AbstractTable, ScannableTable

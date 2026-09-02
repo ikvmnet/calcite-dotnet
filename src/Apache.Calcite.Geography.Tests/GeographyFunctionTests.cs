@@ -220,6 +220,80 @@ namespace Apache.Calcite.Geography.Tests
             org.apache.calcite.runtime.SpatialTypeFunctions.ST_Within(point, polygon).Should().BeFalse();
         }
 
+        /// <summary>
+        /// Two points either side of the antimeridian are a fifth of a degree apart, not three hundred and
+        /// fifty-nine and four fifths.
+        /// </summary>
+        /// <remarks>
+        /// The antimeridian is one of the four places the design issue names as having to be measured against
+        /// a live store before any of this may recheck a pushed-down predicate. What is held here is the
+        /// nearer half of that: that this convention is on the right side of the seam at all, and that the
+        /// planar reading is not merely a different number but a different journey.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldMeasureAcrossTheAntimeridian()
+        {
+            var west = Wkt("POINT(179.9 0)");
+            var east = Wkt("POINT(-179.9 0)");
+
+            GeographyFunctions.Distance(west, east)!.doubleValue().Should().BeApproximately(0.2 * Degree, 0.001);
+            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(west, east).Should().BeApproximately(359.8, 1e-9);
+        }
+
+        /// <summary>
+        /// The shortest way between two places on opposite meridians near a pole is over the pole.
+        /// </summary>
+        [TestMethod]
+        public void ShouldMeasureOverThePole()
+        {
+            var here = Wkt("POINT(0 89.9)");
+            var there = Wkt("POINT(180 89.9)");
+
+            GeographyFunctions.Distance(here, there)!.doubleValue().Should().BeApproximately(0.2 * Degree, 0.001);
+            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(here, there).Should().BeApproximately(180, 1e-9);
+        }
+
+        /// <summary>
+        /// The pole has a longitude in the coordinates and no longitude on the Earth, so every spelling of it
+        /// is the same place.
+        /// </summary>
+        [TestMethod]
+        public void ShouldTreatEverySpellingOfThePoleAsOnePlace()
+        {
+            var pole = Wkt("POINT(0 90)");
+            var alsoPole = Wkt("POINT(180 90)");
+
+            GeographyFunctions.Distance(pole, alsoPole)!.doubleValue().Should().Be(0);
+            GeographyFunctions.Intersects(pole, alsoPole)!.booleanValue().Should().BeTrue();
+            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(pole, alsoPole).Should().Be(180);
+        }
+
+        /// <summary>
+        /// A polygon written across the antimeridian, where the two readings are not merely different but
+        /// exact inversions of one another.
+        /// </summary>
+        /// <remarks>
+        /// The ring runs from longitude 179 east to -179, which on the sphere is a two-degree box straddling
+        /// the seam and in the plane is a three-hundred-and-fifty-eight-degree band that is everything except
+        /// that box. So each of these three points is inside one polygon and outside the other, and there is
+        /// no tolerance and no reprojection that reconciles them. This is why the two readings need types
+        /// that cannot be confused.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldReadAPolygonAcrossTheAntimeridianInsideOutFromCalcite()
+        {
+            var box = Wkt("POLYGON((179 -1, -179 -1, -179 1, 179 1, 179 -1))");
+
+            foreach (var wkt in new[] { "POINT(179.5 0)", "POINT(-179.5 0)" })
+            {
+                GeographyFunctions.Within(Wkt(wkt), box)!.booleanValue().Should().BeTrue(wkt);
+                org.apache.calcite.runtime.SpatialTypeFunctions.ST_Within(Wkt(wkt), box).Should().BeFalse(wkt);
+            }
+
+            GeographyFunctions.Within(Wkt("POINT(0 0)"), box)!.booleanValue().Should().BeFalse();
+            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Within(Wkt("POINT(0 0)"), box).Should().BeTrue();
+        }
+
         [TestMethod]
         public void ShouldAnswerIsValid()
         {

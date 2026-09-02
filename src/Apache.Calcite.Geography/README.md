@@ -115,6 +115,8 @@ One model rather than two, deliberately. An ellipsoidal distance from Geographic
 
 The difference this makes is not a scale factor. The northern edge of `POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))` runs between two points at ten degrees north: as a straight line in longitude and latitude it stays on that parallel, and as a great circle it reaches about 10° 2′ at the midpoint. A point between the two is inside one polygon and outside the other — not a different distance, a different answer.
 
+At the antimeridian the two readings are exact inversions. `POLYGON((179 -1, -179 -1, -179 1, 179 1, 179 -1))` is a two-degree box straddling the seam on the sphere, and in the plane it is the 358-degree band that is everything except that box: every point is inside one and outside the other. The same seam turns a fifth of a degree into 359.8, and near a pole the shortest way between opposite meridians runs over the pole rather than 180 degrees around.
+
 The pairwise operations are quadratic in the vertex counts. S2 has an indexed form of these queries and this does not use it yet.
 
 ## What is not here
