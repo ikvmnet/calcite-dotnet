@@ -10,8 +10,12 @@ using java.lang;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using org.apache.calcite.runtime;
+using org.apache.calcite.runtime.rtti;
 
 using J = org.apache.calcite.linq4j.tree;
+using JavaTypeFactoryImpl = org.apache.calcite.jdbc.JavaTypeFactoryImpl;
+using RelDataTypeFactory = org.apache.calcite.rel.type.RelDataTypeFactory;
+using SqlTypeName = org.apache.calcite.sql.type.SqlTypeName;
 
 using Apache.Calcite.Extensions.Runtime;
 using Apache.Calcite.Extensions;
@@ -370,6 +374,62 @@ namespace Apache.Calcite.Tests.Tree
             var translated = translator.Translate(J.Expressions.arrayIndex(row, J.Expressions.constant(Integer.valueOf(1))));
 
             Expression.Lambda<Func<object[], object>>(translated, target).Compile()(["a", "b"]).Should().Be("b");
+        }
+
+        /// <summary>
+        /// A Java varargs call passes its trailing arguments individually and lets the compiler collect
+        /// them into an array. Janino does that collecting; an expression tree has no step that would, so
+        /// it is the translator's.
+        /// </summary>
+        /// <remarks>
+        /// These drive the generator that actually reaches it rather than a tree written to look like one.
+        /// <c>CAST(x AS VARIANT)</c> compiles the payload's type into the plan through
+        /// <c>RuntimeTypeInformation.createExpression</c>, and the constructor that builds one for a
+        /// parameterised type is varargs — which is why no variant of a collection could be planned under
+        /// either convention.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldTranslateVarArgsConstructorGivenOneArgument()
+        {
+            var factory = new JavaTypeFactoryImpl();
+            var type = factory.createArrayType(factory.createSqlType(SqlTypeName.INTEGER), -1);
+
+            // new GenericSqlTypeRtti(ARRAY, new BasicSqlTypeRtti(INTEGER)): two arguments against two
+            // parameters, the second of them a RuntimeTypeInformation[], which coercion refused
+            var rtti = Run<GenericSqlTypeRtti>(RuntimeTypeInformation.createExpression(type));
+
+            rtti.getArgumentCount().Should().Be(1);
+            rtti.getTypeArgument(0).getTypeName().Should().BeSameAs(RuntimeTypeInformation.RuntimeSqlTypeName.INTEGER);
+        }
+
+        [TestMethod]
+        public void ShouldTranslateVarArgsConstructorGivenSeveralArguments()
+        {
+            var factory = new JavaTypeFactoryImpl();
+            var type = factory.createMapType(factory.createSqlType(SqlTypeName.VARCHAR), factory.createSqlType(SqlTypeName.INTEGER));
+
+            // new GenericSqlTypeRtti(MAP, key, value): three arguments against two parameters, which did
+            // not reach the coercion at all -- no constructor has that arity
+            var rtti = Run<GenericSqlTypeRtti>(RuntimeTypeInformation.createExpression(type));
+
+            rtti.getArgumentCount().Should().Be(2);
+            rtti.getTypeArgument(0).getTypeName().Should().BeSameAs(RuntimeTypeInformation.RuntimeSqlTypeName.VARCHAR);
+            rtti.getTypeArgument(1).getTypeName().Should().BeSameAs(RuntimeTypeInformation.RuntimeSqlTypeName.INTEGER);
+        }
+
+        /// <summary>
+        /// The elements are converted on the way into the array, which a row's RTTI is what needs: its
+        /// arguments are <c>AbstractMap.SimpleEntry</c> where the array is of <c>Map.Entry</c>.
+        /// </summary>
+        [TestMethod]
+        public void ShouldConvertTheElementsOfAVarArgsArray()
+        {
+            var factory = new JavaTypeFactoryImpl();
+            var type = new RelDataTypeFactory.Builder(factory).add("A", SqlTypeName.INTEGER).add("B", SqlTypeName.VARCHAR).build();
+
+            var rtti = Run<RowSqlTypeRtti>(RuntimeTypeInformation.createExpression(type));
+
+            rtti.size().Should().Be(2);
         }
 
     }
