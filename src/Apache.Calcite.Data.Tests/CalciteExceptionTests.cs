@@ -37,9 +37,7 @@ namespace Apache.Calcite.Data.Tests
         /// <summary>
         /// The JDK's reflection wrappers keep their cause out of <see cref="Exception.InnerException"/>:
         /// each calls <c>super((Throwable) null)</c> and overrides <c>getCause()</c> instead, so a .NET
-        /// report of one names nothing at all. This is the shape a CI failure of <c>CalciteDdlTests</c>
-        /// arrived in — "Failed to execute Calcite statement." over an
-        /// <c>UndeclaredThrowableException</c> with no message and no cause.
+        /// report of one carries no message and no cause.
         /// </summary>
         [Theory]
         [MemberData(nameof(Cause_hiding_wrappers))]

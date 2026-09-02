@@ -10,28 +10,25 @@ namespace Apache.Calcite.Data.Internal
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Three of the JDK's own wrappers withhold their cause from the constructor that would record it.
+    /// Three of the JDK's wrappers withhold their cause from the constructor that records it.
     /// <c>UndeclaredThrowableException</c>, <c>InvocationTargetException</c> and
-    /// <c>ExceptionInInitializerError</c> each call <c>super((Throwable) null)</c> — the comment upstream
-    /// reads "Disallow initCause" — keep the throwable in a field of their own, and override
-    /// <c>getCause()</c> to answer that field. IKVM carries a <c>Throwable</c>'s cause as
-    /// <see cref="Exception.InnerException"/>, which that constructor left null, and the override is a Java
-    /// method no .NET reporter consults. Measured: each of the three answers an empty
+    /// <c>ExceptionInInitializerError</c> each call <c>super((Throwable) null)</c>, keep the throwable in a
+    /// field of their own, and override <c>getCause()</c> to answer it. IKVM carries a <c>Throwable</c>'s
+    /// cause as <see cref="Exception.InnerException"/>, which that constructor leaves null, and the override
+    /// is a Java method no .NET reporter consults. Measured: each of the three answers an empty
     /// <see cref="Exception.Message"/> and a null <see cref="Exception.InnerException"/> while
     /// <c>getCause()</c> holds the reason, and a plain <c>RuntimeException(message, cause)</c> answers both.
     /// </para>
     /// <para>
-    /// What that costs is the whole of a diagnosis. A CI run of <c>CalciteDdlTests</c> failed with
-    /// "Failed to execute Calcite statement." over a bare <c>java.lang.reflect.UndeclaredThrowableException</c>
-    /// — no message and no cause — raised where Calcite's <c>Resources</c> proxy builds
-    /// <c>sQLFeature_E101_03</c>. That handler declares four checked exceptions the resource interface does
-    /// not, so the proxy converts whichever one escaped into the wrapper; which of the four it was is the
-    /// entire answer, and it was not in the log.
+    /// So a report of one of those names nothing at all, and the reason is on the object the whole time.
+    /// Calcite reaches all three: its <c>Resources</c> proxy turns whichever of the four checked exceptions
+    /// its handler declares into an <c>UndeclaredThrowableException</c>, and which one it was is the
+    /// diagnosis.
     /// </para>
     /// <para>
-    /// The test for it is exact rather than a list of class names: a <c>Throwable</c> holding a cause that
-    /// its own <see cref="Exception.InnerException"/> does not. That is the same condition for any wrapper
-    /// written the same way, including ones added later.
+    /// The test is the condition rather than a list of class names — a <c>Throwable</c> holding a cause that
+    /// its own <see cref="Exception.InnerException"/> does not — so a wrapper written the same way is
+    /// covered without being named.
     /// </para>
     /// </remarks>
     static class JavaCauses
@@ -95,7 +92,7 @@ namespace Apache.Calcite.Data.Internal
         /// <remarks>
         /// <c>Throwable.toString</c> is the class and the message and nothing else, and IKVM answers the
         /// same from <see cref="object.ToString"/> — measured. <see cref="Exception.ToString"/> is not: it
-        /// carries the stack trace, which has no place in a message, so a cause that reached here as a CLR
+        /// carries the stack trace, which has no place in a message, so a cause that reaches here as a CLR
         /// exception is written out rather than asked.
         /// </remarks>
         static string Describe(Exception exception)
