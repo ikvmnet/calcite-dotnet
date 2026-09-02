@@ -280,6 +280,40 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
+        /// Correlating on a signed <c>TINYINT</c>, which carries its sign to the provider.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The outer row is a <c>VALUES</c> because no SQL Server column can be one: the server's own
+        /// <c>tinyint</c> is unsigned, maps to <c>UTINYINT</c>, and is covered above as
+        /// <c>C_TINYINT</c>. Calcite's <c>TINYINT</c> is signed and holds its value in a
+        /// <c>java.lang.Byte</c>, whose <c>byteValue()</c> under IKVM answers an unsigned CLR
+        /// <see cref="byte"/> — so -56 binds as 200 unless the sign is carried out of it.
+        /// </para>
+        /// <para>
+        /// The comparison runs on the server against <c>ID</c>, whose two values are 1 and 2: -56 is below
+        /// both and 200 is above both, so the answer is one row where the sign survived the binding and
+        /// none where it did not. <c>C_TINYINT</c> cannot be the other side of it — comparing a
+        /// <c>TINYINT</c> against a <c>UTINYINT</c> casts to an unsigned type, which the MSSQL dialect
+        /// writes as a bare <c>UNSIGNED</c> that T-SQL will not parse.
+        /// </para>
+        /// </remarks>
+        /// <param name="provider"></param>
+        [TestMethod]
+        [DataRow(SqlClient)]
+        [DataRow(Odbc)]
+        [DataRow(OleDb)]
+        public void CorrelatingOnASignedTinyIntKeepsItsSign(string provider)
+        {
+            CollectionAssert.AreEqual(
+                new[] { "-56" },
+                CorrelatedRows(provider, """
+                    SELECT V.X FROM (VALUES (CAST(-56 AS TINYINT))) AS V(X)
+                    WHERE EXISTS (SELECT 1 FROM ADO.TYPES T WHERE V.X < T.ID)
+                    """));
+        }
+
+        /// <summary>
         /// Correlating across a cast to <c>UUID</c>, which puts the type name into the generated SQL as
         /// well as a <c>java.util.UUID</c> into the parameter.
         /// </summary>

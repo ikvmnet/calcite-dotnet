@@ -258,7 +258,12 @@ namespace Apache.Calcite.Adapter.AdoNet
             {
                 null => null,
                 java.lang.Boolean b => b.booleanValue(),
-                java.lang.Byte b => b.byteValue(),
+                // Java's byte is signed and IKVM's byte is not, so byteValue() answers a CLR byte
+                // holding the two's complement bits, and a TINYINT of -56 would bind as 200.
+                // shortValue() sign-extends instead, and short is the narrowest CLR type every
+                // provider binds: SqlClient refuses an sbyte outright, "The parameter data type of
+                // SByte is invalid", the same wall the unsigned types below run into
+                java.lang.Byte b => b.shortValue(),
                 java.lang.Short s => s.shortValue(),
                 java.lang.Integer i => i.intValue(),
                 java.lang.Long l => l.longValue(),
