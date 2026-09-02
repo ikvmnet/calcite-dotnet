@@ -96,6 +96,8 @@ namespace Apache.Calcite.Geography.Runtime
                     return line.isEmpty() || IsValidLine(line);
                 case Polygon polygon:
                     return polygon.isEmpty() || IsValidPolygon(polygon);
+                case MultiPolygon multi:
+                    return multi.isEmpty() || IsValidPolygonSet(multi);
                 case GeometryCollection collection:
                     for (var i = 0; i < collection.getNumGeometries(); i++)
                         if (IsValid(collection.getGeometryN(i)) == false)
@@ -147,6 +149,122 @@ namespace Apache.Calcite.Geography.Runtime
             }
 
             return S2Polygon.isValid(loops);
+        }
+
+        /// <summary>
+        /// Returns whether the parts of a multi-polygon are each valid and do not overlap one another.
+        /// </summary>
+        /// <param name="multi"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Two things validating the parts one at a time cannot see, and JTS checks both. The interiors of
+        /// the parts may not meet, so two overlapping squares are an invalid multi-polygon however valid each
+        /// square is — handing every ring of every part to S2 at once answers that, because two overlapping
+        /// shells are two loops that cross. And the parts may touch at only finitely many points, so two
+        /// squares sharing a whole edge are invalid as well even though their interiors never meet; that one
+        /// S2 has no opinion about and <see cref="SharesAnEdge"/> answers.
+        ///
+        /// <para>A geometry collection is held to neither, and neither does JTS hold one to them — its parts
+        /// are validated separately. That is why this case sits above the collection case rather than
+        /// replacing it.</para>
+        /// </remarks>
+        static bool IsValidPolygonSet(MultiPolygon multi)
+        {
+            var loops = new java.util.ArrayList();
+            var parts = new List<S2Geographies>();
+
+            for (var i = 0; i < multi.getNumGeometries(); i++)
+            {
+                if (multi.getGeometryN(i) is not Polygon part)
+                    return false;
+
+                if (part.isEmpty())
+                    continue;
+
+                if (IsValidPolygon(part) == false)
+                    return false;
+
+                var shell = ToLoop(part.getExteriorRing());
+                if (shell is null)
+                    return false;
+
+                loops.add(shell);
+
+                for (var j = 0; j < part.getNumInteriorRing(); j++)
+                {
+                    var hole = ToLoop(part.getInteriorRingN(j));
+                    if (hole is null)
+                        return false;
+
+                    loops.add(hole);
+                }
+
+                parts.Add(Of(part));
+            }
+
+            if (loops.isEmpty())
+                return true;
+
+            if (S2Polygon.isValid(loops) == false)
+                return false;
+
+            for (var i = 0; i < parts.Count; i++)
+                for (var j = i + 1; j < parts.Count; j++)
+                    if (Separate(parts[i], parts[j]) == false)
+                        return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Returns whether two parts of a multi-polygon are separate enough to belong to one.
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Two rules of the standard, and one predicate because either failing makes the same answer. The
+        /// interiors may not meet, which the boundary of one running through the interior of the other
+        /// reports — including the case a whole part sits inside another, which nothing else here would see,
+        /// because <c>S2Polygon.init</c> works out nesting and reads a shell inside a shell as a hole rather
+        /// than as an overlap. And the parts may touch at finitely many points only, which is
+        /// <see cref="SharesAnEdge"/>.
+        /// </remarks>
+        static bool Separate(S2Geographies a, S2Geographies b)
+        {
+            foreach (var (p, q) in a.RingEdges)
+                foreach (var middle in b.Pieces(p, q))
+                    if (b.ContainsInterior(middle))
+                        return false;
+
+            foreach (var (p, q) in b.RingEdges)
+                foreach (var middle in a.Pieces(p, q))
+                    if (a.ContainsInterior(middle))
+                        return false;
+
+            return SharesAnEdge(a, b) == false;
+        }
+
+        /// <summary>
+        /// Returns whether two geographies have a stretch of boundary in common, rather than meeting at
+        /// points.
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Every edge of one is cut wherever the other meets it, and a piece whose middle lies on the other
+        /// is a piece that lies on it whole — which is a stretch of shared boundary and not a touch. Two
+        /// squares sharing a corner have no such piece; two sharing a side have one.
+        /// </remarks>
+        static bool SharesAnEdge(S2Geographies a, S2Geographies b)
+        {
+            foreach (var (p, q) in a.Edges)
+                foreach (var middle in b.Pieces(p, q))
+                    if (b.OnEdge(middle))
+                        return true;
+
+            return false;
         }
 
         readonly List<S2Point> points = [];
@@ -206,6 +324,11 @@ namespace Apache.Calcite.Geography.Runtime
         /// real edge that a distance or an intersection can be nearest to.
         /// </remarks>
         public IEnumerable<(S2Point, S2Point)> Edges => EdgesOf(Paths);
+
+        /// <summary>
+        /// Every edge of every ring, which is the whole boundary of the areal part.
+        /// </summary>
+        public IEnumerable<(S2Point, S2Point)> RingEdges => EdgesOf(rings);
 
         IEnumerable<S2Point[]> Paths
         {
@@ -396,10 +519,17 @@ namespace Apache.Calcite.Geography.Runtime
                     if (b.Contains(middle) == false)
                         return false;
 
-            // the boundary of a says nothing about a hole of b lying wholly inside a: no edge of a goes near
-            // one, so the areal parts have to be compared as areas rather than as boundaries
-            if (a.polygon is not null && (b.polygon is null || Encloses(b.polygon, a.polygon) == false))
-                return false;
+            // The boundary of a says nothing about a hole of b lying wholly inside a: no edge of a goes near
+            // one. Any part of a outside b sits in a region bounded by a ring of b, so if a is not within b
+            // then a ring of b runs through the interior of a. Cutting each of those edges wherever a meets
+            // it and testing the middles decides it: a piece is wholly inside a, wholly outside it, or wholly
+            // on its boundary. Testing the vertices of those rings instead is not enough and looks like it is
+            // — a hole can have every one of its corners on the boundary of a and still lie inside it.
+            if (a.polygon is not null)
+                foreach (var (p, q) in b.RingEdges)
+                    foreach (var middle in a.Pieces(p, q))
+                        if (a.ContainsInterior(middle))
+                            return false;
 
             return MeetsInterior(a, b);
         }
@@ -416,9 +546,11 @@ namespace Apache.Calcite.Geography.Runtime
             switch (b.Dimension)
             {
                 case 2:
-                    // an areal part of a lies in b and has interior of its own, so the two interiors meet
+                    // Not "a has area, so the interiors meet". Every point of a is in b by here, but a can be
+                    // exactly a hole of b — its whole boundary on the boundary of b, its whole interior
+                    // outside b — and nothing that walks boundaries can tell that from a being inside.
                     if (a.Dimension == 2)
-                        return true;
+                        return a.polygon is not null && b.polygon is not null && Overlaps(a.polygon, b.polygon);
 
                     // every part of a, not only the parts of its own dimension: a collection of a point and a
                     // line is one-dimensional, and it is within a polygon whose boundary its line runs along
@@ -649,26 +781,23 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// Returns whether one polygon covers another, boundary sharing allowed.
+        /// Returns whether two polygons have area in common, rather than only boundary.
         /// </summary>
-        /// <param name="outer"></param>
-        /// <param name="inner"></param>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
         /// <returns></returns>
         /// <remarks>
-        /// <c>S2Polygon.contains</c> alone will not do. It is strict about a shared boundary, so two squares
-        /// meeting the corners of a hole from opposite sides are not contained by the polygon they sit in,
-        /// though every point of them is. Taking the difference answers the question that was asked — is
-        /// there any part of the inner polygon outside the outer one — and <c>contains</c> is kept in front
-        /// of it because it settles the ordinary nested case without building a polygon.
+        /// The area of the intersection and not whether it is empty. S2 snaps while it intersects, so two
+        /// polygons that merely share a boundary can leave a sliver behind and an emptiness test would call
+        /// that an overlap. A sliver is the square of the snap radius, around a millionth of a millionth of
+        /// what the smallest real overlap here would be, so a threshold relative to the area of
+        /// <paramref name="a"/> separates them by twenty orders of magnitude rather than by a guess.
         /// </remarks>
-        static bool Encloses(S2Polygon outer, S2Polygon inner)
+        static bool Overlaps(S2Polygon a, S2Polygon b)
         {
-            if (outer.contains(inner))
-                return true;
-
-            var difference = new S2Polygon();
-            difference.initToDifference(inner, outer);
-            return difference.isEmpty();
+            var intersection = new S2Polygon();
+            intersection.initToIntersection(a, b);
+            return intersection.getArea() > a.getArea() * 1e-9;
         }
 
         static bool Near(S2Point a, S2Point b)

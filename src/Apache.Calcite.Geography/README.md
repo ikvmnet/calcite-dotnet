@@ -119,6 +119,8 @@ At the antimeridian the two readings are exact inversions. `POLYGON((179 -1, -17
 
 The pairwise operations are quadratic in the vertex counts. S2 has an indexed form of these queries and this does not use it yet.
 
+The relations are this package's own rather than a library's. `S2BooleanOperation` would settle `ST_GEOG_WITHIN` by construction, and it cannot be had: the S2 published to Maven Central is the 2021 release, which does not have it, and the current source is compiled to Java 11, which IKVM does not read. What stands in for it is the size of the oracle — `GeographyDifferentialTests` over hand-written shapes, and `GeographyRandomDifferentialTests` over thirty thousand generated pairs a run, both answered by Calcite. Four defects in the relations were found by the generated half after the hand-written half was green.
+
 ## What is not here
 
 - The remaining ~120 declarations. The full mapping is in [the design issue](https://github.com/ikvmnet/calcite-dotnet/issues/86).
