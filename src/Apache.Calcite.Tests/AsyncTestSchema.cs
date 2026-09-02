@@ -97,6 +97,38 @@ namespace Apache.Calcite.Tests
         ];
 
         /// <summary>
+        /// The values a document store puts behind an ANY column — a GUID, a timestamp and a number, each
+        /// written the way JSON writes it.
+        /// </summary>
+        /// <remarks>
+        /// The same rows as <c>ClrEnumerableDifferentialTests.CastsTable</c>, whose remarks say what a cast
+        /// out of ANY actually does. This convention reaches the same generator, and the point of running
+        /// the queries here is that it keeps reaching it: the failure that raised the question was in
+        /// <c>ClrAsyncEnumerableDefaults.CalcRows</c>.
+        /// </remarks>
+        public static readonly object?[][] Casts =
+        [
+            [java.lang.Integer.valueOf(1), "11111111-1111-1111-1111-111111111111", "2026-01-01 00:00:00", java.lang.Long.valueOf(1767225600000L), "42"],
+            [java.lang.Integer.valueOf(2), "22222222-2222-2222-2222-222222222222", "2025-06-15 12:30:45", java.lang.Long.valueOf(0L), "7"],
+        ];
+
+        /// <summary>
+        /// Returns the CASTS row type.
+        /// </summary>
+        public static RelDataType CastsRowType(RelDataTypeFactory typeFactory)
+        {
+            RelDataType Any() => typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.ANY), true);
+
+            return typeFactory.builder()
+                .add("ID", typeFactory.createSqlType(SqlTypeName.INTEGER))
+                .add("G", Any())
+                .add("T", Any())
+                .add("M", Any())
+                .add("N", Any())
+                .build();
+        }
+
+        /// <summary>
         /// Returns the WIDE row type.
         /// </summary>
         public static RelDataType WideRowType(RelDataTypeFactory typeFactory)

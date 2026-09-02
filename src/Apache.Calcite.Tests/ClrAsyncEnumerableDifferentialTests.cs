@@ -55,6 +55,7 @@ namespace Apache.Calcite.Tests
                 rootSchema.add("SORTED", new AsyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, true));
                 rootSchema.add("WIDE", new AsyncRowsTable(AsyncTestRows.Wide, AsyncTestRows.WideRowType, false));
                 rootSchema.add("ANYS", new AsyncRowsTable(AsyncTestRows.Anys, AsyncTestRows.AnysRowType, false));
+                rootSchema.add("CASTS", new AsyncRowsTable(AsyncTestRows.Casts, AsyncTestRows.CastsRowType, false));
             }
             else
             {
@@ -62,6 +63,7 @@ namespace Apache.Calcite.Tests
                 rootSchema.add("SORTED", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, true));
                 rootSchema.add("WIDE", new SyncRowsTable(AsyncTestRows.Wide, AsyncTestRows.WideRowType, false));
                 rootSchema.add("ANYS", new SyncRowsTable(AsyncTestRows.Anys, AsyncTestRows.AnysRowType, false));
+                rootSchema.add("CASTS", new SyncRowsTable(AsyncTestRows.Casts, AsyncTestRows.CastsRowType, false));
             }
 
             // a table function, which this convention has no node for: Calcite plans it and the converter
@@ -423,6 +425,24 @@ namespace Apache.Calcite.Tests
 
         [TestMethod]
         public Task ShouldAgreeOnAGroupedAggregateOverACastAnyColumn() => Same("SELECT K, MIN(CAST(V AS INTEGER)), SUM(CAST(V AS INTEGER)) FROM ANYS GROUP BY K ORDER BY K");
+
+        [TestMethod]
+        public Task ShouldAgreeOnCastingAnAnyColumnToVarchar() => Same("SELECT ID, CAST(G AS VARCHAR) FROM CASTS ORDER BY ID");
+
+        [TestMethod]
+        public Task ShouldAgreeOnCastingAnAnyColumnToANumber() => Same("SELECT ID, CAST(N AS INTEGER), CAST(N AS DECIMAL(10, 2)) FROM CASTS ORDER BY ID");
+
+        [TestMethod]
+        public Task ShouldAgreeOnCastingAnAnyColumnOfMillisToATimestamp() => Same("SELECT ID, CAST(M AS TIMESTAMP) FROM CASTS ORDER BY ID");
+
+        [TestMethod]
+        public Task ShouldAgreeOnCastingAnAnyColumnToUuidChangingNothing() => Same("SELECT ID, CAST(G AS UUID) FROM CASTS ORDER BY ID");
+
+        [TestMethod]
+        public Task ShouldAgreeOnCastingAnAnyColumnThroughVarcharToUuid() => Same("SELECT ID, CAST(CAST(G AS VARCHAR) AS UUID) FROM CASTS ORDER BY ID");
+
+        [TestMethod]
+        public Task ShouldAgreeOnCastingAnAnyColumnThroughVarcharToATimestamp() => Same("SELECT ID, CAST(CAST(T AS VARCHAR) AS TIMESTAMP) FROM CASTS ORDER BY ID");
 
         [TestMethod]
         public Task ShouldAgreeOnDistinct() => Same("SELECT DISTINCT REGION FROM SALES");
