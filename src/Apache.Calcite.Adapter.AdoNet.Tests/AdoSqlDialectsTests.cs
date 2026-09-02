@@ -88,6 +88,36 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
+        /// A column reference, for building a call the parser will not produce.
+        /// </summary>
+        /// <param name="name"></param>
+        /// <returns></returns>
+        static SqlNode Column(string name)
+        {
+            return new SqlIdentifier(name, SqlParserPos.ZERO);
+        }
+
+        /// <summary>
+        /// A call to an operator over the operands given.
+        /// </summary>
+        /// <param name="op"></param>
+        /// <param name="operands"></param>
+        /// <returns></returns>
+        static SqlNode Call(SqlOperator op, params SqlNode[] operands)
+        {
+            return op.createCall(SqlParserPos.ZERO, operands);
+        }
+
+        /// <summary>
+        /// <c>MOD(A, B)</c>, which is the call every modulo test is written around.
+        /// </summary>
+        /// <returns></returns>
+        static SqlNode Modulo()
+        {
+            return Call(SqlStdOperatorTable.MOD, Column("A"), Column("B"));
+        }
+
+        /// <summary>
         /// Builds types the way a connection does, from the default type system.
         /// </summary>
         static readonly RelDataTypeFactory Types = new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
@@ -466,26 +496,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             StringAssert.Contains(Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), sql), expected);
         }
 
-        /// <summary>
-        /// <c>MOD</c> in particular, which is the interception this one is modelled on: CALCITE-6726 swapped
-        /// <c>PERCENT_REMAINDER</c> in through <c>SqlSyntax.BINARY</c>, and nothing pinned it.
-        /// </summary>
-        /// <remarks>
-        /// Built rather than parsed. An unqualified function name is a <c>SqlUnresolvedFunction</c> until
-        /// the validator has run, and <c>MssqlSqlDialect</c> switches on <c>SqlKind.MOD</c>, which an
-        /// unresolved call does not carry — so parse-then-unparse writes <c>MOD([ID], 2)</c> and says
-        /// nothing about the interception either way.
-        /// </remarks>
-        [TestMethod]
-        public void TheInterceptionThisOneIsModelledOnStillHappens()
-        {
-            var call = SqlStdOperatorTable.MOD.createCall(
-                SqlParserPos.ZERO,
-                new SqlIdentifier("ID", SqlParserPos.ZERO),
-                SqlLiteral.createExactNumeric("2", SqlParserPos.ZERO));
-
-            Assert.AreEqual("[ID] % 2", Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), call));
-        }
 
         #endregion
 
@@ -556,6 +566,181 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             Assert.AreEqual(
                 "SELECT [A] || [B] * 2 FROM [CAT]",
                 Unparse(MssqlSqlDialect.DEFAULT, "SELECT (A || B) * 2 FROM CAT"));
+        }
+
+        #endregion
+
+        #region Modulo
+
+        /// <summary>
+        /// <c>MssqlSqlDialect</c> already writes a modulo as the operator T-SQL has, which CALCITE-6726
+        /// added and nothing pinned. This is the answer that is kept.
+        /// </summary>
+        /// <remarks>
+        /// Built rather than parsed throughout this region. An unqualified function name is a
+        /// <c>SqlUnresolvedFunction</c> until the validator has run, and the interception switches on
+        /// <c>SqlKind.MOD</c>, which an unresolved call does not carry — so parse-then-unparse writes
+        /// <c>MOD([A], [B])</c> and says nothing about the interception either way.
+        /// </remarks>
+        [TestMethod]
+        public void ModuloIsWrittenAsThePercentOperator()
+        {
+            Assert.AreEqual("[A] % [B]", Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), Modulo()));
+        }
+
+        /// <summary>
+        /// What is corrected is where the parentheses go. <c>MOD</c> is a function and carries a function's
+        /// precedence of 100; <c>PERCENT_REMAINDER</c> is 60. So as the right operand of an operator that
+        /// binds at 60, the substitution loses the grouping the call had, and the operands being numeric
+        /// there is no shape of the expression a validated plan cannot reach.
+        /// </summary>
+        [TestMethod]
+        [DataRow(nameof(SqlStdOperatorTable.DIVIDE), "[N] / ([A] % [B])")]
+        [DataRow(nameof(SqlStdOperatorTable.MULTIPLY), "[N] * ([A] % [B])")]
+        [DataRow(nameof(SqlStdOperatorTable.MOD), "[N] % ([A] % [B])")]
+        public void AModuloAsARightOperandKeepsItsGrouping(string operatorName, string expected)
+        {
+            var call = Call(OperatorNamed(operatorName), Column("N"), Modulo());
+
+            Assert.AreEqual(expected, Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), call));
+        }
+
+        /// <summary>
+        /// And the answers this corrects, so that the tests say what they are for. Each is grouped by the
+        /// server from the left: over 12, 7 and 4 they answer 1, 0 and 1 where the expressions mean 4, 36
+        /// and 0 — measured on the server, not derived from the precedence table.
+        /// </summary>
+        [TestMethod]
+        [DataRow(nameof(SqlStdOperatorTable.DIVIDE), "[N] / [A] % [B]")]
+        [DataRow(nameof(SqlStdOperatorTable.MULTIPLY), "[N] * [A] % [B]")]
+        [DataRow(nameof(SqlStdOperatorTable.MOD), "[N] % [A] % [B]")]
+        public void CalcitesOwnAnswerLosesTheGrouping(string operatorName, string expected)
+        {
+            var call = Call(OperatorNamed(operatorName), Column("N"), Modulo());
+
+            Assert.AreEqual(expected, Unparse(MssqlSqlDialect.DEFAULT, call));
+        }
+
+        /// <summary>
+        /// Everywhere else the rendering already meant what the call meant, and is left as it stands. As a
+        /// left operand left associativity gives the nesting for nothing; <c>%</c> binds tighter than
+        /// <c>-</c>; and SQL Server's <c>%</c> takes the sign of its dividend, so <c>(-a) % b</c> and
+        /// <c>-(a % b)</c> agree.
+        /// </summary>
+        [TestMethod]
+        [DataRow(nameof(SqlStdOperatorTable.MULTIPLY), "[A] % [B] * [N]")]
+        [DataRow(nameof(SqlStdOperatorTable.DIVIDE), "[A] % [B] / [N]")]
+        [DataRow(nameof(SqlStdOperatorTable.MINUS), "[A] % [B] - [N]")]
+        [DataRow(nameof(SqlStdOperatorTable.EQUALS), "[A] % [B] = [N]")]
+        public void AModuloAsALeftOperandIsUnchanged(string operatorName, string expected)
+        {
+            var call = Call(OperatorNamed(operatorName), Modulo(), Column("N"));
+            var dialect = AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382");
+
+            Assert.AreEqual(expected, Unparse(dialect, call));
+            Assert.AreEqual(expected, Unparse(MssqlSqlDialect.DEFAULT, call), "Calcite already writes this one");
+        }
+
+        /// <summary>
+        /// The right-operand context that was already right, for the same reason: a looser operator needs
+        /// no parentheses around a tighter one, and <c>%</c> binds tighter than <c>-</c>.
+        /// </summary>
+        [TestMethod]
+        public void AModuloUnderALooserOperatorIsUnchanged()
+        {
+            var dialect = AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382");
+            var minus = Call(SqlStdOperatorTable.MINUS, Column("N"), Modulo());
+
+            Assert.AreEqual("[N] - [A] % [B]", Unparse(dialect, minus));
+            Assert.AreEqual(Unparse(MssqlSqlDialect.DEFAULT, minus), Unparse(dialect, minus));
+        }
+
+        /// <summary>
+        /// A prefix operator hands its operand a left precedence of 80, which outranks
+        /// <c>PERCENT_REMAINDER</c>'s 60, so the parentheses go on where Calcite writes none. This is the
+        /// one place the correction writes a parenthesis Calcite would not have.
+        /// </summary>
+        /// <remarks>
+        /// Both compute the same thing here, and Calcite is not wrong — but only because SQL Server's
+        /// <c>%</c> takes the sign of its dividend, so <c>(-a) % b</c> and <c>-(a % b)</c> agree, measured
+        /// at -3 over 7 and 4. The rule the override applies does not know that and does not need to: it
+        /// writes the grouping the call had, and a parenthesis that was not needed costs nothing.
+        /// </remarks>
+        [TestMethod]
+        public void AModuloUnderAPrefixOperatorIsParenthesised()
+        {
+            var negated = Call(SqlStdOperatorTable.UNARY_MINUS, Modulo());
+
+            Assert.AreEqual("- ([A] % [B])", Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), negated));
+            Assert.AreEqual("- [A] % [B]", Unparse(MssqlSqlDialect.DEFAULT, negated), "the answer this does not need to correct");
+        }
+
+        /// <summary>
+        /// A postfix operator, which is what a sort key's null ordering is written with.
+        /// </summary>
+        [TestMethod]
+        public void AModuloUnderAPostfixOperatorIsUnchanged()
+        {
+            var call = Call(SqlStdOperatorTable.IS_NULL, Modulo());
+
+            Assert.AreEqual("[A] % [B] IS NULL", Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), call));
+        }
+
+        /// <summary>
+        /// <c>SqlKind.MOD</c> is carried by two operators, and the other one is <c>PERCENT_REMAINDER</c>
+        /// itself — what a query written with <c>%</c> produces, under a conformance level that allows one.
+        /// The interception then substitutes an operator for itself, and the rule is applied to the same
+        /// precedences <c>SqlCall.unparse</c> has just applied it to, so it answers the same and no
+        /// parenthesis is written twice.
+        /// </summary>
+        [TestMethod]
+        public void ThePercentOperatorItselfIsUnchanged()
+        {
+            var dialect = AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382");
+            var percent = Call(SqlStdOperatorTable.PERCENT_REMAINDER, Column("A"), Column("B"));
+
+            foreach (var call in new[]
+            {
+                percent,
+                Call(SqlStdOperatorTable.DIVIDE, Column("N"), percent),
+                Call(SqlStdOperatorTable.MULTIPLY, percent, Column("N")),
+                Call(SqlStdOperatorTable.UNARY_MINUS, percent),
+            })
+            {
+                Assert.AreEqual(Unparse(MssqlSqlDialect.DEFAULT, call), Unparse(dialect, call));
+            }
+        }
+
+        /// <summary>
+        /// The correction is SQL Server's alone. Another product writes the function, and writes it whole,
+        /// so there is no substitution to lose a grouping over.
+        /// </summary>
+        [TestMethod]
+        [DataRow("PostgreSQL")]
+        [DataRow("Oracle")]
+        public void AnotherProductKeepsTheFunction(string productName)
+        {
+            var call = Call(SqlStdOperatorTable.DIVIDE, Column("N"), Modulo());
+
+            Assert.IsFalse(Unparse(AdoSqlDialects.For(productName, "1.0"), call).Contains('%'));
+        }
+
+        /// <summary>
+        /// Resolves one of the operators the rows above name.
+        /// </summary>
+        /// <param name="name"></param>
+        /// <returns></returns>
+        static SqlOperator OperatorNamed(string name)
+        {
+            return name switch
+            {
+                nameof(SqlStdOperatorTable.DIVIDE) => SqlStdOperatorTable.DIVIDE,
+                nameof(SqlStdOperatorTable.MULTIPLY) => SqlStdOperatorTable.MULTIPLY,
+                nameof(SqlStdOperatorTable.MINUS) => SqlStdOperatorTable.MINUS,
+                nameof(SqlStdOperatorTable.EQUALS) => SqlStdOperatorTable.EQUALS,
+                nameof(SqlStdOperatorTable.MOD) => SqlStdOperatorTable.MOD,
+                _ => throw new AssertFailedException($"no operator {name}"),
+            };
         }
 
         #endregion
