@@ -2,6 +2,7 @@ using System;
 
 using org.apache.calcite.avatica;
 using org.apache.calcite.jdbc;
+using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
 
 using Apache.Calcite.Extensions.Prepare;
@@ -30,6 +31,21 @@ namespace Apache.Calcite.Data.Internal
             // The SQL type name takes precedence for date/time/binary because Calcite's runtime
             // representation (rep) is the internal storage form (int days, long ms, ByteString),
             // not the public CLR type expected by ADO.NET consumers.
+
+            // an ARRAY, a MULTISET and a ROW are not scalars, and their rep does not describe them:
+            // Avatica puts the *component's* rep on an array type, so an INTEGER ARRAY reports
+            // PRIMITIVE_INT, and a struct reports OBJECT. The JDBC ordinal is what names the shape.
+            if (type.id == java.sql.Types.ARRAY)
+                // the component array, which is what the value materializes as; a component that holds a
+                // null materializes as Nullable<T>[] instead, there being no other way to carry one, and
+                // a component the metadata cannot name falls back to object[]
+                return type is ColumnMetaData.ArrayType array && array.getComponent() != null
+                    ? MapClrType(array.getComponent()).MakeArrayType()
+                    : typeof(object[]);
+
+            // a row's fields are heterogeneous, so the array that carries them is of object
+            if (type.id == java.sql.Types.STRUCT)
+                return typeof(object[]);
 
             switch (type.name)
             {
@@ -148,15 +164,21 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Gets the Calcite <see cref="SqlTypeName"/> enum value for the column.
+        /// Gets the Calcite <see cref="RelDataType"/> of the column.
         /// </summary>
+        /// <remarks>
+        /// The whole type rather than its <see cref="SqlTypeName"/>, because reading a value needs more
+        /// than the name: a <c>DATE</c> is a count of days and an <c>ARRAY</c> of them is a list of
+        /// counts, so the component, key, value and field types are what say how to read one. Avatica's
+        /// <see cref="ColumnMetaData"/> does not carry them.
+        /// </remarks>
         /// <param name="index"></param>
         /// <returns></returns>
-        public SqlTypeName GetSqlType(int index)
+        public RelDataType GetRelType(int index)
         {
             var rowType = _signature.RowType ?? throw new InvalidOperationException($"{_signature.Sql ?? "The statement"} has no row type.");
-            var field = (org.apache.calcite.rel.type.RelDataTypeField)rowType.getFieldList().get(index);
-            return field.getType().getSqlTypeName();
+            var field = (RelDataTypeField)rowType.getFieldList().get(index);
+            return field.getType();
         }
 
         /// <summary>

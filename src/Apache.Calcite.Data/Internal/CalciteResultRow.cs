@@ -46,7 +46,7 @@ namespace Apache.Calcite.Data.Internal
                 if (ordinal != 0)
                     throw new IndexOutOfRangeException();
 
-                return new CalciteResultValue(_columns.GetSqlType(ordinal), _row);
+                return new CalciteResultValue(_columns.GetRelType(ordinal), _row);
             }
 
             if (style == Meta.Style.ARRAY)
@@ -54,7 +54,7 @@ namespace Apache.Calcite.Data.Internal
                 if (_row is null)
                     throw new NullReferenceException();
 
-                return new CalciteResultValue(_columns.GetSqlType(ordinal), ((object[])_row)[ordinal]);
+                return new CalciteResultValue(_columns.GetRelType(ordinal), ((object[])_row)[ordinal]);
             }
 
             if (style == Meta.Style.LIST)
@@ -62,7 +62,7 @@ namespace Apache.Calcite.Data.Internal
                 if (_row is null)
                     throw new NullReferenceException();
 
-                return new CalciteResultValue(_columns.GetSqlType(ordinal), ((java.util.List)_row).get(ordinal));
+                return new CalciteResultValue(_columns.GetRelType(ordinal), ((java.util.List)_row).get(ordinal));
             }
 
             throw new NotSupportedException($"Cursor style '{style}' is not yet supported.");

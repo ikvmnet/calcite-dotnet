@@ -20,6 +20,14 @@ namespace Apache.Calcite.Data.Internal
     /// does internally for <c>PreparedStatement.setXxx</c>: it converts each CLR value to the
     /// representation Calcite's runtime expects (Java boxed primitives, <c>BigDecimal</c>,
     /// <c>java.sql.Date</c>/<c>Time</c>/<c>Timestamp</c>, <c>ByteString</c>, ...).
+    ///
+    /// <para>The <see cref="DbType"/> decides where the caller named one, and where it did not
+    /// <see cref="CalciteParameter.DbType"/> infers it from the value's CLR type — which is
+    /// <see cref="DbType.Object"/> for everything <see cref="CalciteTypeMap.ToDbType"/> has no name for,
+    /// a dictionary and a sequence included. That is the parameter half of an <c>ANY</c>, and it is
+    /// <see cref="CalciteValues.ToJava"/>'s: a value handed to the <c>DataContext</c> as it stood would
+    /// be a .NET object loose in a plan whose row types are Java classes, and the first thing to compare
+    /// it against something would fail.</para>
     /// </remarks>
     internal static class ParameterBinder
     {
@@ -74,46 +82,32 @@ namespace Apache.Calcite.Data.Internal
                 DbType.Single => java.lang.Float.valueOf((float)value),
                 DbType.Double => java.lang.Double.valueOf((double)value),
                 DbType.Decimal or DbType.Currency or DbType.VarNumeric => JavaDecimals.ToBigDecimal((decimal)value),
-                DbType.String or DbType.AnsiString or DbType.StringFixedLength or DbType.AnsiStringFixedLength => (string)value,
+                DbType.String or DbType.AnsiString or DbType.StringFixedLength or DbType.AnsiStringFixedLength => ConvertString(value),
                 DbType.Guid => JavaUuids.ToUuid((Guid)value),
                 DbType.Date => ConvertDate(value),
                 DbType.DateTime or DbType.DateTime2 => ConvertTimestamp(value),
                 DbType.DateTimeOffset => ConvertTimestamp(value is DateTimeOffset dto ? dto.UtcDateTime : (DateTime)value),
                 DbType.Time => ConvertTime(value),
                 DbType.Binary => ConvertBinary(value),
-                _ => InferFromClr(value),
+                _ => CalciteValues.ToJava(value),
             };
         }
 
         /// <summary>
-        /// Infers the Calcite-native representation from the CLR type of <paramref name="value"/> when no
-        /// explicit <see cref="DbType"/> mapping is available.
+        /// Converts a value bound as one of the character types to the string Calcite's runtime holds one
+        /// as.
         /// </summary>
-        /// <param name="value">The non-null CLR value to convert.</param>
-        /// <returns>The converted Java/Calcite-native value, or the original <paramref name="value"/> if no mapping is defined.</returns>
-        static object InferFromClr(object value)
+        /// <param name="value">A <see cref="string"/>, or a <see cref="char"/>, which is what a
+        /// one-character value infers <see cref="DbType.StringFixedLength"/> from.</param>
+        /// <returns>The string.</returns>
+        /// <exception cref="InvalidCastException">Where the value is neither.</exception>
+        static string ConvertString(object value)
         {
             return value switch
             {
-                bool b => java.lang.Boolean.valueOf(b),
-                sbyte sb => java.lang.Byte.valueOf(unchecked((byte)sb)),
-                byte by => org.joou.UByte.valueOf(by),
-                short s => java.lang.Short.valueOf(s),
-                ushort us => org.joou.UShort.valueOf(us),
-                int i => java.lang.Integer.valueOf(i),
-                uint ui => org.joou.UInteger.valueOf(ui),
-                long l => java.lang.Long.valueOf(l),
-                ulong ul => org.joou.ULong.valueOf(unchecked((long)ul)),
-                float f => java.lang.Float.valueOf(f),
-                double d => java.lang.Double.valueOf(d),
-                decimal m => JavaDecimals.ToBigDecimal(m),
                 string s => s,
-                Guid g => JavaUuids.ToUuid(g),
-                DateTime dt => ConvertTimestamp(dt),
-                DateTimeOffset dto => ConvertTimestamp(dto.UtcDateTime),
-                TimeSpan ts => ConvertTime(ts),
-                byte[] b => ConvertBinary(b),
-                _ => value,
+                char c => c.ToString(),
+                _ => throw new InvalidCastException($"Cannot bind value of type '{value.GetType()}' as a character type."),
             };
         }
 

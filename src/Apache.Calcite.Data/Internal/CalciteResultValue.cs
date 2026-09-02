@@ -2,6 +2,7 @@
 
 using Apache.Calcite.Extensions.Interop;
 
+using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
 
 namespace Apache.Calcite.Data.Internal
@@ -11,23 +12,71 @@ namespace Apache.Calcite.Data.Internal
     /// Thin wrapper over an object returned by Calcite. Provides the final conversion methods to coerce the type to and from various CLR
     /// types.
     /// </summary>
+    /// <remarks>
+    /// Two things decide what a value is. The column's <see cref="RelDataType"/> decides wherever it can:
+    /// Calcite stores a <c>DATE</c> as a count of days and a <c>TIMESTAMP</c> as a count of milliseconds,
+    /// so nothing about the runtime value says which one an integer is. <see cref="SqlTypeName.ANY"/> is
+    /// where it cannot — the type is <c>java.lang.Object</c> and the value is whatever a table, a
+    /// user-defined function or a schema put there — and there <b>the value's own class stands in for the
+    /// declared type</b>.
+    ///
+    /// <para>Standing in for it is all it does. <c>ANY</c> does not make an accessor lenient: a
+    /// <c>java.lang.Integer</c> in an <c>ANY</c> column is an <c>INTEGER</c>, so it reads through
+    /// <see cref="GetInt32"/> and <see cref="GetInt64"/> refuses it exactly as it refuses an
+    /// <c>INTEGER</c> column. What the <c>ANY</c> arms add is the case the SQL type used to be the only
+    /// route to: a <c>java.sql.Timestamp</c> or a <c>java.time.LocalDate</c> says what it is by being
+    /// what it is, and before this there was no column type to say it, because <c>ANY</c> is not
+    /// <c>TIMESTAMP</c> or <c>DATE</c>. Each such arm takes exactly the type its accessor returns —
+    /// a date reads through <see cref="GetDateOnly"/> and not through <see cref="GetDateTime"/> with a
+    /// zero time bolted on — and a column whose type does say what it holds is untouched by any of it.</para>
+    ///
+    /// <para><see cref="CalciteValues"/> holds the conversion itself, in both directions and recursively,
+    /// so that a collection of an <c>ANY</c> is read the same way the <c>ANY</c> is.</para>
+    /// </remarks>
     internal readonly struct CalciteResultValue
     {
 
         static readonly DateTime UnixEpoch = new(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
+        readonly RelDataType _type;
         readonly SqlTypeName _sqlType;
         readonly object? _value;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="sqlType"></param>
+        /// <param name="type"></param>
         /// <param name="value"></param>
-        public CalciteResultValue(SqlTypeName sqlType, object? value)
+        public CalciteResultValue(RelDataType type, object? value)
         {
-            _sqlType = sqlType;
+            _type = type ?? throw new ArgumentNullException(nameof(type));
+            _sqlType = type.getSqlTypeName();
             _value = value;
+        }
+
+        /// <summary>
+        /// Gets whether the column's type says nothing about what the value is, which is the one case in
+        /// which the accessors read the runtime type instead.
+        /// </summary>
+        bool IsAny => _sqlType == SqlTypeName.ANY;
+
+        /// <summary>
+        /// Returns the exception an accessor throws where the value is not the thing asked for.
+        /// </summary>
+        /// <param name="target"></param>
+        /// <returns></returns>
+        InvalidCastException Cannot(string target)
+        {
+            return new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to '{target}'");
+        }
+
+        /// <summary>
+        /// Returns the value converted by its runtime type, which is what an <c>ANY</c> accessor reads.
+        /// </summary>
+        /// <returns></returns>
+        object? Any()
+        {
+            return IsAny ? CalciteValues.ToClr(_value, null) : null;
         }
 
         /// <summary>
@@ -44,7 +93,14 @@ namespace Apache.Calcite.Data.Internal
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <returns></returns>
-        /// <exception cref="NotImplementedException"></exception>
+        /// <remarks>
+        /// The .NET value is tried first, so <c>GetFieldValue&lt;object&gt;()</c> answers what
+        /// <see cref="GetValue"/> answers rather than the Java object behind it, and
+        /// <c>GetFieldValue&lt;IDictionary&gt;()</c> or <c>GetFieldValue&lt;int[]&gt;()</c> answers a
+        /// <c>MAP</c> or an <c>ARRAY</c> without the caller naming element types. A caller that does name
+        /// them gets the conversion built to them instead. The Java object itself is last and reached
+        /// only by naming its class, which is the escape hatch for a value nothing corresponds to.
+        /// </remarks>
         public T GetFieldValue<T>()
         {
             if (_value is null)
@@ -58,9 +114,9 @@ namespace Apache.Calcite.Data.Internal
 
             var target = typeof(T);
 
-            // Fast path for direct assignable
-            if (target.IsInstanceOfType(_value))
-                return (T)_value;
+            // the value as an ADO.NET caller reads it, which is what nearly every ask is for
+            if (CalciteValues.ToClr(_value, _type) is T converted)
+                return converted;
 
             // Handle common ADO.NET types
             if (target == typeof(string))
@@ -68,7 +124,7 @@ namespace Apache.Calcite.Data.Internal
             if (target == typeof(char))
                 return (T)(object)GetChar();
             if (target == typeof(byte[]))
-                return (T)(object)(GetValue() as byte[] ?? throw new InvalidCastException($"Cannot convert value of type '{_value.GetType().Name}' (SQL type: {_sqlType}) to 'Byte[]'"));
+                return (T)(object)(GetValue() as byte[] ?? throw Cannot("Byte[]"));
             if (target == typeof(DateTime))
                 return (T)(object)GetDateTime();
             if (target == typeof(DateTimeOffset))
@@ -104,12 +160,15 @@ namespace Apache.Calcite.Data.Internal
             if (target == typeof(ulong))
                 return (T)(object)GetUInt64();
 
-            // Fallback: try to convert via GetValue if possible
-            var val = GetValue();
-            if (val is T tval)
-                return tval;
+            // a collection whose element types the caller named rather than the ones the values measured
+            if (CalciteValues.TryConvertTo(_value, _type, target, out var shaped) && shaped is T reshaped)
+                return reshaped;
 
-            throw new InvalidCastException($"Cannot convert value of type '{_value.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to '{typeof(T).Name}'");
+            // last, the object Calcite produced, for a caller that asked for it by its own class
+            if (target.IsInstanceOfType(_value))
+                return (T)_value;
+
+            throw Cannot(typeof(T).Name);
         }
 
         /// <summary>
@@ -118,103 +177,7 @@ namespace Apache.Calcite.Data.Internal
         /// <returns></returns>
         public object GetValue()
         {
-            if (_value is null)
-                return DBNull.Value;
-
-            switch (_sqlType.name())
-            {
-                case nameof(SqlTypeName.DATE):
-                    {
-                        return _value switch
-                        {
-                            java.lang.Integer i => UnixEpoch.AddDays(i.intValue()),
-                            java.lang.Number n => UnixEpoch.AddDays(n.longValue()),
-                            java.sql.Date d => UnixEpoch.AddMilliseconds(d.getTime()),
-                            _ => _value,
-                        };
-                    }
-                case nameof(SqlTypeName.TIME):
-                    {
-                        return _value switch
-                        {
-                            java.lang.Integer i => TimeSpan.FromMilliseconds(i.intValue()),
-                            java.lang.Number n => TimeSpan.FromMilliseconds(n.longValue()),
-                            java.sql.Time t => TimeSpan.FromMilliseconds(t.getTime()),
-                            _ => _value,
-                        };
-                    }
-                case nameof(SqlTypeName.TIME_WITH_LOCAL_TIME_ZONE):
-                case nameof(SqlTypeName.TIME_TZ):
-                    {
-                        // Calcite's wire form is a count of milliseconds-since-midnight; the offset is
-                        // not carried per-row, so surface as DateTimeOffset at the epoch date with UTC offset
-                        // (matches IKVM.Jdbc's OffsetTime path which anchors at 0001-01-01).
-                        return _value switch
-                        {
-                            java.lang.Integer i => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(i.intValue())),
-                            java.lang.Number n => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(n.longValue())),
-                            java.sql.Time t => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(t.getTime())),
-                            _ => _value,
-                        };
-                    }
-                case nameof(SqlTypeName.TIMESTAMP):
-                    {
-                        return _value switch
-                        {
-                            java.lang.Number n => UnixEpoch.AddMilliseconds(n.longValue()),
-                            java.sql.Timestamp ts => UnixEpoch.AddMilliseconds(ts.getTime()),
-                            _ => _value,
-                        };
-                    }
-                case nameof(SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE):
-                case nameof(SqlTypeName.TIMESTAMP_TZ):
-                    {
-                        // UTC instant; surface as DateTimeOffset with UTC offset.
-                        return _value switch
-                        {
-                            java.lang.Number n => new DateTimeOffset(UnixEpoch.AddMilliseconds(n.longValue()), TimeSpan.Zero),
-                            java.sql.Timestamp ts => new DateTimeOffset(UnixEpoch.AddMilliseconds(ts.getTime()), TimeSpan.Zero),
-                            _ => _value,
-                        };
-                    }
-                case nameof(SqlTypeName.BINARY):
-                case nameof(SqlTypeName.VARBINARY):
-                    {
-                        return _value switch
-                        {
-                            org.apache.calcite.avatica.util.ByteString bs => bs.getBytes(),
-                            byte[] b => b,
-                            _ => _value,
-                        };
-                    }
-            }
-
-            {
-                if (_value is null) return DBNull.Value;
-                if (_value is string) return _value;
-                if (_value is java.math.BigDecimal bd) return JavaDecimals.ToDecimal(bd);
-                if (_value is java.util.UUID uu) return JavaUuids.ToGuid(uu);
-                if (_value is java.lang.Boolean b) return b.booleanValue();
-                if (_value is java.lang.Byte by) return (sbyte)by.byteValue();
-                if (_value is java.lang.Short sh) return sh.shortValue();
-                if (_value is java.lang.Integer i) return i.intValue();
-                if (_value is java.lang.Long l) return l.longValue();
-                if (_value is java.lang.Float f) return f.floatValue();
-                if (_value is java.lang.Double d) return d.doubleValue();
-                if (_value is java.lang.Character c) return c.charValue();
-                if (_value is java.sql.Timestamp ts) return UnixEpoch.AddMilliseconds(ts.getTime());
-                if (_value is java.sql.Date dt) return UnixEpoch.AddMilliseconds(dt.getTime());
-                if (_value is java.sql.Time tm) return TimeSpan.FromMilliseconds(tm.getTime());
-                if (_value is org.apache.calcite.avatica.util.ByteString bs) return bs.getBytes();
-                // joou unsigned integer types: Calcite may return these when unsigned columns are
-                // read. Map each to its natural unsigned CLR counterpart.
-                if (_value is org.joou.UByte ub) return (byte)ub.byteValue();
-                if (_value is org.joou.UShort us) return (ushort)us.shortValue();
-                if (_value is org.joou.UInteger ui) return (uint)ui.intValue();
-                if (_value is org.joou.ULong ul) return (ulong)ul.longValue();
-            }
-
-            return _value;
+            return _value is null ? DBNull.Value : CalciteValues.ToClr(_value, _type)!;
         }
 
         /// <summary>
@@ -225,7 +188,8 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Boolean b => b.booleanValue(),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Boolean'"),
+                bool clr when IsAny => clr,
+                _ => throw Cannot("Boolean"),
             };
         }
 
@@ -238,7 +202,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 string s => s,
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'String'"),
+                _ => throw Cannot("String"),
             };
         }
 
@@ -255,7 +219,8 @@ namespace Apache.Calcite.Data.Internal
             {
                 java.lang.Character c => c.charValue(),
                 string s when _sqlType == SqlTypeName.CHAR && s.Length == 1 => s[0],
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Char'"),
+                char clr when IsAny => clr,
+                _ => throw Cannot("Char"),
             };
         }
 
@@ -270,13 +235,12 @@ namespace Apache.Calcite.Data.Internal
         /// <exception cref="InvalidOperationException"></exception>
         public long GetBytes(long dataOffset, byte[]? buffer, int bufferOffset, int length)
         {
-            if (_value is not null && _value is not byte[])
-                throw new InvalidCastException($"Cannot convert value of type '{_value.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Byte[]'");
-
             if (_value is null)
                 return 0;
 
-            var bytes = (byte[])_value;
+            // a BINARY arrives as a ByteString and an ANY holding binary may be either
+            var bytes = GetValue() as byte[] ?? throw Cannot("Byte[]");
+
             if (buffer is null)
                 return bytes.LongLength;
 
@@ -313,15 +277,6 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Implements the GetObject operation.
-        /// </summary>
-        /// <returns></returns>
-        public object? GetObject()
-        {
-            return _value;
-        }
-
-        /// <summary>
         /// Implements the GetDateTime operation. Only valid for DATE and TIMESTAMP columns.
         /// </summary>
         /// <returns></returns>
@@ -333,7 +288,10 @@ namespace Apache.Calcite.Data.Internal
                 java.sql.Date d when _sqlType == SqlTypeName.DATE => UnixEpoch.AddMilliseconds(d.getTime()),
                 java.lang.Long l when _sqlType == SqlTypeName.TIMESTAMP => UnixEpoch.AddMilliseconds(l.longValue()),
                 java.sql.Timestamp ts when _sqlType == SqlTypeName.TIMESTAMP => UnixEpoch.AddMilliseconds(ts.getTime()),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'DateTime'"),
+                // a java.sql.Timestamp, a java.util.Date or a java.time.LocalDateTime says it is a moment
+                // whatever column it came out of, and under ANY that is the only thing saying so
+                _ when Any() is DateTime dt => dt,
+                _ => throw Cannot("DateTime"),
             };
         }
 
@@ -349,7 +307,8 @@ namespace Apache.Calcite.Data.Internal
                 java.sql.Timestamp ts when (_sqlType == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE || _sqlType == SqlTypeName.TIMESTAMP_TZ) => new DateTimeOffset(UnixEpoch.AddMilliseconds(ts.getTime()), TimeSpan.Zero),
                 java.lang.Integer i when (_sqlType == SqlTypeName.TIME_WITH_LOCAL_TIME_ZONE || _sqlType == SqlTypeName.TIME_TZ) => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(i.intValue())),
                 java.sql.Time t when (_sqlType == SqlTypeName.TIME_WITH_LOCAL_TIME_ZONE || _sqlType == SqlTypeName.TIME_TZ) => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(t.getTime())),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'DateTimeOffset'"),
+                _ when Any() is DateTimeOffset dto => dto,
+                _ => throw Cannot("DateTimeOffset"),
             };
         }
 
@@ -363,7 +322,8 @@ namespace Apache.Calcite.Data.Internal
             {
                 java.lang.Integer i when _sqlType == SqlTypeName.TIME => TimeSpan.FromMilliseconds(i.intValue()),
                 java.sql.Time t when _sqlType == SqlTypeName.TIME => TimeSpan.FromMilliseconds(t.getTime()),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'TimeSpan'"),
+                _ when Any() is TimeSpan ts => ts,
+                _ => throw Cannot("TimeSpan"),
             };
         }
 
@@ -376,7 +336,8 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.math.BigDecimal bd => JavaDecimals.ToDecimal(bd),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Decimal'"),
+                decimal clr when IsAny => clr,
+                _ => throw Cannot("Decimal"),
             };
         }
 
@@ -389,7 +350,8 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Double d => d.doubleValue(),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Double'"),
+                double clr when IsAny => clr,
+                _ => throw Cannot("Double"),
             };
         }
 
@@ -402,7 +364,8 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Float f => f.floatValue(),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Single'"),
+                float clr when IsAny => clr,
+                _ => throw Cannot("Single"),
             };
         }
 
@@ -418,7 +381,8 @@ namespace Apache.Calcite.Data.Internal
             {
                 java.util.UUID u => JavaUuids.ToGuid(u),
                 string s when Guid.TryParse(s, out _) => Guid.Parse(s),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Guid'"),
+                Guid clr when IsAny => clr,
+                _ => throw Cannot("Guid"),
             };
         }
 
@@ -431,7 +395,8 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Short s => s.shortValue(),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Int16'"),
+                short clr when IsAny => clr,
+                _ => throw Cannot("Int16"),
             };
         }
 
@@ -444,7 +409,8 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Integer i => i.intValue(),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Int32'"),
+                int clr when IsAny => clr,
+                _ => throw Cannot("Int32"),
             };
         }
 
@@ -457,7 +423,8 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Long l => l.longValue(),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Int64'"),
+                long clr when IsAny => clr,
+                _ => throw Cannot("Int64"),
             };
         }
 
@@ -470,7 +437,8 @@ namespace Apache.Calcite.Data.Internal
             {
                 org.joou.UByte ub => (byte)ub.byteValue(),
                 java.lang.Number n => checked((byte)n.longValue()),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'Byte'"),
+                byte clr when IsAny => clr,
+                _ => throw Cannot("Byte"),
             };
         }
 
@@ -483,7 +451,8 @@ namespace Apache.Calcite.Data.Internal
             {
                 java.lang.Byte by => (sbyte)by.byteValue(),
                 java.lang.Number n => checked((sbyte)n.longValue()),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'SByte'"),
+                sbyte clr when IsAny => clr,
+                _ => throw Cannot("SByte"),
             };
         }
 
@@ -496,7 +465,8 @@ namespace Apache.Calcite.Data.Internal
             {
                 org.joou.UShort us => (ushort)us.shortValue(),
                 java.lang.Number n => checked((ushort)n.longValue()),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'UInt16'"),
+                ushort clr when IsAny => clr,
+                _ => throw Cannot("UInt16"),
             };
         }
 
@@ -509,7 +479,8 @@ namespace Apache.Calcite.Data.Internal
             {
                 org.joou.UInteger ui => (uint)ui.intValue(),
                 java.lang.Number n => checked((uint)n.longValue()),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'UInt32'"),
+                uint clr when IsAny => clr,
+                _ => throw Cannot("UInt32"),
             };
         }
 
@@ -523,7 +494,8 @@ namespace Apache.Calcite.Data.Internal
                 org.joou.ULong ul => (ulong)ul.longValue(),
                 java.math.BigDecimal bd => (ulong)JavaDecimals.ToDecimal(bd),
                 java.lang.Number n => (ulong)n.longValue(),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'UInt64'"),
+                ulong clr when IsAny => clr,
+                _ => throw Cannot("UInt64"),
             };
         }
 
@@ -537,7 +509,8 @@ namespace Apache.Calcite.Data.Internal
             {
                 java.lang.Integer i when _sqlType == SqlTypeName.DATE => DateOnly.FromDateTime(UnixEpoch.AddDays(i.intValue())),
                 java.sql.Date d when _sqlType == SqlTypeName.DATE => DateOnly.FromDateTime(UnixEpoch.AddMilliseconds(d.getTime())),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'DateOnly'"),
+                _ when Any() is DateOnly dd => dd,
+                _ => throw Cannot("DateOnly"),
             };
         }
 
@@ -551,7 +524,8 @@ namespace Apache.Calcite.Data.Internal
             {
                 java.lang.Integer i when _sqlType == SqlTypeName.TIME => TimeOnly.FromTimeSpan(TimeSpan.FromMilliseconds(i.intValue())),
                 java.sql.Time t when _sqlType == SqlTypeName.TIME => TimeOnly.FromTimeSpan(TimeSpan.FromMilliseconds(t.getTime())),
-                _ => throw new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to 'TimeOnly'"),
+                _ when Any() is TimeOnly to => to,
+                _ => throw Cannot("TimeOnly"),
             };
         }
 

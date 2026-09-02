@@ -260,8 +260,12 @@ nothing else.
 provider type name — and maps each to a CLR type. The SQL type name takes precedence over the
 runtime representation for date, time and binary columns, because Calcite's `rep` there is the
 internal storage form (`int` days, `long` millis, `ByteString`) rather than what an ADO.NET consumer
-expects. Unsigned SQL types map to the unsigned CLR types. `GetSqlType` reads the signature's
-`RelDataType` instead, and throws where there is none.
+expects. Unsigned SQL types map to the unsigned CLR types. The JDBC ordinal takes precedence over
+both for a collection: Avatica puts the *component's* rep on an array type, so an `INTEGER ARRAY`
+reports `PRIMITIVE_INT` and would otherwise be read as an `int`; the answers are `int[]` and, for a
+struct, `object[]`. `GetRelType` reads the signature's `RelDataType` instead, and throws where there
+is none — the whole type rather than its `SqlTypeName`, because reading a value needs the component,
+key, value and field types that Avatica's metadata does not carry.
 
 `CalciteResultRow` addresses a column within one row without copying it, dispatching on the cursor
 factory's style: `OBJECT` (a one-column result is the value, so only ordinal `0` is valid), `ARRAY`,
@@ -271,8 +275,38 @@ or `LIST`. Any other style throws `NotSupportedException`.
 for: `GetValue` for the reader's untyped path, `GetFieldValue<T>` for the generic one, and a typed
 getter per ADO.NET accessor. Each typed getter is strict — it accepts the representations Calcite
 actually produces for that SQL type and throws `InvalidCastException` otherwise, naming the runtime
-type, the value and the SQL type. `BigDecimalConverter` carries `java.math.BigDecimal` to and from
-`decimal`.
+type, the value and the SQL type.
+
+`SqlTypeName.ANY` is the one type it cannot read, and the one place **the value's own class stands
+in for the declared type**. An `ANY` is `java.lang.Object`: the value is whatever a table, a
+user-defined function or a schema put there, and nothing in the column says which of the things a
+`java.lang.Integer` could mean it is.
+
+Standing in for it is all it does — `ANY` does not make an accessor lenient. A `java.lang.Integer` in
+an `ANY` column is an `INTEGER`: it reads through `GetInt32`, and `GetInt64` refuses it exactly as it
+refuses an `INTEGER` column. What the `ANY` arms add is the case the SQL type used to be the only
+route to: a `java.sql.Timestamp` or a `java.time.LocalDate` says what it is by being what it is, and
+there was no column type to say it, `ANY` being neither `TIMESTAMP` nor `DATE`. Each such arm takes
+exactly the type its accessor returns, so a date reads through `GetDateOnly` and not through
+`GetDateTime` with a zero time bolted on. A column whose type does say what it holds is untouched by
+any of it: `GetGuid` over a `VARCHAR` is still a refusal.
+
+`CalciteValues` holds the conversion itself, in both directions and recursively, and is what keeps a
+Java object from reaching a caller. Calcite's runtime holds an `ARRAY` or a `MULTISET` as a
+`java.util.List`, a `MAP` as a `java.util.Map` and a `ROW` as an `Object[]`, so a reader that handed
+back what the plan produced would hand back Java. It converts a list to an array of the type its
+converted elements share — `int[]`, or `int?[]` where one is null, or `object[]` where they disagree
+— a map to a `Dictionary<TKey, TValue>` measured the same way, and a row to `object[]`, which is
+what it stays however alike its fields are. The `RelDataType` descends with it, because a `DATE`
+inside an array is a count of days and only the component type says so. A map holding a null key
+becomes `KeyValuePair<,>[]`: Calcite reaches one and no dictionary the framework ships accepts it.
+`GetFieldValue<T>` answers the converted value first, so `GetFieldValue<object>` is `GetValue`; where
+the caller names element types — `IDictionary<string, object>`, `IList<int>`, `int[]` — the
+collection is built to them, and only where the values already have them: `IList<long>` over an
+`INTEGER ARRAY` is the refusal `GetInt64` makes over an `INTEGER`. Naming the Java class is the last
+arm, and the escape hatch for a value nothing corresponds to.
+`JavaDecimals` carries `java.math.BigDecimal` to and from `decimal` and `JavaUuids` carries
+`java.util.UUID` to and from `Guid`.
 
 `CalciteDataReader` holds an array of `CalciteResult`s and delegates every accessor to
 `ActiveResult.Current.GetValue(ordinal)`. `NextResult` disposes the result it leaves and advances.
@@ -289,8 +323,12 @@ type, the value and the SQL type. `BigDecimalConverter` carries `java.math.BigDe
 - `ParameterBinder` converts each value to the representation Calcite's runtime expects — Java boxed
   primitives, `BigDecimal`, `ByteString`, `joou` unsigned types, and the internal forms for
   temporals: days since epoch for `DATE`, milliseconds since epoch for `TIMESTAMP`, milliseconds
-  since midnight for `TIME`. Where the `DbType` is `Object` or unrecognised it infers from the CLR
-  type instead.
+  since midnight for `TIME`. Where the `DbType` is `Object` or unrecognised — which is what a value
+  of a type `CalciteTypeMap` has no name for infers, a dictionary and a sequence included — it is
+  `CalciteValues.ToJava` that reads the CLR type instead, recursively: a dictionary becomes a
+  `java.util.LinkedHashMap` and a sequence a `java.util.ArrayList`, elements and all. That is the
+  parameter half of an `ANY`, and it matters for the same reason the other half does — a .NET object
+  left loose in a plan whose row types are Java classes fails the first thing that compares it.
 
 ### 7. Metadata and configuration
 
@@ -418,8 +456,8 @@ src/
       CalciteSession.cs                   Per-connection engine state; plan, bind, execute
       CalciteExecuteRequest.cs            Execute payload
       CalciteParameterValue.cs            (DbType, value) pair
-      ParameterBinder.cs                  CLR value → Calcite runtime representation
-      BigDecimalConverter.cs              decimal ↔ java.math.BigDecimal
+      ParameterBinder.cs                  CLR value → Calcite runtime representation, by DbType
+      CalciteValues.cs                    Java value ↔ CLR value, by RelDataType or runtime type
       CalciteResult.cs                    Row stream over a ClrSignature
       CalciteResultColumns.cs             Avatica ColumnMetaData → ADO.NET column metadata
       CalciteResultRow.cs                 Column addressing within one row, by cursor style
