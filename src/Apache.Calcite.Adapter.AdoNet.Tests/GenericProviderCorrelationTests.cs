@@ -280,6 +280,33 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
+        /// Correlating across a cast to <c>UUID</c>, which puts the type name into the generated SQL as
+        /// well as a <c>java.util.UUID</c> into the parameter.
+        /// </summary>
+        /// <remarks>
+        /// The cast is what makes the value a UUID rather than text — a <c>uniqueidentifier</c> reaches
+        /// Calcite as a <c>CHAR(36)</c>, so a schema wanting GUID semantics has to state them, which is
+        /// what a view over a document store does — and stating them is what puts a type name T-SQL has
+        /// never heard of into the statement: "Type UUID is not a defined system type". A parameter bound
+        /// into a statement the server refuses to parse is not yet a working comparison, which is why this
+        /// is here beside the conversion tests rather than covered by them.
+        /// </remarks>
+        /// <param name="provider"></param>
+        [TestMethod]
+        [DataRow(SqlClient)]
+        [DataRow(Odbc)]
+        [DataRow(OleDb)]
+        public void CorrelatingAcrossAUuidCastRunsOnTheServer(string provider)
+        {
+            CollectionAssert.AreEqual(
+                new[] { "1" },
+                CorrelatedRows(provider, """
+                    SELECT T.ID FROM ADO.TYPES T
+                    WHERE EXISTS (SELECT 1 FROM ADO.TYPES T2 WHERE CAST(T2.C_GUID AS UUID) = CAST(T.C_GUID AS UUID))
+                    """));
+        }
+
+        /// <summary>
         /// A limitation of the driver rather than of the adapter, pinned so that it is a stated fact rather
         /// than a surprise: <c>System.Data.OleDb</c> cannot marshal a <see cref="DateTimeOffset"/> to a
         /// Variant at all, so a zoned timestamp cannot be a parameter through OLE DB. It fails on the
