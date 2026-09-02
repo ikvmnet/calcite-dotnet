@@ -190,15 +190,36 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             /// rather than of Calcite — Postgres writes <c>double precision</c> through it — and it unparses
             /// the alias alone, which is what puts the <c>(MAX)</c> where a precision would otherwise go.
             /// </para>
+            /// <para>
+            /// <c>UUID</c> is the other name Calcite writes that T-SQL has never heard: the server answers
+            /// "Type UUID is not a defined system type" and the statement never runs. <c>uniqueidentifier</c>
+            /// is what SQL Server calls the same sixteen bytes. A schema reaches this by stating GUID
+            /// semantics for a key its source spells as text — which is what a view over a document store
+            /// does — and then every comparison against that key is a cast.
+            /// </para>
             /// </remarks>
             public override SqlNode getCastSpec(RelDataType type)
             {
-                if (UnboundedTypeName(type) is string typeAlias)
-                    return new SqlDataTypeSpec(
-                        new SqlAlienSystemTypeNameSpec(typeAlias, type.getSqlTypeName(), SqlParserPos.ZERO),
-                        SqlParserPos.ZERO);
+                if (UnboundedTypeName(type) is string unbounded)
+                    return AlienSpec(unbounded, type);
+
+                if (type.getSqlTypeName()?.name() == nameof(SqlTypeName.UUID))
+                    return AlienSpec("UNIQUEIDENTIFIER", type);
 
                 return base.getCastSpec(type);
+            }
+
+            /// <summary>
+            /// Writes a cast to a type named as SQL Server names it rather than as Calcite does.
+            /// </summary>
+            /// <param name="typeAlias"></param>
+            /// <param name="type"></param>
+            /// <returns></returns>
+            static SqlDataTypeSpec AlienSpec(string typeAlias, RelDataType type)
+            {
+                return new SqlDataTypeSpec(
+                    new SqlAlienSystemTypeNameSpec(typeAlias, type.getSqlTypeName(), SqlParserPos.ZERO),
+                    SqlParserPos.ZERO);
             }
 
             /// <summary>
