@@ -537,8 +537,10 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
-        // Unsigned typed getters: GetUInt8/16/32/64 on CalciteDataReader, reading standard
-        // signed Calcite SQL types (TINYINT/SMALLINT/INTEGER/BIGINT/DECIMAL).
+        // Unsigned typed getters: GetByte/GetUInt16/32/64 on CalciteDataReader, reading the unsigned
+        // Calcite SQL types. Each is the one representation Calcite's runtime produces for that type —
+        // an org.joou.UByte for TINYINT UNSIGNED, a UShort for SMALLINT UNSIGNED, and so on — and
+        // nothing else is that type, which the refusals below hold.
         // ------------------------------------------------------------------------------------
 
         [Fact]
@@ -575,6 +577,69 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(typeof(ulong), r.GetFieldType(0));
             Assert.Equal(9_000_000_000_000_000_000UL, r.GetUInt64(0));
             Assert.Equal(9_000_000_000_000_000_000UL, r.GetFieldValue<ulong>(0));
+        }
+
+        // ------------------------------------------------------------------------------------
+        // Refusals. A typed getter answers for the type its column has and no other: ADO.NET's
+        // contract is that GetXxx throws where the column is not an Xxx, not that it converts.
+        // ------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Text in canonical GUID form is text. Parsing it here would have <c>GetGuid</c> answer for a
+        /// type the column does not have; <c>CAST(x AS UUID)</c> is how a caller says it means one, and
+        /// <see cref="Output_Uuid_cast_from_a_string_should_round_trip_as_Guid"/> is that.
+        /// </summary>
+        [Fact]
+        public void GetGuid_should_refuse_a_character_column_holding_guid_text()
+        {
+            using var r = ExecuteSingleRow("VALUES (CAST('cccccccc-0000-0000-0000-000000000001' AS VARCHAR))");
+            Assert.Throws<InvalidCastException>(() => r.GetGuid(0));
+        }
+
+        [Fact]
+        public void GetByte_should_refuse_a_signed_tinyint()
+        {
+            using var r = ExecuteSingleRowTyped("VALUES (CAST(1 AS TINYINT))");
+            Assert.Throws<InvalidCastException>(() => r.GetByte(0));
+        }
+
+        [Fact]
+        public void GetSByte_should_refuse_a_smallint()
+        {
+            using var r = ExecuteSingleRowTyped("VALUES (CAST(1 AS SMALLINT))");
+            Assert.Throws<InvalidCastException>(() => r.GetSByte(0));
+        }
+
+        [Fact]
+        public void GetUInt16_should_refuse_a_signed_smallint()
+        {
+            using var r = ExecuteSingleRowTyped("VALUES (CAST(1 AS SMALLINT))");
+            Assert.Throws<InvalidCastException>(() => r.GetUInt16(0));
+        }
+
+        [Fact]
+        public void GetUInt32_should_refuse_a_signed_integer()
+        {
+            using var r = ExecuteSingleRowTyped("VALUES (CAST(1 AS INTEGER))");
+            Assert.Throws<InvalidCastException>(() => r.GetUInt32(0));
+        }
+
+        [Fact]
+        public void GetUInt64_should_refuse_a_signed_bigint()
+        {
+            using var r = ExecuteSingleRowTyped("VALUES (CAST(1 AS BIGINT))");
+            Assert.Throws<InvalidCastException>(() => r.GetUInt64(0));
+        }
+
+        /// <summary>
+        /// A <c>DECIMAL</c> wide enough to hold the same number is still a <c>DECIMAL</c>. Nineteen
+        /// digits, not twenty: Calcite backs DECIMAL with a Java long and caps the precision there.
+        /// </summary>
+        [Fact]
+        public void GetUInt64_should_refuse_a_decimal()
+        {
+            using var r = ExecuteSingleRowTyped("VALUES (CAST(1 AS DECIMAL(19, 0)))");
+            Assert.Throws<InvalidCastException>(() => r.GetUInt64(0));
         }
 
         // ------------------------------------------------------------------------------------

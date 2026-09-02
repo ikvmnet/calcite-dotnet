@@ -371,8 +371,10 @@ namespace Apache.Calcite.Data.Internal
 
         /// <summary>
         /// Implements the GetGuid operation. Calcite's runtime representation of <c>UUID</c> is a
-        /// <see cref="java.util.UUID"/>; a value carried as a string in canonical GUID form
-        /// converts as well, which is what a character column holding one gives.
+        /// <see cref="java.util.UUID"/>, and that is the only thing this reads: a character column
+        /// holding text in canonical GUID form is a character column, and parsing it here would be
+        /// <see cref="GetGuid"/> answering for a type the column does not have. <c>CAST(x AS UUID)</c> is
+        /// how a caller says it means one.
         /// </summary>
         /// <returns></returns>
         public Guid GetGuid()
@@ -380,7 +382,6 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.util.UUID u => JavaUuids.ToGuid(u),
-                string s when Guid.TryParse(s, out _) => Guid.Parse(s),
                 Guid clr when IsAny => clr,
                 _ => throw Cannot("Guid"),
             };
@@ -429,71 +430,71 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Implements the GetByte operation. Accepts any numeric value that fits in a <see cref="byte"/>.
+        /// Implements the GetByte operation. A <see cref="byte"/> is a <c>TINYINT UNSIGNED</c>, which
+        /// Calcite's runtime holds as an <c>org.joou.UByte</c>; a signed <c>TINYINT</c> is not one.
         /// </summary>
         public byte GetByte()
         {
             return _value switch
             {
                 org.joou.UByte ub => (byte)ub.byteValue(),
-                java.lang.Number n => checked((byte)n.longValue()),
                 byte clr when IsAny => clr,
                 _ => throw Cannot("Byte"),
             };
         }
 
         /// <summary>
-        /// Implements the GetSByte operation. Accepts any numeric value that fits in a <see cref="sbyte"/>.
+        /// Implements the GetSByte operation. An <see cref="sbyte"/> is a <c>TINYINT</c>, which Java
+        /// signs and Calcite holds as a <c>java.lang.Byte</c>.
         /// </summary>
         public sbyte GetSByte()
         {
             return _value switch
             {
                 java.lang.Byte by => (sbyte)by.byteValue(),
-                java.lang.Number n => checked((sbyte)n.longValue()),
                 sbyte clr when IsAny => clr,
                 _ => throw Cannot("SByte"),
             };
         }
 
         /// <summary>
-        /// Implements the GetUInt16 operation. Accepts any numeric value that fits in a <see cref="ushort"/>.
+        /// Implements the GetUInt16 operation. A <see cref="ushort"/> is a <c>SMALLINT UNSIGNED</c>,
+        /// which Calcite's runtime holds as an <c>org.joou.UShort</c>.
         /// </summary>
         public ushort GetUInt16()
         {
             return _value switch
             {
                 org.joou.UShort us => (ushort)us.shortValue(),
-                java.lang.Number n => checked((ushort)n.longValue()),
                 ushort clr when IsAny => clr,
                 _ => throw Cannot("UInt16"),
             };
         }
 
         /// <summary>
-        /// Implements the GetUInt32 operation. Accepts any numeric value that fits in a <see cref="uint"/>.
+        /// Implements the GetUInt32 operation. A <see cref="uint"/> is an <c>INTEGER UNSIGNED</c>, which
+        /// Calcite's runtime holds as an <c>org.joou.UInteger</c>.
         /// </summary>
         public uint GetUInt32()
         {
             return _value switch
             {
                 org.joou.UInteger ui => (uint)ui.intValue(),
-                java.lang.Number n => checked((uint)n.longValue()),
                 uint clr when IsAny => clr,
                 _ => throw Cannot("UInt32"),
             };
         }
 
         /// <summary>
-        /// Implements the GetUInt64 operation. Accepts any numeric value representable as a <see cref="ulong"/>.
+        /// Implements the GetUInt64 operation. A <see cref="ulong"/> is a <c>BIGINT UNSIGNED</c>, which
+        /// Calcite's runtime holds as an <c>org.joou.ULong</c>; a <c>DECIMAL</c> wide enough to hold the
+        /// same number is still a <c>DECIMAL</c>.
         /// </summary>
         public ulong GetUInt64()
         {
             return _value switch
             {
                 org.joou.ULong ul => (ulong)ul.longValue(),
-                java.math.BigDecimal bd => (ulong)JavaDecimals.ToDecimal(bd),
-                java.lang.Number n => (ulong)n.longValue(),
                 ulong clr when IsAny => clr,
                 _ => throw Cannot("UInt64"),
             };

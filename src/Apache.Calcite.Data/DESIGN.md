@@ -275,7 +275,10 @@ or `LIST`. Any other style throws `NotSupportedException`.
 for: `GetValue` for the reader's untyped path, `GetFieldValue<T>` for the generic one, and a typed
 getter per ADO.NET accessor. Each typed getter is strict — it accepts the representations Calcite
 actually produces for that SQL type and throws `InvalidCastException` otherwise, naming the runtime
-type, the value and the SQL type.
+type, the value and the SQL type. Strict means the type and not a family of them: `GetGuid` reads a
+`java.util.UUID` and not text in canonical GUID form, and `GetByte` and the `GetUIntNN` getters read
+the `org.joou` type Calcite produces for that unsigned SQL type and not any number that would fit.
+`CAST(x AS UUID)` is how a caller says a string means one.
 
 `SqlTypeName.ANY` is the one type it cannot read, and the one place **the value's own class stands
 in for the declared type**. An `ANY` is `java.lang.Object`: the value is whatever a table, a
