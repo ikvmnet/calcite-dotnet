@@ -247,10 +247,21 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="value"></param>
         /// <returns></returns>
         /// <remarks>
+        /// <para>
         /// A parameter value comes out of the plan in Calcite's representation, which is a boxed Java
         /// type. No ADO.NET provider knows what a <see cref="java.lang.Long"/> is, so it is unwrapped to
-        /// the .NET value it stands for. This is the inverse of what <see cref="AdoReaderUtil"/> does on
-        /// the way in.
+        /// the .NET value it stands for, roughly inverting what <see cref="AdoReaderUtil"/> does on the
+        /// way in. Roughly, because the type chosen is the narrowest one every provider will bind and not
+        /// the narrowest one that holds the value: an <c>sbyte</c>, a <c>ushort</c>, a <c>uint</c> and a
+        /// <c>ulong</c> are none of them bindable, so each widens.
+        /// </para>
+        /// <para>
+        /// This settles what the value is and nothing about what it is bound as.
+        /// <see cref="SetParameter"/> sets no <see cref="System.Data.DbType"/>, so the provider infers one
+        /// from the CLR type, and a cast the dialect wrote around the marker names Calcite's type rather
+        /// than the provider's — a <c>TINYINT</c> being signed in Calcite and unsigned on SQL Server.
+        /// Neither is decidable from a value.
+        /// </para>
         /// </remarks>
         static object? ToProviderValue(object? value)
         {
@@ -258,7 +269,12 @@ namespace Apache.Calcite.Adapter.AdoNet
             {
                 null => null,
                 java.lang.Boolean b => b.booleanValue(),
-                java.lang.Byte b => b.byteValue(),
+                // Java's byte is signed and IKVM's byte is not, so byteValue() answers a CLR byte
+                // holding the two's complement bits, and a TINYINT of -56 would bind as 200.
+                // shortValue() sign-extends instead, and short is the narrowest CLR type every
+                // provider binds: SqlClient refuses an sbyte outright, "The parameter data type of
+                // SByte is invalid", the same wall the unsigned types below run into
+                java.lang.Byte b => b.shortValue(),
                 java.lang.Short s => s.shortValue(),
                 java.lang.Integer i => i.intValue(),
                 java.lang.Long l => l.longValue(),
