@@ -671,6 +671,576 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
+        /// <c>ST_GEOG_FLIPCOORDINATES</c>. Returns the geography with longitude and latitude swapped.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        public static Geometry? FlipCoordinates(Geometry? g)
+        {
+            return g is null ? null : Wgs84Of(SpatialTypeFunctions.ST_FlipCoordinates(g));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_FORCE2D</c>. Returns the geography with any third ordinate dropped.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        public static Geometry? Force2D(Geometry? g)
+        {
+            return g is null ? null : Wgs84Of(SpatialTypeFunctions.ST_Force2D(g));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_FORCE3D</c>. Returns the geography with a third ordinate on every coordinate.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        public static Geometry? Force3D(Geometry? g)
+        {
+            return g is null ? null : Wgs84Of(SpatialTypeFunctions.ST_Force3D(g));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_NORMALIZE</c>. Returns the geography in its canonical form.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        public static Geometry? Normalize(Geometry? g)
+        {
+            return g is null ? null : Wgs84Of(SpatialTypeFunctions.ST_Normalize(g));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_REMOVEHOLES</c>. Returns the geography with the holes taken out of its polygons.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        public static Geometry? RemoveHoles(Geometry? g)
+        {
+            return g is null ? null : Wgs84Of(SpatialTypeFunctions.ST_RemoveHoles(g));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_REMOVEREPEATEDPOINTS</c>. Returns the geography with repeated coordinates dropped.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        public static Geometry? RemoveRepeatedPoints(Geometry? g)
+        {
+            return g is null ? null : Wgs84Of(SpatialTypeFunctions.ST_RemoveRepeatedPoints(g));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_REVERSE</c>. Returns the geography with its coordinates in the opposite order.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        public static Geometry? Reverse(Geometry? g)
+        {
+            return g is null ? null : Wgs84Of(SpatialTypeFunctions.ST_Reverse(g));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_TOMULTILINE</c>. Returns the lines of the geography as a multi-line.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        public static Geometry? ToMultiLine(Geometry? g)
+        {
+            return g is null ? null : Wgs84Of(SpatialTypeFunctions.ST_ToMultiLine(g));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_TOMULTIPOINT</c>. Returns the coordinates of the geography as a multi-point.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        public static Geometry? ToMultiPoint(Geometry? g)
+        {
+            return g is null ? null : Wgs84Of(SpatialTypeFunctions.ST_ToMultiPoint(g));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_TOMULTISEGMENTS</c>. Returns the edges of the geography as a multi-line.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        public static Geometry? ToMultiSegments(Geometry? g)
+        {
+            return g is null ? null : Wgs84Of(SpatialTypeFunctions.ST_ToMultiSegments(g));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_ADDPOINT</c>. Returns the line with the coordinate added at its end.
+        /// </summary>
+        /// <param name="line"></param>
+        /// <param name="point"></param>
+        /// <returns></returns>
+        public static Geometry? AddPoint(Geometry? line, Geometry? point)
+        {
+            return line is null || point is null ? null : Wgs84Of(SpatialTypeFunctions.ST_AddPoint(line, point));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_ADDPOINT</c>. Returns the line with the coordinate added at the given index.
+        /// </summary>
+        /// <param name="line"></param>
+        /// <param name="point"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        public static Geometry? AddPoint(Geometry? line, Geometry? point, java.lang.Number? index)
+        {
+            return line is null || point is null || index is null
+                ? null
+                : Wgs84Of(SpatialTypeFunctions.ST_AddPoint(line, point, index.intValue()));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_REMOVEPOINT</c>. Returns the line with the coordinate at the given index taken out.
+        /// </summary>
+        /// <param name="line"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        public static Geometry? RemovePoint(Geometry? line, java.lang.Number? index)
+        {
+            return line is null || index is null ? null : Wgs84Of(SpatialTypeFunctions.ST_RemovePoint(line, index.intValue()));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_ADDZ</c>. Returns the geography with the given amount added to every third ordinate.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <param name="z"></param>
+        /// <returns></returns>
+        public static Geometry? AddZ(Geometry? g, java.lang.Number? z)
+        {
+            return g is null || z is null ? null : Wgs84Of(SpatialTypeFunctions.ST_AddZ(g, Decimal(z)));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_REMOVEREPEATEDPOINTS</c>. Returns the geography with coordinates closer together than
+        /// the given tolerance dropped.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <param name="tolerance"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The tolerance is in the units of the coordinates and not in metres, because what this does is drop
+        /// coordinates rather than measure between places. Calcite's is the same number.
+        /// </remarks>
+        public static Geometry? RemoveRepeatedPoints(Geometry? g, java.lang.Number? tolerance)
+        {
+            return g is null || tolerance is null
+                ? null
+                : Wgs84Of(SpatialTypeFunctions.ST_RemoveRepeatedPoints(g, Decimal(tolerance)));
+        }
+
+        /// <summary>
+        /// Reads a number as the decimal Calcite's own signature asks for.
+        /// </summary>
+        /// <param name="number"></param>
+        /// <returns></returns>
+        static java.math.BigDecimal Decimal(java.lang.Number number)
+        {
+            return number as java.math.BigDecimal ?? java.math.BigDecimal.valueOf(number.doubleValue());
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_POINT</c> and <c>ST_GEOG_MAKEPOINT</c>. Returns the place at the given longitude and
+        /// latitude.
+        /// </summary>
+        /// <param name="x">The longitude.</param>
+        /// <param name="y">The latitude.</param>
+        /// <returns></returns>
+        public static Geometry? Point(java.lang.Number? x, java.lang.Number? y)
+        {
+            return x is null || y is null ? null : Wgs84Of(SpatialTypeFunctions.ST_Point(Decimal(x), Decimal(y)));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_POINT</c> and <c>ST_GEOG_MAKEPOINT</c>, with a third ordinate.
+        /// </summary>
+        /// <param name="x">The longitude.</param>
+        /// <param name="y">The latitude.</param>
+        /// <param name="z"></param>
+        /// <returns></returns>
+        public static Geometry? Point(java.lang.Number? x, java.lang.Number? y, java.lang.Number? z)
+        {
+            return x is null || y is null || z is null
+                ? null
+                : Wgs84Of(SpatialTypeFunctions.ST_Point(Decimal(x), Decimal(y), Decimal(z)));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKELINE</c>. Returns the line through 2 places.
+        /// </summary>
+        /// <returns></returns>
+        public static Geometry? MakeLine(Geometry? g1, Geometry? g2)
+        {
+            return g1 is null || g2 is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MakeLine(g1, g2));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKELINE</c>. Returns the line through 3 places.
+        /// </summary>
+        /// <returns></returns>
+        public static Geometry? MakeLine(Geometry? g1, Geometry? g2, Geometry? g3)
+        {
+            return g1 is null || g2 is null || g3 is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MakeLine(g1, g2, g3));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKELINE</c>. Returns the line through 4 places.
+        /// </summary>
+        /// <returns></returns>
+        public static Geometry? MakeLine(Geometry? g1, Geometry? g2, Geometry? g3, Geometry? g4)
+        {
+            return g1 is null || g2 is null || g3 is null || g4 is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MakeLine(g1, g2, g3, g4));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKELINE</c>. Returns the line through 5 places.
+        /// </summary>
+        /// <returns></returns>
+        public static Geometry? MakeLine(Geometry? g1, Geometry? g2, Geometry? g3, Geometry? g4, Geometry? g5)
+        {
+            return g1 is null || g2 is null || g3 is null || g4 is null || g5 is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MakeLine(g1, g2, g3, g4, g5));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKELINE</c>. Returns the line through 6 places.
+        /// </summary>
+        /// <returns></returns>
+        public static Geometry? MakeLine(Geometry? g1, Geometry? g2, Geometry? g3, Geometry? g4, Geometry? g5, Geometry? g6)
+        {
+            return g1 is null || g2 is null || g3 is null || g4 is null || g5 is null || g6 is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MakeLine(g1, g2, g3, g4, g5, g6));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and no holes.
+        /// </summary>
+        /// <returns></returns>
+        public static Geometry? MakePolygon(Geometry? shell)
+        {
+            return shell is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MakePolygon(shell));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and one hole.
+        /// </summary>
+        /// <returns></returns>
+        public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0)
+        {
+            return shell is null || hole0 is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MakePolygon(shell, hole0));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 2 holes.
+        /// </summary>
+        /// <returns></returns>
+        public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1)
+        {
+            return shell is null || hole0 is null || hole1 is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MakePolygon(shell, hole0, hole1));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 3 holes.
+        /// </summary>
+        /// <returns></returns>
+        public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1, Geometry? hole2)
+        {
+            return shell is null || hole0 is null || hole1 is null || hole2 is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MakePolygon(shell, hole0, hole1, hole2));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 4 holes.
+        /// </summary>
+        /// <returns></returns>
+        public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1, Geometry? hole2, Geometry? hole3)
+        {
+            return shell is null || hole0 is null || hole1 is null || hole2 is null || hole3 is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MakePolygon(shell, hole0, hole1, hole2, hole3));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 5 holes.
+        /// </summary>
+        /// <returns></returns>
+        public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1, Geometry? hole2, Geometry? hole3, Geometry? hole4)
+        {
+            return shell is null || hole0 is null || hole1 is null || hole2 is null || hole3 is null || hole4 is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MakePolygon(shell, hole0, hole1, hole2, hole3, hole4));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 6 holes.
+        /// </summary>
+        /// <returns></returns>
+        public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1, Geometry? hole2, Geometry? hole3, Geometry? hole4, Geometry? hole5)
+        {
+            return shell is null || hole0 is null || hole1 is null || hole2 is null || hole3 is null || hole4 is null || hole5 is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MakePolygon(shell, hole0, hole1, hole2, hole3, hole4, hole5));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 7 holes.
+        /// </summary>
+        /// <returns></returns>
+        public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1, Geometry? hole2, Geometry? hole3, Geometry? hole4, Geometry? hole5, Geometry? hole6)
+        {
+            return shell is null || hole0 is null || hole1 is null || hole2 is null || hole3 is null || hole4 is null || hole5 is null || hole6 is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MakePolygon(shell, hole0, hole1, hole2, hole3, hole4, hole5, hole6));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 8 holes.
+        /// </summary>
+        /// <returns></returns>
+        public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1, Geometry? hole2, Geometry? hole3, Geometry? hole4, Geometry? hole5, Geometry? hole6, Geometry? hole7)
+        {
+            return shell is null || hole0 is null || hole1 is null || hole2 is null || hole3 is null || hole4 is null || hole5 is null || hole6 is null || hole7 is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MakePolygon(shell, hole0, hole1, hole2, hole3, hole4, hole5, hole6, hole7));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 9 holes.
+        /// </summary>
+        /// <returns></returns>
+        public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1, Geometry? hole2, Geometry? hole3, Geometry? hole4, Geometry? hole5, Geometry? hole6, Geometry? hole7, Geometry? hole8)
+        {
+            return shell is null || hole0 is null || hole1 is null || hole2 is null || hole3 is null || hole4 is null || hole5 is null || hole6 is null || hole7 is null || hole8 is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MakePolygon(shell, hole0, hole1, hole2, hole3, hole4, hole5, hole6, hole7, hole8));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 10 holes.
+        /// </summary>
+        /// <returns></returns>
+        public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1, Geometry? hole2, Geometry? hole3, Geometry? hole4, Geometry? hole5, Geometry? hole6, Geometry? hole7, Geometry? hole8, Geometry? hole9)
+        {
+            return shell is null || hole0 is null || hole1 is null || hole2 is null || hole3 is null || hole4 is null || hole5 is null || hole6 is null || hole7 is null || hole8 is null || hole9 is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MakePolygon(shell, hole0, hole1, hole2, hole3, hole4, hole5, hole6, hole7, hole8, hole9));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_LINEFROMTEXT</c>. Returns a line read from WKT, or null if the text does not name one.
+        /// </summary>
+        /// <param name="wkt"></param>
+        /// <returns></returns>
+        public static Geometry? LineFromText(string? wkt)
+        {
+            return wkt is null ? null : Wgs84Of(SpatialTypeFunctions.ST_LineFromText(wkt));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_LINEFROMTEXT</c>, with the SRID Calcite lets a caller name.
+        /// </summary>
+        /// <param name="wkt"></param>
+        /// <param name="srid"></param>
+        /// <returns></returns>
+        public static Geometry? LineFromText(string? wkt, java.lang.Number? srid)
+        {
+            if (wkt is null || srid is null)
+                return null;
+
+            RequireWgs84(srid.intValue());
+            return LineFromText(wkt);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_LINEFROMWKB</c>. Returns a line read from WKB, or null if the text does not name one.
+        /// </summary>
+        /// <param name="wkb"></param>
+        /// <returns></returns>
+        public static Geometry? LineFromWkb(org.apache.calcite.avatica.util.ByteString? wkb)
+        {
+            return wkb is null ? null : Wgs84Of(SpatialTypeFunctions.ST_LineFromWKB(wkb));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_LINEFROMWKB</c>, with the SRID Calcite lets a caller name.
+        /// </summary>
+        /// <param name="wkb"></param>
+        /// <param name="srid"></param>
+        /// <returns></returns>
+        public static Geometry? LineFromWkb(org.apache.calcite.avatica.util.ByteString? wkb, java.lang.Number? srid)
+        {
+            if (wkb is null || srid is null)
+                return null;
+
+            RequireWgs84(srid.intValue());
+            return LineFromWkb(wkb);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MLINEFROMTEXT</c>. Returns a multi-line read from WKT, or null if the text does not name one.
+        /// </summary>
+        /// <param name="wkt"></param>
+        /// <returns></returns>
+        public static Geometry? MLineFromText(string? wkt)
+        {
+            return wkt is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MLineFromText(wkt));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MLINEFROMTEXT</c>, with the SRID Calcite lets a caller name.
+        /// </summary>
+        /// <param name="wkt"></param>
+        /// <param name="srid"></param>
+        /// <returns></returns>
+        public static Geometry? MLineFromText(string? wkt, java.lang.Number? srid)
+        {
+            if (wkt is null || srid is null)
+                return null;
+
+            RequireWgs84(srid.intValue());
+            return MLineFromText(wkt);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MPOINTFROMTEXT</c>. Returns a multi-point read from WKT, or null if the text does not name one.
+        /// </summary>
+        /// <param name="wkt"></param>
+        /// <returns></returns>
+        public static Geometry? MPointFromText(string? wkt)
+        {
+            return wkt is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MPointFromText(wkt));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MPOINTFROMTEXT</c>, with the SRID Calcite lets a caller name.
+        /// </summary>
+        /// <param name="wkt"></param>
+        /// <param name="srid"></param>
+        /// <returns></returns>
+        public static Geometry? MPointFromText(string? wkt, java.lang.Number? srid)
+        {
+            if (wkt is null || srid is null)
+                return null;
+
+            RequireWgs84(srid.intValue());
+            return MPointFromText(wkt);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MPOLYFROMTEXT</c>. Returns a multi-polygon read from WKT, or null if the text does not name one.
+        /// </summary>
+        /// <param name="wkt"></param>
+        /// <returns></returns>
+        public static Geometry? MPolyFromText(string? wkt)
+        {
+            return wkt is null ? null : Wgs84Of(SpatialTypeFunctions.ST_MPolyFromText(wkt));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MPOLYFROMTEXT</c>, with the SRID Calcite lets a caller name.
+        /// </summary>
+        /// <param name="wkt"></param>
+        /// <param name="srid"></param>
+        /// <returns></returns>
+        public static Geometry? MPolyFromText(string? wkt, java.lang.Number? srid)
+        {
+            if (wkt is null || srid is null)
+                return null;
+
+            RequireWgs84(srid.intValue());
+            return MPolyFromText(wkt);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_POINTFROMTEXT</c>. Returns a point read from WKT, or null if the text does not name one.
+        /// </summary>
+        /// <param name="wkt"></param>
+        /// <returns></returns>
+        public static Geometry? PointFromText(string? wkt)
+        {
+            return wkt is null ? null : Wgs84Of(SpatialTypeFunctions.ST_PointFromText(wkt));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_POINTFROMTEXT</c>, with the SRID Calcite lets a caller name.
+        /// </summary>
+        /// <param name="wkt"></param>
+        /// <param name="srid"></param>
+        /// <returns></returns>
+        public static Geometry? PointFromText(string? wkt, java.lang.Number? srid)
+        {
+            if (wkt is null || srid is null)
+                return null;
+
+            RequireWgs84(srid.intValue());
+            return PointFromText(wkt);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_POINTFROMWKB</c>. Returns a point read from WKB, or null if the text does not name one.
+        /// </summary>
+        /// <param name="wkb"></param>
+        /// <returns></returns>
+        public static Geometry? PointFromWkb(org.apache.calcite.avatica.util.ByteString? wkb)
+        {
+            return wkb is null ? null : Wgs84Of(SpatialTypeFunctions.ST_PointFromWKB(wkb));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_POINTFROMWKB</c>, with the SRID Calcite lets a caller name.
+        /// </summary>
+        /// <param name="wkb"></param>
+        /// <param name="srid"></param>
+        /// <returns></returns>
+        public static Geometry? PointFromWkb(org.apache.calcite.avatica.util.ByteString? wkb, java.lang.Number? srid)
+        {
+            if (wkb is null || srid is null)
+                return null;
+
+            RequireWgs84(srid.intValue());
+            return PointFromWkb(wkb);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_POLYFROMTEXT</c>. Returns a polygon read from WKT, or null if the text does not name one.
+        /// </summary>
+        /// <param name="wkt"></param>
+        /// <returns></returns>
+        public static Geometry? PolyFromText(string? wkt)
+        {
+            return wkt is null ? null : Wgs84Of(SpatialTypeFunctions.ST_PolyFromText(wkt));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_POLYFROMTEXT</c>, with the SRID Calcite lets a caller name.
+        /// </summary>
+        /// <param name="wkt"></param>
+        /// <param name="srid"></param>
+        /// <returns></returns>
+        public static Geometry? PolyFromText(string? wkt, java.lang.Number? srid)
+        {
+            if (wkt is null || srid is null)
+                return null;
+
+            RequireWgs84(srid.intValue());
+            return PolyFromText(wkt);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_POLYFROMWKB</c>. Returns a polygon read from WKB, or null if the text does not name one.
+        /// </summary>
+        /// <param name="wkb"></param>
+        /// <returns></returns>
+        public static Geometry? PolyFromWkb(org.apache.calcite.avatica.util.ByteString? wkb)
+        {
+            return wkb is null ? null : Wgs84Of(SpatialTypeFunctions.ST_PolyFromWKB(wkb));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_POLYFROMWKB</c>, with the SRID Calcite lets a caller name.
+        /// </summary>
+        /// <param name="wkb"></param>
+        /// <param name="srid"></param>
+        /// <returns></returns>
+        public static Geometry? PolyFromWkb(org.apache.calcite.avatica.util.ByteString? wkb, java.lang.Number? srid)
+        {
+            if (wkb is null || srid is null)
+                return null;
+
+            RequireWgs84(srid.intValue());
+            return PolyFromWkb(wkb);
+        }
+
+        /// <summary>
         /// Refuses an SRID a geography cannot be in.
         /// </summary>
         /// <param name="srid"></param>

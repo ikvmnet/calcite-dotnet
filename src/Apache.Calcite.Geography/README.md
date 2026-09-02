@@ -116,7 +116,26 @@ Both arities are Calcite's. The SRID a caller may name has to be 4326 and anythi
 
 `ST_GEOG_XMIN` and its four relatives are computed structurally and are wrong in the usual way for anything crossing the antimeridian, where the least longitude of a shape spanning the seam is not its westmost point. That is inherited from the planar reading rather than introduced here.
 
-**Every format, both ways.** A reader and a writer for each.
+**Building one from parts.**
+
+| | |
+| --- | --- |
+| places | `ST_GEOG_POINT`, `ST_GEOG_MAKEPOINT` — two ordinates or three |
+| lines | `ST_GEOG_MAKELINE` — two to six places |
+| polygons | `ST_GEOG_MAKEPOLYGON` — a shell and up to ten holes |
+
+**Editing.** Rearranging coordinates without interpreting the space between them.
+
+| | |
+| --- | --- |
+| coordinates | `ST_GEOG_ADDPOINT`, `ST_GEOG_REMOVEPOINT`, `ST_GEOG_ADDZ`, `ST_GEOG_REMOVEREPEATEDPOINTS` |
+| order and form | `ST_GEOG_REVERSE`, `ST_GEOG_NORMALIZE`, `ST_GEOG_FLIPCOORDINATES` |
+| ordinates | `ST_GEOG_FORCE2D`, `ST_GEOG_FORCE3D` |
+| structure | `ST_GEOG_REMOVEHOLES`, `ST_GEOG_TOMULTILINE`, `ST_GEOG_TOMULTIPOINT`, `ST_GEOG_TOMULTISEGMENTS` |
+
+Every geography one of these hands back is stamped WGS84, which is a small divergence: `ST_FORCE2D` answers something with an SRID of zero, because the transformer underneath builds through a geometry factory that carries none across. Calcite has no reference system to keep there and this package does.
+
+**Every format, both ways.** A reader and a writer for each, plus a typed reader for each shape — `ST_GEOG_POINTFROMTEXT`, `ST_GEOG_LINEFROMTEXT`, `ST_GEOG_POLYFROMTEXT`, their `MULTI` counterparts and the three `FROMWKB` forms — each answering `NULL` for text that names a different shape.
 
 | | reads | writes |
 | --- | --- | --- |

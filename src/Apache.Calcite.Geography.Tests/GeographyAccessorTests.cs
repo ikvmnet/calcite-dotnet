@@ -104,7 +104,7 @@ namespace Apache.Calcite.Geography.Tests
         /// </summary>
         /// <param name="answer"></param>
         /// <returns></returns>
-        static string Render(object? answer)
+        internal static string Render(object? answer)
         {
             return answer switch
             {
@@ -131,7 +131,7 @@ namespace Apache.Calcite.Geography.Tests
         /// same way. That is an answer to compare like any other, so the kind of the exception is rendered
         /// rather than allowed to end the run.
         /// </remarks>
-        static string Answer(Func<object?> call)
+        internal static string Answer(Func<object?> call)
         {
             try
             {
