@@ -730,9 +730,13 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             method = ClrTypes.Rebind(method, Array.ConvertAll(translated, e => e.Type));
 
             var parameters = method.GetParameters();
-            var resolved = new Expression[translated.Length];
-            for (int i = 0; i < translated.Length; i++)
-                resolved[i] = Coerce(translated[i], parameters[i].ParameterType);
+            var resolved = BindVarArgs(parameters, translated);
+            if (resolved == null)
+            {
+                resolved = new Expression[translated.Length];
+                for (int i = 0; i < translated.Length; i++)
+                    resolved[i] = Coerce(translated[i], parameters[i].ParameterType);
+            }
 
             if (method.IsStatic)
                 return Expression.Call(null, method, resolved);
@@ -812,6 +816,11 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 if (parameters.Length != resolved.Length)
                     continue;
 
+                // a trailing array parameter handed something that is not one is a varargs call rather
+                // than a coercion, and coercing into the array is what threw before the pass below existed
+                if (IsVarArgs(parameters, resolved))
+                    continue;
+
                 var arms = new Expression[resolved.Length];
                 for (int i = 0; i < resolved.Length; i++)
                     arms[i] = Coerce(resolved[i], parameters[i].ParameterType);
@@ -819,7 +828,75 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 return Expression.New(candidate, arms);
             }
 
+            foreach (var candidate in type.GetConstructors())
+                if (BindVarArgs(candidate.GetParameters(), resolved) is Expression[] packed)
+                    return Expression.New(candidate, packed);
+
             throw new NotSupportedException($"'{type}' has no constructor taking {resolved.Length} arguments.");
+        }
+
+        /// <summary>
+        /// Returns whether these arguments reach these parameters as a varargs call.
+        /// </summary>
+        /// <param name="parameters"></param>
+        /// <param name="arguments"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Java's own test, which is the last parameter being an array that the call did not pass one to:
+        /// either there are more arguments than parameters, or the final argument is not the array itself.
+        /// A call that hands the array over as the array is an ordinary call and is left alone, which is
+        /// what Java does with it too.
+        /// </remarks>
+        static bool IsVarArgs(ParameterInfo[] parameters, Expression[] arguments)
+        {
+            if (parameters.Length == 0 || arguments.Length < parameters.Length - 1)
+                return false;
+
+            var last = parameters[^1].ParameterType;
+            if (last.IsArray == false)
+                return false;
+
+            return arguments.Length != parameters.Length || last.IsAssignableFrom(arguments[^1].Type) == false;
+        }
+
+        /// <summary>
+        /// Returns the arguments of a varargs call packed the way the call expects them, or
+        /// <see langword="null"/> where the call is not one.
+        /// </summary>
+        /// <param name="parameters"></param>
+        /// <param name="arguments"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A Java varargs call passes its trailing arguments individually and lets the compiler collect them
+        /// into an array; Janino does that collecting and an expression tree has no step that would. So a
+        /// tree Calcite generates for one arrives with more arguments than the method has parameters, or
+        /// with a single argument where an array belongs, and neither shape binds.
+        ///
+        /// <para><c>CAST(x AS VARIANT)</c> is what reaches it: the variant carries its payload's type, and
+        /// <c>RuntimeTypeInformation.createExpression</c> compiles that type into the plan as
+        /// <c>new GenericSqlTypeRtti(ARRAY, new BasicSqlTypeRtti(INTEGER))</c> for an array — two arguments
+        /// against two parameters, the second of which is a <c>RuntimeTypeInformation[]</c> — as
+        /// <c>new GenericSqlTypeRtti(MAP, key, value)</c> for a map, which is three against two, and as
+        /// <c>new RowSqlTypeRtti(entry, entry)</c> for a row, which is two against one and whose elements
+        /// are <c>AbstractMap.SimpleEntry</c> where the array is of <c>Map.Entry</c>. Every element is
+        /// coerced for that last reason.</para>
+        /// </remarks>
+        Expression[]? BindVarArgs(ParameterInfo[] parameters, Expression[] arguments)
+        {
+            if (IsVarArgs(parameters, arguments) == false)
+                return null;
+
+            var element = parameters[^1].ParameterType.GetElementType()!;
+            var arms = new Expression[parameters.Length];
+            for (int i = 0; i < parameters.Length - 1; i++)
+                arms[i] = Coerce(arguments[i], parameters[i].ParameterType);
+
+            var rest = new Expression[arguments.Length - parameters.Length + 1];
+            for (int i = 0; i < rest.Length; i++)
+                rest[i] = Coerce(arguments[parameters.Length - 1 + i], element);
+
+            arms[^1] = Expression.NewArrayInit(element, rest);
+            return arms;
         }
 
         /// <summary>
