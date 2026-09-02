@@ -66,6 +66,60 @@ Three things carry Java names through this design and are not going away:
 
 ---
 
+## The driver this one is modelled on
+
+**Where an ADO.NET question has no answer in Calcite, the answer is Microsoft's.** SQL Server's
+driver — `Microsoft.Data.SqlClient` — is the reference implementation of `DbDataReader` and
+`DbParameter` that every .NET consumer has already been trained by, so a question about what a
+provider *ought* to do is settled by reading what SqlClient does rather than by reasoning from the
+ADO.NET documentation. This is not deference for its own sake: a consumer written against SqlClient
+and pointed at this provider should not have to learn a second set of rules.
+
+Read the source, not the docs, and not memory: `dotnet/SqlClient`, `SqlBuffer.cs` and
+`SqlDataReader.cs`. The three rules below are quoted from it.
+
+**A typed getter is a cast, not a conversion.** `SqlBuffer.Int32` returns the stored `int` where the
+storage type is `Int32` and otherwise `(int)Value` — an unboxing cast of the boxed value, which
+throws `InvalidCastException` for anything else. `SqlBuffer.Byte` is `(byte)Value` the same way, and
+`SqlBuffer.Guid` accepts `Guid` and `SqlGuid` and otherwise `(Guid)Value`. The source's own comment
+on the fallback is "anything else we haven't thought of goes through boxing". So `GetInt32` over a
+`bigint` throws, `GetByte` over a `smallint` throws, and `GetGuid` over a `varchar` holding text in
+canonical GUID form throws — SqlClient never parses it, and neither does this provider.
+`CalciteResultValue`'s getters are that rule against Calcite's representations: the `org.joou` type
+Calcite produces for each unsigned SQL type, a `java.util.UUID` for `UUID`, and nothing that merely
+resembles one.
+
+**`GetFieldValue<T>` is the same cast.** Every fast path in
+`SqlDataReader.GetFieldValueFromSqlBufferInternal<T>` is guarded on `typeof(T) == dataType`, where
+`dataType` is `data.GetTypeFromStorageType(false)` — the value's storage type, not the column's
+declared type — and the general fallback is `(T)GetValueFromSqlBufferInternal(...)`, a cast whose
+failure is rethrown named. There is one narrowing convenience, `GetFieldValue<DateOnly>` where the
+storage type is `DateTime`, and no reverse of it. This provider matches both: the converted .NET
+value answers where it already is a `T`, the typed getters answer the scalars, and naming element
+types on a collection builds it to them without converting the elements into them.
+
+**`sql_variant` is `ANY`, and it is where the runtime type stands in for the declared one.**
+`MetaType`'s row for `SqlDbType.Variant` carries `typeof(object)` as its class type and
+`DbType.Object`, so `GetFieldType` on such a column is `typeof(object)` — as it is here for `ANY`,
+and for the same reason: no row has been read when it is asked. `TdsParser.TryReadSqlVariant` then
+reads the variant's *inner* TDS type and dispatches into the very same `TryReadSqlValueInternal` the
+non-variant path uses, so the `SqlBuffer` ends up holding the inner storage type. A `sql_variant`
+carrying an `int` reads through `GetInt32`; through `GetInt64` it reaches `(long)Value` over a boxed
+`int` and throws. **That is the whole of the rule this provider applies to `ANY`** — the value's
+class stands in for the type the column does not declare, and standing in for it is all it does.
+
+**What is ours rather than SqlClient's** is what SQL Server has no equivalent of: Calcite's `MAP`,
+`ARRAY`, `MULTISET` and `ROW` are values whose runtime form is a Java object, where every SQL Server
+type is already a CLR value by the time `SqlBuffer` holds one. `CalciteValues` exists for that gap
+and for no other, and it answers it in the same spirit — a `Dictionary<,>`, an array, an `object[]`;
+the shapes a .NET consumer would have written by hand.
+
+**None of this was measured by running SqlClient.** There is no .NET runtime and no SQL Server in
+the environment this was written in, so the driver was read rather than exercised. Where a question
+turns on behaviour the source does not settle plainly, run it before answering.
+
+---
+
 ## Layered Architecture
 
 ### 1. ADO.NET Surface
@@ -508,4 +562,8 @@ src/
   reverse does not happen.
 - **Idiomatic .NET.** Public types follow .NET naming and `IDisposable` conventions. JDBC concepts
   are translated, not copied.
+- **`Microsoft.Data.SqlClient` is the pattern.** Where ADO.NET leaves a provider a choice — what a
+  typed getter accepts, what `GetFieldValue<T>` converts, what `GetFieldType` claims for a column
+  whose type is not known until a row is read — the answer is whatever SqlClient does, read from its
+  source. See *The driver this one is modelled on*.
 - **Targeting.** The provider targets .NET 8, and is verified on .NET 8 and .NET 10.

@@ -32,6 +32,13 @@ namespace Apache.Calcite.Data.Internal
     ///
     /// <para><see cref="CalciteValues"/> holds the conversion itself, in both directions and recursively,
     /// so that a collection of an <c>ANY</c> is read the same way the <c>ANY</c> is.</para>
+    ///
+    /// <para>None of this is invented. <c>Microsoft.Data.SqlClient</c> is the pattern every getter here
+    /// follows: <c>SqlBuffer</c>'s accessors return the stored value where the storage type matches and
+    /// otherwise cast the boxed one, so a getter throws rather than converting, and <c>sql_variant</c> —
+    /// SQL Server's <c>ANY</c> — reports <c>typeof(object)</c> as its field type while its
+    /// <c>SqlBuffer</c> carries the variant's inner storage type, which is what makes its getters read
+    /// the runtime type. <c>DESIGN.md</c>, <i>The driver this one is modelled on</i>, has the reading.</para>
     /// </remarks>
     internal readonly struct CalciteResultValue
     {
