@@ -241,6 +241,71 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
+        /// A table whose ANY columns hold the values a document store puts behind one — a GUID, a
+        /// timestamp and a number, each written the way JSON writes it.
+        /// </summary>
+        /// <remarks>
+        /// <c>ANYS</c> asks what an aggregate does over a value of unknown type; this asks what a
+        /// <c>CAST</c> does, which is a different question with a surprising answer.
+        /// <c>RexToLixTranslator.getConvertExpression</c> switches on the target type and then on the
+        /// source, and ANY matches no source branch anywhere, so every one of these ends at
+        /// <c>EnumUtils.convert(operand, typeFactory.getJavaClass(targetType))</c> — a Java conversion
+        /// between two <em>classes</em>, with no idea that a SQL cast was asked for. What that gives
+        /// depends entirely on which class the target has:
+        ///
+        /// <list type="bullet">
+        /// <item>a primitive or <c>BigDecimal</c> target reaches <c>SqlFunctions.toInt</c> and friends,
+        /// which do convert — including from a string;</item>
+        /// <item><c>VARCHAR</c> reaches <c>toString()</c>;</item>
+        /// <item><c>TIMESTAMP</c> and <c>DATE</c> are <c>long</c> and <c>int</c>, so the cast asks for the
+        /// <em>internal</em> value: epoch millis and epoch days, never a date parse;</item>
+        /// <item><c>UUID</c> has no case in <c>JavaTypeFactoryImpl.getJavaClass</c> at all, so its class is
+        /// <c>Object</c>, the conversion is between <c>Object</c> and <c>Object</c>, and the cast is the
+        /// identity — the value comes through as whatever it already was.</item>
+        /// </list>
+        ///
+        /// <para>None of that is this project's: it is Calcite's own generator, reached identically by
+        /// both conventions, and the tests below are here to hold that it stays reached identically. Where
+        /// a caller wants a conversion, the second cast is what performs it — <c>VARCHAR</c> is a source
+        /// branch that every target has, so <c>CAST(CAST(x AS VARCHAR) AS UUID)</c> reaches
+        /// <c>SqlFunctions.uuidFromString</c> and <c>… AS TIMESTAMP</c> reaches the string parser.</para>
+        /// </remarks>
+        sealed class CastsTable : AbstractTable, ScannableTable
+        {
+
+            static readonly object?[][] Rows =
+            [
+                [java.lang.Integer.valueOf(1), "11111111-1111-1111-1111-111111111111", "2026-01-01 00:00:00", java.lang.Long.valueOf(1767225600000L), "42"],
+                [java.lang.Integer.valueOf(2), "22222222-2222-2222-2222-222222222222", "2025-06-15 12:30:45", java.lang.Long.valueOf(0L), "7"],
+            ];
+
+            /// <inheritdoc />
+            public override RelDataType getRowType(RelDataTypeFactory typeFactory)
+            {
+                RelDataType Any() => typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.ANY), true);
+
+                return typeFactory.builder()
+                    .add("ID", typeFactory.createSqlType(SqlTypeName.INTEGER))
+                    .add("G", Any())
+                    .add("T", Any())
+                    .add("M", Any())
+                    .add("N", Any())
+                    .build();
+            }
+
+            /// <inheritdoc />
+            public org.apache.calcite.linq4j.Enumerable scan(DataContext root)
+            {
+                var list = new java.util.ArrayList();
+                foreach (var row in Rows)
+                    list.add(row);
+
+                return Linq4j.asEnumerable(list);
+            }
+
+        }
+
+        /// <summary>
         /// A table of twelve distinct keys, which is the one row count at which a hash join's leftovers can
         /// come out in the wrong order.
         /// </summary>
@@ -384,6 +449,7 @@ namespace Apache.Calcite.Tests
             rootSchema.add("SCALARS", new ScalarsTable());
             rootSchema.add("WIDE", new WideTable());
             rootSchema.add("ANYS", new AnysTable());
+            rootSchema.add("CASTS", new CastsTable());
             rootSchema.add("FIB", org.apache.calcite.schema.impl.TableFunctionImpl.create(org.apache.calcite.util.Smalls.FIBONACCI_LIMIT_100_TABLE_METHOD));
 
             // A CUSTOM-format fixture, which every other table here is not. HrSchema's rows are instances of
@@ -643,6 +709,43 @@ namespace Apache.Calcite.Tests
             var calcite = Run(sql, false, limitSort: limitSort);
 
             mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
+        }
+
+        /// <summary>
+        /// Requires that a query fails the same way in both conventions.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <param name="message">What the exception both sides throw has to say.</param>
+        /// <remarks>
+        /// A query Calcite refuses is as much a fact about Calcite as one it answers, and a convention that
+        /// answered it would be the divergence. <see cref="Same"/> cannot state that: two throws are not two
+        /// row lists, and a test that only ran the query would pass on a defect that made both sides fail
+        /// for different reasons. The message is what pins which failure, so the java.lang exception a
+        /// generated block throws is compared rather than merely counted.
+        /// </remarks>
+        static void SameFailure(string sql, string message)
+        {
+            static string Failure(string sql, bool clr)
+            {
+                try
+                {
+                    Run(sql, clr);
+                    return "<no failure>";
+                }
+                catch (Exception e)
+                {
+                    while (e.InnerException is not null)
+                        e = e.InnerException;
+
+                    return $"{e.GetType().Name}: {e.Message}";
+                }
+            }
+
+            var mine = Failure(sql, true);
+            var calcite = Failure(sql, false);
+
+            calcite.Should().Contain(message, "'{0}' should fail this way under EnumerableConvention", sql);
+            mine.Should().Be(calcite, "'{0}' should fail the way EnumerableConvention fails", sql);
         }
 
         /// <summary>
@@ -1059,6 +1162,47 @@ namespace Apache.Calcite.Tests
 
         [TestMethod]
         public void ShouldAgreeOnAGroupedAggregateOverACastAnyColumn() => Same("SELECT \"K\", MIN(CAST(\"V\" AS INTEGER)), SUM(CAST(\"V\" AS INTEGER)) FROM \"ANYS\" GROUP BY \"K\" ORDER BY \"K\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnCastingAnAnyColumnToVarchar() => Same("SELECT \"ID\", CAST(\"G\" AS VARCHAR) FROM \"CASTS\" ORDER BY \"ID\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnCastingAnAnyColumnToANumber() => Same("SELECT \"ID\", CAST(\"N\" AS INTEGER), CAST(\"N\" AS DECIMAL(10, 2)) FROM \"CASTS\" ORDER BY \"ID\"");
+
+        /// <summary>
+        /// A TIMESTAMP whose source is ANY reads the value as the internal representation — epoch millis —
+        /// rather than parsing it, and this holds that both conventions do.
+        /// </summary>
+        [TestMethod]
+        public void ShouldAgreeOnCastingAnAnyColumnOfMillisToATimestamp() => Same("SELECT \"ID\", CAST(\"M\" AS TIMESTAMP) FROM \"CASTS\" ORDER BY \"ID\"");
+
+        /// <summary>
+        /// The other half of the same fact: a timestamp written as text is not epoch millis, so the same
+        /// cast over the same column asks <c>Long.parseLong</c> for a date and gets what it deserves.
+        /// </summary>
+        [TestMethod]
+        public void ShouldAgreeOnRefusingATimestampCastOfAnAnyColumnOfText() => SameFailure("SELECT CAST(\"T\" AS TIMESTAMP) FROM \"CASTS\"", "For input string: \"2026-01-01 00:00:00\"");
+
+        /// <summary>
+        /// A UUID whose source is ANY converts nothing at all: <c>JavaTypeFactoryImpl.getJavaClass</c> has
+        /// no UUID case, so the target class is <c>Object</c> and the cast is the identity. The string
+        /// arrives at the projection wearing a type it does not have.
+        /// </summary>
+        [TestMethod]
+        public void ShouldAgreeOnCastingAnAnyColumnToUuidChangingNothing() => Same("SELECT \"ID\", CAST(\"G\" AS UUID) FROM \"CASTS\" ORDER BY \"ID\"");
+
+        /// <summary>
+        /// And that the second cast is what converts, VARCHAR being a source branch every target has.
+        /// </summary>
+        [TestMethod]
+        public void ShouldAgreeOnCastingAnAnyColumnThroughVarcharToUuid() => Same("SELECT \"ID\", CAST(CAST(\"G\" AS VARCHAR) AS UUID) FROM \"CASTS\" ORDER BY \"ID\"");
+
+        /// <summary>
+        /// The same route to a timestamp, which reaches the string parser and so wants SQL's literal
+        /// spelling rather than ISO-8601.
+        /// </summary>
+        [TestMethod]
+        public void ShouldAgreeOnCastingAnAnyColumnThroughVarcharToATimestamp() => Same("SELECT \"ID\", CAST(CAST(\"T\" AS VARCHAR) AS TIMESTAMP) FROM \"CASTS\" ORDER BY \"ID\"");
 
         [TestMethod]
         public void ShouldAgreeOnAGlobalAggregate() => Same("SELECT COUNT(*), SUM(\"AMOUNT\"), AVG(\"AMOUNT\") FROM \"SALES\"");
