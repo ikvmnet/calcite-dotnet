@@ -5,6 +5,7 @@ using System.Data.Common;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.dialect;
+using org.apache.calcite.sql.fun;
 using org.apache.calcite.sql.parser;
 using org.apache.calcite.sql.type;
 
@@ -126,7 +127,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         }
 
         /// <summary>
-        /// <see cref="MssqlSqlDialect"/>, and the two things it does not say about SQL Server.
+        /// <see cref="MssqlSqlDialect"/>, and the three things it does not say about SQL Server.
         /// </summary>
         /// <param name="context"></param>
         /// <remarks>
@@ -145,8 +146,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// for a server to run, and the server is the authority on what it accepts.
         /// </para>
         /// <para>
-        /// The second is what an unbounded string casts to — see <see cref="Mssql.getCastSpec"/>, which is
-        /// the same kind of correction and made for the same reason.
+        /// The second is what an unbounded string casts to — see <see cref="Mssql.getCastSpec"/> — and the
+        /// third is that T-SQL has no concatenation operator — see <see cref="Mssql.unparseCall"/>. Both
+        /// are the same kind of correction and made for the same reason.
         /// </para>
         /// </remarks>
         sealed class Mssql(SqlDialect.Context context) : MssqlSqlDialect(context)
@@ -156,6 +158,95 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             public override bool supportsGroupByLiteral()
             {
                 return false;
+            }
+
+            /// <inheritdoc />
+            /// <remarks>
+            /// <para>
+            /// T-SQL has no <c>||</c>. <c>SqlStdOperatorTable.CONCAT</c> unparses as one, and
+            /// <see cref="MssqlSqlDialect"/> intercepts <c>SUBSTRING</c>, <c>CEIL</c>, <c>FLOOR</c>,
+            /// <c>MOD</c> and <c>SAFE_CAST</c> without intercepting it — so every statement that
+            /// concatenates reaches the server as <c>[A] || [B]</c> and answers "Incorrect syntax near
+            /// '|'". It is not confined to a select list: the operator reaches a predicate, a sort key and
+            /// an aggregate argument the same way, and two literals are not folded away, so no spelling of
+            /// the expression avoids it.
+            /// </para>
+            /// <para>
+            /// <c>+</c> rather than <c>CONCAT</c>, and the difference is answers rather than taste. Both
+            /// concatenate, and only <c>+</c> means what the operator means: <c>||</c> yields null when
+            /// either operand is null, <c>+</c> does the same under the default
+            /// <c>CONCAT_NULL_YIELDS_NULL</c>, and T-SQL's <c>CONCAT</c> reads a null operand as the empty
+            /// string. Rendering the function would trade a loud failure for a row where there should have
+            /// been none. Calcite models that function correctly and separately, as
+            /// <c>SqlLibraryOperators.CONCAT_FUNCTION_WITH_NULL</c> under <c>fun=mssql</c>, which is why
+            /// enabling the library does not repair the operator either.
+            /// </para>
+            /// <para>
+            /// The swap is the shape CALCITE-6726 already put in this method for <c>MOD</c>:
+            /// <see cref="SqlSyntax"/>'s <c>BINARY</c> unparses the call under another operator. What that
+            /// shape does not carry across is precedence — <c>||</c> is 60 and <c>+</c> is 40 — and by the
+            /// time a dialect is asked, <c>SqlCall.unparse</c> has already decided the parentheses around
+            /// the call from the call's own operator. So the substitution alone writes a <c>+</c> inside
+            /// <c>||</c>'s parenthesisation, and where the two differ the grouping is the server's to get
+            /// wrong: <c>(a || b) * n</c> comes out as <c>a + b * n</c>.
+            /// </para>
+            /// <para>
+            /// So the rule is applied again here for the operator actually written. It is
+            /// <c>SqlCall.needsParentheses</c> over <c>PLUS</c> — the two clauses that read a precedence,
+            /// the third being the writer's own setting, which has already been consulted, and the fourth
+            /// a comparison, which neither operator is.
+            /// </para>
+            /// <para>
+            /// Calcite's <c>MOD</c> case has the same gap and does not close it — <c>MOD</c> is a function
+            /// and carries a function's precedence, <c>PERCENT_REMAINDER</c> is 60, and
+            /// <c>n / MOD(a, b)</c> is written <c>n / a % b</c>, measured, which the server groups as
+            /// <c>(n / a) % b</c>. That is a defect to raise upstream rather than one to reproduce: a
+            /// dialect exists to generate SQL a server will run, and a misgrouped expression is not that.
+            /// </para>
+            /// <para>
+            /// <c>SqlDialect.supportsFunction</c> is not the place for it and could not be: it lists
+            /// <c>CONCAT</c> in <c>BUILT_IN_OPERATORS_LIST</c>, and nothing in Calcite core at 1.42 calls
+            /// the method at all, so refusing the operator there would gate nothing.
+            /// </para>
+            /// </remarks>
+            public override void unparseCall(SqlWriter writer, SqlCall call, int leftPrec, int rightPrec)
+            {
+                if (call.getOperator().equals(SqlStdOperatorTable.CONCAT))
+                {
+                    UnparseAsPlus(writer, call, leftPrec, rightPrec);
+                    return;
+                }
+
+                base.unparseCall(writer, call, leftPrec, rightPrec);
+            }
+
+            /// <summary>
+            /// Writes a concatenation as an addition, parenthesised as an addition would have been.
+            /// </summary>
+            /// <param name="writer"></param>
+            /// <param name="call"></param>
+            /// <param name="leftPrec"></param>
+            /// <param name="rightPrec"></param>
+            /// <remarks>
+            /// The two precedences the caller already spent on <c>||</c> are spent again on <c>+</c>, which
+            /// is <c>SqlCall.needsParentheses</c>'s test. Where the call was parenthesised on the way in,
+            /// both are zero and nothing more is written; where it was not, and <c>+</c> binds too loosely
+            /// for where it stands, the parentheses go on here.
+            /// </remarks>
+            static void UnparseAsPlus(SqlWriter writer, SqlCall call, int leftPrec, int rightPrec)
+            {
+                var plus = SqlStdOperatorTable.PLUS;
+
+                if (leftPrec > plus.getLeftPrec() || (plus.getRightPrec() <= rightPrec && rightPrec != 0))
+                {
+                    var frame = writer.startList("(", ")");
+                    SqlSyntax.BINARY.unparse(writer, plus, call, 0, 0);
+                    writer.endList(frame);
+                }
+                else
+                {
+                    SqlSyntax.BINARY.unparse(writer, plus, call, leftPrec, rightPrec);
+                }
             }
 
             /// <inheritdoc />
