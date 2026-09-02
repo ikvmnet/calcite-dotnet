@@ -1,0 +1,54 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <LangVersion>Preview</LangVersion>
+        <Nullable>enable</Nullable>
+        <Description>A GEOGRAPHY type and an ST_GEOG_* operator table for Apache Calcite. Calcite's spatial library is planar JTS answering in the units of an unprojected coordinate system; a store that speaks WGS84 is geodesic and answers in metres. This package gives the second reading a type of its own, so the two cannot be confused, and evaluates the operations backends push over Google's S2.</Description>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageIcon>icon.png</PackageIcon>
+        <PackageTags>apache;calcite;sql;spatial;geography;geodesic;wgs84;s2;ikvm</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\" />
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Apache.Calcite.Geography.Tests" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="IKVM" Version="8.16.0" />
+        <PackageReference Include="IKVM.Java.Extensions" Version="8.16.0" />
+        <!-- Not PrivateAssets, deliberately. This package ships only buildTransitive, which is the folder that
+             carries build assets to consumers; marking it private disables the one mechanism it has, and a project
+             that references ours then compiles and fails at run time with `Could not load file or assembly
+             'calcite.core'`. The default PrivateAssets keeps `build` to ourselves and lets buildTransitive through,
+             which is what we want. -->
+        <PackageReference Include="IKVM.Maven.Sdk" Version="1.12.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- Pinned to the version the rest of the repository resolves. calcite-core drags linq4j in with it and
+             the two are not separable: a disagreement fails inside a type initializer on the first query rather
+             than at restore. json-path's published POM declares no jackson dependency at all
+             (json-path/JsonPath#1082); declare the missing edge, optional like json-path's own bundled descriptor
+             intends, so the version sorts ahead when the closure asks for jackson. -->
+        <MavenReference Include="org.apache.calcite:calcite-core" Version="1.42.0">
+            <Dependencies>
+                com.jayway.jsonpath:json-path/com.fasterxml.jackson.core:jackson-databind:2.18.6,optional=true;
+                com.jayway.jsonpath:json-path/com.fasterxml.jackson.core:jackson-core:2.18.6,optional=true
+            </Dependencies>
+        </MavenReference>
+        <!-- The geodesic engine. Google's own S2, which is what the stores this package exists to agree with
+             compute in: BigQuery and Snowflake are both S2. It is a sphere rather than an ellipsoid, so a
+             distance differs from an ellipsoidal one by a few tenths of a percent — one model for all five
+             operations, which is the point; mixing a spherical predicate with an ellipsoidal distance would put
+             two models in one plan. The .NET ports on NuGet were considered and rejected: the largest is a 2016
+             netstandard1.0 port of a 2011 snapshot with no S2Polyline at all. -->
+        <MavenReference Include="com.google.geometry:s2-geometry" Version="2.0.0" />
+    </ItemGroup>
+
+</Project>

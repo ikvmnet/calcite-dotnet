@@ -11,6 +11,7 @@ instead of Janino, and the prepare pipeline that gets a statement to one.
 | `Apache.Calcite.Adapter.AdoNet` | pushes a plan down to an ADO.NET provider |
 | `Apache.Calcite.Data` | the `DbConnection` / `DbCommand` surface |
 | `Apache.Calcite.Extensions` | `ClrEnumerableConvention` and `ClrAsyncEnumerableConvention`, the prepare pipeline, and the IKVM interop helpers |
+| `Apache.Calcite.Geography` | optional; a `GEOGRAPHY` type distinct from Calcite's `GEOMETRY`, the `ST_GEOG_*` operator table, and a geodesic evaluator over Google's S2. Nothing else references it, and it references nothing else here |
 
 `TODO.md` has the outstanding work on the ADO.NET adapter, sized and reasoned, and the findings of the
 operator audit against linq4j — 45 methods read side by side, 17 of them divergent.

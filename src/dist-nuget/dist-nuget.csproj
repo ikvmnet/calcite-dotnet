@@ -16,7 +16,7 @@
         <PackageProjectReference Include="..\Apache.Calcite.Extensions\Apache.Calcite.Extensions.csproj">
             <PackageTargetPath>.</PackageTargetPath>
         </PackageProjectReference>
-        <PackageProjectReference Include="..\Apache.Calcite.Extensions\Apache.Calcite.Extensions.csproj">
+        <PackageProjectReference Include="..\Apache.Calcite.Geography\Apache.Calcite.Geography.csproj">
             <PackageTargetPath>.</PackageTargetPath>
         </PackageProjectReference>
     </ItemGroup>

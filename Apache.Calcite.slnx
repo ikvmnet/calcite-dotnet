@@ -20,6 +20,8 @@
     <Project Path="src/Apache.Calcite.Data.Tests/Apache.Calcite.Data.Tests.csproj" />
     <Project Path="src/Apache.Calcite.Data/Apache.Calcite.Data.csproj" />
     <Project Path="src/Apache.Calcite.Extensions/Apache.Calcite.Extensions.csproj" />
+    <Project Path="src/Apache.Calcite.Geography.Tests/Apache.Calcite.Geography.Tests.csproj" />
+    <Project Path="src/Apache.Calcite.Geography/Apache.Calcite.Geography.csproj" />
     <Project Path="src/Apache.Calcite.Tests/Apache.Calcite.Tests.csproj" />
   </Folder>
   <Folder Name="/src/dist/">

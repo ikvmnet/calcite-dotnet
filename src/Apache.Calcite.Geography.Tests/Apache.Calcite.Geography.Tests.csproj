@@ -1,0 +1,27 @@
+﻿<Project Sdk="MSTest.Sdk/4.3.3">
+
+    <PropertyGroup>
+        <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+        <LangVersion>latest</LangVersion>
+        <Nullable>enable</Nullable>
+        <TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <!-- MSTest.Sdk 4 references Microsoft.NET.Test.Sdk only under UseVSTest, so a build under 4 puts no
+             VSTest testhost in the output and CI's `dotnet test <dll>` aborts before a test runs.
+             MSTest.TestAdapter still carries the VSTest bridge and still sets GenerateProgramFile=false under
+             EnableMSTestRunner, so declaring the package restores what 3.10.4 arranged, entry point included,
+             and leaves the MSTest runner as it is. -->
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+        <PackageReference Include="FluentAssertions" Version="8.10.0" />
+        <PackageReference Include="IKVM" Version="8.16.0" />
+        <PackageReference Include="IKVM.Java.Extensions" Version="8.16.0" />
+        <PackageReference Include="IKVM.Maven.Sdk" Version="1.12.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Apache.Calcite.Geography\Apache.Calcite.Geography.csproj" />
+    </ItemGroup>
+
+</Project>
