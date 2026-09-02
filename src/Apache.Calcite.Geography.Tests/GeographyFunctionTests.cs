@@ -50,6 +50,25 @@ namespace Apache.Calcite.Geography.Tests
             geography.getSRID().Should().Be(GeographyFunctions.Wgs84);
         }
 
+        /// <summary>
+        /// The SRID a caller may name is the only one a geography can be in, and any other is refused rather
+        /// than ignored.
+        /// </summary>
+        [TestMethod]
+        public void ShouldReadWktWithAnSrid()
+        {
+            var geography = GeographyFunctions.FromWkt("POINT(1 2)", java.lang.Integer.valueOf(GeographyFunctions.Wgs84));
+
+            geography.Should().NotBeNull();
+            geography!.getSRID().Should().Be(GeographyFunctions.Wgs84);
+
+            var refused = () => GeographyFunctions.FromWkt("POINT(1 2)", java.lang.Integer.valueOf(3857));
+            refused.Should().Throw<java.lang.IllegalArgumentException>().WithMessage("*3857*");
+
+            GeographyFunctions.FromWkt(null, java.lang.Integer.valueOf(GeographyFunctions.Wgs84)).Should().BeNull();
+            GeographyFunctions.FromWkt("POINT(1 2)", null).Should().BeNull();
+        }
+
         [TestMethod]
         public void ShouldReadGeoJson()
         {

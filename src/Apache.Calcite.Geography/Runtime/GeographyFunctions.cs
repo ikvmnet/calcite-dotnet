@@ -62,6 +62,32 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
+        /// <c>ST_GEOG_GEOMFROMTEXT</c> and <c>ST_GEOG_GEOMFROMWKT</c>, with the SRID Calcite lets a caller
+        /// name. Reads a geography from WKT.
+        /// </summary>
+        /// <param name="wkt"></param>
+        /// <param name="srid"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The arity is Calcite's, and it is declared so that the mirror is complete rather than because
+        /// there is a choice to make: a geography is WGS84 and there is no second reference system to be in,
+        /// which is the same reason <c>ST_SETSRID</c> and <c>ST_TRANSFORM</c> have no counterpart at all.
+        /// Anything but 4326 is refused rather than ignored — a caller who names one is asking for a
+        /// reprojection that will not happen, and silence would hand them coordinates read as something they
+        /// are not.
+        /// </remarks>
+        public static Geometry? FromWkt(string? wkt, java.lang.Number? srid)
+        {
+            if (wkt is null || srid is null)
+                return null;
+
+            if (srid.intValue() != Wgs84)
+                throw new java.lang.IllegalArgumentException($"A geography is WGS84; SRID {srid.intValue()} is not a reference system it can be in.");
+
+            return FromWkt(wkt);
+        }
+
+        /// <summary>
         /// <c>ST_GEOG_ASGEOM</c>. Reads a geography as a geometry.
         /// </summary>
         /// <param name="geography"></param>
@@ -103,8 +129,7 @@ namespace Apache.Calcite.Geography.Runtime
             if (a is null || b is null)
                 return null;
 
-            var distance = S2Geographies.Distance(S2Geographies.Of(a), S2Geographies.Of(b));
-            return double.IsNaN(distance) ? null : java.lang.Double.valueOf(distance);
+            return java.lang.Double.valueOf(S2Geographies.Distance(S2Geographies.Of(a), S2Geographies.Of(b)));
         }
 
         /// <summary>

@@ -128,6 +128,23 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
+        /// Calcite declares two arities for each WKT constructor, and so do we; the routine lookup picks
+        /// between them by argument count.
+        /// </summary>
+        [TestMethod]
+        public void ShouldTypeTheWktConstructorWithAnSridAsGeography()
+        {
+            GeographyTypes.IsGeography(Column("SELECT ST_GEOG_GEOMFROMTEXT('POINT(0 0)', 4326) FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeography(Column("SELECT ST_GEOG_GEOMFROMWKT('POINT(0 0)', 4326) FROM GEO")).Should().BeTrue();
+        }
+
+        [TestMethod]
+        public void ShouldRejectAWktConstructorWithATooLongArgumentList()
+        {
+            Refuse("SELECT ST_GEOG_GEOMFROMTEXT('POINT(0 0)', 4326, 1) FROM GEO").Should().Contain("ST_GEOG_GEOMFROMTEXT");
+        }
+
+        /// <summary>
         /// A constructed geography goes into a geodesic operator without a column to hold it.
         /// </summary>
         [TestMethod]

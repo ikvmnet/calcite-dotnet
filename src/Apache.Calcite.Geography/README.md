@@ -80,9 +80,11 @@ The names mirror Calcite's `ST_*` one for one with an `ST_GEOG_` prefix. This is
 
 | | |
 | --- | --- |
-| `ST_GEOG_GEOMFROMTEXT(VARCHAR)` | reads WKT |
-| `ST_GEOG_GEOMFROMWKT(VARCHAR)` | the same, under Calcite's other spelling |
+| `ST_GEOG_GEOMFROMTEXT(VARCHAR [, INTEGER])` | reads WKT |
+| `ST_GEOG_GEOMFROMWKT(VARCHAR [, INTEGER])` | the same, under Calcite's other spelling |
 | `ST_GEOG_GEOMFROMGEOJSON(VARCHAR)` | reads GeoJSON |
+
+Both arities are Calcite's. The SRID a caller may name has to be 4326 and anything else is refused rather than ignored — a geography is WGS84 and there is no second reference system to reproject into, which is the same reason `ST_SETSRID` and `ST_TRANSFORM` have no counterpart at all.
 
 **The crossing between the two readings.** Free at run time, since both sides are the same JTS object; explicit, because losing the geodesic reading should be something you wrote down.
 
@@ -102,6 +104,8 @@ The names mirror Calcite's `ST_*` one for one with an `ST_GEOG_` prefix. This is
 | `ST_GEOG_ISVALID(GEOGRAPHY)` | valid on the sphere |
 
 Each answers `NULL` for a `NULL` argument.
+
+What these *mean* is what Calcite means, with the plane swapped for the sphere: `ST_Within` is `geom1.within(geom2)`, so `ST_GEOG_WITHIN` is the DE-9IM relation and not containment — a point on a polygon's boundary is not within it. `GeographyDifferentialTests` runs every one of them against Calcite's over shapes small enough that the two models must agree, which is what holds them to that.
 
 ## The engine
 
