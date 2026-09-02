@@ -77,7 +77,51 @@ namespace Apache.Calcite.Data.Internal
             if (type.isStruct() && value is object[] fields)
                 return FromRow(fields, type);
 
-            switch (type.getSqlTypeName().name())
+            var name = type.getSqlTypeName().name();
+
+            switch (name)
+            {
+                case nameof(SqlTypeName.ARRAY):
+                case nameof(SqlTypeName.MULTISET):
+                    {
+                        if (value is java.util.Collection collection)
+                            return FromCollection(collection, type.getComponentType());
+
+                        break;
+                    }
+
+                case nameof(SqlTypeName.MAP):
+                    {
+                        if (value is java.util.Map map)
+                            return FromMap(map, type.getKeyType(), type.getValueType());
+
+                        break;
+                    }
+            }
+
+            return FromScalar(name, value);
+        }
+
+        /// <summary>
+        /// Returns the .NET value for a value whose SQL type is named but is not a collection.
+        /// </summary>
+        /// <param name="name">The SQL type's name, as <see cref="SqlTypeName.name"/> gives it.</param>
+        /// <param name="value">The value as the plan produced it, or <see langword="null"/>.</param>
+        /// <returns>The .NET value.</returns>
+        /// <remarks>
+        /// The name and not the type, because a variant carries its payload's type as one and has no
+        /// <see cref="RelDataType"/> to offer — and it is the same table either way, since the names
+        /// <c>RuntimeSqlTypeName</c> uses for the temporal and binary types are <see cref="SqlTypeName"/>'s
+        /// own. Those are the types this exists for: Calcite stores a <c>DATE</c> as a count of days and a
+        /// <c>TIMESTAMP</c> as a count of milliseconds, so an integer is one or the other only because the
+        /// type says so. Everything else is decided by the value's class.
+        /// </remarks>
+        internal static object? FromScalar(string name, object? value)
+        {
+            if (value is null)
+                return null;
+
+            switch (name)
             {
                 case nameof(SqlTypeName.DATE):
                     {
@@ -141,23 +185,6 @@ namespace Apache.Calcite.Data.Internal
                             _ => FromRuntime(value),
                         };
                     }
-
-                case nameof(SqlTypeName.ARRAY):
-                case nameof(SqlTypeName.MULTISET):
-                    {
-                        if (value is java.util.Collection collection)
-                            return FromCollection(collection, type.getComponentType());
-
-                        break;
-                    }
-
-                case nameof(SqlTypeName.MAP):
-                    {
-                        if (value is java.util.Map map)
-                            return FromMap(map, type.getKeyType(), type.getValueType());
-
-                        break;
-                    }
             }
 
             return FromRuntime(value);
@@ -178,7 +205,7 @@ namespace Apache.Calcite.Data.Internal
         /// this runtime supplies: its rows hold a CLR <c>int</c> where the plan's row type says
         /// <c>java.lang.Integer</c>.</para>
         /// </remarks>
-        static object FromRuntime(object value)
+        static object? FromRuntime(object value)
         {
             return value switch
             {
@@ -213,6 +240,8 @@ namespace Apache.Calcite.Data.Internal
                 java.time.OffsetDateTime odt => FromInstant(odt.toInstant(), odt.getOffset()),
                 java.time.ZonedDateTime zdt => FromInstant(zdt.toInstant(), zdt.getOffset()),
                 java.time.Duration du => TimeSpan.FromTicks(du.getSeconds() * TimeSpan.TicksPerSecond + du.getNano() / NanosecondsPerTick),
+                // a variant carries its payload's type with it, which is the whole of what it is for
+                org.apache.calcite.runtime.variant.VariantValue variant => CalciteVariants.ToClr(variant),
                 java.util.Map m => FromMap(m, null, null),
                 java.util.Collection col => FromCollection(col, null),
                 // an Object[] is heterogeneous by construction, so its elements convert and its shape does not
@@ -275,12 +304,6 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Returns a Java map as a dictionary of its converted entries.
         /// </summary>
-        /// <remarks>
-        /// A map holding a null key becomes an array of pairs instead: no dictionary the framework ships
-        /// accepts one — <see cref="Dictionary{TKey, TValue}"/> throws for a null key whatever its key
-        /// type is — and dropping the entry would lose a row's contents. Calcite reaches the case, as
-        /// <c>MAP[CAST(NULL AS VARCHAR), 1]</c> validates and runs.
-        /// </remarks>
         static object FromMap(java.util.Map source, RelDataType? keyType, RelDataType? valueType)
         {
             var count = source.size();
@@ -295,6 +318,22 @@ namespace Apache.Calcite.Data.Internal
                 values[n] = ToClr(entry.getValue(), valueType);
                 n++;
             }
+
+            return PackMap(keys, values);
+        }
+
+        /// <summary>
+        /// Returns converted entries as a dictionary of the types they share.
+        /// </summary>
+        /// <remarks>
+        /// A map holding a null key becomes an array of pairs instead: no dictionary the framework ships
+        /// accepts one — <see cref="Dictionary{TKey, TValue}"/> throws for a null key whatever its key
+        /// type is — and dropping the entry would lose a row's contents. Calcite reaches the case, as
+        /// <c>MAP[CAST(NULL AS VARCHAR), 1]</c> validates and runs.
+        /// </remarks>
+        internal static object PackMap(object?[] keys, object?[] values)
+        {
+            var count = keys.Length;
 
             if (Array.IndexOf(keys, null) >= 0)
             {
@@ -315,7 +354,7 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Returns the converted elements as an array of the type they share.
         /// </summary>
-        static Array Pack(object?[] items)
+        internal static Array Pack(object?[] items)
         {
             var element = Unify(items);
             if (element == typeof(object))

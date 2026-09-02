@@ -32,13 +32,6 @@ namespace Apache.Calcite.Data.Internal
     ///
     /// <para><see cref="CalciteValues"/> holds the conversion itself, in both directions and recursively,
     /// so that a collection of an <c>ANY</c> is read the same way the <c>ANY</c> is.</para>
-    ///
-    /// <para>None of this is invented. <c>Microsoft.Data.SqlClient</c> is the pattern every getter here
-    /// follows: <c>SqlBuffer</c>'s accessors return the stored value where the storage type matches and
-    /// otherwise cast the boxed one, so a getter throws rather than converting, and <c>sql_variant</c> —
-    /// SQL Server's <c>ANY</c> — reports <c>typeof(object)</c> as its field type while its
-    /// <c>SqlBuffer</c> carries the variant's inner storage type, which is what makes its getters read
-    /// the runtime type. <c>DESIGN.md</c>, <i>The driver this one is modelled on</i>, has the reading.</para>
     /// </remarks>
     internal readonly struct CalciteResultValue
     {
@@ -62,10 +55,15 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Gets whether the column's type says nothing about what the value is, which is the one case in
-        /// which the accessors read the runtime type instead.
+        /// Gets whether the column's type says nothing about what the value is, which is the case in which
+        /// the accessors read the value's own type instead.
         /// </summary>
-        bool IsAny => _sqlType == SqlTypeName.ANY;
+        /// <remarks>
+        /// Two types leave it unsaid, and they are the same problem written two ways. An <c>ANY</c> is
+        /// <c>java.lang.Object</c> and carries nothing; a <c>VARIANT</c> carries its payload's type with
+        /// the payload. Either way the column does not say, and the value does.
+        /// </remarks>
+        bool IsUntyped => _sqlType == SqlTypeName.ANY || _sqlType == SqlTypeName.VARIANT;
 
         /// <summary>
         /// Returns the exception an accessor throws where the value is not the thing asked for.
@@ -78,12 +76,14 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns the value converted by its runtime type, which is what an <c>ANY</c> accessor reads.
+        /// Returns the value converted by its own type, which is what an accessor over an untyped column
+        /// reads. Null everywhere else, so an arm written against it cannot fire for a column that does
+        /// say what it holds.
         /// </summary>
         /// <returns></returns>
-        object? Any()
+        object? Untyped()
         {
-            return IsAny ? CalciteValues.ToClr(_value, null) : null;
+            return IsUntyped ? CalciteValues.ToClr(_value, _type) : null;
         }
 
         /// <summary>
@@ -92,7 +92,7 @@ namespace Apache.Calcite.Data.Internal
         /// <returns></returns>
         public bool IsDbNull()
         {
-            return _value is null;
+            return _value is null || CalciteVariants.IsNull(_value);
         }
 
         /// <summary>
@@ -184,7 +184,8 @@ namespace Apache.Calcite.Data.Internal
         /// <returns></returns>
         public object GetValue()
         {
-            return _value is null ? DBNull.Value : CalciteValues.ToClr(_value, _type)!;
+            // a variant holding a null converts to one, so the coalesce is reachable and not a formality
+            return _value is null ? DBNull.Value : CalciteValues.ToClr(_value, _type) ?? DBNull.Value;
         }
 
         /// <summary>
@@ -195,7 +196,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Boolean b => b.booleanValue(),
-                bool clr when IsAny => clr,
+                _ when Untyped() is bool clr => clr,
                 _ => throw Cannot("Boolean"),
             };
         }
@@ -209,6 +210,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 string s => s,
+                _ when Untyped() is string text => text,
                 _ => throw Cannot("String"),
             };
         }
@@ -226,7 +228,7 @@ namespace Apache.Calcite.Data.Internal
             {
                 java.lang.Character c => c.charValue(),
                 string s when _sqlType == SqlTypeName.CHAR && s.Length == 1 => s[0],
-                char clr when IsAny => clr,
+                _ when Untyped() is char clr => clr,
                 _ => throw Cannot("Char"),
             };
         }
@@ -297,7 +299,7 @@ namespace Apache.Calcite.Data.Internal
                 java.sql.Timestamp ts when _sqlType == SqlTypeName.TIMESTAMP => UnixEpoch.AddMilliseconds(ts.getTime()),
                 // a java.sql.Timestamp, a java.util.Date or a java.time.LocalDateTime says it is a moment
                 // whatever column it came out of, and under ANY that is the only thing saying so
-                _ when Any() is DateTime dt => dt,
+                _ when Untyped() is DateTime dt => dt,
                 _ => throw Cannot("DateTime"),
             };
         }
@@ -314,7 +316,7 @@ namespace Apache.Calcite.Data.Internal
                 java.sql.Timestamp ts when (_sqlType == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE || _sqlType == SqlTypeName.TIMESTAMP_TZ) => new DateTimeOffset(UnixEpoch.AddMilliseconds(ts.getTime()), TimeSpan.Zero),
                 java.lang.Integer i when (_sqlType == SqlTypeName.TIME_WITH_LOCAL_TIME_ZONE || _sqlType == SqlTypeName.TIME_TZ) => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(i.intValue())),
                 java.sql.Time t when (_sqlType == SqlTypeName.TIME_WITH_LOCAL_TIME_ZONE || _sqlType == SqlTypeName.TIME_TZ) => new DateTimeOffset(1, 1, 1, 0, 0, 0, TimeSpan.Zero).Add(TimeSpan.FromMilliseconds(t.getTime())),
-                _ when Any() is DateTimeOffset dto => dto,
+                _ when Untyped() is DateTimeOffset dto => dto,
                 _ => throw Cannot("DateTimeOffset"),
             };
         }
@@ -329,7 +331,7 @@ namespace Apache.Calcite.Data.Internal
             {
                 java.lang.Integer i when _sqlType == SqlTypeName.TIME => TimeSpan.FromMilliseconds(i.intValue()),
                 java.sql.Time t when _sqlType == SqlTypeName.TIME => TimeSpan.FromMilliseconds(t.getTime()),
-                _ when Any() is TimeSpan ts => ts,
+                _ when Untyped() is TimeSpan ts => ts,
                 _ => throw Cannot("TimeSpan"),
             };
         }
@@ -343,7 +345,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.math.BigDecimal bd => JavaDecimals.ToDecimal(bd),
-                decimal clr when IsAny => clr,
+                _ when Untyped() is decimal clr => clr,
                 _ => throw Cannot("Decimal"),
             };
         }
@@ -357,7 +359,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Double d => d.doubleValue(),
-                double clr when IsAny => clr,
+                _ when Untyped() is double clr => clr,
                 _ => throw Cannot("Double"),
             };
         }
@@ -371,7 +373,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Float f => f.floatValue(),
-                float clr when IsAny => clr,
+                _ when Untyped() is float clr => clr,
                 _ => throw Cannot("Single"),
             };
         }
@@ -389,7 +391,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.util.UUID u => JavaUuids.ToGuid(u),
-                Guid clr when IsAny => clr,
+                _ when Untyped() is Guid clr => clr,
                 _ => throw Cannot("Guid"),
             };
         }
@@ -403,7 +405,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Short s => s.shortValue(),
-                short clr when IsAny => clr,
+                _ when Untyped() is short clr => clr,
                 _ => throw Cannot("Int16"),
             };
         }
@@ -417,7 +419,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Integer i => i.intValue(),
-                int clr when IsAny => clr,
+                _ when Untyped() is int clr => clr,
                 _ => throw Cannot("Int32"),
             };
         }
@@ -431,7 +433,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Long l => l.longValue(),
-                long clr when IsAny => clr,
+                _ when Untyped() is long clr => clr,
                 _ => throw Cannot("Int64"),
             };
         }
@@ -445,7 +447,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 org.joou.UByte ub => (byte)ub.byteValue(),
-                byte clr when IsAny => clr,
+                _ when Untyped() is byte clr => clr,
                 _ => throw Cannot("Byte"),
             };
         }
@@ -459,7 +461,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 java.lang.Byte by => (sbyte)by.byteValue(),
-                sbyte clr when IsAny => clr,
+                _ when Untyped() is sbyte clr => clr,
                 _ => throw Cannot("SByte"),
             };
         }
@@ -473,7 +475,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 org.joou.UShort us => (ushort)us.shortValue(),
-                ushort clr when IsAny => clr,
+                _ when Untyped() is ushort clr => clr,
                 _ => throw Cannot("UInt16"),
             };
         }
@@ -487,7 +489,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 org.joou.UInteger ui => (uint)ui.intValue(),
-                uint clr when IsAny => clr,
+                _ when Untyped() is uint clr => clr,
                 _ => throw Cannot("UInt32"),
             };
         }
@@ -502,7 +504,7 @@ namespace Apache.Calcite.Data.Internal
             return _value switch
             {
                 org.joou.ULong ul => (ulong)ul.longValue(),
-                ulong clr when IsAny => clr,
+                _ when Untyped() is ulong clr => clr,
                 _ => throw Cannot("UInt64"),
             };
         }
@@ -517,7 +519,7 @@ namespace Apache.Calcite.Data.Internal
             {
                 java.lang.Integer i when _sqlType == SqlTypeName.DATE => DateOnly.FromDateTime(UnixEpoch.AddDays(i.intValue())),
                 java.sql.Date d when _sqlType == SqlTypeName.DATE => DateOnly.FromDateTime(UnixEpoch.AddMilliseconds(d.getTime())),
-                _ when Any() is DateOnly dd => dd,
+                _ when Untyped() is DateOnly dd => dd,
                 _ => throw Cannot("DateOnly"),
             };
         }
@@ -532,7 +534,7 @@ namespace Apache.Calcite.Data.Internal
             {
                 java.lang.Integer i when _sqlType == SqlTypeName.TIME => TimeOnly.FromTimeSpan(TimeSpan.FromMilliseconds(i.intValue())),
                 java.sql.Time t when _sqlType == SqlTypeName.TIME => TimeOnly.FromTimeSpan(TimeSpan.FromMilliseconds(t.getTime())),
-                _ when Any() is TimeOnly to => to,
+                _ when Untyped() is TimeOnly to => to,
                 _ => throw Cannot("TimeOnly"),
             };
         }

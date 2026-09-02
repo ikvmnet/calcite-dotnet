@@ -68,55 +68,36 @@ Three things carry Java names through this design and are not going away:
 
 ## The driver this one is modelled on
 
-**Where an ADO.NET question has no answer in Calcite, the answer is Microsoft's.** SQL Server's
-driver — `Microsoft.Data.SqlClient` — is the reference implementation of `DbDataReader` and
-`DbParameter` that every .NET consumer has already been trained by, so a question about what a
-provider *ought* to do is settled by reading what SqlClient does rather than by reasoning from the
-ADO.NET documentation. This is not deference for its own sake: a consumer written against SqlClient
-and pointed at this provider should not have to learn a second set of rules.
+**Where ADO.NET leaves a provider a choice, `Microsoft.Data.SqlClient` settles it.** It is the
+`DbDataReader` every .NET consumer has been trained by, so a consumer written against it and pointed
+at this provider should not have to learn a second set of rules. Read its source rather than the
+documentation or memory — `SqlBuffer.cs`, `SqlDataReader.cs` and `TdsParser.cs` in `dotnet/SqlClient`.
 
-Read the source, not the docs, and not memory: `dotnet/SqlClient`, `SqlBuffer.cs` and
-`SqlDataReader.cs`. The three rules below are quoted from it.
+*This is the client surface imitating a client surface, and has nothing to do with
+`Apache.Calcite.Adapter.AdoNet`, which pushes a plan down to SQL Server as a back end. The two uses of
+the name run in opposite directions.*
 
-**A typed getter is a cast, not a conversion.** `SqlBuffer.Int32` returns the stored `int` where the
-storage type is `Int32` and otherwise `(int)Value` — an unboxing cast of the boxed value, which
-throws `InvalidCastException` for anything else. `SqlBuffer.Byte` is `(byte)Value` the same way, and
-`SqlBuffer.Guid` accepts `Guid` and `SqlGuid` and otherwise `(Guid)Value`. The source's own comment
-on the fallback is "anything else we haven't thought of goes through boxing". So `GetInt32` over a
-`bigint` throws, `GetByte` over a `smallint` throws, and `GetGuid` over a `varchar` holding text in
-canonical GUID form throws — SqlClient never parses it, and neither does this provider.
-`CalciteResultValue`'s getters are that rule against Calcite's representations: the `org.joou` type
-Calcite produces for each unsigned SQL type, a `java.util.UUID` for `UUID`, and nothing that merely
-resembles one.
+Three things settled from it:
 
-**`GetFieldValue<T>` is the same cast.** Every fast path in
-`SqlDataReader.GetFieldValueFromSqlBufferInternal<T>` is guarded on `typeof(T) == dataType`, where
-`dataType` is `data.GetTypeFromStorageType(false)` — the value's storage type, not the column's
-declared type — and the general fallback is `(T)GetValueFromSqlBufferInternal(...)`, a cast whose
-failure is rethrown named. There is one narrowing convenience, `GetFieldValue<DateOnly>` where the
-storage type is `DateTime`, and no reverse of it. This provider matches both: the converted .NET
-value answers where it already is a `T`, the typed getters answer the scalars, and naming element
-types on a collection builds it to them without converting the elements into them.
+- **A typed getter is a cast, not a conversion.** `SqlBuffer.Int32` returns the stored `int` where the
+  storage type is `Int32` and otherwise `(int)Value`; `Guid` accepts `Guid` and `SqlGuid` and
+  otherwise `(Guid)Value`. The source's comment on the fallback is "anything else we haven't thought
+  of goes through boxing". So `GetInt32` over a `bigint` throws and `GetGuid` never parses text.
+- **`GetFieldValue<T>` is the same cast**, every fast path guarded on `typeof(T)` against the value's
+  *storage* type rather than the column's declared type, with `(T)GetValue()` as the fallback. One
+  narrowing convenience — `DateOnly` over a `DateTime` store — and no reverse of it.
+- **`sql_variant` is `ANY`.** `MetaType` gives it `typeof(object)` as its class type, and
+  `TryReadSqlVariant` dispatches on the variant's inner TDS type into the same reader the non-variant
+  path uses, so the `SqlBuffer` holds the inner storage type. The value's class stands in for the type
+  the column does not declare, and standing in for it is all it does.
 
-**`sql_variant` is `ANY`, and it is where the runtime type stands in for the declared one.**
-`MetaType`'s row for `SqlDbType.Variant` carries `typeof(object)` as its class type and
-`DbType.Object`, so `GetFieldType` on such a column is `typeof(object)` — as it is here for `ANY`,
-and for the same reason: no row has been read when it is asked. `TdsParser.TryReadSqlVariant` then
-reads the variant's *inner* TDS type and dispatches into the very same `TryReadSqlValueInternal` the
-non-variant path uses, so the `SqlBuffer` ends up holding the inner storage type. A `sql_variant`
-carrying an `int` reads through `GetInt32`; through `GetInt64` it reaches `(long)Value` over a boxed
-`int` and throws. **That is the whole of the rule this provider applies to `ANY`** — the value's
-class stands in for the type the column does not declare, and standing in for it is all it does.
+What has no counterpart there is Calcite's `MAP`, `ARRAY`, `MULTISET`, `ROW` and `VARIANT`, whose
+runtime forms are Java objects where every SQL Server type is already a CLR value by the time
+`SqlBuffer` holds one. `CalciteValues` and `CalciteVariants` exist for that gap and no other.
 
-**What is ours rather than SqlClient's** is what SQL Server has no equivalent of: Calcite's `MAP`,
-`ARRAY`, `MULTISET` and `ROW` are values whose runtime form is a Java object, where every SQL Server
-type is already a CLR value by the time `SqlBuffer` holds one. `CalciteValues` exists for that gap
-and for no other, and it answers it in the same spirit — a `Dictionary<,>`, an array, an `object[]`;
-the shapes a .NET consumer would have written by hand.
-
-**None of this was measured by running SqlClient.** There is no .NET runtime and no SQL Server in
-the environment this was written in, so the driver was read rather than exercised. Where a question
-turns on behaviour the source does not settle plainly, run it before answering.
+Recorded honestly: the driver was read, not run — there is no .NET runtime and no SQL Server in the
+environment this was written in. Where a question turns on behaviour the source does not settle
+plainly, run it before answering.
 
 ---
 
@@ -334,8 +315,10 @@ type, the value and the SQL type. Strict means the type and not a family of them
 the `org.joou` type Calcite produces for that unsigned SQL type and not any number that would fit.
 `CAST(x AS UUID)` is how a caller says a string means one.
 
-`SqlTypeName.ANY` is the one type it cannot read, and the one place **the value's own class stands
-in for the declared type**. An `ANY` is `java.lang.Object`: the value is whatever a table, a
+`SqlTypeName.ANY` and `SqlTypeName.VARIANT` are the two types it cannot read, and the place where
+**the value's own class stands in for the declared type**. They are one problem written two ways: an
+`ANY` is `java.lang.Object` and carries no type at all, a `VARIANT` carries its payload's type along
+with the payload. An `ANY` is `java.lang.Object`: the value is whatever a table, a
 user-defined function or a schema put there, and nothing in the column says which of the things a
 `java.lang.Integer` could mean it is.
 
@@ -364,6 +347,23 @@ collection is built to them, and only where the values already have them: `IList
 arm, and the escape hatch for a value nothing corresponds to.
 `JavaDecimals` carries `java.math.BigDecimal` to and from `decimal` and `JavaUuids` carries
 `java.util.UUID` to and from `Guid`.
+
+`CalciteVariants` reads a `VARIANT`, whose runtime form is a `VariantValue` and therefore also never
+leaves. Two public calls do the scalar case: `getTypeString()` names the payload's type and `cast()`
+against a `BasicSqlTypeRtti` of that same name hands the payload back, in Calcite's storage form, for
+`CalciteValues.FromScalar` to decode by that name. Naming its *own* type is the point — `cast` is
+Calcite's SQL cast and it converts, a `DOUBLE` of 1.5 casting to `BIGINT` as 1, so it is only ever
+called with the type the variant says it already is. An array is walked with `item(1)`, `item(2)`, …
+until null rather than cast, since a variant keeps only a `RuntimeSqlTypeName` and cannot name its
+element type. A map is met halfway: a cast to `MAP<VARCHAR, VARCHAR>` answers the keys and drops the
+values, and `item(key)` reads each value back.
+
+**A `MULTISET`, a `ROW`, and a map whose keys are not character values are refused.** A multiset
+answers null to every `item`; a row answers only to field names the variant does not carry; a
+non-character key comes back null from the cast that would enumerate it. Calcite 1.42 exposes no
+public route to any of their contents, so `GetValue` throws and names which it was, rather than
+handing back the `VariantValue` — that would put a Java object in a caller's hands — or inventing a
+text form for it. If upstream exposes a variant's full `RuntimeTypeInformation`, all three open up.
 
 `CalciteDataReader` holds an array of `CalciteResult`s and delegates every accessor to
 `ActiveResult.Current.GetValue(ordinal)`. `NextResult` disposes the result it leaves and advances.
@@ -515,6 +515,7 @@ src/
       CalciteParameterValue.cs            (DbType, value) pair
       ParameterBinder.cs                  CLR value → Calcite runtime representation, by DbType
       CalciteValues.cs                    Java value ↔ CLR value, by RelDataType or runtime type
+      CalciteVariants.cs                  VARIANT payload → CLR value, by the payload's own type
       CalciteResult.cs                    Row stream over a ClrSignature
       CalciteResultColumns.cs             Avatica ColumnMetaData → ADO.NET column metadata
       CalciteResultRow.cs                 Column addressing within one row, by cursor style

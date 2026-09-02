@@ -337,6 +337,195 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
+        // VARIANT: the type is carried with the value rather than by the column, which is the same
+        // problem as ANY written the other way round, and reads the same way.
+        // ------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// A variant's payload type is not known until a row is read, so the column can claim no more
+        /// than <see cref="object"/>.
+        /// </summary>
+        [Fact]
+        public void Variant_column_should_report_object_as_its_field_type()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST(1 AS VARIANT)");
+
+            Assert.Equal(typeof(object), r.GetFieldType(0));
+            Assert.Equal("VARIANT", r.GetDataTypeName(0));
+        }
+
+        [Fact]
+        public void Variant_should_never_hand_out_a_java_object()
+        {
+            using var c = Open();
+
+            foreach (var expression in new[] { "CAST(1 AS VARIANT)", "CAST('x' AS VARIANT)", "CAST(ARRAY[1,2] AS VARIANT)", "CAST(MAP['a',1] AS VARIANT)", "CAST(DATE '2020-01-02' AS VARIANT)" })
+            {
+                using var r = Row(c, "SELECT " + expression);
+
+                var name = r.GetValue(0).GetType().FullName!;
+                Assert.False(name.StartsWith("java.", StringComparison.Ordinal), $"{expression} gave {name}");
+                Assert.False(name.StartsWith("org.apache.calcite.", StringComparison.Ordinal), $"{expression} gave {name}");
+            }
+        }
+
+        [Fact]
+        public void Variant_holding_an_integer_should_read_as_an_int()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST(7 AS VARIANT)");
+
+            Assert.Equal(7, r.GetValue(0));
+            Assert.Equal(7, r.GetInt32(0));
+        }
+
+        /// <summary>
+        /// The payload's type stands in for the one the column does not declare, and does nothing more
+        /// than stand in for it: an <c>INTEGER</c> in a variant is an <c>INTEGER</c>.
+        /// </summary>
+        [Fact]
+        public void Variant_holding_an_integer_should_still_refuse_another_width()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST(7 AS VARIANT)");
+
+            Assert.Throws<InvalidCastException>(() => r.GetInt64(0));
+            Assert.Throws<InvalidCastException>(() => r.GetDecimal(0));
+        }
+
+        [Fact]
+        public void Variant_holding_a_string_should_read_as_a_string()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST('hello' AS VARIANT)");
+
+            Assert.Equal("hello", r.GetValue(0));
+            Assert.Equal("hello", r.GetString(0));
+        }
+
+        [Fact]
+        public void Variant_holding_a_boolean_should_read_as_a_bool()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST(TRUE AS VARIANT)");
+
+            Assert.Equal(true, r.GetValue(0));
+            Assert.True(r.GetBoolean(0));
+        }
+
+        /// <summary>
+        /// A variant keeps Calcite's storage form, so a <c>DATE</c> inside one is a count of days and
+        /// only the payload's type says so. Reading it as a number would be the same defect the ANY and
+        /// collection paths exist to avoid.
+        /// </summary>
+        [Fact]
+        public void Variant_holding_a_date_should_read_as_a_date_time()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST(DATE '2020-01-02' AS VARIANT)");
+
+            Assert.Equal(new DateTime(2020, 1, 2), r.GetValue(0));
+            Assert.Equal(new DateTime(2020, 1, 2), r.GetDateTime(0));
+        }
+
+        [Fact]
+        public void Variant_holding_a_timestamp_should_read_as_a_date_time()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST(TIMESTAMP '2020-01-02 03:04:05' AS VARIANT)");
+
+            Assert.Equal(new DateTime(2020, 1, 2, 3, 4, 5), r.GetValue(0));
+        }
+
+        [Fact]
+        public void Variant_holding_a_decimal_should_read_as_a_decimal()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST(CAST(1.25 AS DECIMAL(10, 2)) AS VARIANT)");
+
+            Assert.Equal(1.25m, r.GetValue(0));
+            Assert.Equal(1.25m, r.GetDecimal(0));
+        }
+
+        /// <summary>
+        /// Walked with <c>item</c> rather than cast, so each element carries its own type and the array
+        /// is measured from what they convert to, exactly as a real <c>ARRAY</c> column is.
+        /// </summary>
+        [Fact]
+        public void Variant_holding_an_array_should_read_as_an_array()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST(ARRAY[10, 20] AS VARIANT)");
+
+            Assert.Equal(new[] { 10, 20 }, Assert.IsType<int[]>(r.GetValue(0)));
+        }
+
+        [Fact]
+        public void Variant_holding_a_nested_array_should_read_as_a_nested_array()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST(ARRAY[ARRAY[1, 2]] AS VARIANT)");
+
+            var outer = Assert.IsType<int[][]>(r.GetValue(0));
+            Assert.Equal(new[] { 1, 2 }, outer[0]);
+        }
+
+        [Fact]
+        public void Variant_holding_an_array_with_a_null_should_read_as_an_array_of_the_nullable_type()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST(ARRAY[CAST(NULL AS INTEGER), 5] AS VARIANT)");
+
+            Assert.Equal(new int?[] { null, 5 }, Assert.IsType<int?[]>(r.GetValue(0)));
+        }
+
+        [Fact]
+        public void Variant_holding_a_map_should_read_as_a_dictionary()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST(MAP['a', 1, 'b', 2] AS VARIANT)");
+
+            var typed = Assert.IsType<Dictionary<string, int>>(r.GetValue(0));
+            Assert.Equal(1, typed["a"]);
+            Assert.Equal(2, typed["b"]);
+        }
+
+        [Fact]
+        public void Variant_holding_a_null_should_read_as_db_null()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST(NULL AS VARIANT)");
+
+            Assert.True(r.IsDBNull(0));
+            Assert.Equal(DBNull.Value, r.GetValue(0));
+        }
+
+        /// <summary>
+        /// A <c>ROW</c> payload answers <c>item</c> only for its field names, and a variant does not
+        /// carry them; a <c>MULTISET</c> payload answers <c>item</c> with null for every index. Neither
+        /// has a public route to its contents in Calcite 1.42, so both are refused rather than guessed
+        /// at — handing back the <c>VariantValue</c> would put a Java object in a caller's hands.
+        /// </summary>
+        [Fact]
+        public void Variant_holding_a_row_should_be_refused()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST(ROW(1, 'x') AS VARIANT)");
+
+            Assert.Throws<InvalidCastException>(() => r.GetValue(0));
+        }
+
+        [Fact]
+        public void Variant_holding_a_multiset_should_be_refused()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST(MULTISET[1, 2] AS VARIANT)");
+
+            Assert.Throws<InvalidCastException>(() => r.GetValue(0));
+        }
+
+        // ------------------------------------------------------------------------------------
         // Input: the same conversion the other way round.
         // ------------------------------------------------------------------------------------
 

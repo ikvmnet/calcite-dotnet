@@ -15,16 +15,13 @@ instead of Janino, and the prepare pipeline that gets a statement to one.
 `TODO.md` has the outstanding work on the ADO.NET adapter, sized and reasoned, and the findings of the
 operator audit against linq4j — 45 methods read side by side, 17 of them divergent.
 
-**`Apache.Calcite.Data` follows `Microsoft.Data.SqlClient`.** Where ADO.NET leaves a provider a choice
-— what a typed getter accepts, what `GetFieldValue<T>` converts, what `GetFieldType` claims for a
-column whose type is not known until a row is read — the answer is whatever SqlClient does, and the way
-to find it is to read `SqlBuffer.cs` and `SqlDataReader.cs` in `dotnet/SqlClient` rather than the
-documentation or memory. Two things settled from there so far: a typed getter is a *cast* and never a
-conversion (`SqlBuffer.Int32` is `(int)Value` for anything it does not store, so `GetGuid` does not
-parse a string and `GetInt32` does not read a `bigint`), and `sql_variant` is `ANY` — its field type is
-`typeof(object)` and its `SqlBuffer` carries the variant's *inner* storage type, so the value's class
-stands in for the type the column does not declare and does nothing more than stand in for it.
-`src/Apache.Calcite.Data/DESIGN.md`, *The driver this one is modelled on*, has the reading.
+**Where ADO.NET leaves `Apache.Calcite.Data` a choice, `Microsoft.Data.SqlClient` settles it** — what a
+typed getter accepts, what `GetFieldValue<T>` converts, what `GetFieldType` claims for a column whose
+type is not known until a row is read — and the way to find the answer is to read `SqlBuffer.cs` and
+`SqlDataReader.cs` in `dotnet/SqlClient`, not the documentation and not memory. A typed getter is a
+*cast* and never a conversion, and `sql_variant` is `ANY`. `src/Apache.Calcite.Data/DESIGN.md`, *The
+driver this one is modelled on*, has the reading. Not to be confused with
+`Apache.Calcite.Adapter.AdoNet`'s SQL Server support, which is a back end a plan is pushed down to.
 
 ## Building
 
