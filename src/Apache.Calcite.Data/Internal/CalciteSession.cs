@@ -184,7 +184,7 @@ namespace Apache.Calcite.Data.Internal
             }
             catch (Exception e) when (e is not CalciteException)
             {
-                throw new CalciteException("Failed to initialize Calcite.", e);
+                throw new CalciteException(JavaCauses.Amend("Failed to initialize Calcite.", e), e);
             }
         }
 
@@ -245,7 +245,7 @@ namespace Apache.Calcite.Data.Internal
             }
             catch (Exception e) when (e is not CalciteException)
             {
-                throw new CalciteException("Failed to load Calcite model.", e);
+                throw new CalciteException(JavaCauses.Amend("Failed to load Calcite model.", e), e);
             }
         }
 
@@ -466,7 +466,7 @@ namespace Apache.Calcite.Data.Internal
             }
             catch (Exception e)
             {
-                throw new CalciteException("Failed to execute Calcite statement.", e);
+                throw new CalciteException(JavaCauses.Amend("Failed to execute Calcite statement.", e), e);
             }
             finally
             {
@@ -552,7 +552,7 @@ namespace Apache.Calcite.Data.Internal
             }
             catch (Exception e)
             {
-                throw new CalciteException("Failed to execute Calcite statement.", e);
+                throw new CalciteException(JavaCauses.Amend("Failed to execute Calcite statement.", e), e);
             }
             finally
             {
