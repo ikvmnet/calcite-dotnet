@@ -1,10 +1,13 @@
 using Apache.Calcite.Adapter.AdoNet.Metadata;
 
+using System.Text.RegularExpressions;
+
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.dialect;
+using org.apache.calcite.sql.fun;
 using org.apache.calcite.sql.parser;
 using org.apache.calcite.sql.pretty;
 using org.apache.calcite.sql.type;
@@ -52,6 +55,36 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             dialect.getCastSpec(type).unparse(writer, 0, 0);
 
             return writer.toSqlString().getSql().Trim();
+        }
+
+        /// <summary>
+        /// Returns what a dialect writes for a statement, by parsing it and unparsing it again.
+        /// </summary>
+        /// <param name="dialect"></param>
+        /// <param name="sql"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The route the adapter takes is a rel through <c>RelToSqlConverter</c>, and this is not that; it
+        /// is the same answer because both end at <c>SqlNode.unparse</c>, which is where an operator is
+        /// written. Measured on stock Calcite over the shapes in the report — projection, predicate, sort
+        /// key, aggregate argument — the two routes give the same string for this operator, so the shorter
+        /// one is what the assertions are made against and no schema is needed to make them.
+        /// </remarks>
+        static string Unparse(SqlDialect dialect, string sql)
+        {
+            return Unparse(dialect, SqlParser.create(sql).parseQuery());
+        }
+
+        /// <summary>
+        /// Returns what a dialect writes for a node already built, which is the way to reach an operator the
+        /// parser leaves unresolved.
+        /// </summary>
+        /// <param name="dialect"></param>
+        /// <param name="node"></param>
+        /// <returns></returns>
+        static string Unparse(SqlDialect dialect, SqlNode node)
+        {
+            return Regex.Replace(node.toSqlString(dialect).getSql(), @"\s+", " ").Trim();
         }
 
         /// <summary>
@@ -313,6 +346,216 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         public void AnyNameThatSelectsSqlServerGetsTheCorrection(string productName)
         {
             Assert.AreEqual("VARCHAR(MAX)", CastSpec(AdoSqlDialects.For(productName, "10.50.1600"), Types.createSqlType(SqlTypeName.VARCHAR)));
+        }
+
+        #endregion
+
+        #region Concatenation
+
+        /// <summary>
+        /// T-SQL has no <c>||</c>, and every statement that concatenates reached the server carrying one.
+        /// The four shapes are the ones measured in the report, and the fifth is two literals, which are
+        /// not folded away — so there is no spelling of the expression that avoids the operator.
+        /// </summary>
+        [TestMethod]
+        [DataRow("SELECT A || B FROM CAT WHERE ID = 1", "a projection")]
+        [DataRow("SELECT ID FROM CAT WHERE A || B = 'aabb'", "a predicate")]
+        [DataRow("SELECT ID FROM CAT ORDER BY A || B", "a sort key")]
+        [DataRow("SELECT MAX(A || B) FROM CAT", "an aggregate argument")]
+        [DataRow("SELECT A || B FROM CAT GROUP BY A || B", "a group key")]
+        [DataRow("SELECT 'x' || 'y' FROM CAT WHERE ID = 1", "two literals")]
+        public void ConcatenationIsWrittenAsPlus(string sql, string shape)
+        {
+            var written = Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), sql);
+
+            Assert.IsFalse(written.Contains("||"), $"{shape} still carries the operator the server refuses: {written}");
+            StringAssert.Contains(written, "+", $"{shape}: {written}");
+        }
+
+        /// <summary>
+        /// And the answer this corrects, so that the test says what it is for. <c>MssqlSqlDialect</c>
+        /// intercepts <c>SUBSTRING</c>, <c>CEIL</c>, <c>FLOOR</c>, <c>MOD</c> and <c>SAFE_CAST</c> and not
+        /// this, so the operator goes down as it stands and the server answers "Incorrect syntax near '|'".
+        /// </summary>
+        [TestMethod]
+        public void CalcitesOwnAnswerIsTheOperatorTheServerRefuses()
+        {
+            Assert.AreEqual(
+                "SELECT [A] || [B] FROM [CAT] WHERE [ID] = 1",
+                Unparse(MssqlSqlDialect.DEFAULT, "SELECT A || B FROM CAT WHERE ID = 1"));
+        }
+
+        /// <summary>
+        /// The whole statement, rather than the operator alone, for each shape — a substitution that writes
+        /// the right operator into the wrong place is still wrong.
+        /// </summary>
+        [TestMethod]
+        [DataRow(
+            "SELECT A || B FROM CAT WHERE ID = 1",
+            "SELECT [A] + [B] FROM [CAT] WHERE [ID] = 1")]
+        [DataRow(
+            "SELECT ID FROM CAT WHERE A || B = 'aabb'",
+            "SELECT [ID] FROM [CAT] WHERE [A] + [B] = 'aabb'")]
+        [DataRow(
+            "SELECT MAX(A || B) FROM CAT",
+            "SELECT MAX([A] + [B]) FROM [CAT]")]
+        [DataRow(
+            "SELECT A || B FROM CAT GROUP BY A || B",
+            "SELECT [A] + [B] FROM [CAT] GROUP BY [A] + [B]")]
+        public void TheStatementIsWrittenWhole(string sql, string expected)
+        {
+            Assert.AreEqual(expected, Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), sql));
+        }
+
+        /// <summary>
+        /// <c>+</c> and not <c>CONCAT</c>, and the difference is answers rather than taste: <c>||</c> yields
+        /// null when either operand is null, <c>+</c> does the same under the default
+        /// <c>CONCAT_NULL_YIELDS_NULL</c>, and T-SQL's <c>CONCAT</c> reads a null operand as the empty
+        /// string. The function would turn a query that should return nothing into one that returns a row.
+        /// </summary>
+        [TestMethod]
+        public void TheFunctionIsNotWhatIsWritten()
+        {
+            var written = Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), "SELECT A || B FROM CAT");
+
+            Assert.IsFalse(written.Contains("CONCAT"), $"the function does not propagate null: {written}");
+        }
+
+        /// <summary>
+        /// The correction is SQL Server's alone: a product whose own operator is <c>||</c> keeps it.
+        /// </summary>
+        [TestMethod]
+        [DataRow("PostgreSQL")]
+        [DataRow("SQLite")]
+        [DataRow("Oracle")]
+        // the generic dialect an unknown product gets, which is where a driver that will not say what it
+        // fronts ends up
+        [DataRow("Some Database Nobody Has Heard Of")]
+        public void AnotherProductKeepsTheOperator(string productName)
+        {
+            StringAssert.Contains(Unparse(AdoSqlDialects.For(productName, "1.0"), "SELECT A || B FROM CAT"), "||");
+        }
+
+        /// <summary>
+        /// ODBC and OLE DB reach SQL Server through this same dialect, and a name is all either can offer,
+        /// so every name that selects SQL Server has to carry the correction with it.
+        /// </summary>
+        [TestMethod]
+        [DataRow("Microsoft SQL Server")]
+        [DataRow("microsoft sql server")]
+        [DataRow("Microsoft SQL Server Enterprise Edition")]
+        public void AnyNameThatSelectsSqlServerGetsTheOperator(string productName)
+        {
+            Assert.AreEqual(
+                "SELECT [A] + [B] FROM [CAT]",
+                Unparse(AdoSqlDialects.For(productName, "10.50.1600"), "SELECT A || B FROM CAT"));
+        }
+
+        /// <summary>
+        /// The override is a case ahead of <c>MssqlSqlDialect.unparseCall</c> rather than a replacement of
+        /// it, so what that method already intercepts still happens. <c>MOD</c> is the one this is modelled
+        /// on — CALCITE-6726 swapped an operator in the same way — and <c>CEIL</c> is a rewrite of a
+        /// different shape.
+        /// </summary>
+        [TestMethod]
+        [DataRow("SELECT CEIL(SALARY) FROM CAT", "CEILING")]
+        [DataRow("SELECT SUBSTRING(A FROM 1 FOR 2) FROM CAT", "SUBSTRING")]
+        [DataRow("SELECT CAST(A AS INTEGER) FROM CAT", "CAST")]
+        public void TheDialectsOwnInterceptionsStillHappen(string sql, string expected)
+        {
+            StringAssert.Contains(Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), sql), expected);
+        }
+
+        /// <summary>
+        /// <c>MOD</c> in particular, which is the interception this one is modelled on: CALCITE-6726 swapped
+        /// <c>PERCENT_REMAINDER</c> in through <c>SqlSyntax.BINARY</c>, and nothing pinned it.
+        /// </summary>
+        /// <remarks>
+        /// Built rather than parsed. An unqualified function name is a <c>SqlUnresolvedFunction</c> until
+        /// the validator has run, and <c>MssqlSqlDialect</c> switches on <c>SqlKind.MOD</c>, which an
+        /// unresolved call does not carry — so parse-then-unparse writes <c>MOD([ID], 2)</c> and says
+        /// nothing about the interception either way.
+        /// </remarks>
+        [TestMethod]
+        public void TheInterceptionThisOneIsModelledOnStillHappens()
+        {
+            var call = SqlStdOperatorTable.MOD.createCall(
+                SqlParserPos.ZERO,
+                new SqlIdentifier("ID", SqlParserPos.ZERO),
+                SqlLiteral.createExactNumeric("2", SqlParserPos.ZERO));
+
+            Assert.AreEqual("[ID] % 2", Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), call));
+        }
+
+        #endregion
+
+        #region Concatenation and precedence
+
+        /// <summary>
+        /// <c>SqlSyntax.BINARY.unparse</c> is handed <c>PLUS</c>, whose precedence is not the one the call
+        /// carries — <c>||</c> is 60 and <c>+</c> is 40 — and <c>SqlCall.unparse</c> has already decided the
+        /// parentheses around the call from the call's own operator by the time the dialect is asked. So a
+        /// nested expression is where a substitution of this shape goes wrong.
+        /// </summary>
+        /// <remarks>
+        /// Concatenation nests inside itself, inside a comparison, inside a postfix operator and inside a
+        /// call that writes its own parentheses; all four are here, and the last row is the one where the
+        /// two precedences differ.
+        /// </remarks>
+        [TestMethod]
+        // concatenation in concatenation, which associates the same either way
+        [DataRow(
+            "SELECT A || B || C FROM CAT",
+            "SELECT [A] + [B] + [C] FROM [CAT]")]
+        // the right operand is parenthesised under either operator, each being left associative, so the
+        // grouping the caller wrote survives the substitution
+        [DataRow(
+            "SELECT A || (B || C) FROM CAT",
+            "SELECT [A] + ([B] + [C]) FROM [CAT]")]
+        // against a comparison, which binds looser than either spelling
+        [DataRow(
+            "SELECT ID FROM CAT WHERE A || B = 'aabb'",
+            "SELECT [ID] FROM [CAT] WHERE [A] + [B] = 'aabb'")]
+        [DataRow(
+            "SELECT ID FROM CAT WHERE A || B > 'aa' AND ID > 1",
+            "SELECT [ID] FROM [CAT] WHERE [A] + [B] > 'aa' AND [ID] > 1")]
+        // a postfix operator, which is what a sort key's null ordering is written with
+        [DataRow(
+            "SELECT ID FROM CAT WHERE A || B IS NULL",
+            "SELECT [ID] FROM [CAT] WHERE [A] + [B] IS NULL")]
+        // arithmetic reaches a string only through a cast, and a cast writes its own parentheses
+        [DataRow(
+            "SELECT A || CAST(ID + 1 AS VARCHAR(4)) FROM CAT",
+            "SELECT [A] + CAST([ID] + 1 AS VARCHAR(4)) FROM [CAT]")]
+        [DataRow(
+            "SELECT CAST(A || B AS VARCHAR(4)) FROM CAT",
+            "SELECT CAST([A] + [B] AS VARCHAR(4)) FROM [CAT]")]
+        // and inside a function call, whose frame parenthesises whatever it holds
+        [DataRow(
+            "SELECT UPPER(A || B) FROM CAT",
+            "SELECT UPPER([A] + [B]) FROM [CAT]")]
+        // the one context that binds between the two precedences, and the reason the override applies
+        // PLUS's parenthesisation itself rather than inheriting the one computed for the operator it
+        // replaces: without that, this is [A] + [B] * 2
+        [DataRow(
+            "SELECT (A || B) * 2 FROM CAT",
+            "SELECT ([A] + [B]) * 2 FROM [CAT]")]
+        public void ANestedConcatenationKeepsItsGrouping(string sql, string expected)
+        {
+            Assert.AreEqual(expected, Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), sql));
+        }
+
+        /// <summary>
+        /// Calcite writes no parentheses there, and is right not to: <c>||</c> binds as tightly as <c>*</c>
+        /// does. It is the substitution that makes them necessary, which is why closing the gap is this
+        /// override's job and not something to leave to the shape of the expression.
+        /// </summary>
+        [TestMethod]
+        public void TheGroupingIsOnlyAtRiskBecauseOfTheSubstitution()
+        {
+            Assert.AreEqual(
+                "SELECT [A] || [B] * 2 FROM [CAT]",
+                Unparse(MssqlSqlDialect.DEFAULT, "SELECT (A || B) * 2 FROM CAT"));
         }
 
         #endregion

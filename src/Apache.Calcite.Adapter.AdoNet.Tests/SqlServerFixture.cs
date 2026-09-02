@@ -250,6 +250,17 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             Execute("CREATE TABLE dbo.DEPTS (DEPTNO INT NOT NULL PRIMARY KEY, DNAME NVARCHAR(64) NOT NULL)");
             Execute("INSERT INTO dbo.DEPTS (DEPTNO, DNAME) VALUES (10, 'Sales'), (20, 'Engineering'), (30, 'Empty')");
 
+            // two short strings and a null one, which is the table concatenation was measured over: the
+            // operator has to reach the server as something it will parse, and it has to keep the meaning
+            // it had, which is that a null operand makes the whole expression null
+            Execute("""
+                CREATE TABLE dbo.CAT (
+                    ID INT         NOT NULL PRIMARY KEY,
+                    A  VARCHAR(16) NULL,
+                    B  VARCHAR(16) NULL)
+                """);
+            Execute("INSERT INTO dbo.CAT (ID, A, B) VALUES (1, 'aa', 'bb'), (2, 'cc', NULL), (3, 'dd', 'ee')");
+
             // one column of every type the server's information schema names differently, so that a gap in
             // the type mapping shows up as a failing test rather than as a table nobody can read
             Execute("""
