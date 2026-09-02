@@ -43,9 +43,9 @@ jobs:
         versionSpec: 6.x
     - name: Execute GitVersion
       uses: gittools/actions/gitversion/execute@v4
-    - name: Add NuGet Source (GitHub)
+    - name: Authenticate NuGet Source (GitHub)
       shell: pwsh
-      run: dotnet nuget add source --username USERNAME --password $env:GITHUB_TOKEN --store-password-in-clear-text --name ${{ github.repository_owner }} $env:GITHUB_REPOS
+      run: dotnet nuget update source ${{ github.repository_owner }} --source $env:GITHUB_REPOS --username USERNAME --password $env:GITHUB_TOKEN --store-password-in-clear-text
       env:
         GITHUB_REPOS: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -119,9 +119,13 @@ jobs:
       uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
+    # This job never checks the repository out, so the nuget.config that names the feed is not on disk
+    # and there is no source here to authenticate: it has to be added outright. The build job, which
+    # does check out, updates the source its config already names instead — adding it there fails on the
+    # name being taken.
     - name: Add NuGet Source (GitHub)
       shell: pwsh
-      run: dotnet nuget add source --username USERNAME --password $env:GITHUB_TOKEN --store-password-in-clear-text --name ${{ github.repository_owner }} $env:GITHUB_REPOS
+      run: dotnet nuget add source $env:GITHUB_REPOS --name ${{ github.repository_owner }} --username USERNAME --password $env:GITHUB_TOKEN --store-password-in-clear-text
       env:
         GITHUB_REPOS: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
