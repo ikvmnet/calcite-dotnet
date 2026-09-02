@@ -97,6 +97,7 @@ jobs:
         - Apache.Calcite.Tests
         - Apache.Calcite.Adapter.AdoNet.Tests
         - Apache.Calcite.Data.Tests
+        - Apache.Calcite.Geography.Tests
         sys:
         - win-x64
         - linux-x64

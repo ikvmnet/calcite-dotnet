@@ -38,6 +38,18 @@ Targets .NET 8, and is verified on .NET 8 and .NET 10.
 dotnet add package Apache.Calcite.Extensions
 ```
 
+### [`Apache.Calcite.Geography`](https://www.nuget.org/packages/Apache.Calcite.Geography) · `src/Apache.Calcite.Geography`
+
+A `GEOGRAPHY` type and a set of `ST_GEOG_*` operators that read coordinates as WGS84 and answer in metres.
+
+Calcite has `GEOMETRY` and no `GEOGRAPHY`: its spatial library is planar JTS answering in the units of an unprojected coordinate system, while the stores that speak WGS84 — PostGIS `geography`, BigQuery, Snowflake, Elasticsearch, MongoDB — are geodesic. The two disagree about what identically-named functions mean, and the disagreement is not a scale factor. The type keeps them apart: Calcite's own `ST_*` refuse a geography at validation, and the crossing between the two readings has to be written down.
+
+Optional, and nothing else here depends on it. The geodesic engine is Google's S2.
+
+```sh
+dotnet add package Apache.Calcite.Geography
+```
+
 ## Test and distribution projects
 
 | Project | Purpose |
@@ -45,6 +57,7 @@ dotnet add package Apache.Calcite.Extensions
 | `Apache.Calcite.Tests` | Core engine integration tests, and the convention and prepare pipeline tests — including the differential suites that run the same SQL through `ClrEnumerableConvention` and `EnumerableConvention` and require the same rows |
 | `Apache.Calcite.Data.Tests` | Provider integration tests |
 | `Apache.Calcite.Adapter.AdoNet.Tests` | Adapter integration tests |
+| `Apache.Calcite.Geography.Tests` | Geography type, operator table and geodesic evaluator tests |
 | `dist-nuget` | Packages NuGet artifacts |
 | `dist-tests` | Packages test artifacts for CI |
 
