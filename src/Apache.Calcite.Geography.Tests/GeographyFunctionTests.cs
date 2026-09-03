@@ -294,6 +294,66 @@ namespace Apache.Calcite.Geography.Tests
             org.apache.calcite.runtime.SpatialTypeFunctions.ST_Within(Wkt("POINT(0 0)"), box).Should().BeTrue();
         }
 
+        /// <summary>
+        /// An area is in square metres, and its planar counterpart is in square degrees.
+        /// </summary>
+        /// <remarks>
+        /// The region bounded by the parallels and meridians through the four corners has an area of the
+        /// radius squared times the span of longitude in radians times the difference of the sines of the two
+        /// latitudes. This polygon is a little larger than that region and has to be: its northern edge is a
+        /// great circle between two places at one degree north, and a great circle between them runs north of
+        /// the parallel that joins them. So the closed form is a floor rather than an answer, and the excess
+        /// over it is the bulge — the same bulge that decides whether a point just north of the parallel is
+        /// inside the polygon.
+        ///
+        /// <para>Calcite answers one, which is the box measured in degrees.</para>
+        /// </remarks>
+        [TestMethod]
+        public void ShouldMeasureAreaInSquareMetres()
+        {
+            var box = Wkt("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))");
+            var radians = Math.PI / 180;
+            var betweenTheParallels = EarthRadiusMeters * EarthRadiusMeters * radians * Math.Sin(radians);
+            var area = GeographyFunctions.Area(box)!.doubleValue();
+
+            area.Should().BeGreaterThan(betweenTheParallels);
+            area.Should().BeApproximately(betweenTheParallels, betweenTheParallels * 1e-4);
+
+            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Area(box)!.doubleValue().Should().BeApproximately(1, 1e-9);
+        }
+
+        [TestMethod]
+        public void ShouldMeasureLengthAndPerimeterInMetres()
+        {
+            var line = Wkt("LINESTRING(0 0, 1 0)");
+            var box = Wkt("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))");
+
+            GeographyFunctions.Length(line)!.doubleValue().Should().BeApproximately(Degree, 0.001);
+            GeographyFunctions.Perimeter(line)!.doubleValue().Should().Be(0);
+            GeographyFunctions.Area(line)!.doubleValue().Should().Be(0);
+
+            // the two edges on meridians are a degree each; the two that follow a parallel are shorter as
+            // great circles than the parallel they are written along, and the southern one is the equator
+            GeographyFunctions.Perimeter(box)!.doubleValue()
+                .Should().BeLessThan(4 * Degree).And.BeGreaterThan(3.9 * Degree);
+            GeographyFunctions.Length(box)!.doubleValue()
+                .Should().Be(GeographyFunctions.Perimeter(box)!.doubleValue());
+        }
+
+        /// <summary>
+        /// Two boxes either side of the antimeridian have bounding boxes that meet, and the planar reading
+        /// puts them at opposite ends of the world.
+        /// </summary>
+        [TestMethod]
+        public void ShouldAnswerEnvelopesIntersectAcrossTheAntimeridian()
+        {
+            var west = Wkt("POLYGON((179 -1, 180 -1, 180 1, 179 1, 179 -1))");
+            var east = Wkt("POLYGON((-180 -1, -179 -1, -179 1, -180 1, -180 -1))");
+
+            GeographyFunctions.EnvelopesIntersect(west, east)!.booleanValue().Should().BeTrue();
+            org.apache.calcite.runtime.SpatialTypeFunctions.ST_EnvelopesIntersect(west, east).Should().BeFalse();
+        }
+
         [TestMethod]
         public void ShouldAnswerIsValid()
         {

@@ -1,12 +1,15 @@
 using System;
+using System.Linq;
 
 using Apache.Calcite.Geography.Rel.Type;
+using Apache.Calcite.Geography.Sql;
 
 using FluentAssertions;
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using org.apache.calcite.rel.type;
+using org.apache.calcite.sql;
 using org.apache.calcite.sql.type;
 
 namespace Apache.Calcite.Geography.Tests
@@ -54,6 +57,66 @@ namespace Apache.Calcite.Geography.Tests
             var row = GeographyFixture.Validate(sql);
             row.getFieldList().size().Should().Be(1);
             return ((RelDataTypeField)row.getFieldList().get(0)).getType();
+        }
+
+        /// <summary>
+        /// Every operator the table declares is also an operator the table hands out.
+        /// </summary>
+        /// <remarks>
+        /// The declarations are one list and the registrations are another, and nothing but this connects
+        /// them. A field added without its line in the second list is an operator that exists, compiles,
+        /// resolves nowhere and fails only as <c>No match found for function signature</c> in whichever query
+        /// reaches for it first.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldRegisterEveryDeclaredOperator()
+        {
+            var declared = typeof(GeographyOperatorTable)
+                .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                .Where(field => typeof(SqlFunction).IsAssignableFrom(field.FieldType))
+                .Select(field => (Name: field.Name, Operator: (SqlFunction)field.GetValue(null)!))
+                .ToList();
+
+            declared.Should().HaveCountGreaterThan(50);
+
+            var registered = GeographyOperatorTable.Instance().getOperatorList();
+            var missing = declared.Where(d => registered.contains(d.Operator) == false).Select(d => d.Name).ToList();
+
+            missing.Should().BeEmpty(string.Join(", ", missing));
+            registered.size().Should().Be(declared.Count);
+        }
+
+        /// <summary>
+        /// The accessors insist on a geography exactly as the operations do.
+        /// </summary>
+        /// <remarks>
+        /// They read coordinates without interpreting the space between them, so it would be tempting to let
+        /// them take either reading. They must not: <c>ST_GEOG_ASTEXT</c> over a geometry would be a way to
+        /// spell <c>ST_ASTEXT</c>, and every such way is a place the two readings can be confused.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldRejectAnAccessorOverAGeometryColumn()
+        {
+            foreach (var sql in new[]
+            {
+                "SELECT ST_GEOG_X(GEOM) FROM GEO",
+                "SELECT ST_GEOG_ASTEXT(GEOM) FROM GEO",
+                "SELECT ST_GEOG_NUMPOINTS(GEOM) FROM GEO",
+                "SELECT ST_GEOG_POINTN(GEOM, 1) FROM GEO",
+            })
+                Refuse(sql).Should().Contain("ST_GEOG_", sql);
+        }
+
+        [TestMethod]
+        public void ShouldTypeTheAccessorsOverAGeographyColumn()
+        {
+            Column("SELECT ST_GEOG_X(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
+            Column("SELECT ST_GEOG_NUMPOINTS(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.INTEGER);
+            Column("SELECT ST_GEOG_ISEMPTY(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.BOOLEAN);
+            Column("SELECT ST_GEOG_ASTEXT(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.VARCHAR);
+            Column("SELECT ST_GEOG_ASWKB(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.VARBINARY);
+            GeographyTypes.IsGeography(Column("SELECT ST_GEOG_BOUNDARY(GEOG) FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeography(Column("SELECT ST_GEOG_GEOMFROMWKB(ST_GEOG_ASWKB(GEOG)) FROM GEO")).Should().BeTrue();
         }
 
         [TestMethod]

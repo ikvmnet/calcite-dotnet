@@ -140,6 +140,770 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Geography], ["geog"]);
 
         /// <summary>
+        /// <c>ST_GEOG_X(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogX =
+            Function("ST_GEOG_X", nameof(GeographyFunctions.X), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_Y(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogY =
+            Function("ST_GEOG_Y", nameof(GeographyFunctions.Y), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_Z(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogZ =
+            Function("ST_GEOG_Z", nameof(GeographyFunctions.Z), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_XMIN(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogXMin =
+            Function("ST_GEOG_XMIN", nameof(GeographyFunctions.XMin), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_XMAX(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogXMax =
+            Function("ST_GEOG_XMAX", nameof(GeographyFunctions.XMax), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_YMIN(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogYMin =
+            Function("ST_GEOG_YMIN", nameof(GeographyFunctions.YMin), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_YMAX(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogYMax =
+            Function("ST_GEOG_YMAX", nameof(GeographyFunctions.YMax), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ZMIN(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogZMin =
+            Function("ST_GEOG_ZMIN", nameof(GeographyFunctions.ZMin), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ZMAX(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogZMax =
+            Function("ST_GEOG_ZMAX", nameof(GeographyFunctions.ZMax), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_COORDDIM(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogCoordDim =
+            Function("ST_GEOG_COORDDIM", nameof(GeographyFunctions.CoordDim), GeographyReturnTypes.Integer,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_DIMENSION(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogDimension =
+            Function("ST_GEOG_DIMENSION", nameof(GeographyFunctions.Dimension), GeographyReturnTypes.Integer,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_GEOMETRYTYPE(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogGeometryType =
+            Function("ST_GEOG_GEOMETRYTYPE", nameof(GeographyFunctions.GeometryType), GeographyReturnTypes.Text,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_GEOMETRYTYPECODE(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogGeometryTypeCode =
+            Function("ST_GEOG_GEOMETRYTYPECODE", nameof(GeographyFunctions.GeometryTypeCode), GeographyReturnTypes.Integer,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_NPOINTS(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogNPoints =
+            Function("ST_GEOG_NPOINTS", nameof(GeographyFunctions.NPoints), GeographyReturnTypes.Integer,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_NUMPOINTS(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogNumPoints =
+            Function("ST_GEOG_NUMPOINTS", nameof(GeographyFunctions.NumPoints), GeographyReturnTypes.Integer,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_NUMGEOMETRIES(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogNumGeometries =
+            Function("ST_GEOG_NUMGEOMETRIES", nameof(GeographyFunctions.NumGeometries), GeographyReturnTypes.Integer,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_NUMINTERIORRING(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogNumInteriorRing =
+            Function("ST_GEOG_NUMINTERIORRING", nameof(GeographyFunctions.NumInteriorRing), GeographyReturnTypes.Integer,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_NUMINTERIORRINGS(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogNumInteriorRings =
+            Function("ST_GEOG_NUMINTERIORRINGS", nameof(GeographyFunctions.NumInteriorRings), GeographyReturnTypes.Integer,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_STARTPOINT(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogStartPoint =
+            Function("ST_GEOG_STARTPOINT", nameof(GeographyFunctions.StartPoint), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ENDPOINT(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogEndPoint =
+            Function("ST_GEOG_ENDPOINT", nameof(GeographyFunctions.EndPoint), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_EXTERIORRING(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogExteriorRing =
+            Function("ST_GEOG_EXTERIORRING", nameof(GeographyFunctions.ExteriorRing), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_BOUNDARY(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogBoundary =
+            Function("ST_GEOG_BOUNDARY", nameof(GeographyFunctions.Boundary), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_HOLES(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogHoles =
+            Function("ST_GEOG_HOLES", nameof(GeographyFunctions.Holes), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ISEMPTY(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogIsEmpty =
+            Function("ST_GEOG_ISEMPTY", nameof(GeographyFunctions.IsEmpty), GeographyReturnTypes.Boolean,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_IS3D(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogIs3D =
+            Function("ST_GEOG_IS3D", nameof(GeographyFunctions.Is3D), GeographyReturnTypes.Boolean,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ISCLOSED(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogIsClosed =
+            Function("ST_GEOG_ISCLOSED", nameof(GeographyFunctions.IsClosed), GeographyReturnTypes.Boolean,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_SRID(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogSrid =
+            Function("ST_GEOG_SRID", nameof(GeographyFunctions.Srid), GeographyReturnTypes.Integer,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ASTEXT(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogAsText =
+            Function("ST_GEOG_ASTEXT", nameof(GeographyFunctions.AsText), GeographyReturnTypes.Text,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ASWKT(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogAsWkt =
+            Function("ST_GEOG_ASWKT", nameof(GeographyFunctions.AsWkt), GeographyReturnTypes.Text,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ASEWKT(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogAsEwkt =
+            Function("ST_GEOG_ASEWKT", nameof(GeographyFunctions.AsEwkt), GeographyReturnTypes.Text,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ASGEOJSON(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogAsGeoJson =
+            Function("ST_GEOG_ASGEOJSON", nameof(GeographyFunctions.AsGeoJson), GeographyReturnTypes.Text,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ASGML(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogAsGml =
+            Function("ST_GEOG_ASGML", nameof(GeographyFunctions.AsGml), GeographyReturnTypes.Text,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ASBINARY(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogAsBinary =
+            Function("ST_GEOG_ASBINARY", nameof(GeographyFunctions.AsBinary), GeographyReturnTypes.Binary,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ASWKB(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogAsWkb =
+            Function("ST_GEOG_ASWKB", nameof(GeographyFunctions.AsWkb), GeographyReturnTypes.Binary,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ASEWKB(GEOGRAPHY)</c>.
+        /// </summary>
+        public static readonly SqlFunction StGeogAsEwkb =
+            Function("ST_GEOG_ASEWKB", nameof(GeographyFunctions.AsEwkb), GeographyReturnTypes.Binary,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_POINTN(GEOGRAPHY, INTEGER)</c>. Returns the nth coordinate of a line.
+        /// </summary>
+        public static readonly SqlFunction StGeogPointN =
+            Function("ST_GEOG_POINTN", nameof(GeographyFunctions.PointN), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Numeric], ["geog", "n"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_GEOMETRYN(GEOGRAPHY, INTEGER)</c>. Returns the nth part of the geography.
+        /// </summary>
+        public static readonly SqlFunction StGeogGeometryN =
+            Function("ST_GEOG_GEOMETRYN", nameof(GeographyFunctions.GeometryN), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Numeric], ["geog", "n"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_INTERIORRING(GEOGRAPHY, INTEGER)</c>. Returns the nth hole of a polygon.
+        /// </summary>
+        public static readonly SqlFunction StGeogInteriorRing =
+            Function("ST_GEOG_INTERIORRING", nameof(GeographyFunctions.InteriorRing), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Numeric], ["geog", "n"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ORDERINGEQUALS(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether two geographies name the same coordinates in the same order.
+        /// </summary>
+        public static readonly SqlFunction StGeogOrderingEquals =
+            Function("ST_GEOG_ORDERINGEQUALS", nameof(GeographyFunctions.OrderingEquals), GeographyReturnTypes.Boolean,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_GEOMFROMEWKT(VARCHAR)</c>. Returns a geography read from EWKT.
+        /// </summary>
+        public static readonly SqlFunction StGeogGeomFromEwkt =
+            Function("ST_GEOG_GEOMFROMEWKT", nameof(GeographyFunctions.FromEwkt), GeographyReturnTypes.Geography,
+                [GeographyOperand.Character], ["ewkt"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_GEOMFROMWKB(VARBINARY)</c>. Returns a geography read from WKB.
+        /// </summary>
+        public static readonly SqlFunction StGeogGeomFromWkb =
+            Function("ST_GEOG_GEOMFROMWKB", nameof(GeographyFunctions.FromWkb), GeographyReturnTypes.Geography,
+                [GeographyOperand.Binary], ["wkb"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_GEOMFROMWKB(VARBINARY, INTEGER)</c>. Returns a geography read from WKB; the SRID must be 4326.
+        /// </summary>
+        public static readonly SqlFunction StGeogGeomFromWkbWithSrid =
+            Function("ST_GEOG_GEOMFROMWKB", nameof(GeographyFunctions.FromWkb), GeographyReturnTypes.Geography,
+                [GeographyOperand.Binary, GeographyOperand.Numeric], ["wkb", "srid"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_GEOMFROMEWKB(VARBINARY)</c>. Returns a geography read from EWKB.
+        /// </summary>
+        public static readonly SqlFunction StGeogGeomFromEwkb =
+            Function("ST_GEOG_GEOMFROMEWKB", nameof(GeographyFunctions.FromEwkb), GeographyReturnTypes.Geography,
+                [GeographyOperand.Binary], ["ewkb"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_GEOMFROMGML(VARCHAR)</c>. Returns a geography read from GML.
+        /// </summary>
+        public static readonly SqlFunction StGeogGeomFromGml =
+            Function("ST_GEOG_GEOMFROMGML", nameof(GeographyFunctions.FromGml), GeographyReturnTypes.Geography,
+                [GeographyOperand.Character], ["gml"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_GEOMFROMGML(VARCHAR, INTEGER)</c>. Returns a geography read from GML; the SRID must be 4326.
+        /// </summary>
+        public static readonly SqlFunction StGeogGeomFromGmlWithSrid =
+            Function("ST_GEOG_GEOMFROMGML", nameof(GeographyFunctions.FromGml), GeographyReturnTypes.Geography,
+                [GeographyOperand.Character, GeographyOperand.Numeric], ["gml", "srid"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_FLIPCOORDINATES(GEOGRAPHY)</c>. Returns the geography with longitude and latitude swapped.
+        /// </summary>
+        public static readonly SqlFunction StGeogFlipCoordinates =
+            Function("ST_GEOG_FLIPCOORDINATES", nameof(GeographyFunctions.FlipCoordinates), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_FORCE2D(GEOGRAPHY)</c>. Returns the geography with any third ordinate dropped.
+        /// </summary>
+        public static readonly SqlFunction StGeogForce2D =
+            Function("ST_GEOG_FORCE2D", nameof(GeographyFunctions.Force2D), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_FORCE3D(GEOGRAPHY)</c>. Returns the geography with a third ordinate on every coordinate.
+        /// </summary>
+        public static readonly SqlFunction StGeogForce3D =
+            Function("ST_GEOG_FORCE3D", nameof(GeographyFunctions.Force3D), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_NORMALIZE(GEOGRAPHY)</c>. Returns the geography in its canonical form.
+        /// </summary>
+        public static readonly SqlFunction StGeogNormalize =
+            Function("ST_GEOG_NORMALIZE", nameof(GeographyFunctions.Normalize), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_REMOVEHOLES(GEOGRAPHY)</c>. Returns the geography with the holes taken out of its polygons.
+        /// </summary>
+        public static readonly SqlFunction StGeogRemoveHoles =
+            Function("ST_GEOG_REMOVEHOLES", nameof(GeographyFunctions.RemoveHoles), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_REMOVEREPEATEDPOINTS(GEOGRAPHY)</c>. Returns the geography with repeated coordinates dropped.
+        /// </summary>
+        public static readonly SqlFunction StGeogRemoveRepeatedPoints =
+            Function("ST_GEOG_REMOVEREPEATEDPOINTS", nameof(GeographyFunctions.RemoveRepeatedPoints), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_REVERSE(GEOGRAPHY)</c>. Returns the geography with its coordinates in the opposite order.
+        /// </summary>
+        public static readonly SqlFunction StGeogReverse =
+            Function("ST_GEOG_REVERSE", nameof(GeographyFunctions.Reverse), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_TOMULTILINE(GEOGRAPHY)</c>. Returns the lines of the geography as a multi-line.
+        /// </summary>
+        public static readonly SqlFunction StGeogToMultiLine =
+            Function("ST_GEOG_TOMULTILINE", nameof(GeographyFunctions.ToMultiLine), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_TOMULTIPOINT(GEOGRAPHY)</c>. Returns the coordinates of the geography as a multi-point.
+        /// </summary>
+        public static readonly SqlFunction StGeogToMultiPoint =
+            Function("ST_GEOG_TOMULTIPOINT", nameof(GeographyFunctions.ToMultiPoint), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_TOMULTISEGMENTS(GEOGRAPHY)</c>. Returns the edges of the geography as a multi-line.
+        /// </summary>
+        public static readonly SqlFunction StGeogToMultiSegments =
+            Function("ST_GEOG_TOMULTISEGMENTS", nameof(GeographyFunctions.ToMultiSegments), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ADDPOINT(GEOGRAPHY, GEOGRAPHY)</c>. Returns the line with the coordinate added at its end.
+        /// </summary>
+        public static readonly SqlFunction StGeogAddPoint =
+            Function("ST_GEOG_ADDPOINT", nameof(GeographyFunctions.AddPoint), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["line", "point"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ADDPOINT(GEOGRAPHY, GEOGRAPHY, INTEGER)</c>. Returns the line with the coordinate added at the given index.
+        /// </summary>
+        public static readonly SqlFunction StGeogAddPointAtIndex =
+            Function("ST_GEOG_ADDPOINT", nameof(GeographyFunctions.AddPoint), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Numeric], ["line", "point", "index"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_REMOVEPOINT(GEOGRAPHY, INTEGER)</c>. Returns the line with the coordinate at the given index taken out.
+        /// </summary>
+        public static readonly SqlFunction StGeogRemovePoint =
+            Function("ST_GEOG_REMOVEPOINT", nameof(GeographyFunctions.RemovePoint), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Numeric], ["line", "index"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ADDZ(GEOGRAPHY, NUMERIC)</c>. Returns the geography with the given amount added to every third ordinate.
+        /// </summary>
+        public static readonly SqlFunction StGeogAddZ =
+            Function("ST_GEOG_ADDZ", nameof(GeographyFunctions.AddZ), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Numeric], ["geog", "z"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_REMOVEREPEATEDPOINTS(GEOGRAPHY, NUMERIC)</c>. Returns the geography with coordinates closer together than the tolerance dropped.
+        /// </summary>
+        public static readonly SqlFunction StGeogRemoveRepeatedPointsWithTolerance =
+            Function("ST_GEOG_REMOVEREPEATEDPOINTS", nameof(GeographyFunctions.RemoveRepeatedPoints), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Numeric], ["geog", "tolerance"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_POINT(NUMERIC, NUMERIC)</c>. Returns the place at the given longitude and latitude.
+        /// </summary>
+        public static readonly SqlFunction StGeogPoint =
+            Function("ST_GEOG_POINT", nameof(GeographyFunctions.Point), GeographyReturnTypes.Geography,
+                [GeographyOperand.Numeric, GeographyOperand.Numeric], ["x", "y"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_POINT(NUMERIC, NUMERIC, NUMERIC)</c>. Returns the place at the given longitude, latitude and third ordinate.
+        /// </summary>
+        public static readonly SqlFunction StGeogPoint3D =
+            Function("ST_GEOG_POINT", nameof(GeographyFunctions.Point), GeographyReturnTypes.Geography,
+                [GeographyOperand.Numeric, GeographyOperand.Numeric, GeographyOperand.Numeric], ["x", "y", "z"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOINT(NUMERIC, NUMERIC)</c>. Returns the place at the given longitude and latitude.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakePoint =
+            Function("ST_GEOG_MAKEPOINT", nameof(GeographyFunctions.Point), GeographyReturnTypes.Geography,
+                [GeographyOperand.Numeric, GeographyOperand.Numeric], ["x", "y"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOINT(NUMERIC, NUMERIC, NUMERIC)</c>. Returns the place at the given longitude, latitude and third ordinate.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakePoint3D =
+            Function("ST_GEOG_MAKEPOINT", nameof(GeographyFunctions.Point), GeographyReturnTypes.Geography,
+                [GeographyOperand.Numeric, GeographyOperand.Numeric, GeographyOperand.Numeric], ["x", "y", "z"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKELINE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the line through 2 places.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakeLine2 =
+            Function("ST_GEOG_MAKELINE", nameof(GeographyFunctions.MakeLine), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKELINE(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the line through 3 places.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakeLine3 =
+            Function("ST_GEOG_MAKELINE", nameof(GeographyFunctions.MakeLine), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2", "geog3"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKELINE(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the line through 4 places.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakeLine4 =
+            Function("ST_GEOG_MAKELINE", nameof(GeographyFunctions.MakeLine), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2", "geog3", "geog4"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKELINE(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the line through 5 places.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakeLine5 =
+            Function("ST_GEOG_MAKELINE", nameof(GeographyFunctions.MakeLine), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2", "geog3", "geog4", "geog5"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKELINE(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the line through 6 places.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakeLine6 =
+            Function("ST_GEOG_MAKELINE", nameof(GeographyFunctions.MakeLine), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2", "geog3", "geog4", "geog5", "geog6"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON(GEOGRAPHY)</c>. Returns the polygon with the given shell and no holes.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakePolygon1 =
+            Function("ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography], ["shell"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and one hole.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakePolygon2 =
+            Function("ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["shell", "hole0"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 2 holes.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakePolygon3 =
+            Function("ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography], ["shell", "hole0", "hole1"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 3 holes.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakePolygon4 =
+            Function("ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography], ["shell", "hole0", "hole1", "hole2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 4 holes.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakePolygon5 =
+            Function("ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography], ["shell", "hole0", "hole1", "hole2", "hole3"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 5 holes.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakePolygon6 =
+            Function("ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography], ["shell", "hole0", "hole1", "hole2", "hole3", "hole4"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 6 holes.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakePolygon7 =
+            Function("ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography], ["shell", "hole0", "hole1", "hole2", "hole3", "hole4", "hole5"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 7 holes.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakePolygon8 =
+            Function("ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography], ["shell", "hole0", "hole1", "hole2", "hole3", "hole4", "hole5", "hole6"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 8 holes.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakePolygon9 =
+            Function("ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography], ["shell", "hole0", "hole1", "hole2", "hole3", "hole4", "hole5", "hole6", "hole7"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 9 holes.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakePolygon10 =
+            Function("ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography], ["shell", "hole0", "hole1", "hole2", "hole3", "hole4", "hole5", "hole6", "hole7", "hole8"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 10 holes.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakePolygon11 =
+            Function("ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Geography], ["shell", "hole0", "hole1", "hole2", "hole3", "hole4", "hole5", "hole6", "hole7", "hole8", "hole9"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_LINEFROMTEXT(VARCHAR)</c>. Returns a line read from WKT.
+        /// </summary>
+        public static readonly SqlFunction StGeogLineFromText =
+            Function("ST_GEOG_LINEFROMTEXT", nameof(GeographyFunctions.LineFromText), GeographyReturnTypes.Geography,
+                [GeographyOperand.Character], ["wkt"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_LINEFROMTEXT(VARCHAR, INTEGER)</c>. Returns a line read from WKT; the SRID must be 4326.
+        /// </summary>
+        public static readonly SqlFunction StGeogLineFromTextWithSrid =
+            Function("ST_GEOG_LINEFROMTEXT", nameof(GeographyFunctions.LineFromText), GeographyReturnTypes.Geography,
+                [GeographyOperand.Character, GeographyOperand.Numeric], ["wkt", "srid"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_LINEFROMWKB(VARBINARY)</c>. Returns a line read from WKB.
+        /// </summary>
+        public static readonly SqlFunction StGeogLineFromWkb =
+            Function("ST_GEOG_LINEFROMWKB", nameof(GeographyFunctions.LineFromWkb), GeographyReturnTypes.Geography,
+                [GeographyOperand.Binary], ["wkb"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_LINEFROMWKB(VARBINARY, INTEGER)</c>. Returns a line read from WKB; the SRID must be 4326.
+        /// </summary>
+        public static readonly SqlFunction StGeogLineFromWkbWithSrid =
+            Function("ST_GEOG_LINEFROMWKB", nameof(GeographyFunctions.LineFromWkb), GeographyReturnTypes.Geography,
+                [GeographyOperand.Binary, GeographyOperand.Numeric], ["wkb", "srid"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MLINEFROMTEXT(VARCHAR)</c>. Returns a multi-line read from WKT.
+        /// </summary>
+        public static readonly SqlFunction StGeogMLineFromText =
+            Function("ST_GEOG_MLINEFROMTEXT", nameof(GeographyFunctions.MLineFromText), GeographyReturnTypes.Geography,
+                [GeographyOperand.Character], ["wkt"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MLINEFROMTEXT(VARCHAR, INTEGER)</c>. Returns a multi-line read from WKT; the SRID must be 4326.
+        /// </summary>
+        public static readonly SqlFunction StGeogMLineFromTextWithSrid =
+            Function("ST_GEOG_MLINEFROMTEXT", nameof(GeographyFunctions.MLineFromText), GeographyReturnTypes.Geography,
+                [GeographyOperand.Character, GeographyOperand.Numeric], ["wkt", "srid"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MPOINTFROMTEXT(VARCHAR)</c>. Returns a multi-point read from WKT.
+        /// </summary>
+        public static readonly SqlFunction StGeogMPointFromText =
+            Function("ST_GEOG_MPOINTFROMTEXT", nameof(GeographyFunctions.MPointFromText), GeographyReturnTypes.Geography,
+                [GeographyOperand.Character], ["wkt"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MPOINTFROMTEXT(VARCHAR, INTEGER)</c>. Returns a multi-point read from WKT; the SRID must be 4326.
+        /// </summary>
+        public static readonly SqlFunction StGeogMPointFromTextWithSrid =
+            Function("ST_GEOG_MPOINTFROMTEXT", nameof(GeographyFunctions.MPointFromText), GeographyReturnTypes.Geography,
+                [GeographyOperand.Character, GeographyOperand.Numeric], ["wkt", "srid"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MPOLYFROMTEXT(VARCHAR)</c>. Returns a multi-polygon read from WKT.
+        /// </summary>
+        public static readonly SqlFunction StGeogMPolyFromText =
+            Function("ST_GEOG_MPOLYFROMTEXT", nameof(GeographyFunctions.MPolyFromText), GeographyReturnTypes.Geography,
+                [GeographyOperand.Character], ["wkt"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MPOLYFROMTEXT(VARCHAR, INTEGER)</c>. Returns a multi-polygon read from WKT; the SRID must be 4326.
+        /// </summary>
+        public static readonly SqlFunction StGeogMPolyFromTextWithSrid =
+            Function("ST_GEOG_MPOLYFROMTEXT", nameof(GeographyFunctions.MPolyFromText), GeographyReturnTypes.Geography,
+                [GeographyOperand.Character, GeographyOperand.Numeric], ["wkt", "srid"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_POINTFROMTEXT(VARCHAR)</c>. Returns a point read from WKT.
+        /// </summary>
+        public static readonly SqlFunction StGeogPointFromText =
+            Function("ST_GEOG_POINTFROMTEXT", nameof(GeographyFunctions.PointFromText), GeographyReturnTypes.Geography,
+                [GeographyOperand.Character], ["wkt"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_POINTFROMTEXT(VARCHAR, INTEGER)</c>. Returns a point read from WKT; the SRID must be 4326.
+        /// </summary>
+        public static readonly SqlFunction StGeogPointFromTextWithSrid =
+            Function("ST_GEOG_POINTFROMTEXT", nameof(GeographyFunctions.PointFromText), GeographyReturnTypes.Geography,
+                [GeographyOperand.Character, GeographyOperand.Numeric], ["wkt", "srid"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_POINTFROMWKB(VARBINARY)</c>. Returns a point read from WKB.
+        /// </summary>
+        public static readonly SqlFunction StGeogPointFromWkb =
+            Function("ST_GEOG_POINTFROMWKB", nameof(GeographyFunctions.PointFromWkb), GeographyReturnTypes.Geography,
+                [GeographyOperand.Binary], ["wkb"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_POINTFROMWKB(VARBINARY, INTEGER)</c>. Returns a point read from WKB; the SRID must be 4326.
+        /// </summary>
+        public static readonly SqlFunction StGeogPointFromWkbWithSrid =
+            Function("ST_GEOG_POINTFROMWKB", nameof(GeographyFunctions.PointFromWkb), GeographyReturnTypes.Geography,
+                [GeographyOperand.Binary, GeographyOperand.Numeric], ["wkb", "srid"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_POLYFROMTEXT(VARCHAR)</c>. Returns a polygon read from WKT.
+        /// </summary>
+        public static readonly SqlFunction StGeogPolyFromText =
+            Function("ST_GEOG_POLYFROMTEXT", nameof(GeographyFunctions.PolyFromText), GeographyReturnTypes.Geography,
+                [GeographyOperand.Character], ["wkt"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_POLYFROMTEXT(VARCHAR, INTEGER)</c>. Returns a polygon read from WKT; the SRID must be 4326.
+        /// </summary>
+        public static readonly SqlFunction StGeogPolyFromTextWithSrid =
+            Function("ST_GEOG_POLYFROMTEXT", nameof(GeographyFunctions.PolyFromText), GeographyReturnTypes.Geography,
+                [GeographyOperand.Character, GeographyOperand.Numeric], ["wkt", "srid"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_POLYFROMWKB(VARBINARY)</c>. Returns a polygon read from WKB.
+        /// </summary>
+        public static readonly SqlFunction StGeogPolyFromWkb =
+            Function("ST_GEOG_POLYFROMWKB", nameof(GeographyFunctions.PolyFromWkb), GeographyReturnTypes.Geography,
+                [GeographyOperand.Binary], ["wkb"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_POLYFROMWKB(VARBINARY, INTEGER)</c>. Returns a polygon read from WKB; the SRID must be 4326.
+        /// </summary>
+        public static readonly SqlFunction StGeogPolyFromWkbWithSrid =
+            Function("ST_GEOG_POLYFROMWKB", nameof(GeographyFunctions.PolyFromWkb), GeographyReturnTypes.Geography,
+                [GeographyOperand.Binary, GeographyOperand.Numeric], ["wkb", "srid"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_CONTAINS(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether the first geography contains the second.
+        /// </summary>
+        public static readonly SqlFunction StGeogContains =
+            Function("ST_GEOG_CONTAINS", nameof(GeographyFunctions.Contains), GeographyReturnTypes.Boolean,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2"]);
+
+
+
+        /// <summary>
+        /// <c>ST_GEOG_COVERS(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether no point of the second geography is outside the first.
+        /// </summary>
+        public static readonly SqlFunction StGeogCovers =
+            Function("ST_GEOG_COVERS", nameof(GeographyFunctions.Covers), GeographyReturnTypes.Boolean,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_COVEREDBY(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether no point of the first geography is outside the second.
+        /// </summary>
+        public static readonly SqlFunction StGeogCoveredBy =
+            Function("ST_GEOG_COVEREDBY", nameof(GeographyFunctions.CoveredBy), GeographyReturnTypes.Boolean,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2"]);
+
+
+
+        /// <summary>
+        /// <c>ST_GEOG_DISJOINT(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether two geographies have no point in common.
+        /// </summary>
+        public static readonly SqlFunction StGeogDisjoint =
+            Function("ST_GEOG_DISJOINT", nameof(GeographyFunctions.Disjoint), GeographyReturnTypes.Boolean,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_EQUALS(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether two geographies are the same set of places.
+        /// </summary>
+        public static readonly SqlFunction StGeogEquals =
+            Function("ST_GEOG_EQUALS", nameof(GeographyFunctions.Equals), GeographyReturnTypes.Boolean,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2"]);
+
+
+
+
+
+        /// <summary>
+        /// <c>ST_GEOG_ENVELOPESINTERSECT(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether the bounding boxes of two geographies meet.
+        /// </summary>
+        public static readonly SqlFunction StGeogEnvelopesIntersect =
+            Function("ST_GEOG_ENVELOPESINTERSECT", nameof(GeographyFunctions.EnvelopesIntersect), GeographyReturnTypes.Boolean,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_AREA(GEOGRAPHY)</c>. Returns the area of the geography in square metres.
+        /// </summary>
+        public static readonly SqlFunction StGeogArea =
+            Function("ST_GEOG_AREA", nameof(GeographyFunctions.Area), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_LENGTH(GEOGRAPHY)</c>. Returns the length of the geography in metres.
+        /// </summary>
+        public static readonly SqlFunction StGeogLength =
+            Function("ST_GEOG_LENGTH", nameof(GeographyFunctions.Length), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_PERIMETER(GEOGRAPHY)</c>. Returns the perimeter of the areal part of the geography in metres.
+        /// </summary>
+        public static readonly SqlFunction StGeogPerimeter =
+            Function("ST_GEOG_PERIMETER", nameof(GeographyFunctions.Perimeter), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAXDISTANCE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the greatest distance between a coordinate of one geography and a coordinate of the other, in metres.
+        /// </summary>
+        public static readonly SqlFunction StGeogMaxDistance =
+            Function("ST_GEOG_MAXDISTANCE", nameof(GeographyFunctions.MaxDistance), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2"]);
+
+        /// <summary>
         /// Declares one operator.
         /// </summary>
         /// <param name="name">The SQL name.</param>
@@ -189,6 +953,7 @@ namespace Apache.Calcite.Geography.Sql
                 GeographyOperand.Geometry => (java.lang.Class)typeof(org.locationtech.jts.geom.Geometry),
                 GeographyOperand.Character => (java.lang.Class)typeof(string),
                 GeographyOperand.Numeric => (java.lang.Class)typeof(java.lang.Number),
+                GeographyOperand.Binary => (java.lang.Class)typeof(org.apache.calcite.avatica.util.ByteString),
                 _ => throw new NotSupportedException($"No parameter class for '{operand}'."),
             };
         }
@@ -231,6 +996,114 @@ namespace Apache.Calcite.Geography.Sql
                 StGeogWithin,
                 StGeogIntersects,
                 StGeogIsValid,
+                StGeogContains,
+                StGeogCovers,
+                StGeogCoveredBy,
+                StGeogDisjoint,
+                StGeogEquals,
+                StGeogEnvelopesIntersect,
+                StGeogArea,
+                StGeogLength,
+                StGeogPerimeter,
+                StGeogMaxDistance,
+                StGeogX,
+                StGeogY,
+                StGeogZ,
+                StGeogXMin,
+                StGeogXMax,
+                StGeogYMin,
+                StGeogYMax,
+                StGeogZMin,
+                StGeogZMax,
+                StGeogCoordDim,
+                StGeogDimension,
+                StGeogGeometryType,
+                StGeogGeometryTypeCode,
+                StGeogNPoints,
+                StGeogNumPoints,
+                StGeogNumGeometries,
+                StGeogNumInteriorRing,
+                StGeogNumInteriorRings,
+                StGeogStartPoint,
+                StGeogEndPoint,
+                StGeogExteriorRing,
+                StGeogBoundary,
+                StGeogHoles,
+                StGeogIsEmpty,
+                StGeogIs3D,
+                StGeogIsClosed,
+                StGeogSrid,
+                StGeogAsText,
+                StGeogAsWkt,
+                StGeogAsEwkt,
+                StGeogAsGeoJson,
+                StGeogAsGml,
+                StGeogAsBinary,
+                StGeogAsWkb,
+                StGeogAsEwkb,
+                StGeogPointN,
+                StGeogGeometryN,
+                StGeogInteriorRing,
+                StGeogOrderingEquals,
+                StGeogGeomFromEwkt,
+                StGeogGeomFromWkb,
+                StGeogGeomFromWkbWithSrid,
+                StGeogGeomFromEwkb,
+                StGeogGeomFromGml,
+                StGeogGeomFromGmlWithSrid,
+                StGeogFlipCoordinates,
+                StGeogForce2D,
+                StGeogForce3D,
+                StGeogNormalize,
+                StGeogRemoveHoles,
+                StGeogRemoveRepeatedPoints,
+                StGeogReverse,
+                StGeogToMultiLine,
+                StGeogToMultiPoint,
+                StGeogToMultiSegments,
+                StGeogAddPoint,
+                StGeogAddPointAtIndex,
+                StGeogRemovePoint,
+                StGeogAddZ,
+                StGeogRemoveRepeatedPointsWithTolerance,
+                StGeogPoint,
+                StGeogPoint3D,
+                StGeogMakePoint,
+                StGeogMakePoint3D,
+                StGeogMakeLine2,
+                StGeogMakeLine3,
+                StGeogMakeLine4,
+                StGeogMakeLine5,
+                StGeogMakeLine6,
+                StGeogMakePolygon1,
+                StGeogMakePolygon2,
+                StGeogMakePolygon3,
+                StGeogMakePolygon4,
+                StGeogMakePolygon5,
+                StGeogMakePolygon6,
+                StGeogMakePolygon7,
+                StGeogMakePolygon8,
+                StGeogMakePolygon9,
+                StGeogMakePolygon10,
+                StGeogMakePolygon11,
+                StGeogLineFromText,
+                StGeogLineFromTextWithSrid,
+                StGeogLineFromWkb,
+                StGeogLineFromWkbWithSrid,
+                StGeogMLineFromText,
+                StGeogMLineFromTextWithSrid,
+                StGeogMPointFromText,
+                StGeogMPointFromTextWithSrid,
+                StGeogMPolyFromText,
+                StGeogMPolyFromTextWithSrid,
+                StGeogPointFromText,
+                StGeogPointFromTextWithSrid,
+                StGeogPointFromWkb,
+                StGeogPointFromWkbWithSrid,
+                StGeogPolyFromText,
+                StGeogPolyFromTextWithSrid,
+                StGeogPolyFromWkb,
+                StGeogPolyFromWkbWithSrid,
             ]);
         }
 

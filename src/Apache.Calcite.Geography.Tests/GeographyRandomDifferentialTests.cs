@@ -181,20 +181,65 @@ namespace Apache.Calcite.Geography.Tests
                     Compare(differences, "WITHIN", left, right,
                         () => GeographyFunctions.Within(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Within(a, b), ref refused);
 
+                    Compare(differences, "CONTAINS", left, right,
+                        () => GeographyFunctions.Contains(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Contains(a, b), ref refused);
+
+                    Compare(differences, "COVERS", left, right,
+                        () => GeographyFunctions.Covers(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Covers(a, b), ref refused);
+
+                    Compare(differences, "COVEREDBY", left, right,
+                        () => GeographyFunctions.CoveredBy(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_CoveredBy(a, b), ref refused);
+
+                    Compare(differences, "DISJOINT", left, right,
+                        () => GeographyFunctions.Disjoint(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Disjoint(a, b), ref refused);
+
+                    Compare(differences, "EQUALS", left, right,
+                        () => GeographyFunctions.Equals(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Equals(a, b), ref refused);
+
+                    Compare(differences, "ENVELOPESINTERSECT", left, right,
+                        () => GeographyFunctions.EnvelopesIntersect(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_EnvelopesIntersect(a, b), ref refused);
+
                     Compare(differences, "DWITHIN", left, right,
                         () => GeographyFunctions.DWithin(a, b, java.lang.Double.valueOf(0.0025 * Degree))!.booleanValue(),
                         () => SpatialTypeFunctions.ST_DWithin(a, b, 0.0025), ref refused);
 
-                    var ours = GeographyFunctions.Distance(a, b)!.doubleValue();
-                    var theirs = SpatialTypeFunctions.ST_Distance(a, b) * Degree;
+                    Measure(differences, "DISTANCE", left, right,
+                        () => GeographyFunctions.Distance(a, b)!.doubleValue(), SpatialTypeFunctions.ST_Distance(a, b) * Degree);
 
-                    if (Math.Abs(ours - theirs) > Math.Max(1e-4 * theirs, 1e-6))
-                        differences.Add($"DISTANCE {left} / {right}: ours {ours}, Calcite {theirs}");
+                    Measure(differences, "MAXDISTANCE", left, right,
+                        () => GeographyFunctions.MaxDistance(a, b)!.doubleValue(), SpatialTypeFunctions.ST_MaxDistance(a, b)!.doubleValue() * Degree);
+
+                    Measure(differences, "LENGTH", left, left,
+                        () => GeographyFunctions.Length(a)!.doubleValue(), SpatialTypeFunctions.ST_Length(a)!.doubleValue() * Degree);
+
+                    Measure(differences, "PERIMETER", left, left,
+                        () => GeographyFunctions.Perimeter(a)!.doubleValue(), SpatialTypeFunctions.ST_Perimeter(a)!.doubleValue() * Degree);
+
+                    // an area is two lengths, so the scale between the two readings is the square of the one
+                    // a distance uses
+                    Measure(differences, "AREA", left, left,
+                        () => GeographyFunctions.Area(a)!.doubleValue(), SpatialTypeFunctions.ST_Area(a)!.doubleValue() * Degree * Degree);
                 }
             }
 
             differences.Should().BeEmpty(string.Join("\n", differences));
             compared.Should().BeGreaterThan(10000);
+        }
+
+        /// <summary>
+        /// Compares a measurement, ours in metres against Calcite's in degrees brought to the same units.
+        /// </summary>
+        /// <remarks>
+        /// A relative tolerance, because these are quantities rather than answers: at this scale on the
+        /// equator a degree of arc and a degree of coordinate are the same length to far more places than a
+        /// hundredth of a per cent, and the absolute floor is there for the pairs whose answer is zero.
+        /// </remarks>
+        static void Measure(List<string> differences, string what, string left, string right, Func<double> geodesic, double planar)
+        {
+            var ours = geodesic();
+
+            if (Math.Abs(ours - planar) > Math.Max(1e-4 * Math.Abs(planar), 1e-6))
+                differences.Add($"{what} {left} / {right}: ours {ours}, Calcite {planar}");
         }
 
         static void Compare(List<string> differences, string what, string left, string right, Func<bool> geodesic, Func<bool> planar, ref int refused)

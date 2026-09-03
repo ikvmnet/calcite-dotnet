@@ -117,6 +117,72 @@ namespace Apache.Calcite.Geography.Tests
             notNull.getSqlTypeName().Should().BeSameAs(SqlTypeName.GEOMETRY);
         }
 
+        /// <summary>
+        /// A column declared <c>NOT NULL</c> is not a geography column, and nothing says so.
+        /// </summary>
+        /// <remarks>
+        /// The shape an adapter reaches for: build a row type, name a column, say it cannot be null. The last
+        /// of those goes through <c>createTypeWithNullability</c>, and that is the call
+        /// <c>RelDataTypeFactoryImpl.copySimpleType</c> answers with a plain <c>new JavaType(clazz,
+        /// nullable)</c> — so the column that comes out is an ordinary geometry, and Calcite's planar
+        /// <c>ST_*</c> will take it. A geodesic column becomes a planar one with no error anywhere, which is
+        /// the exact failure this package exists to prevent.
+        ///
+        /// <para>It cannot be fixed from here. <c>copySimpleType</c> is private;
+        /// <c>createTypeWithNullability</c> is public and could be overridden, but a type factory of our own
+        /// cannot be put in front of Calcite — <c>PlannerImpl</c> and <c>CalciteConnectionImpl</c> each build
+        /// a <c>JavaTypeFactoryImpl</c> outright, and only a protected constructor takes one. Nor does
+        /// dropping <c>JavaType</c> help: a type that is not one survives this untouched, and then
+        /// <c>getJavaClass</c> answers null and no plan compiles.</para>
+        ///
+        /// <para>So the rule for an adapter is that a geography column is declared nullable, and this is here
+        /// to keep that rule honest rather than to approve of it. Nullability at the level of the row is
+        /// fine — only the field-level call degrades.</para>
+        /// </remarks>
+        [TestMethod]
+        public void ShouldNotSurviveAColumnDeclaredNotNull()
+        {
+            var typeFactory = GeographyFixture.TypeFactory();
+            var geography = GeographyTypes.Of(typeFactory);
+
+            var row = typeFactory.builder().add("GEOG", geography).nullable(false).build();
+            var column = ((RelDataTypeField)row.getFieldList().get(0)).getType();
+
+            GeographyTypes.IsGeography(column).Should().BeFalse();
+            column.getSqlTypeName().Should().BeSameAs(SqlTypeName.GEOMETRY);
+
+            // the row being not-nullable is a different call and does not degrade the field
+            var nullableRow = typeFactory.builder().add("GEOG", geography).build();
+            var kept = ((RelDataTypeField)typeFactory.createTypeWithNullability(nullableRow, false)
+                .getFieldList().get(0)).getType();
+
+            GeographyTypes.IsGeography(kept).Should().BeTrue();
+        }
+
+        /// <summary>
+        /// Two geography columns can be brought together; a geography and a geometry cannot.
+        /// </summary>
+        /// <remarks>
+        /// <c>leastRestrictive</c> is what a <c>UNION</c> asks. Over two geographies it answers the geography,
+        /// which is what a set operation over two such columns needs. Over one of each it reaches the
+        /// assignment rules and throws the same <c>No assign rules for OTHER defined</c> the schema-function
+        /// route dies on — an error rather than a wrong answer, but an assertion rather than a validation
+        /// error, and worth knowing before it turns up in a query plan.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldBringTwoGeographiesTogetherAndRefuseAMixture()
+        {
+            var typeFactory = GeographyFixture.TypeFactory();
+            var geography = GeographyTypes.Of(typeFactory);
+            var geometry = GeographyTypes.GeometryOf(typeFactory);
+
+            var both = typeFactory.leastRestrictive(java.util.Arrays.asList([geography, geography]));
+            GeographyTypes.IsGeography(both).Should().BeTrue();
+
+            var mixed = () => typeFactory.leastRestrictive(java.util.Arrays.asList([geography, geometry]));
+            mixed.Should().Throw<java.lang.AssertionError>().WithMessage("*OTHER*");
+        }
+
         [TestMethod]
         public void ShouldTellTheTwoApart()
         {

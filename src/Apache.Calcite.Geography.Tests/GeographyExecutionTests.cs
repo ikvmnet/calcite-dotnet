@@ -42,7 +42,7 @@ namespace Apache.Calcite.Geography.Tests
         /// </summary>
         /// <param name="sql"></param>
         /// <returns></returns>
-        static List<object?[]> Run(string sql)
+        internal static List<object?[]> Run(string sql)
         {
             java.lang.Class.forName("org.apache.calcite.jdbc.Driver");
 
@@ -150,6 +150,18 @@ namespace Apache.Calcite.Geography.Tests
                 ("ST_GEOG_WITHIN(ST_GEOG_GEOMFROMTEXT('POINT(1 1)'), ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
                 ("ST_GEOG_INTERSECTS(ST_GEOG_GEOMFROMTEXT('POINT(1 1)'), ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
                 ("ST_GEOG_ISVALID(ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
+
+                // the relations and the measurements
+                ("ST_GEOG_CONTAINS(ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'), ST_GEOG_GEOMFROMTEXT('POINT(1 1)'))", true),
+                ("ST_GEOG_COVERS(ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'), ST_GEOG_GEOMFROMTEXT('POINT(0 0)'))", true),
+                ("ST_GEOG_COVEREDBY(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
+                ("ST_GEOG_DISJOINT(ST_GEOG_GEOMFROMTEXT('POINT(9 9)'), ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
+                ("ST_GEOG_EQUALS(ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 1 1)'), ST_GEOG_GEOMFROMTEXT('LINESTRING(1 1, 0 0)'))", true),
+                ("ST_GEOG_ENVELOPESINTERSECT(ST_GEOG_GEOMFROMTEXT('POINT(1 1)'), ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
+                ("ST_GEOG_LENGTH(ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 1 0)'))", 6371010.0 * Math.PI / 180),
+                ("ST_GEOG_PERIMETER(ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 1 0)'))", 0.0),
+                ("ST_GEOG_AREA(ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 1 0)'))", 0.0),
+                ("ST_GEOG_MAXDISTANCE(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), ST_GEOG_GEOMFROMTEXT('POINT(1 0)'))", 6371010.0 * Math.PI / 180),
             };
 
             var failures = new List<string>();

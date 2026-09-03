@@ -58,6 +58,20 @@ namespace Apache.Calcite.Geography.Runtime
         const double Tolerance = 1e-13;
 
         /// <summary>
+        /// The shortest run of edge that counts as a stretch shared between two geographies, in radians.
+        /// </summary>
+        /// <remarks>
+        /// Bigger than <see cref="Tolerance"/> by four orders, and it has to be. A great-circle edge does not
+        /// pass exactly through the coordinates a straight line in longitude and latitude would — over a
+        /// thousandth of a degree near the equator the two are about a picoradian apart — so where two lines
+        /// meet at a place both of them name, the edges either side of that place cross the other line just
+        /// short of it and just past it. That leaves a genuine piece of edge a picoradian long whose middle
+        /// lies on the other geography, and a predicate asking whether the two run along one another would
+        /// read it as yes. Six millimetres on the Earth is below anything a store records and far above that.
+        /// </remarks>
+        const double MinimumStretch = 1e-9;
+
+        /// <summary>
         /// Reads a JTS geometry as WGS84 and builds its S2 shapes.
         /// </summary>
         /// <param name="geometry"></param>
@@ -233,13 +247,13 @@ namespace Apache.Calcite.Geography.Runtime
         static bool Separate(S2Geographies a, S2Geographies b)
         {
             foreach (var (p, q) in a.RingEdges)
-                foreach (var middle in b.Pieces(p, q))
-                    if (b.ContainsInterior(middle))
+                foreach (var piece in b.Pieces(p, q))
+                    if (b.ContainsInterior(piece.Middle))
                         return false;
 
             foreach (var (p, q) in b.RingEdges)
-                foreach (var middle in a.Pieces(p, q))
-                    if (a.ContainsInterior(middle))
+                foreach (var piece in a.Pieces(p, q))
+                    if (a.ContainsInterior(piece.Middle))
                         return false;
 
             return SharesAnEdge(a, b) == false;
@@ -260,8 +274,8 @@ namespace Apache.Calcite.Geography.Runtime
         static bool SharesAnEdge(S2Geographies a, S2Geographies b)
         {
             foreach (var (p, q) in a.Edges)
-                foreach (var middle in b.Pieces(p, q))
-                    if (b.OnEdge(middle))
+                foreach (var piece in b.Pieces(p, q))
+                    if (piece.Length > MinimumStretch && b.OnEdge(piece.Middle))
                         return true;
 
             return false;
@@ -503,36 +517,132 @@ namespace Apache.Calcite.Geography.Runtime
         /// </remarks>
         public static bool Within(S2Geographies a, S2Geographies b)
         {
-            if (a.IsEmpty || b.IsEmpty)
+            return Covers(b, a) && MeetsInterior(a, b);
+        }
+
+        /// <summary>
+        /// Returns whether every point of <paramref name="inner"/> lies in <paramref name="outer"/>.
+        /// </summary>
+        /// <param name="outer"></param>
+        /// <param name="inner"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>ST_COVERS</c>, and the half of <c>within</c> that is about where the points are rather than
+        /// about the interiors meeting. Covering is the weaker relation and the more useful one: a polygon
+        /// covers a line lying along its own boundary and does not contain it.
+        ///
+        /// <para>An edge of <paramref name="inner"/> is checked by cutting it wherever the boundary of
+        /// <paramref name="outer"/> meets it and testing the middle of each piece, which is exact rather than
+        /// a sample; see <see cref="Pieces"/>. The last loop is the one that is easy to leave out: the
+        /// boundary of <paramref name="inner"/> says nothing about a hole of <paramref name="outer"/> lying
+        /// wholly inside it, because no edge of it goes near one. Any part of <paramref name="inner"/>
+        /// outside <paramref name="outer"/> sits in a region bounded by a ring of <paramref name="outer"/>,
+        /// so a ring of it must run through the interior. Testing the vertices of those rings instead is not
+        /// enough and looks like it is — a hole can have every one of its corners on the boundary and still
+        /// lie inside.</para>
+        /// </remarks>
+        public static bool Covers(S2Geographies outer, S2Geographies inner)
+        {
+            if (outer.IsEmpty || inner.IsEmpty)
                 return false;
 
             // nothing of a higher dimension lies inside something of a lower one
-            if (a.Dimension > b.Dimension)
+            if (inner.Dimension > outer.Dimension)
                 return false;
 
-            foreach (var vertex in a.Vertices)
-                if (b.Contains(vertex) == false)
+            foreach (var vertex in inner.Vertices)
+                if (outer.Holds(vertex) == false)
                     return false;
 
-            foreach (var (p, q) in a.Edges)
-                foreach (var middle in b.Pieces(p, q))
-                    if (b.Contains(middle) == false)
+            foreach (var (p, q) in inner.Edges)
+                foreach (var piece in outer.Pieces(p, q))
+                    if (outer.Holds(piece.Middle) == false)
                         return false;
 
-            // The boundary of a says nothing about a hole of b lying wholly inside a: no edge of a goes near
-            // one. Any part of a outside b sits in a region bounded by a ring of b, so if a is not within b
-            // then a ring of b runs through the interior of a. Cutting each of those edges wherever a meets
-            // it and testing the middles decides it: a piece is wholly inside a, wholly outside it, or wholly
-            // on its boundary. Testing the vertices of those rings instead is not enough and looks like it is
-            // — a hole can have every one of its corners on the boundary of a and still lie inside it.
-            if (a.polygon is not null)
-                foreach (var (p, q) in b.RingEdges)
-                    foreach (var middle in a.Pieces(p, q))
-                        if (a.ContainsInterior(middle))
+            if (inner.polygon is not null)
+            {
+                foreach (var (p, q) in outer.RingEdges)
+                    foreach (var piece in inner.Pieces(p, q))
+                        if (inner.ContainsInterior(piece.Middle))
                             return false;
 
-            return MeetsInterior(a, b);
+                // and the areas, because a polygon that is exactly a hole of the other has every one of its
+                // points on a boundary of it and none of its area inside it
+                if (outer.polygon is null || Enclosed(outer.polygon, inner.polygon) == false)
+                    return false;
+            }
+
+            return true;
         }
+
+        /// <summary>
+        /// Returns whether one polygon holds essentially all of another's area.
+        /// </summary>
+        /// <param name="outer"></param>
+        /// <param name="inner"></param>
+        /// <returns></returns>
+        static bool Enclosed(S2Polygon outer, S2Polygon inner)
+        {
+            var intersection = new S2Polygon();
+            intersection.initToIntersection(inner, outer);
+            return intersection.getArea() >= inner.getArea() * (1 - SliverShare);
+        }
+
+        /// <summary>
+        /// <c>ST_CONTAINS</c>. Returns whether <paramref name="a"/> contains <paramref name="b"/>.
+        /// </summary>
+        public static bool Contains(S2Geographies a, S2Geographies b)
+        {
+            return Within(b, a);
+        }
+
+        /// <summary>
+        /// <c>ST_COVEREDBY</c>. Returns whether every point of <paramref name="a"/> lies in
+        /// <paramref name="b"/>.
+        /// </summary>
+        public static bool CoveredBy(S2Geographies a, S2Geographies b)
+        {
+            return Covers(b, a);
+        }
+
+        /// <summary>
+        /// <c>ST_EQUALS</c>. Returns whether two geographies are the same set of places.
+        /// </summary>
+        /// <remarks>
+        /// Topological equality and not equality of the coordinates: a line named forwards and the same line
+        /// named backwards are equal, and <c>ST_GEOG_ORDERINGEQUALS</c> is the one that says otherwise. Each
+        /// covering the other is the whole of it.
+        /// </remarks>
+        public static bool Equals(S2Geographies a, S2Geographies b)
+        {
+            return Covers(a, b) && Covers(b, a);
+        }
+
+        /// <summary>
+        /// <c>ST_DISJOINT</c>. Returns whether two geographies have no point in common.
+        /// </summary>
+        public static bool Disjoint(S2Geographies a, S2Geographies b)
+        {
+            return Intersects(a, b) == false;
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
         /// <summary>
         /// Returns whether the interior of <paramref name="a"/>, already known to lie in
@@ -560,8 +670,8 @@ namespace Apache.Calcite.Geography.Runtime
                             return true;
 
                     foreach (var (p, q) in a.Edges)
-                        foreach (var middle in b.Pieces(p, q))
-                            if (b.ContainsInterior(middle))
+                        foreach (var piece in b.Pieces(p, q))
+                            if (b.ContainsInterior(piece.Middle))
                                 return true;
 
                     return false;
@@ -583,12 +693,23 @@ namespace Apache.Calcite.Geography.Runtime
             }
         }
 
+        // ST_GEOG_CROSSES, ST_GEOG_TOUCHES, ST_GEOG_OVERLAPS and ST_GEOG_CONTAINSPROPERLY are not here, and
+        // the reason is one place rather than four. All four turn on whether the interiors of two geographies
+        // meet, and where a line comes back and touches itself that question has no answer this file can
+        // give: the place is the end of the whole line and the middle of one of its own edges at once, so it
+        // is boundary by the rule that counts ends and interior by the rule that reads the curve. Measured
+        // both ways round over generated shapes, and each is wrong somewhere -- taking the end makes a
+        // genuine crossing read as a touch, and taking the curve makes a touch between a point and the end
+        // of a line read as a crossing. JTS settles it in a node graph built over the two geometries
+        // together, labelling every node from the edges that arrive at it, and that is the machinery
+        // S2BooleanOperation would have brought.
+
         /// <summary>
         /// Returns whether the given point lies in this geography, boundary included.
         /// </summary>
         /// <param name="point"></param>
         /// <returns></returns>
-        public bool Contains(S2Point point)
+        public bool Holds(S2Point point)
         {
             if (polygon is not null && polygon.contains(point))
                 return true;
@@ -637,6 +758,8 @@ namespace Apache.Calcite.Geography.Runtime
             return false;
         }
 
+
+
         /// <summary>
         /// Returns whether the given point is on the boundary of the linear part of this geography.
         /// </summary>
@@ -675,7 +798,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// that merely runs along an edge starts and ends at that edge's own vertices. So the middle of a
         /// piece stands for the whole piece, and testing the middles is exact rather than a sample.
         /// </remarks>
-        public IEnumerable<S2Point> Pieces(S2Point p, S2Point q)
+        public IEnumerable<(S2Point Middle, double Length)> Pieces(S2Point p, S2Point q)
         {
             var cuts = new List<double> { 0, 1 };
 
@@ -693,8 +816,17 @@ namespace Apache.Calcite.Geography.Runtime
 
             cuts.Sort();
 
+            // Two cuts that fall in the same place — a crossing that is also a vertex of this geography, say
+            // — would otherwise leave a piece of no length between them, and the middle of a piece of no
+            // length is the cut itself, which lies on this geography by construction. A caller asking whether
+            // a stretch of edge runs along this one would then be told yes by a stretch that is a point.
+            const double Together = 1e-9;
+
+            var whole = new S1Angle(p, q).radians();
+
             for (var i = 1; i < cuts.Count; i++)
-                yield return S2EdgeUtil.interpolate((cuts[i - 1] + cuts[i]) / 2, p, q);
+                if (cuts[i] - cuts[i - 1] > Together)
+                    yield return (S2EdgeUtil.interpolate((cuts[i - 1] + cuts[i]) / 2, p, q), (cuts[i] - cuts[i - 1]) * whole);
         }
 
         static void Cut(List<double> cuts, S2Point p, S2Point q, S2Point vertex)
@@ -705,6 +837,123 @@ namespace Apache.Calcite.Geography.Runtime
             var fraction = S2EdgeUtil.getDistanceFraction(vertex, p, q);
             if (fraction > 0 && fraction < 1)
                 cuts.Add(fraction);
+        }
+
+        /// <summary>
+        /// <c>ST_AREA</c>. Returns the area of the geography in square metres.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The area S2 measures on the sphere, which is a real area rather than the square degrees a planar
+        /// reading answers. A geography with no areal part has none, as JTS has none for a line.
+        /// </remarks>
+        public static double Area(S2Geographies g)
+        {
+            return g.polygon is null ? 0 : g.polygon.getArea() * EarthRadiusMeters * EarthRadiusMeters;
+        }
+
+        /// <summary>
+        /// <c>ST_LENGTH</c>. Returns the length of the geography in metres.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Every edge, the rings of a polygon included, because <c>Geometry.getLength</c> answers a polygon
+        /// with its perimeter and this mirrors that.
+        /// </remarks>
+        public static double Length(S2Geographies g)
+        {
+            return Arc(g.Edges);
+        }
+
+        /// <summary>
+        /// <c>ST_PERIMETER</c>. Returns the perimeter of the areal part of the geography in metres.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        public static double Perimeter(S2Geographies g)
+        {
+            return Arc(g.RingEdges);
+        }
+
+        static double Arc(IEnumerable<(S2Point, S2Point)> edges)
+        {
+            var total = 0.0;
+
+            foreach (var (p, q) in edges)
+                total += new S1Angle(p, q).radians();
+
+            return total * EarthRadiusMeters;
+        }
+
+        /// <summary>
+        /// <c>ST_MAXDISTANCE</c>. Returns the greatest distance between a coordinate of one geography and a
+        /// coordinate of the other, in metres.
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Between the coordinates and not between the shapes, which is what Calcite measures: it walks the
+        /// two coordinate arrays and takes the largest. The greatest distance between two shapes would want
+        /// the edges as well, and would be a different function.
+        /// </remarks>
+        public static double MaxDistance(S2Geographies a, S2Geographies b)
+        {
+            var max = 0.0;
+
+            foreach (var va in a.Vertices)
+                foreach (var vb in b.Vertices)
+                    max = System.Math.Max(max, new S1Angle(va, vb).radians());
+
+            return max * EarthRadiusMeters;
+        }
+
+        /// <summary>
+        /// <c>ST_ENVELOPESINTERSECT</c>. Returns whether the bounding boxes of two geographies meet.
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The box is an <c>S2LatLngRect</c> rather than a rectangle in longitude and latitude, which is the
+        /// whole reason this one is not in the mechanical group: a shape crossing the antimeridian has no
+        /// correct bounding box in plain coordinates, and the planar reading answers one anyway. S2 builds
+        /// the bound from the edges rather than the vertices, so it also holds the bulge a great-circle edge
+        /// makes north of a parallel.
+        /// </remarks>
+        public static bool EnvelopesIntersect(S2Geographies a, S2Geographies b)
+        {
+            if (a.IsEmpty || b.IsEmpty)
+                return false;
+
+            // expanded, because the two bounds are built from unit vectors and compared as latitudes and
+            // longitudes, and boxes that meet exactly at a corner can miss each other by the last bit of that
+            // round trip. The margin is the same angle everything else here treats as touching.
+            var margin = S2LatLng.fromRadians(Tolerance, Tolerance);
+
+            return a.Bound().expanded(margin).intersects(b.Bound().expanded(margin));
+        }
+
+        /// <summary>
+        /// The bounding box of the geography.
+        /// </summary>
+        /// <returns></returns>
+        S2LatLngRect Bound()
+        {
+            var bound = S2LatLngRect.empty();
+
+            foreach (var point in points)
+                bound = bound.addPoint(point);
+
+            foreach (var line in lines)
+                bound = bound.union(new S2Polyline(ToList(line)).getRectBound());
+
+            if (polygon is not null)
+                bound = bound.union(polygon.getRectBound());
+
+            return bound;
         }
 
         /// <summary>
@@ -793,11 +1042,28 @@ namespace Apache.Calcite.Geography.Runtime
         /// what the smallest real overlap here would be, so a threshold relative to the area of
         /// <paramref name="a"/> separates them by twenty orders of magnitude rather than by a guess.
         /// </remarks>
+        /// <summary>
+        /// The share of a polygon's area below which an intersection is taken to be a snapping artefact
+        /// rather than an overlap.
+        /// </summary>
+        /// <remarks>
+        /// Measured rather than guessed. Two squares meeting along an edge leave an intersection of about a
+        /// billionth of a billionth of a steradian, which for the shapes this is asked about is a billionth
+        /// or two of their area — the sliver is the length of the shared boundary times the radius S2 snaps
+        /// to. A real overlap of two shapes that meet at all is a finite fraction of the smaller one. A
+        /// millionth sits three orders above the sliver and four below the smallest real overlap.
+        ///
+        /// <para>What it costs: two shapes whose genuine overlap is thinner than that are reported as
+        /// touching rather than as overlapping. That is the price of a boolean operation that snaps, and it
+        /// is the same price S2 charges its own callers.</para>
+        /// </remarks>
+        const double SliverShare = 1e-6;
+
         static bool Overlaps(S2Polygon a, S2Polygon b)
         {
             var intersection = new S2Polygon();
             intersection.initToIntersection(a, b);
-            return intersection.getArea() > a.getArea() * 1e-9;
+            return intersection.getArea() > a.getArea() * SliverShare;
         }
 
         static bool Near(S2Point a, S2Point b)

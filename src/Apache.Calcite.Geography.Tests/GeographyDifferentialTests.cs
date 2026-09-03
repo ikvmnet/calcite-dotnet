@@ -195,6 +195,42 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         [TestMethod]
+        public void ShouldAgreeOnContains()
+        {
+            Differ(GeographyFunctions.Contains, SpatialTypeFunctions.ST_Contains, refusals: 6);
+        }
+
+        [TestMethod]
+        public void ShouldAgreeOnCovers()
+        {
+            Differ(GeographyFunctions.Covers, SpatialTypeFunctions.ST_Covers, refusals: 6);
+        }
+
+        [TestMethod]
+        public void ShouldAgreeOnCoveredBy()
+        {
+            Differ(GeographyFunctions.CoveredBy, SpatialTypeFunctions.ST_CoveredBy, refusals: 6);
+        }
+
+        [TestMethod]
+        public void ShouldAgreeOnDisjoint()
+        {
+            Differ(GeographyFunctions.Disjoint, SpatialTypeFunctions.ST_Disjoint, refusals: 0);
+        }
+
+        [TestMethod]
+        public void ShouldAgreeOnEquals()
+        {
+            Differ(GeographyFunctions.Equals, SpatialTypeFunctions.ST_Equals, refusals: 1);
+        }
+
+        [TestMethod]
+        public void ShouldAgreeOnEnvelopesIntersect()
+        {
+            Differ(GeographyFunctions.EnvelopesIntersect, SpatialTypeFunctions.ST_EnvelopesIntersect, refusals: 0);
+        }
+
+        [TestMethod]
         public void ShouldAgreeOnIsValid()
         {
             var differences = new List<string>();

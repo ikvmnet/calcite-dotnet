@@ -32,6 +32,11 @@ namespace Apache.Calcite.Geography.Sql.Type
         /// </summary>
         Numeric,
 
+        /// <summary>
+        /// A string of bytes.
+        /// </summary>
+        Binary,
+
     }
 
 }
