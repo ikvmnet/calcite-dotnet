@@ -48,6 +48,8 @@ typeFactory.builder()
 
 and the values in it are ordinary JTS `Geometry` objects — the same class Calcite's own spatial library carries.
 
+**A geography column has to be nullable.** Saying `.nullable(false)` on the field — the ordinary thing an adapter does for a `NOT NULL` column — silently gives you an ordinary geometry, and Calcite's planar `ST_*` will then take it. `RelDataTypeFactoryImpl.copySimpleType` answers any change of a `JavaType`'s nullability with a plain `new JavaType(clazz, nullable)`, which is not this subclass; it is private, and a type factory of one's own cannot be put in front of Calcite, since `PlannerImpl` and `CalciteConnectionImpl` each build a `JavaTypeFactoryImpl` outright. Declaring the row not-nullable is a different call and is fine — only the field-level one degrades.
+
 ```sql
 SELECT ID
 FROM PLACES
