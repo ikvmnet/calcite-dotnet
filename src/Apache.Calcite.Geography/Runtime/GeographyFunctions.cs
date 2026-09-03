@@ -184,6 +184,135 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
+        /// <c>ST_GEOG_CONTAINS</c>. Returns whether the first geography contains the second.
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        public static java.lang.Boolean? Contains(Geometry? a, Geometry? b)
+        {
+            return a is null || b is null
+                ? null
+                : java.lang.Boolean.valueOf(S2Geographies.Contains(S2Geographies.Of(a), S2Geographies.Of(b)));
+        }
+
+
+
+        /// <summary>
+        /// <c>ST_GEOG_COVERS</c>. Returns whether no point of the second geography is outside the first.
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        public static java.lang.Boolean? Covers(Geometry? a, Geometry? b)
+        {
+            return a is null || b is null
+                ? null
+                : java.lang.Boolean.valueOf(S2Geographies.Covers(S2Geographies.Of(a), S2Geographies.Of(b)));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_COVEREDBY</c>. Returns whether no point of the first geography is outside the second.
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        public static java.lang.Boolean? CoveredBy(Geometry? a, Geometry? b)
+        {
+            return a is null || b is null
+                ? null
+                : java.lang.Boolean.valueOf(S2Geographies.CoveredBy(S2Geographies.Of(a), S2Geographies.Of(b)));
+        }
+
+
+
+        /// <summary>
+        /// <c>ST_GEOG_DISJOINT</c>. Returns whether two geographies have no point in common.
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        public static java.lang.Boolean? Disjoint(Geometry? a, Geometry? b)
+        {
+            return a is null || b is null
+                ? null
+                : java.lang.Boolean.valueOf(S2Geographies.Disjoint(S2Geographies.Of(a), S2Geographies.Of(b)));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_EQUALS</c>. Returns whether two geographies are the same set of places.
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        public static java.lang.Boolean? Equals(Geometry? a, Geometry? b)
+        {
+            return a is null || b is null
+                ? null
+                : java.lang.Boolean.valueOf(S2Geographies.Equals(S2Geographies.Of(a), S2Geographies.Of(b)));
+        }
+
+
+
+
+
+        /// <summary>
+        /// <c>ST_GEOG_ENVELOPESINTERSECT</c>. Returns whether the bounding boxes of two geographies meet.
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        public static java.lang.Boolean? EnvelopesIntersect(Geometry? a, Geometry? b)
+        {
+            return a is null || b is null
+                ? null
+                : java.lang.Boolean.valueOf(S2Geographies.EnvelopesIntersect(S2Geographies.Of(a), S2Geographies.Of(b)));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_AREA</c>. Returns the area of the geography in square metres.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        public static java.lang.Double? Area(Geometry? g)
+        {
+            return g is null ? null : java.lang.Double.valueOf(S2Geographies.Area(S2Geographies.Of(g)));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_LENGTH</c>. Returns the length of the geography in metres.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        public static java.lang.Double? Length(Geometry? g)
+        {
+            return g is null ? null : java.lang.Double.valueOf(S2Geographies.Length(S2Geographies.Of(g)));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_PERIMETER</c>. Returns the perimeter of the areal part of the geography in metres.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        public static java.lang.Double? Perimeter(Geometry? g)
+        {
+            return g is null ? null : java.lang.Double.valueOf(S2Geographies.Perimeter(S2Geographies.Of(g)));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAXDISTANCE</c>. Returns the greatest distance between a coordinate of one geography and a coordinate of the other, in metres.
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        public static java.lang.Double? MaxDistance(Geometry? a, Geometry? b)
+        {
+            return a is null || b is null
+                ? null
+                : java.lang.Double.valueOf(S2Geographies.MaxDistance(S2Geographies.Of(a), S2Geographies.Of(b)));
+        }
+
+        /// <summary>
         /// <c>ST_GEOG_ISVALID</c>. Whether the geography is valid on the sphere.
         /// </summary>
         /// <param name="geography"></param>

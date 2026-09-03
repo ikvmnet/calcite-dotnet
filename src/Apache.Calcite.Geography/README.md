@@ -93,15 +93,30 @@ Both arities are Calcite's. The SRID a caller may name has to be 4326 and anythi
 | `ST_GEOG_ASGEOM(GEOGRAPHY)` | read a geography as a geometry |
 | `ST_GEOM_ASGEOG(GEOMETRY)` | read a geometry as a geography |
 
-**The operations backends actually push.**
+**Relations.**
 
 | | |
 | --- | --- |
-| `ST_GEOG_DISTANCE(GEOGRAPHY, GEOGRAPHY)` | metres |
-| `ST_GEOG_DWITHIN(GEOGRAPHY, GEOGRAPHY, NUMERIC)` | within a distance in metres |
-| `ST_GEOG_WITHIN(GEOGRAPHY, GEOGRAPHY)` | containment |
-| `ST_GEOG_INTERSECTS(GEOGRAPHY, GEOGRAPHY)` | any point in common |
-| `ST_GEOG_ISVALID(GEOGRAPHY)` | valid on the sphere |
+| `ST_GEOG_INTERSECTS` | any point in common |
+| `ST_GEOG_DISJOINT` | none |
+| `ST_GEOG_WITHIN`, `ST_GEOG_CONTAINS` | inside, with the interiors meeting |
+| `ST_GEOG_COVEREDBY`, `ST_GEOG_COVERS` | inside, boundary allowed |
+| `ST_GEOG_EQUALS` | the same set of places |
+| `ST_GEOG_ENVELOPESINTERSECT` | bounding boxes meet |
+| `ST_GEOG_ISVALID` | valid on the sphere |
+
+`WITHIN` and `CONTAINS` are the DE-9IM relations JTS means by the words, not plain containment: a point on a polygon's boundary is covered by it and not within it.
+
+**Measurements**, in metres and square metres rather than in degrees.
+
+| | |
+| --- | --- |
+| `ST_GEOG_DISTANCE`, `ST_GEOG_DWITHIN` | the distance between two geographies |
+| `ST_GEOG_MAXDISTANCE` | the greatest distance between a coordinate of one and a coordinate of the other |
+| `ST_GEOG_LENGTH`, `ST_GEOG_PERIMETER` | metres |
+| `ST_GEOG_AREA` | square metres |
+
+An area shows the difference plainly: a one-degree box at the equator is about 12,364 square kilometres, and it is a little *larger* than the region between the parallels through its corners, because its northern edge is a great circle that runs north of the parallel joining its two northern corners.
 
 **Reading a geography.** Accessors, which read or rearrange coordinates without interpreting the space between them, so each is a delegation to the very JTS method Calcite's `ST_*` of that name calls.
 
@@ -166,6 +181,7 @@ The relations are this package's own rather than a library's. `S2BooleanOperatio
 
 ## What is not here
 
-- The remaining ~120 declarations. The full mapping is in [the design issue](https://github.com/ikvmnet/calcite-dotnet/issues/86).
+- The rest of the mapping in [the design issue](https://github.com/ikvmnet/calcite-dotnet/issues/86) — the constructed-geometry group (buffer, the boolean overlay set, hulls, simplification, triangulation, grids), the point-returning measurements, `ST_GEOG_RELATE`, and the aggregates and table functions, which need machinery this package does not have.
+- **`ST_GEOG_CROSSES`, `ST_GEOG_TOUCHES`, `ST_GEOG_OVERLAPS` and `ST_GEOG_CONTAINSPROPERLY`.** All four turn on whether the interiors of two geographies meet, and where a line comes back and touches itself that question has no answer without a node graph over both geometries: the place is the end of the whole line and the middle of one of its own edges at once, so it is boundary by the rule that counts ends and interior by the rule that reads the curve. Both rules were tried and each is wrong somewhere. That is the same machinery `S2BooleanOperation` would have brought.
 - `ST_SETSRID` and `ST_TRANSFORM` have no counterpart, and will not: geography is WGS84 by definition and there is no second reference system to reproject into. Nor do the planar affine transforms — `ST_ROTATE`, `ST_SCALE`, `ST_TRANSLATE` — or precision reduction, which snaps to a planar grid.
 - **Rechecking a pushed-down predicate.** These implementations must not be wired into a filter-recheck path until their agreement with each live store has been measured at the boundaries — a point on a polygon edge, an antimeridian crossing, the poles, a distance sitting on a threshold. A recheck that disagrees discards rows the store returned.

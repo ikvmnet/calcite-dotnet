@@ -826,6 +826,84 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Binary, GeographyOperand.Numeric], ["wkb", "srid"]);
 
         /// <summary>
+        /// <c>ST_GEOG_CONTAINS(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether the first geography contains the second.
+        /// </summary>
+        public static readonly SqlFunction StGeogContains =
+            Function("ST_GEOG_CONTAINS", nameof(GeographyFunctions.Contains), GeographyReturnTypes.Boolean,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2"]);
+
+
+
+        /// <summary>
+        /// <c>ST_GEOG_COVERS(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether no point of the second geography is outside the first.
+        /// </summary>
+        public static readonly SqlFunction StGeogCovers =
+            Function("ST_GEOG_COVERS", nameof(GeographyFunctions.Covers), GeographyReturnTypes.Boolean,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_COVEREDBY(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether no point of the first geography is outside the second.
+        /// </summary>
+        public static readonly SqlFunction StGeogCoveredBy =
+            Function("ST_GEOG_COVEREDBY", nameof(GeographyFunctions.CoveredBy), GeographyReturnTypes.Boolean,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2"]);
+
+
+
+        /// <summary>
+        /// <c>ST_GEOG_DISJOINT(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether two geographies have no point in common.
+        /// </summary>
+        public static readonly SqlFunction StGeogDisjoint =
+            Function("ST_GEOG_DISJOINT", nameof(GeographyFunctions.Disjoint), GeographyReturnTypes.Boolean,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_EQUALS(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether two geographies are the same set of places.
+        /// </summary>
+        public static readonly SqlFunction StGeogEquals =
+            Function("ST_GEOG_EQUALS", nameof(GeographyFunctions.Equals), GeographyReturnTypes.Boolean,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2"]);
+
+
+
+
+
+        /// <summary>
+        /// <c>ST_GEOG_ENVELOPESINTERSECT(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether the bounding boxes of two geographies meet.
+        /// </summary>
+        public static readonly SqlFunction StGeogEnvelopesIntersect =
+            Function("ST_GEOG_ENVELOPESINTERSECT", nameof(GeographyFunctions.EnvelopesIntersect), GeographyReturnTypes.Boolean,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_AREA(GEOGRAPHY)</c>. Returns the area of the geography in square metres.
+        /// </summary>
+        public static readonly SqlFunction StGeogArea =
+            Function("ST_GEOG_AREA", nameof(GeographyFunctions.Area), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_LENGTH(GEOGRAPHY)</c>. Returns the length of the geography in metres.
+        /// </summary>
+        public static readonly SqlFunction StGeogLength =
+            Function("ST_GEOG_LENGTH", nameof(GeographyFunctions.Length), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_PERIMETER(GEOGRAPHY)</c>. Returns the perimeter of the areal part of the geography in metres.
+        /// </summary>
+        public static readonly SqlFunction StGeogPerimeter =
+            Function("ST_GEOG_PERIMETER", nameof(GeographyFunctions.Perimeter), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAXDISTANCE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the greatest distance between a coordinate of one geography and a coordinate of the other, in metres.
+        /// </summary>
+        public static readonly SqlFunction StGeogMaxDistance =
+            Function("ST_GEOG_MAXDISTANCE", nameof(GeographyFunctions.MaxDistance), GeographyReturnTypes.Double,
+                [GeographyOperand.Geography, GeographyOperand.Geography], ["geog1", "geog2"]);
+
+        /// <summary>
         /// Declares one operator.
         /// </summary>
         /// <param name="name">The SQL name.</param>
@@ -918,6 +996,16 @@ namespace Apache.Calcite.Geography.Sql
                 StGeogWithin,
                 StGeogIntersects,
                 StGeogIsValid,
+                StGeogContains,
+                StGeogCovers,
+                StGeogCoveredBy,
+                StGeogDisjoint,
+                StGeogEquals,
+                StGeogEnvelopesIntersect,
+                StGeogArea,
+                StGeogLength,
+                StGeogPerimeter,
+                StGeogMaxDistance,
                 StGeogX,
                 StGeogY,
                 StGeogZ,
