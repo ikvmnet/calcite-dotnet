@@ -64,8 +64,13 @@ namespace Apache.Calcite.Data.Internal
                 if (string.Equals(key, CalciteConnectionStringBuilder.SynchronousKey, StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                // a provider option, not an engine one: it decides whether connections share a root schema
+                // provider options, not engine ones: whether connections share a root schema, and for how
+                // long the provider keeps one nobody is using
                 if (string.Equals(key, CalciteConnectionStringBuilder.PoolingKey, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (string.Equals(key, CalciteConnectionStringBuilder.ConnectionIdleLifetimeKey, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (string.Equals(key, CalciteConnectionStringBuilder.ConnectionPruningIntervalKey, StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 // a provider option, not an engine one: it names a .NET type, resolved by ClrPlugin, and

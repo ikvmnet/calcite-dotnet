@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 
 using com.google.common.collect;
 
@@ -194,6 +195,97 @@ namespace Apache.Calcite.Data.Internal
         /// </summary>
         public string? DefaultSchemaName => _defaultSchemaName;
 
+        readonly object _sync = new();
+        int _users;
+        bool _retired;
+        long _idleSince = Environment.TickCount64;
+
+        /// <summary>
+        /// Gets the lock a statement plans under and DDL alters the root under.
+        /// </summary>
+        /// <remarks>
+        /// Calcite's connection is driven by one thread and its root by one connection, so nothing in Calcite
+        /// guards the root: a <c>CalciteSchema</c> keeps its tables and sub-schemas in <c>NameMap</c>s over
+        /// <c>TreeMap</c>s, and a DDL statement writes into them while a statement planning reads them. A
+        /// root shared by connections used concurrently needs the reader-writer shape: planning — the
+        /// snapshot, validation, optimisation, implementation — under the read lock, many at a time, and DDL
+        /// under the write lock, alone. The lock is thread-affine, so it spans planning, which is one thread's
+        /// work, and not execution: a table is resolved again from the snapshot when a plan runs, the
+        /// snapshot shares its table map with the live root by Calcite's own javadoc, and an asynchronous
+        /// read cannot hold a lock across its awaits. That lookup against a concurrent DDL is the exposure
+        /// that stays open, and it is Calcite's.
+        /// </remarks>
+        public ReaderWriterLockSlim Lock { get; } = new(LockRecursionPolicy.SupportsRecursion);
+
+        /// <summary>
+        /// Gets the number of sessions holding this root.
+        /// </summary>
+        public int Users
+        {
+            get { lock (_sync) return _users; }
+        }
+
+        /// <summary>
+        /// Gets when this root last had no session holding it, as <see cref="Environment.TickCount64"/> —
+        /// its construction, or the last <see cref="Release"/> that left it with none.
+        /// </summary>
+        public long IdleSince
+        {
+            get { lock (_sync) return _idleSince; }
+        }
+
+        /// <summary>
+        /// Counts a session onto this root.
+        /// </summary>
+        public void Acquire()
+        {
+            lock (_sync)
+                _users++;
+        }
+
+        /// <summary>
+        /// Counts a session off this root, disposing it where it has been retired and this was the last.
+        /// </summary>
+        public void Release()
+        {
+            bool dispose;
+            lock (_sync)
+            {
+                _users--;
+                if (_users == 0)
+                    _idleSince = Environment.TickCount64;
+
+                dispose = _users == 0 && _retired;
+            }
+
+            if (dispose)
+                Dispose();
+        }
+
+        /// <summary>
+        /// Marks this root as done with, disposing it now where no session holds it and otherwise when
+        /// the last one lets go.
+        /// </summary>
+        /// <remarks>
+        /// This is what a data source does to a root it drops — on <see cref="CalciteDataSource.Clear"/>,
+        /// on its own disposal, and when the provider evicts or prunes it — and what a session does to a
+        /// root built for it alone. A connection still open keeps working: the root goes when the last
+        /// session on it is disposed, the way a pooled connector Npgsql has cleared is closed when it is
+        /// returned rather than while it is busy.
+        /// </remarks>
+        public void Retire()
+        {
+            bool dispose;
+            lock (_sync)
+            {
+                _retired = true;
+                dispose = _users == 0;
+            }
+
+            if (dispose)
+                Dispose();
+        }
+
         /// <summary>
         /// Disposes every schema on the root that can be disposed, sub-schemas first.
         /// </summary>
@@ -201,16 +293,21 @@ namespace Apache.Calcite.Data.Internal
         /// Calcite has no disposal hook for a schema: a <c>SchemaFactory</c> builds one and nothing ever
         /// tells it the schema is done with, so an adapter holding a client holds it for the life of the
         /// process. A root has a lifetime here, so the schemas on it get one too — a schema that implements
-        /// <see cref="IDisposable"/> is disposed when its root is, which for a shared root is when the data
-        /// source is and for a private one is when the connection is.
+        /// <see cref="IDisposable"/> is disposed when its root is, which is when it has been
+        /// <see cref="Retire">retired</see> and no session holds it.
         /// </remarks>
-        public void Dispose()
+        void Dispose()
         {
-            if (_disposed)
-                return;
+            lock (_sync)
+            {
+                if (_disposed)
+                    return;
 
-            _disposed = true;
+                _disposed = true;
+            }
+
             DisposeSchemas(_schema);
+            Lock.Dispose();
         }
 
         static void DisposeSchemas(CalciteSchema schema)

@@ -162,14 +162,21 @@ model read once per process rather than once per request. That is the same barga
 makes with its connection pool, and it has the same switch: `Pooling=false` in the connection string gives
 each connection a root of its own, built when it opens and released when it is disposed.
 
-`CalciteConnection.ClearPool(connection)` drops the provider's data source for a connection string, so the
-next connection reads the model again — which is how a changed model file reaches a running process — and
-`ClearAllPools()` drops them all. A data source you built yourself is not kept by the provider;
-`CalciteDataSource.Clear()` is its equivalent.
+What the provider keeps is bounded by time, as a connection pool is. A data source that has gone
+`Connection Idle Lifetime` seconds (default 300) with no connection open on it is released — dropped, and
+every schema on its root that implements `IDisposable` disposed — checked every `Connection Pruning
+Interval` seconds (default 10); the next connection opened with that string builds again. So a process
+that varies its connection strings does not keep a root for every string it ever wrote.
+`CalciteConnection.ClearPool(connection)` releases one on demand, which is how a changed model file reaches
+a running process sooner, and `ClearAllPools()` releases them all. A connection already open keeps the
+root it has, and the root is disposed once the last such connection is. A data source you built yourself
+is not kept by the provider and is never released this way; `CalciteDataSource.Clear()` is its equivalent.
 
 Sharing a root means an adapter's schema may be read from several threads at once. Calcite serialises
-nothing, so a schema reachable from a data source has to tolerate concurrent reads; DDL is serialised
-against DDL by the provider.
+nothing, so a schema reachable from a data source has to tolerate concurrent reads. The provider holds
+the root's read lock while a statement plans and its write lock while DDL alters it, so a statement never
+plans against a root another connection is changing; a table is looked up once more when a plan runs, and
+that lookup is not under the lock.
 
 ## Using `DbProviderFactory`
 
@@ -231,6 +238,8 @@ All keys are exposed as typed properties on `CalciteConnectionStringBuilder`. Ke
 | `Schema` | `string` | — | Default schema name when identifiers are unqualified. |
 | `Synchronous` | `bool` | `false` | Plan queries in the synchronous convention instead of the asynchronous one. A provider option, not forwarded to the engine — see [Behaviour worth knowing](#behaviour-worth-knowing). |
 | `Pooling` | `bool` | `true` | Whether connections opened with this connection string share one root schema. A provider option, not forwarded to the engine — see [Using `DbDataSource`](#using-dbdatasource-net-7). |
+| `Connection Idle Lifetime` | `int` | `300` | Seconds a shared root schema is kept with no connection open on it before it is released. A provider option. |
+| `Connection Pruning Interval` | `int` | `10` | Seconds between checks for shared root schemas to release. A provider option. |
 | `Lex` | `string` | `ORACLE` | Lexical policy: `ORACLE`, `MYSQL`, `MYSQL_ANSI`, `SQL_SERVER`, `JAVA`, `BIG_QUERY`. |
 | `CaseSensitive` | `bool` | from `Lex` | Whether identifier lookup is case-sensitive. |
 | `Quoting` | `string` | from `Lex` | Quote style: `DOUBLE_QUOTE`, `BACK_TICK`, `BACK_TICK_BACKSLASH`, `BRACKET`. |

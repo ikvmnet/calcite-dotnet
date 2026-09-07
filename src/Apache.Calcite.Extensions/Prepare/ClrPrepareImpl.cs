@@ -222,19 +222,45 @@ namespace Apache.Calcite.Extensions.Prepare
         /// Executes a DDL statement.
         /// </summary>
         /// <remarks>
-        /// Under the mutable root's monitor, which Calcite's <c>executeDdl</c> is not. Calcite's connection is
-        /// driven by one thread and its root schema by one connection, so a DDL statement never meets another;
-        /// here a root may be shared by connections used concurrently, and a DDL statement writes into
-        /// <c>NameMap</c>s over <c>TreeMap</c>s, which two writers corrupt. This serialises DDL against DDL on
-        /// one root and nothing else: a statement planning against the root while another alters it is
-        /// Calcite's own exposure, and it is not closed here.
+        /// Under the root's write lock, which Calcite's <c>executeDdl</c> is not. Calcite's connection is
+        /// driven by one thread and its root schema by one connection, so a DDL statement never meets a
+        /// statement planning; here a root may be shared by connections used concurrently, and a DDL
+        /// statement writes into <c>NameMap</c>s over <c>TreeMap</c>s while planning reads them. A context
+        /// that carries a root lock (<see cref="PrepareContext.RootLock"/>) arrives here holding its read
+        /// side, since the parse that told a DDL statement apart from a query ran under it; the read side is
+        /// given up, the write side taken for the DDL, and the read side taken back for the caller to
+        /// release. A context without one is a root one connection has to itself, and the mutable root's
+        /// monitor serialises DDL against DDL there.
         /// </remarks>
         public virtual void ExecuteDdl(CalcitePrepare.Context context, SqlNode node)
         {
             var config = context.config();
             var parserFactory = (SqlParserImplFactory)config.parserFactory((java.lang.Class)typeof(SqlParserImplFactory), org.apache.calcite.sql.parser.impl.SqlParserImpl.FACTORY);
-            lock (context.getMutableRootSchema())
+
+            var rootLock = (context as PrepareContext)?.RootLock;
+            if (rootLock is null)
+            {
+                lock (context.getMutableRootSchema())
+                    parserFactory.getDdlExecutor().executeDdl(context, node);
+
+                return;
+            }
+
+            var hadRead = rootLock.IsReadLockHeld;
+            if (hadRead)
+                rootLock.ExitReadLock();
+
+            rootLock.EnterWriteLock();
+            try
+            {
                 parserFactory.getDdlExecutor().executeDdl(context, node);
+            }
+            finally
+            {
+                rootLock.ExitWriteLock();
+                if (hadRead)
+                    rootLock.EnterReadLock();
+            }
         }
 
         /// <summary>

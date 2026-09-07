@@ -27,25 +27,41 @@ namespace Apache.Calcite.Data
     /// A <see cref="CalciteDataSource"/> is intended to be created once per logical data source and shared
     /// across the application — registered as a singleton, with connections transient. There are two ways
     /// to one. A bare <c>new CalciteConnection(connectionString)</c> draws on a data source the provider
-    /// keeps for that connection string, made the first time the string is seen and shared by every
-    /// connection opened with an equivalent string afterwards; <c>Pooling=false</c> in the string opts a
-    /// connection out, giving it a root of its own. Or the application builds one with
-    /// <see cref="CalciteDataSourceBuilder"/>, which is the only way to hand over a schema instance the
-    /// application constructed, and which is the application's to dispose.
+    /// keeps for that connection string, made the first time the string is seen, shared by every
+    /// connection opened with an equivalent string afterwards, and released once it has gone
+    /// <see cref="CalciteConnectionStringBuilder.ConnectionIdleLifetime"/> with no connection open on it;
+    /// <c>Pooling=false</c> in the string opts a connection out, giving it a root of its own. Or the
+    /// application builds one with <see cref="CalciteDataSourceBuilder"/>, which is the only way to hand
+    /// over a schema instance the application constructed, and which is the application's to dispose.
     /// </para>
     /// <para>
     /// Sharing a root means an adapter's schema may be read from several threads at once. Calcite serialises
-    /// nothing; a schema reachable from a data source has to tolerate concurrent reads. DDL is serialised
-    /// against DDL by the provider. Disposing the data source disposes every schema on its root that
-    /// implements <see cref="IDisposable"/>, and a connection still open on it fails at its next statement.
+    /// nothing; a schema reachable from a data source has to tolerate concurrent reads. Planning takes the
+    /// root's read lock and DDL its write lock, so a statement never plans against a root another is
+    /// altering. Disposing the data source retires its root: every schema on it that implements
+    /// <see cref="IDisposable"/> is disposed once the last connection open on it is disposed, and no new
+    /// connection can be opened from it.
     /// </para>
     /// </remarks>
     public class CalciteDataSource : DbDataSource
     {
 
+        /// <summary>
+        /// The <see cref="CalciteConnectionStringBuilder.ConnectionIdleLifetime"/> where the string gives none.
+        /// </summary>
+        public const int DefaultConnectionIdleLifetime = 300;
+
+        /// <summary>
+        /// The <see cref="CalciteConnectionStringBuilder.ConnectionPruningInterval"/> where the string gives none.
+        /// </summary>
+        public const int DefaultConnectionPruningInterval = 10;
+
         readonly CalciteConnectionStringBuilder _options;
         readonly IReadOnlyList<Action<org.apache.calcite.schema.SchemaPlus>> _configure;
         readonly bool _pooling;
+        readonly TimeSpan _idleLifetime;
+        readonly TimeSpan _pruningInterval;
+        readonly long _created = Environment.TickCount64;
         readonly object _sync = new();
         CalciteDataSourceRoot? _root;
         bool _disposed;
@@ -56,6 +72,7 @@ namespace Apache.Calcite.Data
         /// <param name="connectionString">The connection string used by every connection produced from this data source.
         /// Recognized keys are described on <see cref="CalciteConnectionStringBuilder"/>.</param>
         /// <exception cref="ArgumentNullException"><paramref name="connectionString"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentException">The connection string's pooling settings are not valid.</exception>
         public CalciteDataSource(string connectionString) :
             this(new CalciteConnectionStringBuilder(connectionString ?? throw new ArgumentNullException(nameof(connectionString))), [])
         {
@@ -67,6 +84,7 @@ namespace Apache.Calcite.Data
         /// </summary>
         /// <param name="connectionStringBuilder">The builder whose <see cref="DbConnectionStringBuilder.ConnectionString"/> is used to configure produced connections.</param>
         /// <exception cref="ArgumentNullException"><paramref name="connectionStringBuilder"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentException">The connection string's pooling settings are not valid.</exception>
         public CalciteDataSource(CalciteConnectionStringBuilder connectionStringBuilder) :
             this(new CalciteConnectionStringBuilder((connectionStringBuilder ?? throw new ArgumentNullException(nameof(connectionStringBuilder))).ConnectionString), [])
         {
@@ -78,40 +96,107 @@ namespace Apache.Calcite.Data
         /// </summary>
         /// <param name="options">The connection string, which this instance owns.</param>
         /// <param name="configure">Steps to run over the root after the model, in order.</param>
-        internal CalciteDataSource(CalciteConnectionStringBuilder options, IReadOnlyList<Action<org.apache.calcite.schema.SchemaPlus>> configure)
+        /// <param name="pooled">Whether the root is shared, or <see langword="null"/> to read the
+        /// <c>Pooling</c> key.</param>
+        /// <exception cref="ArgumentException">The pooling settings are not valid.</exception>
+        internal CalciteDataSource(CalciteConnectionStringBuilder options, IReadOnlyList<Action<org.apache.calcite.schema.SchemaPlus>> configure, bool? pooled = null)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _configure = configure ?? throw new ArgumentNullException(nameof(configure));
-            _pooling = options.Pooling ?? true;
+            _pooling = pooled ?? options.Pooling ?? true;
+
+            var idleLifetime = options.ConnectionIdleLifetime ?? DefaultConnectionIdleLifetime;
+            var pruningInterval = options.ConnectionPruningInterval ?? DefaultConnectionPruningInterval;
+            if (pruningInterval <= 0)
+                throw new ArgumentException($"{CalciteConnectionStringBuilder.ConnectionPruningIntervalKey} can't be 0.", nameof(options));
+            if (idleLifetime < pruningInterval)
+                throw new ArgumentException($"Connection can't have {CalciteConnectionStringBuilder.ConnectionIdleLifetimeKey} {idleLifetime} under {CalciteConnectionStringBuilder.ConnectionPruningIntervalKey} {pruningInterval}.", nameof(options));
+
+            _idleLifetime = TimeSpan.FromSeconds(idleLifetime);
+            _pruningInterval = TimeSpan.FromSeconds(pruningInterval);
         }
 
         /// <inheritdoc />
         public override string ConnectionString => _options.ConnectionString;
 
         /// <summary>
+        /// Gets how often the provider looks at this data source for pruning, where it keeps it.
+        /// </summary>
+        internal TimeSpan PruningInterval => _pruningInterval;
+
+        /// <summary>
         /// Gets the root a connection should plan against, and whether that connection owns it.
         /// </summary>
         /// <returns>The root, and <see langword="true"/> where it was built for this caller alone and is the
-        /// caller's to dispose.</returns>
+        /// caller's to retire.</returns>
         /// <exception cref="ObjectDisposedException">Thrown when the data source has been disposed.</exception>
         /// <remarks>
         /// Built once, by whichever connection opens first, with the others waiting on it — a failed build
         /// leaves nothing behind, so the next connection tries again. With <c>Pooling=false</c> there is no
-        /// shared root: every call builds one, and the connection that asked disposes it.
+        /// shared root: every call builds one, and the connection that asked retires it.
         /// </remarks>
         internal (CalciteDataSourceRoot Root, bool Owned) Acquire()
         {
-            ThrowIfDisposed();
+            return TryAcquire(out var root, out var owned) ? (root, owned) : throw new ObjectDisposedException(GetType().Name);
+        }
 
-            if (_pooling == false)
-                return (CalciteDataSourceRoot.Build(_options, _configure), true);
-
+        /// <summary>
+        /// <see cref="Acquire"/>, answering <see langword="false"/> rather than throwing where the data source
+        /// has been disposed — which for one the provider keeps means it was pruned between being looked up
+        /// and being used, and the caller looks it up again.
+        /// </summary>
+        internal bool TryAcquire(out CalciteDataSourceRoot root, out bool owned)
+        {
             lock (_sync)
             {
-                ThrowIfDisposed();
+                if (_disposed)
+                {
+                    root = null!;
+                    owned = false;
+                    return false;
+                }
+
+                if (_pooling == false)
+                {
+                    root = CalciteDataSourceRoot.Build(_options, _configure);
+                    owned = true;
+                    return true;
+                }
+
                 _root ??= CalciteDataSourceRoot.Build(_options, _configure);
-                return (_root, false);
+                root = _root;
+                owned = false;
+                return true;
             }
+        }
+
+        /// <summary>
+        /// Disposes this data source where no connection is open on it and none has been for its idle
+        /// lifetime, answering whether it is now disposed.
+        /// </summary>
+        /// <param name="now">The current <see cref="Environment.TickCount64"/>.</param>
+        internal bool TryPrune(long now)
+        {
+            CalciteDataSourceRoot? root;
+            lock (_sync)
+            {
+                if (_disposed)
+                    return true;
+
+                if (_root is not null && _root.Users > 0)
+                    return false;
+
+                var idleSince = _root?.IdleSince ?? _created;
+                if (now - idleSince < _idleLifetime.TotalMilliseconds)
+                    return false;
+
+                _disposed = true;
+                root = _root;
+                _root = null;
+            }
+
+            root?.Retire();
+            return true;
         }
 
         /// <summary>
@@ -119,13 +204,19 @@ namespace Apache.Calcite.Data
         /// model, and with it a model file that has changed on disk.
         /// </summary>
         /// <remarks>
-        /// A connection already open keeps the root it has. The dropped root is not disposed, for that
-        /// reason; it goes when the last such connection lets go of it.
+        /// A connection already open keeps the root it has, and the dropped root is disposed once the last
+        /// such connection is.
         /// </remarks>
         public void Clear()
         {
+            CalciteDataSourceRoot? root;
             lock (_sync)
+            {
+                root = _root;
                 _root = null;
+            }
+
+            root?.Retire();
         }
 
         /// <inheritdoc />
@@ -154,6 +245,10 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Retires the root: no new connection can be opened, a connection already open keeps working, and
+        /// the root's disposable schemas are disposed once the last such connection is disposed.
+        /// </remarks>
         protected override void Dispose(bool disposing)
         {
             if (disposing)
@@ -169,16 +264,10 @@ namespace Apache.Calcite.Data
                     _root = null;
                 }
 
-                root?.Dispose();
+                root?.Retire();
             }
 
             base.Dispose(disposing);
-        }
-
-        void ThrowIfDisposed()
-        {
-            if (_disposed)
-                throw new ObjectDisposedException(GetType().Name);
         }
 
     }

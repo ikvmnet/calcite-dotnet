@@ -24,19 +24,37 @@ namespace Apache.Calcite.Extensions.Prepare
         readonly CalciteSchema _rootSchema;
         readonly CalciteConnectionConfig _config;
         readonly IReadOnlyList<string> _defaultSchemaPath;
+        readonly System.Threading.ReaderWriterLockSlim? _rootLock;
 
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        /// <param name="typeFactory">The type factory.</param>
+        /// <param name="rootSchema">The root, of which a snapshot is taken here — so a caller sharing the root
+        /// between connections holds <paramref name="rootLock"/>'s read lock across this constructor.</param>
+        /// <param name="config">The connection configuration.</param>
+        /// <param name="defaultSchemaPath">The default schema path.</param>
+        /// <param name="rootLock">The lock the root is read and altered under, where it is shared, or
+        /// <see langword="null"/> where one connection has the root to itself, as Calcite's does.</param>
         public PrepareContext(
             JavaTypeFactory typeFactory,
             CalciteSchema rootSchema,
             CalciteConnectionConfig config,
-            IReadOnlyList<string> defaultSchemaPath)
+            IReadOnlyList<string> defaultSchemaPath,
+            System.Threading.ReaderWriterLockSlim? rootLock = null)
         {
             _typeFactory = typeFactory;
             _mutableRootSchema = rootSchema;
             _rootSchema = rootSchema.createSnapshot(new org.apache.calcite.schema.impl.LongSchemaVersion(java.lang.System.currentTimeMillis()));
             _config = config;
             _defaultSchemaPath = defaultSchemaPath;
+            _rootLock = rootLock;
         }
+
+        /// <summary>
+        /// Gets the lock the root is read and altered under, or <see langword="null"/> where there is none.
+        /// </summary>
+        public System.Threading.ReaderWriterLockSlim? RootLock => _rootLock;
 
         public JavaTypeFactory getTypeFactory()
         {

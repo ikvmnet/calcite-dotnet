@@ -132,6 +132,7 @@ namespace Apache.Calcite.Data.Internal
 
                 _root = root;
                 _ownsRoot = ownsRoot;
+                _root.Acquire();
                 _rootSchema = root.Schema;
                 _config = cfg;
                 _rootSchemaPlus = _rootSchema.plus();
@@ -197,17 +198,61 @@ namespace Apache.Calcite.Data.Internal
         /// </remarks>
         IClrPrepare.Signature Plan(CalciteExecuteRequest request, bool async = false)
         {
-            var ctx = new PrepareContext(_typeFactory, _rootSchema, _config, _defaultSchemaPath);
-
-            CalcitePrepare.Dummy.push(ctx);
+            // the root's read lock, from the snapshot the context takes to the signature: the root may be
+            // shared with connections altering it by DDL, and DDL takes the write side inside the prepare
+            _root.Lock.EnterReadLock();
             try
             {
-                return _prepareFactory().PrepareSql(ctx, IClrPrepare.Query.Of(request.Sql), typeof(object[]), -1, async);
+                var ctx = new PrepareContext(_typeFactory, _rootSchema, _config, _defaultSchemaPath, _root.Lock);
+
+                CalcitePrepare.Dummy.push(ctx);
+                try
+                {
+                    return _prepareFactory().PrepareSql(ctx, IClrPrepare.Query.Of(request.Sql), typeof(object[]), -1, async);
+                }
+                finally
+                {
+                    CalcitePrepare.Dummy.pop(ctx);
+                }
             }
             finally
             {
-                CalcitePrepare.Dummy.pop(ctx);
+                _root.Lock.ExitReadLock();
             }
+        }
+
+        /// <summary>
+        /// Holds the root's read lock until the result is disposed, for a reader of the root outside planning.
+        /// </summary>
+        public ReadLockHold ReadRoot()
+        {
+            _root.Lock.EnterReadLock();
+            return new ReadLockHold(_root.Lock);
+        }
+
+        /// <summary>
+        /// A held read lock, released on dispose.
+        /// </summary>
+        public readonly struct ReadLockHold : IDisposable
+        {
+
+            readonly System.Threading.ReaderWriterLockSlim _lock;
+
+            /// <summary>
+            /// Initializes a new instance.
+            /// </summary>
+            /// <param name="lock">The lock held.</param>
+            public ReadLockHold(System.Threading.ReaderWriterLockSlim @lock)
+            {
+                _lock = @lock;
+            }
+
+            /// <inheritdoc />
+            public void Dispose()
+            {
+                _lock.ExitReadLock();
+            }
+
         }
 
         /// <summary>
@@ -563,7 +608,9 @@ namespace Apache.Calcite.Data.Internal
 
             _disposed = true;
             if (_ownsRoot)
-                _root.Dispose();
+                _root.Retire();
+
+            _root.Release();
         }
 
         void ThrowIfDisposed()

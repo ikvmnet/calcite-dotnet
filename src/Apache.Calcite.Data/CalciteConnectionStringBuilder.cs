@@ -45,6 +45,17 @@ namespace Apache.Calcite.Data
         public const string PoolingKey = "Pooling";
 
         /// <summary>
+        /// Connection string key for how long, in seconds, the provider keeps a root schema no connection
+        /// is using.
+        /// </summary>
+        public const string ConnectionIdleLifetimeKey = "Connection Idle Lifetime";
+
+        /// <summary>
+        /// Connection string key for how often, in seconds, the provider looks for root schemas to release.
+        /// </summary>
+        public const string ConnectionPruningIntervalKey = "Connection Pruning Interval";
+
+        /// <summary>
         /// Connection string key for whether identifiers are matched case-sensitively.
         /// </summary>
         public const string CaseSensitiveKey = "CaseSensitive";
@@ -242,6 +253,49 @@ namespace Apache.Calcite.Data
                     Remove(PoolingKey);
                 else
                     this[PoolingKey] = value.Value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets how long, in seconds, the provider keeps a root schema no connection is using before
+        /// releasing it. Default is 300.
+        /// </summary>
+        /// <remarks>
+        /// A provider option rather than an engine one. The data source the provider keeps for a connection
+        /// string is released — dropped, and its schemas disposed — once it has gone this long with no
+        /// connection open on it, so that a process which varies its connection strings does not keep a root
+        /// for every string it ever wrote. The next connection opened with the string builds a new one. It is
+        /// checked every <see cref="ConnectionPruningInterval"/>. A data source the application built is the
+        /// application's and is never released this way.
+        /// </remarks>
+        public int? ConnectionIdleLifetime
+        {
+            get => TryGetInt(ConnectionIdleLifetimeKey);
+            set
+            {
+                if (value is null)
+                    Remove(ConnectionIdleLifetimeKey);
+                else
+                    this[ConnectionIdleLifetimeKey] = value.Value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets how often, in seconds, the provider looks for root schemas that have passed their
+        /// <see cref="ConnectionIdleLifetime"/>. Default is 10.
+        /// </summary>
+        /// <remarks>
+        /// A provider option rather than an engine one.
+        /// </remarks>
+        public int? ConnectionPruningInterval
+        {
+            get => TryGetInt(ConnectionPruningIntervalKey);
+            set
+            {
+                if (value is null)
+                    Remove(ConnectionPruningIntervalKey);
+                else
+                    this[ConnectionPruningIntervalKey] = value.Value;
             }
         }
 

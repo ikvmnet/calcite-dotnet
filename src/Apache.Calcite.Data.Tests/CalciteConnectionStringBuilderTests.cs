@@ -123,6 +123,24 @@ namespace Apache.Calcite.Data.Tests
             Assert.NotEqual(a.DataSourceKey, c.DataSourceKey);
         }
 
+        [Fact]
+        public void Pool_lifetimes_should_round_trip_and_default_to_unset()
+        {
+            var b = new CalciteConnectionStringBuilder();
+            Assert.Null(b.ConnectionIdleLifetime);
+            Assert.Null(b.ConnectionPruningInterval);
+
+            b.ConnectionIdleLifetime = 60;
+            b.ConnectionPruningInterval = 5;
+            var rebuilt = new CalciteConnectionStringBuilder(b.ConnectionString);
+            Assert.Equal(60, rebuilt.ConnectionIdleLifetime);
+            Assert.Equal(5, rebuilt.ConnectionPruningInterval);
+
+            var spelled = new CalciteConnectionStringBuilder("Connection Idle Lifetime=60;Connection Pruning Interval=5");
+            Assert.Equal(60, spelled.ConnectionIdleLifetime);
+            Assert.Equal(5, spelled.ConnectionPruningInterval);
+        }
+
     }
 
 }

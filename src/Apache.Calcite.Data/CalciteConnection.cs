@@ -266,8 +266,24 @@ namespace Apache.Calcite.Data
                 // Session is created once on the first Open() and reused across Close/Open cycles.
                 if (_session is null)
                 {
-                    _dataSource ??= CalciteDataSources.Resolve(_options);
-                    var (root, owned) = _dataSource.Acquire();
+                    CalciteDataSourceRoot root;
+                    bool owned;
+                    if (_dataSource is not null)
+                    {
+                        (root, owned) = _dataSource.Acquire();
+                    }
+                    else
+                    {
+                        // the data source the provider keeps for this string, looked up again if it was
+                        // pruned between the lookup and the use
+                        CalciteDataSource dataSource;
+                        do
+                            dataSource = CalciteDataSources.Resolve(_options);
+                        while (dataSource.TryAcquire(out root, out owned) == false);
+
+                        _dataSource = dataSource;
+                    }
+
                     _session = new CalciteSession(_options, root, owned);
                 }
 
@@ -438,10 +454,11 @@ namespace Apache.Calcite.Data
         /// </summary>
         /// <param name="connection">A connection whose connection string names the data source to drop.</param>
         /// <remarks>
-        /// This is how a changed model file reaches a running process. Connections already open keep the
-        /// root they have; the dropped data source is not disposed, and goes when the last of them lets go
-        /// of it. A data source the application built with <see cref="CalciteDataSourceBuilder"/> is not
-        /// kept by the provider and is unaffected — <see cref="CalciteDataSource.Clear"/> is its equivalent.
+        /// This is how a changed model file reaches a running process before the data source's idle
+        /// lifetime would have released it. Connections already open keep the root they have, and it is
+        /// disposed once the last of them is. A data source the application built with
+        /// <see cref="CalciteDataSourceBuilder"/> is not kept by the provider and is unaffected —
+        /// <see cref="CalciteDataSource.Clear"/> is its equivalent.
         /// </remarks>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="connection"/> is <see langword="null"/>.</exception>
         public static void ClearPool(CalciteConnection connection)

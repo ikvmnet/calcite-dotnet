@@ -160,9 +160,19 @@ sources keyed by `CalciteConnectionStringBuilder.DataSourceKey`, which is the co
 its keys lower-cased and sorted and `Synchronous` left out — that key chooses the convention a
 connection plans into and nothing that is built, as Npgsql leaves `TargetSessionAttributes` out of its
 key. A bare `new CalciteConnection(cs)` resolves its data source here on `Open`; an empty connection
-string gets a private one, there being nothing to key on. `ClearPool` and `ClearAllPools` remove entries
-without disposing them, since a connection may still hold one; every entry left at process exit is
-disposed then. A data source the application built is never here.
+string gets a private one, there being nothing to key on. A data source the application built is never
+here.
+
+Entries are held strongly, not weakly: the point of one is to be there for the next connection when
+nothing else references it, so what bounds the set is time rather than reachability, as it is for a
+connection pool. A root counts the sessions on it, and each entry has a timer that fires every
+`Connection Pruning Interval` and releases the entry once it has gone `Connection Idle Lifetime` with no
+session on its root — removed here, and its root retired. `ClearPool` and `ClearAllPools` do the same on
+demand, and entries left at process exit are released then. Retiring a root disposes its `IDisposable`
+schemas at once where no session holds it and otherwise when the last session is disposed, so a connection
+still open keeps working, the way a pooled connector Npgsql has cleared is closed when it is returned
+rather than while it is busy. A connection that finds its entry pruned between lookup and use looks it up
+again. Both keywords are spelled as Npgsql spells them and validated as Npgsql validates them.
 
 **`CalciteSession`** is the connection-lived half: created on the first `CalciteConnection.Open()` over
 the root the data source handed it, and kept alive across `Close`/`Open` cycles. Construction is the
@@ -182,18 +192,25 @@ rest of `CalciteConnectionImpl`'s constructor:
   `Schema` key — and reads the `Synchronous` key, which decides the convention every query on this
   connection is planned into.
 
-`Dispose` marks the session disposed so later execute calls throw `ObjectDisposedException`, and
-disposes the root where the session owns it.
+`Dispose` marks the session disposed so later execute calls throw `ObjectDisposedException`, releases
+the session's count on the root, and retires the root first where the session owns it.
 
 Anything thrown in either constructor that is not already a `CalciteException` is wrapped in one.
 
 Sharing a root is a contract adapters did not have before: a `Schema` reachable from a data source may
-be read from several threads at once, and Calcite serialises nothing. DDL is serialised against DDL —
-`ClrPrepareImpl.ExecuteDdl` takes the mutable root's monitor, because a DDL statement writes into
-`NameMap`s over `TreeMap`s, which two writers corrupt. A statement planning against the root while
-another alters it is Calcite's own exposure and is not closed; note that `createSnapshot` shares
-`tableMap` with the live root by its own javadoc, so the per-statement snapshot isolates the adapter's
-implicit tables and not the explicit ones.
+be read from several threads at once, and Calcite serialises nothing. What the provider serialises is
+the root itself, with a reader-writer lock on `CalciteDataSourceRoot`. Planning is a reader: `Plan` holds
+the read side from the snapshot `PrepareContext` takes to the signature, and the `GetSchema` walkers hold
+it while they read. DDL is the writer: a DDL statement is told apart from a query only after the parse,
+inside the prepare, so `ClrPrepareImpl.ExecuteDdl` finds the lock on the context, gives up the read side
+it arrived holding, takes the write side for the DDL, and takes the read side back for `Plan` to release.
+A statement therefore never plans against a root another connection is altering, which Calcite's own
+connection never had to guarantee, its root being one connection's.
+
+What stays open is execution. The lock is thread-affine and a plan is read asynchronously, so the lock
+cannot span a reader; and a plan resolves its tables once more when it runs, from the snapshot, whose
+`tableMap` is the live root's by `createSnapshot`'s own javadoc. That lookup against a concurrent DDL is
+Calcite's exposure, and it is stated rather than closed.
 
 The session exposes three private steps and the execute entry points.
 

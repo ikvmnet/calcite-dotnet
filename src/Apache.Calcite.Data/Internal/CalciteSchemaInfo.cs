@@ -235,7 +235,9 @@ namespace Apache.Calcite.Data.Internal
             var tableFilter     = restrictionValues?.Length > 2 ? restrictionValues[2] : null;
             var tableTypeFilter = restrictionValues?.Length > 3 ? restrictionValues[3] : null;
 
-            var root = connection.RequireSession().RootSchema;
+            var session = connection.RequireSession();
+            using var _ = session.ReadRoot();
+            var root = session.RootSchema;
             var schemaNames = root.getSubSchemaNames().iterator();
             while (schemaNames.hasNext())
             {
@@ -383,7 +385,9 @@ namespace Apache.Calcite.Data.Internal
             var columnFilter = restrictionValues?.Length > 3 ? restrictionValues[3] : null;
 
             var typeFactory = connection.TypeFactory;
-            var root = connection.RequireSession().RootSchema;
+            var session = connection.RequireSession();
+            using var _ = session.ReadRoot();
+            var root = session.RootSchema;
             var schemaNames = root.getSubSchemaNames().iterator();
             while (schemaNames.hasNext())
             {
