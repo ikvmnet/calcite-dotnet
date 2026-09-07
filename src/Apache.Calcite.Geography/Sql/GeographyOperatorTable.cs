@@ -897,6 +897,97 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
+        /// <c>ST_GEOG_INTERSECTION(GEOGRAPHY, GEOGRAPHY)</c>. Returns the area common to two geographies.
+        /// </summary>
+        public static readonly SqlFunction StGeogIntersection =
+            Function("ST_GEOG_INTERSECTION", nameof(GeographyFunctions.Intersection), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_DIFFERENCE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the part of the first geography that is not in the second.
+        /// </summary>
+        public static readonly SqlFunction StGeogDifference =
+            Function("ST_GEOG_DIFFERENCE", nameof(GeographyFunctions.Difference), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_SYMDIFFERENCE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the parts of two geographies that are in one and not the other.
+        /// </summary>
+        public static readonly SqlFunction StGeogSymDifference =
+            Function("ST_GEOG_SYMDIFFERENCE", nameof(GeographyFunctions.SymDifference), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_UNARYUNION(GEOGRAPHY)</c>. Returns the geography with its overlapping parts merged.
+        /// </summary>
+        public static readonly SqlFunction StGeogUnaryUnion =
+            Function("ST_GEOG_UNARYUNION", nameof(GeographyFunctions.UnaryUnion), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_DENSIFY(GEOGRAPHY, DOUBLE)</c>. Returns the geography with vertices inserted along its geodesics so that no edge is longer than the given distance in metres.
+        /// </summary>
+        public static readonly SqlFunction StGeogDensify =
+            Function("ST_GEOG_DENSIFY", nameof(GeographyFunctions.Densify), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Fractional], ["geog", "tolerance"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_PROJECTPOINT(GEOGRAPHY, GEOGRAPHY)</c>. Returns the point of the line nearest the given point.
+        /// </summary>
+        public static readonly SqlFunction StGeogProjectPoint =
+            Function("ST_GEOG_PROJECTPOINT", nameof(GeographyFunctions.ProjectPoint), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Geometry], ["point", "line"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_ENVELOPE(GEOGRAPHY)</c>. Returns the smallest latitude-longitude rectangle containing the geography.
+        /// </summary>
+        public static readonly SqlFunction StGeogEnvelope =
+            Function("ST_GEOG_ENVELOPE", nameof(GeographyFunctions.Envelope), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_EXTENT(GEOGRAPHY)</c>. Returns the smallest latitude-longitude rectangle containing the geography.
+        /// </summary>
+        public static readonly SqlFunction StGeogExtent =
+            Function("ST_GEOG_EXTENT", nameof(GeographyFunctions.Extent), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_EXPAND(GEOGRAPHY, DOUBLE)</c>. Returns the geography's rectangle grown by a distance in metres.
+        /// </summary>
+        public static readonly SqlFunction StGeogExpand =
+            Function("ST_GEOG_EXPAND", nameof(GeographyFunctions.Expand), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Fractional], ["geog", "distance"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_CLOSESTCOORDINATE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the coordinate or coordinates of the geography nearest the given point.
+        /// </summary>
+        public static readonly SqlFunction StGeogClosestCoordinate =
+            Function("ST_GEOG_CLOSESTCOORDINATE", nameof(GeographyFunctions.ClosestCoordinate), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Geometry], ["point", "geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_FURTHESTCOORDINATE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the coordinate or coordinates of the geography furthest from the given point.
+        /// </summary>
+        public static readonly SqlFunction StGeogFurthestCoordinate =
+            Function("ST_GEOG_FURTHESTCOORDINATE", nameof(GeographyFunctions.FurthestCoordinate), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Geometry], ["point", "geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_CLOSESTPOINT(GEOGRAPHY, GEOGRAPHY)</c>. Returns the point of the first geography nearest the second.
+        /// </summary>
+        public static readonly SqlFunction StGeogClosestPoint =
+            Function("ST_GEOG_CLOSESTPOINT", nameof(GeographyFunctions.ClosestPoint), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_LONGESTLINE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the line between the two coordinates, one from each geography, that are furthest apart.
+        /// </summary>
+        public static readonly SqlFunction StGeogLongestLine =
+            Function("ST_GEOG_LONGESTLINE", nameof(GeographyFunctions.LongestLine), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
+
+        /// <summary>
         /// <c>ST_GEOG_MAXDISTANCE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the greatest distance between a coordinate of one geography and a coordinate of the other, in metres.
         /// </summary>
         public static readonly SqlFunction StGeogMaxDistance =
@@ -1006,6 +1097,19 @@ namespace Apache.Calcite.Geography.Sql
                 StGeogLength,
                 StGeogPerimeter,
                 StGeogMaxDistance,
+                StGeogIntersection,
+                StGeogDifference,
+                StGeogSymDifference,
+                StGeogUnaryUnion,
+                StGeogDensify,
+                StGeogProjectPoint,
+                StGeogEnvelope,
+                StGeogExtent,
+                StGeogExpand,
+                StGeogClosestCoordinate,
+                StGeogFurthestCoordinate,
+                StGeogClosestPoint,
+                StGeogLongestLine,
                 StGeogX,
                 StGeogY,
                 StGeogZ,

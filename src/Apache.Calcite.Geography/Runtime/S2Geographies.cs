@@ -282,6 +282,15 @@ namespace Apache.Calcite.Geography.Runtime
         S2Polygon? polygon;
 
         /// <summary>
+        /// Gets the areal part of the geography, or <see langword="null"/> where it has none.
+        /// </summary>
+        /// <remarks>
+        /// Exposed for the overlay operations, which are S2's own — <c>initToIntersection</c> and its
+        /// neighbours answer on the sphere what JTS answers on a plane.
+        /// </remarks>
+        public S2Polygon? Polygon => polygon;
+
+        /// <summary>
         /// Initializes a new instance.
         /// </summary>
         S2Geographies()
@@ -476,7 +485,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// far apart they are; picking the pair on a sphere and measuring it on the ellipsoid is second order
         /// in how far that pair is from the true one, where measuring on the sphere is first order.
         /// </remarks>
-        static (S2Point A, S2Point B)? ClosestPair(S2Geographies a, S2Geographies b)
+        public static (S2Point A, S2Point B)? ClosestPair(S2Geographies a, S2Geographies b)
         {
             var min = double.NaN;
             (S2Point A, S2Point B)? best = null;
@@ -980,7 +989,16 @@ namespace Apache.Calcite.Geography.Runtime
         /// The bounding box of the geography.
         /// </summary>
         /// <returns></returns>
-        S2LatLngRect Bound()
+        /// <summary>
+        /// Returns the smallest latitude-longitude rectangle containing the geography.
+        /// </summary>
+        /// <returns></returns>
+        /// <remarks>
+        /// An <c>S2LatLngRect</c> knows the longitude interval may wrap, which is the whole reason
+        /// <c>ST_GEOG_ENVELOPE</c> is not <c>ST_ENVELOPE</c>: taking a minimum and a maximum of longitudes
+        /// answers most of the globe for a shape that straddles the antimeridian.
+        /// </remarks>
+        public S2LatLngRect Bound()
         {
             var bound = S2LatLngRect.empty();
 

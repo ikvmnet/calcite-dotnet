@@ -1,5 +1,11 @@
+using System;
+using System.Collections.Generic;
+
 using org.apache.calcite.runtime;
 
+// the class and this class's Wgs84 constant, which is the SRID, are two different things with one name;
+// inside here the constant wins, so the ellipsoid is reached under a name that says what it is
+using Ellipsoid = Apache.Calcite.Geography.Runtime.Wgs84;
 using Geometry = org.locationtech.jts.geom.Geometry;
 
 namespace Apache.Calcite.Geography.Runtime
@@ -1398,6 +1404,536 @@ namespace Apache.Calcite.Geography.Runtime
         {
             if (srid != Wgs84)
                 throw new java.lang.IllegalArgumentException($"A geography is WGS84; SRID {srid} is not a reference system it can be in.");
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_INTERSECTION</c>. Returns the area common to two geographies.
+        /// </summary>
+        /// <param name="geog1"></param>
+        /// <param name="geog2"></param>
+        /// <returns></returns>
+        /// <inheritdoc cref="Overlay" />
+        public static Geometry? Intersection(Geometry? geog1, Geometry? geog2)
+        {
+            return Overlay(geog1, geog2, (result, a, b) => result.initToIntersection(a, b));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_DIFFERENCE</c>. Returns the part of the first geography that is not in the second.
+        /// </summary>
+        /// <param name="geog1"></param>
+        /// <param name="geog2"></param>
+        /// <returns></returns>
+        /// <inheritdoc cref="Overlay" />
+        public static Geometry? Difference(Geometry? geog1, Geometry? geog2)
+        {
+            return Overlay(geog1, geog2, (result, a, b) => result.initToDifference(a, b));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_SYMDIFFERENCE</c>. Returns the parts of two geographies that are in one and not the
+        /// other.
+        /// </summary>
+        /// <param name="geog1"></param>
+        /// <param name="geog2"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Built from two differences and a union, S2 having no symmetric difference of its own. That is what
+        /// the operation is: everything in one and not the other, either way round.
+        /// </remarks>
+        /// <inheritdoc cref="Overlay" />
+        public static Geometry? SymDifference(Geometry? geog1, Geometry? geog2)
+        {
+            return Overlay(geog1, geog2, (result, a, b) =>
+            {
+                var left = new com.google.common.geometry.S2Polygon();
+                var right = new com.google.common.geometry.S2Polygon();
+
+                left.initToDifference(a, b);
+                right.initToDifference(b, a);
+
+                result.initToUnion(left, right);
+            });
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_UNARYUNION</c>. Returns the geography with its overlapping parts merged.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <inheritdoc cref="Overlay" />
+        public static Geometry? UnaryUnion(Geometry? geog)
+        {
+            return Overlay(geog, geog, (result, a, b) => result.initToUnion(a, b));
+        }
+
+        /// <summary>
+        /// Runs one of S2's overlay operations over the areal parts of two geographies.
+        /// </summary>
+        /// <param name="geog1"></param>
+        /// <param name="geog2"></param>
+        /// <param name="operation"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// These are areal operations and this answers them for areas, declining anything else with null
+        /// rather than guessing. Calcite's take any pair, JTS overlaying whatever it is handed; the reason
+        /// not to follow it there is that a line clipped by a polygon is a different computation from an area
+        /// intersected with one, and S2 has the second. Answering the first by falling back to the plane
+        /// would put two models in one expression, which is the thing this package exists to prevent.
+        ///
+        /// <para>What is on offer instead is exact where it applies. An intersection of two areas on the
+        /// sphere is bounded by geodesics, and the planar answer is bounded by straight lines in degrees —
+        /// which is a different region, not a rounding of the same one.</para>
+        /// </remarks>
+        static Geometry? Overlay(Geometry? geog1, Geometry? geog2, Action<com.google.common.geometry.S2Polygon, com.google.common.geometry.S2Polygon, com.google.common.geometry.S2Polygon> operation)
+        {
+            if (geog1 is null || geog2 is null)
+                return null;
+
+            var a = S2Geographies.Of(geog1).Polygon;
+            var b = S2Geographies.Of(geog2).Polygon;
+
+            if (a is null || b is null)
+                return null;
+
+            var result = new com.google.common.geometry.S2Polygon();
+            operation(result, a, b);
+
+            return Wgs84Of(Areal(result));
+        }
+
+        /// <summary>
+        /// Writes an S2 polygon as a geography.
+        /// </summary>
+        /// <param name="polygon"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// S2 records nesting as a loop's depth — even is a shell and odd is a hole — and orders a shell's
+        /// holes after it, so one pass builds the rings. A hole is stored wound the other way round from the
+        /// shell that contains it, so its vertices are reversed on the way out; and an S2 loop does not repeat
+        /// its first vertex where a JTS ring must.
+        /// </remarks>
+        static Geometry Areal(com.google.common.geometry.S2Polygon polygon)
+        {
+            if (polygon.numLoops() == 0)
+                return Factory.createPolygon();
+
+            var polygons = new java.util.ArrayList();
+            org.locationtech.jts.geom.LinearRing? shell = null;
+            var holes = new java.util.ArrayList();
+
+            void Close()
+            {
+                if (shell is null)
+                    return;
+
+                var rings = new org.locationtech.jts.geom.LinearRing[holes.size()];
+                for (var i = 0; i < holes.size(); i++)
+                    rings[i] = (org.locationtech.jts.geom.LinearRing)holes.get(i);
+
+                polygons.add(Factory.createPolygon(shell, rings));
+                holes.clear();
+            }
+
+            for (var i = 0; i < polygon.numLoops(); i++)
+            {
+                var loop = polygon.loop(i);
+                var ring = Ring(loop, reversed: loop.depth() % 2 != 0);
+
+                if (loop.depth() % 2 == 0)
+                {
+                    Close();
+                    shell = ring;
+                }
+                else
+                {
+                    holes.add(ring);
+                }
+            }
+
+            Close();
+
+            return Factory.buildGeometry(polygons);
+        }
+
+        /// <summary>
+        /// Writes one S2 loop as a closed ring.
+        /// </summary>
+        /// <param name="loop"></param>
+        /// <param name="reversed"></param>
+        /// <returns></returns>
+        static org.locationtech.jts.geom.LinearRing Ring(com.google.common.geometry.S2Loop loop, bool reversed)
+        {
+            var count = loop.numVertices();
+            var coordinates = new org.locationtech.jts.geom.Coordinate[count + 1];
+
+            for (var i = 0; i < count; i++)
+                coordinates[i] = Coordinate(loop.vertex(reversed ? count - 1 - i : i));
+
+            coordinates[count] = coordinates[0];
+
+            return Factory.createLinearRing(coordinates);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_DENSIFY</c>. Returns the geography with vertices inserted so that no edge is longer
+        /// than the given distance in metres.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <param name="longest"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Metres and a geodesic, where Calcite's is degrees and a straight line in them. Both differences
+        /// matter and the second is the point of the function: densifying is usually done to hand a planar
+        /// consumer something that follows the true path, and a straight line in degrees is exactly what it
+        /// would have drawn anyway. Between two points on a parallel away from the equator the geodesic bows
+        /// poleward, and these vertices bow with it.
+        ///
+        /// <para>Every part of the geography is walked, a polygon's rings included, which is what
+        /// <c>GeometryTransformer</c> is for — the alternative is a case for each of the seven types.</para>
+        /// </remarks>
+        public static Geometry? Densify(Geometry? geog, java.lang.Object? longest)
+        {
+            if (geog is null || longest is null)
+                return null;
+
+            return Wgs84Of(new Densifier(Double(longest)).transform(geog));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_PROJECTPOINT</c>. Returns the point of the line nearest the given point.
+        /// </summary>
+        /// <param name="point"></param>
+        /// <param name="line"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Null for anything of more than one dimension, as Calcite's is: a projection onto an area is not
+        /// defined and it declines rather than guessing. The point lands on a geodesic and so is not where a
+        /// planar projection puts it.
+        /// </remarks>
+        public static Geometry? ProjectPoint(Geometry? point, Geometry? line)
+        {
+            if (point is null || line is null || line.getDimension() > 1)
+                return null;
+
+            var pair = S2Geographies.ClosestPair(S2Geographies.Of(line), S2Geographies.Of(point));
+
+            return pair is null ? null : Wgs84Of(Factory.createPoint(Coordinate(pair.Value.A)));
+        }
+
+        /// <summary>
+        /// Inserts vertices along every edge of whatever it is handed.
+        /// </summary>
+        /// <param name="longest">The greatest edge length in metres.</param>
+        sealed class Densifier(double longest) : org.locationtech.jts.geom.util.GeometryTransformer
+        {
+
+            protected override org.locationtech.jts.geom.CoordinateSequence transformCoordinates(
+                org.locationtech.jts.geom.CoordinateSequence coords,
+                Geometry parent)
+            {
+                if (coords.size() < 2)
+                    return coords;
+
+                var built = new java.util.ArrayList();
+
+                for (var i = 0; i < coords.size() - 1; i++)
+                {
+                    var from = coords.getCoordinate(i);
+                    var to = coords.getCoordinate(i + 1);
+
+                    built.add(from);
+
+                    foreach (var between in Ellipsoid.Divide(from, to, longest))
+                        built.add(between);
+                }
+
+                built.add(coords.getCoordinate(coords.size() - 1));
+
+                var array = new org.locationtech.jts.geom.Coordinate[built.size()];
+                for (var i = 0; i < built.size(); i++)
+                    array[i] = (org.locationtech.jts.geom.Coordinate)built.get(i);
+
+                return createCoordinateSequence(array);
+            }
+
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_ENVELOPE</c>. Returns the smallest latitude-longitude rectangle containing the
+        /// geography.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The reason this is not <c>ST_ENVELOPE</c> is the antimeridian. A planar envelope is the minimum
+        /// and maximum of the coordinates, so a shape with a vertex at 179 and another at -179 gets a
+        /// rectangle 358 degrees wide — very nearly the whole globe, for a shape two degrees across. S2's
+        /// rectangle knows a longitude interval may wrap, and answers the two-degree band that is actually
+        /// there. Where the interval does wrap the answer is a multi-polygon of the two halves either side of
+        /// the antimeridian, there being no way to write a wrapped box as one ring in longitude and latitude.
+        ///
+        /// <para>A degenerate rectangle answers what JTS answers for one: a point where the shape is a point,
+        /// a line where it has no width or no height.</para>
+        /// </remarks>
+        public static Geometry? Envelope(Geometry? geog)
+        {
+            return geog is null ? null : Wgs84Of(Rectangle(S2Geographies.Of(geog).Bound()));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_EXTENT</c>. Returns the smallest latitude-longitude rectangle containing the geography.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The same rectangle <see cref="Envelope"/> answers. Calcite's two are the same call as well —
+        /// <c>ST_Extent</c> is <c>geom.getEnvelope()</c>, with a comment wondering whether they differ — and
+        /// this mirrors that rather than inventing a difference.
+        /// </remarks>
+        public static Geometry? Extent(Geometry? geog)
+        {
+            return Envelope(geog);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_EXPAND</c>. Returns the geography's rectangle grown by a distance in metres.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <param name="distance"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Metres, where Calcite's grows by degrees. Growing a box by a degree moves its northern edge
+        /// further than its eastern one everywhere off the equator, and by a factor that reaches two by 60
+        /// degrees of latitude, so the planar reading of this function has no fixed meaning on the Earth at
+        /// all. S2 grows the rectangle by an angle and widens the longitude interval by more than that as the
+        /// latitude rises, which is what keeps every point within the distance actually inside.
+        /// </remarks>
+        public static Geometry? Expand(Geometry? geog, java.lang.Object? distance)
+        {
+            if (geog is null || distance is null)
+                return null;
+
+            return Wgs84Of(Rectangle(S2Geographies.Of(geog).Bound().expandedByDistance(Ellipsoid.AngleFor(Double(distance)))));
+        }
+
+        /// <summary>
+        /// Writes a latitude-longitude rectangle as a geography.
+        /// </summary>
+        /// <param name="rect"></param>
+        /// <returns></returns>
+        static Geometry Rectangle(com.google.common.geometry.S2LatLngRect rect)
+        {
+            if (rect.isEmpty())
+                return Factory.createPolygon();
+
+            var latLo = rect.lat().lo() * 180 / System.Math.PI;
+            var latHi = rect.lat().hi() * 180 / System.Math.PI;
+            var lngLo = rect.lng().lo() * 180 / System.Math.PI;
+            var lngHi = rect.lng().hi() * 180 / System.Math.PI;
+
+            // a wrapped interval has no single ring in these coordinates, so it is written as the two halves
+            if (rect.lng().isInverted())
+            {
+                // buildGeometry rather than createMultiPolygon, because either half degenerates to a line or
+                // a point exactly as one box does, and a shape on the equator makes both of them lines
+                var halves = new java.util.ArrayList();
+                halves.add(Box(latLo, latHi, lngLo, 180));
+                halves.add(Box(latLo, latHi, -180, lngHi));
+
+                return Factory.buildGeometry(halves);
+            }
+
+            return Box(latLo, latHi, lngLo, lngHi);
+        }
+
+        /// <summary>
+        /// Writes one box, degenerating to a line or a point as JTS does.
+        /// </summary>
+        /// <param name="latLo"></param>
+        /// <param name="latHi"></param>
+        /// <param name="lngLo"></param>
+        /// <param name="lngHi"></param>
+        /// <returns></returns>
+        static Geometry Box(double latLo, double latHi, double lngLo, double lngHi)
+        {
+            // a tolerance rather than equality: a coordinate reaches the rectangle as a unit vector and
+            // comes back a few bits shy, so a shape that lies exactly on a parallel has a latitude interval
+            // that is degenerate in fact and not in the last digit. This is a thousandth of a millimetre.
+            const double flat = 1e-11;
+
+            if (System.Math.Abs(latHi - latLo) < flat && System.Math.Abs(lngHi - lngLo) < flat)
+                return Factory.createPoint(new org.locationtech.jts.geom.Coordinate(lngLo, latLo));
+
+            if (System.Math.Abs(latHi - latLo) < flat || System.Math.Abs(lngHi - lngLo) < flat)
+                return Factory.createLineString([
+                    new org.locationtech.jts.geom.Coordinate(lngLo, latLo),
+                    new org.locationtech.jts.geom.Coordinate(lngHi, latHi)]);
+
+            return Factory.createPolygon([
+                new org.locationtech.jts.geom.Coordinate(lngLo, latLo),
+                new org.locationtech.jts.geom.Coordinate(lngHi, latLo),
+                new org.locationtech.jts.geom.Coordinate(lngHi, latHi),
+                new org.locationtech.jts.geom.Coordinate(lngLo, latHi),
+                new org.locationtech.jts.geom.Coordinate(lngLo, latLo)]);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_CLOSESTCOORDINATE</c>. Returns the coordinate or coordinates of the geography nearest
+        /// the given point.
+        /// </summary>
+        /// <param name="point"></param>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A coordinate of the geography rather than a point on it, which is what Calcite's own answers: it
+        /// walks the coordinate array and never looks at the space between two of them. Ties answer a
+        /// multi-point, as Calcite's does.
+        ///
+        /// <para>The ranking is geodesic and Calcite's is planar, which is the whole of the difference and is
+        /// not cosmetic: a candidate one degree east and a candidate one degree north are equidistant in
+        /// degrees and 745 metres apart in metres, so the two disagree about which is nearer whenever the
+        /// candidates lie in different directions.</para>
+        /// </remarks>
+        public static Geometry? ClosestCoordinate(Geometry? point, Geometry? geog)
+        {
+            return ExtremeCoordinate(point, geog, furthest: false);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_FURTHESTCOORDINATE</c>. Returns the coordinate or coordinates of the geography furthest
+        /// from the given point.
+        /// </summary>
+        /// <param name="point"></param>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <inheritdoc cref="ClosestCoordinate" />
+        public static Geometry? FurthestCoordinate(Geometry? point, Geometry? geog)
+        {
+            return ExtremeCoordinate(point, geog, furthest: true);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_CLOSESTPOINT</c>. Returns the point of the first geography nearest the second.
+        /// </summary>
+        /// <param name="geog1"></param>
+        /// <param name="geog2"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A point on the geography rather than one of its coordinates — it may fall part way along an edge,
+        /// which is why this is a different function from <see cref="ClosestCoordinate"/> and why S2 answers
+        /// it. The edge it falls on is a geodesic, so the point is not the one a planar reading finds: a
+        /// chord and an arc between the same two ends meet a third point at different places.
+        /// </remarks>
+        public static Geometry? ClosestPoint(Geometry? geog1, Geometry? geog2)
+        {
+            if (geog1 is null || geog2 is null)
+                return null;
+
+            var pair = S2Geographies.ClosestPair(S2Geographies.Of(geog1), S2Geographies.Of(geog2));
+
+            return pair is null ? null : Wgs84Of(Factory.createPoint(Coordinate(pair.Value.A)));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_LONGESTLINE</c>. Returns the line between the two coordinates, one from each geography,
+        /// that are furthest apart.
+        /// </summary>
+        /// <param name="geog1"></param>
+        /// <param name="geog2"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Between coordinates and not between shapes, which is what Calcite measures, and the same pair
+        /// <c>ST_GEOG_MAXDISTANCE</c> measures the length of.
+        /// </remarks>
+        public static Geometry? LongestLine(Geometry? geog1, Geometry? geog2)
+        {
+            if (geog1 is null || geog2 is null)
+                return null;
+
+            var max = double.NaN;
+            org.locationtech.jts.geom.Coordinate? left = null;
+            org.locationtech.jts.geom.Coordinate? right = null;
+
+            foreach (var a in geog1.getCoordinates())
+            {
+                foreach (var b in geog2.getCoordinates())
+                {
+                    var distance = Ellipsoid.Distance(a, b);
+
+                    if (double.IsNaN(max) || distance > max)
+                    {
+                        max = distance;
+                        left = a;
+                        right = b;
+                    }
+                }
+            }
+
+            if (left is null || right is null)
+                return null;
+
+            return Wgs84Of(Factory.createLineString([left, right]));
+        }
+
+        /// <summary>
+        /// The coordinate or coordinates of the geography at the extreme geodesic distance from the point.
+        /// </summary>
+        /// <param name="point"></param>
+        /// <param name="geog"></param>
+        /// <param name="furthest"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Calcite reads a single coordinate off the point argument and compares every coordinate of the
+        /// other geography against it, so this does too — the argument is a point in the signature and only
+        /// its first coordinate in the behaviour.
+        /// </remarks>
+        static Geometry? ExtremeCoordinate(Geometry? point, Geometry? geog, bool furthest)
+        {
+            if (point is null || geog is null)
+                return null;
+
+            var origin = point.getCoordinate();
+            if (origin is null)
+                return null;
+
+            var found = new List<org.locationtech.jts.geom.Coordinate>();
+            var best = double.NaN;
+
+            foreach (var candidate in geog.getCoordinates())
+            {
+                var distance = Ellipsoid.Distance(origin, candidate);
+
+                if (double.IsNaN(best) || (furthest ? distance > best : distance < best))
+                {
+                    best = distance;
+                    found.Clear();
+                    found.Add(candidate);
+                }
+                else if (distance == best && found.Contains(candidate) == false)
+                {
+                    found.Add(candidate);
+                }
+            }
+
+            if (found.Count == 0)
+                return null;
+
+            return Wgs84Of(found.Count == 1
+                ? Factory.createPoint(found[0])
+                : Factory.createMultiPointFromCoords([.. found]));
+        }
+
+        /// <summary>
+        /// The factory the answers above are built with.
+        /// </summary>
+        static readonly org.locationtech.jts.geom.GeometryFactory Factory = new();
+
+        static org.locationtech.jts.geom.Coordinate Coordinate(com.google.common.geometry.S2Point p)
+        {
+            var ll = new com.google.common.geometry.S2LatLng(p);
+
+            return new org.locationtech.jts.geom.Coordinate(ll.lngDegrees(), ll.latDegrees());
         }
 
         /// <summary>
