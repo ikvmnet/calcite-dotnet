@@ -200,7 +200,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A table of two rows, each holding a geography a degree apart on the equator.
         /// </summary>
-        sealed class GeographyTable : AbstractTable, ScannableTable
+        internal sealed class GeographyTable : AbstractTable, ScannableTable
         {
 
             public override RelDataType getRowType(RelDataTypeFactory typeFactory)
