@@ -119,7 +119,7 @@ namespace Apache.Calcite.Geography.Tests
         /// A geography column is typed by its carrier class all the way into the plan.
         /// </summary>
         /// <remarks>
-        /// The rows the scan yields hold <see cref="Runtime.Geography"/> instances, and the block the
+        /// The rows the scan yields hold ordinary JTS geometries, and the block the
         /// convention builds reads them as that class. Pinning it here says the type survived planning rather
         /// than only validation.
         /// </remarks>

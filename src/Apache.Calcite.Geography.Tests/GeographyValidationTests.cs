@@ -166,7 +166,7 @@ namespace Apache.Calcite.Geography.Tests
             var message = Refuse("SELECT ST_GEOG_DISTANCE('a', 'b') FROM GEO");
 
             message.Should().Contain("ST_GEOG_DISTANCE");
-            message.Should().Contain("GEOGRAPHY");
+            message.Should().Contain("GEOMETRY");
         }
 
         [TestMethod]

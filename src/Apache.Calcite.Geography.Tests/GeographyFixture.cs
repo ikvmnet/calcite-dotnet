@@ -77,7 +77,7 @@ namespace Apache.Calcite.Geography.Tests
                 return typeFactory.builder()
                     .add("ID", typeFactory.createSqlType(SqlTypeName.INTEGER))
                     .add("GEOG", GeographyTypes.Of(typeFactory))
-                    .add("GEOM", GeographyTypes.GeometryOf(typeFactory))
+                    .add("GEOM", GeographyTypes.Of(typeFactory))
                     .build();
             }
 

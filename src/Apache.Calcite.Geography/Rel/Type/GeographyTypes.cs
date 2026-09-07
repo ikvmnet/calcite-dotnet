@@ -51,45 +51,6 @@ namespace Apache.Calcite.Geography.Rel.Type
         }
 
         /// <summary>
-        /// Returns the same type as <see cref="Of"/>, under the name a declaration uses when it means a
-        /// geometry rather than a geography.
-        /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// The two are one type. Both spellings are kept because a declaration reads better for saying which
-        /// it means, and because the distinction is real in the operator's contract even though nothing in
-        /// the type system enforces it.
-        /// </remarks>
-        public static RelDataType GeometryOf(RelDataTypeFactory typeFactory)
-        {
-            return Of(typeFactory);
-        }
-
-        /// <summary>
-        /// Returns the type as something a schema can be given a name for.
-        /// </summary>
-        /// <returns></returns>
-        /// <remarks>
-        /// Registering this under <c>GEOGRAPHY</c> makes <c>CAST(x AS GEOGRAPHY)</c> resolve, as an alias for
-        /// <c>GEOMETRY</c>. It documents intent in a schema and converts nothing.
-        /// </remarks>
-        public static RelProtoDataType Proto()
-        {
-            return new GeographyProtoType();
-        }
-
-        sealed class GeographyProtoType : RelProtoDataType
-        {
-
-            public object apply(object typeFactory)
-            {
-                return Of((RelDataTypeFactory)typeFactory);
-            }
-
-        }
-
-        /// <summary>
         /// Returns whether the given type is a geometry — which is to say, whether an <c>ST_GEOG_</c>
         /// operator can be applied to it.
         /// </summary>

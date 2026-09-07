@@ -62,7 +62,6 @@ namespace Apache.Calcite.Geography.Tests
         {
             var typeFactory = GeographyFixture.TypeFactory();
 
-            GeographyTypes.Of(typeFactory).Should().BeSameAs(GeographyTypes.GeometryOf(typeFactory));
             GeographyTypes.IsGeometry(GeographyTypes.Of(typeFactory)).Should().BeTrue();
             GeographyTypes.IsGeometry(typeFactory.createSqlType(SqlTypeName.GEOMETRY)).Should().BeTrue();
             GeographyTypes.IsGeometry(typeFactory.createSqlType(SqlTypeName.INTEGER)).Should().BeFalse();
@@ -112,10 +111,11 @@ namespace Apache.Calcite.Geography.Tests
         public void ShouldBringAnyTwoGeometriesTogether()
         {
             var typeFactory = GeographyFixture.TypeFactory();
-            var geography = GeographyTypes.Of(typeFactory);
-            var geometry = GeographyTypes.GeometryOf(typeFactory);
+            // the java type and the plain SQL type are two instances, and a UNION over them settles
+            var javaType = GeographyTypes.Of(typeFactory);
+            var sqlType = typeFactory.createSqlType(SqlTypeName.GEOMETRY);
 
-            var both = typeFactory.leastRestrictive(java.util.Arrays.asList([geography, geometry]));
+            var both = typeFactory.leastRestrictive(java.util.Arrays.asList([javaType, sqlType]));
 
             GeographyTypes.IsGeometry(both).Should().BeTrue();
         }

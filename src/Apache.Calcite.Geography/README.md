@@ -80,7 +80,7 @@ Since a schema is the only way an adapter can bring its functions with it, and b
 
 The names mirror Calcite's `ST_*` one for one with an `ST_GEOG_` prefix. This is the first increment; Calcite's spatial library is about 130 names and every one of them needs a declaration, because Calcite's own reject the type.
 
-**Constructors** — the only way a geography comes into existence in a query. The return type is `GEOGRAPHY`, and the result carries SRID 4326.
+**Constructors** — how a geography comes into existence in a query. The return type is `GEOMETRY`, and the result carries SRID 4326, though see above for how little that is worth once one of Calcite's own functions has touched it.
 
 | | |
 | --- | --- |
@@ -94,8 +94,8 @@ Both arities are Calcite's. The SRID a caller may name has to be 4326 and anythi
 
 | | |
 | --- | --- |
-| `ST_GEOG_ASGEOM(GEOGRAPHY)` | read a geography as a geometry |
-| `ST_GEOM_ASGEOG(GEOMETRY)` | read a geometry as a geography |
+| `ST_GEOG_ASGEOM(GEOMETRY)` | say the value is to be read as a plane from here on; converts nothing |
+| `ST_GEOM_ASGEOG(GEOMETRY)` | say the value is to be read geodesically from here on; converts nothing |
 
 **Relations.**
 

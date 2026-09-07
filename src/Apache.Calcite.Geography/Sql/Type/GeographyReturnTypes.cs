@@ -32,11 +32,6 @@ namespace Apache.Calcite.Geography.Sql.Type
         public static readonly SqlReturnTypeInference Geography = new GeographyReturnTypeInference();
 
         /// <summary>
-        /// Returns <c>GEOMETRY</c>, as Calcite's own spatial library declares it.
-        /// </summary>
-        public static readonly SqlReturnTypeInference Geometry = new GeometryReturnTypeInference();
-
-        /// <summary>
         /// Returns the type the type factory gives a Java class, which is how Calcite's own spatial
         /// functions are typed.
         /// </summary>
@@ -125,16 +120,6 @@ namespace Apache.Calcite.Geography.Sql.Type
             public override RelDataType inferReturnType(SqlOperatorBinding opBinding)
             {
                 return GeographyTypes.Of(opBinding.getTypeFactory());
-            }
-
-        }
-
-        sealed class GeometryReturnTypeInference : ReturnTypeInference
-        {
-
-            public override RelDataType inferReturnType(SqlOperatorBinding opBinding)
-            {
-                return GeographyTypes.GeometryOf(opBinding.getTypeFactory());
             }
 
         }

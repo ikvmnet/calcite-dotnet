@@ -13,13 +13,14 @@ namespace Apache.Calcite.Geography.Sql.Type
     {
 
         /// <summary>
-        /// A geography, and nothing else — not a geometry, which is the same class read as a plane.
+        /// A geometry, which is what a geography is.
         /// </summary>
-        Geography,
-
-        /// <summary>
-        /// A geometry as Calcite means one.
-        /// </summary>
+        /// <remarks>
+        /// There were two kinds here, one for each reading, back when the two were different types. They
+        /// accepted the same values from the moment the geography type went, and a distinction that
+        /// discriminates nothing is worse than none: it reads as though something is being checked. Which
+        /// reading an operator means is said by its name.
+        /// </remarks>
         Geometry,
 
         /// <summary>

@@ -164,9 +164,6 @@ namespace Apache.Calcite.Geography.Sql.Type
 
             return operand switch
             {
-                // one type, so one question: the two operand kinds record which the operator means and
-                // no longer discriminate, there being nothing in the type system to discriminate on
-                GeographyOperand.Geography => GeographyTypes.IsGeometry(type),
                 GeographyOperand.Geometry => GeographyTypes.IsGeometry(type),
                 GeographyOperand.Character => SqlTypeUtil.inCharFamily(type),
                 GeographyOperand.Integral => SqlTypeUtil.isNumeric(type),
@@ -180,8 +177,7 @@ namespace Apache.Calcite.Geography.Sql.Type
         {
             return operand switch
             {
-                GeographyOperand.Geography => GeographyTypes.Of(typeFactory),
-                GeographyOperand.Geometry => GeographyTypes.GeometryOf(typeFactory),
+                GeographyOperand.Geometry => GeographyTypes.Of(typeFactory),
                 GeographyOperand.Character => typeFactory.createSqlType(SqlTypeName.VARCHAR),
                 GeographyOperand.Integral => typeFactory.createSqlType(SqlTypeName.INTEGER),
                 GeographyOperand.Fractional => typeFactory.createSqlType(SqlTypeName.ANY),
@@ -194,7 +190,6 @@ namespace Apache.Calcite.Geography.Sql.Type
         {
             return operand switch
             {
-                GeographyOperand.Geography => "GEOGRAPHY",
                 GeographyOperand.Geometry => "GEOMETRY",
                 GeographyOperand.Character => "CHARACTER",
                 GeographyOperand.Integral => "INTEGER",

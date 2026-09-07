@@ -2,8 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Extensions.Runtime;
-using Apache.Calcite.Extensions.Linq4j;
 using Apache.Calcite.Extensions.Linq4j.Function;
 
 namespace Apache.Calcite.Extensions.Linq4j.Tree
