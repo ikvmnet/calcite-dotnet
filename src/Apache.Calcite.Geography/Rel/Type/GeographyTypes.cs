@@ -1,7 +1,5 @@
 using System;
 
-using Apache.Calcite.Geography.Runtime;
-
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
 
@@ -11,46 +9,61 @@ namespace Apache.Calcite.Geography.Rel.Type
 {
 
     /// <summary>
-    /// The two types this package deals in, and the questions asked about them.
+    /// The type this package deals in, which is Calcite's own <c>GEOMETRY</c>.
     /// </summary>
     /// <remarks>
-    /// <c>GEOGRAPHY</c> is <c>createJavaType(Geography.class)</c> and <c>GEOMETRY</c> is
-    /// <c>createJavaType(Geometry.class)</c> — two ordinary <c>RelDataTypeFactoryImpl.JavaType</c>s over two
-    /// different classes. Neither is a type of this package's own making, and that is why both behave.
+    /// There is no <c>GEOGRAPHY</c> type. A geography and a geometry are the same type, carried by the same
+    /// class, and what says a value is to be read geodesically is the name of the operator applied to it —
+    /// <c>ST_GEOG_DISTANCE</c> rather than <c>ST_DISTANCE</c>. That is the whole marking.
     ///
-    /// <para>The alternative, a <c>JavaType</c> subclass answering a different <c>SqlTypeName</c>, does not
-    /// survive: <c>RelDataTypeFactoryImpl.copySimpleType</c> answers a change of nullability on a
-    /// <c>JavaType</c> by constructing a plain one, so the subclass is dropped the first time an adapter
-    /// declares a column <c>NOT NULL</c>. Distinguishing by class rather than by subclass puts the identity
-    /// somewhere that method copies rather than discards. See <see cref="Geography"/>.</para>
+    /// <para>It is not the design anyone would choose first, and it is the only one Calcite permits.
+    /// <c>SqlTypeName</c> is a closed enum, so a type of this package's own has to impersonate one of
+    /// Calcite's; and the enum is not a label but the key to the tables that make a type behave — the
+    /// assignment rules, the coercion rules, the family map, <c>getJavaClass</c>. A name with no entry in
+    /// the assignment table is not rejected but asserted on, so a function declared through a schema over
+    /// such a type takes the validator down. Since a schema is the only way an adapter can bring its
+    /// functions with it, and bringing them is the point, the type gives way to the registration.</para>
+    ///
+    /// <para>What that costs is a mixed expression nothing refuses:
+    /// <c>ST_GEOG_DISTANCE(ST_BUFFER(g, 0.1), h)</c> buffers in degrees and then measures in metres, and
+    /// both halves run. There is no run-time guard underneath either — see
+    /// <c>SridPropagationTests</c>: Calcite's own spatial functions drop the SRID off a geometry they
+    /// derive, so a stamp cannot be relied on to say what a value means.</para>
     /// </remarks>
     public static class GeographyTypes
     {
 
         /// <summary>
-        /// Returns the <c>GEOGRAPHY</c> type for the given type factory.
+        /// Returns the type a geography column has, which is Calcite's <c>GEOMETRY</c>.
         /// </summary>
         /// <param name="typeFactory"></param>
         /// <returns></returns>
+        /// <remarks>
+        /// <c>createJavaType(Geometry.class)</c> rather than <c>createSqlType(GEOMETRY)</c>, because that is
+        /// what <c>ScalarFunctionImpl</c> derives from an <c>ST_*</c> method's signature and so what every
+        /// declaration here has to line up with.
+        /// </remarks>
         public static RelDataType Of(RelDataTypeFactory typeFactory)
         {
             ArgumentNullException.ThrowIfNull(typeFactory);
 
-            return typeFactory.createJavaType((java.lang.Class)typeof(Runtime.Geography));
+            return typeFactory.createJavaType((java.lang.Class)typeof(JtsGeometry));
         }
 
         /// <summary>
-        /// Returns the <c>GEOGRAPHY</c> type of the given nullability for the given type factory.
+        /// Returns the same type as <see cref="Of"/>, under the name a declaration uses when it means a
+        /// geometry rather than a geography.
         /// </summary>
         /// <param name="typeFactory"></param>
-        /// <param name="nullable"></param>
         /// <returns></returns>
         /// <remarks>
-        /// Both nullabilities are reachable, and a stock <c>JavaTypeFactoryImpl</c> answers both correctly.
+        /// The two are one type. Both spellings are kept because a declaration reads better for saying which
+        /// it means, and because the distinction is real in the operator's contract even though nothing in
+        /// the type system enforces it.
         /// </remarks>
-        public static RelDataType Of(RelDataTypeFactory typeFactory, bool nullable)
+        public static RelDataType GeometryOf(RelDataTypeFactory typeFactory)
         {
-            return typeFactory.createTypeWithNullability(Of(typeFactory), nullable);
+            return Of(typeFactory);
         }
 
         /// <summary>
@@ -58,8 +71,8 @@ namespace Apache.Calcite.Geography.Rel.Type
         /// </summary>
         /// <returns></returns>
         /// <remarks>
-        /// <c>SchemaPlus.add(name, RelProtoDataType)</c> is how Calcite lets a name stand for a type in SQL,
-        /// and registering this under <c>GEOGRAPHY</c> is what makes <c>CAST(x AS GEOGRAPHY)</c> resolve.
+        /// Registering this under <c>GEOGRAPHY</c> makes <c>CAST(x AS GEOGRAPHY)</c> resolve, as an alias for
+        /// <c>GEOMETRY</c>. It documents intent in a schema and converts nothing.
         /// </remarks>
         public static RelProtoDataType Proto()
         {
@@ -77,47 +90,24 @@ namespace Apache.Calcite.Geography.Rel.Type
         }
 
         /// <summary>
-        /// Returns the <c>GEOMETRY</c> type Calcite's spatial library uses, which is the Java type over
-        /// <c>org.locationtech.jts.geom.Geometry</c>.
-        /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <returns></returns>
-        public static RelDataType GeometryOf(RelDataTypeFactory typeFactory)
-        {
-            ArgumentNullException.ThrowIfNull(typeFactory);
-
-            return typeFactory.createJavaType((java.lang.Class)typeof(JtsGeometry));
-        }
-
-        /// <summary>
-        /// Returns whether the given type is <c>GEOGRAPHY</c>.
-        /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
-        public static bool IsGeography(RelDataType? type)
-        {
-            return IsJavaType(type, typeof(Runtime.Geography));
-        }
-
-        /// <summary>
-        /// Returns whether the given type is a geometry as Calcite means one — planar, in the units of
-        /// whatever coordinate system it is written in.
+        /// Returns whether the given type is a geometry — which is to say, whether an <c>ST_GEOG_</c>
+        /// operator can be applied to it.
         /// </summary>
         /// <param name="type"></param>
         /// <returns></returns>
         /// <remarks>
-        /// A geography is not one, and now cannot be mistaken for one: the two are different classes, so
-        /// the digests differ and so does <c>getJavaClass</c>. Calcite's own <c>ST_*</c> are declared over
-        /// <c>Geometry</c> and will not take a geography.
+        /// There is no predicate that tells a geography from a geometry, because there is nothing to tell
+        /// apart. Both spellings of the question answer this.
         /// </remarks>
         public static bool IsGeometry(RelDataType? type)
         {
-            return IsJavaType(type, typeof(JtsGeometry)) || (type is not null && type.getSqlTypeName() == SqlTypeName.GEOMETRY);
-        }
+            if (type is null)
+                return false;
 
-        static bool IsJavaType(RelDataType? type, System.Type clazz)
-        {
-            return type is RelDataTypeFactoryImpl.JavaType javaType && Equals(javaType.getJavaClass(), (java.lang.Class)clazz);
+            if (type is RelDataTypeFactoryImpl.JavaType javaType)
+                return Equals(javaType.getJavaClass(), (java.lang.Class)typeof(JtsGeometry));
+
+            return type.getSqlTypeName() == SqlTypeName.GEOMETRY;
         }
 
     }

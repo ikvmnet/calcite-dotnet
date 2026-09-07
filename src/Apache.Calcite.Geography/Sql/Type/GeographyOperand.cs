@@ -13,7 +13,7 @@ namespace Apache.Calcite.Geography.Sql.Type
     {
 
         /// <summary>
-        /// A geography, and nothing else — not a geometry, which is a different class read as a plane.
+        /// A geography, and nothing else — not a geometry, which is the same class read as a plane.
         /// </summary>
         Geography,
 
@@ -28,9 +28,23 @@ namespace Apache.Calcite.Geography.Sql.Type
         Character,
 
         /// <summary>
-        /// A number.
+        /// A whole number — an index, a count, an SRID.
         /// </summary>
-        Numeric,
+        /// <remarks>
+        /// Integral and fractional are separate kinds because a schema function's parameter type is derived
+        /// from the method's signature and then compared under Calcite's assignment rules, so it has to be a
+        /// class those rules know. <c>java.lang.Number</c> is not one of them: it has no entry in
+        /// <c>JavaToSqlTypeConversionRules</c>, so it becomes <c>SqlTypeName.OTHER</c>, which has no
+        /// entry in <c>SqlTypeAssignmentRule</c>, and routine resolution asserts rather than rejects.
+        /// <c>Integer</c> and <c>Double</c> are both named there.
+        /// </remarks>
+        Integral,
+
+        /// <summary>
+        /// A number that may have a fraction — a distance, a tolerance, a coordinate.
+        /// </summary>
+        /// <inheritdoc cref="Integral" />
+        Fractional,
 
         /// <summary>
         /// A string of bytes.

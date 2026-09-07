@@ -16,12 +16,12 @@ namespace Apache.Calcite.Geography.Sql.Type
     /// measurement is <c>DOUBLE_NULLABLE</c>, both of which are right, because each body answers null exactly
     /// when one of its arguments is null.
     ///
-    /// <para>Neither of these two runs through <c>SqlTypeTransforms.TO_NULLABLE</c>, and it no longer
-    /// matters that they do not. It used to: the transform calls <c>createTypeWithNullability</c>, and when
-    /// a geography was a <c>JavaType</c> subclass that call discarded the subclass. It is a distinct class
-    /// now, which <c>copySimpleType</c> copies faithfully, so the transform would be safe. It is left off
-    /// because it would not change the answer — every body here returns null exactly when an argument is
-    /// null, so the nullable type is the right one whatever the operands are.</para>
+    /// <para>Neither runs through <c>SqlTypeTransforms.TO_NULLABLE</c>, and nothing turns on that any
+    /// more. It mattered when a geography was a <c>JavaType</c> subclass, because the transform calls
+    /// <c>createTypeWithNullability</c> and <c>copySimpleType</c> answers that on a <c>JavaType</c> by
+    /// constructing a plain one, dropping the subclass. There is no subclass now. The transform is left off
+    /// because it would not change the answer: every body here returns null exactly when an argument is
+    /// null, so the nullable type is right whatever the operands are.</para>
     /// </remarks>
     public static class GeographyReturnTypes
     {

@@ -14,15 +14,6 @@ using Geometry = org.locationtech.jts.geom.Geometry;
 namespace Apache.Calcite.Geography.Tests
 {
 
-    // inside the namespace deliberately: from Apache.Calcite.Geography.Tests the simple name
-    // Geography reaches the namespace Apache.Calcite.Geography before any compilation-unit
-    // alias, and a using-alias of the namespace body is resolved ahead of both.
-    using Geography = Apache.Calcite.Geography.Runtime.Geography;
-
-    // inside the namespace deliberately: from Apache.Calcite.Geography.Tests the simple name
-    // Geography reaches the namespace Apache.Calcite.Geography before any compilation-unit
-    // alias, and a using-alias of the namespace body is resolved ahead of both.
-    
     /// <summary>
     /// The editing functions and the constructors that build a geography out of parts, against the
     /// <c>ST_*</c> each one mirrors.
@@ -58,12 +49,12 @@ namespace Apache.Calcite.Geography.Tests
             "GEOMETRYCOLLECTION(POINT(1 2), LINESTRING(0 0, 1 1))",
         ];
 
-        static Geography Wkt(string wkt)
+        static Geometry Wkt(string wkt)
         {
             return GeographyFunctions.FromWkt(wkt) ?? throw new InvalidOperationException($"'{wkt}' did not parse.");
         }
 
-        static readonly (string Name, Func<Geography, object?> Ours, Func<Geometry, object?> Theirs)[] unary =
+        static readonly (string Name, Func<Geometry, object?> Ours, Func<Geometry, object?> Theirs)[] unary =
         [
             ("ST_GEOG_FLIPCOORDINATES", g => GeographyFunctions.FlipCoordinates(g), g => SpatialTypeFunctions.ST_FlipCoordinates(g)),
             ("ST_GEOG_FORCE2D", g => GeographyFunctions.Force2D(g), g => SpatialTypeFunctions.ST_Force2D(g)),
@@ -89,7 +80,7 @@ namespace Apache.Calcite.Geography.Tests
                 foreach (var (name, ours, theirs) in unary)
                 {
                     var mine = GeographyAccessorTests.Answer(() => ours(geography));
-                    var calcite = GeographyAccessorTests.Answer(() => theirs(geography.Geometry));
+                    var calcite = GeographyAccessorTests.Answer(() => theirs(geography));
 
                     if (mine != calcite)
                         differences.Add($"{name} over {shape}: ours {mine}, Calcite {calcite}");
@@ -110,26 +101,26 @@ namespace Apache.Calcite.Geography.Tests
                 var g = Wkt(shape);
 
                 Compare(differences, $"ST_GEOG_ADDPOINT({shape}, POINT(9 9))",
-                    () => GeographyFunctions.AddPoint(g, point), () => SpatialTypeFunctions.ST_AddPoint(g.Geometry, point.Geometry));
+                    () => GeographyFunctions.AddPoint(g, point), () => SpatialTypeFunctions.ST_AddPoint(g, point));
 
                 for (var n = 0; n <= 2; n++)
                 {
                     var index = java.lang.Integer.valueOf(n);
 
                     Compare(differences, $"ST_GEOG_ADDPOINT({shape}, POINT(9 9), {n})",
-                        () => GeographyFunctions.AddPoint(g, point, index), () => SpatialTypeFunctions.ST_AddPoint(g.Geometry, point.Geometry, n));
+                        () => GeographyFunctions.AddPoint(g, point, index), () => SpatialTypeFunctions.ST_AddPoint(g, point, n));
 
                     Compare(differences, $"ST_GEOG_REMOVEPOINT({shape}, {n})",
-                        () => GeographyFunctions.RemovePoint(g, index), () => SpatialTypeFunctions.ST_RemovePoint(g.Geometry, n));
+                        () => GeographyFunctions.RemovePoint(g, index), () => SpatialTypeFunctions.ST_RemovePoint(g, n));
                 }
 
                 Compare(differences, $"ST_GEOG_ADDZ({shape}, 5)",
-                    () => GeographyFunctions.AddZ(g, java.lang.Integer.valueOf(5)),
-                    () => SpatialTypeFunctions.ST_AddZ(g.Geometry, java.math.BigDecimal.valueOf(5.0)));
+                    () => GeographyFunctions.AddZ(g, java.lang.Double.valueOf(5)),
+                    () => SpatialTypeFunctions.ST_AddZ(g, java.math.BigDecimal.valueOf(5.0)));
 
                 Compare(differences, $"ST_GEOG_REMOVEREPEATEDPOINTS({shape}, 0.5)",
                     () => GeographyFunctions.RemoveRepeatedPoints(g, java.lang.Double.valueOf(0.5)),
-                    () => SpatialTypeFunctions.ST_RemoveRepeatedPoints(g.Geometry, java.math.BigDecimal.valueOf(0.5)));
+                    () => SpatialTypeFunctions.ST_RemoveRepeatedPoints(g, java.math.BigDecimal.valueOf(0.5)));
             }
 
             differences.Should().BeEmpty(string.Join("\n", differences));
@@ -139,9 +130,9 @@ namespace Apache.Calcite.Geography.Tests
         public void ShouldAgreeWithCalciteOnTheConstructors()
         {
             var differences = new List<string>();
-            var one = java.lang.Integer.valueOf(1);
-            var two = java.lang.Integer.valueOf(2);
-            var three = java.lang.Integer.valueOf(3);
+            var one = java.lang.Double.valueOf(1);
+            var two = java.lang.Double.valueOf(2);
+            var three = java.lang.Double.valueOf(3);
 
             Compare(differences, "ST_GEOG_POINT(1, 2)",
                 () => GeographyFunctions.Point(one, two), () => SpatialTypeFunctions.ST_Point(Dec(1), Dec(2)));
@@ -155,19 +146,19 @@ namespace Apache.Calcite.Geography.Tests
             var c = Wkt("POINT(2 0)");
 
             Compare(differences, "ST_GEOG_MAKELINE(a, b)",
-                () => GeographyFunctions.MakeLine(a, b), () => SpatialTypeFunctions.ST_MakeLine(a.Geometry, b.Geometry));
+                () => GeographyFunctions.MakeLine(a, b), () => SpatialTypeFunctions.ST_MakeLine(a, b));
 
             Compare(differences, "ST_GEOG_MAKELINE(a, b, c)",
-                () => GeographyFunctions.MakeLine(a, b, c), () => SpatialTypeFunctions.ST_MakeLine(a.Geometry, b.Geometry, c.Geometry));
+                () => GeographyFunctions.MakeLine(a, b, c), () => SpatialTypeFunctions.ST_MakeLine(a, b, c));
 
             var shell = Wkt("LINESTRING(0 0, 6 0, 6 6, 0 6, 0 0)");
             var hole = Wkt("LINESTRING(2 2, 4 2, 4 4, 2 4, 2 2)");
 
             Compare(differences, "ST_GEOG_MAKEPOLYGON(shell)",
-                () => GeographyFunctions.MakePolygon(shell), () => SpatialTypeFunctions.ST_MakePolygon(shell.Geometry));
+                () => GeographyFunctions.MakePolygon(shell), () => SpatialTypeFunctions.ST_MakePolygon(shell));
 
             Compare(differences, "ST_GEOG_MAKEPOLYGON(shell, hole)",
-                () => GeographyFunctions.MakePolygon(shell, hole), () => SpatialTypeFunctions.ST_MakePolygon(shell.Geometry, hole.Geometry));
+                () => GeographyFunctions.MakePolygon(shell, hole), () => SpatialTypeFunctions.ST_MakePolygon(shell, hole));
 
             differences.Should().BeEmpty(string.Join("\n", differences));
         }
@@ -245,7 +236,7 @@ namespace Apache.Calcite.Geography.Tests
                 // through ST_GEOG_ASTEXT on both sides, because that is what the statement asks for and it is
                 // not the same rendering as Geometry.toText: the writer ST_ASTEXT builds is told how many
                 // ordinates the shape has, and the default one always writes two
-                var answer = GeographyAccessorTests.Answer(() => GeographyFunctions.AsText(ours(geography) as Geography));
+                var answer = GeographyAccessorTests.Answer(() => GeographyFunctions.AsText(ours(geography) as Geometry));
                 if (answer.EndsWith("Exception"))
                     continue;
 
@@ -264,13 +255,13 @@ namespace Apache.Calcite.Geography.Tests
                 // over a point, because ST_AddZ throws over a polygon; see
                 // ShouldInheritTheDefectInAddZOverAPolygon
                 ("ST_GEOG_ASTEXT(ST_GEOG_ADDZ(ST_GEOG_POINT(1, 2), 5))",
-                    () => GeographyFunctions.AddZ(Wkt("POINT(1 2)"), java.lang.Integer.valueOf(5))),
+                    () => GeographyFunctions.AddZ(Wkt("POINT(1 2)"), java.lang.Double.valueOf(5))),
                 ($"ST_GEOG_ASTEXT(ST_GEOG_REMOVEREPEATEDPOINTS({subject}, 0.5))",
                     () => GeographyFunctions.RemoveRepeatedPoints(geography, java.lang.Double.valueOf(0.5))),
                 ("ST_GEOG_ASTEXT(ST_GEOG_POINT(1, 2))",
-                    () => GeographyFunctions.Point(java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2))),
+                    () => GeographyFunctions.Point(java.lang.Double.valueOf(1), java.lang.Double.valueOf(2))),
                 ("ST_GEOG_ASTEXT(ST_GEOG_MAKEPOINT(1, 2))",
-                    () => GeographyFunctions.Point(java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2))),
+                    () => GeographyFunctions.Point(java.lang.Double.valueOf(1), java.lang.Double.valueOf(2))),
                 ("ST_GEOG_ASTEXT(ST_GEOG_MAKELINE(ST_GEOG_POINT(0, 0), ST_GEOG_POINT(1, 1), ST_GEOG_POINT(2, 0)))",
                     () => GeographyFunctions.MakeLine(Wkt("POINT(0 0)"), Wkt("POINT(1 1)"), Wkt("POINT(2 0)"))),
                 ("ST_GEOG_ASTEXT(ST_GEOG_MAKEPOLYGON(ST_GEOG_LINEFROMTEXT('LINESTRING(0 0, 6 0, 6 6, 0 6, 0 0)')))",
@@ -285,7 +276,7 @@ namespace Apache.Calcite.Geography.Tests
 
             foreach (var (sql, ours) in extra)
             {
-                var answer = GeographyAccessorTests.Answer(() => GeographyFunctions.AsText(ours() as Geography));
+                var answer = GeographyAccessorTests.Answer(() => GeographyFunctions.AsText(ours() as Geometry));
 
                 // an expression that throws would end the whole statement rather than answer a column, and
                 // what it would prove is already proven by the comparisons above
@@ -337,15 +328,15 @@ namespace Apache.Calcite.Geography.Tests
                 if (GeographyAccessorTests.Answer(() => ours(geography)).EndsWith("Exception"))
                     continue;
 
-                (ours(geography) as Geography)?.Geometry.getSRID().Should().Be(GeographyFunctions.Wgs84, name);
+                (ours(geography) as Geometry)?.getSRID().Should().Be(GeographyFunctions.Wgs84, name);
             }
 
-            GeographyFunctions.Point(java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2))!
-                .Geometry.getSRID().Should().Be(GeographyFunctions.Wgs84);
+            GeographyFunctions.Point(java.lang.Double.valueOf(1), java.lang.Double.valueOf(2))!
+                .getSRID().Should().Be(GeographyFunctions.Wgs84);
             GeographyFunctions.MakeLine(Wkt("POINT(0 0)"), Wkt("POINT(1 1)"))!
-                .Geometry.getSRID().Should().Be(GeographyFunctions.Wgs84);
+                .getSRID().Should().Be(GeographyFunctions.Wgs84);
             GeographyFunctions.PointFromText("POINT(1 2)")!
-                .Geometry.getSRID().Should().Be(GeographyFunctions.Wgs84);
+                .getSRID().Should().Be(GeographyFunctions.Wgs84);
         }
 
         /// <summary>
@@ -363,9 +354,9 @@ namespace Apache.Calcite.Geography.Tests
         public void ShouldInheritTheDefectInAddZOverAPolygon()
         {
             var polygon = Wkt("POLYGON((0 0, 4 0, 4 4, 0 4, 0 0))");
-            var five = java.lang.Integer.valueOf(5);
+            var five = java.lang.Double.valueOf(5);
 
-            ((Action)(() => SpatialTypeFunctions.ST_AddZ(polygon.Geometry, Dec(5)))).Should().Throw<NullReferenceException>();
+            ((Action)(() => SpatialTypeFunctions.ST_AddZ(polygon, Dec(5)))).Should().Throw<NullReferenceException>();
             ((Action)(() => GeographyFunctions.AddZ(polygon, five))).Should().Throw<NullReferenceException>();
 
             // over a point it is well behaved, which is what the operator is exercised with
@@ -385,7 +376,7 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.RemovePoint(geography, null).Should().BeNull();
             GeographyFunctions.AddZ(geography, null).Should().BeNull();
             GeographyFunctions.RemoveRepeatedPoints(geography, null).Should().BeNull();
-            GeographyFunctions.Point(null, java.lang.Integer.valueOf(1)).Should().BeNull();
+            GeographyFunctions.Point(null, java.lang.Double.valueOf(1)).Should().BeNull();
             GeographyFunctions.MakeLine(null, geography).Should().BeNull();
             GeographyFunctions.MakePolygon(null).Should().BeNull();
             GeographyFunctions.PointFromText(null).Should().BeNull();

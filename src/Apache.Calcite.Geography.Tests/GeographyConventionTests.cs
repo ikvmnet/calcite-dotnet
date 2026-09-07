@@ -129,7 +129,7 @@ namespace Apache.Calcite.Geography.Tests
             var (physical, _, _) = PlanClr("SELECT GEOG FROM GEO WHERE ID = 1");
             var column = ((RelDataTypeField)physical.getRowType().getFieldList().get(0)).getType();
 
-            Rel.Type.GeographyTypes.IsGeography(column).Should().BeTrue();
+            Rel.Type.GeographyTypes.IsGeometry(column).Should().BeTrue();
         }
 
         static bool Differs(List<string[]> calcite, List<string[]> ours, string sql, out string difference)

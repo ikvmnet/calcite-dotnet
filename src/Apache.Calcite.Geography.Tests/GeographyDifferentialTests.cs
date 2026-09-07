@@ -14,15 +14,6 @@ using Geometry = org.locationtech.jts.geom.Geometry;
 namespace Apache.Calcite.Geography.Tests
 {
 
-    // inside the namespace deliberately: from Apache.Calcite.Geography.Tests the simple name
-    // Geography reaches the namespace Apache.Calcite.Geography before any compilation-unit
-    // alias, and a using-alias of the namespace body is resolved ahead of both.
-    using Geography = Apache.Calcite.Geography.Runtime.Geography;
-
-    // inside the namespace deliberately: from Apache.Calcite.Geography.Tests the simple name
-    // Geography reaches the namespace Apache.Calcite.Geography before any compilation-unit
-    // alias, and a using-alias of the namespace body is resolved ahead of both.
-    
     /// <summary>
     /// Every <c>ST_GEOG_*</c> operation against the <c>ST_*</c> it mirrors, over shapes small enough and near
     /// enough the equator that the sphere and the plane have to agree.
@@ -101,7 +92,7 @@ namespace Apache.Calcite.Geography.Tests
             "POLYGON((0 0, 0.004 0, 0.004 0, 0.004 0.004, 0 0.004, 0 0))",
         ];
 
-        static Geography Wkt(string wkt)
+        static Geometry Wkt(string wkt)
         {
             return GeographyFunctions.FromWkt(wkt) ?? throw new InvalidOperationException($"'{wkt}' did not parse.");
         }
@@ -123,7 +114,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <see cref="ShouldAnswerWithinOverACollectionWhereCalciteRefuses"/> pins what this convention says
         /// about one of them.
         /// </remarks>
-        static void Differ(Func<Geography, Geography, java.lang.Boolean?> geodesic, Func<Geometry, Geometry, bool> planar, int refusals)
+        static void Differ(Func<Geometry, Geometry, java.lang.Boolean?> geodesic, Func<Geometry, Geometry, bool> planar, int refusals)
         {
             var differences = new List<string>();
             var refused = 0;
@@ -139,7 +130,7 @@ namespace Apache.Calcite.Geography.Tests
 
                     try
                     {
-                        theirs = planar(a.Geometry, b.Geometry);
+                        theirs = planar(a, b);
                     }
                     catch (java.lang.IllegalArgumentException)
                     {
@@ -191,7 +182,7 @@ namespace Apache.Calcite.Geography.Tests
             var collection = Wkt("GEOMETRYCOLLECTION(POINT(0.001 0.001), LINESTRING(0.002 0, 0.004 0))");
             var donut = Wkt("POLYGON((0 0, 0.006 0, 0.006 0.006, 0 0.006, 0 0), (0.002 0.002, 0.004 0.002, 0.004 0.004, 0.002 0.004, 0.002 0.002))");
 
-            var refused = () => SpatialTypeFunctions.ST_Within(collection.Geometry, donut.Geometry);
+            var refused = () => SpatialTypeFunctions.ST_Within(collection, donut);
             refused.Should().Throw<java.lang.IllegalArgumentException>().WithMessage("*GeometryCollection*");
 
             GeographyFunctions.Within(collection, donut)!.booleanValue().Should().BeTrue();
@@ -200,7 +191,7 @@ namespace Apache.Calcite.Geography.Tests
             // donut and it is not within it — which Calcite can answer, and does answer the same way
             var line = Wkt("LINESTRING(0.002 0, 0.004 0)");
             GeographyFunctions.Within(line, donut)!.booleanValue().Should().BeFalse();
-            SpatialTypeFunctions.ST_Within(line.Geometry, donut.Geometry).Should().BeFalse();
+            SpatialTypeFunctions.ST_Within(line, donut).Should().BeFalse();
         }
 
         [TestMethod]
@@ -248,7 +239,7 @@ namespace Apache.Calcite.Geography.Tests
             {
                 var geography = Wkt(shape);
                 var ours = GeographyFunctions.IsValid(geography)!.booleanValue();
-                var theirs = SpatialTypeFunctions.ST_IsValid(geography.Geometry);
+                var theirs = SpatialTypeFunctions.ST_IsValid(geography);
 
                 if (ours != theirs)
                     differences.Add($"{shape}: ours {ours}, Calcite {theirs}");
@@ -274,7 +265,7 @@ namespace Apache.Calcite.Geography.Tests
                     var b = Wkt(right);
 
                     var ours = GeographyFunctions.Distance(a, b)!.doubleValue();
-                    var theirs = SpatialTypeFunctions.ST_Distance(a.Geometry, b.Geometry) * Degree;
+                    var theirs = SpatialTypeFunctions.ST_Distance(a, b) * Degree;
 
                     if (Math.Abs(ours - theirs) > Math.Max(1e-4 * theirs, 1e-6))
                         differences.Add($"{left} / {right}: ours {ours}, Calcite {theirs}");
@@ -302,7 +293,7 @@ namespace Apache.Calcite.Geography.Tests
 
                     var threshold = 0.003;
                     var ours = GeographyFunctions.DWithin(a, b, java.lang.Double.valueOf(threshold * Degree))!.booleanValue();
-                    var theirs = SpatialTypeFunctions.ST_DWithin(a.Geometry, b.Geometry, threshold);
+                    var theirs = SpatialTypeFunctions.ST_DWithin(a, b, threshold);
 
                     if (ours != theirs)
                         differences.Add($"{left} / {right}: ours {ours}, Calcite {theirs}");

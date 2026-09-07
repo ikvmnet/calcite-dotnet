@@ -80,14 +80,14 @@ namespace Apache.Calcite.Geography.Sql
         /// </summary>
         public static readonly SqlFunction StGeogGeomFromTextWithSrid =
             Function("ST_GEOG_GEOMFROMTEXT", nameof(GeographyFunctions.FromWkt), GeographyReturnTypes.Geography,
-                [GeographyOperand.Character, GeographyOperand.Numeric], ["wkt", "srid"]);
+                [GeographyOperand.Character, GeographyOperand.Integral], ["wkt", "srid"]);
 
         /// <summary>
         /// <c>ST_GEOG_GEOMFROMWKT(VARCHAR, INTEGER)</c>. Reads a geography from WKT; the SRID must be 4326.
         /// </summary>
         public static readonly SqlFunction StGeogGeomFromWktWithSrid =
             Function("ST_GEOG_GEOMFROMWKT", nameof(GeographyFunctions.FromWkt), GeographyReturnTypes.Geography,
-                [GeographyOperand.Character, GeographyOperand.Numeric], ["wkt", "srid"]);
+                [GeographyOperand.Character, GeographyOperand.Integral], ["wkt", "srid"]);
 
         /// <summary>
         /// <c>ST_GEOG_ASGEOM(GEOGRAPHY)</c>. Reads a geography as a geometry.
@@ -116,7 +116,7 @@ namespace Apache.Calcite.Geography.Sql
         /// </summary>
         public static readonly SqlFunction StGeogDWithin =
             Function("ST_GEOG_DWITHIN", nameof(GeographyFunctions.DWithin), ReturnTypes.BOOLEAN_NULLABLE,
-                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Numeric], ["geog1", "geog2", "distance"]);
+                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Fractional], ["geog1", "geog2", "distance"]);
 
         /// <summary>
         /// <c>ST_GEOG_WITHIN(GEOGRAPHY, GEOGRAPHY)</c>. Whether the first geography lies within the second.
@@ -389,21 +389,21 @@ namespace Apache.Calcite.Geography.Sql
         /// </summary>
         public static readonly SqlFunction StGeogPointN =
             Function("ST_GEOG_POINTN", nameof(GeographyFunctions.PointN), GeographyReturnTypes.Geography,
-                [GeographyOperand.Geography, GeographyOperand.Numeric], ["geog", "n"]);
+                [GeographyOperand.Geography, GeographyOperand.Integral], ["geog", "n"]);
 
         /// <summary>
         /// <c>ST_GEOG_GEOMETRYN(GEOGRAPHY, INTEGER)</c>. Returns the nth part of the geography.
         /// </summary>
         public static readonly SqlFunction StGeogGeometryN =
             Function("ST_GEOG_GEOMETRYN", nameof(GeographyFunctions.GeometryN), GeographyReturnTypes.Geography,
-                [GeographyOperand.Geography, GeographyOperand.Numeric], ["geog", "n"]);
+                [GeographyOperand.Geography, GeographyOperand.Integral], ["geog", "n"]);
 
         /// <summary>
         /// <c>ST_GEOG_INTERIORRING(GEOGRAPHY, INTEGER)</c>. Returns the nth hole of a polygon.
         /// </summary>
         public static readonly SqlFunction StGeogInteriorRing =
             Function("ST_GEOG_INTERIORRING", nameof(GeographyFunctions.InteriorRing), GeographyReturnTypes.Geography,
-                [GeographyOperand.Geography, GeographyOperand.Numeric], ["geog", "n"]);
+                [GeographyOperand.Geography, GeographyOperand.Integral], ["geog", "n"]);
 
         /// <summary>
         /// <c>ST_GEOG_ORDERINGEQUALS(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether two geographies name the same coordinates in the same order.
@@ -431,7 +431,7 @@ namespace Apache.Calcite.Geography.Sql
         /// </summary>
         public static readonly SqlFunction StGeogGeomFromWkbWithSrid =
             Function("ST_GEOG_GEOMFROMWKB", nameof(GeographyFunctions.FromWkb), GeographyReturnTypes.Geography,
-                [GeographyOperand.Binary, GeographyOperand.Numeric], ["wkb", "srid"]);
+                [GeographyOperand.Binary, GeographyOperand.Integral], ["wkb", "srid"]);
 
         /// <summary>
         /// <c>ST_GEOG_GEOMFROMEWKB(VARBINARY)</c>. Returns a geography read from EWKB.
@@ -452,7 +452,7 @@ namespace Apache.Calcite.Geography.Sql
         /// </summary>
         public static readonly SqlFunction StGeogGeomFromGmlWithSrid =
             Function("ST_GEOG_GEOMFROMGML", nameof(GeographyFunctions.FromGml), GeographyReturnTypes.Geography,
-                [GeographyOperand.Character, GeographyOperand.Numeric], ["gml", "srid"]);
+                [GeographyOperand.Character, GeographyOperand.Integral], ["gml", "srid"]);
 
         /// <summary>
         /// <c>ST_GEOG_FLIPCOORDINATES(GEOGRAPHY)</c>. Returns the geography with longitude and latitude swapped.
@@ -536,56 +536,56 @@ namespace Apache.Calcite.Geography.Sql
         /// </summary>
         public static readonly SqlFunction StGeogAddPointAtIndex =
             Function("ST_GEOG_ADDPOINT", nameof(GeographyFunctions.AddPoint), GeographyReturnTypes.Geography,
-                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Numeric], ["line", "point", "index"]);
+                [GeographyOperand.Geography, GeographyOperand.Geography, GeographyOperand.Integral], ["line", "point", "index"]);
 
         /// <summary>
         /// <c>ST_GEOG_REMOVEPOINT(GEOGRAPHY, INTEGER)</c>. Returns the line with the coordinate at the given index taken out.
         /// </summary>
         public static readonly SqlFunction StGeogRemovePoint =
             Function("ST_GEOG_REMOVEPOINT", nameof(GeographyFunctions.RemovePoint), GeographyReturnTypes.Geography,
-                [GeographyOperand.Geography, GeographyOperand.Numeric], ["line", "index"]);
+                [GeographyOperand.Geography, GeographyOperand.Integral], ["line", "index"]);
 
         /// <summary>
         /// <c>ST_GEOG_ADDZ(GEOGRAPHY, NUMERIC)</c>. Returns the geography with the given amount added to every third ordinate.
         /// </summary>
         public static readonly SqlFunction StGeogAddZ =
             Function("ST_GEOG_ADDZ", nameof(GeographyFunctions.AddZ), GeographyReturnTypes.Geography,
-                [GeographyOperand.Geography, GeographyOperand.Numeric], ["geog", "z"]);
+                [GeographyOperand.Geography, GeographyOperand.Fractional], ["geog", "z"]);
 
         /// <summary>
         /// <c>ST_GEOG_REMOVEREPEATEDPOINTS(GEOGRAPHY, NUMERIC)</c>. Returns the geography with coordinates closer together than the tolerance dropped.
         /// </summary>
         public static readonly SqlFunction StGeogRemoveRepeatedPointsWithTolerance =
             Function("ST_GEOG_REMOVEREPEATEDPOINTS", nameof(GeographyFunctions.RemoveRepeatedPoints), GeographyReturnTypes.Geography,
-                [GeographyOperand.Geography, GeographyOperand.Numeric], ["geog", "tolerance"]);
+                [GeographyOperand.Geography, GeographyOperand.Fractional], ["geog", "tolerance"]);
 
         /// <summary>
         /// <c>ST_GEOG_POINT(NUMERIC, NUMERIC)</c>. Returns the place at the given longitude and latitude.
         /// </summary>
         public static readonly SqlFunction StGeogPoint =
             Function("ST_GEOG_POINT", nameof(GeographyFunctions.Point), GeographyReturnTypes.Geography,
-                [GeographyOperand.Numeric, GeographyOperand.Numeric], ["x", "y"]);
+                [GeographyOperand.Fractional, GeographyOperand.Fractional], ["x", "y"]);
 
         /// <summary>
         /// <c>ST_GEOG_POINT(NUMERIC, NUMERIC, NUMERIC)</c>. Returns the place at the given longitude, latitude and third ordinate.
         /// </summary>
         public static readonly SqlFunction StGeogPoint3D =
             Function("ST_GEOG_POINT", nameof(GeographyFunctions.Point), GeographyReturnTypes.Geography,
-                [GeographyOperand.Numeric, GeographyOperand.Numeric, GeographyOperand.Numeric], ["x", "y", "z"]);
+                [GeographyOperand.Fractional, GeographyOperand.Fractional, GeographyOperand.Fractional], ["x", "y", "z"]);
 
         /// <summary>
         /// <c>ST_GEOG_MAKEPOINT(NUMERIC, NUMERIC)</c>. Returns the place at the given longitude and latitude.
         /// </summary>
         public static readonly SqlFunction StGeogMakePoint =
             Function("ST_GEOG_MAKEPOINT", nameof(GeographyFunctions.Point), GeographyReturnTypes.Geography,
-                [GeographyOperand.Numeric, GeographyOperand.Numeric], ["x", "y"]);
+                [GeographyOperand.Fractional, GeographyOperand.Fractional], ["x", "y"]);
 
         /// <summary>
         /// <c>ST_GEOG_MAKEPOINT(NUMERIC, NUMERIC, NUMERIC)</c>. Returns the place at the given longitude, latitude and third ordinate.
         /// </summary>
         public static readonly SqlFunction StGeogMakePoint3D =
             Function("ST_GEOG_MAKEPOINT", nameof(GeographyFunctions.Point), GeographyReturnTypes.Geography,
-                [GeographyOperand.Numeric, GeographyOperand.Numeric, GeographyOperand.Numeric], ["x", "y", "z"]);
+                [GeographyOperand.Fractional, GeographyOperand.Fractional, GeographyOperand.Fractional], ["x", "y", "z"]);
 
         /// <summary>
         /// <c>ST_GEOG_MAKELINE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the line through 2 places.
@@ -711,7 +711,7 @@ namespace Apache.Calcite.Geography.Sql
         /// </summary>
         public static readonly SqlFunction StGeogLineFromTextWithSrid =
             Function("ST_GEOG_LINEFROMTEXT", nameof(GeographyFunctions.LineFromText), GeographyReturnTypes.Geography,
-                [GeographyOperand.Character, GeographyOperand.Numeric], ["wkt", "srid"]);
+                [GeographyOperand.Character, GeographyOperand.Integral], ["wkt", "srid"]);
 
         /// <summary>
         /// <c>ST_GEOG_LINEFROMWKB(VARBINARY)</c>. Returns a line read from WKB.
@@ -725,7 +725,7 @@ namespace Apache.Calcite.Geography.Sql
         /// </summary>
         public static readonly SqlFunction StGeogLineFromWkbWithSrid =
             Function("ST_GEOG_LINEFROMWKB", nameof(GeographyFunctions.LineFromWkb), GeographyReturnTypes.Geography,
-                [GeographyOperand.Binary, GeographyOperand.Numeric], ["wkb", "srid"]);
+                [GeographyOperand.Binary, GeographyOperand.Integral], ["wkb", "srid"]);
 
         /// <summary>
         /// <c>ST_GEOG_MLINEFROMTEXT(VARCHAR)</c>. Returns a multi-line read from WKT.
@@ -739,7 +739,7 @@ namespace Apache.Calcite.Geography.Sql
         /// </summary>
         public static readonly SqlFunction StGeogMLineFromTextWithSrid =
             Function("ST_GEOG_MLINEFROMTEXT", nameof(GeographyFunctions.MLineFromText), GeographyReturnTypes.Geography,
-                [GeographyOperand.Character, GeographyOperand.Numeric], ["wkt", "srid"]);
+                [GeographyOperand.Character, GeographyOperand.Integral], ["wkt", "srid"]);
 
         /// <summary>
         /// <c>ST_GEOG_MPOINTFROMTEXT(VARCHAR)</c>. Returns a multi-point read from WKT.
@@ -753,7 +753,7 @@ namespace Apache.Calcite.Geography.Sql
         /// </summary>
         public static readonly SqlFunction StGeogMPointFromTextWithSrid =
             Function("ST_GEOG_MPOINTFROMTEXT", nameof(GeographyFunctions.MPointFromText), GeographyReturnTypes.Geography,
-                [GeographyOperand.Character, GeographyOperand.Numeric], ["wkt", "srid"]);
+                [GeographyOperand.Character, GeographyOperand.Integral], ["wkt", "srid"]);
 
         /// <summary>
         /// <c>ST_GEOG_MPOLYFROMTEXT(VARCHAR)</c>. Returns a multi-polygon read from WKT.
@@ -767,7 +767,7 @@ namespace Apache.Calcite.Geography.Sql
         /// </summary>
         public static readonly SqlFunction StGeogMPolyFromTextWithSrid =
             Function("ST_GEOG_MPOLYFROMTEXT", nameof(GeographyFunctions.MPolyFromText), GeographyReturnTypes.Geography,
-                [GeographyOperand.Character, GeographyOperand.Numeric], ["wkt", "srid"]);
+                [GeographyOperand.Character, GeographyOperand.Integral], ["wkt", "srid"]);
 
         /// <summary>
         /// <c>ST_GEOG_POINTFROMTEXT(VARCHAR)</c>. Returns a point read from WKT.
@@ -781,7 +781,7 @@ namespace Apache.Calcite.Geography.Sql
         /// </summary>
         public static readonly SqlFunction StGeogPointFromTextWithSrid =
             Function("ST_GEOG_POINTFROMTEXT", nameof(GeographyFunctions.PointFromText), GeographyReturnTypes.Geography,
-                [GeographyOperand.Character, GeographyOperand.Numeric], ["wkt", "srid"]);
+                [GeographyOperand.Character, GeographyOperand.Integral], ["wkt", "srid"]);
 
         /// <summary>
         /// <c>ST_GEOG_POINTFROMWKB(VARBINARY)</c>. Returns a point read from WKB.
@@ -795,7 +795,7 @@ namespace Apache.Calcite.Geography.Sql
         /// </summary>
         public static readonly SqlFunction StGeogPointFromWkbWithSrid =
             Function("ST_GEOG_POINTFROMWKB", nameof(GeographyFunctions.PointFromWkb), GeographyReturnTypes.Geography,
-                [GeographyOperand.Binary, GeographyOperand.Numeric], ["wkb", "srid"]);
+                [GeographyOperand.Binary, GeographyOperand.Integral], ["wkb", "srid"]);
 
         /// <summary>
         /// <c>ST_GEOG_POLYFROMTEXT(VARCHAR)</c>. Returns a polygon read from WKT.
@@ -809,7 +809,7 @@ namespace Apache.Calcite.Geography.Sql
         /// </summary>
         public static readonly SqlFunction StGeogPolyFromTextWithSrid =
             Function("ST_GEOG_POLYFROMTEXT", nameof(GeographyFunctions.PolyFromText), GeographyReturnTypes.Geography,
-                [GeographyOperand.Character, GeographyOperand.Numeric], ["wkt", "srid"]);
+                [GeographyOperand.Character, GeographyOperand.Integral], ["wkt", "srid"]);
 
         /// <summary>
         /// <c>ST_GEOG_POLYFROMWKB(VARBINARY)</c>. Returns a polygon read from WKB.
@@ -823,7 +823,7 @@ namespace Apache.Calcite.Geography.Sql
         /// </summary>
         public static readonly SqlFunction StGeogPolyFromWkbWithSrid =
             Function("ST_GEOG_POLYFROMWKB", nameof(GeographyFunctions.PolyFromWkb), GeographyReturnTypes.Geography,
-                [GeographyOperand.Binary, GeographyOperand.Numeric], ["wkb", "srid"]);
+                [GeographyOperand.Binary, GeographyOperand.Integral], ["wkb", "srid"]);
 
         /// <summary>
         /// <c>ST_GEOG_CONTAINS(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether the first geography contains the second.
@@ -949,10 +949,11 @@ namespace Apache.Calcite.Geography.Sql
         {
             return operand switch
             {
-                GeographyOperand.Geography => (java.lang.Class)typeof(Apache.Calcite.Geography.Runtime.Geography),
+                GeographyOperand.Geography => (java.lang.Class)typeof(org.locationtech.jts.geom.Geometry),
                 GeographyOperand.Geometry => (java.lang.Class)typeof(org.locationtech.jts.geom.Geometry),
                 GeographyOperand.Character => (java.lang.Class)typeof(string),
-                GeographyOperand.Numeric => (java.lang.Class)typeof(java.lang.Number),
+                GeographyOperand.Integral => (java.lang.Class)typeof(java.lang.Integer),
+                GeographyOperand.Fractional => (java.lang.Class)typeof(java.lang.Object),
                 GeographyOperand.Binary => (java.lang.Class)typeof(org.apache.calcite.avatica.util.ByteString),
                 _ => throw new NotSupportedException($"No parameter class for '{operand}'."),
             };

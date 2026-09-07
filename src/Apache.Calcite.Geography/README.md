@@ -2,7 +2,7 @@
 
 [![NuGet](https://img.shields.io/nuget/v/Apache.Calcite.Geography)](https://www.nuget.org/packages/Apache.Calcite.Geography)
 
-**Apache.Calcite.Geography** gives [Apache Calcite](https://calcite.apache.org/) a `GEOGRAPHY` type and a set of `ST_GEOG_*` operators that read coordinates as WGS84 and answer in metres.
+**Apache.Calcite.Geography** gives [Apache Calcite](https://calcite.apache.org/) a set of `ST_GEOG_*` operators that read coordinates as WGS84 and answer in metres.
 
 Calcite has `GEOMETRY` and no `GEOGRAPHY`. Its spatial library is planar [JTS](https://github.com/locationtech/jts) over an unprojected coordinate system, answering in the units of that system. The stores that speak WGS84 — PostGIS `geography`, BigQuery, Snowflake, Elasticsearch `geo_shape`, MongoDB's 2dsphere — are geodesic, and answer in metres. The two disagree about what identically-named functions *mean*, and the disagreement is not a scale factor: the ratio varies with latitude and with bearing, so no conversion of a result recovers it and no transformation of the inputs does either. An ordering is not merely wrong, it is differently ordered.
 
@@ -46,9 +46,7 @@ typeFactory.builder()
     .build();
 ```
 
-and the values in it are `Geography` objects, each holding a JTS `Geometry` and the SRID it is in. A bare `Geometry` will not do — the column's type names the `Geography` class, so a plan casts to it and a raw geometry fails the cast loudly rather than being read as a plane in silence.
-
-**A geography column may be `NOT NULL`.** The marking is the carrier class rather than a `RelDataType` subclass, and that is why. `RelDataTypeFactoryImpl.copySimpleType` answers a change of a `JavaType`'s nullability with `new JavaType(Primitive.box(clazz), nullable)`, and `Primitive.box` returns a class that is neither a primitive nor a box unchanged — so the copy is the same type at the other nullability. A subclass would have been discarded there, handing an adapter that said `.nullable(false)` an ordinary geometry that Calcite's planar `ST_*` would then take.
+and the values in it are ordinary JTS `Geometry` objects — the same class Calcite's own spatial library carries, because it is the same type.
 
 ```sql
 SELECT ID
@@ -56,23 +54,27 @@ FROM PLACES
 WHERE ST_GEOG_DWITHIN(LOCATION, ST_GEOG_GEOMFROMTEXT('POINT(-0.1278 51.5074)'), 5000.0)
 ```
 
-There is no other way in. A function declared through a schema cannot take a geography parameter at all — routine resolution runs an assignability check keyed on the parameter's `SqlTypeName` and throws `AssertionError: No assign rules for OTHER defined` — so something has to chain the table for the caller: the host, or a provider on their behalf.
+The operators can be reached two ways. A host driving its own planner chains `GeographyOperatorTable.Instance()`, as above. Anyone else registers them on a schema:
 
-## What the type is
+```csharp
+using Apache.Calcite.Geography.Schema;
 
-A `RelDataTypeFactoryImpl.JavaType` over `org.locationtech.jts.geom.Geometry` that answers a different name.
+GeographySchema.AddTo(rootSchema);
+```
 
-| | |
-| --- | --- |
-| `getSqlTypeName()` | `OTHER` — the base would answer `GEOMETRY` |
-| `getFullTypeString()` | `GEOGRAPHY` — a digest nothing else produces |
-| `getJavaClass()` | `org.locationtech.jts.geom.Geometry` |
+which works through the stock `jdbc:calcite:` driver with nothing chained and nothing subclassed — an adapter can call it on the schema it builds, and its functions arrive with its tables. Registering on the root schema makes every operator visible unqualified everywhere on the connection, views in other schemas included. Do one or the other, not both: a name found twice resolves to whichever the lookup reaches first.
 
-So the runtime carrier stays a plain JTS geometry — no new class, nothing new for code generation to name, and nothing to convert at a boundary — while the type system sees something else entirely.
+## There is no GEOGRAPHY type
 
-**Calcite's planar functions refuse it at validation.** `ST_DISTANCE(LOCATION, LOCATION)` over a geography column fails to resolve. That is the property that matters most and the one no naming scheme provides: without it, a geodesic value would answer in degrees, in a different ordering, with no error anywhere. It is not special to `ST_DISTANCE` — every function in Calcite's spatial library is a reflective binding over `Geometry`, so all of them refuse it, the harmless accessors included.
+A geography and a geometry are one type — Calcite's `GEOMETRY`, over `org.locationtech.jts.geom.Geometry`. What says a value is to be read geodesically is the name of the operator applied to it, and nothing else.
 
-The marking exists only in the type system, so a geography and a geometry are indistinguishable at run time. Anywhere the type is erased — a value on an `ANY` path, a third-party function declared over `Geometry` — the geodesic reading is silently lost. That is the same guarantee PostGIS gives, where both are the same bytes and only the declared type keeps them apart.
+**Nothing refuses a mixture.** `ST_DISTANCE(LOCATION, LOCATION)` over geodesic coordinates answers in degrees, and `ST_GEOG_DISTANCE` over projected ones answers metres as though they were degrees. Both validate, both run. Worse than either, an expression can be half of each: `ST_GEOG_DISTANCE(ST_BUFFER(LOCATION, 0.1), OTHER)` buffers in degrees and then measures in metres.
+
+There is no run-time guard underneath, either. The SRID is a tag on the JTS instance, and Calcite's own spatial functions mostly drop it off a geometry they derive — `ST_Buffer`, `ST_Centroid`, `ST_Envelope` and `ST_Intersection` all return zero from an operand stamped 4326 (`SridPropagationTests` pins this). So an `ST_GEOG_` operator cannot refuse a value for want of a stamp: it may be geodesic and merely have passed through one of Calcite's functions.
+
+**This was a choice, and the alternative was measured.** A `JavaType` subclass answering `SqlTypeName.OTHER` gives the whole guarantee back — Calcite's planar functions then refuse a geography at validation. It cannot be registered on a schema: `CalciteCatalogReader.toOp` builds a fixed-parameter operand checker for every schema function, that checker's parameter types go through the assignment rules, and `SqlTypeAssignmentRule` has no entry for `OTHER` — so routine resolution throws `AssertionError: No assign rules for OTHER defined` rather than rejecting. Nor can the type be added to `SqlTypeName`, which is a closed Java enum and the key to that table and several others.
+
+Since a schema is the only way an adapter can bring its functions with it, and bringing them is the point, the type gave way to the registration.
 
 ## What is here
 
