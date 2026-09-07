@@ -897,6 +897,13 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
+        /// <c>ST_GEOG_BUFFER(GEOGRAPHY, DOUBLE)</c>. Returns the region within the given distance in metres of the geography.
+        /// </summary>
+        public static readonly SqlFunction StGeogBuffer =
+            Function("ST_GEOG_BUFFER", nameof(GeographyFunctions.Buffer), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Fractional], ["geog", "distance"]);
+
+        /// <summary>
         /// <c>ST_GEOG_CENTROID(GEOGRAPHY)</c>. Returns the centre of the geography.
         /// </summary>
         public static readonly SqlFunction StGeogCentroid =
@@ -1118,6 +1125,7 @@ namespace Apache.Calcite.Geography.Sql
                 StGeogLength,
                 StGeogPerimeter,
                 StGeogMaxDistance,
+                StGeogBuffer,
                 StGeogCentroid,
                 StGeogConvexHull,
                 StGeogSimplify,
