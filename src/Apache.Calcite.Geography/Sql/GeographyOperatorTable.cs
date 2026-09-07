@@ -897,6 +897,20 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
+        /// <c>ST_GEOG_CONVEXHULL(GEOGRAPHY)</c>. Returns the smallest convex geography containing this one.
+        /// </summary>
+        public static readonly SqlFunction StGeogConvexHull =
+            Function("ST_GEOG_CONVEXHULL", nameof(GeographyFunctions.ConvexHull), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_SIMPLIFY(GEOGRAPHY, DOUBLE)</c>. Returns the geography with vertices removed that move its boundary by no more than the given distance in metres.
+        /// </summary>
+        public static readonly SqlFunction StGeogSimplify =
+            Function("ST_GEOG_SIMPLIFY", nameof(GeographyFunctions.Simplify), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Fractional], ["geog", "tolerance"]);
+
+        /// <summary>
         /// <c>ST_GEOG_INTERSECTION(GEOGRAPHY, GEOGRAPHY)</c>. Returns the area common to two geographies.
         /// </summary>
         public static readonly SqlFunction StGeogIntersection =
@@ -1097,6 +1111,8 @@ namespace Apache.Calcite.Geography.Sql
                 StGeogLength,
                 StGeogPerimeter,
                 StGeogMaxDistance,
+                StGeogConvexHull,
+                StGeogSimplify,
                 StGeogIntersection,
                 StGeogDifference,
                 StGeogSymDifference,

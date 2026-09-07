@@ -1407,6 +1407,72 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
+        /// <c>ST_GEOG_CONVEXHULL</c>. Returns the smallest convex geography containing this one.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Convex on the sphere, which is a different region from convex on a plane: the hull's edges are
+        /// geodesics, so away from the equator they bow poleward of the straight lines a planar hull draws
+        /// between the same vertices. A point can be inside one and outside the other.
+        ///
+        /// <para>Only the vertices are offered to the query, which is enough — every edge of the input is a
+        /// geodesic between two of them, and a convex region containing the ends of a geodesic contains the
+        /// geodesic.</para>
+        /// </remarks>
+        public static Geometry? ConvexHull(Geometry? geog)
+        {
+            if (geog is null)
+                return null;
+
+            var query = new com.google.common.geometry.S2ConvexHullQuery();
+            var any = false;
+
+            foreach (var vertex in S2Geographies.Of(geog).Vertices)
+            {
+                query.addPoint(vertex);
+                any = true;
+            }
+
+            if (any == false)
+                return Wgs84Of(Factory.createPolygon());
+
+            return Wgs84Of(Areal(new com.google.common.geometry.S2Polygon(query.getConvexHull())));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_SIMPLIFY</c>. Returns the geography with vertices removed that move its boundary by no
+        /// more than the given distance in metres.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <param name="tolerance"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Metres rather than degrees, and the boundary the tolerance is measured against is made of
+        /// geodesics. Areas only, as the overlay operations are, and for the same reason: S2 simplifies a
+        /// polygon and answering a line by falling back to the plane would put two models in one expression.
+        ///
+        /// <para>There is no <c>ST_GEOG_SIMPLIFYPRESERVETOPOLOGY</c>. Calcite has both because JTS has both,
+        /// the second promising the result is still valid and still disjoint from what it was disjoint from.
+        /// S2's simplification makes no such promise, and a function that claimed it without keeping it would
+        /// be worse than one that is missing.</para>
+        /// </remarks>
+        public static Geometry? Simplify(Geometry? geog, java.lang.Object? tolerance)
+        {
+            if (geog is null || tolerance is null)
+                return null;
+
+            var polygon = S2Geographies.Of(geog).Polygon;
+            if (polygon is null)
+                return null;
+
+            var simplified = new com.google.common.geometry.S2Polygon();
+            simplified.initToSimplified(polygon, Ellipsoid.AngleFor(Double(tolerance)), false);
+
+            return Wgs84Of(Areal(simplified));
+        }
+
+        /// <summary>
         /// <c>ST_GEOG_INTERSECTION</c>. Returns the area common to two geographies.
         /// </summary>
         /// <param name="geog1"></param>
