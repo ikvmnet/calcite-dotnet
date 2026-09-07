@@ -83,6 +83,31 @@ namespace Apache.Calcite.Geography.Runtime
             return Geodesic.WGS84.Inverse(a.getY(), a.getX(), b.getY(), b.getX()).s12;
         }
 
+
+        /// <summary>
+        /// Returns the point reached by travelling the given distance from a coordinate along the given
+        /// azimuth.
+        /// </summary>
+        /// <param name="from"></param>
+        /// <param name="azimuth">Degrees clockwise from north.</param>
+        /// <param name="metres"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The true geodesic, so the ring of points this traces at a fixed distance is the set of places
+        /// actually that far away — which is what makes a buffer built from it agree with
+        /// <c>ST_GEOG_DWITHIN</c>. A circle of constant angular radius on a sphere would not: the two differ
+        /// by the same half percent every other measurement here differs by.
+        /// </remarks>
+        public static org.locationtech.jts.geom.Coordinate Offset(
+            org.locationtech.jts.geom.Coordinate from,
+            double azimuth,
+            double metres)
+        {
+            var step = Geodesic.WGS84.Direct(from.getY(), from.getX(), azimuth, metres);
+
+            return new org.locationtech.jts.geom.Coordinate(step.lon2, step.lat2);
+        }
+
         /// <summary>
         /// Returns the points that divide the geodesic between two coordinates into segments no longer than
         /// the given distance, excluding the two ends.
