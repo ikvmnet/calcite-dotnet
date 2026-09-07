@@ -949,7 +949,7 @@ namespace Apache.Calcite.Geography.Sql
         {
             return operand switch
             {
-                GeographyOperand.Geography => (java.lang.Class)typeof(org.locationtech.jts.geom.Geometry),
+                GeographyOperand.Geography => (java.lang.Class)typeof(Apache.Calcite.Geography.Runtime.Geography),
                 GeographyOperand.Geometry => (java.lang.Class)typeof(org.locationtech.jts.geom.Geometry),
                 GeographyOperand.Character => (java.lang.Class)typeof(string),
                 GeographyOperand.Numeric => (java.lang.Class)typeof(java.lang.Number),

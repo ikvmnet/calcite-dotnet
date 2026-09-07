@@ -14,6 +14,15 @@ using Geometry = org.locationtech.jts.geom.Geometry;
 namespace Apache.Calcite.Geography.Tests
 {
 
+    // inside the namespace deliberately: from Apache.Calcite.Geography.Tests the simple name
+    // Geography reaches the namespace Apache.Calcite.Geography before any compilation-unit
+    // alias, and a using-alias of the namespace body is resolved ahead of both.
+    using Geography = Apache.Calcite.Geography.Runtime.Geography;
+
+    // inside the namespace deliberately: from Apache.Calcite.Geography.Tests the simple name
+    // Geography reaches the namespace Apache.Calcite.Geography before any compilation-unit
+    // alias, and a using-alias of the namespace body is resolved ahead of both.
+    
     /// <summary>
     /// The same comparison <see cref="GeographyDifferentialTests"/> makes, over shapes nobody chose.
     /// </summary>
@@ -56,7 +65,7 @@ namespace Apache.Calcite.Geography.Tests
         /// </summary>
         const double Degree = 6371010.0 * Math.PI / 180;
 
-        static Geometry Wkt(string wkt)
+        static Geography Wkt(string wkt)
         {
             return GeographyFunctions.FromWkt(wkt) ?? throw new InvalidOperationException($"'{wkt}' did not parse.");
         }
@@ -165,60 +174,60 @@ namespace Apache.Calcite.Geography.Tests
                     var b = Wkt(right);
 
                     var ourValidity = GeographyFunctions.IsValid(a)!.booleanValue();
-                    var theirValidity = SpatialTypeFunctions.ST_IsValid(a);
+                    var theirValidity = SpatialTypeFunctions.ST_IsValid(a.Geometry);
 
                     if (ourValidity != theirValidity)
                         differences.Add($"ST_ISVALID {left}: ours {ourValidity}, Calcite {theirValidity}");
 
-                    if (theirValidity == false || SpatialTypeFunctions.ST_IsValid(b) == false)
+                    if (theirValidity == false || SpatialTypeFunctions.ST_IsValid(b.Geometry) == false)
                         continue;
 
                     compared++;
 
                     Compare(differences, "INTERSECTS", left, right,
-                        () => GeographyFunctions.Intersects(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Intersects(a, b), ref refused);
+                        () => GeographyFunctions.Intersects(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Intersects(a.Geometry, b.Geometry), ref refused);
 
                     Compare(differences, "WITHIN", left, right,
-                        () => GeographyFunctions.Within(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Within(a, b), ref refused);
+                        () => GeographyFunctions.Within(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Within(a.Geometry, b.Geometry), ref refused);
 
                     Compare(differences, "CONTAINS", left, right,
-                        () => GeographyFunctions.Contains(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Contains(a, b), ref refused);
+                        () => GeographyFunctions.Contains(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Contains(a.Geometry, b.Geometry), ref refused);
 
                     Compare(differences, "COVERS", left, right,
-                        () => GeographyFunctions.Covers(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Covers(a, b), ref refused);
+                        () => GeographyFunctions.Covers(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Covers(a.Geometry, b.Geometry), ref refused);
 
                     Compare(differences, "COVEREDBY", left, right,
-                        () => GeographyFunctions.CoveredBy(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_CoveredBy(a, b), ref refused);
+                        () => GeographyFunctions.CoveredBy(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_CoveredBy(a.Geometry, b.Geometry), ref refused);
 
                     Compare(differences, "DISJOINT", left, right,
-                        () => GeographyFunctions.Disjoint(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Disjoint(a, b), ref refused);
+                        () => GeographyFunctions.Disjoint(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Disjoint(a.Geometry, b.Geometry), ref refused);
 
                     Compare(differences, "EQUALS", left, right,
-                        () => GeographyFunctions.Equals(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Equals(a, b), ref refused);
+                        () => GeographyFunctions.Equals(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_Equals(a.Geometry, b.Geometry), ref refused);
 
                     Compare(differences, "ENVELOPESINTERSECT", left, right,
-                        () => GeographyFunctions.EnvelopesIntersect(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_EnvelopesIntersect(a, b), ref refused);
+                        () => GeographyFunctions.EnvelopesIntersect(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_EnvelopesIntersect(a.Geometry, b.Geometry), ref refused);
 
                     Compare(differences, "DWITHIN", left, right,
                         () => GeographyFunctions.DWithin(a, b, java.lang.Double.valueOf(0.0025 * Degree))!.booleanValue(),
-                        () => SpatialTypeFunctions.ST_DWithin(a, b, 0.0025), ref refused);
+                        () => SpatialTypeFunctions.ST_DWithin(a.Geometry, b.Geometry, 0.0025), ref refused);
 
                     Measure(differences, "DISTANCE", left, right,
-                        () => GeographyFunctions.Distance(a, b)!.doubleValue(), SpatialTypeFunctions.ST_Distance(a, b) * Degree);
+                        () => GeographyFunctions.Distance(a, b)!.doubleValue(), SpatialTypeFunctions.ST_Distance(a.Geometry, b.Geometry) * Degree);
 
                     Measure(differences, "MAXDISTANCE", left, right,
-                        () => GeographyFunctions.MaxDistance(a, b)!.doubleValue(), SpatialTypeFunctions.ST_MaxDistance(a, b)!.doubleValue() * Degree);
+                        () => GeographyFunctions.MaxDistance(a, b)!.doubleValue(), SpatialTypeFunctions.ST_MaxDistance(a.Geometry, b.Geometry)!.doubleValue() * Degree);
 
                     Measure(differences, "LENGTH", left, left,
-                        () => GeographyFunctions.Length(a)!.doubleValue(), SpatialTypeFunctions.ST_Length(a)!.doubleValue() * Degree);
+                        () => GeographyFunctions.Length(a)!.doubleValue(), SpatialTypeFunctions.ST_Length(a.Geometry)!.doubleValue() * Degree);
 
                     Measure(differences, "PERIMETER", left, left,
-                        () => GeographyFunctions.Perimeter(a)!.doubleValue(), SpatialTypeFunctions.ST_Perimeter(a)!.doubleValue() * Degree);
+                        () => GeographyFunctions.Perimeter(a)!.doubleValue(), SpatialTypeFunctions.ST_Perimeter(a.Geometry)!.doubleValue() * Degree);
 
                     // an area is two lengths, so the scale between the two readings is the square of the one
                     // a distance uses
                     Measure(differences, "AREA", left, left,
-                        () => GeographyFunctions.Area(a)!.doubleValue(), SpatialTypeFunctions.ST_Area(a)!.doubleValue() * Degree * Degree);
+                        () => GeographyFunctions.Area(a)!.doubleValue(), SpatialTypeFunctions.ST_Area(a.Geometry)!.doubleValue() * Degree * Degree);
                 }
             }
 

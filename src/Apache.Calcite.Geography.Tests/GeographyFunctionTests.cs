@@ -11,6 +11,15 @@ using Geometry = org.locationtech.jts.geom.Geometry;
 namespace Apache.Calcite.Geography.Tests
 {
 
+    // inside the namespace deliberately: from Apache.Calcite.Geography.Tests the simple name
+    // Geography reaches the namespace Apache.Calcite.Geography before any compilation-unit
+    // alias, and a using-alias of the namespace body is resolved ahead of both.
+    using Geography = Apache.Calcite.Geography.Runtime.Geography;
+
+    // inside the namespace deliberately: from Apache.Calcite.Geography.Tests the simple name
+    // Geography reaches the namespace Apache.Calcite.Geography before any compilation-unit
+    // alias, and a using-alias of the namespace body is resolved ahead of both.
+    
     /// <summary>
     /// What the bodies behind the operators compute.
     /// </summary>
@@ -34,7 +43,7 @@ namespace Apache.Calcite.Geography.Tests
         /// </summary>
         const double Degree = EarthRadiusMeters * Math.PI / 180;
 
-        static Geometry Wkt(string wkt)
+        static Geography Wkt(string wkt)
         {
             return GeographyFunctions.FromWkt(wkt) ?? throw new InvalidOperationException($"'{wkt}' did not parse.");
         }
@@ -44,10 +53,10 @@ namespace Apache.Calcite.Geography.Tests
         {
             var geography = Wkt("POINT(1 2)");
 
-            geography.getGeometryType().Should().Be("Point");
-            geography.getCoordinate().getX().Should().Be(1);
-            geography.getCoordinate().getY().Should().Be(2);
-            geography.getSRID().Should().Be(GeographyFunctions.Wgs84);
+            geography.Geometry.getGeometryType().Should().Be("Point");
+            geography.Geometry.getCoordinate().getX().Should().Be(1);
+            geography.Geometry.getCoordinate().getY().Should().Be(2);
+            geography.Geometry.getSRID().Should().Be(GeographyFunctions.Wgs84);
         }
 
         /// <summary>
@@ -60,7 +69,7 @@ namespace Apache.Calcite.Geography.Tests
             var geography = GeographyFunctions.FromWkt("POINT(1 2)", java.lang.Integer.valueOf(GeographyFunctions.Wgs84));
 
             geography.Should().NotBeNull();
-            geography!.getSRID().Should().Be(GeographyFunctions.Wgs84);
+            geography!.Geometry.getSRID().Should().Be(GeographyFunctions.Wgs84);
 
             var refused = () => GeographyFunctions.FromWkt("POINT(1 2)", java.lang.Integer.valueOf(3857));
             refused.Should().Throw<java.lang.IllegalArgumentException>().WithMessage("*3857*");
@@ -75,21 +84,27 @@ namespace Apache.Calcite.Geography.Tests
             var geography = GeographyFunctions.FromGeoJson("{\"type\":\"Point\",\"coordinates\":[1,2]}");
 
             geography.Should().NotBeNull();
-            geography!.getCoordinate().getX().Should().Be(1);
-            geography.getCoordinate().getY().Should().Be(2);
-            geography.getSRID().Should().Be(GeographyFunctions.Wgs84);
+            geography!.Geometry.getCoordinate().getX().Should().Be(1);
+            geography.Geometry.getCoordinate().getY().Should().Be(2);
+            geography.Geometry.getSRID().Should().Be(GeographyFunctions.Wgs84);
         }
 
         /// <summary>
-        /// The crossings are re-typings and nothing else happens at run time.
+        /// The crossings unwrap and wrap, and the coordinates go through untouched.
         /// </summary>
+        /// <remarks>
+        /// They were re-typings when both sides were carried by <c>Geometry</c>. Now that a geography is its
+        /// own class the crossing is a real conversion, and what is preserved is the geometry inside rather
+        /// than the object: <c>ST_GEOG_ASGEOM</c> hands out the very geometry it was holding, and
+        /// <c>ST_GEOM_ASGEOG</c> wraps the caller's without copying it.
+        /// </remarks>
         [TestMethod]
-        public void ShouldCrossWithoutTouchingTheValue()
+        public void ShouldCrossWithoutTouchingTheCoordinates()
         {
             var geography = Wkt("POINT(1 2)");
 
-            GeographyFunctions.AsGeometry(geography).Should().BeSameAs(geography);
-            GeographyFunctions.AsGeography(geography).Should().BeSameAs(geography);
+            GeographyFunctions.AsGeometry(geography).Should().BeSameAs(geography.Geometry);
+            GeographyFunctions.AsGeography(geography.Geometry)!.Geometry.Should().BeSameAs(geography.Geometry);
         }
 
         /// <summary>
@@ -119,8 +134,8 @@ namespace Apache.Calcite.Geography.Tests
             var equator = GeographyFunctions.Distance(Wkt("POINT(0 0)"), Wkt("POINT(1 0)"))!.doubleValue();
             var north = GeographyFunctions.Distance(Wkt("POINT(0 50)"), Wkt("POINT(1 50)"))!.doubleValue();
 
-            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(Wkt("POINT(0 0)"), Wkt("POINT(1 0)")).Should().Be(1);
-            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(Wkt("POINT(0 50)"), Wkt("POINT(1 50)")).Should().Be(1);
+            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(Wkt("POINT(0 0)").Geometry, Wkt("POINT(1 0)").Geometry).Should().Be(1);
+            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(Wkt("POINT(0 50)").Geometry, Wkt("POINT(1 50)").Geometry).Should().Be(1);
 
             north.Should().BeLessThan(equator);
             (equator / north).Should().BeApproximately(1 / Math.Cos(50 * Math.PI / 180), 0.001);
@@ -217,7 +232,7 @@ namespace Apache.Calcite.Geography.Tests
             var point = Wkt("POINT(5 10.02)");
 
             GeographyFunctions.Within(point, polygon)!.booleanValue().Should().BeTrue();
-            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Within(point, polygon).Should().BeFalse();
+            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Within(point.Geometry, polygon.Geometry).Should().BeFalse();
         }
 
         /// <summary>
@@ -237,7 +252,7 @@ namespace Apache.Calcite.Geography.Tests
             var east = Wkt("POINT(-179.9 0)");
 
             GeographyFunctions.Distance(west, east)!.doubleValue().Should().BeApproximately(0.2 * Degree, 0.001);
-            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(west, east).Should().BeApproximately(359.8, 1e-9);
+            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(west.Geometry, east.Geometry).Should().BeApproximately(359.8, 1e-9);
         }
 
         /// <summary>
@@ -250,7 +265,7 @@ namespace Apache.Calcite.Geography.Tests
             var there = Wkt("POINT(180 89.9)");
 
             GeographyFunctions.Distance(here, there)!.doubleValue().Should().BeApproximately(0.2 * Degree, 0.001);
-            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(here, there).Should().BeApproximately(180, 1e-9);
+            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(here.Geometry, there.Geometry).Should().BeApproximately(180, 1e-9);
         }
 
         /// <summary>
@@ -265,7 +280,7 @@ namespace Apache.Calcite.Geography.Tests
 
             GeographyFunctions.Distance(pole, alsoPole)!.doubleValue().Should().Be(0);
             GeographyFunctions.Intersects(pole, alsoPole)!.booleanValue().Should().BeTrue();
-            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(pole, alsoPole).Should().Be(180);
+            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(pole.Geometry, alsoPole.Geometry).Should().Be(180);
         }
 
         /// <summary>
@@ -287,11 +302,11 @@ namespace Apache.Calcite.Geography.Tests
             foreach (var wkt in new[] { "POINT(179.5 0)", "POINT(-179.5 0)" })
             {
                 GeographyFunctions.Within(Wkt(wkt), box)!.booleanValue().Should().BeTrue(wkt);
-                org.apache.calcite.runtime.SpatialTypeFunctions.ST_Within(Wkt(wkt), box).Should().BeFalse(wkt);
+                org.apache.calcite.runtime.SpatialTypeFunctions.ST_Within(Wkt(wkt).Geometry, box.Geometry).Should().BeFalse(wkt);
             }
 
             GeographyFunctions.Within(Wkt("POINT(0 0)"), box)!.booleanValue().Should().BeFalse();
-            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Within(Wkt("POINT(0 0)"), box).Should().BeTrue();
+            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Within(Wkt("POINT(0 0)").Geometry, box.Geometry).Should().BeTrue();
         }
 
         /// <summary>
@@ -319,7 +334,7 @@ namespace Apache.Calcite.Geography.Tests
             area.Should().BeGreaterThan(betweenTheParallels);
             area.Should().BeApproximately(betweenTheParallels, betweenTheParallels * 1e-4);
 
-            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Area(box)!.doubleValue().Should().BeApproximately(1, 1e-9);
+            org.apache.calcite.runtime.SpatialTypeFunctions.ST_Area(box.Geometry)!.doubleValue().Should().BeApproximately(1, 1e-9);
         }
 
         [TestMethod]
@@ -351,7 +366,7 @@ namespace Apache.Calcite.Geography.Tests
             var east = Wkt("POLYGON((-180 -1, -179 -1, -179 1, -180 1, -180 -1))");
 
             GeographyFunctions.EnvelopesIntersect(west, east)!.booleanValue().Should().BeTrue();
-            org.apache.calcite.runtime.SpatialTypeFunctions.ST_EnvelopesIntersect(west, east).Should().BeFalse();
+            org.apache.calcite.runtime.SpatialTypeFunctions.ST_EnvelopesIntersect(west.Geometry, east.Geometry).Should().BeFalse();
         }
 
         [TestMethod]
@@ -371,7 +386,7 @@ namespace Apache.Calcite.Geography.Tests
             var polygon = Wkt("POLYGON((0 0, 400 0, 400 10, 0 10, 0 0))");
 
             GeographyFunctions.IsValid(polygon)!.booleanValue().Should().BeFalse();
-            org.apache.calcite.runtime.SpatialTypeFunctions.ST_IsValid(polygon).Should().BeTrue();
+            org.apache.calcite.runtime.SpatialTypeFunctions.ST_IsValid(polygon.Geometry).Should().BeTrue();
         }
 
         [TestMethod]

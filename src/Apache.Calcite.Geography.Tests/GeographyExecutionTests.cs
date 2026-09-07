@@ -22,6 +22,11 @@ using Geometry = org.locationtech.jts.geom.Geometry;
 namespace Apache.Calcite.Geography.Tests
 {
 
+    // inside the namespace deliberately: from Apache.Calcite.Geography.Tests the simple name
+    // Geography reaches the namespace Apache.Calcite.Geography before any compilation-unit
+    // alias, and a using-alias of the namespace body is resolved ahead of both.
+    using Geography = Apache.Calcite.Geography.Runtime.Geography;
+
     /// <summary>
     /// A geography through a whole statement — planned, code-generated, compiled and run.
     /// </summary>
@@ -209,14 +214,25 @@ namespace Apache.Calcite.Geography.Tests
             public Enumerable scan(DataContext root)
             {
                 return Linq4j.asEnumerable(java.util.Arrays.asList([
-                    new object[] { java.lang.Integer.valueOf(1), Geography("POINT(0.5 0)") },
-                    new object[] { java.lang.Integer.valueOf(2), Geography("POINT(20 0)") },
+                    new object[] { java.lang.Integer.valueOf(1), Geog("POINT(0.5 0)") },
+                    new object[] { java.lang.Integer.valueOf(2), Geog("POINT(20 0)") },
                 ]));
             }
 
-            static Geometry Geography(string wkt)
+            /// <summary>
+            /// A geography value, as an adapter declaring a geography column has to produce one.
+            /// </summary>
+            /// <param name="wkt"></param>
+            /// <returns></returns>
+            /// <remarks>
+            /// A bare JTS geometry will not do, and the failure is loud rather than silent: the column's type
+            /// is <c>JavaType(Geography)</c>, so the generated block casts each value to that class and a
+            /// <c>Point</c> fails the cast. That is the marking earning its keep — under a type carried by
+            /// <c>Geometry</c> the same row would have been read as a plane with nothing said.
+            /// </remarks>
+            static Geography Geog(string wkt)
             {
-                return org.apache.calcite.runtime.SpatialTypeUtils.fromWkt(wkt);
+                return Geography.Of(org.apache.calcite.runtime.SpatialTypeUtils.fromWkt(wkt))!;
             }
 
         }

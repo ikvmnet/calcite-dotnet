@@ -1,5 +1,7 @@
 using System;
 
+using Apache.Calcite.Geography.Runtime;
+
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
 
@@ -12,11 +14,15 @@ namespace Apache.Calcite.Geography.Rel.Type
     /// The two types this package deals in, and the questions asked about them.
     /// </summary>
     /// <remarks>
-    /// <c>GEOGRAPHY</c> is <see cref="GeographySqlType"/>. <c>GEOMETRY</c> is whatever Calcite's own spatial
-    /// library produces and consumes, which is <c>createJavaType(Geometry.class)</c> — the type
-    /// <c>ScalarFunctionImpl</c> derives by reflection from an <c>ST_*</c> method's signature. Asking the type
-    /// factory for it here rather than for <c>createSqlType(GEOMETRY)</c> is what makes the crossing
-    /// operators line up with Calcite's declarations exactly.
+    /// <c>GEOGRAPHY</c> is <c>createJavaType(Geography.class)</c> and <c>GEOMETRY</c> is
+    /// <c>createJavaType(Geometry.class)</c> — two ordinary <c>RelDataTypeFactoryImpl.JavaType</c>s over two
+    /// different classes. Neither is a type of this package's own making, and that is why both behave.
+    ///
+    /// <para>The alternative, a <c>JavaType</c> subclass answering a different <c>SqlTypeName</c>, does not
+    /// survive: <c>RelDataTypeFactoryImpl.copySimpleType</c> answers a change of nullability on a
+    /// <c>JavaType</c> by constructing a plain one, so the subclass is dropped the first time an adapter
+    /// declares a column <c>NOT NULL</c>. Distinguishing by class rather than by subclass puts the identity
+    /// somewhere that method copies rather than discards. See <see cref="Geography"/>.</para>
     /// </remarks>
     public static class GeographyTypes
     {
@@ -26,18 +32,48 @@ namespace Apache.Calcite.Geography.Rel.Type
         /// </summary>
         /// <param name="typeFactory"></param>
         /// <returns></returns>
-        /// <remarks>
-        /// The round trip through <c>copyType</c> is how the result gets interned. <c>canonize</c> is
-        /// protected on <c>RelDataTypeFactoryImpl</c>, so a caller outside the class cannot reach it; but
-        /// <c>copyType</c> is <c>createTypeWithNullability(type, type.isNullable())</c>, which finds the
-        /// nullability unchanged, keeps the instance and canonizes it. The type factory's own
-        /// <c>createJavaType</c> does the same thing by the same interner.
-        /// </remarks>
         public static RelDataType Of(RelDataTypeFactory typeFactory)
         {
             ArgumentNullException.ThrowIfNull(typeFactory);
 
-            return typeFactory.copyType(new GeographySqlType((RelDataTypeFactoryImpl)typeFactory));
+            return typeFactory.createJavaType((java.lang.Class)typeof(Runtime.Geography));
+        }
+
+        /// <summary>
+        /// Returns the <c>GEOGRAPHY</c> type of the given nullability for the given type factory.
+        /// </summary>
+        /// <param name="typeFactory"></param>
+        /// <param name="nullable"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Both nullabilities are reachable, and a stock <c>JavaTypeFactoryImpl</c> answers both correctly.
+        /// </remarks>
+        public static RelDataType Of(RelDataTypeFactory typeFactory, bool nullable)
+        {
+            return typeFactory.createTypeWithNullability(Of(typeFactory), nullable);
+        }
+
+        /// <summary>
+        /// Returns the type as something a schema can be given a name for.
+        /// </summary>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>SchemaPlus.add(name, RelProtoDataType)</c> is how Calcite lets a name stand for a type in SQL,
+        /// and registering this under <c>GEOGRAPHY</c> is what makes <c>CAST(x AS GEOGRAPHY)</c> resolve.
+        /// </remarks>
+        public static RelProtoDataType Proto()
+        {
+            return new GeographyProtoType();
+        }
+
+        sealed class GeographyProtoType : RelProtoDataType
+        {
+
+            public object apply(object typeFactory)
+            {
+                return Of((RelDataTypeFactory)typeFactory);
+            }
+
         }
 
         /// <summary>
@@ -60,7 +96,7 @@ namespace Apache.Calcite.Geography.Rel.Type
         /// <returns></returns>
         public static bool IsGeography(RelDataType? type)
         {
-            return type is GeographySqlType;
+            return IsJavaType(type, typeof(Runtime.Geography));
         }
 
         /// <summary>
@@ -70,13 +106,18 @@ namespace Apache.Calcite.Geography.Rel.Type
         /// <param name="type"></param>
         /// <returns></returns>
         /// <remarks>
-        /// A geography is not one. It is carried by the same class, so <c>getJavaClass</c> cannot tell them
-        /// apart; what tells them apart is that a geography answers <see cref="SqlTypeName.OTHER"/> where a
-        /// geometry answers <see cref="SqlTypeName.GEOMETRY"/>.
+        /// A geography is not one, and now cannot be mistaken for one: the two are different classes, so
+        /// the digests differ and so does <c>getJavaClass</c>. Calcite's own <c>ST_*</c> are declared over
+        /// <c>Geometry</c> and will not take a geography.
         /// </remarks>
         public static bool IsGeometry(RelDataType? type)
         {
-            return type is not null && !IsGeography(type) && type.getSqlTypeName() == SqlTypeName.GEOMETRY;
+            return IsJavaType(type, typeof(JtsGeometry)) || (type is not null && type.getSqlTypeName() == SqlTypeName.GEOMETRY);
+        }
+
+        static bool IsJavaType(RelDataType? type, System.Type clazz)
+        {
+            return type is RelDataTypeFactoryImpl.JavaType javaType && Equals(javaType.getJavaClass(), (java.lang.Class)clazz);
         }
 
     }

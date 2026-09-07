@@ -13,7 +13,7 @@ namespace Apache.Calcite.Geography.Sql.Type
     {
 
         /// <summary>
-        /// A geography, and nothing else — not a geometry, which is the same class read as a plane.
+        /// A geography, and nothing else — not a geometry, which is a different class read as a plane.
         /// </summary>
         Geography,
 

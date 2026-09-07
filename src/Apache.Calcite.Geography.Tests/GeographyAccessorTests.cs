@@ -14,6 +14,15 @@ using Geometry = org.locationtech.jts.geom.Geometry;
 namespace Apache.Calcite.Geography.Tests
 {
 
+    // inside the namespace deliberately: from Apache.Calcite.Geography.Tests the simple name
+    // Geography reaches the namespace Apache.Calcite.Geography before any compilation-unit
+    // alias, and a using-alias of the namespace body is resolved ahead of both.
+    using Geography = Apache.Calcite.Geography.Runtime.Geography;
+
+    // inside the namespace deliberately: from Apache.Calcite.Geography.Tests the simple name
+    // Geography reaches the namespace Apache.Calcite.Geography before any compilation-unit
+    // alias, and a using-alias of the namespace body is resolved ahead of both.
+    
     /// <summary>
     /// The accessors and the serializers, against the <c>ST_*</c> each one mirrors.
     /// </summary>
@@ -52,7 +61,7 @@ namespace Apache.Calcite.Geography.Tests
             "GEOMETRYCOLLECTION(POINT(1 2), LINESTRING(0 0, 1 1))",
         ];
 
-        static Geometry Wkt(string wkt)
+        static Geography Wkt(string wkt)
         {
             return GeographyFunctions.FromWkt(wkt) ?? throw new InvalidOperationException($"'{wkt}' did not parse.");
         }
@@ -60,7 +69,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Every one-argument accessor and serializer, ours beside Calcite's.
         /// </summary>
-        static readonly (string Name, Func<Geometry, object?> Ours, Func<Geometry, object?> Theirs)[] unary =
+        static readonly (string Name, Func<Geography, object?> Ours, Func<Geometry, object?> Theirs)[] unary =
         [
             ("ST_GEOG_X", g => GeographyFunctions.X(g), g => SpatialTypeFunctions.ST_X(g)),
             ("ST_GEOG_Y", g => GeographyFunctions.Y(g), g => SpatialTypeFunctions.ST_Y(g)),
@@ -155,7 +164,7 @@ namespace Apache.Calcite.Geography.Tests
                 foreach (var (name, ours, theirs) in unary)
                 {
                     var mine = Answer(() => ours(geography));
-                    var calcite = Answer(() => theirs(geography));
+                    var calcite = Answer(() => theirs(geography.Geometry));
 
                     if (mine != calcite)
                         differences.Add($"{name} over {shape}: ours {mine}, Calcite {calcite}");
@@ -226,19 +235,19 @@ namespace Apache.Calcite.Geography.Tests
                     var index = java.lang.Integer.valueOf(n);
 
                     Compare(differences, $"ST_GEOG_POINTN({shape}, {n})",
-                        () => GeographyFunctions.PointN(geography, index), () => SpatialTypeFunctions.ST_PointN(geography, n));
+                        () => GeographyFunctions.PointN(geography, index), () => SpatialTypeFunctions.ST_PointN(geography.Geometry, n));
 
                     Compare(differences, $"ST_GEOG_GEOMETRYN({shape}, {n})",
-                        () => GeographyFunctions.GeometryN(geography, index), () => SpatialTypeFunctions.ST_GeometryN(geography, n));
+                        () => GeographyFunctions.GeometryN(geography, index), () => SpatialTypeFunctions.ST_GeometryN(geography.Geometry, n));
 
                     Compare(differences, $"ST_GEOG_INTERIORRING({shape}, {n})",
-                        () => GeographyFunctions.InteriorRing(geography, index), () => SpatialTypeFunctions.ST_InteriorRing(geography, n));
+                        () => GeographyFunctions.InteriorRing(geography, index), () => SpatialTypeFunctions.ST_InteriorRing(geography.Geometry, n));
                 }
 
                 foreach (var other in shapes)
                     Compare(differences, $"ST_GEOG_ORDERINGEQUALS({shape}, {other})",
                         () => GeographyFunctions.OrderingEquals(geography, Wkt(other)),
-                        () => SpatialTypeFunctions.ST_OrderingEquals(geography, Wkt(other)));
+                        () => SpatialTypeFunctions.ST_OrderingEquals(geography.Geometry, Wkt(other).Geometry));
             }
 
             differences.Should().BeEmpty(string.Join("\n", differences));
@@ -269,11 +278,11 @@ namespace Apache.Calcite.Geography.Tests
             {
                 var geography = Wkt(shape);
 
-                GeographyFunctions.FromWkt(GeographyFunctions.AsText(geography))!.toText().Should().Be(geography.toText(), shape);
-                GeographyFunctions.FromEwkt(GeographyFunctions.AsEwkt(geography))!.toText().Should().Be(geography.toText(), shape);
-                GeographyFunctions.FromGeoJson(GeographyFunctions.AsGeoJson(geography))!.toText().Should().Be(geography.toText(), shape);
-                GeographyFunctions.FromWkb(GeographyFunctions.AsWkb(geography))!.toText().Should().Be(geography.toText(), shape);
-                GeographyFunctions.FromEwkb(GeographyFunctions.AsEwkb(geography))!.toText().Should().Be(geography.toText(), shape);
+                GeographyFunctions.FromWkt(GeographyFunctions.AsText(geography))!.Geometry.toText().Should().Be(geography.Geometry.toText(), shape);
+                GeographyFunctions.FromEwkt(GeographyFunctions.AsEwkt(geography))!.Geometry.toText().Should().Be(geography.Geometry.toText(), shape);
+                GeographyFunctions.FromGeoJson(GeographyFunctions.AsGeoJson(geography))!.Geometry.toText().Should().Be(geography.Geometry.toText(), shape);
+                GeographyFunctions.FromWkb(GeographyFunctions.AsWkb(geography))!.Geometry.toText().Should().Be(geography.Geometry.toText(), shape);
+                GeographyFunctions.FromEwkb(GeographyFunctions.AsEwkb(geography))!.Geometry.toText().Should().Be(geography.Geometry.toText(), shape);
             }
         }
 
@@ -282,11 +291,11 @@ namespace Apache.Calcite.Geography.Tests
         {
             var geography = Wkt("POINT(1 2)");
 
-            GeographyFunctions.FromWkt("POINT(1 2)")!.getSRID().Should().Be(GeographyFunctions.Wgs84);
-            GeographyFunctions.FromEwkt("POINT(1 2)")!.getSRID().Should().Be(GeographyFunctions.Wgs84);
-            GeographyFunctions.FromGeoJson("{\"type\":\"Point\",\"coordinates\":[1,2]}")!.getSRID().Should().Be(GeographyFunctions.Wgs84);
-            GeographyFunctions.FromWkb(GeographyFunctions.AsWkb(geography))!.getSRID().Should().Be(GeographyFunctions.Wgs84);
-            GeographyFunctions.FromEwkb(GeographyFunctions.AsEwkb(geography))!.getSRID().Should().Be(GeographyFunctions.Wgs84);
+            GeographyFunctions.FromWkt("POINT(1 2)")!.Geometry.getSRID().Should().Be(GeographyFunctions.Wgs84);
+            GeographyFunctions.FromEwkt("POINT(1 2)")!.Geometry.getSRID().Should().Be(GeographyFunctions.Wgs84);
+            GeographyFunctions.FromGeoJson("{\"type\":\"Point\",\"coordinates\":[1,2]}")!.Geometry.getSRID().Should().Be(GeographyFunctions.Wgs84);
+            GeographyFunctions.FromWkb(GeographyFunctions.AsWkb(geography))!.Geometry.getSRID().Should().Be(GeographyFunctions.Wgs84);
+            GeographyFunctions.FromEwkb(GeographyFunctions.AsEwkb(geography))!.Geometry.getSRID().Should().Be(GeographyFunctions.Wgs84);
         }
 
         /// <summary>

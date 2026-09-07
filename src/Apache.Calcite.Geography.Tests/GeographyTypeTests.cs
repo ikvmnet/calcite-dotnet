@@ -13,6 +13,11 @@ using Geometry = org.locationtech.jts.geom.Geometry;
 namespace Apache.Calcite.Geography.Tests
 {
 
+    // inside the namespace deliberately: from Apache.Calcite.Geography.Tests the simple name
+    // Geography reaches the namespace Apache.Calcite.Geography before any compilation-unit
+    // alias, and a using-alias of the namespace body is resolved ahead of both.
+    using Geography = Apache.Calcite.Geography.Runtime.Geography;
+
     /// <summary>
     /// What the <c>GEOGRAPHY</c> type reports about itself.
     /// </summary>
@@ -20,12 +25,21 @@ namespace Apache.Calcite.Geography.Tests
     public class GeographyTypeTests
     {
 
+        /// <summary>
+        /// The digest names the carrier class, which is what keeps the type distinct.
+        /// </summary>
+        /// <remarks>
+        /// It reads <c>JavaType(class cli.…)</c> rather than <c>GEOGRAPHY</c> because the type is an ordinary
+        /// <c>JavaType</c> rather than a subclass answering a name of its own. That is the trade the design
+        /// makes: a subclass could write <c>GEOGRAPHY</c> here and would be discarded by
+        /// <c>copySimpleType</c> the first time an adapter declared a column <c>NOT NULL</c>.
+        /// </remarks>
         [TestMethod]
-        public void ShouldReportGeographyAsItsTypeString()
+        public void ShouldReportItsCarrierClassAsItsTypeString()
         {
             var type = GeographyTypes.Of(GeographyFixture.TypeFactory());
 
-            type.getFullTypeString().Should().Be("GEOGRAPHY");
+            type.getFullTypeString().Should().Be("JavaType(class cli.Apache.Calcite.Geography.Runtime.Geography)");
         }
 
         [TestMethod]
@@ -37,20 +51,22 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The runtime carrier is an ordinary JTS geometry, asked either way round.
+        /// The runtime carrier is <see cref="Geography"/>, asked either way round.
         /// </summary>
         /// <remarks>
-        /// This is what makes the type free: there is no new class, so nothing new for code generation to
-        /// name and nothing to convert at a boundary.
+        /// A real class rather than <c>Object</c>, which is what a type that is not a <c>JavaType</c> would
+        /// have answered — so the conventions type a geography column properly and generated code names the
+        /// class. Janino resolves the <c>cli.</c>-prefixed name IKVM gives it, which it could not before
+        /// 8.16.0.
         /// </remarks>
         [TestMethod]
-        public void ShouldReportJtsGeometryAsItsJavaClass()
+        public void ShouldReportTheCarrierAsItsJavaClass()
         {
             var typeFactory = new JavaTypeFactoryImpl();
             var type = GeographyTypes.Of(typeFactory);
 
-            ((RelDataTypeFactoryImpl.JavaType)type).getJavaClass().Should().BeSameAs((java.lang.Class)typeof(Geometry));
-            typeFactory.getJavaClass(type).Should().BeSameAs((java.lang.Class)typeof(Geometry));
+            ((RelDataTypeFactoryImpl.JavaType)type).getJavaClass().Should().BeSameAs((java.lang.Class)typeof(Geography));
+            typeFactory.getJavaClass(type).Should().BeSameAs((java.lang.Class)typeof(Geography));
         }
 
         /// <summary>
@@ -93,19 +109,22 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Asking for the type <c>NOT NULL</c> loses the marking.
+        /// Asking for the type <c>NOT NULL</c> keeps the marking.
         /// </summary>
         /// <remarks>
-        /// <c>RelDataTypeFactoryImpl.copySimpleType</c> answers a change of nullability on any
-        /// <c>JavaType</c> with a plain <c>new JavaType(clazz, nullable)</c>, which is not this subclass. The
-        /// type is nullable so that the path everything actually takes —
-        /// <c>createTypeWithNullability(geography, true)</c> — finds nothing to change and returns it
-        /// unchanged, and so that no return type strategy here may run through
-        /// <c>SqlTypeTransforms.TO_NULLABLE</c>. Recorded rather than fixed: the copy is Calcite's and there
-        /// is no hook in it.
+        /// <c>RelDataTypeFactoryImpl.copySimpleType</c> answers a change of nullability on a <c>JavaType</c>
+        /// with <c>new JavaType(Primitive.box(clazz), nullable)</c>, and <c>Primitive.box</c> returns a class
+        /// that is neither a primitive nor a box unchanged. So the copy is a <c>JavaType</c> over the same
+        /// class — the type again, at the other nullability — and it holds on a stock
+        /// <c>JavaTypeFactoryImpl</c> with no factory of ours in front of Calcite.
+        ///
+        /// <para>This is the whole reason the marking is a class rather than a subclass of <c>JavaType</c>
+        /// answering a <c>SqlTypeName</c> of its own. That method's other branch, the one for everything
+        /// that is not a <c>JavaType</c>, returns the type untouched and so cannot change nullability at
+        /// all; and a subclass is discarded outright. Only a distinct class is both copied and kept.</para>
         /// </remarks>
         [TestMethod]
-        public void ShouldLoseTheMarkingWhenMadeNotNullable()
+        public void ShouldKeepTheMarkingWhenMadeNotNullable()
         {
             var typeFactory = GeographyFixture.TypeFactory();
             var geography = GeographyTypes.Of(typeFactory);
@@ -113,34 +132,25 @@ namespace Apache.Calcite.Geography.Tests
             typeFactory.createTypeWithNullability(geography, true).Should().BeSameAs(geography);
 
             var notNull = typeFactory.createTypeWithNullability(geography, false);
-            GeographyTypes.IsGeography(notNull).Should().BeFalse();
-            notNull.getSqlTypeName().Should().BeSameAs(SqlTypeName.GEOMETRY);
+            GeographyTypes.IsGeography(notNull).Should().BeTrue();
+            notNull.isNullable().Should().BeFalse();
+            notNull.getSqlTypeName().Should().BeSameAs(SqlTypeName.OTHER);
+
+            // and back again, to the interned instance
+            typeFactory.createTypeWithNullability(notNull, true).Should().BeSameAs(geography);
         }
 
         /// <summary>
-        /// A column declared <c>NOT NULL</c> is not a geography column, and nothing says so.
+        /// A column an adapter declares <c>NOT NULL</c> is still a geography column.
         /// </summary>
         /// <remarks>
         /// The shape an adapter reaches for: build a row type, name a column, say it cannot be null. The last
-        /// of those goes through <c>createTypeWithNullability</c>, and that is the call
-        /// <c>RelDataTypeFactoryImpl.copySimpleType</c> answers with a plain <c>new JavaType(clazz,
-        /// nullable)</c> — so the column that comes out is an ordinary geometry, and Calcite's planar
-        /// <c>ST_*</c> will take it. A geodesic column becomes a planar one with no error anywhere, which is
-        /// the exact failure this package exists to prevent.
-        ///
-        /// <para>It cannot be fixed from here. <c>copySimpleType</c> is private;
-        /// <c>createTypeWithNullability</c> is public and could be overridden, but a type factory of our own
-        /// cannot be put in front of Calcite — <c>PlannerImpl</c> and <c>CalciteConnectionImpl</c> each build
-        /// a <c>JavaTypeFactoryImpl</c> outright, and only a protected constructor takes one. Nor does
-        /// dropping <c>JavaType</c> help: a type that is not one survives this untouched, and then
-        /// <c>getJavaClass</c> answers null and no plan compiles.</para>
-        ///
-        /// <para>So the rule for an adapter is that a geography column is declared nullable, and this is here
-        /// to keep that rule honest rather than to approve of it. Nullability at the level of the row is
-        /// fine — only the field-level call degrades.</para>
+        /// of those goes through <c>createTypeWithNullability</c>, which is where a <c>JavaType</c> subclass
+        /// would have been dropped and an ordinary geometry handed back — a geodesic column silently becoming
+        /// a planar one that Calcite's own <c>ST_*</c> would take. Distinguishing by class survives it.
         /// </remarks>
         [TestMethod]
-        public void ShouldNotSurviveAColumnDeclaredNotNull()
+        public void ShouldSurviveAColumnDeclaredNotNull()
         {
             var typeFactory = GeographyFixture.TypeFactory();
             var geography = GeographyTypes.Of(typeFactory);
@@ -148,10 +158,10 @@ namespace Apache.Calcite.Geography.Tests
             var row = typeFactory.builder().add("GEOG", geography).nullable(false).build();
             var column = ((RelDataTypeField)row.getFieldList().get(0)).getType();
 
-            GeographyTypes.IsGeography(column).Should().BeFalse();
-            column.getSqlTypeName().Should().BeSameAs(SqlTypeName.GEOMETRY);
+            GeographyTypes.IsGeography(column).Should().BeTrue();
+            column.isNullable().Should().BeFalse();
 
-            // the row being not-nullable is a different call and does not degrade the field
+            // and the row being not-nullable, which is a different call, keeps it too
             var nullableRow = typeFactory.builder().add("GEOG", geography).build();
             var kept = ((RelDataTypeField)typeFactory.createTypeWithNullability(nullableRow, false)
                 .getFieldList().get(0)).getType();

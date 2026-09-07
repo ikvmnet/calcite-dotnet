@@ -46,9 +46,9 @@ typeFactory.builder()
     .build();
 ```
 
-and the values in it are ordinary JTS `Geometry` objects — the same class Calcite's own spatial library carries.
+and the values in it are `Geography` objects, each holding a JTS `Geometry` and the SRID it is in. A bare `Geometry` will not do — the column's type names the `Geography` class, so a plan casts to it and a raw geometry fails the cast loudly rather than being read as a plane in silence.
 
-**A geography column has to be nullable.** Saying `.nullable(false)` on the field — the ordinary thing an adapter does for a `NOT NULL` column — silently gives you an ordinary geometry, and Calcite's planar `ST_*` will then take it. `RelDataTypeFactoryImpl.copySimpleType` answers any change of a `JavaType`'s nullability with a plain `new JavaType(clazz, nullable)`, which is not this subclass; it is private, and a type factory of one's own cannot be put in front of Calcite, since `PlannerImpl` and `CalciteConnectionImpl` each build a `JavaTypeFactoryImpl` outright. Declaring the row not-nullable is a different call and is fine — only the field-level one degrades.
+**A geography column may be `NOT NULL`.** The marking is the carrier class rather than a `RelDataType` subclass, and that is why. `RelDataTypeFactoryImpl.copySimpleType` answers a change of a `JavaType`'s nullability with `new JavaType(Primitive.box(clazz), nullable)`, and `Primitive.box` returns a class that is neither a primitive nor a box unchanged — so the copy is the same type at the other nullability. A subclass would have been discarded there, handing an adapter that said `.nullable(false)` an ordinary geometry that Calcite's planar `ST_*` would then take.
 
 ```sql
 SELECT ID
