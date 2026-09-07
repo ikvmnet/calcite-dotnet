@@ -1407,6 +1407,214 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
+        /// <c>ST_GEOG_BUFFER</c>. Returns the region within the given distance in metres of the geography.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <param name="distance"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The one operation here that S2 does not have. Its Java release has no buffer, so this is built
+        /// rather than called, and what it is built from is the definition: the set of places within the
+        /// distance of any part of the shape. Every vertex contributes a ring of points at exactly that
+        /// distance, traced with <c>Wgs84.Offset</c> so the ring is the true geodesic circle rather than a
+        /// circle of constant angular radius; the rings are unioned, and an areal shape is unioned with its
+        /// own interior so the buffer grows outward rather than only skinning the boundary.
+        ///
+        /// <para>An edge is longer than the gaps between the rings its two ends make, so the edges are
+        /// divided first — every part of the boundary gets a ring within a quarter of the distance of it.
+        /// That is what bounds the error: the result is contained in the true buffer and contains everything
+        /// more than a small fraction of the distance inside it, and the fraction falls as the division
+        /// tightens.</para>
+        ///
+        /// <para>An inscribed polygon is used for each ring, as JTS uses one, so the answer is a little
+        /// inside the true circle rather than straddling it. Thirty-two sides, which is what JTS's default of
+        /// eight per quadrant comes to.</para>
+        ///
+        /// <para>The work is bounded rather than unbounded: a shape with a great many vertices, or one
+        /// enormous beside the distance, would otherwise trace millions of rings. Past a limit the division
+        /// coarsens instead, which loses accuracy and keeps the answer finite, and is the honest trade for an
+        /// operation with no exact form.</para>
+        /// </remarks>
+        public static Geometry? Buffer(Geometry? geog, java.lang.Object? distance)
+        {
+            if (geog is null || distance is null)
+                return null;
+
+            var metres = Double(distance);
+            if (metres <= 0 || geog.isEmpty())
+                return Wgs84Of(Factory.createPolygon());
+
+            var seeds = Seeds(geog, metres);
+            if (seeds.Count == 0)
+                return Wgs84Of(Factory.createPolygon());
+
+            var union = S2Geographies.Of(geog).Polygon ?? new com.google.common.geometry.S2Polygon();
+
+            foreach (var seed in seeds)
+            {
+                var ring = Circle(seed, metres);
+                var merged = new com.google.common.geometry.S2Polygon();
+
+                merged.initToUnion(union, ring);
+                union = merged;
+            }
+
+            return Wgs84Of(Areal(union));
+        }
+
+        /// <summary>
+        /// The places a ring is drawn around, which is every vertex plus enough of every edge.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <param name="metres"></param>
+        /// <returns></returns>
+        static List<org.locationtech.jts.geom.Coordinate> Seeds(Geometry geog, double metres)
+        {
+            var coordinates = geog.getCoordinates();
+            var seeds = new List<org.locationtech.jts.geom.Coordinate>();
+
+            if (coordinates.Length == 0)
+                return seeds;
+
+            // a quarter of the distance keeps the gap between neighbouring rings small beside their radius;
+            // the limit is what keeps a large shape from tracing more rings than anyone wants to wait for
+            const int most = 512;
+
+            var step = metres / 4;
+            var length = Ellipsoid.Length(S2Geographies.Of(geog).Edges);
+
+            if (length / step > most)
+                step = length / most;
+
+            seeds.Add(coordinates[0]);
+
+            for (var i = 0; i < coordinates.Length - 1; i++)
+            {
+                foreach (var between in Ellipsoid.Divide(coordinates[i], coordinates[i + 1], step))
+                    seeds.Add(between);
+
+                seeds.Add(coordinates[i + 1]);
+            }
+
+            return seeds;
+        }
+
+        /// <summary>
+        /// The ring of places at exactly the given distance from one coordinate.
+        /// </summary>
+        /// <param name="centre"></param>
+        /// <param name="metres"></param>
+        /// <returns></returns>
+        static com.google.common.geometry.S2Polygon Circle(org.locationtech.jts.geom.Coordinate centre, double metres)
+        {
+            const int sides = 32;
+
+            var vertices = new java.util.ArrayList();
+
+            for (var i = 0; i < sides; i++)
+            {
+                var point = Ellipsoid.Offset(centre, i * 360.0 / sides, metres);
+
+                vertices.add(com.google.common.geometry.S2LatLng.fromDegrees(point.getY(), point.getX()).toPoint());
+            }
+
+            var loop = new com.google.common.geometry.S2Loop(vertices);
+            loop.normalize();
+
+            return new com.google.common.geometry.S2Polygon(loop);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_CENTROID</c>. Returns the centre of the geography.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The same dimensional rule Calcite's follows — an area outranks a line and a line outranks a point
+        /// — computed on the sphere. The difference is not a refinement. A planar centroid averages
+        /// longitudes, so the centre of a shape straddling the antimeridian lands on the far side of the
+        /// planet; this sums directions from the Earth's centre, and answers a point in the shape.
+        ///
+        /// <para>Null where there is no centre to name: an empty geography, or one symmetric about the
+        /// Earth's centre, where every direction is as good as its opposite.</para>
+        /// </remarks>
+        public static Geometry? Centroid(Geometry? geog)
+        {
+            if (geog is null)
+                return null;
+
+            var centre = S2Geographies.Centroid(S2Geographies.Of(geog));
+
+            return centre is null ? Wgs84Of(Factory.createPoint()) : Wgs84Of(Factory.createPoint(Coordinate(centre)));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_CONVEXHULL</c>. Returns the smallest convex geography containing this one.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Convex on the sphere, which is a different region from convex on a plane: the hull's edges are
+        /// geodesics, so away from the equator they bow poleward of the straight lines a planar hull draws
+        /// between the same vertices. A point can be inside one and outside the other.
+        ///
+        /// <para>Only the vertices are offered to the query, which is enough — every edge of the input is a
+        /// geodesic between two of them, and a convex region containing the ends of a geodesic contains the
+        /// geodesic.</para>
+        /// </remarks>
+        public static Geometry? ConvexHull(Geometry? geog)
+        {
+            if (geog is null)
+                return null;
+
+            var query = new com.google.common.geometry.S2ConvexHullQuery();
+            var any = false;
+
+            foreach (var vertex in S2Geographies.Of(geog).Vertices)
+            {
+                query.addPoint(vertex);
+                any = true;
+            }
+
+            if (any == false)
+                return Wgs84Of(Factory.createPolygon());
+
+            return Wgs84Of(Areal(new com.google.common.geometry.S2Polygon(query.getConvexHull())));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_SIMPLIFY</c>. Returns the geography with vertices removed that move its boundary by no
+        /// more than the given distance in metres.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <param name="tolerance"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Metres rather than degrees, and the boundary the tolerance is measured against is made of
+        /// geodesics. Areas only, as the overlay operations are, and for the same reason: S2 simplifies a
+        /// polygon and answering a line by falling back to the plane would put two models in one expression.
+        ///
+        /// <para>There is no <c>ST_GEOG_SIMPLIFYPRESERVETOPOLOGY</c>. Calcite has both because JTS has both,
+        /// the second promising the result is still valid and still disjoint from what it was disjoint from.
+        /// S2's simplification makes no such promise, and a function that claimed it without keeping it would
+        /// be worse than one that is missing.</para>
+        /// </remarks>
+        public static Geometry? Simplify(Geometry? geog, java.lang.Object? tolerance)
+        {
+            if (geog is null || tolerance is null)
+                return null;
+
+            var polygon = S2Geographies.Of(geog).Polygon;
+            if (polygon is null)
+                return null;
+
+            var simplified = new com.google.common.geometry.S2Polygon();
+            simplified.initToSimplified(polygon, Ellipsoid.AngleFor(Double(tolerance)), false);
+
+            return Wgs84Of(Areal(simplified));
+        }
+
+        /// <summary>
         /// <c>ST_GEOG_INTERSECTION</c>. Returns the area common to two geographies.
         /// </summary>
         /// <param name="geog1"></param>

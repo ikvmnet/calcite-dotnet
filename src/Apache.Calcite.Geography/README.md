@@ -127,6 +127,10 @@ The two halves run on different engines, and deliberately. The predicates are S2
 | `ST_GEOG_DENSIFY` | vertices inserted along the geodesic so no edge exceeds a distance in metres |
 | `ST_GEOG_PROJECTPOINT` | a point projected onto a line, landing on the geodesic |
 | `ST_GEOG_INTERSECTION`, `ST_GEOG_DIFFERENCE`, `ST_GEOG_SYMDIFFERENCE`, `ST_GEOG_UNARYUNION` | the overlay set, over areas, bounded by geodesics |
+| `ST_GEOG_CONVEXHULL` | convex on the sphere, so its edges bow poleward of a planar hull's |
+| `ST_GEOG_SIMPLIFY` | vertices removed within a tolerance in metres |
+| `ST_GEOG_CENTROID` | the centre as a direction from the Earth's centre, so it lands in the shape across the antimeridian |
+| `ST_GEOG_BUFFER` | the region within a distance in metres, so it covers the same ground at every latitude |
 | `ST_GEOG_LENGTH`, `ST_GEOG_PERIMETER` | metres |
 | `ST_GEOG_AREA` | square metres |
 
