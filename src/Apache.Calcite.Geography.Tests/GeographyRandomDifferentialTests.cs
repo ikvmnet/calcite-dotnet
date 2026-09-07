@@ -52,9 +52,25 @@ namespace Apache.Calcite.Geography.Tests
         const int Extent = 3;
 
         /// <summary>
-        /// Metres per degree of arc on the sphere S2 models the Earth as.
+        /// Metres per degree of longitude at the equator on WGS84, which is where the shapes below sit.
         /// </summary>
-        const double Degree = 6371010.0 * Math.PI / 180;
+        /// <remarks>
+        /// A scale factor between a planar answer in degrees and a geodesic one in metres is a spherical
+        /// idea, and these measurements are no longer spherical. There is no single number here: a degree
+        /// east is 111319.49 and a degree north is 110574.39, so a comparison scaled by either is out by up
+        /// to 0.67% depending on which way the two shapes lie.
+        ///
+        /// <para>So the numeric comparisons below are a <em>bound</em> rather than an oracle. They catch a
+        /// wrong unit, a wrong factor, a wrong shape — what a differential test is for — and they cannot
+        /// confirm the model. <c>Wgs84MeasurementTests</c> is what does that, against figures measured from a
+        /// live geodesic service.</para>
+        /// </remarks>
+        const double Degree = 111319.49079327357;
+
+        /// <summary>
+        /// How far the two models may differ before a difference is real.
+        /// </summary>
+        const double ModelGap = 1e-2;
 
         static Geometry Wkt(string wkt)
         {
@@ -199,9 +215,11 @@ namespace Apache.Calcite.Geography.Tests
                     Compare(differences, "ENVELOPESINTERSECT", left, right,
                         () => GeographyFunctions.EnvelopesIntersect(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_EnvelopesIntersect(a, b), ref refused);
 
-                    Compare(differences, "DWITHIN", left, right,
-                        () => GeographyFunctions.DWithin(a, b, java.lang.Double.valueOf(0.0025 * Degree))!.booleanValue(),
-                        () => SpatialTypeFunctions.ST_DWithin(a, b, 0.0025), ref refused);
+                    // outside the band where the two models decide differently; see Degree
+                    if (Math.Abs(SpatialTypeFunctions.ST_Distance(a, b) - 0.0025) > ModelGap * 0.0025)
+                        Compare(differences, "DWITHIN", left, right,
+                            () => GeographyFunctions.DWithin(a, b, java.lang.Double.valueOf(0.0025 * Degree))!.booleanValue(),
+                            () => SpatialTypeFunctions.ST_DWithin(a, b, 0.0025), ref refused);
 
                     Measure(differences, "DISTANCE", left, right,
                         () => GeographyFunctions.Distance(a, b)!.doubleValue(), SpatialTypeFunctions.ST_Distance(a, b) * Degree);
@@ -238,7 +256,7 @@ namespace Apache.Calcite.Geography.Tests
         {
             var ours = geodesic();
 
-            if (Math.Abs(ours - planar) > Math.Max(1e-4 * Math.Abs(planar), 1e-6))
+            if (Math.Abs(ours - planar) > Math.Max(ModelGap * Math.Abs(planar), 1e-6))
                 differences.Add($"{what} {left} / {right}: ours {ours}, Calcite {planar}");
         }
 

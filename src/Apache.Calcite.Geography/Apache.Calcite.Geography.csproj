@@ -42,13 +42,19 @@
                 com.jayway.jsonpath:json-path/com.fasterxml.jackson.core:jackson-core:2.18.6,optional=true
             </Dependencies>
         </MavenReference>
-        <!-- The geodesic engine. Google's own S2, which is what the stores this package exists to agree with
-             compute in: BigQuery and Snowflake are both S2. It is a sphere rather than an ellipsoid, so a
-             distance differs from an ellipsoidal one by a few tenths of a percent — one model for all five
-             operations, which is the point; mixing a spherical predicate with an ellipsoidal distance would put
-             two models in one plan. The .NET ports on NuGet were considered and rejected: the largest is a 2016
-             netstandard1.0 port of a 2011 snapshot with no S2Polyline at all. -->
+        <!-- The topology. Google's own S2 decides what contains, crosses or touches what, and which points
+             of two shapes are the closest pair; the measuring is GeographicLib's, below. S2 is a sphere by
+             construction, and that is fine for a predicate — sphere against ellipsoid moves an edge by far less
+             than it moves a distance, and containment asks which side of an edge a point falls on rather than
+             how long the edge is. It was measuring distances too until #90, which is what that issue is about.
+             The .NET ports on NuGet were considered and rejected: the largest is a 2016 netstandard1.0 port of a
+             2011 snapshot with no S2Polyline at all. -->
         <MavenReference Include="com.google.geometry:s2-geometry" Version="2.0.0" />
+        <!-- The measurements. S2 is a sphere by construction, and a WGS84 store is not: a distance differs
+             by up to 0.56%, measured against a live service in #90, which is far too much for an adapter to
+             recheck a pushed-down predicate against. Karney's GeographicLib answers the ellipsoid exactly,
+             and is what #86 proposed for this half before either was written. -->
+        <MavenReference Include="net.sf.geographiclib:GeographicLib-Java" Version="2.0" />
     </ItemGroup>
 
 </Project>

@@ -72,7 +72,7 @@ namespace Apache.Calcite.Geography.Tests
             var rows = Run("SELECT ST_GEOG_DISTANCE(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), ST_GEOG_GEOMFROMTEXT('POINT(1 0)'))");
 
             rows.Should().HaveCount(1);
-            ((java.lang.Number)rows[0][0]!).doubleValue().Should().BeApproximately(6371010.0 * Math.PI / 180, 0.001);
+            ((java.lang.Number)rows[0][0]!).doubleValue().Should().BeApproximately(111319.49079327357, 0.001);
         }
 
         [TestMethod]

@@ -111,7 +111,9 @@ Both arities are Calcite's. The SRID a caller may name has to be 4326 and anythi
 
 `WITHIN` and `CONTAINS` are the DE-9IM relations JTS means by the words, not plain containment: a point on a polygon's boundary is covered by it and not within it.
 
-**Measurements**, in metres and square metres rather than in degrees.
+**Measurements**, in metres and square metres rather than in degrees, on the WGS84 ellipsoid.
+
+The two halves run on different engines, and deliberately. The predicates are S2's, which is a sphere; the measurements are [GeographicLib](https://geographiclib.sourceforge.io/)'s, which is the ellipsoid. S2 answers *which* points of two shapes are closest and GeographicLib answers *how far apart* they are. Measuring on the sphere was wrong by up to 0.56% against a live geodesic service — enough that an adapter could not recheck a predicate it had pushed down, since the recheck discards rows the store correctly returned. A degree of longitude at the equator is 111319.49 m and a degree of latitude is 110574.39 m; that these differ is the whole of what says the answers are ellipsoidal.
 
 | | |
 | --- | --- |
@@ -120,7 +122,7 @@ Both arities are Calcite's. The SRID a caller may name has to be 4326 and anythi
 | `ST_GEOG_LENGTH`, `ST_GEOG_PERIMETER` | metres |
 | `ST_GEOG_AREA` | square metres |
 
-An area shows the difference plainly: a one-degree box at the equator is about 12,364 square kilometres, and it is a little *larger* than the region between the parallels through its corners, because its northern edge is a great circle that runs north of the parallel joining its two northern corners.
+An area shows the difference plainly: a one-degree box at the equator is about 12,309 square kilometres, and it is a little *larger* than the region between the parallels through its corners, because its northern edge is a geodesic that runs north of the parallel joining its two northern corners.
 
 **Reading a geography.** Accessors, which read or rearrange coordinates without interpreting the space between them, so each is a delegation to the very JTS method Calcite's `ST_*` of that name calls.
 
