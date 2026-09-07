@@ -897,6 +897,20 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
+        /// <c>ST_GEOG_OFFSETCURVE(GEOGRAPHY, DOUBLE)</c>. Returns the line drawn a distance in metres to one side of this one.
+        /// </summary>
+        public static readonly SqlFunction StGeogOffsetCurve =
+            Function("ST_GEOG_OFFSETCURVE", nameof(GeographyFunctions.OffsetCurve), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Fractional], ["line", "distance"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEELLIPSE(GEOGRAPHY, DOUBLE, DOUBLE)</c>. Returns an ellipse of the given width and height in metres about a point.
+        /// </summary>
+        public static readonly SqlFunction StGeogMakeEllipse =
+            Function("ST_GEOG_MAKEELLIPSE", nameof(GeographyFunctions.MakeEllipse), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Fractional, GeographyOperand.Fractional], ["point", "width", "height"]);
+
+        /// <summary>
         /// <c>ST_GEOG_LOCATEALONG(GEOGRAPHY, DOUBLE, DOUBLE)</c>. Returns a point on every segment, a fraction of the way along it and offset sideways by a distance in metres.
         /// </summary>
         public static readonly SqlFunction StGeogLocateAlong =
@@ -1160,6 +1174,8 @@ namespace Apache.Calcite.Geography.Sql
                 StGeogLength,
                 StGeogPerimeter,
                 StGeogMaxDistance,
+                StGeogOffsetCurve,
+                StGeogMakeEllipse,
                 StGeogLocateAlong,
                 StGeogMinimumDiameter,
                 StGeogBoundingCircle,
