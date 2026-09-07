@@ -221,11 +221,20 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Executes a DDL statement.
         /// </summary>
+        /// <remarks>
+        /// Under the mutable root's monitor, which Calcite's <c>executeDdl</c> is not. Calcite's connection is
+        /// driven by one thread and its root schema by one connection, so a DDL statement never meets another;
+        /// here a root may be shared by connections used concurrently, and a DDL statement writes into
+        /// <c>NameMap</c>s over <c>TreeMap</c>s, which two writers corrupt. This serialises DDL against DDL on
+        /// one root and nothing else: a statement planning against the root while another alters it is
+        /// Calcite's own exposure, and it is not closed here.
+        /// </remarks>
         public virtual void ExecuteDdl(CalcitePrepare.Context context, SqlNode node)
         {
             var config = context.config();
             var parserFactory = (SqlParserImplFactory)config.parserFactory((java.lang.Class)typeof(SqlParserImplFactory), org.apache.calcite.sql.parser.impl.SqlParserImpl.FACTORY);
-            parserFactory.getDdlExecutor().executeDdl(context, node);
+            lock (context.getMutableRootSchema())
+                parserFactory.getDdlExecutor().executeDdl(context, node);
         }
 
         /// <summary>

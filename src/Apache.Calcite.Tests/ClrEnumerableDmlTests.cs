@@ -1,4 +1,4 @@
-using Apache.Calcite.Data;
+﻿using Apache.Calcite.Data;
 
 using FluentAssertions;
 
@@ -30,6 +30,8 @@ namespace Apache.Calcite.Tests
         {
             Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
             ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+            // these tests create tables by name, so each connection gets a root of its own
+            Pooling = false,
             Schema = "adhoc",
         };
 

@@ -86,23 +86,35 @@ while (await reader.ReadAsync())
 
 ## Code-driven schemas
 
-Register .NET objects as Calcite schemas directly — no JSON model required:
+Register .NET objects as Calcite schemas directly — no JSON model required. A schema an application
+constructs is handed to a `CalciteDataSource`, which every connection opened from it shares:
 
 ```csharp
 using org.apache.calcite.schema;
 
-await using var conn = new CalciteConnection();
-await conn.OpenAsync();
+await using var dataSource = new CalciteDataSourceBuilder()
+    .AddSchema("MEM", new MyCustomSchema())   // any org.apache.calcite.schema.Schema implementation
+    .Build();
 
-SchemaPlus root = conn.RootSchema;
-root.add("MEM", new MyCustomSchema());   // any org.apache.calcite.schema.Schema implementation
-
+await using var conn = await dataSource.OpenConnectionAsync();
 await using var cmd = conn.CreateCommand();
 cmd.CommandText = "SELECT * FROM \"MEM\".\"USERS\" ORDER BY \"ID\"";
 await using var reader = await cmd.ExecuteReaderAsync();
 ```
 
-Objects registered this way live as long as the connection object does. Closing and reopening the connection keeps them — see [Connection lifetime](#connection-lifetime).
+`ConfigureRootSchema` is the general form: it hands you the root as Calcite's mutable `SchemaPlus`, after
+the model has been applied, so a table, a function or a view macro can be added as well as a schema, and a
+schema that needs its parent can have it:
+
+```csharp
+var dataSource = new CalciteDataSourceBuilder("Model=path/to/model.json")
+    .ConfigureRootSchema(root => root.add("STAFF", ViewTable.viewMacro(root, "SELECT ...", null, null, null)))
+    .Build();
+```
+
+The data source is the application's: create it once, register it as a singleton, and dispose it when the
+application is done. Disposing it disposes every schema on its root that implements `IDisposable`, which is
+the release Calcite's own schema SPI has no hook for.
 
 ## Batches
 
@@ -127,7 +139,9 @@ var first = batch.BatchCommands[0].RecordsAffected;      // per-command count
 
 ## Using `DbDataSource` (.NET 7+)
 
-`CalciteDataSource` implements the modern `DbDataSource` pattern for dependency-injection scenarios:
+`CalciteDataSource` implements the modern `DbDataSource` pattern, and it is where the long-lived half of a
+Calcite connection lives. It reads the model and builds the schemas once, on the first connection to open,
+and every connection it produces plans against that root:
 
 ```csharp
 using Apache.Calcite.Data;
@@ -140,6 +154,22 @@ cmd.CommandText = "SELECT COUNT(*) FROM \"ORDERS\"";
 var count = await cmd.ExecuteScalarAsync();
 Console.WriteLine($"Order count: {count}");
 ```
+
+A bare `new CalciteConnection(connectionString)` draws on a data source too — one the provider keeps for
+that connection string, made the first time the string is seen and shared by every connection opened with
+an equivalent string afterwards. So the idiomatic ADO.NET shape, a connection per unit of work, costs a
+model read once per process rather than once per request. That is the same bargain every ADO.NET provider
+makes with its connection pool, and it has the same switch: `Pooling=false` in the connection string gives
+each connection a root of its own, built when it opens and released when it is disposed.
+
+`CalciteConnection.ClearPool(connection)` drops the provider's data source for a connection string, so the
+next connection reads the model again — which is how a changed model file reaches a running process — and
+`ClearAllPools()` drops them all. A data source you built yourself is not kept by the provider;
+`CalciteDataSource.Clear()` is its equivalent.
+
+Sharing a root means an adapter's schema may be read from several threads at once. Calcite serialises
+nothing, so a schema reachable from a data source has to tolerate concurrent reads; DDL is serialised
+against DDL by the provider.
 
 ## Using `DbProviderFactory`
 
@@ -159,10 +189,16 @@ await conn.OpenAsync();
 
 ## Connection lifetime
 
-The Calcite session is created on the **first** `Open()` and reused for the life of the `CalciteConnection` object.
+A connection is cheap and short-lived. What it plans against — the model, the schemas the model built, the
+tables DDL has created — belongs to its data source and outlives it; what it keeps to itself is its
+configuration, its type factory and the convention it plans into, created on the **first** `Open()` and
+reused for the life of the `CalciteConnection` object.
 
-- `Close()` only moves the connection to the `Closed` state. Schemas registered on `RootSchema`, tables created by DDL, and every other in-process artifact survive it and are visible again after the next `Open()`.
-- `Dispose()` is what tears the session down.
+- `Close()` only moves the connection to the `Closed` state; the next `Open()` is free.
+- `Dispose()` releases what the connection holds. The data source's root is untouched — unless the
+  connection string said `Pooling=false`, in which case the root was the connection's own and goes with it.
+- A table created by DDL on one connection is visible on every connection of the same data source, as it
+  is in any database.
 - `ConnectionString` cannot be changed once the connection has been opened. Create a new `CalciteConnection` for different settings.
 
 ## Behaviour worth knowing
@@ -177,7 +213,7 @@ The Calcite session is created on the **first** `Open()` and reused for the life
 
 **`ExecuteNonQuery` return values** follow ADO.NET convention: `-1` for a `SELECT`, `0` for DDL, and the row count Calcite reports for `INSERT` / `UPDATE` / `DELETE` / `MERGE`.
 
-**DDL runs at prepare time.** A `CREATE` or `DROP` has already taken effect by the time the call returns, and produces no rows. DDL also needs a parser that understands it — set `parserFactory=org.apache.calcite.sql.parser.ddl.SqlDdlParserImpl#FACTORY`.
+**DDL runs at prepare time.** A `CREATE` or `DROP` has already taken effect by the time the call returns, and produces no rows; it took effect on the data source's root, so every connection of that data source sees it. DDL also needs a parser that understands it — set `parserFactory=org.apache.calcite.sql.parser.ddl.SqlDdlParserImpl#FACTORY`.
 
 **Materialized views are not substituted**, whatever `materializationsEnabled` says. Calcite builds them through a package-private class this provider cannot reach.
 
@@ -194,6 +230,7 @@ All keys are exposed as typed properties on `CalciteConnectionStringBuilder`. Ke
 | `Model` | `string` | — | Path to a Calcite model JSON file, or `inline:<json>` for an embedded model. |
 | `Schema` | `string` | — | Default schema name when identifiers are unqualified. |
 | `Synchronous` | `bool` | `false` | Plan queries in the synchronous convention instead of the asynchronous one. A provider option, not forwarded to the engine — see [Behaviour worth knowing](#behaviour-worth-knowing). |
+| `Pooling` | `bool` | `true` | Whether connections opened with this connection string share one root schema. A provider option, not forwarded to the engine — see [Using `DbDataSource`](#using-dbdatasource-net-7). |
 | `Lex` | `string` | `ORACLE` | Lexical policy: `ORACLE`, `MYSQL`, `MYSQL_ANSI`, `SQL_SERVER`, `JAVA`, `BIG_QUERY`. |
 | `CaseSensitive` | `bool` | from `Lex` | Whether identifier lookup is case-sensitive. |
 | `Quoting` | `string` | from `Lex` | Quote style: `DOUBLE_QUOTE`, `BACK_TICK`, `BACK_TICK_BACKSLASH`, `BRACKET`. |
@@ -212,8 +249,8 @@ All keys are exposed as typed properties on `CalciteConnectionStringBuilder`. Ke
 | `ApproximateTopN` | `bool` | `false` | Allow approximate Top-N results. |
 | `DruidFetch` | `int` | `16384` | Rows the Druid adapter fetches at a time. |
 | `Spark` | `bool` | `false` | Ignored by this provider. |
-| `SchemaFactory` | `string` | — | Schema factory class name, when not using a model. |
-| `SchemaType` | `string` | — | Schema type: `MAP`, `JDBC`, or `CUSTOM`. |
+| `SchemaFactory` | `string` | — | Schema factory class name, when not using a model: the factory makes one schema, named by `Schema` (default `adhoc`), with every `schema.`-prefixed key as an operand. |
+| `SchemaType` | `string` | — | Schema type when not using a model, `MAP` or `JDBC`, naming the factory Calcite ships for it. |
 | `TypeSystem` | `string` | — | Type system class name. |
 | `parserFactory` | `string` | — | Custom SQL parser factory, e.g. `org.apache.calcite.sql.parser.ddl.SqlDdlParserImpl#FACTORY`. |
 
@@ -274,7 +311,7 @@ Overloads accept a Java `Consumer`, a .NET `Action<object>`, or a primitive valu
 
 | Property | Java type | Purpose |
 |----------|-----------|---------|
-| `RootSchema` | `org.apache.calcite.schema.SchemaPlus` | Add/remove schemas and tables at runtime. |
+| `RootSchema` | `org.apache.calcite.schema.Schema` | Inspect the root the connection plans against. It is the data source's, shared by every connection opened on it, and handed out as Calcite's read interface; to add to it, use `CalciteDataSourceBuilder.ConfigureRootSchema` or DDL. |
 | `TypeFactory` | `org.apache.calcite.adapter.java.JavaTypeFactory` | Construct Calcite `RelDataType` instances. |
 | `Config` | `org.apache.calcite.config.CalciteConnectionConfig` | Inspect resolved connection configuration. |
 

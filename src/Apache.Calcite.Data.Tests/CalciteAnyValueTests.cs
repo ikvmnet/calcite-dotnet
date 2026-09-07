@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Data;
@@ -30,14 +30,16 @@ namespace Apache.Calcite.Data.Tests
     {
 
         /// <summary>
-        /// Opens a connection with <see cref="AnyTable"/> registered as <c>ANYT</c>.
+        /// Opens a connection with <see cref="AnyTable"/> registered as <c>ANYT</c> and
+        /// <see cref="AnyClassFunction"/> as <c>ANYCLASS</c>.
         /// </summary>
         static CalciteConnection Open()
         {
-            var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
-            c.Open();
-            c.RootSchema.add("ANYT", new AnyTable());
-            return c;
+            return new CalciteDataSourceBuilder(TestModels.InlineEmptyModelConnectionString)
+                .ConfigureRootSchema(root => root.add("ANYT", new AnyTable()))
+                .ConfigureRootSchema(root => root.add("ANYCLASS", ScalarFunctionImpl.create((java.lang.Class)typeof(AnyClassFunction), "eval")))
+                .Build()
+                .OpenConnection();
         }
 
         /// <summary>
@@ -538,7 +540,6 @@ namespace Apache.Calcite.Data.Tests
         public void A_dictionary_parameter_should_arrive_as_a_java_map()
         {
             using var c = Open();
-            c.RootSchema.add("ANYCLASS", ScalarFunctionImpl.create((java.lang.Class)typeof(AnyClassFunction), "eval"));
 
             using var cmd = c.CreateCommand();
             cmd.CommandText = "SELECT ANYCLASS(?)";
@@ -551,7 +552,6 @@ namespace Apache.Calcite.Data.Tests
         public void A_sequence_parameter_should_arrive_as_a_java_list()
         {
             using var c = Open();
-            c.RootSchema.add("ANYCLASS", ScalarFunctionImpl.create((java.lang.Class)typeof(AnyClassFunction), "eval"));
 
             using var cmd = c.CreateCommand();
             cmd.CommandText = "SELECT ANYCLASS(?)";

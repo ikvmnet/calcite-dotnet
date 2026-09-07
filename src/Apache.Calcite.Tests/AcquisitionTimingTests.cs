@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Threading.Tasks;
 
 using Apache.Calcite.Data;
@@ -121,11 +121,11 @@ namespace Apache.Calcite.Tests
 
         static (CalciteConnection Connection, CountingTable Table) Open(string model)
         {
-            var c = new CalciteConnection(model);
-            c.Open();
-
             var table = new CountingTable();
-            c.RootSchema.add("T", table);
+            var c = new CalciteDataSourceBuilder(model)
+                .ConfigureRootSchema(root => root.add("T", table))
+                .Build()
+                .OpenConnection();
 
             return (c, table);
         }

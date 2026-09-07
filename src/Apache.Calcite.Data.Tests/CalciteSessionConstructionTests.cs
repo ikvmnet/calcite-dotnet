@@ -390,9 +390,8 @@ namespace Apache.Calcite.Data.Tests
         public void Injected_type_factory_should_bypass_type_system_and_ragged_union_wrapper()
         {
             var typeFactory = new JavaTypeFactoryImpl();
-            var session = new CalciteSession(
-                new CalciteConnectionStringBuilder(TestModels.InlineEmptyModelConnectionString + ";Conformance=PRAGMATIC_2003;TypeSystem=\"" + typeof(TestTypeSystem).AssemblyQualifiedName + "\""),
-                typeFactory: typeFactory);
+            var options = new CalciteConnectionStringBuilder(TestModels.InlineEmptyModelConnectionString + ";Conformance=PRAGMATIC_2003;TypeSystem=\"" + typeof(TestTypeSystem).AssemblyQualifiedName + "\"");
+            var session = new CalciteSession(options, CalciteDataSourceRoot.Build(options, []), ownsRoot: true, typeFactory: typeFactory);
             Assert.Same(typeFactory, session.TypeFactory);
             Assert.Same(RelDataTypeSystem.DEFAULT, session.TypeFactory.getTypeSystem());
         }
@@ -402,11 +401,9 @@ namespace Apache.Calcite.Data.Tests
         {
             var root = CalciteSchema.createRootSchema(true);
             root.plus().add("PRE", new org.apache.calcite.schema.impl.AbstractSchema());
-            var session = new CalciteSession(
-                new CalciteConnectionStringBuilder(),
-                rootSchema: root);
-            Assert.Same(root, session.RootSchema.unwrap((java.lang.Class)typeof(CalciteSchema)));
-            Assert.NotNull(session.RootSchema.getSubSchema("PRE"));
+            var built = CalciteDataSourceRoot.Build(new CalciteConnectionStringBuilder(), [], rootSchema: root);
+            Assert.Same(root, built.Schema);
+            Assert.NotNull(built.Schema.plus().getSubSchema("PRE"));
         }
 
         [Fact]
@@ -414,11 +411,10 @@ namespace Apache.Calcite.Data.Tests
         {
             var root = CalciteSchema.createRootSchema(true);
             root.plus().add("PRE", new org.apache.calcite.schema.impl.AbstractSchema());
-            var session = new CalciteSession(
-                new CalciteConnectionStringBuilder(TestModels.InlineEmptyModelConnectionString),
-                rootSchema: root);
-            Assert.NotNull(session.RootSchema.getSubSchema("PRE"));
-            Assert.NotNull(session.RootSchema.getSubSchema("adhoc"));
+            var built = CalciteDataSourceRoot.Build(new CalciteConnectionStringBuilder(TestModels.InlineEmptyModelConnectionString), [], rootSchema: root);
+            Assert.NotNull(built.Schema.plus().getSubSchema("PRE"));
+            Assert.NotNull(built.Schema.plus().getSubSchema("adhoc"));
+            Assert.Equal("adhoc", built.DefaultSchemaName);
         }
 
         [Fact]
@@ -426,10 +422,40 @@ namespace Apache.Calcite.Data.Tests
         {
             // DUAL is a view macro, so it registers as a nullary function rather than a plain table
             var root = CalciteSchema.createRootSchema(true);
-            var session = new CalciteSession(
-                new CalciteConnectionStringBuilder(TestModels.InlineEmptyModelConnectionString + ";Conformance=ORACLE_12"),
-                rootSchema: root);
-            Assert.False(session.RootSchema.getFunctions("DUAL").isEmpty());
+            var built = CalciteDataSourceRoot.Build(new CalciteConnectionStringBuilder(TestModels.InlineEmptyModelConnectionString + ";Conformance=ORACLE_12"), [], rootSchema: root);
+            Assert.False(built.Schema.plus().getFunctions("DUAL").isEmpty());
+        }
+
+        /// <summary>
+        /// The session is the connection's half and the root the data source's, so a session over a root it
+        /// does not own leaves the root alone when it goes, and one over a root of its own takes it along.
+        /// </summary>
+        [Fact]
+        public void Session_should_dispose_the_root_only_where_it_owns_it()
+        {
+            var options = new CalciteConnectionStringBuilder(TestModels.InlineEmptyModelConnectionString);
+
+            var shared = new DisposableSchema();
+            var sharedRoot = CalciteDataSourceRoot.Build(options, [root => root.add("D", shared)]);
+            new CalciteSession(options, sharedRoot, ownsRoot: false).Dispose();
+            Assert.False(shared.Disposed);
+
+            var owned = new DisposableSchema();
+            var ownedRoot = CalciteDataSourceRoot.Build(options, [root => root.add("D", owned)]);
+            new CalciteSession(options, ownedRoot, ownsRoot: true).Dispose();
+            Assert.True(owned.Disposed);
+        }
+
+        sealed class DisposableSchema : org.apache.calcite.schema.impl.AbstractSchema, IDisposable
+        {
+
+            public bool Disposed { get; private set; }
+
+            public void Dispose()
+            {
+                Disposed = true;
+            }
+
         }
 
     }

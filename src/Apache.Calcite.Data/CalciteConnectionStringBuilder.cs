@@ -39,6 +39,12 @@ namespace Apache.Calcite.Data
         public const string SynchronousKey = "Synchronous";
 
         /// <summary>
+        /// Connection string key for whether connections sharing this connection string share one root
+        /// schema.
+        /// </summary>
+        public const string PoolingKey = "Pooling";
+
+        /// <summary>
         /// Connection string key for whether identifiers are matched case-sensitively.
         /// </summary>
         public const string CaseSensitiveKey = "CaseSensitive";
@@ -211,6 +217,31 @@ namespace Apache.Calcite.Data
                     Remove(SynchronousKey);
                 else
                     this[SynchronousKey] = value.Value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets whether connections sharing this connection string share one root schema. Default is
+        /// <see langword="true"/>.
+        /// </summary>
+        /// <remarks>
+        /// A provider option rather than an engine one. By default every connection opened with the same
+        /// connection string, <see cref="Synchronous"/> aside, draws on one <see cref="CalciteDataSource"/>
+        /// held for the process, so the model is read and its schemas built once rather than per
+        /// connection, and a table created by DDL on one connection is visible on the next.
+        /// <see langword="false"/> gives each connection a root schema of its own, built when it first opens
+        /// and released when it is disposed. This is the switch every ADO.NET provider spells the same way,
+        /// and it means the same thing: shared by default, keyed by what was written, off if you say so.
+        /// </remarks>
+        public bool? Pooling
+        {
+            get => TryGetBool(PoolingKey);
+            set
+            {
+                if (value is null)
+                    Remove(PoolingKey);
+                else
+                    this[PoolingKey] = value.Value;
             }
         }
 
@@ -512,6 +543,34 @@ namespace Apache.Calcite.Data
             foreach (var key in Keys)
                 if (key is string s)
                     yield return s;
+        }
+
+        /// <summary>
+        /// The connection string a <see cref="CalciteDataSource"/> is looked up by.
+        /// </summary>
+        /// <remarks>
+        /// Two connection strings that differ only in the order or the casing of their keys describe one
+        /// data source, so the key is written with every key lower-cased and sorted. <see cref="Synchronous"/>
+        /// is left out: it chooses the convention a connection plans into and nothing that is built, and a
+        /// data source built twice for the two conventions would read the same model twice.
+        /// </remarks>
+        internal string DataSourceKey
+        {
+            get
+            {
+                var keys = new List<string>();
+                foreach (var key in EnumerateKeys())
+                    if (string.Equals(key, SynchronousKey, System.StringComparison.OrdinalIgnoreCase) == false)
+                        keys.Add(key);
+
+                keys.Sort(System.StringComparer.OrdinalIgnoreCase);
+
+                var canonical = new DbConnectionStringBuilder();
+                foreach (var key in keys)
+                    canonical[key.ToLowerInvariant()] = this[key];
+
+                return canonical.ConnectionString;
+            }
         }
 
         string? TryGetString(string key)

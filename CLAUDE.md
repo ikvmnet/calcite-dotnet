@@ -59,6 +59,14 @@ driver this one is modelled on*, has the reading. Not to be confused with
   **they pass, and nothing in the suite is skipped.** The claim that they are red outlived the fix by four
   commits in this file.
 
+  **1.43's model loads no class by name unless told to.** From the August 2026 snapshots `ClassNameFilter`
+  carries an allowlist beside the denylist, read from the `calcite.model.classes.allowed` system property,
+  and an empty allowlist — the default — rejects every `factory`, function class and driver a model names,
+  Calcite's own `AbstractSchema$Factory` included. `Apache.Calcite.Data.Tests` sets the property in a module
+  initializer, before `CalciteSystemProperty` reads it; a .NET class needs both its CLR name and its IKVM
+  `cli.` name allowed, because Calcite writes `getClass().getName()` into the model it synthesises for
+  `SchemaFactory`. The 1.42 the provider ships has the denylist only, and `D:\calcite` has not caught up.
+
   **`AsofJoin` is neither** — `rel.core.AsofJoin`, `EnumerableAsofJoin` and `ENUMERABLE_ASOFJOIN_RULE` are
   all in 1.41, and a claim that it was 1.42 stood in this file for a while on the strength of the wrong
   class name. `rel.core.Asof` is a different class and is 1.43, not 1.42 as this file said.

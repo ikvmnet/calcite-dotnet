@@ -1,12 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Prepare;
-
-using com.google.common.collect;
 
 using java.util;
 using java.util.concurrent.atomic;
@@ -16,17 +13,16 @@ using org.apache.calcite.adapter.java;
 using org.apache.calcite.avatica;
 using org.apache.calcite.config;
 using org.apache.calcite.jdbc;
-using org.apache.calcite.model;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.runtime;
 using org.apache.calcite.schema;
-using org.apache.calcite.schema.impl;
 
 namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Represents an active session with the Calcite engine, encapsulating the root schema, type factory,  and connection configuration.
+    /// The connection-lived half of a Calcite connection: the type factory, the configuration and the
+    /// convention, over a root schema the data source holds.
     /// </summary>
     internal sealed class CalciteSession
     {
@@ -51,37 +47,8 @@ namespace Apache.Calcite.Data.Internal
             new org.apache.calcite.jdbc.Driver();
         }
 
-        /// <summary>
-        /// Maps each <see cref="CalciteConnectionStringBuilder"/> key constant to the
-        /// corresponding <see cref="CalciteConnectionProperty"/>, which is the authoritative
-        /// source of the camelCase property name Calcite expects.
-        /// </summary>
-        static readonly Dictionary<string, CalciteConnectionProperty> KeyToProperty = new(StringComparer.OrdinalIgnoreCase)
-        {
-            [CalciteConnectionStringBuilder.ApproximateDecimalKey] = CalciteConnectionProperty.APPROXIMATE_DECIMAL,
-            [CalciteConnectionStringBuilder.ApproximateDistinctCountKey] = CalciteConnectionProperty.APPROXIMATE_DISTINCT_COUNT,
-            [CalciteConnectionStringBuilder.ApproximateTopNKey] = CalciteConnectionProperty.APPROXIMATE_TOP_N,
-            [CalciteConnectionStringBuilder.CaseSensitiveKey] = CalciteConnectionProperty.CASE_SENSITIVE,
-            [CalciteConnectionStringBuilder.ConformanceKey] = CalciteConnectionProperty.CONFORMANCE,
-            [CalciteConnectionStringBuilder.CreateMaterializationsKey] = CalciteConnectionProperty.CREATE_MATERIALIZATIONS,
-            [CalciteConnectionStringBuilder.DefaultNullCollationKey] = CalciteConnectionProperty.DEFAULT_NULL_COLLATION,
-            [CalciteConnectionStringBuilder.DruidFetchKey] = CalciteConnectionProperty.DRUID_FETCH,
-            [CalciteConnectionStringBuilder.ForceDecorrelateKey] = CalciteConnectionProperty.FORCE_DECORRELATE,
-            [CalciteConnectionStringBuilder.FunKey] = CalciteConnectionProperty.FUN,
-            [CalciteConnectionStringBuilder.LexKey] = CalciteConnectionProperty.LEX,
-            [CalciteConnectionStringBuilder.MaterializationsEnabledKey] = CalciteConnectionProperty.MATERIALIZATIONS_ENABLED,
-            [CalciteConnectionStringBuilder.ParserFactoryKey] = CalciteConnectionProperty.PARSER_FACTORY,
-            [CalciteConnectionStringBuilder.QuotingKey] = CalciteConnectionProperty.QUOTING,
-            [CalciteConnectionStringBuilder.QuotedCasingKey] = CalciteConnectionProperty.QUOTED_CASING,
-            [CalciteConnectionStringBuilder.UnquotedCasingKey] = CalciteConnectionProperty.UNQUOTED_CASING,
-            [CalciteConnectionStringBuilder.SchemaKey] = CalciteConnectionProperty.SCHEMA,
-            [CalciteConnectionStringBuilder.SchemaFactoryKey] = CalciteConnectionProperty.SCHEMA_FACTORY,
-            [CalciteConnectionStringBuilder.SchemaTypeKey] = CalciteConnectionProperty.SCHEMA_TYPE,
-            [CalciteConnectionStringBuilder.SparkKey] = CalciteConnectionProperty.SPARK,
-            [CalciteConnectionStringBuilder.TimeZoneKey] = CalciteConnectionProperty.TIME_ZONE,
-            [CalciteConnectionStringBuilder.TypeCoercionKey] = CalciteConnectionProperty.TYPE_COERCION,
-        };
-
+        readonly CalciteDataSourceRoot _root;
+        readonly bool _ownsRoot;
         readonly CalciteSchema _rootSchema;
         readonly SchemaPlus _rootSchemaPlus;
         readonly JavaTypeFactory _typeFactory;
@@ -95,26 +62,29 @@ namespace Apache.Calcite.Data.Internal
         /// Initializes a new instance.
         /// </summary>
         /// <param name="options">The connection string options.</param>
-        /// <param name="rootSchema">Root schema, or null.</param>
+        /// <param name="root">The root schema to plan against, built by the data source.</param>
+        /// <param name="ownsRoot">Whether this session is the only user of <paramref name="root"/> and so
+        /// disposes it. <see langword="true"/> under <c>Pooling=false</c>, where the root was built for this
+        /// connection alone.</param>
         /// <param name="typeFactory">Type factory, or null. See the remarks for what the conventions require of one.</param>
         /// <param name="prepareFactory">Prepare factory, or null for <see cref="ClrPrepareImpl"/>.</param>
         /// <exception cref="ArgumentNullException"></exception>
         /// <exception cref="CalciteException"></exception>
         /// <remarks>
-        /// The body is <c>CalciteConnectionImpl</c>'s constructor, statement for statement — the config, the
-        /// prepare factory, the type factory resolved from the <c>typeSystem</c> property (by
-        /// <see cref="ClrPlugin"/>, this provider naming a plugin in .NET rather than in Java) under the
-        /// conformance's ragged-union wrapper, the root schema, and the conformance-gated <c>DUAL</c> view —
-        /// followed by the model step the JDBC driver runs after construction, in that order, so a model can
-        /// overwrite <c>DUAL</c> and never the reverse. The injection pair is upstream's too: an injected
-        /// <paramref name="typeFactory"/> bypasses both the configured type system and the ragged-union
-        /// wrapper, an injected <paramref name="rootSchema"/> is used verbatim, and <c>DUAL</c> is added to an
-        /// injected root all the same. Nothing in the provider passes either yet: they are the seam a
-        /// session needs to be built over a root schema and a type factory it does not own, which is what
-        /// sharing one session across several connections would require. Tests are the only callers today.
+        /// This is the half of <c>CalciteConnectionImpl</c>'s constructor that is the connection's rather than
+        /// the data source's: the config, the prepare factory, and the type factory resolved from the
+        /// <c>typeSystem</c> property (by <see cref="ClrPlugin"/>, this provider naming a plugin in .NET rather
+        /// than in Java) under the conformance's ragged-union wrapper. The root, <c>DUAL</c> and the model
+        /// are <see cref="CalciteDataSourceRoot"/>'s, built once per data source and shared by every connection
+        /// it opens, which is the split Calcite itself makes when it opens an internal connection over an
+        /// existing root — <c>CalciteMetaImpl.connect(schema.root(), null)</c> — and pairs it with a fresh
+        /// type factory. The pairing is not a nicety: <c>JavaTypeFactoryImpl.syntheticTypes</c> is a plain
+        /// <c>HashMap</c> written by every grouped aggregate and window, so a factory shared by connections
+        /// used concurrently would race, where a root shared by them is read.
         ///
-        /// <para>Both conventions require more of <paramref name="typeFactory"/> than its interface says,
-        /// and the requirement is stated rather than typed because no type expresses it. Every grouped
+        /// <para>An injected <paramref name="typeFactory"/> bypasses both the configured type system and the
+        /// ragged-union wrapper, as upstream's does. Both conventions require more of it than its interface
+        /// says, and the requirement is stated rather than typed because no type expresses it. Every grouped
         /// aggregate and every window builds its accumulator from <c>createSyntheticType</c> and then
         /// matches the result against <c>JavaTypeFactoryImpl.SyntheticRecordType</c>, a nested class of
         /// the implementation — Calcite's own coupling, <c>EnumerableAggregateBase</c> having the same
@@ -137,13 +107,14 @@ namespace Apache.Calcite.Data.Internal
         /// has no node for is still planned and run — implemented in <c>EnumerableConvention</c>, with a
         /// converter carrying its rows.</para>
         /// </remarks>
-        public CalciteSession(CalciteConnectionStringBuilder options, CalciteSchema? rootSchema = null, JavaTypeFactory? typeFactory = null, Func<ClrPrepareImpl>? prepareFactory = null)
+        public CalciteSession(CalciteConnectionStringBuilder options, CalciteDataSourceRoot root, bool ownsRoot, JavaTypeFactory? typeFactory = null, Func<ClrPrepareImpl>? prepareFactory = null)
         {
             ArgumentNullException.ThrowIfNull(options);
+            ArgumentNullException.ThrowIfNull(root);
 
             try
             {
-                var cfg = new CalciteConnectionConfigImpl(BuildEngineProperties(options));
+                var cfg = new CalciteConnectionConfigImpl(CalciteEngineProperties.Build(options));
 
                 _prepareFactory = prepareFactory ?? (static () => new ClrPrepareImpl());
                 if (typeFactory != null)
@@ -159,27 +130,14 @@ namespace Apache.Calcite.Data.Internal
                     _typeFactory = new JavaTypeFactoryImpl(typeSystem);
                 }
 
-                _rootSchema = rootSchema != null ? rootSchema : CalciteSchema.createRootSchema(true);
-
-                // Add dual table metadata when isSupportedDualTable return true
-                if (cfg.conformance().isSupportedDualTable())
-                {
-                    SchemaPlus schemaPlus = _rootSchema.plus();
-                    // Dual table contains one row with a value X
-                    schemaPlus.add(
-                        "DUAL", ViewTable.viewMacro(schemaPlus, "VALUES ('X')",
-                        ImmutableList.of(), null, java.lang.Boolean.valueOf(false)));
-                }
+                _root = root;
+                _ownsRoot = ownsRoot;
+                _rootSchema = root.Schema;
                 _config = cfg;
                 _rootSchemaPlus = _rootSchema.plus();
 
-                // the driver's ModelHandler step, run after the constructor's work as upstream runs it
-                string? modelDefaultSchema = null;
-                if (string.IsNullOrEmpty(options.Model) == false)
-                    ApplyModel(_rootSchema, options.Model, out modelDefaultSchema);
-
                 _synchronous = options.Synchronous ?? false;
-                var defaultSchema = modelDefaultSchema ?? options.Schema;
+                var defaultSchema = root.DefaultSchemaName ?? options.Schema;
                 _defaultSchemaPath = string.IsNullOrEmpty(defaultSchema) ? [] : [defaultSchema];
             }
             catch (Exception e) when (e is not CalciteException)
@@ -214,76 +172,10 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Applies a Calcite model to the root schema, either from an inline JSON definition or a file path.
-        /// </summary>
-        /// <param name="rootSchema">The root schema to which the model will be applied.</param>
-        /// <param name="model">Either an inline JSON model definition (prefixed with "inline:" or starting with "{") or a file path to a
-        /// model definition.</param>
-        /// <param name="defaultSchema">When this method returns, contains the default schema name defined in the model, or <see langword="null"/>
-        /// if no default schema is defined.</param>
-        /// <exception cref="FileNotFoundException">Thrown when the specified model file does not exist.</exception>
-        /// <exception cref="CalciteException">Thrown when the model fails to load.</exception>
-        void ApplyModel(CalciteSchema rootSchema, string model, out string? defaultSchema)
-        {
-            try
-            {
-                if (model.StartsWith("inline:", StringComparison.OrdinalIgnoreCase) || model.TrimStart().StartsWith("{"))
-                {
-                    var inline = model.StartsWith("inline:", StringComparison.OrdinalIgnoreCase) ? model.Substring("inline:".Length) : model;
-                    var handler = new ModelHandler(rootSchema.plus(), "inline:" + inline);
-                    defaultSchema = handler.defaultSchemaName();
-                }
-                else
-                {
-                    if (!File.Exists(model))
-                        throw new FileNotFoundException("Model file was not found.", model);
-
-                    var handler = new ModelHandler(rootSchema.plus(), model);
-                    defaultSchema = handler.defaultSchemaName();
-                }
-
-            }
-            catch (Exception e) when (e is not CalciteException)
-            {
-                throw new CalciteException("Failed to load Calcite model.", e);
-            }
-        }
-
-        /// <summary>
-        /// Builds a Java Properties object from connection string options, mapping keys to their camel-cased property
-        /// names and excluding the Model key.
-        /// </summary>
-        /// <param name="options">The connection string builder containing the options to convert.</param>
-        /// <returns>A Properties object populated with the connection string options.</returns>
-        Properties BuildEngineProperties(CalciteConnectionStringBuilder options)
-        {
-            var props = new Properties();
-
-            foreach (var key in options.EnumerateKeys())
-            {
-                if (string.Equals(key, CalciteConnectionStringBuilder.ModelKey, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                // a provider option, not an engine one: it chooses the convention the session plans into
-                if (string.Equals(key, CalciteConnectionStringBuilder.SynchronousKey, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                // a provider option, not an engine one: it names a .NET type, resolved by ClrPlugin, and
-                // nothing in calcite-core reads the engine property but the constructor line this ports
-                if (string.Equals(key, CalciteConnectionStringBuilder.TypeSystemKey, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                if (options.TryGetValue(key, out var v) && v is not null)
-                    props.setProperty(KeyToProperty.TryGetValue(key, out var prop) ? prop.camelName() : key, v.ToString());
-            }
-
-            return props;
-        }
-
-        /// <summary>
         /// Gets the root schema for the current context.
         /// </summary>
         public SchemaPlus RootSchema => _rootSchemaPlus;
+
 
         /// <summary>
         /// Gets the factory used to create Java type representations.
@@ -660,10 +552,18 @@ namespace Apache.Calcite.Data.Internal
             _ => Convert.ToInt64(value.ToString()),
         };
 
-        /// <summary>Marks the session as disposed. Further calls to execute methods will throw <see cref="ObjectDisposedException"/>.</summary>
+        /// <summary>
+        /// Marks the session as disposed, so that further calls to execute methods throw
+        /// <see cref="ObjectDisposedException"/>, and disposes the root where this session owns it.
+        /// </summary>
         public void Dispose()
         {
+            if (_disposed)
+                return;
+
             _disposed = true;
+            if (_ownsRoot)
+                _root.Dispose();
         }
 
         void ThrowIfDisposed()

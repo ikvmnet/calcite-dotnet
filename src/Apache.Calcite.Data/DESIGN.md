@@ -109,13 +109,14 @@ Public, consumer-facing classes implementing the `System.Data.Common` contracts.
 
 | Class | Base | Role |
 | --- | --- | --- |
-| `CalciteConnection` | `DbConnection` | Owns connection state and the `CalciteSession`; exposes Calcite-native accessors and hook registration. |
+| `CalciteConnection` | `DbConnection` | Owns connection state and the `CalciteSession`; draws its root schema from a `CalciteDataSource`; exposes Calcite-native accessors and hook registration. |
 | `CalciteCommand` | `DbCommand` | Holds SQL text and parameters; builds a `CalciteExecuteRequest` and calls the session. |
 | `CalciteDataReader` | `DbDataReader` | Streams rows out of one or more `CalciteResult`s; `NextResult` walks a batch's results. |
 | `CalciteBatch` / `CalciteBatchCommand` / `CalciteBatchCommandCollection` | `DbBatch` / `DbBatchCommand` / `DbBatchCommandCollection` | Runs several statements sequentially on one session. |
 | `CalciteParameter` / `CalciteParameterCollection` | `DbParameter` / `DbParameterCollection` | Provider parameter model. Placeholders are positional `?`; `ParameterName` is informational. |
 | `CalciteTransaction` | `DbTransaction` | Exists to satisfy frameworks that require a non-null transaction. `Commit` and `Rollback` throw `NotSupportedException`, and `BeginDbTransaction` throws before one is ever handed out. |
-| `CalciteDataSource` | `DbDataSource` | The `DbDataSource` entry point. |
+| `CalciteDataSource` | `DbDataSource` | Holds the root schema — model, `DUAL`, whatever the builder added — for the life of the application, and hands it to every connection it opens. Every bare `new CalciteConnection(cs)` draws on one the provider keeps per connection string. |
+| `CalciteDataSourceBuilder` | — | Builds a `CalciteDataSource` from a connection string plus what a string cannot carry: a schema instance, or any step over the root as a `SchemaPlus`. |
 | `CalciteProviderFactory` | `DbProviderFactory` | Standard ADO.NET factory registration. |
 | `CalciteConnectionStringBuilder` | `DbConnectionStringBuilder` | Typed connection-string keys (`Model`, `Schema`, `Synchronous`, `CaseSensitive`, `Conformance`, …). Unknown keys are preserved and forwarded. |
 | `CalciteException` | `DbException` | Provider failures, including planning and execution errors. |
@@ -123,7 +124,8 @@ Public, consumer-facing classes implementing the `System.Data.Common` contracts.
 `CalciteConnection` also exposes Calcite-native objects directly, so there is no `Unwrap`-style
 escape hatch:
 
-- `RootSchema` → `org.apache.calcite.schema.SchemaPlus`
+- `RootSchema` → `org.apache.calcite.schema.Schema`, the read interface — the root is the data source's,
+  and what changes it is `CalciteDataSourceBuilder.ConfigureRootSchema` or DDL
 - `TypeFactory` → `org.apache.calcite.adapter.java.JavaTypeFactory`
 - `Config` → `org.apache.calcite.config.CalciteConnectionConfig`
 
@@ -136,25 +138,62 @@ The connection's hooks and the command's are concatenated per request, connectio
 
 ### 2. Session (`Internal/CalciteSession`)
 
-`CalciteSession` is the per-connection engine state, created on the first `CalciteConnection.Open()`
-and kept alive across `Close`/`Open` cycles — a schema registered on `RootSchema` or a table created
-by DDL survives a close. `Dispose` is what ends it, and only marks the session disposed so later
-execute calls throw `ObjectDisposedException`.
+A Calcite connection is long-lived — it is the engine, and Java applications hold one for the life of
+the process — and an ADO.NET connection is not. So Calcite's connection is split along the line
+between what lives as long as the application and what lives as long as a connection, and the two
+halves are two classes.
 
-Construction, from the `CalciteConnectionStringBuilder`:
+**`CalciteDataSourceRoot`** (`Internal/`) is the application-lived half, held by a `CalciteDataSource`:
+the root schema, `DUAL` where the conformance has one, and the model. It is `CalciteConnectionImpl`'s
+constructor minus the type factory, followed by the driver's `onConnectionInit` model step, in that
+order, so a model can overwrite `DUAL` and never the reverse; and the driver's `model()` is ported with
+it, so that without a `Model` a `SchemaFactory` or `SchemaType` key synthesises one, named by the
+`Schema` key, with every `schema.`-prefixed key as an operand. The steps a `CalciteDataSourceBuilder`
+registered run last. A data source builds its root once, under a lock, on the first connection to open —
+Npgsql's `Bootstrap` — and a build that throws leaves nothing behind, so the next connection tries again.
+`Pooling=false` builds one per connection instead, and the connection disposes it. Disposing a root
+disposes every schema on it that implements `IDisposable`, sub-schemas first, which is the release
+Calcite's schema SPI has no hook for.
 
-- Builds the root schema with `CalciteSchema.createRootSchema(addMetadataSchema: true)`, then
-  applies the `Model` key through Calcite's `ModelHandler` — either `inline:`-prefixed (or
-  brace-leading) JSON, or a file path, which must exist. The handler's `defaultSchemaName()` wins
-  over the `Schema` key.
-- Builds a `java.util.Properties` from every remaining key, translating each to the camelCase name
-  Calcite expects via a static map from connection-string key to `CalciteConnectionProperty`, and
-  wraps it in a `CalciteConnectionConfigImpl`.
-- Creates a `JavaTypeFactoryImpl`, and resolves the default schema path to zero or one name.
-- Reads the `Synchronous` key — a provider option, excluded from the engine properties like `Model` —
-  which decides the convention every query on this connection is planned into.
+**`CalciteDataSources`** (`Internal/`) is Npgsql's `PoolManager`: a process-wide dictionary of data
+sources keyed by `CalciteConnectionStringBuilder.DataSourceKey`, which is the connection string with
+its keys lower-cased and sorted and `Synchronous` left out — that key chooses the convention a
+connection plans into and nothing that is built, as Npgsql leaves `TargetSessionAttributes` out of its
+key. A bare `new CalciteConnection(cs)` resolves its data source here on `Open`; an empty connection
+string gets a private one, there being nothing to key on. `ClearPool` and `ClearAllPools` remove entries
+without disposing them, since a connection may still hold one; every entry left at process exit is
+disposed then. A data source the application built is never here.
 
-Anything thrown here that is not already a `CalciteException` is wrapped in one.
+**`CalciteSession`** is the connection-lived half: created on the first `CalciteConnection.Open()` over
+the root the data source handed it, and kept alive across `Close`/`Open` cycles. Construction is the
+rest of `CalciteConnectionImpl`'s constructor:
+
+- Builds a `java.util.Properties` from every key that is the engine's, translating each to the camelCase
+  name Calcite expects via `CalciteEngineProperties`, and wraps it in a `CalciteConnectionConfigImpl`.
+  `Model`, `Synchronous`, `Pooling` and `TypeSystem` are the provider's and are left out.
+- Creates a `JavaTypeFactoryImpl` over the type system the `TypeSystem` key names, under the
+  conformance's ragged-union wrapper. **The type factory is per connection and the root is per data
+  source, and that is the split Calcite makes itself** when it opens an internal connection over an
+  existing root, `CalciteMetaImpl.connect(schema.root(), null)`. It is not a nicety:
+  `JavaTypeFactoryImpl.syntheticTypes` is a plain `HashMap` written by every grouped aggregate and
+  window, so a factory shared by connections used concurrently would race, where a root shared by them
+  is read. `RelDataType`s are interned process-wide, so a table answers the same types to every factory.
+- Resolves the default schema path to zero or one name — the model's `defaultSchemaName()` wins over the
+  `Schema` key — and reads the `Synchronous` key, which decides the convention every query on this
+  connection is planned into.
+
+`Dispose` marks the session disposed so later execute calls throw `ObjectDisposedException`, and
+disposes the root where the session owns it.
+
+Anything thrown in either constructor that is not already a `CalciteException` is wrapped in one.
+
+Sharing a root is a contract adapters did not have before: a `Schema` reachable from a data source may
+be read from several threads at once, and Calcite serialises nothing. DDL is serialised against DDL —
+`ClrPrepareImpl.ExecuteDdl` takes the mutable root's monitor, because a DDL statement writes into
+`NameMap`s over `TreeMap`s, which two writers corrupt. A statement planning against the root while
+another alters it is Calcite's own exposure and is not closed; note that `createSnapshot` shares
+`tableMap` with the live root by its own javadoc, so the per-statement snapshot isolates the adapter's
+implicit tables and not the explicit ones.
 
 The session exposes three private steps and the execute entry points.
 
@@ -431,8 +470,10 @@ text form for it. If upstream exposes a variant's full `RuntimeTypeInformation`,
 
 1. **Construct.** The caller creates a `CalciteConnection` (directly, through
    `CalciteProviderFactory`, or from a `CalciteDataSource`) with a connection string.
-2. **Open.** `Open()` creates the `CalciteSession` on first call: root schema, model, config, type
-   factory, default schema path.
+2. **Open.** `Open()` resolves the connection's `CalciteDataSource` — the one it was created from, or
+   the one the provider keeps for its connection string — and asks it for the root, which the first
+   connection to open builds (model included) and the rest find built. Then it creates the
+   `CalciteSession` over that root: config, type factory, default schema path.
 3. **Build command.** The caller sets `CommandText` and adds parameters to a `CalciteCommand`.
 4. **Request.** `ExecuteReader` builds a `CalciteExecuteRequest` from the text, the parameters, the
    timeout and the resolved hooks, and hands it to the session's reader core.
@@ -452,7 +493,8 @@ text form for it. If upstream exposes a variant's full `RuntimeTypeInformation`,
 8. **Read.** `CalciteDataReader` pulls rows through `CalciteResult.ReadAsync`, and each accessor
    goes `CalciteResultRow` → `CalciteResultValue` → CLR value.
 9. **Dispose.** Disposing the reader disposes the result and its enumerator. Disposing the
-   connection disposes the session.
+   connection disposes the session, and the root with it only under `Pooling=false`; otherwise the
+   root is the data source's and goes when the data source is disposed.
 
 **A non-query** follows steps 1–6, then branches on the statement type as described above and
 returns a `CalciteResult` with a count and no enumerator.
@@ -478,8 +520,13 @@ plan wherever the query itself would.
 
 `CalciteConnection` exposes selected Calcite-native objects as public properties rather than
 providing a JDBC-style `unwrap`. This keeps the contract typed and discoverable while letting
-advanced consumers register schemas, tables, functions and views on `RootSchema`, build types with
-`TypeFactory`, and inspect resolved configuration through `Config`.
+advanced consumers inspect the root through `RootSchema`, build types with `TypeFactory`, and inspect
+resolved configuration through `Config`. `RootSchema` is a `Schema`, Calcite's read interface, and not
+the `SchemaPlus` Calcite adds to it: the root is the data source's, shared by every connection opened on
+it, and a change made through one connection would reach all of them without any having asked. Schemas,
+tables, functions and views are registered through `CalciteDataSourceBuilder.ConfigureRootSchema`, which
+is where a caller meets the root as a `SchemaPlus`. This is a type and not a guard; the object is the
+root itself.
 
 A user-defined function written in .NET works here without a class name being written out at all: IKVM
 names a CLR class `cli.Namespace.Type`, which `EnumerableConvention` writes into generated Java source,
@@ -506,12 +553,16 @@ src/
     CalciteParameter.cs                   DbParameter
     CalciteParameterCollection.cs         DbParameterCollection
     CalciteTransaction.cs                 DbTransaction (Commit/Rollback throw)
-    CalciteDataSource.cs                  DbDataSource
+    CalciteDataSource.cs                  DbDataSource; holds the root schema for the application
+    CalciteDataSourceBuilder.cs           Builds a data source from a string and what a string cannot carry
     CalciteProviderFactory.cs             DbProviderFactory
     CalciteConnectionStringBuilder.cs     DbConnectionStringBuilder
     CalciteException.cs                   DbException
     Internal/
-      CalciteSession.cs                   Per-connection engine state; plan, bind, execute
+      CalciteSession.cs                   Per-connection engine state over a data source's root; plan, bind, execute
+      CalciteDataSourceRoot.cs            The root schema, DUAL and the model, built once per data source
+      CalciteDataSources.cs               The data sources the provider keeps, one per connection string
+      CalciteEngineProperties.cs          Connection string keys → the engine's Properties
       CalciteExecuteRequest.cs            Execute payload
       CalciteParameterValue.cs            (DbType, value) pair
       ParameterBinder.cs                  CLR value → Calcite runtime representation, by DbType
