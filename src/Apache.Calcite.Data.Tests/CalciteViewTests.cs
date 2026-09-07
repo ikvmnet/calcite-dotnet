@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
@@ -73,6 +73,8 @@ namespace Apache.Calcite.Data.Tests
         {
             Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
             ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+            // these tests create tables by name, so each connection gets a root of its own
+            Pooling = false,
             Schema = "adhoc",
         };
 
@@ -89,6 +91,8 @@ namespace Apache.Calcite.Data.Tests
         static readonly string RootDdlConnectionString = new CalciteConnectionStringBuilder
         {
             ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+            // these tests create tables by name, so each connection gets a root of its own
+            Pooling = false,
         };
 
         // ------------------------------------------------------------------------------------------
@@ -416,16 +420,19 @@ namespace Apache.Calcite.Data.Tests
                 Fun = "standard,oracle",
             };
 
-            using var c = new CalciteConnection(withOracleFun);
-            c.Open();
-
-            var adhoc = c.RootSchema.getSubSchema("adhoc")!;
-            adhoc.add("NVLVIEW", ViewTable.viewMacro(
-                adhoc,
-                "SELECT NVL(CAST(NULL AS INTEGER), 7) AS Y",
-                null,
-                org.apache.calcite.jdbc.CalciteSchema.from(adhoc).path("NVLVIEW"),
-                null));
+            using var c = new CalciteDataSourceBuilder(withOracleFun)
+                .ConfigureRootSchema(root =>
+                {
+                    var adhoc = root.getSubSchema("adhoc")!;
+                    adhoc.add("NVLVIEW", ViewTable.viewMacro(
+                        adhoc,
+                        "SELECT NVL(CAST(NULL AS INTEGER), 7) AS Y",
+                        null,
+                        org.apache.calcite.jdbc.CalciteSchema.from(adhoc).path("NVLVIEW"),
+                        null));
+                })
+                .Build()
+                .OpenConnection();
 
             using var cmd = c.CreateCommand();
             cmd.CommandText = "SELECT Y FROM NVLVIEW";
@@ -440,24 +447,27 @@ namespace Apache.Calcite.Data.Tests
         [Fact]
         public void Added_view_should_bridge_two_back_ends()
         {
-            using var c = new CalciteConnection(RootDdlConnectionString);
-            c.Open();
+            using var c = new CalciteDataSourceBuilder(RootDdlConnectionString)
+                .ConfigureRootSchema(root =>
+                {
+                    root.add("BE3", new ViewTestBackEnd());
+
+                    root.add("cbridged", ViewTable.viewMacro(
+                        root,
+                        "SELECT \"s\".\"sid\" AS \"sid\", \"r\".\"RNAME\" AS \"rname\" " +
+                        "FROM \"csale\" \"s\" JOIN \"BE3\".\"REGIONS\" \"r\" ON \"s\".\"rid\" = \"r\".\"RID\"",
+                        null,
+                        org.apache.calcite.jdbc.CalciteSchema.from(root).path("cbridged"),
+                        null));
+                })
+                .Build()
+                .OpenConnection();
             using var cmd = c.CreateCommand();
 
             cmd.CommandText = "CREATE TABLE \"csale\" (\"sid\" INTEGER NOT NULL, \"rid\" INTEGER NOT NULL)";
             cmd.ExecuteNonQuery();
             cmd.CommandText = "INSERT INTO \"csale\" VALUES (1, 10), (2, 20)";
             cmd.ExecuteNonQuery();
-
-            c.RootSchema.add("BE3", new ViewTestBackEnd());
-
-            c.RootSchema.add("cbridged", ViewTable.viewMacro(
-                c.RootSchema,
-                "SELECT \"s\".\"sid\" AS \"sid\", \"r\".\"RNAME\" AS \"rname\" " +
-                "FROM \"csale\" \"s\" JOIN \"BE3\".\"REGIONS\" \"r\" ON \"s\".\"rid\" = \"r\".\"RID\"",
-                null,
-                org.apache.calcite.jdbc.CalciteSchema.from(c.RootSchema).path("cbridged"),
-                null));
 
             cmd.CommandText = "SELECT \"sid\", \"rname\" FROM \"cbridged\" ORDER BY \"sid\"";
             using var r = cmd.ExecuteReader();
@@ -947,8 +957,21 @@ namespace Apache.Calcite.Data.Tests
         [Fact]
         public void View_should_bridge_two_back_ends_and_still_join_and_aggregate()
         {
-            using var c = new CalciteConnection(RootDdlConnectionString);
-            c.Open();
+            using var c = new CalciteDataSourceBuilder(RootDdlConnectionString)
+                .ConfigureRootSchema(root =>
+                {
+                    root.add("BE2", new ViewTestBackEnd());
+
+                    root.add("bridged", ViewTable.viewMacro(
+                        root,
+                        "SELECT \"s\".\"sid\" AS \"sid\", \"r\".\"RNAME\" AS \"rname\" " +
+                        "FROM \"sale\" \"s\" JOIN \"BE2\".\"REGIONS\" \"r\" ON \"s\".\"rid\" = \"r\".\"RID\"",
+                        null,
+                        org.apache.calcite.jdbc.CalciteSchema.from(root).path("bridged"),
+                        null));
+                })
+                .Build()
+                .OpenConnection();
             using var cmd = c.CreateCommand();
 
             cmd.CommandText = "CREATE TABLE \"sale\" (\"sid\" INTEGER NOT NULL, \"rid\" INTEGER NOT NULL)";
@@ -959,16 +982,6 @@ namespace Apache.Calcite.Data.Tests
             cmd.ExecuteNonQuery();
             cmd.CommandText = "INSERT INTO \"tag\" VALUES (1, 'a'), (2, 'b'), (3, 'a')";
             cmd.ExecuteNonQuery();
-
-            c.RootSchema.add("BE2", new ViewTestBackEnd());
-
-            c.RootSchema.add("bridged", ViewTable.viewMacro(
-                c.RootSchema,
-                "SELECT \"s\".\"sid\" AS \"sid\", \"r\".\"RNAME\" AS \"rname\" " +
-                "FROM \"sale\" \"s\" JOIN \"BE2\".\"REGIONS\" \"r\" ON \"s\".\"rid\" = \"r\".\"RID\"",
-                null,
-                org.apache.calcite.jdbc.CalciteSchema.from(c.RootSchema).path("bridged"),
-                null));
 
             // selected from directly
             cmd.CommandText = "SELECT \"sid\", \"rname\" FROM \"bridged\" ORDER BY \"sid\"";
@@ -1033,25 +1046,25 @@ namespace Apache.Calcite.Data.Tests
         /// model view asking for <c>modifiable</c> can only sit over whatever the model can declare. So the
         /// macro is registered through the schema SPI, over a table <c>CREATE TABLE</c> made — that being a
         /// <c>MutableArrayTable</c>, which is the <c>ModifiableTable</c> the view needs underneath. This is
-        /// the one test here that reaches Calcite through <see cref="CalciteConnection.RootSchema"/> rather
-        /// than through SQL, because that is the only way in.
+        /// the one test here that reaches Calcite through <see cref="CalciteDataSourceBuilder.ConfigureRootSchema"/>
+        /// rather than through SQL, because that is the only way in.
         /// </remarks>
         [Fact]
         public void Insert_into_a_modifiable_view_should_write_through_to_its_table()
         {
-            using var c = new CalciteConnection(RootDdlConnectionString);
-            c.Open();
+            using var c = new CalciteDataSourceBuilder(RootDdlConnectionString)
+                .ConfigureRootSchema(root => root.add("modview", ViewTable.viewMacro(
+                    root,
+                    "SELECT \"id\" FROM \"modsrc\" WHERE \"g\" = 7",
+                    null,
+                    org.apache.calcite.jdbc.CalciteSchema.from(root).path("modview"),
+                    java.lang.Boolean.TRUE)))
+                .Build()
+                .OpenConnection();
             using var cmd = c.CreateCommand();
 
             cmd.CommandText = "CREATE TABLE \"modsrc\" (\"id\" INTEGER NOT NULL, \"g\" INTEGER NOT NULL)";
             cmd.ExecuteNonQuery();
-
-            c.RootSchema.add("modview", ViewTable.viewMacro(
-                c.RootSchema,
-                "SELECT \"id\" FROM \"modsrc\" WHERE \"g\" = 7",
-                null,
-                org.apache.calcite.jdbc.CalciteSchema.from(c.RootSchema).path("modview"),
-                java.lang.Boolean.TRUE));
 
             cmd.CommandText = "INSERT INTO \"modview\" VALUES (1)";
             cmd.ExecuteNonQuery();

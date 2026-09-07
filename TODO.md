@@ -96,6 +96,90 @@ opens a connection to read the server version, and `AdoConvention.Dialect` is re
 that matches while planning. What is left is caching *across* metadata instances, which only matters
 when several schemas point at one database. Lowest priority; measure before assuming it matters.
 
+## A plan cache on the data source's root — *medium, and measured*
+
+Every statement pays parse, validate, Volcano, translation and `LambdaExpression.Compile` on every
+execution; parameters are bound at execution through the data context, so the same text with `?`
+placeholders is the same plan, and the EF Core provider emits exactly that shape repeatedly. The root a
+`CalciteDataSource` holds is where a cache of those plans belongs: a plan references the root's tables, the
+root's lifetime bounds the plans' validity, and the root's write lock is the one place the root changes.
+
+### What was measured, 2026-09-07
+
+Through `ClrPrepareImpl.PrepareSql` over the `ClrPrepareFixture` schema (six-row `SALES`, three-row
+`NUMS`), Debug build, medians of 15 runs after 3 warm-ups, milliseconds. The plan column is start to
+`Hook.PLAN_BEFORE_IMPLEMENTATION`; compile is `Compile()` alone, instrumented for the run and reverted.
+
+| statement | convention | parse+validate+plan | translate | compile | total prepare | execute |
+|---|---|---|---|---|---|---|
+| filter | sync | 19.2 | 1.4 | 0.6 | 22.8 | 0.35 |
+| aggregate | sync | 40.8 | 1.2 | 2.6 | 45.3 | 1.93 |
+| self join | sync | 46.5 | 1.2 | 2.2 | 51.4 | 1.56 |
+| window | sync | 38.1 | 1.6 | 2.2 | 42.2 | 1.84 |
+| sort limit | sync | 42.5 | 1.1 | 1.2 | 45.2 | 2.11 |
+| union | sync | 42.1 | 0.3 | 0.6 | 43.2 | 0.24 |
+| exists | sync | 89.9 | 0.4 | 0.9 | 91.8 | 0.34 |
+| parameter | sync | 34.4 | 2.3 | 1.0 | 36.5 | 0.82 |
+| filter | async | 14.6 | 1.6 | 0.7 | 17.6 | 0.56 |
+| aggregate | async | 26.1 | 0.9 | 2.4 | 29.6 | 1.86 |
+| self join | async | 34.6 | 0.9 | 2.0 | 37.9 | 1.55 |
+| window | async | 30.4 | 1.3 | 1.9 | 33.6 | 1.88 |
+| sort limit | async | 38.5 | 0.7 | 1.0 | 40.4 | 1.91 |
+| union | async | 42.5 | 0.3 | 0.6 | 43.7 | 0.22 |
+| exists | async | 92.2 | 0.4 | 0.8 | 93.5 | 0.32 |
+| parameter | async | 30.8 | 2.6 | 1.2 | 36.3 | 1.14 |
+
+**Planning is the cost, not compilation.** Translation and compilation together are 1 to 4 ms of a 18 to
+94 ms prepare. So Calcite's own shape — `EnumerableInterpretable`'s static cache of compiled `Bindable`s
+keyed by the generated source, `calcite.bindable.cache.maxSize` — would save a tenth of it here, and a
+cache that skips planning is the one worth having. Its key is therefore the SQL text and everything that
+changes what the text means, not a digest of a plan already made.
+
+**A compiled plan is re-bindable.** The same signature, bound a second time and then from 8 tasks 25 times
+each with a fresh `StatementDataContext` per bind, answered the same rows as its first bind for every
+statement above in both conventions. This is the property a prepared statement relies on in Calcite —
+`Bindable.bind` is called per execution — and the translation keeps it: an anonymous class's fields become
+variables of the block that builds the lambdas, and that block runs per bind.
+
+**A compiled plan does not reach back to the type factory it was planned with.** Bound with a data context
+carrying a fresh `JavaTypeFactoryImpl`, every statement above answered the same rows in both conventions.
+The emitted record types are baked into the delegate, and nothing read at execution asks the factory for
+one. So a cache on the root can hand a plan compiled under one connection's factory to another connection,
+which is what a cache on the root means, the factory being per connection.
+
+### The shape, when it is built
+
+- **Where:** `CalciteDataSourceRoot`. Retiring the root retires its plans.
+- **Key:** the SQL text; the engine configuration as a canonical string — lex, casing, conformance,
+  function library, type system, null collation all change what a statement means; the default schema
+  path; the convention. That is `CalciteConnectionStringBuilder.DataSourceKey` plus the two things it
+  leaves out, so the root owns the cache and the session contributes its part of the key.
+- **Invalidation, three kinds.** Schema change: DDL runs under the root's write lock, the one place the
+  root changes, so a version bumped there drops the cache. Learnt facts: an adapter's statistics expire —
+  calcite-cosmos on a five-minute lifetime — and a plan chosen while a table was small stays chosen after
+  it grows; Calcite has no answer, SQL Server recompiles on a statistics change, and a time-to-live on
+  entries is the cheap one. Size: bounded by count with LRU eviction, a keyword in the string with a
+  default, zero to turn it off.
+- **Semantics:** a cached plan is an implicit prepared statement, and Avatica's prepared statement already
+  defines them — it holds the signature's snapshot until closed, so a cached plan executes against the
+  snapshot it was planned on. `CalciteCommand.Prepare()`, a no-op today, becomes "plan it now and keep it".
+- **Hooks bypass it.** A connection or command with hooks registered plans every time; a hook exists to
+  watch planning happen.
+- **Precedents:** SQL Server's server-side plan cache — automatic, keyed by text plus the session's `SET`
+  options, invalidated by schema and statistics change — is the shape, since the engine is in-process and
+  we are the server. Npgsql's auto-prepare is per connector and off by default; per connector is the wrong
+  unit here, a plan not belonging to a connection.
+
+### What is still unproven
+
+- The numbers are one machine, a Debug build, six-row tables and a warm process. The split is what
+  matters and it is not close; the absolute figures are not a benchmark. A cold first statement costs far
+  more than any row above and is not what a cache saves.
+- Re-bindability was measured over eight statement shapes. `ClrEnumerableDifferentialTests` has far more,
+  and the cache's own test should be that list bound twice, since a state a bind leaves behind would show
+  as a differential failure on the second bind and nowhere else.
+- Nothing above measured a cache hit's cost — key canonicalisation and lookup — against the 15 ms floor.
+
 ## Test suites not yet written
 
 Sized against measured coverage: `Apache.Calcite.Data` 69.9%, `Apache.Calcite.Adapter.AdoNet` ~60%.

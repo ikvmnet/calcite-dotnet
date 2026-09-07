@@ -1,4 +1,4 @@
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 
 using Apache.Calcite.Data.Internal;
 
@@ -23,6 +23,8 @@ namespace Apache.Calcite.Data.Tests
         {
             Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
             ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+            // these tests create tables by name, so each connection gets a root of its own
+            Pooling = false,
             Schema = "adhoc",
         };
 
@@ -96,6 +98,8 @@ namespace Apache.Calcite.Data.Tests
         {
             Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
             ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+            // these tests create tables by name, so each connection gets a root of its own
+            Pooling = false,
             Schema = "adhoc",
             Synchronous = true,
         };
@@ -170,6 +174,8 @@ namespace Apache.Calcite.Data.Tests
             // Model has NO defaultSchema — the connection-string Schema property is the sole source.
             Model = "inline:{\"version\":\"1.0\",\"schemas\":[{\"name\":\"adhoc\"}]}",
             ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+            // these tests create tables by name, so each connection gets a root of its own
+            Pooling = false,
             Schema = "adhoc",
         };
 
@@ -178,6 +184,8 @@ namespace Apache.Calcite.Data.Tests
             // Model carries defaultSchema — no Schema property on the connection string.
             Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
             ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+            // these tests create tables by name, so each connection gets a root of its own
+            Pooling = false,
         };
 
         [Fact]
@@ -585,6 +593,8 @@ namespace Apache.Calcite.Data.Tests
             var rootDdl = new CalciteConnectionStringBuilder
             {
                 ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+            // these tests create tables by name, so each connection gets a root of its own
+            Pooling = false,
             };
 
             using var c = new CalciteConnection(rootDdl);

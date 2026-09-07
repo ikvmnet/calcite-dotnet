@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Data;
 using System.Data.Common;
 
@@ -28,6 +28,8 @@ namespace Apache.Calcite.Data.Tests
         {
             Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
             ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
+            // these tests create tables by name, so each connection gets a root of its own
+            Pooling = false,
             Schema = "adhoc",
         };
 

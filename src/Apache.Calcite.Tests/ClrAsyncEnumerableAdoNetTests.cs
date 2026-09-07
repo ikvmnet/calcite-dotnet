@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Threading;
@@ -40,13 +40,21 @@ namespace Apache.Calcite.Tests
 
         static (CalciteConnection Connection, AsyncRowsTable Table) Open()
         {
-            var c = new CalciteConnection(Model);
-            c.Open();
-
             var table = new AsyncRowsTable(AsyncTestRows.Sales, AsyncTestRows.SalesRowType, false);
-            c.RootSchema.add("SALES", table);
+            var c = Open(Model, root => root.add("SALES", table));
 
             return (c, table);
+        }
+
+        /// <summary>
+        /// Opens a connection on a data source of its own, with <paramref name="configure"/> run over the root.
+        /// </summary>
+        static CalciteConnection Open(string model, Action<org.apache.calcite.schema.SchemaPlus> configure)
+        {
+            return new CalciteDataSourceBuilder(model)
+                .ConfigureRootSchema(configure)
+                .Build()
+                .OpenConnection();
         }
 
         /// <summary>
@@ -130,11 +138,8 @@ namespace Apache.Calcite.Tests
         [TestMethod]
         public async Task ShouldBridgeAnAsyncOnlyTableInSynchronousMode()
         {
-            using var c = new CalciteConnection(SynchronousModel);
-            c.Open();
-
             var table = new AsyncRowsTable(AsyncTestRows.Sales, AsyncTestRows.SalesRowType, false);
-            c.RootSchema.add("SALES", table);
+            using var c = Open(SynchronousModel, root => root.add("SALES", table));
 
             using var cmd = c.CreateCommand();
             cmd.CommandText = "SELECT ID FROM SALES ORDER BY ID";
@@ -206,19 +211,15 @@ namespace Apache.Calcite.Tests
         {
             const string Sql = "EXPLAIN PLAN FOR SELECT K FROM SYNCONLY WHERE V = 'A'";
 
-            using (var c = new CalciteConnection(Model))
+            using (var c = Open(Model, root => root.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false))))
             {
-                c.Open();
-                c.RootSchema.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false));
 
                 Explain(c, Sql).Should().Contain("ClrAsyncEnumerable");
                 (await ExplainAsync(c, Sql)).Should().Contain("ClrAsyncEnumerable");
             }
 
-            using (var c = new CalciteConnection(SynchronousModel))
+            using (var c = Open(SynchronousModel, root => root.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false))))
             {
-                c.Open();
-                c.RootSchema.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false));
 
                 Explain(c, Sql).Should().Contain("ClrEnumerable").And.NotContain("ClrAsyncEnumerable");
                 (await ExplainAsync(c, Sql)).Should().Contain("ClrEnumerable").And.NotContain("ClrAsyncEnumerable");
@@ -262,10 +263,8 @@ namespace Apache.Calcite.Tests
         [TestMethod]
         public async Task ShouldExplainThroughExecuteScalar()
         {
-            using (var c = new CalciteConnection(Model))
+            using (var c = Open(Model, root => root.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false))))
             {
-                c.Open();
-                c.RootSchema.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false));
 
                 using var cmd = c.CreateCommand();
                 cmd.CommandText = "EXPLAIN PLAN FOR SELECT K FROM SYNCONLY WHERE V = 'A'";
@@ -276,10 +275,8 @@ namespace Apache.Calcite.Tests
                     .Which.Should().Contain("ClrAsyncEnumerable");
             }
 
-            using (var c = new CalciteConnection(SynchronousModel))
+            using (var c = Open(SynchronousModel, root => root.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false))))
             {
-                c.Open();
-                c.RootSchema.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false));
 
                 using var cmd = c.CreateCommand();
                 cmd.CommandText = "EXPLAIN PLAN FOR SELECT K FROM SYNCONLY WHERE V = 'A'";
@@ -306,9 +303,7 @@ namespace Apache.Calcite.Tests
         [TestMethod]
         public async Task ShouldPlanACalciteTableAsynchronously()
         {
-            using var c = new CalciteConnection(Model);
-            c.Open();
-            c.RootSchema.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false));
+            using var c = Open(Model, root => root.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false)));
 
             using var cmd = c.CreateCommand();
             cmd.CommandText = "SELECT K, V FROM SYNCONLY ORDER BY K, V";
@@ -372,9 +367,7 @@ namespace Apache.Calcite.Tests
         public async Task ShouldReadASyncPlanAsynchronously()
         {
             // the synchronous plan, deliberately: the connection's mode is what asks for it
-            using var c = new CalciteConnection(SynchronousModel);
-            c.Open();
-            c.RootSchema.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false));
+            using var c = Open(SynchronousModel, root => root.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false)));
 
             using var cmd = c.CreateCommand();
             cmd.CommandText = "SELECT K, V FROM SYNCONLY ORDER BY K, V";
@@ -563,15 +556,12 @@ namespace Apache.Calcite.Tests
         [TestMethod]
         public async Task ShouldCancelAReadInProgress()
         {
-            using var c = new CalciteConnection(Model);
-            c.Open();
-
             var rows = new object[10_000][];
             for (int i = 0; i < rows.Length; i++)
                 rows[i] = [java.lang.Integer.valueOf(i), "R"];
 
             var table = new AsyncRowsTable(rows, AsyncTestRows.SortedRowType, false);
-            c.RootSchema.add("BIG", table);
+            using var c = Open(Model, root => root.add("BIG", table));
 
             using var cmd = c.CreateCommand();
             cmd.CommandText = "SELECT K, V FROM BIG";

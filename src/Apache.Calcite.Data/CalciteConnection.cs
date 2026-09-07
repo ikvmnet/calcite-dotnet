@@ -26,17 +26,21 @@ namespace Apache.Calcite.Data
     /// done to release all engine resources.
     /// </para>
     /// <para>
-    /// The underlying Calcite session is created on the first call to <see cref="Open"/> and is kept
-    /// alive across <see cref="Close"/>/<see cref="Open"/> cycles. Schema objects registered on
-    /// <see cref="RootSchema"/>, tables created via DDL, and any other in-process state survive
-    /// a close and remain visible after reopening. The session is torn down permanently only when
-    /// the connection is disposed.
+    /// A connection is cheap and short-lived, as ADO.NET intends. The root schema it plans against —
+    /// the model, the schemas the model built, the tables DDL has created — belongs to a
+    /// <see cref="CalciteDataSource"/>, which outlives it: either one the application built and opened this
+    /// connection from, or the one the provider keeps for this connection string, shared by every connection
+    /// opened with an equivalent string. What the connection keeps to itself is created on the first call to
+    /// <see cref="Open"/>, survives <see cref="Close"/>/<see cref="Open"/> cycles, and is released when the
+    /// connection is disposed. <c>Pooling=false</c> in the connection string gives the connection a root of
+    /// its own instead, built when it first opens and released with it.
     /// </para>
     /// </remarks>
     public sealed class CalciteConnection : DbConnection
     {
 
         CalciteConnectionStringBuilder _options = new();
+        CalciteDataSource? _dataSource;
         CalciteSession? _session;
         ConnectionState _state = ConnectionState.Closed;
         bool _disposed;
@@ -148,12 +152,21 @@ namespace Apache.Calcite.Data
         /// Initializes a new instance of the <see cref="CalciteConnection"/> class with an empty connection string.
         /// </summary>
         /// <remarks>
-        /// Set <see cref="ConnectionString"/> before calling <see cref="Open"/>, or register schemas
-        /// directly on <see cref="RootSchema"/> after opening.
+        /// Set <see cref="ConnectionString"/> before calling <see cref="Open"/>.
         /// </remarks>
         public CalciteConnection()
         {
 
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CalciteConnection"/> class bound to a data source.
+        /// </summary>
+        /// <param name="dataSource">The data source whose root schema this connection plans against.</param>
+        internal CalciteConnection(CalciteDataSource dataSource)
+        {
+            _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+            _options = new CalciteConnectionStringBuilder(dataSource.ConnectionString);
         }
 
         /// <summary>
@@ -175,7 +188,9 @@ namespace Apache.Calcite.Data
         /// The connection string must be set <em>before</em> calling <see cref="Open"/> for the first
         /// time. Once the session has been started it cannot be changed — the Calcite engine is
         /// initialized once and reused for the lifetime of the connection. To use different settings,
-        /// create a new <see cref="CalciteConnection"/>.
+        /// create a new <see cref="CalciteConnection"/>. Setting it on a connection created by a
+        /// <see cref="CalciteDataSource"/> detaches the connection from that data source: it draws on the
+        /// data source the provider keeps for the new string instead.
         /// </remarks>
         /// <exception cref="InvalidOperationException">
         /// Thrown when the connection string is set after the connection has already been opened.
@@ -194,6 +209,7 @@ namespace Apache.Calcite.Data
                         "To use a different connection string, create a new CalciteConnection.");
 
                 _options = new CalciteConnectionStringBuilder(value);
+                _dataSource = null;
             }
         }
 
@@ -230,12 +246,14 @@ namespace Apache.Calcite.Data
         /// </summary>
         /// <remarks>
         /// The Calcite session is created once on the first call and reused on all subsequent
-        /// <see cref="Open"/> calls. Closing and reopening the connection does not reset the engine —
-        /// any schemas registered on <see cref="RootSchema"/> or tables created via DDL remain visible
-        /// after reopening.
+        /// <see cref="Open"/> calls. The first connection to open on a data source is the one that reads
+        /// the model and builds its schemas; every connection after it finds them built. Closing and
+        /// reopening the connection does not reset anything — a table created via DDL remains visible after
+        /// reopening, as it does on every other connection of the same data source.
         /// </remarks>
         /// <exception cref="InvalidOperationException">Thrown when the connection is already open.</exception>
         /// <exception cref="CalciteException">Thrown when the Calcite engine could not be initialized.</exception>
+        /// <exception cref="ObjectDisposedException">Thrown when the data source the connection was created from has been disposed.</exception>
         public override void Open()
         {
             ThrowIfDisposed();
@@ -246,7 +264,29 @@ namespace Apache.Calcite.Data
             try
             {
                 // Session is created once on the first Open() and reused across Close/Open cycles.
-                _session ??= new CalciteSession(_options);
+                if (_session is null)
+                {
+                    CalciteDataSourceRoot root;
+                    bool owned;
+                    if (_dataSource is not null)
+                    {
+                        (root, owned) = _dataSource.Acquire();
+                    }
+                    else
+                    {
+                        // the data source the provider keeps for this string, looked up again if it was
+                        // pruned between the lookup and the use
+                        CalciteDataSource dataSource;
+                        do
+                            dataSource = CalciteDataSources.Resolve(_options);
+                        while (dataSource.TryAcquire(out root, out owned) == false);
+
+                        _dataSource = dataSource;
+                    }
+
+                    _session = new CalciteSession(_options, root, owned);
+                }
+
                 SetState(ConnectionState.Open);
             }
             catch
@@ -261,9 +301,9 @@ namespace Apache.Calcite.Data
         /// </summary>
         /// <remarks>
         /// Closing the connection only changes its state to <see cref="System.Data.ConnectionState.Closed"/>;
-        /// the engine session is preserved so that calling <see cref="Open"/> again is inexpensive and
-        /// retains all in-process state. To fully release engine resources, call
-        /// <see cref="IDisposable.Dispose"/> instead.
+        /// the engine session is preserved so that calling <see cref="Open"/> again is inexpensive. To
+        /// release what the connection holds, call <see cref="IDisposable.Dispose"/> instead. Neither
+        /// touches the data source's root, which is shared and outlives the connection.
         /// </remarks>
         public override void Close()
         {
@@ -409,15 +449,51 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Gets the root <see cref="SchemaPlus"/> for this connection's Calcite engine.
+        /// Drops the data source the provider keeps for <paramref name="connection"/>'s connection string, so
+        /// that the next connection opened with that string reads the model again.
+        /// </summary>
+        /// <param name="connection">A connection whose connection string names the data source to drop.</param>
+        /// <remarks>
+        /// This is how a changed model file reaches a running process before the data source's idle
+        /// lifetime would have released it. Connections already open keep the root they have, and it is
+        /// disposed once the last of them is. A data source the application built with
+        /// <see cref="CalciteDataSourceBuilder"/> is not kept by the provider and is unaffected —
+        /// <see cref="CalciteDataSource.Clear"/> is its equivalent.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="connection"/> is <see langword="null"/>.</exception>
+        public static void ClearPool(CalciteConnection connection)
+        {
+            ArgumentNullException.ThrowIfNull(connection);
+            CalciteDataSources.Clear(connection._options);
+        }
+
+        /// <summary>
+        /// Drops every data source the provider keeps, so that the next connection opened with any
+        /// connection string reads its model again.
         /// </summary>
         /// <remarks>
-        /// Use this to register schemas, tables, custom functions, or other Calcite artifacts that
-        /// should be visible to SQL statements executed on this connection. Objects added here
-        /// persist for the lifetime of the session, including across <see cref="Close"/>/<see cref="Open"/> cycles.
+        /// As <see cref="ClearPool"/>, for every connection string at once.
+        /// </remarks>
+        public static void ClearAllPools()
+        {
+            CalciteDataSources.ClearAll();
+        }
+
+        /// <summary>
+        /// Gets the root schema this connection plans against, read-only.
+        /// </summary>
+        /// <remarks>
+        /// The root belongs to the connection's <see cref="CalciteDataSource"/> and is shared by every
+        /// connection opened on it, so what is seen here is what every one of them sees: the schemas the
+        /// model built, the schemas registered on the data source's builder, the tables DDL has created.
+        /// It is handed out as a <see cref="Schema"/>, Calcite's read interface, because a change made
+        /// through one connection would reach all of them without any having asked; the
+        /// <see cref="SchemaPlus"/> Calcite adds to it is the data source's, reached through
+        /// <see cref="CalciteDataSourceBuilder.ConfigureRootSchema"/>, and a table is created with DDL. This
+        /// is a type and not a guard — the object is the root itself.
         /// </remarks>
         /// <exception cref="InvalidOperationException">Thrown when the connection is not open.</exception>
-        public SchemaPlus RootSchema => RequireSession().RootSchema;
+        public Schema RootSchema => RequireSession().RootSchema;
 
         /// <summary>
         /// Gets the <see cref="JavaTypeFactory"/> used by this connection's Calcite engine.

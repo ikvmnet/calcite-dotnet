@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 using Apache.Calcite.Data;
 
@@ -39,19 +39,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// </summary>
         CalciteConnection OpenConnection(bool synchronous = false)
         {
-            var c = new CalciteConnection(new CalciteConnectionStringBuilder
+            return new CalciteDataSourceBuilder(new CalciteConnectionStringBuilder
             {
                 Lex = "JAVA",
                 CaseSensitive = false,
                 Synchronous = synchronous ? true : null,
-            }.ToString());
-
-            c.Open();
-
-            var root = c.RootSchema;
-            root.add("ADO", AdoSchema.Create(root, "ADO", _sqlite.DataSource, null, null));
-
-            return c;
+            }.ToString())
+                .ConfigureRootSchema(root => root.add("ADO", AdoSchema.Create(root, "ADO", _sqlite.DataSource, null, null)))
+                .Build()
+                .OpenConnection();
         }
 
         [TestCleanup]
