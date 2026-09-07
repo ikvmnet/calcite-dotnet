@@ -115,7 +115,7 @@ namespace Apache.Calcite.Geography.Tests
                 }
 
                 Compare(differences, $"ST_GEOG_ADDZ({shape}, 5)",
-                    () => GeographyFunctions.AddZ(g, java.lang.Integer.valueOf(5)),
+                    () => GeographyFunctions.AddZ(g, java.lang.Double.valueOf(5)),
                     () => SpatialTypeFunctions.ST_AddZ(g, java.math.BigDecimal.valueOf(5.0)));
 
                 Compare(differences, $"ST_GEOG_REMOVEREPEATEDPOINTS({shape}, 0.5)",
@@ -130,9 +130,9 @@ namespace Apache.Calcite.Geography.Tests
         public void ShouldAgreeWithCalciteOnTheConstructors()
         {
             var differences = new List<string>();
-            var one = java.lang.Integer.valueOf(1);
-            var two = java.lang.Integer.valueOf(2);
-            var three = java.lang.Integer.valueOf(3);
+            var one = java.lang.Double.valueOf(1);
+            var two = java.lang.Double.valueOf(2);
+            var three = java.lang.Double.valueOf(3);
 
             Compare(differences, "ST_GEOG_POINT(1, 2)",
                 () => GeographyFunctions.Point(one, two), () => SpatialTypeFunctions.ST_Point(Dec(1), Dec(2)));
@@ -255,13 +255,13 @@ namespace Apache.Calcite.Geography.Tests
                 // over a point, because ST_AddZ throws over a polygon; see
                 // ShouldInheritTheDefectInAddZOverAPolygon
                 ("ST_GEOG_ASTEXT(ST_GEOG_ADDZ(ST_GEOG_POINT(1, 2), 5))",
-                    () => GeographyFunctions.AddZ(Wkt("POINT(1 2)"), java.lang.Integer.valueOf(5))),
+                    () => GeographyFunctions.AddZ(Wkt("POINT(1 2)"), java.lang.Double.valueOf(5))),
                 ($"ST_GEOG_ASTEXT(ST_GEOG_REMOVEREPEATEDPOINTS({subject}, 0.5))",
                     () => GeographyFunctions.RemoveRepeatedPoints(geography, java.lang.Double.valueOf(0.5))),
                 ("ST_GEOG_ASTEXT(ST_GEOG_POINT(1, 2))",
-                    () => GeographyFunctions.Point(java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2))),
+                    () => GeographyFunctions.Point(java.lang.Double.valueOf(1), java.lang.Double.valueOf(2))),
                 ("ST_GEOG_ASTEXT(ST_GEOG_MAKEPOINT(1, 2))",
-                    () => GeographyFunctions.Point(java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2))),
+                    () => GeographyFunctions.Point(java.lang.Double.valueOf(1), java.lang.Double.valueOf(2))),
                 ("ST_GEOG_ASTEXT(ST_GEOG_MAKELINE(ST_GEOG_POINT(0, 0), ST_GEOG_POINT(1, 1), ST_GEOG_POINT(2, 0)))",
                     () => GeographyFunctions.MakeLine(Wkt("POINT(0 0)"), Wkt("POINT(1 1)"), Wkt("POINT(2 0)"))),
                 ("ST_GEOG_ASTEXT(ST_GEOG_MAKEPOLYGON(ST_GEOG_LINEFROMTEXT('LINESTRING(0 0, 6 0, 6 6, 0 6, 0 0)')))",
@@ -331,7 +331,7 @@ namespace Apache.Calcite.Geography.Tests
                 (ours(geography) as Geometry)?.getSRID().Should().Be(GeographyFunctions.Wgs84, name);
             }
 
-            GeographyFunctions.Point(java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2))!
+            GeographyFunctions.Point(java.lang.Double.valueOf(1), java.lang.Double.valueOf(2))!
                 .getSRID().Should().Be(GeographyFunctions.Wgs84);
             GeographyFunctions.MakeLine(Wkt("POINT(0 0)"), Wkt("POINT(1 1)"))!
                 .getSRID().Should().Be(GeographyFunctions.Wgs84);
@@ -354,7 +354,7 @@ namespace Apache.Calcite.Geography.Tests
         public void ShouldInheritTheDefectInAddZOverAPolygon()
         {
             var polygon = Wkt("POLYGON((0 0, 4 0, 4 4, 0 4, 0 0))");
-            var five = java.lang.Integer.valueOf(5);
+            var five = java.lang.Double.valueOf(5);
 
             ((Action)(() => SpatialTypeFunctions.ST_AddZ(polygon, Dec(5)))).Should().Throw<NullReferenceException>();
             ((Action)(() => GeographyFunctions.AddZ(polygon, five))).Should().Throw<NullReferenceException>();
@@ -376,7 +376,7 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.RemovePoint(geography, null).Should().BeNull();
             GeographyFunctions.AddZ(geography, null).Should().BeNull();
             GeographyFunctions.RemoveRepeatedPoints(geography, null).Should().BeNull();
-            GeographyFunctions.Point(null, java.lang.Integer.valueOf(1)).Should().BeNull();
+            GeographyFunctions.Point(null, java.lang.Double.valueOf(1)).Should().BeNull();
             GeographyFunctions.MakeLine(null, geography).Should().BeNull();
             GeographyFunctions.MakePolygon(null).Should().BeNull();
             GeographyFunctions.PointFromText(null).Should().BeNull();

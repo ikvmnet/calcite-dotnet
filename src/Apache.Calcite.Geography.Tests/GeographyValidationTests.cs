@@ -87,15 +87,15 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The accessors insist on a geography exactly as the operations do.
+        /// An accessor takes either column, there being one type.
         /// </summary>
         /// <remarks>
-        /// They read coordinates without interpreting the space between them, so it would be tempting to let
-        /// them take either reading. They must not: <c>ST_GEOG_ASTEXT</c> over a geometry would be a way to
-        /// spell <c>ST_ASTEXT</c>, and every such way is a place the two readings can be confused.
+        /// It used to refuse a geometry, on the grounds that <c>ST_GEOG_ASTEXT</c> over one would be a second
+        /// way to spell <c>ST_ASTEXT</c> and every such way is a place the two readings can be confused. That
+        /// refusal is gone with the type it rested on, and this is here to say so out loud.
         /// </remarks>
         [TestMethod]
-        public void ShouldRejectAnAccessorOverAGeometryColumn()
+        public void ShouldAcceptAnAccessorOverEitherColumn()
         {
             foreach (var sql in new[]
             {
@@ -104,7 +104,7 @@ namespace Apache.Calcite.Geography.Tests
                 "SELECT ST_GEOG_NUMPOINTS(GEOM) FROM GEO",
                 "SELECT ST_GEOG_POINTN(GEOM, 1) FROM GEO",
             })
-                Refuse(sql).Should().Contain("ST_GEOG_", sql);
+                GeographyFixture.Validate(sql);
         }
 
         [TestMethod]
@@ -115,29 +115,25 @@ namespace Apache.Calcite.Geography.Tests
             Column("SELECT ST_GEOG_ISEMPTY(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.BOOLEAN);
             Column("SELECT ST_GEOG_ASTEXT(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.VARCHAR);
             Column("SELECT ST_GEOG_ASWKB(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.VARBINARY);
-            GeographyTypes.IsGeography(Column("SELECT ST_GEOG_BOUNDARY(GEOG) FROM GEO")).Should().BeTrue();
-            GeographyTypes.IsGeography(Column("SELECT ST_GEOG_GEOMFROMWKB(ST_GEOG_ASWKB(GEOG)) FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_BOUNDARY(GEOG) FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_GEOMFROMWKB(ST_GEOG_ASWKB(GEOG)) FROM GEO")).Should().BeTrue();
         }
 
         [TestMethod]
-        public void ShouldRejectCalcitesStDistanceOverAGeographyColumn()
+        public void ShouldAcceptCalcitesStDistanceOverAGeographyColumn()
         {
-            Refuse("SELECT ST_DISTANCE(GEOG, GEOG) FROM GEO").Should().Contain("ST_DISTANCE");
+            Column("SELECT ST_DISTANCE(GEOG, GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
         }
 
         /// <summary>
-        /// The same accessors go the same way, so there is no group of Calcite's spatial functions that comes
-        /// free.
+        /// The same goes for the accessors: every one of Calcite's spatial functions takes the column.
         /// </summary>
         [TestMethod]
-        public void ShouldRejectCalcitesStSridOverAGeographyColumn()
+        public void ShouldAcceptCalcitesStSridOverAGeographyColumn()
         {
-            Refuse("SELECT ST_SRID(GEOG) FROM GEO").Should().Contain("ST_SRID");
+            Column("SELECT ST_SRID(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.INTEGER);
         }
 
-        /// <summary>
-        /// The control. The rejection above is the type and not the fixture.
-        /// </summary>
         [TestMethod]
         public void ShouldAcceptCalcitesStDistanceOverAGeometryColumn()
         {
@@ -151,12 +147,13 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The refusal runs both ways: a geodesic operator will not take a plane's coordinates either.
+        /// And it runs both ways: a geodesic operator takes a plane's coordinates too, and answers metres
+        /// over them as though they were degrees. Nothing here can tell.
         /// </summary>
         [TestMethod]
-        public void ShouldRejectStGeogDistanceOverAGeometryColumn()
+        public void ShouldAcceptStGeogDistanceOverAGeometryColumn()
         {
-            Refuse("SELECT ST_GEOG_DISTANCE(GEOM, GEOM) FROM GEO").Should().Contain("ST_GEOG_DISTANCE");
+            Column("SELECT ST_GEOG_DISTANCE(GEOM, GEOM) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
         }
 
         /// <summary>
@@ -169,7 +166,7 @@ namespace Apache.Calcite.Geography.Tests
             var message = Refuse("SELECT ST_GEOG_DISTANCE('a', 'b') FROM GEO");
 
             message.Should().Contain("ST_GEOG_DISTANCE");
-            message.Should().Contain("GEOGRAPHY");
+            message.Should().Contain("GEOMETRY");
         }
 
         [TestMethod]
@@ -181,13 +178,13 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldTypeTheWktConstructorAsGeography()
         {
-            GeographyTypes.IsGeography(Column("SELECT ST_GEOG_GEOMFROMTEXT('POINT(0 0)') FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_GEOMFROMTEXT('POINT(0 0)') FROM GEO")).Should().BeTrue();
         }
 
         [TestMethod]
         public void ShouldTypeTheGeoJsonConstructorAsGeography()
         {
-            GeographyTypes.IsGeography(Column("SELECT ST_GEOG_GEOMFROMGEOJSON('{\"type\":\"Point\",\"coordinates\":[0,0]}') FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_GEOMFROMGEOJSON('{\"type\":\"Point\",\"coordinates\":[0,0]}') FROM GEO")).Should().BeTrue();
         }
 
         /// <summary>
@@ -197,8 +194,8 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldTypeTheWktConstructorWithAnSridAsGeography()
         {
-            GeographyTypes.IsGeography(Column("SELECT ST_GEOG_GEOMFROMTEXT('POINT(0 0)', 4326) FROM GEO")).Should().BeTrue();
-            GeographyTypes.IsGeography(Column("SELECT ST_GEOG_GEOMFROMWKT('POINT(0 0)', 4326) FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_GEOMFROMTEXT('POINT(0 0)', 4326) FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_GEOMFROMWKT('POINT(0 0)', 4326) FROM GEO")).Should().BeTrue();
         }
 
         [TestMethod]
@@ -229,17 +226,21 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldTypeTheOtherCrossingAsGeography()
         {
-            GeographyTypes.IsGeography(Column("SELECT ST_GEOM_ASGEOG(GEOM) FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeometry(Column("SELECT ST_GEOM_ASGEOG(GEOM) FROM GEO")).Should().BeTrue();
         }
 
         /// <summary>
-        /// Each crossing takes the reading it converts from, so neither is a way to launder the other.
+        /// Either crossing takes either column, and neither converts anything.
         /// </summary>
+        /// <remarks>
+        /// They were re-typings when there were two types to cross between. With one they are documentation:
+        /// a place in the SQL text where the author says which reading they mean.
+        /// </remarks>
         [TestMethod]
-        public void ShouldRejectACrossingOverTheWrongReading()
+        public void ShouldAcceptEitherCrossingOverEitherColumn()
         {
-            Refuse("SELECT ST_GEOM_ASGEOG(GEOG) FROM GEO").Should().Contain("ST_GEOM_ASGEOG");
-            Refuse("SELECT ST_GEOG_ASGEOM(GEOM) FROM GEO").Should().Contain("ST_GEOG_ASGEOM");
+            GeographyFixture.Validate("SELECT ST_GEOM_ASGEOG(GEOG) FROM GEO");
+            GeographyFixture.Validate("SELECT ST_GEOG_ASGEOM(GEOM) FROM GEO");
         }
 
         [TestMethod]

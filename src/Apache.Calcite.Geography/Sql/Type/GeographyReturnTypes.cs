@@ -16,12 +16,12 @@ namespace Apache.Calcite.Geography.Sql.Type
     /// measurement is <c>DOUBLE_NULLABLE</c>, both of which are right, because each body answers null exactly
     /// when one of its arguments is null.
     ///
-    /// <para>Neither of these two runs through <c>SqlTypeTransforms.TO_NULLABLE</c>, and that is deliberate.
-    /// The transform calls <c>createTypeWithNullability</c>, and a change of nullability on a <c>JavaType</c>
-    /// is answered by <c>RelDataTypeFactoryImpl.copySimpleType</c> with a plain <c>new JavaType(clazz,
-    /// nullable)</c> — the subclass is not copied, so a geography asked to become <c>NOT NULL</c> comes back
-    /// an ordinary geometry and every guarantee this package makes is gone. The type is nullable already,
-    /// which is the answer the transform would give for a nullable argument anyway.</para>
+    /// <para>Neither runs through <c>SqlTypeTransforms.TO_NULLABLE</c>, and nothing turns on that any
+    /// more. It mattered when a geography was a <c>JavaType</c> subclass, because the transform calls
+    /// <c>createTypeWithNullability</c> and <c>copySimpleType</c> answers that on a <c>JavaType</c> by
+    /// constructing a plain one, dropping the subclass. There is no subclass now. The transform is left off
+    /// because it would not change the answer: every body here returns null exactly when an argument is
+    /// null, so the nullable type is right whatever the operands are.</para>
     /// </remarks>
     public static class GeographyReturnTypes
     {
@@ -30,11 +30,6 @@ namespace Apache.Calcite.Geography.Sql.Type
         /// Returns <c>GEOGRAPHY</c>.
         /// </summary>
         public static readonly SqlReturnTypeInference Geography = new GeographyReturnTypeInference();
-
-        /// <summary>
-        /// Returns <c>GEOMETRY</c>, as Calcite's own spatial library declares it.
-        /// </summary>
-        public static readonly SqlReturnTypeInference Geometry = new GeometryReturnTypeInference();
 
         /// <summary>
         /// Returns the type the type factory gives a Java class, which is how Calcite's own spatial
@@ -125,16 +120,6 @@ namespace Apache.Calcite.Geography.Sql.Type
             public override RelDataType inferReturnType(SqlOperatorBinding opBinding)
             {
                 return GeographyTypes.Of(opBinding.getTypeFactory());
-            }
-
-        }
-
-        sealed class GeometryReturnTypeInference : ReturnTypeInference
-        {
-
-            public override RelDataType inferReturnType(SqlOperatorBinding opBinding)
-            {
-                return GeographyTypes.GeometryOf(opBinding.getTypeFactory());
             }
 
         }

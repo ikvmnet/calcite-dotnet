@@ -22,6 +22,9 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Apache.Calcite.Geography\Apache.Calcite.Geography.csproj" />
+        <!-- tests only: the shipped package references nothing here, but proving the operators run in
+             the ClrEnumerable conventions needs the conventions -->
+        <ProjectReference Include="..\Apache.Calcite.Extensions\Apache.Calcite.Extensions.csproj" />
     </ItemGroup>
 
 </Project>

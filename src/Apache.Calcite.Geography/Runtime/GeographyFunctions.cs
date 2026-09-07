@@ -76,7 +76,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// reprojection that will not happen, and silence would hand them coordinates read as something they
         /// are not.
         /// </remarks>
-        public static Geometry? FromWkt(string? wkt, java.lang.Number? srid)
+        public static Geometry? FromWkt(string? wkt, java.lang.Integer? srid)
         {
             if (wkt is null || srid is null)
                 return null;
@@ -147,12 +147,12 @@ namespace Apache.Calcite.Geography.Runtime
         /// divergence and a deliberate one: a caller should not have to write
         /// <c>CAST(2.0 AS DOUBLE)</c> to call a function that takes a distance.
         /// </remarks>
-        public static java.lang.Boolean? DWithin(Geometry? a, Geometry? b, java.lang.Number? distance)
+        public static java.lang.Boolean? DWithin(Geometry? a, Geometry? b, java.lang.Object? distance)
         {
             if (a is null || b is null || distance is null)
                 return null;
 
-            return java.lang.Boolean.valueOf(S2Geographies.DWithin(S2Geographies.Of(a), S2Geographies.Of(b), distance.doubleValue()));
+            return java.lang.Boolean.valueOf(S2Geographies.DWithin(S2Geographies.Of(a), S2Geographies.Of(b), Double(distance)));
         }
 
         /// <summary>
@@ -681,7 +681,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="g"></param>
         /// <param name="n"></param>
         /// <returns></returns>
-        public static Geometry? PointN(Geometry? g, java.lang.Number? n)
+        public static Geometry? PointN(Geometry? g, java.lang.Integer? n)
         {
             return g is null || n is null ? null : SpatialTypeFunctions.ST_PointN(g, n.intValue());
         }
@@ -692,7 +692,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="g"></param>
         /// <param name="n"></param>
         /// <returns></returns>
-        public static Geometry? GeometryN(Geometry? g, java.lang.Number? n)
+        public static Geometry? GeometryN(Geometry? g, java.lang.Integer? n)
         {
             return g is null || n is null ? null : SpatialTypeFunctions.ST_GeometryN(g, n.intValue());
         }
@@ -703,7 +703,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="g"></param>
         /// <param name="n"></param>
         /// <returns></returns>
-        public static Geometry? InteriorRing(Geometry? g, java.lang.Number? n)
+        public static Geometry? InteriorRing(Geometry? g, java.lang.Integer? n)
         {
             return g is null || n is null ? null : SpatialTypeFunctions.ST_InteriorRing(g, n.intValue());
         }
@@ -755,7 +755,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="wkb"></param>
         /// <param name="srid"></param>
         /// <returns></returns>
-        public static Geometry? FromWkb(org.apache.calcite.avatica.util.ByteString? wkb, java.lang.Number? srid)
+        public static Geometry? FromWkb(org.apache.calcite.avatica.util.ByteString? wkb, java.lang.Integer? srid)
         {
             if (wkb is null || srid is null)
                 return null;
@@ -790,7 +790,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="gml"></param>
         /// <param name="srid"></param>
         /// <returns></returns>
-        public static Geometry? FromGml(string? gml, java.lang.Number? srid)
+        public static Geometry? FromGml(string? gml, java.lang.Integer? srid)
         {
             if (gml is null || srid is null)
                 return null;
@@ -917,7 +917,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="point"></param>
         /// <param name="index"></param>
         /// <returns></returns>
-        public static Geometry? AddPoint(Geometry? line, Geometry? point, java.lang.Number? index)
+        public static Geometry? AddPoint(Geometry? line, Geometry? point, java.lang.Integer? index)
         {
             return line is null || point is null || index is null
                 ? null
@@ -930,7 +930,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="line"></param>
         /// <param name="index"></param>
         /// <returns></returns>
-        public static Geometry? RemovePoint(Geometry? line, java.lang.Number? index)
+        public static Geometry? RemovePoint(Geometry? line, java.lang.Integer? index)
         {
             return line is null || index is null ? null : Wgs84Of(SpatialTypeFunctions.ST_RemovePoint(line, index.intValue()));
         }
@@ -941,7 +941,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="g"></param>
         /// <param name="z"></param>
         /// <returns></returns>
-        public static Geometry? AddZ(Geometry? g, java.lang.Number? z)
+        public static Geometry? AddZ(Geometry? g, java.lang.Object? z)
         {
             return g is null || z is null ? null : Wgs84Of(SpatialTypeFunctions.ST_AddZ(g, Decimal(z)));
         }
@@ -957,7 +957,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// The tolerance is in the units of the coordinates and not in metres, because what this does is drop
         /// coordinates rather than measure between places. Calcite's is the same number.
         /// </remarks>
-        public static Geometry? RemoveRepeatedPoints(Geometry? g, java.lang.Number? tolerance)
+        public static Geometry? RemoveRepeatedPoints(Geometry? g, java.lang.Object? tolerance)
         {
             return g is null || tolerance is null
                 ? null
@@ -969,9 +969,30 @@ namespace Apache.Calcite.Geography.Runtime
         /// </summary>
         /// <param name="number"></param>
         /// <returns></returns>
-        static java.math.BigDecimal Decimal(java.lang.Number number)
+        /// <remarks>
+        /// The parameter is <c>Object</c> rather than <c>Number</c> for a reason that is not about this
+        /// method: a schema function's parameter type is derived from the declared class, and a fractional
+        /// operand has to be declared as one that accepts whatever a SQL literal arrives as.
+        /// <c>200000.0</c> is a <c>DECIMAL</c> and reaches the body as a <c>BigDecimal</c>; <c>200000</c> is
+        /// an <c>INTEGER</c> and reaches it as an <c>Integer</c>. Declaring <c>Double</c> makes routine
+        /// resolution succeed on the assignment rules and then the generated call fail to compile, since
+        /// nothing inserted the cast the rules implied. <c>Object</c> is the one declaration that always
+        /// compiles, and <c>CalciteCatalogReader.toSql</c> reads it as <c>ANY</c>, which has assignment rules.
+        /// </remarks>
+        static java.math.BigDecimal Decimal(java.lang.Object number)
         {
-            return number as java.math.BigDecimal ?? java.math.BigDecimal.valueOf(number.doubleValue());
+            return number as java.math.BigDecimal ?? java.math.BigDecimal.valueOf(Double(number));
+        }
+
+        /// <summary>
+        /// Reads a number as a <see cref="double"/>.
+        /// </summary>
+        /// <param name="number"></param>
+        /// <returns></returns>
+        /// <inheritdoc cref="Decimal" />
+        static double Double(java.lang.Object number)
+        {
+            return ((java.lang.Number)number).doubleValue();
         }
 
         /// <summary>
@@ -981,7 +1002,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="x">The longitude.</param>
         /// <param name="y">The latitude.</param>
         /// <returns></returns>
-        public static Geometry? Point(java.lang.Number? x, java.lang.Number? y)
+        public static Geometry? Point(java.lang.Object? x, java.lang.Object? y)
         {
             return x is null || y is null ? null : Wgs84Of(SpatialTypeFunctions.ST_Point(Decimal(x), Decimal(y)));
         }
@@ -993,7 +1014,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="y">The latitude.</param>
         /// <param name="z"></param>
         /// <returns></returns>
-        public static Geometry? Point(java.lang.Number? x, java.lang.Number? y, java.lang.Number? z)
+        public static Geometry? Point(java.lang.Object? x, java.lang.Object? y, java.lang.Object? z)
         {
             return x is null || y is null || z is null
                 ? null
@@ -1160,7 +1181,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="wkt"></param>
         /// <param name="srid"></param>
         /// <returns></returns>
-        public static Geometry? LineFromText(string? wkt, java.lang.Number? srid)
+        public static Geometry? LineFromText(string? wkt, java.lang.Integer? srid)
         {
             if (wkt is null || srid is null)
                 return null;
@@ -1185,7 +1206,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="wkb"></param>
         /// <param name="srid"></param>
         /// <returns></returns>
-        public static Geometry? LineFromWkb(org.apache.calcite.avatica.util.ByteString? wkb, java.lang.Number? srid)
+        public static Geometry? LineFromWkb(org.apache.calcite.avatica.util.ByteString? wkb, java.lang.Integer? srid)
         {
             if (wkb is null || srid is null)
                 return null;
@@ -1210,7 +1231,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="wkt"></param>
         /// <param name="srid"></param>
         /// <returns></returns>
-        public static Geometry? MLineFromText(string? wkt, java.lang.Number? srid)
+        public static Geometry? MLineFromText(string? wkt, java.lang.Integer? srid)
         {
             if (wkt is null || srid is null)
                 return null;
@@ -1235,7 +1256,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="wkt"></param>
         /// <param name="srid"></param>
         /// <returns></returns>
-        public static Geometry? MPointFromText(string? wkt, java.lang.Number? srid)
+        public static Geometry? MPointFromText(string? wkt, java.lang.Integer? srid)
         {
             if (wkt is null || srid is null)
                 return null;
@@ -1260,7 +1281,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="wkt"></param>
         /// <param name="srid"></param>
         /// <returns></returns>
-        public static Geometry? MPolyFromText(string? wkt, java.lang.Number? srid)
+        public static Geometry? MPolyFromText(string? wkt, java.lang.Integer? srid)
         {
             if (wkt is null || srid is null)
                 return null;
@@ -1285,7 +1306,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="wkt"></param>
         /// <param name="srid"></param>
         /// <returns></returns>
-        public static Geometry? PointFromText(string? wkt, java.lang.Number? srid)
+        public static Geometry? PointFromText(string? wkt, java.lang.Integer? srid)
         {
             if (wkt is null || srid is null)
                 return null;
@@ -1310,7 +1331,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="wkb"></param>
         /// <param name="srid"></param>
         /// <returns></returns>
-        public static Geometry? PointFromWkb(org.apache.calcite.avatica.util.ByteString? wkb, java.lang.Number? srid)
+        public static Geometry? PointFromWkb(org.apache.calcite.avatica.util.ByteString? wkb, java.lang.Integer? srid)
         {
             if (wkb is null || srid is null)
                 return null;
@@ -1335,7 +1356,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="wkt"></param>
         /// <param name="srid"></param>
         /// <returns></returns>
-        public static Geometry? PolyFromText(string? wkt, java.lang.Number? srid)
+        public static Geometry? PolyFromText(string? wkt, java.lang.Integer? srid)
         {
             if (wkt is null || srid is null)
                 return null;
@@ -1360,7 +1381,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="wkb"></param>
         /// <param name="srid"></param>
         /// <returns></returns>
-        public static Geometry? PolyFromWkb(org.apache.calcite.avatica.util.ByteString? wkb, java.lang.Number? srid)
+        public static Geometry? PolyFromWkb(org.apache.calcite.avatica.util.ByteString? wkb, java.lang.Integer? srid)
         {
             if (wkb is null || srid is null)
                 return null;

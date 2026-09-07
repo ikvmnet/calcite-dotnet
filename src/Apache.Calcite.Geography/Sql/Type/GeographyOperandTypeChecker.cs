@@ -114,7 +114,7 @@ namespace Apache.Calcite.Geography.Sql.Type
         /// </remarks>
         public bool isFixedParameters()
         {
-            return false;
+            return true;
         }
 
         // IKVM does not project a Java default method as a C# default interface member, so an implementer
@@ -164,10 +164,10 @@ namespace Apache.Calcite.Geography.Sql.Type
 
             return operand switch
             {
-                GeographyOperand.Geography => GeographyTypes.IsGeography(type),
                 GeographyOperand.Geometry => GeographyTypes.IsGeometry(type),
                 GeographyOperand.Character => SqlTypeUtil.inCharFamily(type),
-                GeographyOperand.Numeric => SqlTypeUtil.isNumeric(type),
+                GeographyOperand.Integral => SqlTypeUtil.isNumeric(type),
+                GeographyOperand.Fractional => SqlTypeUtil.isNumeric(type),
                 GeographyOperand.Binary => SqlTypeUtil.isBinary(type),
                 _ => false,
             };
@@ -177,10 +177,10 @@ namespace Apache.Calcite.Geography.Sql.Type
         {
             return operand switch
             {
-                GeographyOperand.Geography => GeographyTypes.Of(typeFactory),
-                GeographyOperand.Geometry => GeographyTypes.GeometryOf(typeFactory),
+                GeographyOperand.Geometry => GeographyTypes.Of(typeFactory),
                 GeographyOperand.Character => typeFactory.createSqlType(SqlTypeName.VARCHAR),
-                GeographyOperand.Numeric => typeFactory.createSqlType(SqlTypeName.DOUBLE),
+                GeographyOperand.Integral => typeFactory.createSqlType(SqlTypeName.INTEGER),
+                GeographyOperand.Fractional => typeFactory.createSqlType(SqlTypeName.ANY),
                 GeographyOperand.Binary => typeFactory.createSqlType(SqlTypeName.VARBINARY),
                 _ => throw new NotSupportedException($"No type for '{operand}'."),
             };
@@ -190,10 +190,10 @@ namespace Apache.Calcite.Geography.Sql.Type
         {
             return operand switch
             {
-                GeographyOperand.Geography => "GEOGRAPHY",
                 GeographyOperand.Geometry => "GEOMETRY",
                 GeographyOperand.Character => "CHARACTER",
-                GeographyOperand.Numeric => "NUMERIC",
+                GeographyOperand.Integral => "INTEGER",
+                GeographyOperand.Fractional => "DOUBLE",
                 GeographyOperand.Binary => "BINARY",
                 _ => throw new NotSupportedException($"No name for '{operand}'."),
             };
