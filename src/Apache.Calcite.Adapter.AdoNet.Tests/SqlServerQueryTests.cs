@@ -373,6 +373,109 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
         #endregion
 
+        #region Unbounded strings
+
+        /// <summary>
+        /// The cast from the report, against the column that makes the server say so out loud. A Calcite
+        /// <c>VARCHAR</c> with no precision is unbounded and Calcite writes it as the bare keyword, which
+        /// T-SQL reads as thirty characters in a cast; a <c>uniqueidentifier</c> is thirty-six, so the
+        /// server answers "Insufficient result space to convert uniqueidentifier value to char" rather than
+        /// truncating. The same rendering over a long string truncates instead and says nothing.
+        /// </summary>
+        /// <remarks>
+        /// Upper case, where <see cref="AUniqueIdentifierComesBackAsItsText"/> reading the same column is
+        /// lower — that is the server's own conversion rather than the reader's <c>Guid.ToString</c>, and so
+        /// is the evidence the cast was pushed down rather than computed here.
+        /// </remarks>
+        [TestMethod]
+        public void AnUnboundedCastKeepsTheWholeValue()
+        {
+            Assert.AreEqual(
+                "3F2504E0-4F89-11D3-9A0C-0305E82C3301",
+                Scalar("SELECT CAST(C_GUID AS VARCHAR) FROM ADO.TYPES WHERE ID = 1"));
+        }
+
+        /// <summary>
+        /// And in a predicate, which is the shape a caller has no way to influence: Entity Framework writes
+        /// an unbounded cast around the parameter, and comparing that against a column of a stated length
+        /// makes Calcite's coercion widen the column back to unbounded, so stating a length in a view does
+        /// not save you. The statement that reaches the server is the one the report quotes,
+        /// <c>WHERE CAST([C_GUID] AS VARCHAR) = CAST(@P0 AS VARCHAR)</c> — read back from
+        /// <c>sys.dm_exec_sql_text</c>.
+        /// </summary>
+        /// <remarks>
+        /// A cast on both sides is what makes this a cast on the wire at all:
+        /// <c>SqlImplementor.stripCastFromString</c> drops a character cast from a comparison where only one
+        /// side carries one, so the same query against a literal is sent as a bare <c>[C_GUID] = '…'</c> and
+        /// says nothing about the rendering. A parameter is how the other cast is come by without one being
+        /// written for its own sake.
+        /// </remarks>
+        [TestMethod]
+        public void AnUnboundedCastAroundAParameterMatches()
+        {
+            using var statement = _connection.prepareStatement("SELECT ID FROM ADO.TYPES WHERE CAST(C_GUID AS VARCHAR) = CAST(? AS VARCHAR)");
+            statement.setString(1, "3f2504e0-4f89-11d3-9a0c-0305e82c3301");
+
+            var results = statement.executeQuery();
+            Assert.IsTrue(results.next(), "the row the parameter names");
+            Assert.AreEqual(1, results.getInt(1));
+            Assert.IsFalse(results.next(), "and only that one");
+        }
+
+        #endregion
+
+        #region Parameters
+
+        /// <summary>
+        /// A <c>UUID</c> bound as a parameter reaches the provider as a <see cref="Guid"/>. Calcite holds
+        /// one as a <c>java.util.UUID</c>, and handing that to SqlClient unconverted is
+        /// <c>No mapping exists from object type java.util.UUID to a known managed provider native
+        /// type</c> — measured, on every shape a comparison against a GUID column takes.
+        /// </summary>
+        /// <remarks>
+        /// The gap was one-directional and that is why it lasted: reading the same column always worked,
+        /// <see cref="AUniqueIdentifierComesBackAsItsText"/> holding that, and a literal comparison carries
+        /// no parameter at all. Only a bound value goes through the conversion this pins.
+        /// </remarks>
+        [TestMethod]
+        public void AUuidParameterIsBoundAsAGuid()
+        {
+            using var statement = _connection.prepareStatement("SELECT ID FROM ADO.TYPES WHERE C_GUID = ?");
+            statement.setObject(1, java.util.UUID.fromString("3f2504e0-4f89-11d3-9a0c-0305e82c3301"));
+
+            var results = statement.executeQuery();
+            Assert.IsTrue(results.next(), "the row the parameter names");
+            Assert.AreEqual(1, results.getInt(1));
+            Assert.IsFalse(results.next(), "and only that one");
+        }
+
+        /// <summary>
+        /// A <c>DECIMAL</c> parameter small enough that <c>BigDecimal.toString()</c> writes it in scientific
+        /// notation, which the text route this boundary used could not read back: <c>0.0000001</c> is
+        /// <c>1E-7</c>, and <c>decimal.Parse(string, IFormatProvider)</c> is <c>NumberStyles.Number</c>,
+        /// which does not allow an exponent. Measured, before the byte transfer: <c>FormatException: The
+        /// input string '1E-7' was not in a correct format</c>.
+        /// </summary>
+        /// <remarks>
+        /// <c>0.000001</c> writes itself plainly and parses; the threshold is an adjusted exponent below
+        /// -6, which is <c>BigDecimal.toString</c>'s own rule, and a negative scale writes an exponent at
+        /// any magnitude. Nothing about the value is out of range for a <see cref="decimal"/> — it is only
+        /// how the intermediate text is spelt, which is why no existing decimal test saw it.
+        /// </remarks>
+        [TestMethod]
+        public void ADecimalParameterBelowTheExponentThresholdIsBound()
+        {
+            using var statement = _connection.prepareStatement("SELECT ID FROM ADO.TYPES WHERE C_DECIMAL > ?");
+            statement.setBigDecimal(1, new java.math.BigDecimal("0.0000001"));
+
+            var results = statement.executeQuery();
+            Assert.IsTrue(results.next(), "the one row with a decimal in it");
+            Assert.AreEqual(1, results.getInt(1));
+            Assert.IsFalse(results.next(), "and only that one");
+        }
+
+        #endregion
+
     }
 
 }

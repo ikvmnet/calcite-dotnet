@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Data;
 
-using Apache.Calcite.Data.Common;
+using Apache.Calcite.Data.Types;
 
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
@@ -33,7 +33,7 @@ namespace Apache.Calcite.Data.Tests
 
             public UriResolver()
             {
-                _mappings.Add(typeof(Uri), SqlTypeName.VARCHAR, v => ((Uri)v).ToString(), v => new Uri((string)v));
+                _mappings.Add(typeof(Uri), SqlTypeName.VARCHAR, (v, _) => ((Uri)v).ToString(), (v, _) => new Uri((string)v));
             }
 
             public ClrTypeMapping? GetMapping(Type? clrType, RelDataType? relType, ClrTypeContext context) => _mappings.GetMapping(clrType, relType, context);
@@ -176,6 +176,94 @@ namespace Apache.Calcite.Data.Tests
             using var r = cmd.ExecuteReader();
             Assert.True(r.Read());
             Assert.Equal(9000000001L, r.GetValue(0));
+        }
+
+        // ------------------------------------------------------------------------------------
+        // Where the chain is registered.
+        // ------------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_data_source_mapping_should_reach_every_connection_it_opens()
+        {
+            var builder = new CalciteDataSourceBuilder(TestModels.InlineEmptyModelConnectionString);
+            builder.TypeMapper.Prepend(new UriResolver());
+
+            using var dataSource = builder.Build();
+            using var c = dataSource.OpenConnection();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST('https://calcite.apache.org/' AS VARCHAR(32)))";
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(typeof(Uri), r.GetFieldType(0));
+            Assert.Equal(new Uri("https://calcite.apache.org/"), r.GetValue(0));
+        }
+
+        [Fact]
+        public void A_connection_should_not_write_its_own_mapping_back_to_the_data_source()
+        {
+            // the connection takes a copy, so registering on one is not registering on the next
+            using var dataSource = new CalciteDataSourceBuilder(TestModels.InlineEmptyModelConnectionString).Build();
+
+            using (var first = dataSource.CreateConnection())
+            {
+                first.TypeMapper.Prepend(new UriResolver());
+                first.Open();
+            }
+
+            using var second = dataSource.OpenConnection();
+            using var cmd = second.CreateCommand();
+            cmd.CommandText = "VALUES (CAST('https://calcite.apache.org/' AS VARCHAR(32)))";
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(typeof(string), r.GetFieldType(0));
+        }
+
+        // ------------------------------------------------------------------------------------
+        // A claim over a component is a claim over the collection of it.
+        // ------------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_claim_over_a_component_should_carry_to_the_array_of_it()
+        {
+            // nothing registers an ARRAY mapping; the element type is the component's own answer with a
+            // dimension added, and the elements convert through the component's mapping, so the type the
+            // reader advertises and the value it hands back are the same decision
+            using var c = Open(mapped: true);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (ARRAY[CAST('https://calcite.apache.org/' AS VARCHAR(32))])";
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(typeof(Uri[]), r.GetFieldType(0));
+            Assert.Equal(new[] { new Uri("https://calcite.apache.org/") }, Assert.IsType<Uri[]>(r.GetValue(0)));
+        }
+
+        [Fact]
+        public void A_claim_over_a_component_should_carry_to_the_map_of_it()
+        {
+            using var c = Open(mapped: true);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (MAP[CAST('https://calcite.apache.org/' AS VARCHAR(32)), CAST('https://ikvm.org/' AS VARCHAR(32))])";
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            var map = Assert.IsType<System.Collections.Generic.Dictionary<Uri, Uri>>(r.GetValue(0));
+            Assert.Equal(new Uri("https://ikvm.org/"), map[new Uri("https://calcite.apache.org/")]);
+        }
+
+        [Fact]
+        public void An_unclaimed_array_should_read_as_the_component_it_holds()
+        {
+            using var c = Open(mapped: false);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (ARRAY[1, 2, 3])";
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(typeof(int[]), r.GetFieldType(0));
+            Assert.Equal(new[] { 1, 2, 3 }, Assert.IsType<int[]>(r.GetValue(0)));
         }
 
         [Fact]

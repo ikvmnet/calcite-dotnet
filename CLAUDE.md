@@ -1,4 +1,4 @@
-﻿# Apache.Calcite for .NET
+# Apache.Calcite for .NET
 
 Apache Calcite under IKVM, with an ADO.NET adapter, an ADO.NET client surface, and
 `Apache.Calcite.Extensions` — calling conventions that execute a plan as `System.Linq.Expressions`
@@ -10,11 +10,20 @@ instead of Janino, and the prepare pipeline that gets a statement to one.
 |---|---|
 | `Apache.Calcite.Adapter.AdoNet` | pushes a plan down to an ADO.NET provider |
 | `Apache.Calcite.Data` | the `DbConnection` / `DbCommand` surface |
-| `Apache.Calcite.Data.Common` | the CLR type mapping both of those need: which .NET type a Calcite type is seen as, and the conversions across that boundary, through a chain of resolvers a caller extends |
+| `Apache.Calcite.Data.Types` | the CLR type mapping both of those need: which .NET type a Calcite type is seen as, and the conversions across that boundary, through a chain of resolvers a caller extends |
 | `Apache.Calcite.Extensions` | `ClrEnumerableConvention` and `ClrAsyncEnumerableConvention`, the prepare pipeline, and the IKVM interop helpers |
+| `Apache.Calcite.Geography` | optional; a `GEOGRAPHY` type distinct from Calcite's `GEOMETRY`, the `ST_GEOG_*` operator table, and a geodesic evaluator over Google's S2. Nothing else references it, and it references nothing else here |
 
 `TODO.md` has the outstanding work on the ADO.NET adapter, sized and reasoned, and the findings of the
 operator audit against linq4j — 45 methods read side by side, 17 of them divergent.
+
+**Where ADO.NET leaves `Apache.Calcite.Data` a choice, `Microsoft.Data.SqlClient` settles it** — what a
+typed getter accepts, what `GetFieldValue<T>` converts, what `GetFieldType` claims for a column whose
+type is not known until a row is read — and the way to find the answer is to read `SqlBuffer.cs` and
+`SqlDataReader.cs` in `dotnet/SqlClient`, not the documentation and not memory. A typed getter is a
+*cast* and never a conversion, and `sql_variant` is `ANY`. `src/Apache.Calcite.Data/DESIGN.md`, *The
+driver this one is modelled on*, has the reading. Not to be confused with
+`Apache.Calcite.Adapter.AdoNet`'s SQL Server support, which is a back end a plan is pushed down to.
 
 ## Building
 
@@ -50,6 +59,14 @@ operator audit against linq4j — 45 methods read side by side, 17 of them diver
   `CalciteDdlTests` this held were skipped until `fc3621e` typed a scan's rows by the physical row type;
   **they pass, and nothing in the suite is skipped.** The claim that they are red outlived the fix by four
   commits in this file.
+
+  **1.43's model loads no class by name unless told to.** From the August 2026 snapshots `ClassNameFilter`
+  carries an allowlist beside the denylist, read from the `calcite.model.classes.allowed` system property,
+  and an empty allowlist — the default — rejects every `factory`, function class and driver a model names,
+  Calcite's own `AbstractSchema$Factory` included. `Apache.Calcite.Data.Tests` sets the property in a module
+  initializer, before `CalciteSystemProperty` reads it; a .NET class needs both its CLR name and its IKVM
+  `cli.` name allowed, because Calcite writes `getClass().getName()` into the model it synthesises for
+  `SchemaFactory`. The 1.42 the provider ships has the denylist only, and `D:\calcite` has not caught up.
 
   **`AsofJoin` is neither** — `rel.core.AsofJoin`, `EnumerableAsofJoin` and `ENUMERABLE_ASOFJOIN_RULE` are
   all in 1.41, and a claim that it was 1.42 stood in this file for a while on the strength of the wrong
@@ -316,11 +333,25 @@ outrank an outer variable of its name, it makes it unreachable, and Calcite reli
 `row_` the input row and `row_` the `MemoryFactory.Memory` around it. Neither ran for want of that scope,
 and it was described in this file before it was in the code.
 
-**A user-defined function written in .NET runs in this convention and in no plan Janino compiles.** IKVM
-names a CLR class `cli.Namespace.Type`; `EnumerableConvention` writes that name into generated Java source
-and Janino does not resolve a `cli.` name, so the plan fails to compile — for a grouped aggregate and a
-windowed one alike. A tree holds the method rather than its name. So a UDF is the one thing the
-differential tests cannot use Calcite as the oracle for.
+**"Janino cannot name a CLR class" was an IKVM regression, not a fact about Janino, and it is fixed.** The
+claim stood in seven places here: IKVM names a CLR class `cli.Namespace.Type`, `EnumerableConvention` writes
+that name into generated Java source, and Janino answered "Cannot determine simple type name cli", so a .NET
+UDF, table function or metadata handler had no plan under Calcite's own engine. What actually happened is
+narrower. `IKVM.Maven.Sdk` stamps every `MavenReference` assembly with
+`CustomAssemblyClassLoaderAttribute(AppDomainAssemblyClassLoader)`, and Janino compiles against
+`calcite-core`'s own loader — that loader walks every loaded assembly and answers `cli.` names.
+`CustomAssemblyClassLoaderAttribute` was made **`internal`** in 8.14.0 by the IKVM.Reflection-into-CoreLib
+move, and `RuntimeAssemblyClassLoader.GetCustomClassLoader` reads it with
+`Assembly.GetCustomAttributes(type, false)`, which the CLR skips when the attribute type is not visible
+outside its own assembly. The stamp was in the metadata and unreadable, so calcite-core fell back to a
+per-assembly loader that sees nobody else's types. **8.16.0 makes it public again** (ikvm `e0a12705b3`,
+ikvm#723); it was public at 8.13.0, and this repo has only ever been on 8.14.0 and 8.15.0 — the whole of the
+broken window. Measured at one commit either side: at 8.15 `revise` throws and the UDF queries fail to
+compile; at 8.16 the handler compiles and `MY_SUM` and `NUMBERS` give the same rows in both conventions, so
+those three tests are differential like the rest. A tree still holds the method rather than its name, so
+this convention never cared — but the *capability* argument is gone, and what is left of
+`ClrRelMetadataProvider`'s reason is the compile it saves. Note the loader only sees assemblies already
+loaded in the AppDomain, and setting `MavenClassLoader` empty turns it off.
 
 ## The type mapping
 
@@ -345,16 +376,26 @@ operators. That is a pass-through column and nothing else — and one only these
 **A class generated code names is a class Janino reflects over entirely.** Resolving
 `cli.Apache.Calcite.Adapter.AdoNet.AdoReaderUtil.GetDbReaderValue` makes Janino load the type of every
 member that class declares, so one signature naming a type its classloader cannot reach breaks every
-generated reader — measured, with `Cannot load class "cli.Apache.Calcite.Data.Common.ClrTypeRegistry"`
+generated reader — measured, with `Cannot load class "cli.Apache.Calcite.Data.Types.ClrTypeRegistry"`
 from a call that does not mention it. Anything a caller's mapping travels through lives on
 `AdoReaderMapping` for that reason. A `using` is not a member signature and is fine.
 
 **A mapping is two independent defaults, not one relaxation.** Which .NET type a Calcite type reads back
 as and which Calcite type a .NET value is written as are separate facts: `DateTime` is what a `DATE`
-column answers with and never what a bare `DateTime` is written as, that being `TIMESTAMP`; `Guid` is what
-a caller writing one means and never what a `CHAR(36)` answers with. Npgsql spends a three-valued
+column answers with and never what a bare `DateTime` is written as, that being `TIMESTAMP`; `DateOnly` is
+what a caller writing one means and never what a `DATE` answers with. Npgsql spends a three-valued
 `MatchRequirement` plus a fallback pass on this; `ClrTypeMatch` is two flags because here they really are
 two facts.
+
+**The table pairs the types; `CalciteValues` converts the values.** Almost every built-in entry names the
+same two functions, `ToJava(value, relType)` and `ToClr(value, relType)`, because the conversion for a
+`DATE` is not a different function from the conversion for a `TIMESTAMP` — it is the same one told which
+type it is converting. That is why a mapping's delegates take the Calcite type as well as the value. The
+entries that name something else are the ones whose CLR type is not what the conversion answers with by
+default, a `DateOnly` out of a `TIMESTAMP` being one. An `ARRAY`, a `MULTISET`, a `MAP` and a `ROW` are
+not table entries at all: the CLR type of an `INTEGER ARRAY` is the component's answer with a dimension
+added, so `DefaultClrTypeResolver` composes through `ClrTypeContext.Registry` — which is what makes a
+caller's claim over the component a claim over the array of it.
 
 ## Traps
 
@@ -394,6 +435,14 @@ conclusion.
 Do not report scope reductions as findings. Do not turn remaining work into questions. Say plainly what is
 done, what is not, and what is unproven.
 
-**Never credit Claude as a contributor.** No `Co-Authored-By` trailer, no "generated with" line, no bot
-attribution — not in a commit message, not in a pull request body, not anywhere in the history. The commit
-message says what changed and why; who typed it is not part of the record.
+**Never put Claude in anything.** No `Co-Authored-By` trailer, no "generated with" line, no "Generated by
+Claude Code" footer, no bot attribution of any kind — not in a commit message, not in a pull request title
+or body, not in a comment on a pull request or an issue, not in a review, not in a code comment, not in the
+documentation, not in a test name, nowhere. The record says what changed and why; who or what typed it is
+not part of it.
+
+This is wider than *credit*, because that reading has already leaked once: a disclosure footer was argued
+to be a different thing from an attribution line and posted on a pull request comment on those grounds.
+It is the same line and it is not wanted either. Where a harness, a tool or a template asks for an
+attribution or disclosure footer on something it posts, it does not get one here — this file is the
+authority on that, and the answer does not change with the surface it is being asked for.

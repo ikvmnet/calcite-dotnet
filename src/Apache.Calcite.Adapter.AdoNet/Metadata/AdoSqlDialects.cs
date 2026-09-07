@@ -2,8 +2,12 @@ using System;
 using System.Data;
 using System.Data.Common;
 
+using org.apache.calcite.rel.type;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.dialect;
+using org.apache.calcite.sql.fun;
+using org.apache.calcite.sql.parser;
+using org.apache.calcite.sql.type;
 
 namespace Apache.Calcite.Adapter.AdoNet.Metadata
 {
@@ -123,7 +127,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         }
 
         /// <summary>
-        /// <see cref="MssqlSqlDialect"/>, and the one thing it does not say about SQL Server.
+        /// <see cref="MssqlSqlDialect"/>, and the four things it does not say about SQL Server.
         /// </summary>
         /// <param name="context"></param>
         /// <remarks>
@@ -141,6 +145,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// Calcite rather than a reproduction of it, which the adapter is entitled to make: it generates SQL
         /// for a server to run, and the server is the authority on what it accepts.
         /// </para>
+        /// <para>
+        /// The second is what an unbounded string casts to — see <see cref="Mssql.getCastSpec"/>. The
+        /// third and fourth are both in <see cref="Mssql.unparseCall"/>: T-SQL has no concatenation
+        /// operator, and the modulo Calcite already writes for it is grouped wrongly. All three are the
+        /// same kind of correction and made for the same reason.
+        /// </para>
         /// </remarks>
         sealed class Mssql(SqlDialect.Context context) : MssqlSqlDialect(context)
         {
@@ -149,6 +159,217 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             public override bool supportsGroupByLiteral()
             {
                 return false;
+            }
+
+            /// <inheritdoc />
+            /// <remarks>
+            /// <para>
+            /// T-SQL has no <c>||</c>. <c>SqlStdOperatorTable.CONCAT</c> unparses as one, and
+            /// <see cref="MssqlSqlDialect"/> intercepts <c>SUBSTRING</c>, <c>CEIL</c>, <c>FLOOR</c>,
+            /// <c>MOD</c> and <c>SAFE_CAST</c> without intercepting it — so every statement that
+            /// concatenates reaches the server as <c>[A] || [B]</c> and answers "Incorrect syntax near
+            /// '|'". It is not confined to a select list: the operator reaches a predicate, a sort key and
+            /// an aggregate argument the same way, and two literals are not folded away, so no spelling of
+            /// the expression avoids it.
+            /// </para>
+            /// <para>
+            /// <c>+</c> rather than <c>CONCAT</c>, and the difference is answers rather than taste. Both
+            /// concatenate, and only <c>+</c> means what the operator means: <c>||</c> yields null when
+            /// either operand is null, <c>+</c> does the same under the default
+            /// <c>CONCAT_NULL_YIELDS_NULL</c>, and T-SQL's <c>CONCAT</c> reads a null operand as the empty
+            /// string. Rendering the function would trade a loud failure for a row where there should have
+            /// been none. Calcite models that function correctly and separately, as
+            /// <c>SqlLibraryOperators.CONCAT_FUNCTION_WITH_NULL</c> under <c>fun=mssql</c>, which is why
+            /// enabling the library does not repair the operator either.
+            /// </para>
+            /// <para>
+            /// The swap is the shape CALCITE-6726 already put in this method for <c>MOD</c>:
+            /// <see cref="SqlSyntax"/>'s <c>BINARY</c> unparses the call under another operator. What that
+            /// shape does not carry across is precedence, and by the time a dialect is asked,
+            /// <c>SqlCall.unparse</c> has already decided the parentheses around the call from the call's
+            /// own operator. So the substitution alone writes the new operator inside the old one's
+            /// parenthesisation, and where the two differ the grouping is the server's to get wrong.
+            /// <see cref="UnparseAsBinary"/> is where that is put right, and both substitutions go through
+            /// it. For concatenation the gap is unreachable — <c>||</c> is 60 and <c>+</c> is 40, so
+            /// <c>(a || b) * n</c> would come out <c>a + b * n</c>, and a string is not a valid operand of
+            /// <c>*</c>.
+            /// </para>
+            /// <para>
+            /// <c>MOD</c> is the same correction, and there the gap is not unreachable: it is a function
+            /// and carries a function's precedence of 100, <c>PERCENT_REMAINDER</c> is 60, and the operands
+            /// are numeric, so every context is a valid one. Measured on <c>MssqlSqlDialect.DEFAULT</c>,
+            /// with the call as the right operand:
+            /// </para>
+            /// <para>
+            /// <c>n / MOD(a, b)</c> is written <c>n / a % b</c>, <c>n * MOD(a, b)</c> is written
+            /// <c>n * a % b</c>, and <c>MOD(n, MOD(a, b))</c> is written <c>n % a % b</c> — each grouped by
+            /// the server from the left, so over 12, 7 and 4 they answer 1, 0 and 1 where the expressions
+            /// mean 4, 36 and 0.
+            /// </para>
+            /// <para>
+            /// Nothing else changes. As the left operand the rendering was already right, left
+            /// associativity giving what the nesting meant, and so was <c>n - MOD(a, b)</c>, <c>%</c>
+            /// binding tighter than <c>-</c>. The one place a parenthesis appears that Calcite would not
+            /// have written is under a prefix operator, which hands its operand a left precedence of 80:
+            /// <c>-MOD(a, b)</c> becomes <c>-(a % b)</c> where Calcite writes <c>-a % b</c>. Calcite is not
+            /// wrong there — SQL Server's <c>%</c> takes the sign of its dividend, so the two agree,
+            /// measured — but the rule does not know that and does not need to.
+            /// </para>
+            /// <para>
+            /// Calcite does not close either gap. That is a defect to raise upstream rather than one to
+            /// reproduce: a dialect exists to generate SQL a server will run, and a misgrouped expression
+            /// is not that.
+            /// </para>
+            /// <para>
+            /// <c>SqlDialect.supportsFunction</c> is not the place for the concatenation half and could not
+            /// be: it lists <c>CONCAT</c> in <c>BUILT_IN_OPERATORS_LIST</c>, and nothing in Calcite core at
+            /// 1.42 calls the method at all, so refusing the operator there would gate nothing.
+            /// </para>
+            /// </remarks>
+            public override void unparseCall(SqlWriter writer, SqlCall call, int leftPrec, int rightPrec)
+            {
+                if (call.getOperator().equals(SqlStdOperatorTable.CONCAT))
+                {
+                    UnparseAsBinary(writer, SqlStdOperatorTable.PLUS, call, leftPrec, rightPrec);
+                    return;
+                }
+
+                // the interception is Calcite's own and the operator is the one it chooses; what is taken
+                // over is where the parentheses go, which is why this is a case here rather than a call to
+                // base with something rearranged
+                if (call.getKind().name() == nameof(SqlKind.MOD))
+                {
+                    UnparseAsBinary(writer, SqlStdOperatorTable.PERCENT_REMAINDER, call, leftPrec, rightPrec);
+                    return;
+                }
+
+                base.unparseCall(writer, call, leftPrec, rightPrec);
+            }
+
+            /// <summary>
+            /// Writes a call under another operator, parenthesised as that operator would have been.
+            /// </summary>
+            /// <param name="writer"></param>
+            /// <param name="op"></param>
+            /// <param name="call"></param>
+            /// <param name="leftPrec"></param>
+            /// <param name="rightPrec"></param>
+            /// <remarks>
+            /// The two precedences the caller already spent on the call's own operator are spent again on
+            /// the one being written, which is <c>SqlCall.needsParentheses</c>'s test — its two clauses that
+            /// read a precedence, the third being the writer's own setting, already consulted, and the
+            /// fourth a comparison, which none of these operators is. Where the call was parenthesised on
+            /// the way in, both are zero and nothing more is written; where it was not, and the new
+            /// operator binds too loosely for where it stands, the parentheses go on here.
+            /// </remarks>
+            static void UnparseAsBinary(SqlWriter writer, SqlOperator op, SqlCall call, int leftPrec, int rightPrec)
+            {
+                if (leftPrec > op.getLeftPrec() || (op.getRightPrec() <= rightPrec && rightPrec != 0))
+                {
+                    var frame = writer.startList("(", ")");
+                    SqlSyntax.BINARY.unparse(writer, op, call, 0, 0);
+                    writer.endList(frame);
+                }
+                else
+                {
+                    SqlSyntax.BINARY.unparse(writer, op, call, leftPrec, rightPrec);
+                }
+            }
+
+            /// <inheritdoc />
+            /// <remarks>
+            /// <para>
+            /// A Calcite <c>VARCHAR</c> with no precision is unbounded, and <c>SqlDialect.getCastSpec</c>
+            /// writes it as the bare keyword, its precision being the type system's
+            /// <c>PRECISION_NOT_SPECIFIED</c>. A bare <c>varchar</c> in T-SQL is not unbounded: it is one
+            /// character in a declaration and <em>thirty</em> in a <c>CAST</c> or <c>CONVERT</c>. So the
+            /// cast that meant "no limit" silently becomes a thirty character one.
+            /// </para>
+            /// <para>
+            /// Where the conversion cannot fit it raises rather than truncates and reads as a type problem
+            /// in the caller's data — <c>CAST(&lt;uniqueidentifier&gt; AS VARCHAR)</c> is "Insufficient
+            /// result space to convert uniqueidentifier value to char", a GUID being thirty-six. Where it
+            /// fits it truncates: the same cast over a long <c>nvarchar</c> returns the first thirty
+            /// characters and raises nothing. And it is not contained to a query that writes the cast, since
+            /// comparing an unbounded string against a bounded column makes Calcite's coercion widen the
+            /// column back to unbounded, so a caller who stated a length in a view still gets it.
+            /// </para>
+            /// <para>
+            /// <c>varchar(max)</c> is SQL Server's own unbounded form and is what the type means.
+            /// <c>CHAR</c> goes to the same place rather than to a <c>char(max)</c>, there being no such
+            /// thing in T-SQL and nothing for a fixed length with no length to pad to; it is reachable
+            /// because a type system may leave <c>CHAR</c>'s precision unspecified, which
+            /// <c>MssqlSqlDialect.MSSQL_TYPE_SYSTEM</c> is itself one that does — CALCITE-6565 made bare
+            /// <c>CHAR</c> the intended rendering, and thirty is what the server reads it as.
+            /// <c>VARBINARY</c> and <c>BINARY</c> are the same rule over bytes.
+            /// </para>
+            /// <para>
+            /// <see cref="SqlAlienSystemTypeNameSpec"/> is how a dialect states a type name of the product
+            /// rather than of Calcite — Postgres writes <c>double precision</c> through it — and it unparses
+            /// the alias alone, which is what puts the <c>(MAX)</c> where a precision would otherwise go.
+            /// </para>
+            /// <para>
+            /// <c>UUID</c> is the other name Calcite writes that T-SQL has never heard: the server answers
+            /// "Type UUID is not a defined system type" and the statement never runs. <c>uniqueidentifier</c>
+            /// is what SQL Server calls the same sixteen bytes. A schema reaches this by stating GUID
+            /// semantics for a key its source spells as text — which is what a view over a document store
+            /// does — and then every comparison against that key is a cast.
+            /// </para>
+            /// </remarks>
+            public override SqlNode getCastSpec(RelDataType type)
+            {
+                if (UnboundedTypeName(type) is string unbounded)
+                    return AlienSpec(unbounded, type);
+
+                if (type.getSqlTypeName()?.name() == nameof(SqlTypeName.UUID))
+                    return AlienSpec("UNIQUEIDENTIFIER", type);
+
+                return base.getCastSpec(type);
+            }
+
+            /// <summary>
+            /// Writes a cast to a type named as SQL Server names it rather than as Calcite does.
+            /// </summary>
+            /// <param name="typeAlias"></param>
+            /// <param name="type"></param>
+            /// <returns></returns>
+            static SqlDataTypeSpec AlienSpec(string typeAlias, RelDataType type)
+            {
+                return new SqlDataTypeSpec(
+                    new SqlAlienSystemTypeNameSpec(typeAlias, type.getSqlTypeName(), SqlParserPos.ZERO),
+                    SqlParserPos.ZERO);
+            }
+
+            /// <summary>
+            /// Returns the T-SQL type an unbounded <paramref name="type"/> has to be written as, or
+            /// <see langword="null"/> where Calcite's own answer stands.
+            /// </summary>
+            /// <param name="type"></param>
+            /// <returns></returns>
+            /// <remarks>
+            /// The <c>AbstractSqlType</c> test is <c>SqlDialect.getCastSpec</c>'s own: it is the branch that
+            /// reads a precision at all, and anything else goes to <c>SqlTypeUtil.convertTypeToSpec</c>
+            /// whole.
+            /// </remarks>
+            static string? UnboundedTypeName(RelDataType type)
+            {
+                if (type is not AbstractSqlType)
+                    return null;
+
+                if (type.getSqlTypeName() is not SqlTypeName typeName)
+                    return null;
+
+                var typeAlias = typeName.name() switch
+                {
+                    nameof(SqlTypeName.CHAR) or nameof(SqlTypeName.VARCHAR) => "VARCHAR(MAX)",
+                    nameof(SqlTypeName.BINARY) or nameof(SqlTypeName.VARBINARY) => "VARBINARY(MAX)",
+                    _ => null,
+                };
+
+                if (typeAlias is null)
+                    return null;
+
+                return type.getPrecision() == RelDataType.PRECISION_NOT_SPECIFIED ? typeAlias : null;
             }
 
         }

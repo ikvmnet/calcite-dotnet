@@ -280,6 +280,69 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
+        /// Correlating on a signed <c>TINYINT</c>, which carries its sign to the provider.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The outer row is a <c>VALUES</c> because no SQL Server column can be one: the server's own
+        /// <c>tinyint</c> is unsigned, maps to <c>UTINYINT</c>, and is covered above as
+        /// <c>C_TINYINT</c>. Calcite's <c>TINYINT</c> is signed and holds its value in a
+        /// <c>java.lang.Byte</c>, whose <c>byteValue()</c> under IKVM answers an unsigned CLR
+        /// <see cref="byte"/> — so -56 binds as 200 unless the sign is carried out of it.
+        /// </para>
+        /// <para>
+        /// The comparison runs on the server against <c>ID</c>, whose two values are 1 and 2: -56 is below
+        /// both and 200 is above both, so the answer is one row where the sign survived the binding and
+        /// none where it did not. <c>C_TINYINT</c> cannot be the other side of it: ordering a
+        /// <c>TINYINT</c> against a <c>UTINYINT</c> casts to an unsigned type, which the MSSQL dialect
+        /// writes as a bare <c>UNSIGNED</c> that T-SQL will not parse — measured on this <c>&lt;</c>. The
+        /// equality form is written differently and does parse, so the limit is on the comparison and not
+        /// on the pair of types.
+        /// </para>
+        /// </remarks>
+        /// <param name="provider"></param>
+        [TestMethod]
+        [DataRow(SqlClient)]
+        [DataRow(Odbc)]
+        [DataRow(OleDb)]
+        public void CorrelatingOnASignedTinyIntKeepsItsSign(string provider)
+        {
+            CollectionAssert.AreEqual(
+                new[] { "-56" },
+                CorrelatedRows(provider, """
+                    SELECT V.X FROM (VALUES (CAST(-56 AS TINYINT))) AS V(X)
+                    WHERE EXISTS (SELECT 1 FROM ADO.TYPES T WHERE V.X < T.ID)
+                    """));
+        }
+
+        /// <summary>
+        /// Correlating across a cast to <c>UUID</c>, which puts the type name into the generated SQL as
+        /// well as a <c>java.util.UUID</c> into the parameter.
+        /// </summary>
+        /// <remarks>
+        /// The cast is what makes the value a UUID rather than text — a <c>uniqueidentifier</c> reaches
+        /// Calcite as a <c>CHAR(36)</c>, so a schema wanting GUID semantics has to state them, which is
+        /// what a view over a document store does — and stating them is what puts a type name T-SQL has
+        /// never heard of into the statement: "Type UUID is not a defined system type". A parameter bound
+        /// into a statement the server refuses to parse is not yet a working comparison, which is why this
+        /// is here beside the conversion tests rather than covered by them.
+        /// </remarks>
+        /// <param name="provider"></param>
+        [TestMethod]
+        [DataRow(SqlClient)]
+        [DataRow(Odbc)]
+        [DataRow(OleDb)]
+        public void CorrelatingAcrossAUuidCastRunsOnTheServer(string provider)
+        {
+            CollectionAssert.AreEqual(
+                new[] { "1" },
+                CorrelatedRows(provider, """
+                    SELECT T.ID FROM ADO.TYPES T
+                    WHERE EXISTS (SELECT 1 FROM ADO.TYPES T2 WHERE CAST(T2.C_GUID AS UUID) = CAST(T.C_GUID AS UUID))
+                    """));
+        }
+
+        /// <summary>
         /// A limitation of the driver rather than of the adapter, pinned so that it is a stated fact rather
         /// than a surprise: <c>System.Data.OleDb</c> cannot marshal a <see cref="DateTimeOffset"/> to a
         /// Variant at all, so a zoned timestamp cannot be a parameter through OLE DB. It fails on the

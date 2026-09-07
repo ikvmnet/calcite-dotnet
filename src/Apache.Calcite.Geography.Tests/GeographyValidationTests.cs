@@ -1,0 +1,271 @@
+using System;
+using System.Linq;
+
+using Apache.Calcite.Geography.Rel.Type;
+using Apache.Calcite.Geography.Sql;
+
+using FluentAssertions;
+
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+using org.apache.calcite.rel.type;
+using org.apache.calcite.sql;
+using org.apache.calcite.sql.type;
+
+namespace Apache.Calcite.Geography.Tests
+{
+
+    /// <summary>
+    /// What the validator makes of a call over a geography column.
+    /// </summary>
+    /// <remarks>
+    /// The central property is the first test here. Calcite's spatial library is a set of reflective bindings
+    /// over <c>org.locationtech.jts.geom.Geometry</c>, and routine resolution refuses to pass a geography to
+    /// one — the harmless accessors included. Without that, a geodesic value would answer in degrees, in a
+    /// different ordering, with no error anywhere.
+    /// </remarks>
+    [TestClass]
+    public class GeographyValidationTests
+    {
+
+        /// <summary>
+        /// Validates the given query, requires it to be refused, and returns every message in the chain.
+        /// </summary>
+        /// <remarks>
+        /// The chain, because the validator wraps: a signature error from an operand checker arrives inside a
+        /// <c>ValidationException</c> and names the operator only further down. IKVM makes a Java throwable a
+        /// <see cref="Exception"/>, so its cause is the inner exception.
+        /// </remarks>
+        static string Refuse(string sql)
+        {
+            var thrown = ((Action)(() => GeographyFixture.Validate(sql))).Should().Throw<Exception>().Which;
+            var text = "";
+
+            for (Exception? current = thrown; current is not null; current = current.InnerException)
+                text += current.Message + "\n";
+
+            return text;
+        }
+
+        /// <summary>
+        /// Validates the given query and returns the type of the one column it selects.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <returns></returns>
+        static RelDataType Column(string sql)
+        {
+            var row = GeographyFixture.Validate(sql);
+            row.getFieldList().size().Should().Be(1);
+            return ((RelDataTypeField)row.getFieldList().get(0)).getType();
+        }
+
+        /// <summary>
+        /// Every operator the table declares is also an operator the table hands out.
+        /// </summary>
+        /// <remarks>
+        /// The declarations are one list and the registrations are another, and nothing but this connects
+        /// them. A field added without its line in the second list is an operator that exists, compiles,
+        /// resolves nowhere and fails only as <c>No match found for function signature</c> in whichever query
+        /// reaches for it first.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldRegisterEveryDeclaredOperator()
+        {
+            var declared = typeof(GeographyOperatorTable)
+                .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                .Where(field => typeof(SqlFunction).IsAssignableFrom(field.FieldType))
+                .Select(field => (Name: field.Name, Operator: (SqlFunction)field.GetValue(null)!))
+                .ToList();
+
+            declared.Should().HaveCountGreaterThan(50);
+
+            var registered = GeographyOperatorTable.Instance().getOperatorList();
+            var missing = declared.Where(d => registered.contains(d.Operator) == false).Select(d => d.Name).ToList();
+
+            missing.Should().BeEmpty(string.Join(", ", missing));
+            registered.size().Should().Be(declared.Count);
+        }
+
+        /// <summary>
+        /// An accessor takes either column, there being one type.
+        /// </summary>
+        /// <remarks>
+        /// It used to refuse a geometry, on the grounds that <c>ST_GEOG_ASTEXT</c> over one would be a second
+        /// way to spell <c>ST_ASTEXT</c> and every such way is a place the two readings can be confused. That
+        /// refusal is gone with the type it rested on, and this is here to say so out loud.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAcceptAnAccessorOverEitherColumn()
+        {
+            foreach (var sql in new[]
+            {
+                "SELECT ST_GEOG_X(GEOM) FROM GEO",
+                "SELECT ST_GEOG_ASTEXT(GEOM) FROM GEO",
+                "SELECT ST_GEOG_NUMPOINTS(GEOM) FROM GEO",
+                "SELECT ST_GEOG_POINTN(GEOM, 1) FROM GEO",
+            })
+                GeographyFixture.Validate(sql);
+        }
+
+        [TestMethod]
+        public void ShouldTypeTheAccessorsOverAGeographyColumn()
+        {
+            Column("SELECT ST_GEOG_X(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
+            Column("SELECT ST_GEOG_NUMPOINTS(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.INTEGER);
+            Column("SELECT ST_GEOG_ISEMPTY(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.BOOLEAN);
+            Column("SELECT ST_GEOG_ASTEXT(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.VARCHAR);
+            Column("SELECT ST_GEOG_ASWKB(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.VARBINARY);
+            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_BOUNDARY(GEOG) FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_GEOMFROMWKB(ST_GEOG_ASWKB(GEOG)) FROM GEO")).Should().BeTrue();
+        }
+
+        [TestMethod]
+        public void ShouldAcceptCalcitesStDistanceOverAGeographyColumn()
+        {
+            Column("SELECT ST_DISTANCE(GEOG, GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
+        }
+
+        /// <summary>
+        /// The same goes for the accessors: every one of Calcite's spatial functions takes the column.
+        /// </summary>
+        [TestMethod]
+        public void ShouldAcceptCalcitesStSridOverAGeographyColumn()
+        {
+            Column("SELECT ST_SRID(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.INTEGER);
+        }
+
+        [TestMethod]
+        public void ShouldAcceptCalcitesStDistanceOverAGeometryColumn()
+        {
+            Column("SELECT ST_DISTANCE(GEOM, GEOM) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
+        }
+
+        [TestMethod]
+        public void ShouldAcceptStGeogDistanceOverAGeographyColumn()
+        {
+            Column("SELECT ST_GEOG_DISTANCE(GEOG, GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
+        }
+
+        /// <summary>
+        /// And it runs both ways: a geodesic operator takes a plane's coordinates too, and answers metres
+        /// over them as though they were degrees. Nothing here can tell.
+        /// </summary>
+        [TestMethod]
+        public void ShouldAcceptStGeogDistanceOverAGeometryColumn()
+        {
+            Column("SELECT ST_GEOG_DISTANCE(GEOM, GEOM) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
+        }
+
+        /// <summary>
+        /// The operand checker is what decides the error a caller sees, and a checker that took anything
+        /// would let this validate.
+        /// </summary>
+        [TestMethod]
+        public void ShouldRejectStGeogDistanceOverCharacterArguments()
+        {
+            var message = Refuse("SELECT ST_GEOG_DISTANCE('a', 'b') FROM GEO");
+
+            message.Should().Contain("ST_GEOG_DISTANCE");
+            message.Should().Contain("GEOMETRY");
+        }
+
+        [TestMethod]
+        public void ShouldRejectStGeogDWithinWithoutADistance()
+        {
+            Refuse("SELECT ST_GEOG_DWITHIN(GEOG, GEOG) FROM GEO").Should().Contain("ST_GEOG_DWITHIN");
+        }
+
+        [TestMethod]
+        public void ShouldTypeTheWktConstructorAsGeography()
+        {
+            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_GEOMFROMTEXT('POINT(0 0)') FROM GEO")).Should().BeTrue();
+        }
+
+        [TestMethod]
+        public void ShouldTypeTheGeoJsonConstructorAsGeography()
+        {
+            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_GEOMFROMGEOJSON('{\"type\":\"Point\",\"coordinates\":[0,0]}') FROM GEO")).Should().BeTrue();
+        }
+
+        /// <summary>
+        /// Calcite declares two arities for each WKT constructor, and so do we; the routine lookup picks
+        /// between them by argument count.
+        /// </summary>
+        [TestMethod]
+        public void ShouldTypeTheWktConstructorWithAnSridAsGeography()
+        {
+            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_GEOMFROMTEXT('POINT(0 0)', 4326) FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_GEOMFROMWKT('POINT(0 0)', 4326) FROM GEO")).Should().BeTrue();
+        }
+
+        [TestMethod]
+        public void ShouldRejectAWktConstructorWithATooLongArgumentList()
+        {
+            Refuse("SELECT ST_GEOG_GEOMFROMTEXT('POINT(0 0)', 4326, 1) FROM GEO").Should().Contain("ST_GEOG_GEOMFROMTEXT");
+        }
+
+        /// <summary>
+        /// A constructed geography goes into a geodesic operator without a column to hold it.
+        /// </summary>
+        [TestMethod]
+        public void ShouldAcceptAConstructedGeography()
+        {
+            GeographyFixture.Validate("SELECT ST_GEOG_DISTANCE(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), GEOG) FROM GEO");
+        }
+
+        /// <summary>
+        /// The crossing is deliberate and explicit: having said so, Calcite's planar functions will take the
+        /// value.
+        /// </summary>
+        [TestMethod]
+        public void ShouldCarryAGeographyIntoCalcitesStDistanceThroughAsGeom()
+        {
+            Column("SELECT ST_DISTANCE(ST_GEOG_ASGEOM(GEOG), GEOM) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
+        }
+
+        [TestMethod]
+        public void ShouldTypeTheOtherCrossingAsGeography()
+        {
+            GeographyTypes.IsGeometry(Column("SELECT ST_GEOM_ASGEOG(GEOM) FROM GEO")).Should().BeTrue();
+        }
+
+        /// <summary>
+        /// Either crossing takes either column, and neither converts anything.
+        /// </summary>
+        /// <remarks>
+        /// They were re-typings when there were two types to cross between. With one they are documentation:
+        /// a place in the SQL text where the author says which reading they mean.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAcceptEitherCrossingOverEitherColumn()
+        {
+            GeographyFixture.Validate("SELECT ST_GEOM_ASGEOG(GEOG) FROM GEO");
+            GeographyFixture.Validate("SELECT ST_GEOG_ASGEOM(GEOM) FROM GEO");
+        }
+
+        [TestMethod]
+        public void ShouldTypeThePredicatesAsBoolean()
+        {
+            foreach (var sql in new[]
+            {
+                "SELECT ST_GEOG_INTERSECTS(GEOG, GEOG) FROM GEO",
+                "SELECT ST_GEOG_WITHIN(GEOG, GEOG) FROM GEO",
+                "SELECT ST_GEOG_DWITHIN(GEOG, GEOG, 100.0) FROM GEO",
+                "SELECT ST_GEOG_ISVALID(GEOG) FROM GEO",
+            })
+                Column(sql).getSqlTypeName().Should().BeSameAs(SqlTypeName.BOOLEAN, sql);
+        }
+
+        /// <summary>
+        /// A geodesic predicate in a WHERE clause, which is where one is actually written.
+        /// </summary>
+        [TestMethod]
+        public void ShouldAcceptAPredicateInAWhereClause()
+        {
+            Column("SELECT ID FROM GEO WHERE ST_GEOG_DWITHIN(GEOG, ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 1000.0)")
+                .getSqlTypeName().Should().BeSameAs(SqlTypeName.INTEGER);
+        }
+
+    }
+
+}

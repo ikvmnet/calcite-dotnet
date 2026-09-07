@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Data;
 using System.Threading;
 using System.Threading.Tasks;
@@ -250,9 +250,10 @@ namespace Apache.Calcite.Data.Tests
             // method then retrieves it with root.get("v0stashed"). This test verifies that stashed
             // values are present in the DataContext at execution time, i.e. that Bind() is called
             // after Plan() so that signature.internalParameters is already populated.
-            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
-            c.Open();
-            c.RootSchema.add("STASH_TEST", new StashTestTable());
+            using var c = new CalciteDataSourceBuilder(TestModels.InlineEmptyModelConnectionString)
+                .ConfigureRootSchema(root => root.add("STASH_TEST", new StashTestTable()))
+                .Build()
+                .OpenConnection();
 
             using var cmd = c.CreateCommand();
             cmd.CommandText = "SELECT * FROM \"STASH_TEST\"";

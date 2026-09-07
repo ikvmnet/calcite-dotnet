@@ -20,11 +20,16 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
     /// from the same <see cref="RelMetadataProvider"/>, the class a rel dispatches to is chosen by the same
     /// rule, and the results are cached in the query's own table under the same keys, cycles included.
     ///
-    /// <para>Two things move. A handler is built once per provider and handler interface, as Janino's is, but
-    /// building one no longer runs a Java compiler. And a handler written in .NET works: Calcite's generated
-    /// source names the handler class and each rel class in Java, and IKVM's name for a CLR class begins
-    /// <c>cli.</c>, which Janino refuses — "Cannot determine simple type name cli", measured. Nothing here
-    /// writes a name.</para>
+    /// <para>What moves is the compile. A handler is built once per provider and handler interface, as
+    /// Janino's is, but building one no longer runs a Java compiler.</para>
+    ///
+    /// <para>It used to be more than that. Calcite's generated source names the handler class and each rel
+    /// class in Java, and IKVM's name for a CLR class begins <c>cli.</c>. Janino resolves one through the
+    /// class loader <c>IKVM.Maven.Sdk</c> stamps onto <c>calcite-core</c>; IKVM 8.14.0 and 8.15.0 could not
+    /// read that stamp, so it answered "Cannot determine simple type name cli" and a handler written in .NET
+    /// could answer here and nowhere else. IKVM 8.16.0 reads it again and Janino compiles that handler too,
+    /// measured at one commit either side. Nothing here writes a name either way; what is left of the reason
+    /// is the compile.</para>
     ///
     /// <para>Reached through <see cref="RelOptCluster.setMetadataQuerySupplier"/>:
     /// <c>RelMetadataQueryBase.THREAD_PROVIDERS</c> is typed to Janino's provider and cannot hold this one,

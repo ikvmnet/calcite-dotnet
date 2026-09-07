@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 
-using Apache.Calcite.Data.Common;
+using Apache.Calcite.Data.Types;
 using Apache.Calcite.Extensions.Prepare;
 
 using org.apache.calcite.rel.type;

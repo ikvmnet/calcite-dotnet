@@ -1,6 +1,6 @@
 using System;
 
-using Apache.Calcite.Data.Common;
+using Apache.Calcite.Data.Types;
 using Apache.Calcite.Extensions.Prepare;
 
 using org.apache.calcite.avatica;
@@ -76,8 +76,14 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Gets the Calcite type of the column.
+        /// Gets the Calcite <see cref="RelDataType"/> of the column.
         /// </summary>
+        /// <remarks>
+        /// The whole type rather than its <see cref="SqlTypeName"/>, because reading a value needs more
+        /// than the name: a <c>DATE</c> is a count of days and an <c>ARRAY</c> of them is a list of
+        /// counts, so the component, key, value and field types are what say how to read one. Avatica's
+        /// <see cref="ColumnMetaData"/> does not carry them.
+        /// </remarks>
         /// <param name="index"></param>
         /// <returns></returns>
         public RelDataType GetRelType(int index)

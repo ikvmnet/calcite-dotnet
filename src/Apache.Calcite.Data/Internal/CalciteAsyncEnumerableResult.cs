@@ -1,9 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Apache.Calcite.Data.Common;
+using Apache.Calcite.Data.Types;
 using Apache.Calcite.Extensions.Prepare;
 
 namespace Apache.Calcite.Data.Internal

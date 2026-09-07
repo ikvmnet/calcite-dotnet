@@ -45,7 +45,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         static readonly System.Reflection.MethodInfo ReadMethod = typeof(AdoSequences).GetMethod(nameof(AdoSequences.Read))
             ?? throw new InvalidOperationException($"'{nameof(AdoSequences.Read)}' is missing from {nameof(AdoSequences)}.");
 
-        static readonly System.Reflection.MethodInfo GetDbReaderValueMethod = typeof(AdoReaderUtil).GetMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(SqlTypeName)])
+        // the whole RelDataType, not its SqlTypeName. An expression tree can hold any object, so this
+        // convention is under none of the constraint the Janino route is: AdoToEnumerableConverter writes
+        // Java source and a SqlTypeName constant is what a block can carry, which loses the facets and a
+        // collection's component type along with them.
+        static readonly System.Reflection.MethodInfo GetDbReaderValueMethod = typeof(AdoReaderUtil).GetMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(RelDataType)])
             ?? throw new InvalidOperationException($"'{nameof(AdoReaderUtil.GetDbReaderValue)}' is missing from {nameof(AdoReaderUtil)}.");
 
         static readonly System.Reflection.MethodInfo CreateEnricherMethod = typeof(AdoEnumerable).GetMethod(nameof(AdoEnumerable.CreateEnricher), [typeof(AdoDataSource), typeof(java.util.List), typeof(java.util.List), typeof(DataContext)])
@@ -170,7 +174,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                 GetDbReaderValueMethod,
                 reader,
                 Expression.Constant(index),
-                Expression.Constant(fieldType.getSqlTypeName()));
+                Expression.Constant(fieldType));
         }
 
         /// <summary>

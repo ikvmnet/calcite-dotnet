@@ -1,9 +1,9 @@
-﻿using System;
+using System;
 using System.Data.Common;
 
 // only ever named inside a method body -- a using is not a member signature, and it is member
 // signatures Janino has to be able to load. See the class remarks.
-using Apache.Calcite.Data.Common;
+using Apache.Calcite.Data.Types;
 
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
@@ -49,7 +49,10 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="typeName"></param>
         /// <returns></returns>
         /// <remarks>
-        /// The overload generated code reaches, a <see cref="SqlTypeName"/> being what a block can carry.
+        /// The overload the Janino route reaches, a <see cref="SqlTypeName"/> being what a block of Java
+        /// source can carry. It loses the facets and a collection's component type; the overload taking a
+        /// <see cref="RelDataType"/> is what the Clr conventions call, an expression tree being able to
+        /// hold the type itself.
         /// </remarks>
         public static object? GetDbReaderValue(DbDataReader reader, int index, SqlTypeName typeName)
         {

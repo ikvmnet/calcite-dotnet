@@ -39,6 +39,23 @@ namespace Apache.Calcite.Data
         public const string SynchronousKey = "Synchronous";
 
         /// <summary>
+        /// Connection string key for whether connections sharing this connection string share one root
+        /// schema.
+        /// </summary>
+        public const string PoolingKey = "Pooling";
+
+        /// <summary>
+        /// Connection string key for how long, in seconds, the provider keeps a root schema no connection
+        /// is using.
+        /// </summary>
+        public const string ConnectionIdleLifetimeKey = "Connection Idle Lifetime";
+
+        /// <summary>
+        /// Connection string key for how often, in seconds, the provider looks for root schemas to release.
+        /// </summary>
+        public const string ConnectionPruningIntervalKey = "Connection Pruning Interval";
+
+        /// <summary>
         /// Connection string key for whether identifiers are matched case-sensitively.
         /// </summary>
         public const string CaseSensitiveKey = "CaseSensitive";
@@ -211,6 +228,74 @@ namespace Apache.Calcite.Data
                     Remove(SynchronousKey);
                 else
                     this[SynchronousKey] = value.Value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets whether connections sharing this connection string share one root schema. Default is
+        /// <see langword="true"/>.
+        /// </summary>
+        /// <remarks>
+        /// A provider option rather than an engine one. By default every connection opened with the same
+        /// connection string, <see cref="Synchronous"/> aside, draws on one <see cref="CalciteDataSource"/>
+        /// held for the process, so the model is read and its schemas built once rather than per
+        /// connection, and a table created by DDL on one connection is visible on the next.
+        /// <see langword="false"/> gives each connection a root schema of its own, built when it first opens
+        /// and released when it is disposed. This is the switch every ADO.NET provider spells the same way,
+        /// and it means the same thing: shared by default, keyed by what was written, off if you say so.
+        /// </remarks>
+        public bool? Pooling
+        {
+            get => TryGetBool(PoolingKey);
+            set
+            {
+                if (value is null)
+                    Remove(PoolingKey);
+                else
+                    this[PoolingKey] = value.Value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets how long, in seconds, the provider keeps a root schema no connection is using before
+        /// releasing it. Default is 300.
+        /// </summary>
+        /// <remarks>
+        /// A provider option rather than an engine one. The data source the provider keeps for a connection
+        /// string is released — dropped, and its schemas disposed — once it has gone this long with no
+        /// connection open on it, so that a process which varies its connection strings does not keep a root
+        /// for every string it ever wrote. The next connection opened with the string builds a new one. It is
+        /// checked every <see cref="ConnectionPruningInterval"/>. A data source the application built is the
+        /// application's and is never released this way.
+        /// </remarks>
+        public int? ConnectionIdleLifetime
+        {
+            get => TryGetInt(ConnectionIdleLifetimeKey);
+            set
+            {
+                if (value is null)
+                    Remove(ConnectionIdleLifetimeKey);
+                else
+                    this[ConnectionIdleLifetimeKey] = value.Value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets how often, in seconds, the provider looks for root schemas that have passed their
+        /// <see cref="ConnectionIdleLifetime"/>. Default is 10.
+        /// </summary>
+        /// <remarks>
+        /// A provider option rather than an engine one.
+        /// </remarks>
+        public int? ConnectionPruningInterval
+        {
+            get => TryGetInt(ConnectionPruningIntervalKey);
+            set
+            {
+                if (value is null)
+                    Remove(ConnectionPruningIntervalKey);
+                else
+                    this[ConnectionPruningIntervalKey] = value.Value;
             }
         }
 
@@ -512,6 +597,34 @@ namespace Apache.Calcite.Data
             foreach (var key in Keys)
                 if (key is string s)
                     yield return s;
+        }
+
+        /// <summary>
+        /// The connection string a <see cref="CalciteDataSource"/> is looked up by.
+        /// </summary>
+        /// <remarks>
+        /// Two connection strings that differ only in the order or the casing of their keys describe one
+        /// data source, so the key is written with every key lower-cased and sorted. <see cref="Synchronous"/>
+        /// is left out: it chooses the convention a connection plans into and nothing that is built, and a
+        /// data source built twice for the two conventions would read the same model twice.
+        /// </remarks>
+        internal string DataSourceKey
+        {
+            get
+            {
+                var keys = new List<string>();
+                foreach (var key in EnumerateKeys())
+                    if (string.Equals(key, SynchronousKey, System.StringComparison.OrdinalIgnoreCase) == false)
+                        keys.Add(key);
+
+                keys.Sort(System.StringComparer.OrdinalIgnoreCase);
+
+                var canonical = new DbConnectionStringBuilder();
+                foreach (var key in keys)
+                    canonical[key.ToLowerInvariant()] = this[key];
+
+                return canonical.ConnectionString;
+            }
         }
 
         string? TryGetString(string key)

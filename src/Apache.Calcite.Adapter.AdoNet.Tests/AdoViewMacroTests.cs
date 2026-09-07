@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 using Apache.Calcite.Data;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -32,25 +32,30 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         SqliteFixture _sqlite = null!;
-        CalciteConnection _connection = null!;
 
         [TestInitialize]
         public void Setup()
         {
             _sqlite = new SqliteFixture();
-
-            _connection = new CalciteConnection(new CalciteConnectionStringBuilder());
-            _connection.Open();
-
-            // the adapter, as one schema of the connection's root schema
-            _connection.RootSchema.add("ADO", AdoSchema.Create(_connection.RootSchema, "ADO", _sqlite.DataSource, null, null));
         }
 
         [TestCleanup]
         public void Cleanup()
         {
-            _connection?.Dispose();
             _sqlite?.Dispose();
+        }
+
+        /// <summary>
+        /// Opens a connection on a data source holding the adapter as one schema of its root, with
+        /// <paramref name="configure"/> run over the root after it.
+        /// </summary>
+        CalciteConnection Open(Action<SchemaPlus> configure)
+        {
+            return new CalciteDataSourceBuilder()
+                .ConfigureRootSchema(root => root.add("ADO", AdoSchema.Create(root, "ADO", _sqlite.DataSource, null, null)))
+                .ConfigureRootSchema(configure)
+                .Build()
+                .OpenConnection();
         }
 
         /// <summary>
@@ -59,18 +64,18 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [TestMethod]
         public void View_over_the_adapter_should_behave_like_a_table()
         {
-            _connection.RootSchema.add("STAFF", ViewTable.viewMacro(
-                _connection.RootSchema,
+            using var connection = Open(root => root.add("STAFF", ViewTable.viewMacro(
+                root,
                 """
                 SELECT E.EMPNO AS EMPNO, E.NAME AS NAME, D.DNAME AS DNAME
                 FROM ADO.EMPS AS E
                 JOIN ADO.DEPTS AS D ON E.DEPTNO = D.DEPTNO
                 """,
                 null,
-                org.apache.calcite.jdbc.CalciteSchema.from(_connection.RootSchema).path("STAFF"),
-                null));
+                org.apache.calcite.jdbc.CalciteSchema.from(root).path("STAFF"),
+                null)));
 
-            using var cmd = _connection.CreateCommand();
+            using var cmd = connection.CreateCommand();
             cmd.CommandText = "SELECT NAME, DNAME FROM STAFF WHERE DNAME = 'Sales' ORDER BY NAME";
 
             using var r = cmd.ExecuteReader();
@@ -96,20 +101,23 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [TestMethod]
         public void View_should_bridge_the_adapter_and_a_local_schema()
         {
-            _connection.RootSchema.add("EXTRA", new GradeSchema());
+            using var connection = Open(root =>
+            {
+                root.add("EXTRA", new GradeSchema());
 
-            _connection.RootSchema.add("STAFF", ViewTable.viewMacro(
-                _connection.RootSchema,
-                """
-                SELECT E.EMPNO AS EMPNO, E.NAME AS NAME, D.DNAME AS DNAME
-                FROM ADO.EMPS AS E
-                JOIN ADO.DEPTS AS D ON E.DEPTNO = D.DEPTNO
-                """,
-                null,
-                org.apache.calcite.jdbc.CalciteSchema.from(_connection.RootSchema).path("STAFF"),
-                null));
+                root.add("STAFF", ViewTable.viewMacro(
+                    root,
+                    """
+                    SELECT E.EMPNO AS EMPNO, E.NAME AS NAME, D.DNAME AS DNAME
+                    FROM ADO.EMPS AS E
+                    JOIN ADO.DEPTS AS D ON E.DEPTNO = D.DEPTNO
+                    """,
+                    null,
+                    org.apache.calcite.jdbc.CalciteSchema.from(root).path("STAFF"),
+                    null));
+            });
 
-            using var cmd = _connection.CreateCommand();
+            using var cmd = connection.CreateCommand();
             cmd.CommandText =
                 """
                 SELECT S.DNAME, COUNT(*) AS N

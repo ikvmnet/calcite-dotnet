@@ -1,6 +1,6 @@
-﻿using System;
+using System;
 
-using Apache.Calcite.Data.Common;
+using Apache.Calcite.Data.Types;
 
 using org.apache.calcite.avatica;
 

@@ -24,18 +24,42 @@ Ships built-in metadata for SQL Server, SQLite, ODBC, OLE DB, and any `INFORMATI
 dotnet add package Apache.Calcite.Adapter.AdoNet
 ```
 
+### [`Apache.Calcite.Data.Types`](https://www.nuget.org/packages/Apache.Calcite.Data.Types) · `src/Apache.Calcite.Data.Types`
+
+The CLR type mapping the provider and the adapter both answer with: which .NET type a Calcite SQL type is seen as, and the conversions across that boundary in both directions.
+
+Calcite holds a value of a SQL type in a particular runtime class — a `DATE` is a count of days in a `java.lang.Integer`, a `DECIMAL` is a `java.math.BigDecimal`, a `UUID` is a `java.util.UUID` — and .NET wants a `DateTime`, a `decimal`, a `Guid`. Deciding that once, rather than in each of the four places that ask, is what this is. An application adds a type of its own by putting a resolver in front of the chain, on a `CalciteDataSourceBuilder` for every connection it opens or on a single `CalciteConnection`.
+
+Referenced by both packages above; you do not need to add it yourself unless you are writing a resolver.
+
+```sh
+dotnet add package Apache.Calcite.Data.Types
+```
+
 ### [`Apache.Calcite.Extensions`](https://www.nuget.org/packages/Apache.Calcite.Extensions) · `src/Apache.Calcite.Extensions`
 
 `ClrEnumerableConvention` — a calling convention that runs a query plan as a compiled `System.Linq.Expressions` tree instead of generating Java source and compiling it with Janino. It mirrors Calcite's own `EnumerableConvention` node for node and uses the same row types, and converters exist in both directions, so a plan can mix the two.
 
 With it, the prepare pipeline that takes a statement from SQL text to such a plan, and the interop helpers both need — including `CalciteConnectionProperties`, a strongly-typed wrapper over Calcite's `java.util.Properties`, so you can configure the engine with compile-time-safe .NET properties instead of raw string keys.
 
-Because the plan holds a method rather than its name, a user-defined function written in .NET runs in this convention — Janino cannot resolve the `cli.`-prefixed class name IKVM gives a CLR type, so such a query has no plan under `EnumerableConvention`.
+The plan holds a method rather than its name, so a user-defined function written in .NET runs in this convention without a class name ever being written out. Calcite's own engine runs one too, as long as IKVM can read the class-loader stamp `IKVM.Maven.Sdk` puts on `calcite-core`: IKVM 8.14.0 and 8.15.0 could not, so Janino could not resolve the `cli.`-prefixed name IKVM gives a CLR type and such a query had no plan under `EnumerableConvention` at all. IKVM 8.16.0 fixes that, so the difference between the two engines is the compile rather than the capability.
 
 Targets .NET 8, and is verified on .NET 8 and .NET 10.
 
 ```sh
 dotnet add package Apache.Calcite.Extensions
+```
+
+### [`Apache.Calcite.Geography`](https://www.nuget.org/packages/Apache.Calcite.Geography) · `src/Apache.Calcite.Geography`
+
+A `GEOGRAPHY` type and a set of `ST_GEOG_*` operators that read coordinates as WGS84 and answer in metres.
+
+Calcite has `GEOMETRY` and no `GEOGRAPHY`: its spatial library is planar JTS answering in the units of an unprojected coordinate system, while the stores that speak WGS84 — PostGIS `geography`, BigQuery, Snowflake, Elasticsearch, MongoDB — are geodesic. The two disagree about what identically-named functions mean, and the disagreement is not a scale factor. The type keeps them apart: Calcite's own `ST_*` refuse a geography at validation, and the crossing between the two readings has to be written down.
+
+Optional, and nothing else here depends on it. The geodesic engine is Google's S2.
+
+```sh
+dotnet add package Apache.Calcite.Geography
 ```
 
 ## Test and distribution projects
@@ -44,7 +68,9 @@ dotnet add package Apache.Calcite.Extensions
 |---------|---------|
 | `Apache.Calcite.Tests` | Core engine integration tests, and the convention and prepare pipeline tests — including the differential suites that run the same SQL through `ClrEnumerableConvention` and `EnumerableConvention` and require the same rows |
 | `Apache.Calcite.Data.Tests` | Provider integration tests |
+| `Apache.Calcite.Data.Types.Tests` | Type mapping resolution rules and round trips |
 | `Apache.Calcite.Adapter.AdoNet.Tests` | Adapter integration tests |
+| `Apache.Calcite.Geography.Tests` | Geography type, operator table and geodesic evaluator tests |
 | `dist-nuget` | Packages NuGet artifacts |
 | `dist-tests` | Packages test artifacts for CI |
 

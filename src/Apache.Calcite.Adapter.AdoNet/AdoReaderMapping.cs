@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Data.Common;
 
-using Apache.Calcite.Data.Common;
+using Apache.Calcite.Data.Types;
 
 using org.apache.calcite.jdbc;
 using org.apache.calcite.rel.type;
@@ -21,7 +21,7 @@ namespace Apache.Calcite.Adapter.AdoNet
     /// call by reflecting over the class and loading the type of every member it declares — so one
     /// signature its classloader cannot name breaks every generated reader, including calls to methods that
     /// have nothing to do with it. Measured: an overload taking a <see cref="ClrTypeRegistry"/> made all of
-    /// them fail with <c>Cannot load class "cli.Apache.Calcite.Data.Common.ClrTypeRegistry" through the
+    /// them fail with <c>Cannot load class "cli.Apache.Calcite.Data.Types.ClrTypeRegistry" through the
     /// given ClassLoader</c>.
     /// </para>
     /// <para>
@@ -60,14 +60,26 @@ namespace Apache.Calcite.Adapter.AdoNet
             if (reader.IsDBNull(index))
                 return null;
 
+            // OTHER is the adapter's escape hatch and the one type read without conversion: AdoSchema
+            // types a provider column it cannot name as one so that the rest of the table stays readable,
+            // and whatever the provider handed over is the only representation of it there is. Converting
+            // would be a guess -- a DateTime would become a count of milliseconds and read back as a
+            // number -- and it is not what the mapping means by OTHER either, since a bare Object is that
+            // type too and a value bound to one does have to cross.
+            if (type.getSqlTypeName().name() == nameof(org.apache.calcite.sql.type.SqlTypeName.OTHER))
+                return reader.GetValue(index) is var value && value == DBNull.Value ? null : value;
+
             try
             {
                 return registry.ToCalcite(null, type, reader.GetValue(index));
             }
             catch (ClrTypeMappingException e)
             {
-                // the adapter answers in its own exception, as it does for a column type it cannot name
-                throw new AdoCalciteException($"Unsupported SQL type mapping: {type.getSqlTypeName().name()}.", e);
+                // the adapter answers in its own exception. The chain always has an answer for a type -- a
+                // type nothing claims falls to the catch-all, which reads the value's own class -- so what
+                // reaches here is a mapping that refused the value or answered with the wrong class, not an
+                // unnamed type
+                throw new AdoCalciteException($"Cannot read column {index} as {type.getFullTypeString()}.", e);
             }
         }
 
