@@ -897,6 +897,13 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
+        /// <c>ST_GEOG_BOUNDINGCIRCLE(GEOGRAPHY)</c>. Returns the smallest circle containing the geography.
+        /// </summary>
+        public static readonly SqlFunction StGeogBoundingCircle =
+            Function("ST_GEOG_BOUNDINGCIRCLE", nameof(GeographyFunctions.BoundingCircle), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry], ["geog"]);
+
+        /// <summary>
         /// <c>ST_GEOG_ISSIMPLE(GEOGRAPHY)</c>. Returns whether the geography touches itself nowhere it should not.
         /// </summary>
         public static readonly SqlFunction StGeogIsSimple =
@@ -1139,6 +1146,7 @@ namespace Apache.Calcite.Geography.Sql
                 StGeogLength,
                 StGeogPerimeter,
                 StGeogMaxDistance,
+                StGeogBoundingCircle,
                 StGeogIsSimple,
                 StGeogIsRing,
                 StGeogBuffer,
