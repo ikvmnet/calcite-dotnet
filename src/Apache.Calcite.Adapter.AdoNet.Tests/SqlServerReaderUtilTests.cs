@@ -116,14 +116,41 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A <c>uniqueidentifier</c> is a <see cref="Guid"/> to the provider, and Calcite is holding the
-        /// column as a <c>CHAR(36)</c>: <see cref="DbDataReader.GetString"/> casts and refuses it.
+        /// A <c>uniqueidentifier</c> is not a character column and is not read as one. Formatting it would
+        /// be the mapping answering for a type the column does not have, and the text it produced could
+        /// not be told from a <c>CHAR(36)</c> that really is text.
         /// </summary>
         [TestMethod]
-        public void AUniqueIdentifierIsReadAsItsText()
+        public void AUniqueIdentifierIsNotReadAsAString()
         {
             using var reader = Row("CAST('3f2504e0-4f89-11d3-9a0c-0305e82c3301' AS UNIQUEIDENTIFIER)");
-            Assert.AreEqual("3f2504e0-4f89-11d3-9a0c-0305e82c3301", AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.CHAR));
+
+            Assert.Throws<InvalidCastException>(
+                () => AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.CHAR));
+        }
+
+        /// <summary>
+        /// It is a <c>UUID</c>, and the value is the sixteen bytes rather than the text:
+        /// <c>java.util.UUID</c> is the class Calcite's runtime holds them in.
+        /// </summary>
+        [TestMethod]
+        public void AUniqueIdentifierIsReadAsAJavaUuid()
+        {
+            using var reader = Row("CAST('3f2504e0-4f89-11d3-9a0c-0305e82c3301' AS UNIQUEIDENTIFIER)");
+            var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.UUID);
+
+            Assert.IsInstanceOfType<java.util.UUID>(value);
+            Assert.AreEqual("3f2504e0-4f89-11d3-9a0c-0305e82c3301", value!.ToString());
+        }
+
+        /// <summary>
+        /// A null <c>uniqueidentifier</c> is a null, the class being a reference.
+        /// </summary>
+        [TestMethod]
+        public void ANullUniqueIdentifierIsNull()
+        {
+            using var reader = Row("CAST(NULL AS UNIQUEIDENTIFIER)");
+            Assert.IsNull(AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.UUID));
         }
 
         [TestMethod]
