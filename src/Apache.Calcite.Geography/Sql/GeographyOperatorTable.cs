@@ -897,6 +897,27 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
+        /// <c>ST_GEOG_ENVELOPE(GEOGRAPHY)</c>. Returns the smallest latitude-longitude rectangle containing the geography.
+        /// </summary>
+        public static readonly SqlFunction StGeogEnvelope =
+            Function("ST_GEOG_ENVELOPE", nameof(GeographyFunctions.Envelope), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_EXTENT(GEOGRAPHY)</c>. Returns the smallest latitude-longitude rectangle containing the geography.
+        /// </summary>
+        public static readonly SqlFunction StGeogExtent =
+            Function("ST_GEOG_EXTENT", nameof(GeographyFunctions.Extent), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry], ["geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_EXPAND(GEOGRAPHY, DOUBLE)</c>. Returns the geography's rectangle grown by a distance in metres.
+        /// </summary>
+        public static readonly SqlFunction StGeogExpand =
+            Function("ST_GEOG_EXPAND", nameof(GeographyFunctions.Expand), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Fractional], ["geog", "distance"]);
+
+        /// <summary>
         /// <c>ST_GEOG_CLOSESTCOORDINATE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the coordinate or coordinates of the geography nearest the given point.
         /// </summary>
         public static readonly SqlFunction StGeogClosestCoordinate =
@@ -1034,6 +1055,9 @@ namespace Apache.Calcite.Geography.Sql
                 StGeogLength,
                 StGeogPerimeter,
                 StGeogMaxDistance,
+                StGeogEnvelope,
+                StGeogExtent,
+                StGeogExpand,
                 StGeogClosestCoordinate,
                 StGeogFurthestCoordinate,
                 StGeogClosestPoint,

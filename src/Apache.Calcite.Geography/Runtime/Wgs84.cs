@@ -47,6 +47,28 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
+        /// The mean radius of the WGS84 ellipsoid, <c>(2a + b) / 3</c>, in metres.
+        /// </summary>
+        /// <remarks>
+        /// The one place a single radius is defensible: turning a distance into an angle so that a bounding
+        /// rectangle can be grown by it. A bound is an over-approximation already — it is a rectangle around
+        /// a shape that is not one — so a fraction of a percent in how far it grows changes nothing it
+        /// promises. Nothing else here uses a radius, and a measurement never does.
+        /// </remarks>
+        public const double MeanRadiusMeters = 6371008.7714;
+
+        /// <summary>
+        /// Returns the angle a distance in metres subtends at the Earth's centre.
+        /// </summary>
+        /// <param name="metres"></param>
+        /// <returns></returns>
+        /// <inheritdoc cref="MeanRadiusMeters" />
+        public static S1Angle AngleFor(double metres)
+        {
+            return S1Angle.radians(metres / MeanRadiusMeters);
+        }
+
+        /// <summary>
         /// Returns the geodesic distance between two coordinates in metres.
         /// </summary>
         /// <param name="a"></param>

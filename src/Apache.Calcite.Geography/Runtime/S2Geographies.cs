@@ -980,7 +980,16 @@ namespace Apache.Calcite.Geography.Runtime
         /// The bounding box of the geography.
         /// </summary>
         /// <returns></returns>
-        S2LatLngRect Bound()
+        /// <summary>
+        /// Returns the smallest latitude-longitude rectangle containing the geography.
+        /// </summary>
+        /// <returns></returns>
+        /// <remarks>
+        /// An <c>S2LatLngRect</c> knows the longitude interval may wrap, which is the whole reason
+        /// <c>ST_GEOG_ENVELOPE</c> is not <c>ST_ENVELOPE</c>: taking a minimum and a maximum of longitudes
+        /// answers most of the globe for a shape that straddles the antimeridian.
+        /// </remarks>
+        public S2LatLngRect Bound()
         {
             var bound = S2LatLngRect.empty();
 

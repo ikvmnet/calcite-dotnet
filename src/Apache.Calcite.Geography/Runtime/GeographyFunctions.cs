@@ -1406,6 +1406,125 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
+        /// <c>ST_GEOG_ENVELOPE</c>. Returns the smallest latitude-longitude rectangle containing the
+        /// geography.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The reason this is not <c>ST_ENVELOPE</c> is the antimeridian. A planar envelope is the minimum
+        /// and maximum of the coordinates, so a shape with a vertex at 179 and another at -179 gets a
+        /// rectangle 358 degrees wide — very nearly the whole globe, for a shape two degrees across. S2's
+        /// rectangle knows a longitude interval may wrap, and answers the two-degree band that is actually
+        /// there. Where the interval does wrap the answer is a multi-polygon of the two halves either side of
+        /// the antimeridian, there being no way to write a wrapped box as one ring in longitude and latitude.
+        ///
+        /// <para>A degenerate rectangle answers what JTS answers for one: a point where the shape is a point,
+        /// a line where it has no width or no height.</para>
+        /// </remarks>
+        public static Geometry? Envelope(Geometry? geog)
+        {
+            return geog is null ? null : Wgs84Of(Rectangle(S2Geographies.Of(geog).Bound()));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_EXTENT</c>. Returns the smallest latitude-longitude rectangle containing the geography.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The same rectangle <see cref="Envelope"/> answers. Calcite's two are the same call as well —
+        /// <c>ST_Extent</c> is <c>geom.getEnvelope()</c>, with a comment wondering whether they differ — and
+        /// this mirrors that rather than inventing a difference.
+        /// </remarks>
+        public static Geometry? Extent(Geometry? geog)
+        {
+            return Envelope(geog);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_EXPAND</c>. Returns the geography's rectangle grown by a distance in metres.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <param name="distance"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Metres, where Calcite's grows by degrees. Growing a box by a degree moves its northern edge
+        /// further than its eastern one everywhere off the equator, and by a factor that reaches two by 60
+        /// degrees of latitude, so the planar reading of this function has no fixed meaning on the Earth at
+        /// all. S2 grows the rectangle by an angle and widens the longitude interval by more than that as the
+        /// latitude rises, which is what keeps every point within the distance actually inside.
+        /// </remarks>
+        public static Geometry? Expand(Geometry? geog, java.lang.Object? distance)
+        {
+            if (geog is null || distance is null)
+                return null;
+
+            return Wgs84Of(Rectangle(S2Geographies.Of(geog).Bound().expandedByDistance(Ellipsoid.AngleFor(Double(distance)))));
+        }
+
+        /// <summary>
+        /// Writes a latitude-longitude rectangle as a geography.
+        /// </summary>
+        /// <param name="rect"></param>
+        /// <returns></returns>
+        static Geometry Rectangle(com.google.common.geometry.S2LatLngRect rect)
+        {
+            if (rect.isEmpty())
+                return Factory.createPolygon();
+
+            var latLo = rect.lat().lo() * 180 / System.Math.PI;
+            var latHi = rect.lat().hi() * 180 / System.Math.PI;
+            var lngLo = rect.lng().lo() * 180 / System.Math.PI;
+            var lngHi = rect.lng().hi() * 180 / System.Math.PI;
+
+            // a wrapped interval has no single ring in these coordinates, so it is written as the two halves
+            if (rect.lng().isInverted())
+            {
+                // buildGeometry rather than createMultiPolygon, because either half degenerates to a line or
+                // a point exactly as one box does, and a shape on the equator makes both of them lines
+                var halves = new java.util.ArrayList();
+                halves.add(Box(latLo, latHi, lngLo, 180));
+                halves.add(Box(latLo, latHi, -180, lngHi));
+
+                return Factory.buildGeometry(halves);
+            }
+
+            return Box(latLo, latHi, lngLo, lngHi);
+        }
+
+        /// <summary>
+        /// Writes one box, degenerating to a line or a point as JTS does.
+        /// </summary>
+        /// <param name="latLo"></param>
+        /// <param name="latHi"></param>
+        /// <param name="lngLo"></param>
+        /// <param name="lngHi"></param>
+        /// <returns></returns>
+        static Geometry Box(double latLo, double latHi, double lngLo, double lngHi)
+        {
+            // a tolerance rather than equality: a coordinate reaches the rectangle as a unit vector and
+            // comes back a few bits shy, so a shape that lies exactly on a parallel has a latitude interval
+            // that is degenerate in fact and not in the last digit. This is a thousandth of a millimetre.
+            const double flat = 1e-11;
+
+            if (System.Math.Abs(latHi - latLo) < flat && System.Math.Abs(lngHi - lngLo) < flat)
+                return Factory.createPoint(new org.locationtech.jts.geom.Coordinate(lngLo, latLo));
+
+            if (System.Math.Abs(latHi - latLo) < flat || System.Math.Abs(lngHi - lngLo) < flat)
+                return Factory.createLineString([
+                    new org.locationtech.jts.geom.Coordinate(lngLo, latLo),
+                    new org.locationtech.jts.geom.Coordinate(lngHi, latHi)]);
+
+            return Factory.createPolygon([
+                new org.locationtech.jts.geom.Coordinate(lngLo, latLo),
+                new org.locationtech.jts.geom.Coordinate(lngHi, latLo),
+                new org.locationtech.jts.geom.Coordinate(lngHi, latHi),
+                new org.locationtech.jts.geom.Coordinate(lngLo, latHi),
+                new org.locationtech.jts.geom.Coordinate(lngLo, latLo)]);
+        }
+
+        /// <summary>
         /// <c>ST_GEOG_CLOSESTCOORDINATE</c>. Returns the coordinate or coordinates of the geography nearest
         /// the given point.
         /// </summary>
