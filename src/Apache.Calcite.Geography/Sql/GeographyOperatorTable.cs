@@ -897,6 +897,20 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
+        /// <c>ST_GEOG_LOCATEALONG(GEOGRAPHY, DOUBLE, DOUBLE)</c>. Returns a point on every segment, a fraction of the way along it and offset sideways by a distance in metres.
+        /// </summary>
+        public static readonly SqlFunction StGeogLocateAlong =
+            Function("ST_GEOG_LOCATEALONG", nameof(GeographyFunctions.LocateAlong), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Fractional, GeographyOperand.Fractional], ["geog", "fraction", "offset"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_MINIMUMDIAMETER(GEOGRAPHY)</c>. Returns the shortest line across the geography's width.
+        /// </summary>
+        public static readonly SqlFunction StGeogMinimumDiameter =
+            Function("ST_GEOG_MINIMUMDIAMETER", nameof(GeographyFunctions.MinimumDiameter), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry], ["geog"]);
+
+        /// <summary>
         /// <c>ST_GEOG_BOUNDINGCIRCLE(GEOGRAPHY)</c>. Returns the smallest circle containing the geography.
         /// </summary>
         public static readonly SqlFunction StGeogBoundingCircle =
@@ -1146,6 +1160,8 @@ namespace Apache.Calcite.Geography.Sql
                 StGeogLength,
                 StGeogPerimeter,
                 StGeogMaxDistance,
+                StGeogLocateAlong,
+                StGeogMinimumDiameter,
                 StGeogBoundingCircle,
                 StGeogIsSimple,
                 StGeogIsRing,
