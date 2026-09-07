@@ -135,6 +135,8 @@ The two halves run on different engines, and deliberately. The predicates are S2
 | `ST_GEOG_BOUNDINGCIRCLE` | the smallest circle holding a shape, of constant distance rather than constant degrees |
 | `ST_GEOG_LOCATEALONG` | a point a fraction along each segment, offset sideways in metres |
 | `ST_GEOG_MINIMUMDIAMETER` | the narrowest way across, measured between great circles |
+| `ST_GEOG_OFFSETCURVE` | a line drawn a distance in metres to one side, whichever way it runs |
+| `ST_GEOG_MAKEELLIPSE` | an ellipse whose width and height are metres, so equal ones are round on the ground |
 | `ST_GEOG_LENGTH`, `ST_GEOG_PERIMETER` | metres |
 | `ST_GEOG_AREA` | square metres |
 
