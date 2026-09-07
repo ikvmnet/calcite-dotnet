@@ -282,6 +282,15 @@ namespace Apache.Calcite.Geography.Runtime
         S2Polygon? polygon;
 
         /// <summary>
+        /// Gets the areal part of the geography, or <see langword="null"/> where it has none.
+        /// </summary>
+        /// <remarks>
+        /// Exposed for the overlay operations, which are S2's own — <c>initToIntersection</c> and its
+        /// neighbours answer on the sphere what JTS answers on a plane.
+        /// </remarks>
+        public S2Polygon? Polygon => polygon;
+
+        /// <summary>
         /// Initializes a new instance.
         /// </summary>
         S2Geographies()

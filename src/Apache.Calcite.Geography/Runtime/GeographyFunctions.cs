@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 using org.apache.calcite.runtime;
@@ -1403,6 +1404,175 @@ namespace Apache.Calcite.Geography.Runtime
         {
             if (srid != Wgs84)
                 throw new java.lang.IllegalArgumentException($"A geography is WGS84; SRID {srid} is not a reference system it can be in.");
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_INTERSECTION</c>. Returns the area common to two geographies.
+        /// </summary>
+        /// <param name="geog1"></param>
+        /// <param name="geog2"></param>
+        /// <returns></returns>
+        /// <inheritdoc cref="Overlay" />
+        public static Geometry? Intersection(Geometry? geog1, Geometry? geog2)
+        {
+            return Overlay(geog1, geog2, (result, a, b) => result.initToIntersection(a, b));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_DIFFERENCE</c>. Returns the part of the first geography that is not in the second.
+        /// </summary>
+        /// <param name="geog1"></param>
+        /// <param name="geog2"></param>
+        /// <returns></returns>
+        /// <inheritdoc cref="Overlay" />
+        public static Geometry? Difference(Geometry? geog1, Geometry? geog2)
+        {
+            return Overlay(geog1, geog2, (result, a, b) => result.initToDifference(a, b));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_SYMDIFFERENCE</c>. Returns the parts of two geographies that are in one and not the
+        /// other.
+        /// </summary>
+        /// <param name="geog1"></param>
+        /// <param name="geog2"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Built from two differences and a union, S2 having no symmetric difference of its own. That is what
+        /// the operation is: everything in one and not the other, either way round.
+        /// </remarks>
+        /// <inheritdoc cref="Overlay" />
+        public static Geometry? SymDifference(Geometry? geog1, Geometry? geog2)
+        {
+            return Overlay(geog1, geog2, (result, a, b) =>
+            {
+                var left = new com.google.common.geometry.S2Polygon();
+                var right = new com.google.common.geometry.S2Polygon();
+
+                left.initToDifference(a, b);
+                right.initToDifference(b, a);
+
+                result.initToUnion(left, right);
+            });
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_UNARYUNION</c>. Returns the geography with its overlapping parts merged.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <inheritdoc cref="Overlay" />
+        public static Geometry? UnaryUnion(Geometry? geog)
+        {
+            return Overlay(geog, geog, (result, a, b) => result.initToUnion(a, b));
+        }
+
+        /// <summary>
+        /// Runs one of S2's overlay operations over the areal parts of two geographies.
+        /// </summary>
+        /// <param name="geog1"></param>
+        /// <param name="geog2"></param>
+        /// <param name="operation"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// These are areal operations and this answers them for areas, declining anything else with null
+        /// rather than guessing. Calcite's take any pair, JTS overlaying whatever it is handed; the reason
+        /// not to follow it there is that a line clipped by a polygon is a different computation from an area
+        /// intersected with one, and S2 has the second. Answering the first by falling back to the plane
+        /// would put two models in one expression, which is the thing this package exists to prevent.
+        ///
+        /// <para>What is on offer instead is exact where it applies. An intersection of two areas on the
+        /// sphere is bounded by geodesics, and the planar answer is bounded by straight lines in degrees —
+        /// which is a different region, not a rounding of the same one.</para>
+        /// </remarks>
+        static Geometry? Overlay(Geometry? geog1, Geometry? geog2, Action<com.google.common.geometry.S2Polygon, com.google.common.geometry.S2Polygon, com.google.common.geometry.S2Polygon> operation)
+        {
+            if (geog1 is null || geog2 is null)
+                return null;
+
+            var a = S2Geographies.Of(geog1).Polygon;
+            var b = S2Geographies.Of(geog2).Polygon;
+
+            if (a is null || b is null)
+                return null;
+
+            var result = new com.google.common.geometry.S2Polygon();
+            operation(result, a, b);
+
+            return Wgs84Of(Areal(result));
+        }
+
+        /// <summary>
+        /// Writes an S2 polygon as a geography.
+        /// </summary>
+        /// <param name="polygon"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// S2 records nesting as a loop's depth — even is a shell and odd is a hole — and orders a shell's
+        /// holes after it, so one pass builds the rings. A hole is stored wound the other way round from the
+        /// shell that contains it, so its vertices are reversed on the way out; and an S2 loop does not repeat
+        /// its first vertex where a JTS ring must.
+        /// </remarks>
+        static Geometry Areal(com.google.common.geometry.S2Polygon polygon)
+        {
+            if (polygon.numLoops() == 0)
+                return Factory.createPolygon();
+
+            var polygons = new java.util.ArrayList();
+            org.locationtech.jts.geom.LinearRing? shell = null;
+            var holes = new java.util.ArrayList();
+
+            void Close()
+            {
+                if (shell is null)
+                    return;
+
+                var rings = new org.locationtech.jts.geom.LinearRing[holes.size()];
+                for (var i = 0; i < holes.size(); i++)
+                    rings[i] = (org.locationtech.jts.geom.LinearRing)holes.get(i);
+
+                polygons.add(Factory.createPolygon(shell, rings));
+                holes.clear();
+            }
+
+            for (var i = 0; i < polygon.numLoops(); i++)
+            {
+                var loop = polygon.loop(i);
+                var ring = Ring(loop, reversed: loop.depth() % 2 != 0);
+
+                if (loop.depth() % 2 == 0)
+                {
+                    Close();
+                    shell = ring;
+                }
+                else
+                {
+                    holes.add(ring);
+                }
+            }
+
+            Close();
+
+            return Factory.buildGeometry(polygons);
+        }
+
+        /// <summary>
+        /// Writes one S2 loop as a closed ring.
+        /// </summary>
+        /// <param name="loop"></param>
+        /// <param name="reversed"></param>
+        /// <returns></returns>
+        static org.locationtech.jts.geom.LinearRing Ring(com.google.common.geometry.S2Loop loop, bool reversed)
+        {
+            var count = loop.numVertices();
+            var coordinates = new org.locationtech.jts.geom.Coordinate[count + 1];
+
+            for (var i = 0; i < count; i++)
+                coordinates[i] = Coordinate(loop.vertex(reversed ? count - 1 - i : i));
+
+            coordinates[count] = coordinates[0];
+
+            return Factory.createLinearRing(coordinates);
         }
 
         /// <summary>

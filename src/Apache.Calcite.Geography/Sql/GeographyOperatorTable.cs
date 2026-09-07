@@ -897,6 +897,34 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
+        /// <c>ST_GEOG_INTERSECTION(GEOGRAPHY, GEOGRAPHY)</c>. Returns the area common to two geographies.
+        /// </summary>
+        public static readonly SqlFunction StGeogIntersection =
+            Function("ST_GEOG_INTERSECTION", nameof(GeographyFunctions.Intersection), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_DIFFERENCE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the part of the first geography that is not in the second.
+        /// </summary>
+        public static readonly SqlFunction StGeogDifference =
+            Function("ST_GEOG_DIFFERENCE", nameof(GeographyFunctions.Difference), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_SYMDIFFERENCE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the parts of two geographies that are in one and not the other.
+        /// </summary>
+        public static readonly SqlFunction StGeogSymDifference =
+            Function("ST_GEOG_SYMDIFFERENCE", nameof(GeographyFunctions.SymDifference), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_UNARYUNION(GEOGRAPHY)</c>. Returns the geography with its overlapping parts merged.
+        /// </summary>
+        public static readonly SqlFunction StGeogUnaryUnion =
+            Function("ST_GEOG_UNARYUNION", nameof(GeographyFunctions.UnaryUnion), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry], ["geog"]);
+
+        /// <summary>
         /// <c>ST_GEOG_DENSIFY(GEOGRAPHY, DOUBLE)</c>. Returns the geography with vertices inserted along its geodesics so that no edge is longer than the given distance in metres.
         /// </summary>
         public static readonly SqlFunction StGeogDensify =
@@ -1069,6 +1097,10 @@ namespace Apache.Calcite.Geography.Sql
                 StGeogLength,
                 StGeogPerimeter,
                 StGeogMaxDistance,
+                StGeogIntersection,
+                StGeogDifference,
+                StGeogSymDifference,
+                StGeogUnaryUnion,
                 StGeogDensify,
                 StGeogProjectPoint,
                 StGeogEnvelope,
