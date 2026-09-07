@@ -25,14 +25,24 @@ namespace Apache.Calcite.Geography.Tests
     {
 
         /// <summary>
-        /// The radius S2 models the Earth with, in metres.
+        /// One degree of longitude at the equator on WGS84, in metres.
         /// </summary>
-        const double EarthRadiusMeters = 6371010.0;
+        /// <remarks>
+        /// The semi-major axis times <c>π/180</c>, and what a geodesic store answers — measured against a
+        /// live service in #90. It is not one degree of <em>latitude</em>, which is 110574.3885: that the two
+        /// differ is the whole of what says these are ellipsoidal. The figures below that have no closed form
+        /// on an ellipsoid are recorded rather than derived, for the same reason.
+        /// </remarks>
+        const double Degree = 111319.49079327357;
 
         /// <summary>
-        /// One degree of arc on that sphere, in metres.
+        /// The geodesic distance from a meridian to a point one degree of longitude off it at 5°N.
         /// </summary>
-        const double Degree = EarthRadiusMeters * Math.PI / 180;
+        /// <remarks>
+        /// Recorded, not derived. On a sphere this is <c>asin(sin(1°) · cos(5°)) · R</c>; the ellipsoid has no
+        /// such form, and the closest point on the edge is found by S2 before the distance to it is measured.
+        /// </remarks>
+        const double EdgeAtFiveDegrees = 110898.66346;
 
         static Geometry Wkt(string wkt)
         {
@@ -123,7 +133,10 @@ namespace Apache.Calcite.Geography.Tests
             org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(Wkt("POINT(0 50)"), Wkt("POINT(1 50)")).Should().Be(1);
 
             north.Should().BeLessThan(equator);
-            (equator / north).Should().BeApproximately(1 / Math.Cos(50 * Math.PI / 180), 0.001);
+            // near the spherical prediction 1/cos(50 degrees) and not equal to it, which on a sphere it
+            // would be exactly -- one more place the ellipsoid shows through
+            (equator / north).Should().BeApproximately(1.55268, 1e-4);
+            (equator / north).Should().NotBeApproximately(1 / Math.Cos(50 * Math.PI / 180), 1e-4);
         }
 
         [TestMethod]
@@ -142,10 +155,9 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldMeasureToTheNearestEdgeOfAPolygon()
         {
-            var expected = Math.Asin(Math.Sin(Math.PI / 180) * Math.Cos(5 * Math.PI / 180)) * EarthRadiusMeters;
             var distance = GeographyFunctions.Distance(Wkt("POINT(11 5)"), Wkt("POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))"));
 
-            distance!.doubleValue().Should().BeApproximately(expected, 0.5);
+            distance!.doubleValue().Should().BeApproximately(EdgeAtFiveDegrees, 0.5);
         }
 
         /// <summary>
@@ -161,10 +173,9 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldMeasureToTheEdgeThatClosesARing()
         {
-            var expected = Math.Asin(Math.Sin(Math.PI / 180) * Math.Cos(5 * Math.PI / 180)) * EarthRadiusMeters;
             var distance = GeographyFunctions.Distance(Wkt("POINT(-1 5)"), Wkt("POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))"));
 
-            distance!.doubleValue().Should().BeApproximately(expected, 0.5);
+            distance!.doubleValue().Should().BeApproximately(EdgeAtFiveDegrees, 0.5);
         }
 
         [TestMethod]
@@ -249,7 +260,9 @@ namespace Apache.Calcite.Geography.Tests
             var here = Wkt("POINT(0 89.9)");
             var there = Wkt("POINT(180 89.9)");
 
-            GeographyFunctions.Distance(here, there)!.doubleValue().Should().BeApproximately(0.2 * Degree, 0.001);
+            // 22338.795683 at the service, per #90's "near the pole" row -- this agrees with it to a
+            // micrometre, which is a second confirmation of the model on coordinates nothing here chose
+            GeographyFunctions.Distance(here, there)!.doubleValue().Should().BeApproximately(22338.795683, 1e-3);
             org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(here, there).Should().BeApproximately(180, 1e-9);
         }
 
@@ -312,12 +325,12 @@ namespace Apache.Calcite.Geography.Tests
         public void ShouldMeasureAreaInSquareMetres()
         {
             var box = Wkt("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))");
-            var radians = Math.PI / 180;
-            var betweenTheParallels = EarthRadiusMeters * EarthRadiusMeters * radians * Math.Sin(radians);
             var area = GeographyFunctions.Area(box)!.doubleValue();
 
-            area.Should().BeGreaterThan(betweenTheParallels);
-            area.Should().BeApproximately(betweenTheParallels, betweenTheParallels * 1e-4);
+            // recorded rather than derived: the spherical closed form this used to compare against has no
+            // ellipsoidal counterpart, and area diverges between the two models further than distance does --
+            // the sphere makes this box 12363722802, which is 0.45% more
+            area.Should().BeApproximately(12308778361.47, 1.0);
 
             org.apache.calcite.runtime.SpatialTypeFunctions.ST_Area(box)!.doubleValue().Should().BeApproximately(1, 1e-9);
         }

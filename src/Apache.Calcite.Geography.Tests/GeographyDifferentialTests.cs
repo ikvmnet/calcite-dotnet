@@ -36,7 +36,26 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Metres per degree of arc on the sphere S2 models the Earth as.
         /// </summary>
-        const double Degree = 6371010.0 * Math.PI / 180;
+        /// <summary>
+        /// Metres per degree of longitude at the equator on WGS84, which is where the shapes below sit.
+        /// </summary>
+        /// <remarks>
+        /// A scale factor between a planar answer in degrees and a geodesic one in metres is a spherical
+        /// idea, and these measurements are no longer spherical. There is no single number here: a degree
+        /// east is 111319.49 and a degree north is 110574.39, so a comparison scaled by either is out by up
+        /// to 0.67% depending on which way the two shapes lie.
+        ///
+        /// <para>So the numeric comparisons below are a <em>bound</em> rather than an oracle. They catch a
+        /// wrong unit, a wrong factor, a wrong shape — what a differential test is for — and they cannot
+        /// confirm the model. <c>Wgs84MeasurementTests</c> is what does that, against figures measured from a
+        /// live geodesic service.</para>
+        /// </remarks>
+        const double Degree = 111319.49079327357;
+
+        /// <summary>
+        /// How far the two models may differ before a difference is real.
+        /// </summary>
+        const double ModelGap = 1e-2;
 
         /// <summary>
         /// Shapes of every dimension, overlapping, touching, nested and disjoint.
@@ -267,7 +286,7 @@ namespace Apache.Calcite.Geography.Tests
                     var ours = GeographyFunctions.Distance(a, b)!.doubleValue();
                     var theirs = SpatialTypeFunctions.ST_Distance(a, b) * Degree;
 
-                    if (Math.Abs(ours - theirs) > Math.Max(1e-4 * theirs, 1e-6))
+                    if (Math.Abs(ours - theirs) > Math.Max(ModelGap * theirs, 1e-6))
                         differences.Add($"{left} / {right}: ours {ours}, Calcite {theirs}");
                 }
             }
@@ -292,6 +311,14 @@ namespace Apache.Calcite.Geography.Tests
                     var b = Wkt(right);
 
                     var threshold = 0.003;
+
+                    // a boolean cannot be compared to a tolerance, so the band where the two models decide
+                    // differently is skipped instead: within it the answer turns on which Earth is being
+                    // measured, which is the disagreement rather than a defect. An adapter rechecking a
+                    // pushed-down predicate has the same band and the same problem.
+                    if (Math.Abs(SpatialTypeFunctions.ST_Distance(a, b) - threshold) <= ModelGap * threshold)
+                        continue;
+
                     var ours = GeographyFunctions.DWithin(a, b, java.lang.Double.valueOf(threshold * Degree))!.booleanValue();
                     var theirs = SpatialTypeFunctions.ST_DWithin(a, b, threshold);
 

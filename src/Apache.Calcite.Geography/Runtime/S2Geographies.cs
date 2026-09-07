@@ -40,12 +40,6 @@ namespace Apache.Calcite.Geography.Runtime
     {
 
         /// <summary>
-        /// The radius S2 uses for the Earth, in metres, and therefore the radius every distance this package
-        /// answers is measured on.
-        /// </summary>
-        public const double EarthRadiusMeters = 6371010.0;
-
-        /// <summary>
         /// The angle below which two things are taken to touch, in radians.
         /// </summary>
         /// <remarks>
@@ -460,7 +454,62 @@ namespace Apache.Calcite.Geography.Runtime
             if (a.IsEmpty || b.IsEmpty)
                 return 0;
 
-            return Angle(a, b) * EarthRadiusMeters;
+            // S2 decides whether they touch at all, and whether one encloses the other; only when they are
+            // genuinely apart is there a distance to measure, and it is measured on the ellipsoid
+            if (Angle(a, b) == 0)
+                return 0;
+
+            var pair = ClosestPair(a, b);
+
+            return pair is null ? 0 : Wgs84.Distance(pair.Value.A, pair.Value.B);
+        }
+
+        /// <summary>
+        /// Returns the pair of points, one on each geography, that are closest on the sphere.
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The same four passes <see cref="MinAngle"/> makes, keeping the pair that achieved the least angle
+        /// rather than the angle. S2 answers where the closest points are and <see cref="Wgs84"/> answers how
+        /// far apart they are; picking the pair on a sphere and measuring it on the ellipsoid is second order
+        /// in how far that pair is from the true one, where measuring on the sphere is first order.
+        /// </remarks>
+        static (S2Point A, S2Point B)? ClosestPair(S2Geographies a, S2Geographies b)
+        {
+            var min = double.NaN;
+            (S2Point A, S2Point B)? best = null;
+
+            void Consider(S2Point p, S2Point q)
+            {
+                var angle = new S1Angle(p, q).radians();
+
+                if (double.IsNaN(min) || angle < min)
+                {
+                    min = angle;
+                    best = (p, q);
+                }
+            }
+
+            // no edge-to-edge pass, and none is needed. Two edges that cross are zero apart and never reach
+            // here, Angle having answered already; for two that do not, the least distance is attained at a
+            // vertex of one and its projection on the other, which the passes below take. S2 does have a
+            // four-argument getClosestPoint, and it is not an edge pair -- the fourth argument is the
+            // precomputed normal a x b.
+            foreach (var vertex in a.Vertices)
+                foreach (var (b0, b1) in b.Edges)
+                    Consider(vertex, S2EdgeUtil.getClosestPoint(vertex, b0, b1));
+
+            foreach (var vertex in b.Vertices)
+                foreach (var (a0, a1) in a.Edges)
+                    Consider(S2EdgeUtil.getClosestPoint(vertex, a0, a1), vertex);
+
+            foreach (var va in a.Vertices)
+                foreach (var vb in b.Vertices)
+                    Consider(va, vb);
+
+            return best;
         }
 
         /// <summary>
@@ -845,12 +894,13 @@ namespace Apache.Calcite.Geography.Runtime
         /// <param name="g"></param>
         /// <returns></returns>
         /// <remarks>
-        /// The area S2 measures on the sphere, which is a real area rather than the square degrees a planar
-        /// reading answers. A geography with no areal part has none, as JTS has none for a line.
+        /// A real area rather than the square degrees a planar reading answers, and on the ellipsoid: area
+        /// diverges between the two models further than distance does, not less. A geography with no areal
+        /// part has none, as JTS has none for a line.
         /// </remarks>
         public static double Area(S2Geographies g)
         {
-            return g.polygon is null ? 0 : g.polygon.getArea() * EarthRadiusMeters * EarthRadiusMeters;
+            return g.polygon is null ? 0 : Wgs84.Area(g.polygon);
         }
 
         /// <summary>
@@ -864,7 +914,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// </remarks>
         public static double Length(S2Geographies g)
         {
-            return Arc(g.Edges);
+            return Wgs84.Length(g.Edges);
         }
 
         /// <summary>
@@ -874,17 +924,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <returns></returns>
         public static double Perimeter(S2Geographies g)
         {
-            return Arc(g.RingEdges);
-        }
-
-        static double Arc(IEnumerable<(S2Point, S2Point)> edges)
-        {
-            var total = 0.0;
-
-            foreach (var (p, q) in edges)
-                total += new S1Angle(p, q).radians();
-
-            return total * EarthRadiusMeters;
+            return Wgs84.Length(g.RingEdges);
         }
 
         /// <summary>
@@ -905,9 +945,9 @@ namespace Apache.Calcite.Geography.Runtime
 
             foreach (var va in a.Vertices)
                 foreach (var vb in b.Vertices)
-                    max = System.Math.Max(max, new S1Angle(va, vb).radians());
+                    max = System.Math.Max(max, Wgs84.Distance(va, vb));
 
-            return max * EarthRadiusMeters;
+            return max;
         }
 
         /// <summary>
