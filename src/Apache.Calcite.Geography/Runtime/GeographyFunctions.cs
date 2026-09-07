@@ -1407,6 +1407,33 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
+        /// <c>ST_GEOG_ISSIMPLE</c>. Returns whether the geography touches itself nowhere it should not.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The edges are geodesics, which is what makes this a different question from Calcite's. Two edges a
+        /// planar reading draws as straight lines in degrees may cross on the Earth and not on the map,
+        /// because a geodesic between two points on a parallel bows poleward and can reach over a line drawn
+        /// north of it.
+        /// </remarks>
+        public static java.lang.Boolean? IsSimple(Geometry? geog)
+        {
+            return geog is null ? null : java.lang.Boolean.valueOf(S2Geographies.IsSimple(geog));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_ISRING</c>. Returns whether the geography is a line that is closed and simple.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <inheritdoc cref="IsSimple" />
+        public static java.lang.Boolean? IsRing(Geometry? geog)
+        {
+            return geog is null ? null : java.lang.Boolean.valueOf(S2Geographies.IsRing(geog));
+        }
+
+        /// <summary>
         /// <c>ST_GEOG_BUFFER</c>. Returns the region within the given distance in metres of the geography.
         /// </summary>
         /// <param name="geog"></param>
