@@ -117,6 +117,111 @@ namespace Apache.Calcite.Geography.Runtime
             }
         }
 
+        /// <summary>
+        /// Returns whether the geography touches itself nowhere it should not.
+        /// </summary>
+        /// <param name="geometry"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// JTS's rule, on the sphere. A point is always simple; a set of points is simple when none repeats;
+        /// a line is simple when no two of its edges meet except where they are joined, save that its two ends
+        /// may coincide and make a ring; an area is simple, its self-intersections being a question of
+        /// validity instead; and a collection is simple when its parts are.
+        ///
+        /// <para>The edges are geodesics, which is the whole difference. Two edges that a planar reading draws
+        /// as straight lines in degrees may cross on the Earth and not on the map, because a geodesic between
+        /// two points on a parallel bows poleward and can reach over a line drawn north of it.</para>
+        /// </remarks>
+        public static bool IsSimple(Geometry geometry)
+        {
+            ArgumentNullException.ThrowIfNull(geometry);
+
+            switch (geometry)
+            {
+                case Point _:
+                    return true;
+                case MultiPoint multi:
+                    return NoRepeatedPoint(multi);
+                case LineString line:
+                    return line.isEmpty() || IsSimpleLine(line);
+                // an area's self-intersections are a question of validity rather than simplicity, which is
+                // where JTS puts them too
+                case Polygon _:
+                case MultiPolygon _:
+                    return true;
+                case GeometryCollection collection:
+                    for (var i = 0; i < collection.getNumGeometries(); i++)
+                        if (IsSimple(collection.getGeometryN(i)) == false)
+                            return false;
+
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Returns whether the geography is a line that is closed and simple.
+        /// </summary>
+        /// <param name="geometry"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// What JTS asks: only a line can be a ring, and it must both return to where it began and touch
+        /// itself nowhere else.
+        /// </remarks>
+        public static bool IsRing(Geometry geometry)
+        {
+            ArgumentNullException.ThrowIfNull(geometry);
+
+            return geometry is LineString line
+                && line.isEmpty() == false
+                && line.isClosed()
+                && IsSimpleLine(line);
+        }
+
+        static bool NoRepeatedPoint(MultiPoint multi)
+        {
+            var seen = new java.util.HashSet();
+
+            for (var i = 0; i < multi.getNumGeometries(); i++)
+                if (seen.add(multi.getGeometryN(i).getCoordinate().toString()) == false)
+                    return false;
+
+            return true;
+        }
+
+        static bool IsSimpleLine(LineString line)
+        {
+            var vertices = ToPath(line);
+            if (vertices is null || vertices.Length < 2)
+                return false;
+
+            var closed = vertices[0].Equals(vertices[^1]);
+            var count = vertices.Length - 1;
+
+            // a vertex reached twice is a self-touch, save for the one that closes a ring
+            var seen = new java.util.HashSet();
+            for (var i = 0; i < (closed ? count : vertices.Length); i++)
+                if (seen.add(vertices[i].toString()) == false)
+                    return false;
+
+            for (var i = 0; i < count; i++)
+            {
+                for (var j = i + 1; j < count; j++)
+                {
+                    // edges joined at a vertex meet there by construction, and the first and last edge of a
+                    // ring are joined the same way
+                    if (j == i + 1 || (closed && i == 0 && j == count - 1))
+                        continue;
+
+                    if (S2EdgeUtil.edgeOrVertexCrossing(vertices[i], vertices[i + 1], vertices[j], vertices[j + 1]))
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
         static bool IsValidCoordinate(Coordinate coordinate)
         {
             return S2LatLng.fromDegrees(coordinate.getY(), coordinate.getX()).isValid();

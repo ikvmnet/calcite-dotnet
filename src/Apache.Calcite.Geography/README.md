@@ -131,6 +131,7 @@ The two halves run on different engines, and deliberately. The predicates are S2
 | `ST_GEOG_SIMPLIFY` | vertices removed within a tolerance in metres |
 | `ST_GEOG_CENTROID` | the centre as a direction from the Earth's centre, so it lands in the shape across the antimeridian |
 | `ST_GEOG_BUFFER` | the region within a distance in metres, so it covers the same ground at every latitude |
+| `ST_GEOG_ISSIMPLE`, `ST_GEOG_ISRING` | whether a shape touches itself, asked of geodesic edges |
 | `ST_GEOG_LENGTH`, `ST_GEOG_PERIMETER` | metres |
 | `ST_GEOG_AREA` | square metres |
 
