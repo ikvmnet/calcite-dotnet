@@ -1406,6 +1406,90 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
+        /// <c>ST_GEOG_DENSIFY</c>. Returns the geography with vertices inserted so that no edge is longer
+        /// than the given distance in metres.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <param name="longest"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Metres and a geodesic, where Calcite's is degrees and a straight line in them. Both differences
+        /// matter and the second is the point of the function: densifying is usually done to hand a planar
+        /// consumer something that follows the true path, and a straight line in degrees is exactly what it
+        /// would have drawn anyway. Between two points on a parallel away from the equator the geodesic bows
+        /// poleward, and these vertices bow with it.
+        ///
+        /// <para>Every part of the geography is walked, a polygon's rings included, which is what
+        /// <c>GeometryTransformer</c> is for — the alternative is a case for each of the seven types.</para>
+        /// </remarks>
+        public static Geometry? Densify(Geometry? geog, java.lang.Object? longest)
+        {
+            if (geog is null || longest is null)
+                return null;
+
+            return Wgs84Of(new Densifier(Double(longest)).transform(geog));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_PROJECTPOINT</c>. Returns the point of the line nearest the given point.
+        /// </summary>
+        /// <param name="point"></param>
+        /// <param name="line"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Null for anything of more than one dimension, as Calcite's is: a projection onto an area is not
+        /// defined and it declines rather than guessing. The point lands on a geodesic and so is not where a
+        /// planar projection puts it.
+        /// </remarks>
+        public static Geometry? ProjectPoint(Geometry? point, Geometry? line)
+        {
+            if (point is null || line is null || line.getDimension() > 1)
+                return null;
+
+            var pair = S2Geographies.ClosestPair(S2Geographies.Of(line), S2Geographies.Of(point));
+
+            return pair is null ? null : Wgs84Of(Factory.createPoint(Coordinate(pair.Value.A)));
+        }
+
+        /// <summary>
+        /// Inserts vertices along every edge of whatever it is handed.
+        /// </summary>
+        /// <param name="longest">The greatest edge length in metres.</param>
+        sealed class Densifier(double longest) : org.locationtech.jts.geom.util.GeometryTransformer
+        {
+
+            protected override org.locationtech.jts.geom.CoordinateSequence transformCoordinates(
+                org.locationtech.jts.geom.CoordinateSequence coords,
+                Geometry parent)
+            {
+                if (coords.size() < 2)
+                    return coords;
+
+                var built = new java.util.ArrayList();
+
+                for (var i = 0; i < coords.size() - 1; i++)
+                {
+                    var from = coords.getCoordinate(i);
+                    var to = coords.getCoordinate(i + 1);
+
+                    built.add(from);
+
+                    foreach (var between in Ellipsoid.Divide(from, to, longest))
+                        built.add(between);
+                }
+
+                built.add(coords.getCoordinate(coords.size() - 1));
+
+                var array = new org.locationtech.jts.geom.Coordinate[built.size()];
+                for (var i = 0; i < built.size(); i++)
+                    array[i] = (org.locationtech.jts.geom.Coordinate)built.get(i);
+
+                return createCoordinateSequence(array);
+            }
+
+        }
+
+        /// <summary>
         /// <c>ST_GEOG_ENVELOPE</c>. Returns the smallest latitude-longitude rectangle containing the
         /// geography.
         /// </summary>

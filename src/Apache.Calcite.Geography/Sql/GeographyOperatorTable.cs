@@ -897,6 +897,20 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
+        /// <c>ST_GEOG_DENSIFY(GEOGRAPHY, DOUBLE)</c>. Returns the geography with vertices inserted along its geodesics so that no edge is longer than the given distance in metres.
+        /// </summary>
+        public static readonly SqlFunction StGeogDensify =
+            Function("ST_GEOG_DENSIFY", nameof(GeographyFunctions.Densify), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Fractional], ["geog", "tolerance"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_PROJECTPOINT(GEOGRAPHY, GEOGRAPHY)</c>. Returns the point of the line nearest the given point.
+        /// </summary>
+        public static readonly SqlFunction StGeogProjectPoint =
+            Function("ST_GEOG_PROJECTPOINT", nameof(GeographyFunctions.ProjectPoint), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Geometry], ["point", "line"]);
+
+        /// <summary>
         /// <c>ST_GEOG_ENVELOPE(GEOGRAPHY)</c>. Returns the smallest latitude-longitude rectangle containing the geography.
         /// </summary>
         public static readonly SqlFunction StGeogEnvelope =
@@ -1055,6 +1069,8 @@ namespace Apache.Calcite.Geography.Sql
                 StGeogLength,
                 StGeogPerimeter,
                 StGeogMaxDistance,
+                StGeogDensify,
+                StGeogProjectPoint,
                 StGeogEnvelope,
                 StGeogExtent,
                 StGeogExpand,
