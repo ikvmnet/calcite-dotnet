@@ -119,6 +119,9 @@ The two halves run on different engines, and deliberately. The predicates are S2
 | --- | --- |
 | `ST_GEOG_DISTANCE`, `ST_GEOG_DWITHIN` | the distance between two geographies |
 | `ST_GEOG_MAXDISTANCE` | the greatest distance between a coordinate of one and a coordinate of the other |
+| `ST_GEOG_CLOSESTCOORDINATE`, `ST_GEOG_FURTHESTCOORDINATE` | the coordinate of a geography nearest or furthest from a point |
+| `ST_GEOG_CLOSESTPOINT` | the point of one geography nearest another, which may fall part way along an edge |
+| `ST_GEOG_LONGESTLINE` | the line joining the pair `ST_GEOG_MAXDISTANCE` measures |
 | `ST_GEOG_LENGTH`, `ST_GEOG_PERIMETER` | metres |
 | `ST_GEOG_AREA` | square metres |
 

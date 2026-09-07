@@ -47,6 +47,21 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
+        /// Returns the geodesic distance between two coordinates in metres.
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A JTS coordinate carries longitude in x and latitude in y, which is the order WKT writes and the
+        /// reverse of the order a geodesic library takes.
+        /// </remarks>
+        public static double Distance(org.locationtech.jts.geom.Coordinate a, org.locationtech.jts.geom.Coordinate b)
+        {
+            return Geodesic.WGS84.Inverse(a.getY(), a.getX(), b.getY(), b.getX()).s12;
+        }
+
+        /// <summary>
         /// Returns the total geodesic length of the given edges in metres.
         /// </summary>
         /// <param name="edges"></param>

@@ -897,6 +897,34 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
+        /// <c>ST_GEOG_CLOSESTCOORDINATE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the coordinate or coordinates of the geography nearest the given point.
+        /// </summary>
+        public static readonly SqlFunction StGeogClosestCoordinate =
+            Function("ST_GEOG_CLOSESTCOORDINATE", nameof(GeographyFunctions.ClosestCoordinate), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Geometry], ["point", "geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_FURTHESTCOORDINATE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the coordinate or coordinates of the geography furthest from the given point.
+        /// </summary>
+        public static readonly SqlFunction StGeogFurthestCoordinate =
+            Function("ST_GEOG_FURTHESTCOORDINATE", nameof(GeographyFunctions.FurthestCoordinate), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Geometry], ["point", "geog"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_CLOSESTPOINT(GEOGRAPHY, GEOGRAPHY)</c>. Returns the point of the first geography nearest the second.
+        /// </summary>
+        public static readonly SqlFunction StGeogClosestPoint =
+            Function("ST_GEOG_CLOSESTPOINT", nameof(GeographyFunctions.ClosestPoint), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
+
+        /// <summary>
+        /// <c>ST_GEOG_LONGESTLINE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the line between the two coordinates, one from each geography, that are furthest apart.
+        /// </summary>
+        public static readonly SqlFunction StGeogLongestLine =
+            Function("ST_GEOG_LONGESTLINE", nameof(GeographyFunctions.LongestLine), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
+
+        /// <summary>
         /// <c>ST_GEOG_MAXDISTANCE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the greatest distance between a coordinate of one geography and a coordinate of the other, in metres.
         /// </summary>
         public static readonly SqlFunction StGeogMaxDistance =
@@ -1006,6 +1034,10 @@ namespace Apache.Calcite.Geography.Sql
                 StGeogLength,
                 StGeogPerimeter,
                 StGeogMaxDistance,
+                StGeogClosestCoordinate,
+                StGeogFurthestCoordinate,
+                StGeogClosestPoint,
+                StGeogLongestLine,
                 StGeogX,
                 StGeogY,
                 StGeogZ,

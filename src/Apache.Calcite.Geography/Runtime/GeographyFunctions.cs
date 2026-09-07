@@ -1,5 +1,10 @@
+using System.Collections.Generic;
+
 using org.apache.calcite.runtime;
 
+// the class and this class's Wgs84 constant, which is the SRID, are two different things with one name;
+// inside here the constant wins, so the ellipsoid is reached under a name that says what it is
+using Ellipsoid = Apache.Calcite.Geography.Runtime.Wgs84;
 using Geometry = org.locationtech.jts.geom.Geometry;
 
 namespace Apache.Calcite.Geography.Runtime
@@ -1398,6 +1403,164 @@ namespace Apache.Calcite.Geography.Runtime
         {
             if (srid != Wgs84)
                 throw new java.lang.IllegalArgumentException($"A geography is WGS84; SRID {srid} is not a reference system it can be in.");
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_CLOSESTCOORDINATE</c>. Returns the coordinate or coordinates of the geography nearest
+        /// the given point.
+        /// </summary>
+        /// <param name="point"></param>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A coordinate of the geography rather than a point on it, which is what Calcite's own answers: it
+        /// walks the coordinate array and never looks at the space between two of them. Ties answer a
+        /// multi-point, as Calcite's does.
+        ///
+        /// <para>The ranking is geodesic and Calcite's is planar, which is the whole of the difference and is
+        /// not cosmetic: a candidate one degree east and a candidate one degree north are equidistant in
+        /// degrees and 745 metres apart in metres, so the two disagree about which is nearer whenever the
+        /// candidates lie in different directions.</para>
+        /// </remarks>
+        public static Geometry? ClosestCoordinate(Geometry? point, Geometry? geog)
+        {
+            return ExtremeCoordinate(point, geog, furthest: false);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_FURTHESTCOORDINATE</c>. Returns the coordinate or coordinates of the geography furthest
+        /// from the given point.
+        /// </summary>
+        /// <param name="point"></param>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <inheritdoc cref="ClosestCoordinate" />
+        public static Geometry? FurthestCoordinate(Geometry? point, Geometry? geog)
+        {
+            return ExtremeCoordinate(point, geog, furthest: true);
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_CLOSESTPOINT</c>. Returns the point of the first geography nearest the second.
+        /// </summary>
+        /// <param name="geog1"></param>
+        /// <param name="geog2"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A point on the geography rather than one of its coordinates — it may fall part way along an edge,
+        /// which is why this is a different function from <see cref="ClosestCoordinate"/> and why S2 answers
+        /// it. The edge it falls on is a geodesic, so the point is not the one a planar reading finds: a
+        /// chord and an arc between the same two ends meet a third point at different places.
+        /// </remarks>
+        public static Geometry? ClosestPoint(Geometry? geog1, Geometry? geog2)
+        {
+            if (geog1 is null || geog2 is null)
+                return null;
+
+            var pair = S2Geographies.ClosestPair(S2Geographies.Of(geog1), S2Geographies.Of(geog2));
+
+            return pair is null ? null : Wgs84Of(Factory.createPoint(Coordinate(pair.Value.A)));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_LONGESTLINE</c>. Returns the line between the two coordinates, one from each geography,
+        /// that are furthest apart.
+        /// </summary>
+        /// <param name="geog1"></param>
+        /// <param name="geog2"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Between coordinates and not between shapes, which is what Calcite measures, and the same pair
+        /// <c>ST_GEOG_MAXDISTANCE</c> measures the length of.
+        /// </remarks>
+        public static Geometry? LongestLine(Geometry? geog1, Geometry? geog2)
+        {
+            if (geog1 is null || geog2 is null)
+                return null;
+
+            var max = double.NaN;
+            org.locationtech.jts.geom.Coordinate? left = null;
+            org.locationtech.jts.geom.Coordinate? right = null;
+
+            foreach (var a in geog1.getCoordinates())
+            {
+                foreach (var b in geog2.getCoordinates())
+                {
+                    var distance = Ellipsoid.Distance(a, b);
+
+                    if (double.IsNaN(max) || distance > max)
+                    {
+                        max = distance;
+                        left = a;
+                        right = b;
+                    }
+                }
+            }
+
+            if (left is null || right is null)
+                return null;
+
+            return Wgs84Of(Factory.createLineString([left, right]));
+        }
+
+        /// <summary>
+        /// The coordinate or coordinates of the geography at the extreme geodesic distance from the point.
+        /// </summary>
+        /// <param name="point"></param>
+        /// <param name="geog"></param>
+        /// <param name="furthest"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Calcite reads a single coordinate off the point argument and compares every coordinate of the
+        /// other geography against it, so this does too — the argument is a point in the signature and only
+        /// its first coordinate in the behaviour.
+        /// </remarks>
+        static Geometry? ExtremeCoordinate(Geometry? point, Geometry? geog, bool furthest)
+        {
+            if (point is null || geog is null)
+                return null;
+
+            var origin = point.getCoordinate();
+            if (origin is null)
+                return null;
+
+            var found = new List<org.locationtech.jts.geom.Coordinate>();
+            var best = double.NaN;
+
+            foreach (var candidate in geog.getCoordinates())
+            {
+                var distance = Ellipsoid.Distance(origin, candidate);
+
+                if (double.IsNaN(best) || (furthest ? distance > best : distance < best))
+                {
+                    best = distance;
+                    found.Clear();
+                    found.Add(candidate);
+                }
+                else if (distance == best && found.Contains(candidate) == false)
+                {
+                    found.Add(candidate);
+                }
+            }
+
+            if (found.Count == 0)
+                return null;
+
+            return Wgs84Of(found.Count == 1
+                ? Factory.createPoint(found[0])
+                : Factory.createMultiPointFromCoords([.. found]));
+        }
+
+        /// <summary>
+        /// The factory the answers above are built with.
+        /// </summary>
+        static readonly org.locationtech.jts.geom.GeometryFactory Factory = new();
+
+        static org.locationtech.jts.geom.Coordinate Coordinate(com.google.common.geometry.S2Point p)
+        {
+            var ll = new com.google.common.geometry.S2LatLng(p);
+
+            return new org.locationtech.jts.geom.Coordinate(ll.lngDegrees(), ll.latDegrees());
         }
 
         /// <summary>

@@ -476,7 +476,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// far apart they are; picking the pair on a sphere and measuring it on the ellipsoid is second order
         /// in how far that pair is from the true one, where measuring on the sphere is first order.
         /// </remarks>
-        static (S2Point A, S2Point B)? ClosestPair(S2Geographies a, S2Geographies b)
+        public static (S2Point A, S2Point B)? ClosestPair(S2Geographies a, S2Geographies b)
         {
             var min = double.NaN;
             (S2Point A, S2Point B)? best = null;
