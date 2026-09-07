@@ -1033,6 +1033,74 @@ namespace Apache.Calcite.Geography.Runtime
             return min;
         }
 
+
+        /// <summary>
+        /// Returns the centroid of the geography as a point on the sphere, or <see langword="null"/> where it
+        /// has none.
+        /// </summary>
+        /// <param name="g"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The dimensional rule JTS uses: an area outranks a line and a line outranks a point, so a shape
+        /// with any areal part is answered by that part's centroid alone. What differs is the space it is
+        /// computed in. S2 sums the centroid of each spherical triangle of a loop, weighted by that
+        /// triangle's area, and the answer is a direction from the Earth's centre rather than an average of
+        /// two coordinates — which is what makes it right across the antimeridian, where averaging longitudes
+        /// puts the centre of a shape on the far side of the planet.
+        ///
+        /// <para>The sum can vanish. Two antipodal points have no centroid, and a shape symmetric about the
+        /// centre has none either; there is no direction to answer and this says so rather than choosing.
+        /// </para>
+        /// </remarks>
+        public static S2Point? Centroid(S2Geographies g)
+        {
+            if (g.polygon is not null && g.polygon.numLoops() > 0)
+                return Normalized(g.polygon.getCentroid(), g.polygon.getArea());
+
+            var sum = new S2Point(0, 0, 0);
+            var weight = 0.0;
+
+            foreach (var (p, q) in g.Edges)
+            {
+                // weighted by the length of the edge it stands for, so a long edge counts for more
+                var length = new S1Angle(p, q).radians();
+
+                sum = S2Point.add(sum, S2Point.mul(S2Point.add(p, q).normalize(), length));
+                weight += length;
+            }
+
+            if (weight > 0)
+                return Normalized(sum, weight);
+
+            foreach (var vertex in g.Vertices)
+            {
+                sum = S2Point.add(sum, vertex);
+                weight += 1;
+            }
+
+            return weight > 0 ? Normalized(sum, weight) : null;
+        }
+
+        /// <summary>
+        /// Returns the direction of a weighted sum of directions, or <see langword="null"/> where it has
+        /// none.
+        /// </summary>
+        /// <param name="sum"></param>
+        /// <param name="weight">The total weight that went into the sum.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Against the weight rather than against zero, and that is not a nicety. Two antipodal points cancel
+        /// exactly in arithmetic and leave about <c>1e-16</c> in floating point, so a test for zero never
+        /// fires and the answer is whatever direction the rounding error happened to point in. What says
+        /// there is no centre is that the sum is negligible <em>beside what went into it</em> — a mean
+        /// direction of no length — which is a question about the ratio and not about the magnitude. A very
+        /// small polygon has a very small centroid sum and a perfectly good centre.
+        /// </remarks>
+        static S2Point? Normalized(S2Point sum, double weight)
+        {
+            return sum.norm() <= weight * 1e-12 ? null : sum.normalize();
+        }
+
         /// <summary>
         /// Returns the least angle between any part of one geography and any part of the other, without
         /// regard to whether one encloses the other.

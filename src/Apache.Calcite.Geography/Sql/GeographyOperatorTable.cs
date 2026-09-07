@@ -897,6 +897,13 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
+        /// <c>ST_GEOG_CENTROID(GEOGRAPHY)</c>. Returns the centre of the geography.
+        /// </summary>
+        public static readonly SqlFunction StGeogCentroid =
+            Function("ST_GEOG_CENTROID", nameof(GeographyFunctions.Centroid), GeographyReturnTypes.Geography,
+                [GeographyOperand.Geometry], ["geog"]);
+
+        /// <summary>
         /// <c>ST_GEOG_CONVEXHULL(GEOGRAPHY)</c>. Returns the smallest convex geography containing this one.
         /// </summary>
         public static readonly SqlFunction StGeogConvexHull =
@@ -1111,6 +1118,7 @@ namespace Apache.Calcite.Geography.Sql
                 StGeogLength,
                 StGeogPerimeter,
                 StGeogMaxDistance,
+                StGeogCentroid,
                 StGeogConvexHull,
                 StGeogSimplify,
                 StGeogIntersection,

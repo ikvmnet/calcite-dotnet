@@ -1407,6 +1407,30 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
+        /// <c>ST_GEOG_CENTROID</c>. Returns the centre of the geography.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The same dimensional rule Calcite's follows — an area outranks a line and a line outranks a point
+        /// — computed on the sphere. The difference is not a refinement. A planar centroid averages
+        /// longitudes, so the centre of a shape straddling the antimeridian lands on the far side of the
+        /// planet; this sums directions from the Earth's centre, and answers a point in the shape.
+        ///
+        /// <para>Null where there is no centre to name: an empty geography, or one symmetric about the
+        /// Earth's centre, where every direction is as good as its opposite.</para>
+        /// </remarks>
+        public static Geometry? Centroid(Geometry? geog)
+        {
+            if (geog is null)
+                return null;
+
+            var centre = S2Geographies.Centroid(S2Geographies.Of(geog));
+
+            return centre is null ? Wgs84Of(Factory.createPoint()) : Wgs84Of(Factory.createPoint(Coordinate(centre)));
+        }
+
+        /// <summary>
         /// <c>ST_GEOG_CONVEXHULL</c>. Returns the smallest convex geography containing this one.
         /// </summary>
         /// <param name="geog"></param>
