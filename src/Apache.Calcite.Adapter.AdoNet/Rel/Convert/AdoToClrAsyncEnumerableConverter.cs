@@ -33,11 +33,16 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
     /// to wait on, so a plan whose whole purpose is not to hold a thread would have held one for every
     /// row.</para>
     ///
+    /// <para><b>What is asynchronous here is the row loop, and only that.</b> The statement is still sent
+    /// at <c>GetAsyncEnumerator</c>, synchronously, because that is where this convention acquires and
+    /// <c>GetAsyncEnumerator</c> cannot await — <see cref="AdoSequences.ReadAsync{TRow}"/> says what that
+    /// buys and what it costs. The row loop is where a query spends its time, and it is the part that no
+    /// longer parks a thread.</para>
+    ///
     /// <para>Cancellation is the convention's: the token the consumer hands <c>GetAsyncEnumerator</c> is
-    /// what reaches <c>ExecuteReaderAsync</c> and <c>ReadAsync</c>, and the tree passes <c>default</c>, as
-    /// it does for every other operator. Calcite's own channel,
-    /// <c>DataContext.Variable.CANCEL_FLAG</c>, is read by nothing in this adapter and is not read
-    /// here.</para>
+    /// what reaches <c>ReadAsync</c>, and the tree passes <c>default</c>, as it does for every other
+    /// operator. Calcite's own channel, <c>DataContext.Variable.CANCEL_FLAG</c>, is read by nothing in this
+    /// adapter and is not read here.</para>
     /// </remarks>
     public class AdoToClrAsyncEnumerableConverter : ConverterImpl, ClrAsyncEnumerableRel
     {

@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Apache.Calcite.Adapter.AdoNet.Metadata;
 using Apache.Calcite.Data;
 
+using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
@@ -236,44 +237,22 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The default plan opens its connection without blocking, which is the whole point of the converter
-        /// it reaches.
+        /// The default plan opens one connection and reads its rows without parking a thread.
         /// </summary>
         /// <remarks>
-        /// The plan is what is being asserted, read through the one observable the data source has: a plan
-        /// under <c>AdoToClrAsyncEnumerableConverter</c> calls <see cref="AdoDataSource.OpenConnectionAsync"/>
-        /// and the synchronous route calls <see cref="AdoDataSource.OpenConnection"/>. Metadata's own
-        /// connections do not reach either: those are opened against the <c>DbDataSource</c> the metadata was
-        /// built from.
+        /// Metadata's own connections do not reach this source: those are opened against the
+        /// <c>DbDataSource</c> the metadata was built from, so what is counted here is the plan's.
         /// </remarks>
         [TestMethod]
-        public async Task ShouldOpenTheConnectionWithoutBlocking()
+        public async Task ShouldReadTheAdapterThroughTheAsyncConverter()
         {
             var source = new CountingAdoDataSource(_sqlite.DataSource);
             using var connection = OpenConnection(source);
 
             CollectionAssert.AreEquivalent(new[] { "1|Alice", "2|Bob" }, await RowsAsync(connection, "SELECT empno, name FROM ADO.emps WHERE deptno = 10"));
 
-            Assert.AreEqual(1, source.OpenedAsync);
-            Assert.AreEqual(0, source.Opened);
-        }
-
-        /// <summary>
-        /// In synchronous mode it is the blocking open, there being no asynchronous plan to open for.
-        /// </summary>
-        [TestMethod]
-        public void ShouldOpenTheConnectionSynchronouslyInSynchronousMode()
-        {
-            var source = new CountingAdoDataSource(_sqlite.DataSource);
-            using var connection = OpenConnection(source, synchronous: true);
-
-            using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT empno, name FROM ADO.emps WHERE deptno = 10";
-            using (var r = cmd.ExecuteReader())
-                while (r.Read()) { }
-
             Assert.AreEqual(1, source.Opened);
-            Assert.AreEqual(0, source.OpenedAsync);
+            Assert.AreEqual(1, source.Closed);
         }
 
         /// <summary>
@@ -317,33 +296,42 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
                 names.Add(name);
 
             CollectionAssert.AreEqual(new[] { "Alice", "Bob" }, names);
-            Assert.AreEqual(1, source.OpenedAsync);
+            Assert.AreEqual(1, source.Opened);
             Assert.AreEqual(1, source.Closed);
         }
 
         /// <summary>
-        /// The statement is not sent until the first row is asked for, an <see cref="IAsyncEnumerable{T}"/>
-        /// having nowhere earlier to await.
+        /// The statement is sent at <c>GetAsyncEnumerator</c>, before any row is asked for.
         /// </summary>
+        /// <remarks>
+        /// Where this convention acquires, and the reason a failing statement reaches the caller from the
+        /// call that executed it: <c>CalciteSession</c> runs <c>GetAsyncEnumerator</c> inside
+        /// <c>ExecuteReaderAsync</c>. A leaf that opened on its first <c>MoveNextAsync</c> would still
+        /// answer the same rows and would report a rejected statement from <c>ReadAsync</c>.
+        ///
+        /// <para>Composing the sequence opens nothing, because acquisition belongs to the enumerator and
+        /// not to the call — one enumeration, one connection.</para>
+        /// </remarks>
         [TestMethod]
-        public async Task ShouldNotOpenUntilTheFirstRowIsAskedFor()
+        public async Task ShouldSendTheStatementAtAcquisition()
         {
             var source = new CountingAdoDataSource(_sqlite.DataSource);
 
             var rows = AdoSequences.ReadAsync(source, "SELECT NAME FROM EMPS", r => r.GetString(0), null);
-            Assert.AreEqual(0, source.OpenedAsync);
+            Assert.AreEqual(0, source.Opened, "composing the sequence opens nothing");
 
             var enumerator = rows.GetAsyncEnumerator();
 
             try
             {
-                Assert.IsTrue(await enumerator.MoveNextAsync());
-                Assert.AreEqual(1, source.OpenedAsync);
+                Assert.AreEqual(1, source.Opened, "and obtaining its enumerator sends the statement");
             }
             finally
             {
                 await enumerator.DisposeAsync();
             }
+
+            Assert.AreEqual(1, source.Closed, "an enumerator abandoned without a row still closes it");
         }
 
         /// <summary>
@@ -363,6 +351,51 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             });
 
             Assert.AreEqual(1, source.Closed);
+        }
+
+        /// <summary>
+        /// A statement the source rejects fails from the call that executed it, on either surface.
+        /// </summary>
+        /// <remarks>
+        /// <c>DbCommand.ExecuteReaderAsync</c> sends the command text and builds the reader, so a caller
+        /// expects a bad statement back from there rather than from the first <c>ReadAsync</c>. Nothing in
+        /// the adapter can promise that on its own: the leaf opens its connection and executes on the first
+        /// <c>MoveNextAsync</c>, because <c>GetAsyncEnumerator</c> cannot await. What holds it is the
+        /// provider reading one row inside <c>ExecuteReaderAsync</c>.
+        ///
+        /// <para>The leaf is failed rather than the schema, because the schema is read again while planning:
+        /// dropping the table would make this a validation failure and say nothing about where the statement
+        /// was sent. Metadata is read through the <c>DbDataSource</c> and never through
+        /// <see cref="AdoDataSource"/>, so arming the source after the connection is open fails the plan's
+        /// own connection and nothing else.</para>
+        /// </remarks>
+        [TestMethod]
+        public async Task ShouldFailFromExecuteRatherThanFromTheFirstRead()
+        {
+            var source = new CountingAdoDataSource(_sqlite.DataSource) { Failing = true };
+            using var connection = OpenConnection(source);
+
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT empno, name FROM ADO.emps";
+
+            // the call itself, not the block: a reader handed back and failing on its first ReadAsync is
+            // exactly what this is here to refuse
+            await Assert.ThrowsExactlyAsync<CalciteException>(async () => await cmd.ExecuteReaderAsync());
+        }
+
+        /// <summary>
+        /// The synchronous route has always done this, and still does.
+        /// </summary>
+        [TestMethod]
+        public void ShouldFailFromExecuteInSynchronousMode()
+        {
+            var source = new CountingAdoDataSource(_sqlite.DataSource) { Failing = true };
+            using var connection = OpenConnection(source, synchronous: true);
+
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT empno, name FROM ADO.emps";
+
+            Assert.ThrowsExactly<CalciteException>(() => cmd.ExecuteReader());
         }
 
         /// <summary>
@@ -391,8 +424,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The fixture's data source, counting which of the two opens a plan reached for and how many of the
-        /// connections it handed out were disposed.
+        /// The fixture's data source, counting the connections a plan opened and how many of them were
+        /// disposed.
         /// </summary>
         /// <param name="dataSource"></param>
         sealed class CountingAdoDataSource(DbDataSource dataSource) : AdoDataSource
@@ -401,38 +434,32 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             readonly AdoDatabaseMetadata _metadata = AdoDatabaseMetadataFactoryImpl.Instance.Create(dataSource);
 
             int _opened;
-            int _openedAsync;
             int _closed;
 
             /// <summary>
-            /// Gets the number of blocking opens.
+            /// Gets the number of connections opened.
             /// </summary>
             public int Opened => Volatile.Read(ref _opened);
-
-            /// <summary>
-            /// Gets the number of asynchronous opens.
-            /// </summary>
-            public int OpenedAsync => Volatile.Read(ref _openedAsync);
 
             /// <summary>
             /// Gets the number of connections handed out that were disposed.
             /// </summary>
             public int Closed => Volatile.Read(ref _closed);
 
+            /// <summary>
+            /// Gets or sets whether every open fails as the provider rejecting the statement would.
+            /// </summary>
+            public bool Failing { get; init; }
+
             /// <inheritdoc />
             public override DbConnection OpenConnection()
             {
                 Interlocked.Increment(ref _opened);
 
+                if (Failing)
+                    throw new SqliteException("armed", 1);
+
                 return new Counted(dataSource.OpenConnection(), this);
-            }
-
-            /// <inheritdoc />
-            public override async ValueTask<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
-            {
-                Interlocked.Increment(ref _openedAsync);
-
-                return new Counted(await dataSource.OpenConnectionAsync(cancellationToken), this);
             }
 
             /// <inheritdoc />

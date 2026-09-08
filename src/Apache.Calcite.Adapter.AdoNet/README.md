@@ -178,7 +178,7 @@ The adapter provides Calcite conversion rules for these operators, which become 
 - `AdoValues` — constant value sets
 - `AdoTableScan` — the scan itself
 
-Anything that cannot be pushed down runs in-process. Converters exist into each of the three execution conventions — `AdoToClrAsyncEnumerableConverter` and `AdoToClrEnumerableConverter` for the two compiled-.NET conventions that `Apache.Calcite.Data` plans into, and `AdoToEnumerableConverter` for Calcite's own — so the adapter works under any of them. The asynchronous converter reads its rows through `ExecuteReaderAsync` and `ReadAsync`, so an asynchronous plan does not block a thread on the provider; it is the route a connection takes by default.
+Anything that cannot be pushed down runs in-process. Converters exist into each of the three execution conventions — `AdoToClrAsyncEnumerableConverter` and `AdoToClrEnumerableConverter` for the two compiled-.NET conventions that `Apache.Calcite.Data` plans into, and `AdoToEnumerableConverter` for Calcite's own — so the adapter works under any of them. The asynchronous converter reads its rows through `DbDataReader.ReadAsync`, so an asynchronous plan does not park a thread per row; it is the route a connection takes by default. The statement itself is still sent when the plan is executed, which is where this convention acquires.
 
 Correlated sub-queries are supported: `AdoCorrelationDataContext` carries the outer row's values into the inner query.
 
