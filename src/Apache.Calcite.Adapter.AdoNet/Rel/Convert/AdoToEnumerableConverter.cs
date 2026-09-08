@@ -1,5 +1,7 @@
 using System.Data.Common;
 
+using Apache.Calcite.Data.Types;
+
 using java.lang;
 using java.lang.reflect;
 using java.util;
@@ -32,7 +34,18 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
     public class AdoToEnumerableConverter : ConverterImpl, EnumerableRel
     {
 
-        static readonly Method GetDbReaderValueMethod = ((Class)typeof(AdoReaderUtil)).getDeclaredMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(SqlTypeName)]);
+        // the whole RelDataType and the schema's mapping, exactly as the Clr converter reaches them.
+        //
+        // Both halves of this were believed impossible. The type travelled as a SqlTypeName because a
+        // constant in a block of Java source has to be writable as source and a RelDataType is not --
+        // true, and answered by EnumerableRelImplementor.stash, which hands the object to the generated
+        // class rather than writing it out. The mapping was kept off this path because a member signature
+        // naming ClrTypeRegistry made Janino refuse to resolve any call to the class: measured, at IKVM
+        // 8.15.0, and it does not reproduce at 8.16.0 -- measured again, here and against Calcite's own
+        // connection. What caused it at 8.15.0 is not isolated. Note that a cli. name in this block is
+        // nothing new either way: Schemas.unwrap has been writing
+        // cli.Apache.Calcite.Adapter.AdoNet.AdoDataSource into it the whole time.
+        static readonly Method GetDbReaderValueMethod = ((Class)typeof(AdoReaderUtil)).getDeclaredMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(RelDataType), typeof(ClrTypeRegistry)]);
         static readonly Method CreateReaderMethod = ((Class)typeof(AdoEnumerable)).getDeclaredMethod(nameof(AdoEnumerable.CreateReader), [typeof(AdoDataSource), typeof(string), typeof(Function1)]);
         static readonly Method CreateReaderWithEnricherMethod = ((Class)typeof(AdoEnumerable)).getDeclaredMethod(nameof(AdoEnumerable.CreateReader), [typeof(AdoDataSource), typeof(string), typeof(Function1), typeof(DbCommandEnricher)]);
         static readonly Method CreateEnricherMethod = ((Class)typeof(AdoEnumerable)).getDeclaredMethod(nameof(AdoEnumerable.CreateEnricher), [typeof(AdoDataSource), typeof(java.util.List), typeof(java.util.List), typeof(DataContext)]);
@@ -81,6 +94,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             var writer = GenerateSql(convention, dataContextBuilder, self, out var sqlImplementor);
             var dataSource = Schemas.unwrap(convention.Expression, typeof(AdoDataSource));
 
+            // the schema's mapping, fetched off the schema at run time the way the data source is
+            var typeRegistry = Schemas.unwrap(convention.Expression, typeof(ClrTypeRegistry));
+
             var parameters = writer.Indexes;
             var hasParameters = parameters.isEmpty() == false;
             var parameterTypeNames = GetParameterTypeNames(sqlImplementor, parameters);
@@ -92,10 +108,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             var sql_ = list
                 .append("sql",
                     Expressions.constant(sql));
-
-            var fields_ = list
-                .append("fields",
-                    Expressions.constant(getRowType().getFieldList()));
 
             var rowBuilder = new BlockBuilder();
 
@@ -119,7 +131,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             else if (fieldCount == 1)
             {
                 rowBuilder.add(
-                    Expressions.return_(null, ReadField(rowBuilder, reader_, physType, 0)));
+                    Expressions.return_(null, ReadField(implementor, rowBuilder, reader_, typeRegistry, physType, 0)));
             }
             else
             {
@@ -139,7 +151,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                         Expressions.statement(
                             Expressions.assign(
                                 Expressions.arrayIndex(values_, Expressions.constant(i)),
-                                ReadField(rowBuilder, reader_, physType, i))));
+                                ReadField(implementor, rowBuilder, reader_, typeRegistry, physType, i))));
                 }
 
                 // return values array
@@ -203,9 +215,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// <returns></returns>
         /// <remarks>
         /// The declared SQL type decides how the value is read, not whatever the provider chose to surface
-        /// it as, so the row holds what the plan was built against.
+        /// it as, so the row holds what the plan was built against — the whole type, facets and component
+        /// included, and the schema's mapping with it.
         /// </remarks>
-        static Expression ReadField(BlockBuilder rowBuilder, ParameterExpression reader_, PhysType physType, int index)
+        static Expression ReadField(EnumerableRelImplementor implementor, BlockBuilder rowBuilder, ParameterExpression reader_, Expression typeRegistry, PhysType physType, int index)
         {
             var fieldType = ((RelDataTypeField)physType.getRowType().getFieldList().get(index)).getType();
 
@@ -215,7 +228,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                     GetDbReaderValueMethod,
                     reader_,
                     Expressions.constant(index),
-                    Expressions.constant(fieldType.getSqlTypeName())));
+                    // stash rather than constant: a RelDataType cannot be written out as Java source, and
+                    // stash hands the object to the generated class instead of trying to
+                    implementor.stash(fieldType, (Class)typeof(RelDataType)),
+                    typeRegistry));
         }
 
         /// <summary>

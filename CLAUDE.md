@@ -373,12 +373,24 @@ operators. That is a pass-through column and nothing else — and one only these
 `EnumerableConvention` would write `cli.Namespace.Type` into Java source and Janino does not resolve a
 `cli.` name.
 
-**A class generated code names is a class Janino reflects over entirely.** Resolving
-`cli.Apache.Calcite.Adapter.AdoNet.AdoReaderUtil.GetDbReaderValue` makes Janino load the type of every
-member that class declares, so one signature naming a type its classloader cannot reach breaks every
-generated reader — measured, with `Cannot load class "cli.Apache.Calcite.Data.Types.ClrTypeRegistry"`
-from a call that does not mention it. Anything a caller's mapping travels through lives on
-`AdoReaderMapping` for that reason. A `using` is not a member signature and is fine.
+**A generated plan reaches a live CLR object through `Schemas.unwrap`, and always has.** It emits
+`((cli.Namespace.Type) schema.unwrap(cli.Namespace.Type.class))` — a call evaluated at run time rather
+than an object written into the tree — and `AdoToEnumerableConverter` has been using it to reach
+`cli.Apache.Calcite.Adapter.AdoNet.AdoDataSource` from Java source the whole time. That is how a
+schema's CLR type mapping reaches a table scan in both conventions. Where a value genuinely cannot be
+written as source and is not on a schema, `EnumerableRelImplementor.stash` hands it to the generated
+class instead; the adapter carries a `RelDataType` that way.
+
+**"Janino reflects over every member of the class" was recorded here and does not reproduce.** The claim
+was that resolving a call to `AdoReaderUtil.GetDbReaderValue` makes Janino load the type of every member
+that class declares, so one signature naming `ClrTypeRegistry` broke every generated reader — measured,
+with `Cannot load class "cli.Apache.Calcite.Data.Common.ClrTypeRegistry"` from calls that do not mention
+it, and a whole second class was written to keep such signatures away from it. That measurement was taken
+at **IKVM 8.15.0**, inside the `CustomAssemblyClassLoaderAttribute` window below. At 8.16.0 it does not
+happen: measured with the registry in `AdoReaderUtil`'s signatures and in the generated block, against
+Calcite's own connection and both of this provider's modes. What caused it at 8.15.0 is not isolated —
+note that a per-assembly loader would have refused `cli.…AdoDataSource` in the same block, and that
+resolved — and nothing is written around it any more.
 
 **A mapping is two independent defaults, not one relaxation.** Which .NET type a Calcite type reads back
 as and which Calcite type a .NET value is written as are separate facts: `DateTime` is what a `DATE`

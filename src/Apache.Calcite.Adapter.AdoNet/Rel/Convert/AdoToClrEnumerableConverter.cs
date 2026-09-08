@@ -2,6 +2,7 @@ using System;
 using System.Data.Common;
 using System.Linq.Expressions;
 
+using Apache.Calcite.Data.Types;
 using Apache.Calcite.Extensions;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Linq4j.Tree;
@@ -45,11 +46,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         static readonly System.Reflection.MethodInfo ReadMethod = typeof(AdoSequences).GetMethod(nameof(AdoSequences.Read))
             ?? throw new InvalidOperationException($"'{nameof(AdoSequences.Read)}' is missing from {nameof(AdoSequences)}.");
 
-        // the whole RelDataType, not its SqlTypeName. An expression tree can hold any object, so this
-        // convention is under none of the constraint the Janino route is: AdoToEnumerableConverter writes
-        // Java source and a SqlTypeName constant is what a block can carry, which loses the facets and a
-        // collection's component type along with them.
-        static readonly System.Reflection.MethodInfo GetDbReaderValueMethod = typeof(AdoReaderUtil).GetMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(RelDataType)])
+        // the whole RelDataType, and the schema's mapping alongside it, which is what makes a resolver a
+        // caller registered on the schema reach a scan
+        static readonly System.Reflection.MethodInfo GetDbReaderValueMethod = typeof(AdoReaderUtil).GetMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(RelDataType), typeof(ClrTypeRegistry)])
             ?? throw new InvalidOperationException($"'{nameof(AdoReaderUtil.GetDbReaderValue)}' is missing from {nameof(AdoReaderUtil)}.");
 
         static readonly System.Reflection.MethodInfo CreateEnricherMethod = typeof(AdoEnumerable).GetMethod(nameof(AdoEnumerable.CreateEnricher), [typeof(AdoDataSource), typeof(java.util.List), typeof(java.util.List), typeof(DataContext)])
@@ -99,6 +98,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             // anything first. Everything else this node builds is an expression tree from the start.
             var dataSource = implementor.Translator.Translate(Schemas.unwrap(convention.Expression, typeof(AdoDataSource)));
 
+            // the schema's mapping, fetched off the schema at run time the way the data source is
+            var typeRegistry = implementor.Translator.Translate(Schemas.unwrap(convention.Expression, typeof(ClrTypeRegistry)));
+
             // a correlated sub-query leaves a parameter per correlation variable in the SQL, and the values
             // live on the context the builder closed over the outer row. Without the enricher the command is
             // handed to the provider unfilled.
@@ -111,13 +113,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                     ReadMethod.MakeGenericMethod(rowType),
                     dataSource,
                     Expression.Constant(sql),
-                    RowBuilder(physType, rowType),
+                    RowBuilder(typeRegistry, physType, rowType),
                     enricher));
         }
 
         /// <summary>
         /// Builds the delegate that reads one row from the data reader.
         /// </summary>
+        /// <param name="typeRegistry">The schema's mapping, as an expression fetching it at run time.</param>
         /// <param name="physType"></param>
         /// <param name="rowType"></param>
         /// <returns></returns>
@@ -127,7 +130,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// already told the physical type the same thing: no field is a null, one field is the value itself,
         /// and only beyond that is a row an array.
         /// </remarks>
-        Expression RowBuilder(ClrPhysType physType, Type rowType)
+        Expression RowBuilder(Expression typeRegistry, ClrPhysType physType, Type rowType)
         {
             var reader = Expression.Parameter(typeof(DbDataReader), "reader");
             var fieldCount = getRowType().getFieldCount();
@@ -136,12 +139,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             if (fieldCount == 0)
                 body = Expression.Constant(null, typeof(object));
             else if (fieldCount == 1)
-                body = ReadField(reader, physType, 0);
+                body = ReadField(reader, typeRegistry, physType, 0);
             else
             {
                 var values = new Expression[fieldCount];
                 for (int i = 0; i < fieldCount; i++)
-                    values[i] = ReadField(reader, physType, i);
+                    values[i] = ReadField(reader, typeRegistry, physType, i);
 
                 body = Expression.NewArrayInit(typeof(object), values);
             }
@@ -166,7 +169,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// The declared SQL type decides how the value is read, not whatever the provider chose to surface it
         /// as, so the row holds what the plan was built against.
         /// </remarks>
-        static Expression ReadField(ParameterExpression reader, ClrPhysType physType, int index)
+        static Expression ReadField(ParameterExpression reader, Expression typeRegistry, ClrPhysType physType, int index)
         {
             var fieldType = ((RelDataTypeField)physType.RelRowType.getFieldList().get(index)).getType();
 
@@ -174,7 +177,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                 GetDbReaderValueMethod,
                 reader,
                 Expression.Constant(index),
-                Expression.Constant(fieldType));
+                Expression.Constant(fieldType),
+                typeRegistry);
         }
 
         /// <summary>

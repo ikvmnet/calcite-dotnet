@@ -2,6 +2,8 @@ using System;
 using System.Data;
 using System.Data.Common;
 
+using Apache.Calcite.Data.Types;
+
 using java.util;
 
 using org.apache.calcite.linq4j.function;
@@ -23,17 +25,20 @@ namespace Apache.Calcite.Adapter.AdoNet.Utils
 
         readonly DbDataReader _reader;
         readonly List _fields;
+        readonly ClrTypeRegistry _typeRegistry;
 
         /// <summary>
         /// Initializes a new instance of <see cref="ObjectArrayRowBuilder"/>.
         /// </summary>
         /// <param name="reader">The open <see cref="DbDataReader"/> positioned before the first row.</param>
         /// <param name="fields">The Calcite <c>RelDataTypeField</c> list that defines the projected columns.</param>
+        /// <param name="typeRegistry">The schema's mapping, or <see langword="null"/> for the built-in one.</param>
         /// <exception cref="ArgumentNullException"><paramref name="reader"/> or <paramref name="fields"/> is <see langword="null"/>.</exception>
-        public ObjectArrayRowBuilder(DbDataReader reader, List fields)
+        public ObjectArrayRowBuilder(DbDataReader reader, List fields, ClrTypeRegistry? typeRegistry = null)
         {
             _reader = reader ?? throw new ArgumentNullException(nameof(reader));
             _fields = fields ?? throw new ArgumentNullException(nameof(fields));
+            _typeRegistry = typeRegistry ?? AdoReaderUtil.Default;
         }
 
         /// <inheritdoc />
@@ -60,7 +65,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Utils
         /// <returns></returns>
         object? GetValue(RelDataTypeField field)
         {
-            return AdoReaderUtil.GetDbReaderValue(_reader, field.getIndex(), field.getType());
+            return AdoReaderUtil.GetDbReaderValue(_reader, field.getIndex(), field.getType(), _typeRegistry);
         }
 
     }

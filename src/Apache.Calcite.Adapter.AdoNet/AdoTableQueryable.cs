@@ -44,7 +44,7 @@ namespace Apache.Calcite.Adapter.AdoNet
             var typeFactory = ((CalciteConnection)queryProvider).getTypeFactory();
             var fields = _adoTable.getRowType(typeFactory).getFieldList();
             var sql = GenerateSql();
-            var enumerable = AdoEnumerable.CreateReader(_adoTable.Schema.DataSource, sql.getSql(), AdoUtils.CreateObjectArrayRowBuilderFactory(fields));
+            var enumerable = AdoEnumerable.CreateReader(_adoTable.Schema.DataSource, sql.getSql(), AdoUtils.CreateObjectArrayRowBuilderFactory(fields, _adoTable.Schema.TypeRegistry));
             return enumerable.enumerator();
         }
 

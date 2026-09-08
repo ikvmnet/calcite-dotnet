@@ -542,16 +542,21 @@ type that says nothing about what holds a value, so the value's own class decide
 adapter it is the escape hatch `AdoSchema` types a provider column it cannot name as, so that the rest of
 the table stays readable, and there the provider's value is the only representation there is: converting
 would be a guess, and a `DateTime` would become a count of milliseconds and read back as a number.
-`AdoReaderMapping.GetDbReaderValue` reads that one column without conversion for that reason, and it is
+`AdoReaderUtil.GetDbReaderValue` reads that one column without conversion for that reason, and it is
 the only type it treats specially.
 
-**A mapping of a caller's own cannot reach a plan `EnumerableConvention` compiles.** That route is
-Java source Janino compiles, and the call it writes into a generated reader names
-`AdoReaderUtil.GetDbReaderValue` with a `SqlTypeName` constant — there is nowhere in it to put a CLR
-object. Worse, Janino resolves that call by reflecting over the whole class and loading the type of
-every member it declares, so a single signature naming `ClrTypeRegistry` broke every generated
-reader. Everything a caller's mapping passes through therefore lives on `AdoReaderMapping`, and
-`AdoReaderUtil` stays within what Janino can load.
+**A mapping of a caller's own reaches an adapter table scan, and it belongs to the schema.** A schema
+outlives every connection that reads it and its tables are read the same way for all of them, so the
+mapping arrives the way the data source does: as an operand where a model names a resolver type, as a
+`ClrTypeMapper` argument where an application builds the schema itself. Both generated routes fetch it
+off the schema at run time through `Schemas.unwrap`, which is the same call `AdoToEnumerableConverter`
+has always used to reach the `AdoDataSource` — itself a CLR class named `cli.…` in Java source. The
+`RelDataType` travels as a constant in the expression tree and through
+`EnumerableRelImplementor.stash` in the Java one, so neither route is left with only a `SqlTypeName`
+and neither loses the facets.
+
+This was recorded here as impossible, on a measurement taken at IKVM 8.15.0 — inside the window where
+`CustomAssemblyClassLoaderAttribute` was internal — and it does not reproduce at 8.16.0.
 
 ### 9. Diagnostics and errors
 
