@@ -65,7 +65,18 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <returns></returns>
         List<string> Rows(string sql)
         {
-            using var cmd = _connection.CreateCommand();
+            return Rows(_connection, sql);
+        }
+
+        /// <summary>
+        /// Runs a query on the given connection and returns its rows as strings.
+        /// </summary>
+        /// <param name="connection"></param>
+        /// <param name="sql"></param>
+        /// <returns></returns>
+        static List<string> Rows(CalciteConnection connection, string sql)
+        {
+            using var cmd = connection.CreateCommand();
             cmd.CommandText = sql;
 
             var rows = new List<string>();
@@ -120,19 +131,55 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// By default the adapter's subtree is carried into the asynchronous convention, pushed down intact.
+        /// By default the adapter converts straight into the asynchronous convention, pushed down intact.
         /// </summary>
         /// <remarks>
-        /// The subtree under the converter is the adapter's own — an <c>AdoProject</c> rather than a scan
-        /// with the work done above it — so the crossing costs a wrapper and loses no pushdown.
+        /// One converter, and it is that convention's own. The route this replaced was
+        /// <c>EnumerableToClrAsyncEnumerableConverter</c> over <c>AdoToEnumerableConverter</c> — two
+        /// crossings and a linq4j enumerator between the data reader and the plan — and it answered
+        /// correctly, which is why nothing but this assertion notices. What it could not do is suspend: the
+        /// reader underneath was synchronous, so the one place in the plan with network I/O to await on was
+        /// the one place that blocked.
+        ///
+        /// <para>The subtree under the converter is the adapter's own — an <c>AdoProject</c> rather than a
+        /// scan with the work done above it — so the crossing loses no pushdown.</para>
         /// </remarks>
         [TestMethod]
-        public void ShouldCarryTheAdapterIntoTheAsyncConvention()
+        public void ShouldConvertStraightIntoTheAsyncConvention()
         {
             var plan = Explain(_connection, "SELECT empno, name FROM ADO.emps WHERE deptno = 10");
 
-            StringAssert.Contains(plan, "EnumerableToClrAsyncEnumerableConverter");
+            StringAssert.Contains(plan, "AdoToClrAsyncEnumerableConverter");
             StringAssert.Contains(plan, "AdoProject");
+            Assert.IsFalse(plan.Contains("EnumerableToClrAsyncEnumerableConverter"), plan);
+            Assert.IsFalse(plan.Contains("AdoToEnumerableConverter"), plan);
+        }
+
+        /// <summary>
+        /// The two conventions answer the same rows over the same statements.
+        /// </summary>
+        /// <remarks>
+        /// The statement each sends is the same statement — <c>AdoToClrAsyncEnumerableConverter</c> writes
+        /// it with the implementor and the writer <c>AdoToClrEnumerableConverter</c> uses, and reads a row
+        /// with the same builder — so what this holds is that the only two things that differ, the sequence
+        /// type and the two calls that await, carry the rows across unchanged.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldReadTheSameRowsInBothConventions()
+        {
+            using var synchronous = OpenConnection(synchronous: true);
+
+            foreach (var sql in new[]
+            {
+                "SELECT empno, name, deptno FROM ADO.emps ORDER BY empno",
+                "SELECT name FROM ADO.emps WHERE deptno = 20 ORDER BY name",
+                "SELECT deptno, COUNT(*) FROM ADO.emps GROUP BY deptno ORDER BY deptno",
+                "SELECT salary FROM ADO.emps ORDER BY empno",
+                "SELECT e.name, d.dname FROM ADO.emps e JOIN ADO.depts d ON e.deptno = d.deptno ORDER BY e.name",
+            })
+            {
+                CollectionAssert.AreEqual(Rows(synchronous, sql), Rows(_connection, sql), sql);
+            }
         }
 
         [TestMethod]

@@ -1,4 +1,6 @@
 using System.Data.Common;
+using System.Threading;
+using System.Threading.Tasks;
 
 using Apache.Calcite.Adapter.AdoNet.Metadata;
 
@@ -21,6 +23,25 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// </summary>
         /// <returns>An open <see cref="DbConnection"/> ready for query execution.</returns>
         public abstract DbConnection OpenConnection();
+
+        /// <summary>
+        /// Opens a new connection to the underlying data source without blocking the calling thread.
+        /// </summary>
+        /// <param name="cancellationToken"></param>
+        /// <returns>An open <see cref="DbConnection"/> ready for query execution.</returns>
+        /// <remarks>
+        /// The default opens the connection synchronously and returns a completed task, because a source
+        /// that cannot open without blocking still has to answer. That is not the sync-over-async the
+        /// asynchronous convention refuses — nothing here waits on a task — it is a caller that is simply
+        /// not asynchronous over the open. Both sources this assembly ships override it, and a source whose
+        /// provider offers a real asynchronous open should.
+        /// </remarks>
+        public virtual ValueTask<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return new ValueTask<DbConnection>(OpenConnection());
+        }
 
         /// <summary>
         /// Gets the connection string used to open connections to the underlying data source.

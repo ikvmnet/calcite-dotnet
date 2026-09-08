@@ -83,7 +83,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 
             var dataContextBuilder = new AdoClrCorrelationDataContextBuilder(implementor, implementor.Root);
 
-            var writer = GenerateSql(convention, dataContextBuilder, self, out var sqlImplementor);
+            var writer = GenerateSql(convention, dataContextBuilder, self, (JavaTypeFactory)getCluster().getTypeFactory(), out var sqlImplementor);
             var parameters = writer.Indexes;
             var parameterTypeNames = AdoToEnumerableConverter.GetParameterTypeNames(sqlImplementor, parameters);
 
@@ -107,7 +107,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                     ReadMethod.MakeGenericMethod(rowType),
                     dataSource,
                     Expression.Constant(sql),
-                    RowBuilder(physType, rowType),
+                    RowBuilder(physType, rowType, getRowType().getFieldCount()),
                     enricher));
         }
 
@@ -116,17 +116,20 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// </summary>
         /// <param name="physType"></param>
         /// <param name="rowType"></param>
+        /// <param name="fieldCount"></param>
         /// <returns></returns>
         /// <remarks>
         /// The shape of a row is decided by how many fields it has, exactly as
         /// <see cref="AdoToEnumerableConverter"/> decides it, because <c>JavaRowFormat.optimize</c> has
         /// already told the physical type the same thing: no field is a null, one field is the value itself,
         /// and only beyond that is a row an array.
+        ///
+        /// <para>Shared with <see cref="AdoToClrAsyncEnumerableConverter"/>, which reads a row the same way:
+        /// the reader has fetched it before a field is read, so nothing on this path awaits.</para>
         /// </remarks>
-        Expression RowBuilder(ClrPhysType physType, Type rowType)
+        internal static Expression RowBuilder(ClrPhysType physType, Type rowType, int fieldCount)
         {
             var reader = Expression.Parameter(typeof(DbDataReader), "reader");
-            var fieldCount = getRowType().getFieldCount();
 
             Expression body;
             if (fieldCount == 0)
@@ -179,10 +182,16 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// <param name="convention"></param>
         /// <param name="dataContextBuilder"></param>
         /// <param name="input"></param>
+        /// <param name="typeFactory"></param>
+        /// <param name="implementor"></param>
         /// <returns></returns>
-        AdoSqlWriter GenerateSql(AdoConvention convention, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input, out AdoImplementor implementor)
+        /// <remarks>
+        /// Shared with <see cref="AdoToClrAsyncEnumerableConverter"/>: the statement a plan of either CLR
+        /// convention sends is the same statement, written by the same implementor from the same tree.
+        /// </remarks>
+        internal static AdoSqlWriter GenerateSql(AdoConvention convention, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input, JavaTypeFactory typeFactory, out AdoImplementor implementor)
         {
-            implementor = new AdoImplementor(convention.Dialect, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder);
+            implementor = new AdoImplementor(convention.Dialect, typeFactory, dataContextBuilder);
             var result = implementor.visitRoot(input);
 
             var writer = new AdoSqlWriter(convention.Dialect, convention.Syntax);

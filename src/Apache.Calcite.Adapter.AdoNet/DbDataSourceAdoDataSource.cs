@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Data.Common;
 
 using Apache.Calcite.Adapter.AdoNet.Metadata;
