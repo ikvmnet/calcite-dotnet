@@ -84,6 +84,21 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
 
+
+        /// <summary>
+        /// Returns the azimuth at the first coordinate of the geodesic to the second, in degrees clockwise
+        /// from north.
+        /// </summary>
+        /// <param name="from"></param>
+        /// <param name="to"></param>
+        /// <returns></returns>
+        public static double Azimuth(
+            org.locationtech.jts.geom.Coordinate from,
+            org.locationtech.jts.geom.Coordinate to)
+        {
+            return Geodesic.WGS84.Inverse(from.getY(), from.getX(), to.getY(), to.getX()).azi1;
+        }
+
         /// <summary>
         /// Returns the point reached by travelling the given distance from a coordinate along the given
         /// azimuth.

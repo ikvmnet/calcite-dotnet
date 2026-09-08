@@ -1407,6 +1407,94 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
+        /// <c>ST_GEOG_BOUNDINGCIRCLE</c>. Returns the smallest circle containing the geography.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// A circle on the Earth rather than on a map, which is a different shape and a different centre. A
+        /// planar smallest circle measures its radius in degrees, so the circle it draws is an ellipse on the
+        /// ground everywhere off the equator, and the centre it picks is the one that minimises a distance
+        /// nobody travels.
+        ///
+        /// <para>The centre is found by walking toward whichever vertex is furthest, in steps that shrink as
+        /// the walk goes on. That converges on the point whose greatest distance to the shape is least, and
+        /// it converges from any start; what it does not do is arrive exactly. So the radius is taken
+        /// afterwards as the true greatest distance from the centre it settled on, which makes containment
+        /// exact and minimality approximate — the circle certainly holds the shape, and may be a fraction of
+        /// a percent wider than the smallest one that would.</para>
+        ///
+        /// <para>Only the vertices are walked, which is enough: a cap is convex and a geodesic between two
+        /// points inside one stays inside it, so a circle holding every vertex holds every edge.</para>
+        ///
+        /// <para>The ring is drawn a little wide — by <c>1 / cos(π / sides)</c> — because it is a polygon of
+        /// thirty-two sides rather than a circle, and an inscribed polygon would cut inside the radius
+        /// between its vertices and leave the shape sticking out.</para>
+        /// </remarks>
+        public static Geometry? BoundingCircle(Geometry? geog)
+        {
+            if (geog is null)
+                return null;
+
+            var vertices = geog.getCoordinates();
+            if (vertices.Length == 0)
+                return Wgs84Of(Factory.createPolygon());
+
+            var centre = Centre(vertices);
+            var radius = 0.0;
+
+            foreach (var vertex in vertices)
+                radius = System.Math.Max(radius, Ellipsoid.Distance(centre, vertex));
+
+            if (radius == 0)
+                return Wgs84Of(Factory.createPoint(centre));
+
+            return Wgs84Of(Areal(Circle(centre, radius / System.Math.Cos(System.Math.PI / CircleSides))));
+        }
+
+        /// <summary>
+        /// The place whose greatest distance to any of the given coordinates is least, near enough.
+        /// </summary>
+        /// <param name="vertices"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Steps of <c>d / (i + 1)</c> toward the furthest vertex, which is the shrinking-step walk that
+        /// converges on the one-centre from any start. The count is what decides how close it gets; a
+        /// thousand puts it within a small fraction of a percent, and the radius is measured afterwards so
+        /// that being short of the true centre widens the circle rather than letting anything escape it.
+        /// </remarks>
+        static org.locationtech.jts.geom.Coordinate Centre(org.locationtech.jts.geom.Coordinate[] vertices)
+        {
+            const int steps = 1000;
+
+            var centre = vertices[0];
+
+            for (var i = 1; i <= steps; i++)
+            {
+                var furthest = vertices[0];
+                var distance = 0.0;
+
+                foreach (var vertex in vertices)
+                {
+                    var candidate = Ellipsoid.Distance(centre, vertex);
+
+                    if (candidate > distance)
+                    {
+                        distance = candidate;
+                        furthest = vertex;
+                    }
+                }
+
+                if (distance == 0)
+                    break;
+
+                centre = Ellipsoid.Offset(centre, Ellipsoid.Azimuth(centre, furthest), distance / (i + 1));
+            }
+
+            return centre;
+        }
+
+        /// <summary>
         /// <c>ST_GEOG_ISSIMPLE</c>. Returns whether the geography touches itself nowhere it should not.
         /// </summary>
         /// <param name="geog"></param>
@@ -1527,6 +1615,11 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
+        /// How many sides a circle is drawn with, which is what JTS's default of eight per quadrant comes to.
+        /// </summary>
+        const int CircleSides = 32;
+
+        /// <summary>
         /// The ring of places at exactly the given distance from one coordinate.
         /// </summary>
         /// <param name="centre"></param>
@@ -1534,7 +1627,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <returns></returns>
         static com.google.common.geometry.S2Polygon Circle(org.locationtech.jts.geom.Coordinate centre, double metres)
         {
-            const int sides = 32;
+            const int sides = CircleSides;
 
             var vertices = new java.util.ArrayList();
 
