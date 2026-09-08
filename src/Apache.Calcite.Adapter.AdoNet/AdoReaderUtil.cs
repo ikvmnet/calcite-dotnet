@@ -2,6 +2,7 @@ using System;
 using System.Data.Common;
 
 using Apache.Calcite.Data.Types;
+using Apache.Calcite.Extensions.Interop;
 
 using org.apache.calcite.jdbc;
 using org.apache.calcite.rel.type;
@@ -330,7 +331,13 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// type that is not a string has a case of its own, <c>uniqueidentifier</c> included since the
         /// adapter began typing one <c>UUID</c>.
         /// </remarks>
-        public static object? GetString(DbDataReader reader, int index) => Read(reader, index, CalciteValues.ToChar);
+        public static object? GetString(DbDataReader reader, int index)
+        {
+            if (reader.IsDBNull(index))
+                return null;
+
+            return reader.GetString(index);
+        }
 
         /// <summary>
         /// Gets a <see cref="SqlTypeName.UUID"/> as the <see cref="java.util.UUID"/> Calcite holds one in.
@@ -352,7 +359,13 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// else.
         /// </para>
         /// </remarks>
-        public static object? GetUuid(DbDataReader reader, int index) => Read(reader, index, CalciteValues.ToUuid);
+        public static object? GetUuid(DbDataReader reader, int index)
+        {
+            if (reader.IsDBNull(index))
+                return null;
+
+            return JavaUuids.ToUuid(reader.GetGuid(index));
+        }
 
         /// <summary>
         /// Gets the native provider value.

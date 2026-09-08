@@ -764,13 +764,17 @@ namespace Apache.Calcite.Data.Types
         /// <summary>
         /// Converts to the <c>java.util.UUID</c> a <c>UUID</c> is held in.
         /// </summary>
+        /// <remarks>
+        /// The sixteen bytes, and not text in canonical GUID form: that is a character column, and a cast
+        /// is how a caller says it means one. Same rule as <c>AdoReaderUtil.GetUuid</c> at the adapter end
+        /// and <c>CalciteResultValue.GetGuid</c> at the reader end.
+        /// </remarks>
         public static object ToUuid(object value)
         {
             return value switch
             {
                 Guid guid => JavaUuids.ToUuid(guid),
                 java.util.UUID uuid => uuid,
-                string s => JavaUuids.ToUuid(Guid.Parse(s)),
                 _ => throw new InvalidCastException($"Cannot write a value of type '{value.GetType()}' as a UUID."),
             };
         }
