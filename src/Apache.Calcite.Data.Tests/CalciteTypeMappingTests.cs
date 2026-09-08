@@ -120,16 +120,36 @@ namespace Apache.Calcite.Data.Tests
         }
 
         [Fact]
-        public void The_mapping_should_be_the_one_the_reader_and_the_parameter_binder_share()
+        public void A_stated_DbType_should_select_the_mapping_for_the_type_it_names()
         {
-            // a stated DbType names the Calcite type instead, and the value still crosses through the
-            // caller's mapping. A value written and then read back is the same value, which is the whole
-            // point of the two tables having become one
+            // DbType.String says the value is a string, so the lookup is (string, VARCHAR) and the
+            // caller's Uri mapping is not what answers it -- a resolver claims a pair of types, and this
+            // caller claimed Uri. The built-in mapping then refuses a value that is not a character
+            // value, which is what a character column holds and the one conversion that does not convert
             using var c = Open(mapped: true);
             using var cmd = c.CreateCommand();
             cmd.CommandText = "VALUES (CAST(? AS VARCHAR(32)))";
             var p = cmd.CreateParameter();
             p.DbType = DbType.String;
+            p.Value = new Uri("https://calcite.apache.org/");
+            cmd.Parameters.Add(p);
+
+            // the session wraps every non-CalciteException failure, as it does for any other
+            var e = Assert.Throws<CalciteException>(() => cmd.ExecuteReader());
+            Assert.IsType<InvalidCastException>(e.InnerException);
+            Assert.Contains("System.Uri", e.InnerException.Message);
+        }
+
+        [Fact]
+        public void The_mapping_should_be_the_one_the_reader_and_the_parameter_binder_share()
+        {
+            // nothing stated, so the value's own type selects the caller's mapping on the way in and the
+            // column's type selects it again on the way out. A value written and then read back is the
+            // same value, which is the whole point of the two tables having become one
+            using var c = Open(mapped: true);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST(? AS VARCHAR(32)))";
+            var p = cmd.CreateParameter();
             p.Value = new Uri("https://calcite.apache.org/");
             cmd.Parameters.Add(p);
 

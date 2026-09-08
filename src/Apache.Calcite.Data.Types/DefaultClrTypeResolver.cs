@@ -99,10 +99,11 @@ namespace Apache.Calcite.Data.Types
             m.Add(typeof(TimeOnly), SqlTypeName.TIME, To, (v, t) => TimeOnly.FromTimeSpan((TimeSpan)From(v, t)!), ClrTypeMatch.ClrDefault);
 
             // legal when asked for by name, and nobody's default. A Guid is a UUID and is what a caller
-            // writing one means; a CHAR(36) holding the text of one is a character column, and reading it
-            // as a Guid is something the caller has to ask for
-            m.Add(typeof(Guid), SqlTypeName.CHAR, To, (v, t) => Guid.Parse((string)From(v, t)!), ClrTypeMatch.Named, precision: 36);
-            m.Add(typeof(Guid), SqlTypeName.VARCHAR, To, (v, t) => Guid.Parse((string)From(v, t)!), ClrTypeMatch.Named);
+            // writing one means; a character column holding the text of one is a character column, and
+            // reading it as a Guid is something the caller has to ask for. These two say the text
+            // themselves because ToChar does not format a value that is not already a string
+            m.Add(typeof(Guid), SqlTypeName.CHAR, static (v, _) => ((Guid)v).ToString(), (v, t) => Guid.Parse((string)From(v, t)!), ClrTypeMatch.Named, precision: 36);
+            m.Add(typeof(Guid), SqlTypeName.VARCHAR, static (v, _) => ((Guid)v).ToString(), (v, t) => Guid.Parse((string)From(v, t)!), ClrTypeMatch.Named);
             m.Add(typeof(DateOnly), SqlTypeName.TIMESTAMP, To, (v, t) => DateOnly.FromDateTime((DateTime)From(v, t)!), ClrTypeMatch.Named);
             m.Add(typeof(TimeOnly), SqlTypeName.TIMESTAMP, To, (v, t) => TimeOnly.FromDateTime((DateTime)From(v, t)!), ClrTypeMatch.Named);
             m.Add(typeof(DateTime), SqlTypeName.TIMESTAMP_TZ, To, (v, t) => ((DateTimeOffset)From(v, t)!).UtcDateTime, ClrTypeMatch.Named);

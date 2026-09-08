@@ -15,9 +15,9 @@ namespace Apache.Calcite.Data.Types
     /// <para>
     /// Three boundaries need the same three facts, so they are one object: which .NET type a column is seen
     /// as, what a .NET value becomes on the way in, and what comes back out. A mapping that names a type
-    /// without carrying its conversions is where the four tables this replaces drifted apart — the ADO
-    /// adapter typed a provider <c>uniqueidentifier</c> as <c>CHAR(36)</c> in one file and had to discover
-    /// in another that the value arriving was a <see cref="Guid"/> and not a string.
+    /// without carrying its conversions is where the four tables this replaces drifted apart: the reader
+    /// converted a width and the parameter binder cast one, so a <see cref="long"/> bound to an
+    /// <c>INTEGER</c> parameter threw where the same value read from a column did not.
     /// </para>
     /// <para>
     /// <see cref="RepresentationType"/> is the anchor. Calcite decides what class holds a value of a given

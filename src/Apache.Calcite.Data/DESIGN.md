@@ -516,7 +516,9 @@ entry names the same two functions — `CalciteValues.ToJava(value, relType)` an
 function from the conversion for a `TIMESTAMP`, it is the same one told which type it is converting.
 That is why a mapping's two delegates are handed the Calcite type along with the value. The entries
 that do name something else are the ones whose CLR type is not what the conversion answers with by
-default: a `DateOnly` read out of a `TIMESTAMP`, a `Guid` parsed out of a `CHAR(36)`.
+default: a `DateOnly` read out of a `TIMESTAMP`, a `Guid` parsed out of a character column that holds
+one as text — which the adapter no longer produces, a `uniqueidentifier` being a `UUID` now, and which a
+caller therefore has to ask for by name.
 
 **A collection and a row are answered ahead of the table.** The CLR type they are seen as is not a
 constant an entry could carry — an `INTEGER ARRAY` is an `int[]` and a `VARCHAR ARRAY` a `string[]`,

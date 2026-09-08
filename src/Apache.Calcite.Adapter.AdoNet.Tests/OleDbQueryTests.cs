@@ -194,7 +194,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [DataRow("C_DATETIMEOFFSET", nameof(SqlTypeName.TIMESTAMP_TZ))]
         [DataRow("C_BINARY", nameof(SqlTypeName.VARBINARY))]
         [DataRow("C_VARBINARY", nameof(SqlTypeName.VARBINARY))]
-        [DataRow("C_GUID", nameof(SqlTypeName.CHAR))]
+        [DataRow("C_GUID", nameof(SqlTypeName.UUID))]
         [DataRow("C_XML", nameof(SqlTypeName.VARCHAR))]
         public void AColumnGetsItsCalciteType(string columnName, string expected)
         {

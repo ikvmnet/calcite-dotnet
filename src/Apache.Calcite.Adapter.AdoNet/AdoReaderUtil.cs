@@ -324,13 +324,35 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="index"></param>
         /// <returns></returns>
         /// <remarks>
-        /// A column Calcite holds as <see cref="SqlTypeName.CHAR"/> or <see cref="SqlTypeName.VARCHAR"/> need
-        /// not be a string to the provider: SQL Server hands back a <see cref="Guid"/> for a
-        /// <c>uniqueidentifier</c>, which <c>AdoTable</c> types as <c>CHAR(36)</c>, and
-        /// <see cref="DbDataReader.GetString"/> casts rather than converts and refuses it. Formatting the
-        /// value is what the type says it is.
+        /// A column Calcite holds as <see cref="SqlTypeName.CHAR"/> or <see cref="SqlTypeName.VARCHAR"/> is
+        /// a character column, so this takes a string and refuses anything else. Formatting whatever the
+        /// provider handed back would make the mapping answer for types the column does not have; every
+        /// type that is not a string has a case of its own, <c>uniqueidentifier</c> included since the
+        /// adapter began typing one <c>UUID</c>.
         /// </remarks>
         public static object? GetString(DbDataReader reader, int index) => Read(reader, index, CalciteValues.ToChar);
+
+        /// <summary>
+        /// Gets a <see cref="SqlTypeName.UUID"/> as the <see cref="java.util.UUID"/> Calcite holds one in.
+        /// </summary>
+        /// <param name="reader"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <para>
+        /// A <c>UUID</c> is the sixteen bytes and <see cref="DbDataReader.GetGuid"/> is what a provider
+        /// answers them with, so the transfer is those bytes rather than a string round trip. Named for
+        /// what it returns, as every accessor here is: what the provider is asked for is a
+        /// <see cref="Guid"/> and what Calcite's runtime holds is a <see cref="java.util.UUID"/>.
+        /// </para>
+        /// <para>
+        /// Text in canonical GUID form is a character column and goes to <see cref="GetString"/>. It is not
+        /// a GUID, and a cast is how a caller says it means one — which is this provider's rule at the
+        /// other end too, <c>CalciteResultValue.GetGuid</c> reading a <c>java.util.UUID</c> and nothing
+        /// else.
+        /// </para>
+        /// </remarks>
+        public static object? GetUuid(DbDataReader reader, int index) => Read(reader, index, CalciteValues.ToUuid);
 
         /// <summary>
         /// Gets the native provider value.

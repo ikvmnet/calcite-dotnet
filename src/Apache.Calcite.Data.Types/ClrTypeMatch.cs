@@ -11,10 +11,10 @@ namespace Apache.Calcite.Data.Types
     /// A lookup carries two keys and either may be absent: a result column knows its Calcite type and not
     /// which CLR type is wanted, a parameter carrying a bare value knows the reverse, and
     /// <c>GetFieldValue&lt;T&gt;</c> knows both. An entry that is a legal answer when both are named is not
-    /// necessarily the answer when one is missing, and the two directions are independent — <c>Guid</c> is
-    /// what a caller writing one means and never what a <c>CHAR(36)</c> column reads back as, while
-    /// <c>DateTime</c> is what a <c>DATE</c> column reads back as and never what a bare
-    /// <see cref="DateTime"/> is written as, that being <c>TIMESTAMP</c>.
+    /// necessarily the answer when one is missing, and the two directions are independent —
+    /// <see cref="DateOnly"/> is what a caller writing one means and never what a <c>DATE</c> column reads
+    /// back as, while <see cref="DateTime"/> is what a <c>DATE</c> column reads back as and never what a
+    /// bare <see cref="DateTime"/> is written as, that being <c>TIMESTAMP</c>.
     /// </para>
     /// <para>
     /// Npgsql spends a three-valued <c>MatchRequirement</c> on the same question and needs a fourth rule —

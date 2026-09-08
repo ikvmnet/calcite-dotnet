@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using org.apache.calcite.jdbc;
 using org.apache.calcite.rel.type;
+using org.apache.calcite.runtime;
 using org.apache.calcite.sql.type;
 
 using System;
@@ -259,7 +260,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [DataRow("C_DATETIMEOFFSET", nameof(SqlTypeName.TIMESTAMP_TZ))]
         [DataRow("C_BINARY", nameof(SqlTypeName.VARBINARY))]
         [DataRow("C_VARBINARY", nameof(SqlTypeName.VARBINARY))]
-        [DataRow("C_GUID", nameof(SqlTypeName.CHAR))]
+        [DataRow("C_GUID", nameof(SqlTypeName.UUID))]
         [DataRow("C_XML", nameof(SqlTypeName.VARCHAR))]
         public void AColumnGetsItsCalciteType(string columnName, string expected)
         {
@@ -300,13 +301,52 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A <c>uniqueidentifier</c> is a <see cref="Guid"/> to the provider and a <c>CHAR(36)</c> to
-        /// Calcite, so what the reader hands over has to be the text.
+        /// A <c>uniqueidentifier</c> is a <c>UUID</c>, and a row holds one as the <c>java.util.UUID</c>
+        /// Calcite's runtime holds a UUID in. The class is the assertion rather than the text: a string of
+        /// the same characters stringifies identically and is a different value to everything that
+        /// compares, joins or groups.
         /// </summary>
         [TestMethod]
-        public void AUniqueIdentifierComesBackAsItsText()
+        public void AUniqueIdentifierComesBackAsAUuid()
         {
-            Assert.AreEqual("3f2504e0-4f89-11d3-9a0c-0305e82c3301", Scalar("SELECT C_GUID FROM ADO.TYPES WHERE ID = 1"));
+            using var statement = _connection.createStatement();
+            var results = statement.executeQuery("SELECT C_GUID FROM ADO.TYPES WHERE ID = 1");
+
+            Assert.IsTrue(results.next(), "expected one row");
+            var value = results.getObject(1);
+
+            Assert.IsInstanceOfType<java.util.UUID>(value);
+            Assert.AreEqual("3f2504e0-4f89-11d3-9a0c-0305e82c3301", value.ToString());
+        }
+
+        /// <summary>
+        /// The statement from the report, which is the same column cast to the type it already has.
+        /// </summary>
+        /// <remarks>
+        /// It is a no-op now, and the statement is read off <c>Hook.QUERY_PLAN</c> to say so: a column
+        /// already typed <c>UUID</c> leaves nothing for the cast to do, so none reaches the wire. Stating a
+        /// type the column already has is what a view does, and what the report's schema did.
+        /// </remarks>
+        [TestMethod]
+        public void AUniqueIdentifierCastToUuidIsRead()
+        {
+            var generated = new GeneratedSql();
+            var handle = Hook.QUERY_PLAN.addThread(generated);
+
+            List<string> rows;
+            try
+            {
+                rows = Rows("SELECT CAST(C_GUID AS UUID) FROM ADO.TYPES ORDER BY ID");
+            }
+            finally
+            {
+                handle.close();
+            }
+
+            CollectionAssert.AreEqual(new[] { "3f2504e0-4f89-11d3-9a0c-0305e82c3301", "NULL" }, rows);
+            Assert.IsFalse(
+                generated.Statements.Any(s => s.Contains("CAST", StringComparison.OrdinalIgnoreCase)),
+                string.Join("; ", generated.Statements));
         }
 
         [TestMethod]

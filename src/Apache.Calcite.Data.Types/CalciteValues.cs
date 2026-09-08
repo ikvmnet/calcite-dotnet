@@ -730,11 +730,22 @@ namespace Apache.Calcite.Data.Types
         /// Converts to the <see cref="string"/> a <c>CHAR</c> or <c>VARCHAR</c> is held in.
         /// </summary>
         /// <remarks>
-        /// A column Calcite holds as a character type need not be a string to the provider that produced
-        /// it: SQL Server hands back a <see cref="Guid"/> for a <c>uniqueidentifier</c>, which the
-        /// adapter types as <c>CHAR(36)</c>. Formatting the value is what the type says it is.
+        /// A character column is a character column, and this is the one arm that does not convert.
+        /// Formatting whatever arrived would make the mapping answer for types the column does not have,
+        /// and every type that is not a string has a case of its own — which is what a
+        /// <c>uniqueidentifier</c> stopped needing when the adapter began typing one <c>UUID</c> rather
+        /// than <c>CHAR(36)</c>. A <see cref="char"/> is a string of one, Calcite's runtime holding the
+        /// character family as a string.
         /// </remarks>
-        public static object ToChar(object value) => value as string ?? Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+        public static object ToChar(object value)
+        {
+            return value switch
+            {
+                string s => s,
+                char c => c.ToString(),
+                _ => throw new InvalidCastException($"Cannot write a value of type '{value.GetType()}' as a character type."),
+            };
+        }
 
         /// <summary>
         /// Converts to the <c>ByteString</c> a <c>BINARY</c> or <c>VARBINARY</c> is held in.

@@ -440,6 +440,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
                 SqlTypeName.BOOLEAN, SqlTypeName.TINYINT, SqlTypeName.SMALLINT, SqlTypeName.INTEGER,
                 SqlTypeName.BIGINT, SqlTypeName.FLOAT, SqlTypeName.DOUBLE, SqlTypeName.CHAR,
                 SqlTypeName.VARCHAR, SqlTypeName.OTHER, SqlTypeName.DATE, SqlTypeName.TIMESTAMP,
+                SqlTypeName.UUID,
             ];
 
             foreach (var type in types)
