@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using System.Linq.Expressions;
 
 using Apache.Calcite.Extensions;
+using Apache.Calcite.Extensions.Linq4j.Tree;
 
+using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.rel.core;
+using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Adapter.AdoNet
@@ -12,18 +15,23 @@ namespace Apache.Calcite.Adapter.AdoNet
 
     /// <summary>
     /// Collects the correlation variables needed to construct an <see cref="AdoCorrelationDataContext"/> for a
-    /// correlated sub-query, for a plan of the <see cref="ClrEnumerableConvention"/> calling convention.
+    /// correlated sub-query, for a plan of the <see cref="ClrEnumerableConvention"/> or
+    /// <see cref="ClrAsyncEnumerableConvention"/> calling convention.
     /// </summary>
     /// <remarks>
     /// What <see cref="AdoCorrelationDataContextBuilderImpl"/> does for a plan of Calcite's convention. Two
     /// things differ, and the first is why this exists at all: a correlation variable is registered on the
     /// implementor that is implementing the plan and is unknown to every other, so the variable has to be
-    /// read from this convention's implementor rather than Calcite's. Handing over the wrong one does not
-    /// fail while planning — it fails looking the variable up.
+    /// read from the implementor of the convention the plan is in rather than Calcite's. Handing over the
+    /// wrong one does not fail while planning — it fails looking the variable up.
     ///
     /// <para>The second is that nothing here is linq4j. The other builds a linq4j tree and declares its field
     /// reads into a block; this reads each field as an expression and builds the context directly, so no
     /// block is needed and nothing is left to translate.</para>
+    ///
+    /// <para>One class serves both Clr conventions because everything it touches is about a <em>row</em> —
+    /// the getter and the translator — and a row is the same thing in each. Nothing here is about a
+    /// sequence.</para>
     /// </remarks>
     public class AdoClrCorrelationDataContextBuilder : IAdoCorrelationDataContextBuilder
     {
@@ -32,7 +40,8 @@ namespace Apache.Calcite.Adapter.AdoNet
             ?? throw new InvalidOperationException($"{nameof(AdoCorrelationDataContext)} has no (DataContext, object[]) constructor.");
 
         readonly List<Expression> _parameters = [];
-        readonly ClrEnumerableRelImplementor _implementor;
+        readonly Func<string, RexToLixTranslator.InputGetter> _correlVariableGetter;
+        readonly LixToClrTranslator _translator;
         readonly Expression _dataContext;
 
         int offset = AdoCorrelationDataContext.Offset;
@@ -43,9 +52,41 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="implementor">The implementor of the plan the correlation variables are registered on.</param>
         /// <param name="dataContext">The context the outer query was bound with.</param>
         /// <exception cref="ArgumentNullException"></exception>
-        public AdoClrCorrelationDataContextBuilder(ClrEnumerableRelImplementor implementor, Expression dataContext)
+        public AdoClrCorrelationDataContextBuilder(ClrEnumerableRelImplementor implementor, Expression dataContext) :
+            this(
+                (implementor ?? throw new ArgumentNullException(nameof(implementor))).GetCorrelVariableGetter,
+                implementor.Translator,
+                dataContext)
         {
-            _implementor = implementor ?? throw new ArgumentNullException(nameof(implementor));
+
+        }
+
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        /// <param name="implementor">The implementor of the plan the correlation variables are registered on.</param>
+        /// <param name="dataContext">The context the outer query was bound with.</param>
+        /// <exception cref="ArgumentNullException"></exception>
+        public AdoClrCorrelationDataContextBuilder(ClrAsyncEnumerableRelImplementor implementor, Expression dataContext) :
+            this(
+                (implementor ?? throw new ArgumentNullException(nameof(implementor))).GetCorrelVariableGetter,
+                implementor.Translator,
+                dataContext)
+        {
+
+        }
+
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        /// <param name="correlVariableGetter">Answers the getter a correlation variable was registered with.</param>
+        /// <param name="translator">Turns the getter's linq4j field read into an expression.</param>
+        /// <param name="dataContext">The context the outer query was bound with.</param>
+        /// <exception cref="ArgumentNullException"></exception>
+        AdoClrCorrelationDataContextBuilder(Func<string, RexToLixTranslator.InputGetter> correlVariableGetter, LixToClrTranslator translator, Expression dataContext)
+        {
+            _correlVariableGetter = correlVariableGetter ?? throw new ArgumentNullException(nameof(correlVariableGetter));
+            _translator = translator ?? throw new ArgumentNullException(nameof(translator));
             _dataContext = dataContext ?? throw new ArgumentNullException(nameof(dataContext));
         }
 
@@ -56,9 +97,9 @@ namespace Apache.Calcite.Adapter.AdoNet
 
             // the getter reads the field as linq4j and declares into the block it was created with, not one
             // passed to it, so there is nothing for a block of this builder's to receive
-            var field = _implementor.GetCorrelVariableGetter(id.getName()).field(null, ordinal, type);
+            var field = _correlVariableGetter(id.getName()).field(null, ordinal, type);
 
-            _parameters.Add(_implementor.Translator.Translate(field));
+            _parameters.Add(_translator.Translate(field));
             return offset++;
         }
 

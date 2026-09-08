@@ -45,10 +45,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         static readonly System.Reflection.MethodInfo ReadMethod = typeof(AdoSequences).GetMethod(nameof(AdoSequences.Read))
             ?? throw new InvalidOperationException($"'{nameof(AdoSequences.Read)}' is missing from {nameof(AdoSequences)}.");
 
-        static readonly System.Reflection.MethodInfo GetDbReaderValueMethod = typeof(AdoReaderUtil).GetMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(SqlTypeName)])
+        internal static readonly System.Reflection.MethodInfo GetDbReaderValueMethod = typeof(AdoReaderUtil).GetMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(SqlTypeName)])
             ?? throw new InvalidOperationException($"'{nameof(AdoReaderUtil.GetDbReaderValue)}' is missing from {nameof(AdoReaderUtil)}.");
 
-        static readonly System.Reflection.MethodInfo CreateEnricherMethod = typeof(AdoEnumerable).GetMethod(nameof(AdoEnumerable.CreateEnricher), [typeof(AdoDataSource), typeof(java.util.List), typeof(java.util.List), typeof(DataContext)])
+        internal static readonly System.Reflection.MethodInfo CreateEnricherMethod = typeof(AdoEnumerable).GetMethod(nameof(AdoEnumerable.CreateEnricher), [typeof(AdoDataSource), typeof(java.util.List), typeof(java.util.List), typeof(DataContext)])
             ?? throw new InvalidOperationException($"'{nameof(AdoEnumerable.CreateEnricher)}' is missing from {nameof(AdoEnumerable)}.");
 
         /// <summary>
@@ -83,7 +83,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 
             var dataContextBuilder = new AdoClrCorrelationDataContextBuilder(implementor, implementor.Root);
 
-            var writer = GenerateSql(convention, dataContextBuilder, self, out var sqlImplementor);
+            var writer = GenerateSql(convention, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder, self, out var sqlImplementor);
             var parameters = writer.Indexes;
             var parameterTypeNames = AdoToEnumerableConverter.GetParameterTypeNames(sqlImplementor, parameters);
 
@@ -122,11 +122,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// <see cref="AdoToEnumerableConverter"/> decides it, because <c>JavaRowFormat.optimize</c> has
         /// already told the physical type the same thing: no field is a null, one field is the value itself,
         /// and only beyond that is a row an array.
+        ///
+        /// <para>Shared with <see cref="AdoToClrAsyncEnumerableConverter"/>, which builds the same delegate
+        /// against the same reader: a row is the same thing in both conventions and nothing about building
+        /// one from a materialized reader position awaits.</para>
         /// </remarks>
-        Expression RowBuilder(ClrPhysType physType, Type rowType)
+        internal static Expression RowBuilder(ClrPhysType physType, Type rowType)
         {
             var reader = Expression.Parameter(typeof(DbDataReader), "reader");
-            var fieldCount = getRowType().getFieldCount();
+            var fieldCount = physType.RelRowType.getFieldCount();
 
             Expression body;
             if (fieldCount == 0)
@@ -177,12 +181,17 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// Generates the SQL string to implement the sequence.
         /// </summary>
         /// <param name="convention"></param>
+        /// <param name="typeFactory"></param>
         /// <param name="dataContextBuilder"></param>
         /// <param name="input"></param>
         /// <returns></returns>
-        AdoSqlWriter GenerateSql(AdoConvention convention, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input, out AdoImplementor implementor)
+        /// <remarks>
+        /// Shared with <see cref="AdoToClrAsyncEnumerableConverter"/>: the statement a subtree of the
+        /// adapter's convention becomes does not depend on how its rows are read.
+        /// </remarks>
+        internal static AdoSqlWriter GenerateSql(AdoConvention convention, JavaTypeFactory typeFactory, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input, out AdoImplementor implementor)
         {
-            implementor = new AdoImplementor(convention.Dialect, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder);
+            implementor = new AdoImplementor(convention.Dialect, typeFactory, dataContextBuilder);
             var result = implementor.visitRoot(input);
 
             var writer = new AdoSqlWriter(convention.Dialect, convention.Syntax);
