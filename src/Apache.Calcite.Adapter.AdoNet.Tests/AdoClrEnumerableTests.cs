@@ -99,6 +99,44 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
+        /// The read path from the report, through this convention's own converter: a
+        /// <c>uniqueidentifier</c> cast to the <c>UUID</c> a view gives it, projected. The cast is pushed
+        /// into the ADO convention, so the reader is handed a <c>UUID</c> column and the row holds a
+        /// <c>java.util.UUID</c> — which is the only thing <c>GetGuid</c> on this provider reads.
+        /// </summary>
+        /// <remarks>
+        /// SQL Server rather than the fixture's SQLite because SQLite has no type for the sixteen bytes:
+        /// a type name it does not recognise gives a cast numeric affinity, so the value coming back would
+        /// be a number rather than anything a GUID could be read out of.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldReadAUuidCastThroughThisConvention()
+        {
+            if (SqlServerFixture.IsAvailable == false)
+                Assert.Inconclusive("No SQL Server LocalDB instance is reachable on this machine.");
+
+            var server = SqlServerFixture.Shared;
+
+            using var connection = new CalciteDataSourceBuilder(new CalciteConnectionStringBuilder
+            {
+                Lex = "JAVA",
+                CaseSensitive = false,
+                Synchronous = true,
+            }.ToString())
+                .ConfigureRootSchema(root => root.add("ADO", AdoSchema.Create(root, "ADO", server.DataSource, null, "dbo")))
+                .Build()
+                .OpenConnection();
+
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT CAST(C_GUID AS UUID) FROM ADO.TYPES WHERE ID = 1";
+
+            using var r = cmd.ExecuteReader();
+            Assert.IsTrue(r.Read(), "expected one row");
+            Assert.AreEqual(new System.Guid("3f2504e0-4f89-11d3-9a0c-0305e82c3301"), r.GetGuid(0));
+            Assert.IsFalse(r.Read(), "and only that one");
+        }
+
+        /// <summary>
         /// In synchronous mode the adapter converts straight into the synchronous convention.
         /// </summary>
         /// <remarks>
