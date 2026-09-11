@@ -1,0 +1,308 @@
+﻿using System;
+using System.Data;
+
+using Apache.Calcite.Data.Types;
+
+using org.apache.calcite.rel.type;
+using org.apache.calcite.sql.type;
+
+using Xunit;
+
+namespace Apache.Calcite.Data.Tests
+{
+
+    /// <summary>
+    /// A mapping of a caller's own, registered on a connection and reached through the ADO.NET surface.
+    /// </summary>
+    /// <remarks>
+    /// The registry has its own tests over the resolution rules; these are the ones that say the surface is
+    /// actually wired to it. Both directions have to be here, because a mapping that names a type without
+    /// carrying its conversions is the failure the whole arrangement exists to prevent, and it is only
+    /// visible end to end.
+    /// </remarks>
+    public class CalciteTypeMappingTests
+    {
+
+        /// <summary>
+        /// Reads and writes a VARCHAR as a <see cref="Uri"/>, which nothing built in does.
+        /// </summary>
+        sealed class UriResolver : IClrTypeResolver
+        {
+
+            readonly ClrTypeMappingCollection _mappings = new();
+
+            public UriResolver()
+            {
+                _mappings.Add(typeof(Uri), SqlTypeName.VARCHAR, (v, _) => ((Uri)v).ToString(), (v, _) => new Uri((string)v));
+            }
+
+            public ClrTypeMapping? GetMapping(Type? clrType, RelDataType? relType, ClrTypeContext context) => _mappings.GetMapping(clrType, relType, context);
+
+        }
+
+        static CalciteConnection Open(bool mapped)
+        {
+            var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            if (mapped)
+                c.TypeMapper.Prepend(new UriResolver());
+
+            c.Open();
+            return c;
+        }
+
+        [Fact]
+        public void A_registered_mapping_should_decide_what_a_column_reads_back_as()
+        {
+            using var c = Open(mapped: true);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST('https://calcite.apache.org/' AS VARCHAR(32)))";
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(typeof(Uri), r.GetFieldType(0));
+            Assert.Equal(new Uri("https://calcite.apache.org/"), r.GetValue(0));
+        }
+
+        [Fact]
+        public void A_registered_mapping_should_be_reachable_by_name()
+        {
+            using var c = Open(mapped: true);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST('https://calcite.apache.org/' AS VARCHAR(32)))";
+
+            using var r = (CalciteDataReader)cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(new Uri("https://calcite.apache.org/"), r.GetFieldValue<Uri>(0));
+        }
+
+        [Fact]
+        public void A_registered_mapping_should_carry_a_parameter_in()
+        {
+            // no DbType, so the value's own CLR type is what selects the mapping. The cast is Calcite's
+            // requirement rather than the mapping's: a bare VALUES (?) has no type to infer
+            using var c = Open(mapped: true);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST(? AS VARCHAR(32)))";
+            var p = cmd.CreateParameter();
+            p.Value = new Uri("https://calcite.apache.org/");
+            cmd.Parameters.Add(p);
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(new Uri("https://calcite.apache.org/"), r.GetValue(0));
+        }
+
+        [Fact]
+        public void An_unregistered_connection_should_be_unaffected()
+        {
+            // the chain is per connection, so one caller's mapping is not every caller's
+            using var c = Open(mapped: false);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST('https://calcite.apache.org/' AS VARCHAR(32)))";
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(typeof(string), r.GetFieldType(0));
+            Assert.Equal("https://calcite.apache.org/", r.GetValue(0));
+        }
+
+        [Fact]
+        public void A_registered_mapping_should_leave_alone_what_it_does_not_claim()
+        {
+            using var c = Open(mapped: true);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST(42 AS INTEGER))";
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(typeof(int), r.GetFieldType(0));
+            Assert.Equal(42, r.GetValue(0));
+        }
+
+        [Fact]
+        public void A_stated_DbType_should_select_the_mapping_for_the_type_it_names()
+        {
+            // DbType.String says the value is a string, so the lookup is (string, VARCHAR) and the
+            // caller's Uri mapping is not what answers it -- a resolver claims a pair of types, and this
+            // caller claimed Uri. The built-in mapping then refuses a value that is not a character
+            // value, which is what a character column holds and the one conversion that does not convert
+            using var c = Open(mapped: true);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST(? AS VARCHAR(32)))";
+            var p = cmd.CreateParameter();
+            p.DbType = DbType.String;
+            p.Value = new Uri("https://calcite.apache.org/");
+            cmd.Parameters.Add(p);
+
+            // the session wraps every non-CalciteException failure, as it does for any other
+            var e = Assert.Throws<CalciteException>(() => cmd.ExecuteReader());
+            Assert.IsType<InvalidCastException>(e.InnerException);
+            Assert.Contains("System.Uri", e.InnerException.Message);
+        }
+
+        [Fact]
+        public void The_mapping_should_be_the_one_the_reader_and_the_parameter_binder_share()
+        {
+            // nothing stated, so the value's own type selects the caller's mapping on the way in and the
+            // column's type selects it again on the way out. A value written and then read back is the
+            // same value, which is the whole point of the two tables having become one
+            using var c = Open(mapped: true);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST(? AS VARCHAR(32)))";
+            var p = cmd.CreateParameter();
+            p.Value = new Uri("https://calcite.apache.org/");
+            cmd.Parameters.Add(p);
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(new Uri("https://calcite.apache.org/"), r.GetValue(0));
+        }
+
+        // ------------------------------------------------------------------------------------
+        // The type the plan reads a placeholder as is the validator's, not the caller's.
+        // ------------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_DbType_naming_another_representation_should_not_reach_the_plan()
+        {
+            // Calcite infers TIMESTAMP for the placeholder, whose representation is a count of milliseconds
+            // in a Long. DbType.Date names DATE, a count of days in an Integer. Binding the caller's name
+            // rather than the validator's handed the plan the wrong class and threw partway through the
+            // scan -- an InvalidCastException from inside a generated lambda, several frames from here.
+            using var c = Open(mapped: false);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (? > TIMESTAMP '2020-01-01 00:00:00')";
+            var p = cmd.CreateParameter();
+            p.DbType = DbType.Date;
+            p.Value = new DateTime(2024, 1, 15, 0, 0, 0, DateTimeKind.Utc);
+            cmd.Parameters.Add(p);
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(true, r.GetValue(0));
+        }
+
+        [Fact]
+        public void A_narrower_DbType_than_the_validator_inferred_should_be_carried_across()
+        {
+            using var c = Open(mapped: false);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST(9000000000 AS BIGINT) + ?)";
+            var p = cmd.CreateParameter();
+            p.DbType = DbType.Int32;
+            p.Value = 1;
+            cmd.Parameters.Add(p);
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(9000000001L, r.GetValue(0));
+        }
+
+        // ------------------------------------------------------------------------------------
+        // Where the chain is registered.
+        // ------------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_data_source_mapping_should_reach_every_connection_it_opens()
+        {
+            var builder = new CalciteDataSourceBuilder(TestModels.InlineEmptyModelConnectionString);
+            builder.TypeMapper.Prepend(new UriResolver());
+
+            using var dataSource = builder.Build();
+            using var c = dataSource.OpenConnection();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST('https://calcite.apache.org/' AS VARCHAR(32)))";
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(typeof(Uri), r.GetFieldType(0));
+            Assert.Equal(new Uri("https://calcite.apache.org/"), r.GetValue(0));
+        }
+
+        [Fact]
+        public void A_connection_should_not_write_its_own_mapping_back_to_the_data_source()
+        {
+            // the connection takes a copy, so registering on one is not registering on the next
+            using var dataSource = new CalciteDataSourceBuilder(TestModels.InlineEmptyModelConnectionString).Build();
+
+            using (var first = dataSource.CreateConnection())
+            {
+                first.TypeMapper.Prepend(new UriResolver());
+                first.Open();
+            }
+
+            using var second = dataSource.OpenConnection();
+            using var cmd = second.CreateCommand();
+            cmd.CommandText = "VALUES (CAST('https://calcite.apache.org/' AS VARCHAR(32)))";
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(typeof(string), r.GetFieldType(0));
+        }
+
+        // ------------------------------------------------------------------------------------
+        // A claim over a component is a claim over the collection of it.
+        // ------------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_claim_over_a_component_should_carry_to_the_array_of_it()
+        {
+            // nothing registers an ARRAY mapping; the element type is the component's own answer with a
+            // dimension added, and the elements convert through the component's mapping, so the type the
+            // reader advertises and the value it hands back are the same decision
+            using var c = Open(mapped: true);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (ARRAY[CAST('https://calcite.apache.org/' AS VARCHAR(32))])";
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(typeof(Uri[]), r.GetFieldType(0));
+            Assert.Equal(new[] { new Uri("https://calcite.apache.org/") }, Assert.IsType<Uri[]>(r.GetValue(0)));
+        }
+
+        [Fact]
+        public void A_claim_over_a_component_should_carry_to_the_map_of_it()
+        {
+            using var c = Open(mapped: true);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (MAP[CAST('https://calcite.apache.org/' AS VARCHAR(32)), CAST('https://ikvm.org/' AS VARCHAR(32))])";
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            var map = Assert.IsType<System.Collections.Generic.Dictionary<Uri, Uri>>(r.GetValue(0));
+            Assert.Equal(new Uri("https://ikvm.org/"), map[new Uri("https://calcite.apache.org/")]);
+        }
+
+        [Fact]
+        public void An_unclaimed_array_should_read_as_the_component_it_holds()
+        {
+            using var c = Open(mapped: false);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (ARRAY[1, 2, 3])";
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(typeof(int[]), r.GetFieldType(0));
+            Assert.Equal(new[] { 1, 2, 3 }, Assert.IsType<int[]>(r.GetValue(0)));
+        }
+
+        [Fact]
+        public void A_value_narrower_than_the_validator_inferred_should_be_carried_across()
+        {
+            // nothing stated, so the value's CLR type is the caller's side of the lookup and the inferred
+            // BIGINT is Calcite's; the mapping converts rather than casting
+            using var c = Open(mapped: false);
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "VALUES (CAST(9000000000 AS BIGINT) + ?)";
+            var p = cmd.CreateParameter();
+            p.Value = 1;
+            cmd.Parameters.Add(p);
+
+            using var r = cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(9000000001L, r.GetValue(0));
+        }
+
+    }
+
+}

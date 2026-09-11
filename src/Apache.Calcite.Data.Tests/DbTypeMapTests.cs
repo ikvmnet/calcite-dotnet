@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Data;
 
 using Xunit;
@@ -6,7 +6,7 @@ using Xunit;
 namespace Apache.Calcite.Data.Internal.Tests
 {
 
-    public class CalciteTypeMapTests
+    public class DbTypeMapTests
     {
 
         [Theory]
@@ -28,19 +28,19 @@ namespace Apache.Calcite.Data.Internal.Tests
         [InlineData(typeof(byte[]), DbType.Binary)]
         public void ToDbType_should_map_known_types(Type clr, DbType expected)
         {
-            Assert.Equal(expected, CalciteTypeMap.ToDbType(clr));
+            Assert.Equal(expected, DbTypeMap.ToDbType(clr));
         }
 
         [Fact]
         public void ToDbType_should_resolve_nullable_underlying()
         {
-            Assert.Equal(DbType.Int32, CalciteTypeMap.ToDbType(typeof(int?)));
+            Assert.Equal(DbType.Int32, DbTypeMap.ToDbType(typeof(int?)));
         }
 
         [Fact]
         public void ToDbType_unknown_should_default_to_object()
         {
-            Assert.Equal(DbType.Object, CalciteTypeMap.ToDbType(typeof(System.Text.StringBuilder)));
+            Assert.Equal(DbType.Object, DbTypeMap.ToDbType(typeof(System.Text.StringBuilder)));
         }
 
         [Theory]
@@ -53,13 +53,13 @@ namespace Apache.Calcite.Data.Internal.Tests
         [InlineData(DbType.Guid, typeof(Guid))]
         public void ToClrType_should_map_known_dbtypes(DbType db, Type expected)
         {
-            Assert.Equal(expected, CalciteTypeMap.ToClrType(db));
+            Assert.Equal(expected, DbTypeMap.ToClrType(db));
         }
 
         [Fact]
         public void ToDbType_null_should_throw()
         {
-            Assert.Throws<ArgumentNullException>(() => CalciteTypeMap.ToDbType(null!));
+            Assert.Throws<ArgumentNullException>(() => DbTypeMap.ToDbType(null!));
         }
 
     }

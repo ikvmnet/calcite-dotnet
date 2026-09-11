@@ -1,10 +1,10 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 
 using Xunit;
 
-namespace Apache.Calcite.Data.Internal.Tests
+namespace Apache.Calcite.Data.Types.Tests
 {
 
     /// <summary>

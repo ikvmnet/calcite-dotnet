@@ -1,6 +1,7 @@
 using System;
 using System.Linq.Expressions;
 
+using Apache.Calcite.Data.Types;
 using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 
@@ -94,6 +95,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             // anything first. Everything else this node builds is an expression tree from the start.
             var dataSource = implementor.Translator.Translate(Schemas.unwrap(convention.Expression, typeof(AdoDataSource)));
 
+            // the schema's mapping, fetched off the schema at run time the way the data source is. The row
+            // builder is shared with the synchronous converter and neither of them decides this: which
+            // .NET type a provider value becomes inside a plan is the schema's answer, and a route out of
+            // the convention that did not ask would read the same column differently from the other two
+            var typeRegistry = implementor.Translator.Translate(Schemas.unwrap(convention.Expression, typeof(ClrTypeRegistry)));
+
             // a correlated sub-query leaves a parameter per correlation variable in the SQL, and the values
             // live on the context the builder closed over the outer row. Without the enricher the command is
             // handed to the provider unfilled.
@@ -109,7 +116,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                     ReadAsyncMethod.MakeGenericMethod(rowType),
                     dataSource,
                     Expression.Constant(sql),
-                    AdoToClrEnumerableConverter.RowBuilder(physType, rowType),
+                    AdoToClrEnumerableConverter.RowBuilder(typeRegistry, physType, rowType),
                     enricher));
         }
 

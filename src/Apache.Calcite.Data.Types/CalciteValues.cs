@@ -1,13 +1,15 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 
 using Apache.Calcite.Extensions.Interop;
 
+using org.apache.calcite.avatica.util;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
 
-namespace Apache.Calcite.Data.Internal
+namespace Apache.Calcite.Data.Types
 {
 
     /// <summary>
@@ -42,10 +44,15 @@ namespace Apache.Calcite.Data.Internal
     /// <see cref="TryConvertTo"/> is what <c>GetFieldValue{T}</c>
     /// reaches for.</para>
     /// </remarks>
-    internal static class CalciteValues
+    public static class CalciteValues
     {
 
         static readonly DateTime UnixEpoch = new(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        /// <summary>
+        /// The day a <c>DATE</c> counts from.
+        /// </summary>
+        static readonly DateOnly UnixEpochDay = new(1970, 1, 1);
 
         /// <summary>
         /// The number of nanoseconds in one <see cref="TimeSpan"/> tick.
@@ -105,7 +112,7 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Returns the .NET value for a value whose SQL type is named but is not a collection.
         /// </summary>
-        /// <param name="name">The SQL type's name, as <see cref="SqlTypeName.name"/> gives it.</param>
+        /// <param name="name">The SQL type's name, as <c>SqlTypeName.name()</c> gives it.</param>
         /// <param name="value">The value as the plan produced it, or <see langword="null"/>.</param>
         /// <returns>The .NET value.</returns>
         /// <remarks>
@@ -116,7 +123,7 @@ namespace Apache.Calcite.Data.Internal
         /// <c>TIMESTAMP</c> as a count of milliseconds, so an integer is one or the other only because the
         /// type says so. Everything else is decided by the value's class.
         /// </remarks>
-        internal static object? FromScalar(string name, object? value)
+        public static object? FromScalar(string name, object? value)
         {
             if (value is null)
                 return null;
@@ -525,6 +532,331 @@ namespace Apache.Calcite.Data.Internal
             throw new InvalidCastException($"Cannot convert value of type '{value.GetType().Name}' to '{target.Name}'.");
         }
 
+        #region To Calcite
+
+        /// <summary>
+        /// Returns the value Calcite's runtime holds a value of <paramref name="type"/> in.
+        /// </summary>
+        /// <param name="value">The value as the caller supplied it, or <see langword="null"/>.</param>
+        /// <param name="type">The Calcite type the value is being written as, or <see langword="null"/>
+        /// where there is none and the value's own class decides.</param>
+        /// <returns>The Java value, or <see langword="null"/> where the value is null or <see cref="DBNull"/>.</returns>
+        /// <remarks>
+        /// The mirror of <see cref="ToClr"/>, and the same two rules: the SQL type decides where it can,
+        /// and where it cannot the value's own class does. It descends into a collection's component and
+        /// a map's key and value for the same reason the other direction does — a <c>DATE</c> inside an
+        /// <c>ARRAY</c> is a count of days and only the component type says so.
+        ///
+        /// <para><b>Every arm converts rather than casts.</b> A value arriving here has whatever width
+        /// its author chose and not the one Calcite did: an ADO.NET provider may decode a column Calcite
+        /// types <c>SMALLINT</c> as a <see cref="byte"/>, and a caller may write an <see cref="int"/>
+        /// into a slot the validator made a <c>BIGINT</c>. Casting is what the tables this replaces
+        /// disagreed about — the reader converted and the parameter binder cast, so a <see cref="long"/>
+        /// bound to an <c>INTEGER</c> parameter threw where the same value read from a column did
+        /// not.</para>
+        /// </remarks>
+        public static object? ToJava(object? value, RelDataType? type)
+        {
+            if (value is null || value is DBNull)
+                return null;
+
+            // a struct is a row and its fields carry their own types; nothing writes one, so the value's
+            // own class is what is left
+            if (type is null || type.isStruct())
+                return ToJava(value);
+
+            switch (type.getSqlTypeName().name())
+            {
+                case nameof(SqlTypeName.BOOLEAN):
+                    return ToBoolean(value);
+                case nameof(SqlTypeName.TINYINT):
+                    return ToTinyInt(value);
+                case nameof(SqlTypeName.SMALLINT):
+                    return ToSmallInt(value);
+                case nameof(SqlTypeName.INTEGER):
+                    return ToInteger(value);
+                case nameof(SqlTypeName.BIGINT):
+                    return ToBigInt(value);
+                case nameof(SqlTypeName.UTINYINT):
+                    return ToUTinyInt(value);
+                case nameof(SqlTypeName.USMALLINT):
+                    return ToUSmallInt(value);
+                case nameof(SqlTypeName.UINTEGER):
+                    return ToUInteger(value);
+                case nameof(SqlTypeName.UBIGINT):
+                    return ToUBigInt(value);
+                case nameof(SqlTypeName.REAL):
+                    return ToReal(value);
+                // FLOAT is eight bytes here as it is in SQL and shares DOUBLE's representation, REAL
+                // being the four-byte one; JavaTypeFactoryImpl.getJavaClass says so and marks it "sic"
+                case nameof(SqlTypeName.FLOAT):
+                case nameof(SqlTypeName.DOUBLE):
+                    return ToDouble(value);
+                case nameof(SqlTypeName.DECIMAL):
+                    return ToDecimal(value);
+                case nameof(SqlTypeName.CHAR):
+                case nameof(SqlTypeName.VARCHAR):
+                    return ToChar(value);
+                case nameof(SqlTypeName.BINARY):
+                case nameof(SqlTypeName.VARBINARY):
+                    return ToBinary(value);
+                case nameof(SqlTypeName.UUID):
+                    return ToUuid(value);
+                case nameof(SqlTypeName.DATE):
+                    return ToDate(value);
+                case nameof(SqlTypeName.TIME):
+                    return ToTime(value);
+                case nameof(SqlTypeName.TIME_TZ):
+                case nameof(SqlTypeName.TIME_WITH_LOCAL_TIME_ZONE):
+                    return ToTimeTz(value);
+                case nameof(SqlTypeName.TIMESTAMP):
+                    return ToTimestamp(value);
+                case nameof(SqlTypeName.TIMESTAMP_TZ):
+                case nameof(SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE):
+                    return ToTimestampTz(value);
+                case nameof(SqlTypeName.ARRAY):
+                case nameof(SqlTypeName.MULTISET):
+                    {
+                        // a string enumerates and is not a collection
+                        if (value is IEnumerable sequence and not string)
+                            return ToJavaList(sequence, type.getComponentType());
+
+                        break;
+                    }
+                case nameof(SqlTypeName.MAP):
+                    {
+                        if (value is IDictionary dictionary)
+                            return ToJavaMap(dictionary, type.getKeyType(), type.getValueType());
+
+                        break;
+                    }
+                // the type whose only value is null: java.lang.Void holds it and has no instances
+                case nameof(SqlTypeName.NULL):
+                    return null;
+            }
+
+            return ToJava(value);
+        }
+
+        /// <summary>
+        /// Reads a value as a CLR primitive, converting where its runtime type is not already it.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        static T As<T>(object value)
+            where T : struct
+        {
+            return value is T typed ? typed : (T)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// Converts to the <c>java.lang.Boolean</c> a <c>BOOLEAN</c> is held in.
+        /// </summary>
+        public static object ToBoolean(object value) => java.lang.Boolean.valueOf(As<bool>(value));
+
+        /// <summary>
+        /// Converts to the <c>java.lang.Byte</c> a <c>TINYINT</c> is held in.
+        /// </summary>
+        /// <remarks>
+        /// Calcite's <c>TINYINT</c> is signed and Java's <c>byte</c> is IKVM's unsigned <see cref="byte"/>,
+        /// so the sign travels in the bits.
+        /// </remarks>
+        public static object ToTinyInt(object value) => java.lang.Byte.valueOf(unchecked((byte)As<sbyte>(value)));
+
+        /// <summary>
+        /// Converts to the <c>java.lang.Short</c> a <c>SMALLINT</c> is held in.
+        /// </summary>
+        public static object ToSmallInt(object value) => java.lang.Short.valueOf(As<short>(value));
+
+        /// <summary>
+        /// Converts to the <c>java.lang.Integer</c> an <c>INTEGER</c> is held in.
+        /// </summary>
+        public static object ToInteger(object value) => java.lang.Integer.valueOf(As<int>(value));
+
+        /// <summary>
+        /// Converts to the <c>java.lang.Long</c> a <c>BIGINT</c> is held in.
+        /// </summary>
+        public static object ToBigInt(object value) => java.lang.Long.valueOf(As<long>(value));
+
+        /// <summary>
+        /// Converts to the <c>org.joou.UByte</c> a <c>UTINYINT</c> is held in.
+        /// </summary>
+        /// <remarks>
+        /// The unsigned types are not a variation on the signed ones: <c>getJavaClass</c> answers a joou
+        /// wrapper rather than a <c>java.lang</c> one, and the widening overload is taken in each case so
+        /// that the sign is never in question.
+        /// </remarks>
+        public static object ToUTinyInt(object value) => org.joou.UByte.valueOf((int)As<byte>(value));
+
+        /// <summary>
+        /// Converts to the <c>org.joou.UShort</c> a <c>USMALLINT</c> is held in.
+        /// </summary>
+        public static object ToUSmallInt(object value) => org.joou.UShort.valueOf((int)As<ushort>(value));
+
+        /// <summary>
+        /// Converts to the <c>org.joou.UInteger</c> a <c>UINTEGER</c> is held in.
+        /// </summary>
+        public static object ToUInteger(object value) => org.joou.UInteger.valueOf((long)As<uint>(value));
+
+        /// <summary>
+        /// Converts to the <c>org.joou.ULong</c> a <c>UBIGINT</c> is held in.
+        /// </summary>
+        /// <remarks>
+        /// The bits, read unsigned. This went through the decimal string on the grounds that
+        /// <c>valueOf(long)</c> refuses anything above <see cref="long.MaxValue"/> and so could not carry
+        /// half of what the type holds; that is not what it does. Measured: <c>valueOf(-1L)</c> is
+        /// 18446744073709551615, the overload taking the argument bits rather than its value, which is
+        /// the whole range and the same representation joou stores.
+        /// </remarks>
+        public static object ToUBigInt(object value) => org.joou.ULong.valueOf(unchecked((long)As<ulong>(value)));
+
+        /// <summary>
+        /// Converts to the <c>java.lang.Float</c> a <c>REAL</c> is held in.
+        /// </summary>
+        public static object ToReal(object value) => java.lang.Float.valueOf(As<float>(value));
+
+        /// <summary>
+        /// Converts to the <c>java.lang.Double</c> a <c>DOUBLE</c> or a <c>FLOAT</c> is held in.
+        /// </summary>
+        public static object ToDouble(object value) => java.lang.Double.valueOf(As<double>(value));
+
+        /// <summary>
+        /// Converts to the <c>java.math.BigDecimal</c> a <c>DECIMAL</c> is held in.
+        /// </summary>
+        public static object ToDecimal(object value) => JavaDecimals.ToBigDecimal(As<decimal>(value));
+
+        /// <summary>
+        /// Converts to the <see cref="string"/> a <c>CHAR</c> or <c>VARCHAR</c> is held in.
+        /// </summary>
+        /// <remarks>
+        /// A character column is a character column, and this is the one arm that does not convert.
+        /// Formatting whatever arrived would make the mapping answer for types the column does not have,
+        /// and every type that is not a string has a case of its own — which is what a
+        /// <c>uniqueidentifier</c> stopped needing when the adapter began typing one <c>UUID</c> rather
+        /// than <c>CHAR(36)</c>. A <see cref="char"/> is a string of one, Calcite's runtime holding the
+        /// character family as a string.
+        /// </remarks>
+        public static object ToChar(object value)
+        {
+            return value switch
+            {
+                string s => s,
+                char c => c.ToString(),
+                _ => throw new InvalidCastException($"Cannot write a value of type '{value.GetType()}' as a character type."),
+            };
+        }
+
+        /// <summary>
+        /// Converts to the <c>ByteString</c> a <c>BINARY</c> or <c>VARBINARY</c> is held in.
+        /// </summary>
+        public static object ToBinary(object value)
+        {
+            return value switch
+            {
+                byte[] bytes => new ByteString(bytes),
+                ByteString bs => bs,
+                string s => new ByteString(System.Text.Encoding.UTF8.GetBytes(s)),
+                _ => throw new InvalidCastException($"Cannot write a value of type '{value.GetType()}' as a binary type."),
+            };
+        }
+
+        /// <summary>
+        /// Converts to the <c>java.util.UUID</c> a <c>UUID</c> is held in.
+        /// </summary>
+        /// <remarks>
+        /// The sixteen bytes, and not text in canonical GUID form: that is a character column, and a cast
+        /// is how a caller says it means one. Same rule as <c>AdoReaderUtil.GetUuid</c> at the adapter end
+        /// and <c>CalciteResultValue.GetGuid</c> at the reader end.
+        /// </remarks>
+        public static object ToUuid(object value)
+        {
+            return value switch
+            {
+                Guid guid => JavaUuids.ToUuid(guid),
+                java.util.UUID uuid => uuid,
+                _ => throw new InvalidCastException($"Cannot write a value of type '{value.GetType()}' as a UUID."),
+            };
+        }
+
+        /// <summary>
+        /// Converts to the <c>java.lang.Integer</c> count of days a <c>DATE</c> is held in.
+        /// </summary>
+        /// <remarks>
+        /// Only the date component is read, and no time zone enters into it. Converting through
+        /// <see cref="DateTimeOffset"/> would apply the machine offset to a value whose
+        /// <see cref="DateTime.Kind"/> is typically <see cref="DateTimeKind.Unspecified"/>, which for a
+        /// date at midnight can land on the day before.
+        /// </remarks>
+        public static object ToDate(object value)
+        {
+            var day = value switch
+            {
+                DateOnly d => d,
+                DateTime dt => DateOnly.FromDateTime(dt),
+                DateTimeOffset dto => DateOnly.FromDateTime(dto.UtcDateTime),
+                _ => DateOnly.FromDateTime(Convert.ToDateTime(value, CultureInfo.InvariantCulture)),
+            };
+
+            return java.lang.Integer.valueOf(day.DayNumber - UnixEpochDay.DayNumber);
+        }
+
+        /// <summary>
+        /// Converts to the <c>java.lang.Integer</c> count of milliseconds since midnight a <c>TIME</c> is
+        /// held in.
+        /// </summary>
+        public static object ToTime(object value)
+        {
+            var time = value switch
+            {
+                TimeSpan span => span,
+                TimeOnly t => t.ToTimeSpan(),
+                DateTime dt => dt.TimeOfDay,
+                DateTimeOffset dto => dto.UtcDateTime.TimeOfDay,
+                _ => TimeSpan.Parse(Convert.ToString(value, CultureInfo.InvariantCulture) ?? "0", CultureInfo.InvariantCulture),
+            };
+
+            return java.lang.Integer.valueOf((int)time.TotalMilliseconds);
+        }
+
+        /// <summary>
+        /// Converts to the count of milliseconds since midnight a <c>TIME WITH TIME ZONE</c> is held in.
+        /// </summary>
+        /// <remarks>
+        /// The offset is not carried per row, so the offset is applied and the time of day is what is
+        /// stored.
+        /// </remarks>
+        public static object ToTimeTz(object value) => value is DateTimeOffset dto ? ToTime(dto.UtcDateTime.TimeOfDay) : ToTime(value);
+
+        /// <summary>
+        /// Converts to the <c>java.lang.Long</c> count of milliseconds a <c>TIMESTAMP</c> is held in.
+        /// </summary>
+        /// <remarks>
+        /// A <see cref="DateTimeKind.Unspecified"/> value is taken as UTC rather than converted from the
+        /// machine zone: Calcite <c>TIMESTAMP</c> has no zone, so reading one back has to give the fields
+        /// that went in.
+        /// </remarks>
+        public static object ToTimestamp(object value)
+        {
+            var instant = value switch
+            {
+                DateTime dt => dt.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(dt, DateTimeKind.Utc) : dt.ToUniversalTime(),
+                DateTimeOffset dto => dto.UtcDateTime,
+                DateOnly d => new DateTime(d.Year, d.Month, d.Day, 0, 0, 0, DateTimeKind.Utc),
+                _ => DateTime.SpecifyKind(Convert.ToDateTime(value, CultureInfo.InvariantCulture), DateTimeKind.Utc),
+            };
+
+            return java.lang.Long.valueOf(Milliseconds(instant));
+        }
+
+        /// <summary>
+        /// Converts to the <c>java.lang.Long</c> count of milliseconds a <c>TIMESTAMP WITH TIME ZONE</c>
+        /// is held in, which is an instant.
+        /// </summary>
+        public static object ToTimestampTz(object value) => ToTimestamp(value);
+
+        #endregion
+
         /// <summary>
         /// Returns the value Calcite's runtime holds for a value an ADO.NET caller supplied.
         /// </summary>
@@ -533,10 +865,9 @@ namespace Apache.Calcite.Data.Internal
         /// <remarks>
         /// The direction that matters more, because a CLR value left loose in a plan is a second
         /// representation of something Calcite already has one for, and whatever compares the two fails.
-        /// A parameter carrying a <see cref="System.Data.DbType"/> is converted from that instead — see
-        /// <see cref="ParameterBinder"/> — and this is what is left: a parameter of
-        /// <see cref="System.Data.DbType.Object"/>, which is what a value of a type
-        /// <see cref="CalciteTypeMap.ToDbType"/> has no name for infers, and every element inside one.
+        /// This is the arm of <see cref="ToJava(object?, RelDataType?)"/> that has no Calcite type to go
+        /// on — an <c>ANY</c>, a parameter whose slot the validator did not type, and every element
+        /// inside one — so the value's own class is what it reads.
         /// </remarks>
         public static object? ToJava(object? value)
         {
@@ -591,11 +922,11 @@ namespace Apache.Calcite.Data.Internal
                 case TimeSpan span:
                     return java.lang.Integer.valueOf((int)span.TotalMilliseconds);
                 case IDictionary dictionary:
-                    return ToJavaMap(dictionary);
+                    return ToJavaMap(dictionary, null, null);
                 // a string is a sequence of characters and is answered above; everything else that
                 // enumerates is a collection, which is what Calcite holds an ARRAY or a MULTISET as
                 case IEnumerable sequence:
-                    return ToJavaList(sequence);
+                    return ToJavaList(sequence, null);
                 default:
                     return value;
             }
@@ -617,11 +948,11 @@ namespace Apache.Calcite.Data.Internal
         /// a map come out in the order they went in, and a <c>HashMap</c> would reorder a value on its way
         /// through a parameter.
         /// </remarks>
-        static java.util.Map ToJavaMap(IDictionary source)
+        static java.util.Map ToJavaMap(IDictionary source, RelDataType? keyType, RelDataType? valueType)
         {
             var map = new java.util.LinkedHashMap();
             for (var i = source.GetEnumerator(); i.MoveNext();)
-                map.put(ToJava(i.Key), ToJava(i.Value));
+                map.put(ToJava(i.Key, keyType), ToJava(i.Value, valueType));
 
             return map;
         }
@@ -630,11 +961,11 @@ namespace Apache.Calcite.Data.Internal
         /// Returns a sequence as the <c>java.util.List</c> Calcite's runtime holds an <c>ARRAY</c> or a
         /// <c>MULTISET</c> as.
         /// </summary>
-        static java.util.List ToJavaList(IEnumerable source)
+        static java.util.List ToJavaList(IEnumerable source, RelDataType? component)
         {
             var list = new java.util.ArrayList();
             foreach (var item in source)
-                list.add(ToJava(item));
+                list.add(ToJava(item, component));
 
             return list;
         }

@@ -24,6 +24,18 @@ Ships built-in metadata for SQL Server, SQLite, ODBC, OLE DB, and any `INFORMATI
 dotnet add package Apache.Calcite.Adapter.AdoNet
 ```
 
+### [`Apache.Calcite.Data.Types`](https://www.nuget.org/packages/Apache.Calcite.Data.Types) · `src/Apache.Calcite.Data.Types`
+
+The CLR type mapping the provider and the adapter both answer with: which .NET type a Calcite SQL type is seen as, and the conversions across that boundary in both directions.
+
+Calcite holds a value of a SQL type in a particular runtime class — a `DATE` is a count of days in a `java.lang.Integer`, a `DECIMAL` is a `java.math.BigDecimal`, a `UUID` is a `java.util.UUID` — and .NET wants a `DateTime`, a `decimal`, a `Guid`. Deciding that once, rather than in each of the four places that ask, is what this is. An application adds a type of its own by putting a resolver in front of the chain, on a `CalciteDataSourceBuilder` for every connection it opens or on a single `CalciteConnection`.
+
+Referenced by both packages above; you do not need to add it yourself unless you are writing a resolver.
+
+```sh
+dotnet add package Apache.Calcite.Data.Types
+```
+
 ### [`Apache.Calcite.Extensions`](https://www.nuget.org/packages/Apache.Calcite.Extensions) · `src/Apache.Calcite.Extensions`
 
 `ClrEnumerableConvention` — a calling convention that runs a query plan as a compiled `System.Linq.Expressions` tree instead of generating Java source and compiling it with Janino. It mirrors Calcite's own `EnumerableConvention` node for node and uses the same row types, and converters exist in both directions, so a plan can mix the two.
@@ -56,6 +68,7 @@ dotnet add package Apache.Calcite.Geography
 |---------|---------|
 | `Apache.Calcite.Tests` | Core engine integration tests, and the convention and prepare pipeline tests — including the differential suites that run the same SQL through `ClrEnumerableConvention` and `EnumerableConvention` and require the same rows |
 | `Apache.Calcite.Data.Tests` | Provider integration tests |
+| `Apache.Calcite.Data.Types.Tests` | Type mapping resolution rules and round trips |
 | `Apache.Calcite.Adapter.AdoNet.Tests` | Adapter integration tests |
 | `Apache.Calcite.Geography.Tests` | Geography type, operator table and geodesic evaluator tests |
 | `dist-nuget` | Packages NuGet artifacts |

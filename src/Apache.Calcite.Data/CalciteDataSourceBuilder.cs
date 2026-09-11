@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 
+using Apache.Calcite.Data.Types;
+
 using org.apache.calcite.schema;
 
 namespace Apache.Calcite.Data
@@ -56,6 +58,16 @@ namespace Apache.Calcite.Data
         public string ConnectionString => ConnectionStringBuilder.ConnectionString;
 
         /// <summary>
+        /// Gets the CLR type mapping every connection of the data source starts from.
+        /// </summary>
+        /// <remarks>
+        /// A resolver registered here is the whole data source's, which is where an application's own
+        /// types belong: they do not change from one connection to the next. A connection takes a copy of
+        /// this chain when it is created, so a resolver a connection adds for itself stays its own.
+        /// </remarks>
+        public ClrTypeMapper TypeMapper { get; } = new();
+
+        /// <summary>
         /// Adds a schema to the root of the data source being built.
         /// </summary>
         /// <param name="name">The name to register the schema under.</param>
@@ -98,7 +110,7 @@ namespace Apache.Calcite.Data
         /// <returns>A data source that is the caller's to dispose.</returns>
         public CalciteDataSource Build()
         {
-            return new CalciteDataSource(new CalciteConnectionStringBuilder(ConnectionString), _configure.ToArray());
+            return new CalciteDataSource(new CalciteConnectionStringBuilder(ConnectionString), _configure.ToArray(), typeMapper: new ClrTypeMapper(TypeMapper));
         }
 
     }

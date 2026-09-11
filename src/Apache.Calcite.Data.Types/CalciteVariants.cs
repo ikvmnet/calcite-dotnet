@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 using org.apache.calcite.runtime.rtti;
@@ -7,7 +7,7 @@ using org.apache.calcite.sql.type;
 
 using Name = org.apache.calcite.runtime.rtti.RuntimeTypeInformation.RuntimeSqlTypeName;
 
-namespace Apache.Calcite.Data.Internal
+namespace Apache.Calcite.Data.Types
 {
 
     /// <summary>
@@ -47,7 +47,7 @@ namespace Apache.Calcite.Data.Internal
     /// at: <see cref="ToClr"/> throws and says which one it was. Handing back the <c>VariantValue</c>
     /// would put a Java object in a caller's hands, and inventing a text form for it would be worse.</para>
     /// </remarks>
-    internal static class CalciteVariants
+    public static class CalciteVariants
     {
 
         /// <summary>

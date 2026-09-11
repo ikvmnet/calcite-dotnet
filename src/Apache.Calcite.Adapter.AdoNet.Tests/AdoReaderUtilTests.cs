@@ -411,6 +411,21 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             Assert.AreEqual("passthrough", AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.OTHER));
         }
 
+        /// <summary>
+        /// And hands it back unconverted, which a string cannot show: every other type here answers with a
+        /// java.lang wrapper, and OTHER is the one that must not.
+        /// </summary>
+        [TestMethod]
+        public void OtherIsReadWithoutConversion()
+        {
+            using var reader = Row("1");
+
+            var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.OTHER);
+
+            Assert.IsInstanceOfType<long>(value);
+            Assert.AreEqual(1L, value);
+        }
+
         [TestMethod]
         public void NullTypeIsAlwaysNull()
         {

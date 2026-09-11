@@ -168,7 +168,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         {
             var typeFactory = root.getTypeFactory();
             var sql = GenerateSql();
-            return AdoEnumerable.CreateReader(_schema.DataSource, sql.getSql(), AdoUtils.CreateObjectArrayRowBuilderFactory(getRowType(typeFactory).getFieldList()));
+            return AdoEnumerable.CreateReader(_schema.DataSource, sql.getSql(), AdoUtils.CreateObjectArrayRowBuilderFactory(getRowType(typeFactory).getFieldList(), _schema.TypeRegistry));
         }
 
         /// <summary>

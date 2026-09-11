@@ -10,6 +10,7 @@ instead of Janino, and the prepare pipeline that gets a statement to one.
 |---|---|
 | `Apache.Calcite.Adapter.AdoNet` | pushes a plan down to an ADO.NET provider |
 | `Apache.Calcite.Data` | the `DbConnection` / `DbCommand` surface |
+| `Apache.Calcite.Data.Types` | the CLR type mapping both of those need: which .NET type a Calcite type is seen as, and the conversions across that boundary, through a chain of resolvers a caller extends |
 | `Apache.Calcite.Extensions` | `ClrEnumerableConvention` and `ClrAsyncEnumerableConvention`, the prepare pipeline, and the IKVM interop helpers |
 | `Apache.Calcite.Geography` | optional; a `GEOGRAPHY` type distinct from Calcite's `GEOMETRY`, the `ST_GEOG_*` operator table, and a geodesic evaluator over Google's S2. Nothing else references it, and it references nothing else here |
 
@@ -351,6 +352,62 @@ those three tests are differential like the rest. A tree still holds the method 
 this convention never cared — but the *capability* argument is gone, and what is left of
 `ClrRelMetadataProvider`'s reason is the compile it saves. Note the loader only sees assemblies already
 loaded in the AppDomain, and setting `MavenClassLoader` empty turns it off.
+
+## The type mapping
+
+**`getJavaClass` is the authority on what holds a value, and it is not fixed.** A mapping states which
+.NET type it presents and the two conversions; what it may not state is the runtime class Calcite holds
+the value in, because that is `JavaTypeFactory.getJavaClass`'s answer and a schema is entitled to change
+it. `createJavaType(clazz)` produces a `RelDataType` that *carries* the class, and `getJavaClass` returns
+it verbatim from its first branch, ahead of the `SqlTypeName` switch — under IKVM that class can be a CLR
+one, and `ClrTypes.FromClass` resolves it straight back. So `ClrTypeMapping.RepresentationType` is
+computed from the factory and the first value a mapping converts is checked against it.
+
+**Overriding `getJavaClass` is a trap; `createJavaType` is the hook.** An override is session-global, and
+Calcite's own generated code is written against the internal representation of each `SqlTypeName` —
+`SqlFunctions.internalToTimestamp`, `EnumUtils.convert`, every `RexImpTable` entry. Change what a
+`TIMESTAMP` is held in and every builtin touching one breaks. `createJavaType` does not fight the switch
+because it precedes it, at the cost of `SqlTypeName.OTHER`: `JavaToSqlTypeConversionRules` is an
+`ImmutableMap` behind a private singleton, so an unlisted class is `OTHER`, which has a null family and no
+operators. That is a pass-through column and nothing else — and one only these conventions can run, since
+`EnumerableConvention` would write `cli.Namespace.Type` into Java source and Janino does not resolve a
+`cli.` name.
+
+**A generated plan reaches a live CLR object through `Schemas.unwrap`, and always has.** It emits
+`((cli.Namespace.Type) schema.unwrap(cli.Namespace.Type.class))` — a call evaluated at run time rather
+than an object written into the tree — and `AdoToEnumerableConverter` has been using it to reach
+`cli.Apache.Calcite.Adapter.AdoNet.AdoDataSource` from Java source the whole time. That is how a
+schema's CLR type mapping reaches a table scan in both conventions. Where a value genuinely cannot be
+written as source and is not on a schema, `EnumerableRelImplementor.stash` hands it to the generated
+class instead; the adapter carries a `RelDataType` that way.
+
+**"Janino reflects over every member of the class" was recorded here and does not reproduce.** The claim
+was that resolving a call to `AdoReaderUtil.GetDbReaderValue` makes Janino load the type of every member
+that class declares, so one signature naming `ClrTypeRegistry` broke every generated reader — measured,
+with `Cannot load class "cli.Apache.Calcite.Data.Common.ClrTypeRegistry"` from calls that do not mention
+it, and a whole second class was written to keep such signatures away from it. That measurement was taken
+at **IKVM 8.15.0**, inside the `CustomAssemblyClassLoaderAttribute` window below. At 8.16.0 it does not
+happen: measured with the registry in `AdoReaderUtil`'s signatures and in the generated block, against
+Calcite's own connection and both of this provider's modes. What caused it at 8.15.0 is not isolated —
+note that a per-assembly loader would have refused `cli.…AdoDataSource` in the same block, and that
+resolved — and nothing is written around it any more.
+
+**A mapping is two independent defaults, not one relaxation.** Which .NET type a Calcite type reads back
+as and which Calcite type a .NET value is written as are separate facts: `DateTime` is what a `DATE`
+column answers with and never what a bare `DateTime` is written as, that being `TIMESTAMP`; `DateOnly` is
+what a caller writing one means and never what a `DATE` answers with. Npgsql spends a three-valued
+`MatchRequirement` plus a fallback pass on this; `ClrTypeMatch` is two flags because here they really are
+two facts.
+
+**The table pairs the types; `CalciteValues` converts the values.** Almost every built-in entry names the
+same two functions, `ToJava(value, relType)` and `ToClr(value, relType)`, because the conversion for a
+`DATE` is not a different function from the conversion for a `TIMESTAMP` — it is the same one told which
+type it is converting. That is why a mapping's delegates take the Calcite type as well as the value. The
+entries that name something else are the ones whose CLR type is not what the conversion answers with by
+default, a `DateOnly` out of a `TIMESTAMP` being one. An `ARRAY`, a `MULTISET`, a `MAP` and a `ROW` are
+not table entries at all: the CLR type of an `INTEGER ARRAY` is the component's answer with a dimension
+added, so `DefaultClrTypeResolver` composes through `ClrTypeContext.Registry` — which is what makes a
+caller's claim over the component a claim over the array of it.
 
 ## Traps
 

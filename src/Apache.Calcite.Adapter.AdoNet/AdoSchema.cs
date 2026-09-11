@@ -6,12 +6,14 @@ using System.Data.Common;
 using System.Threading;
 
 using Apache.Calcite.Adapter.AdoNet.Metadata;
+using Apache.Calcite.Data.Types;
 
 using com.google.common.collect;
 
 using java.lang;
 using java.util;
 
+using org.apache.calcite.jdbc;
 using org.apache.calcite.linq4j.tree;
 using org.apache.calcite.schema;
 using org.apache.calcite.schema.lookup;
@@ -89,9 +91,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="databaseName"></param>
         /// <param name="schemaName"></param>
         /// <returns></returns>
-        public static AdoSchema Create(SchemaPlus? parentSchema, string name, DbDataSource dataSource, string? databaseName, string? schemaName)
+        public static AdoSchema Create(SchemaPlus? parentSchema, string name, DbDataSource dataSource, string? databaseName, string? schemaName, ClrTypeMapper? typeMapper = null)
         {
-            return Create(parentSchema, name, dataSource, AdoDatabaseMetadataFactoryImpl.Instance, databaseName, schemaName);
+            return Create(parentSchema, name, dataSource, AdoDatabaseMetadataFactoryImpl.Instance, databaseName, schemaName, typeMapper);
         }
 
         /// <summary>
@@ -104,9 +106,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="databaseName"></param>
         /// <param name="schemaName"></param>
         /// <returns></returns>
-        public static AdoSchema Create(SchemaPlus? parentSchema, string name, DbDataSource dataSource, AdoDatabaseMetadataFactory metadataFactory, string? databaseName, string? schemaName)
+        public static AdoSchema Create(SchemaPlus? parentSchema, string name, DbDataSource dataSource, AdoDatabaseMetadataFactory metadataFactory, string? databaseName, string? schemaName, ClrTypeMapper? typeMapper = null)
         {
-            return Create(parentSchema, name, new DbDataSourceAdoDataSource(dataSource, metadataFactory.Create(dataSource)), databaseName, schemaName);
+            return Create(parentSchema, name, new DbDataSourceAdoDataSource(dataSource, metadataFactory.Create(dataSource)), databaseName, schemaName, typeMapper);
         }
 
         /// <summary>
@@ -119,9 +121,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="databaseName"></param>
         /// <param name="schemaName"></param>
         /// <returns></returns>
-        public static AdoSchema Create(SchemaPlus? parentSchema, string name, DbDataSource dataSource, AdoDatabaseMetadata metadataProvider, string? databaseName, string? schemaName)
+        public static AdoSchema Create(SchemaPlus? parentSchema, string name, DbDataSource dataSource, AdoDatabaseMetadata metadataProvider, string? databaseName, string? schemaName, ClrTypeMapper? typeMapper = null)
         {
-            return Create(parentSchema, name, new DbDataSourceAdoDataSource(dataSource, metadataProvider), databaseName, schemaName);
+            return Create(parentSchema, name, new DbDataSourceAdoDataSource(dataSource, metadataProvider), databaseName, schemaName, typeMapper);
         }
 
         /// <summary>
@@ -133,7 +135,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="databaseName"></param>
         /// <param name="schemaName"></param>
         /// <returns></returns>
-        public static AdoSchema Create(SchemaPlus? parentSchema, string name, AdoDataSource dataSource, string? databaseName, string? schemaName)
+        public static AdoSchema Create(SchemaPlus? parentSchema, string name, AdoDataSource dataSource, string? databaseName, string? schemaName, ClrTypeMapper? typeMapper = null)
         {
             ArgumentNullException.ThrowIfNull(dataSource);
 
@@ -148,7 +150,10 @@ namespace Apache.Calcite.Adapter.AdoNet
             // generate schema
             var expression = Schemas.subSchemaExpression(parentSchema, name, typeof(AdoSchema));
             var convention = AdoConvention.Create(dataSource.Metadata.Dialect, dataSource.Metadata.Syntax, expression, name);
-            return new AdoSchema(dataSource, convention, databaseName, schemaName);
+
+            // a type factory of the schema's own, because a schema is shared by connections that each have
+            // one and what a mapping is checked against must not depend on which of them asked
+            return new AdoSchema(dataSource, convention, databaseName, schemaName, typeMapper?.Bind(new JavaTypeFactoryImpl()));
         }
 
         /// <summary>
@@ -228,18 +233,37 @@ namespace Apache.Calcite.Adapter.AdoNet
                     throw new AdoCalciteException("Failed to instantiate DbDataSource from adoProviderName and adoConnectionString.");
             }
 
+            // a resolver named the way the metadata and the data source are named, since a model is text
+            // and cannot carry an object. An application that builds the schema itself passes the mapper
+            // to the overload above instead
+            ClrTypeMapper? typeMapper = null;
+            var clrTypeResolverName = (string?)operand.get("clrTypeResolver");
+            if (string.IsNullOrWhiteSpace(clrTypeResolverName) == false)
+            {
+                var clrTypeResolverType = Type.GetType(clrTypeResolverName);
+                if (clrTypeResolverType is null)
+                    throw new AdoCalciteException($"Failed to instantiate IClrTypeResolver type: {clrTypeResolverName}.");
+
+                if (Activator.CreateInstance(clrTypeResolverType) is not IClrTypeResolver clrTypeResolver)
+                    throw new AdoCalciteException($"Type is not an IClrTypeResolver: {clrTypeResolverName}.");
+
+                typeMapper = new ClrTypeMapper().Prepend(clrTypeResolver);
+            }
+
             return Create(
                 parentSchema,
                 name,
                 adoDataSource,
                 (string?)operand.get("adoDatabase"),
-                (string?)operand.get("adoSchema"));
+                (string?)operand.get("adoSchema"),
+                typeMapper);
         }
 
         readonly AdoDataSource _dataSource;
         readonly AdoConvention _convention;
         readonly string? _databaseName;
         readonly string? _schemaName;
+        readonly ClrTypeRegistry _typeRegistry;
 
         LoadingCacheLookup? _tables;
 
@@ -250,18 +274,33 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="convention"></param>
         /// <param name="databaseName"></param>
         /// <param name="schemaName"></param>
-        public AdoSchema(AdoDataSource dataSource, AdoConvention convention, string? databaseName, string? schemaName)
+        /// <param name="typeRegistry">The mapping a value crosses on its way from the provider into a
+        /// plan, or <see langword="null"/> for the built-in one.</param>
+        public AdoSchema(AdoDataSource dataSource, AdoConvention convention, string? databaseName, string? schemaName, ClrTypeRegistry? typeRegistry = null)
         {
             _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
             _convention = convention ?? throw new ArgumentNullException(nameof(convention));
             _databaseName = databaseName;
             _schemaName = schemaName;
+            _typeRegistry = typeRegistry ?? AdoReaderUtil.Default;
         }
 
         /// <summary>
         /// Gets the ADO data source.
         /// </summary>
         internal AdoDataSource DataSource => _dataSource;
+
+        /// <summary>
+        /// Gets the mapping a value crosses on its way from the provider into a plan.
+        /// </summary>
+        /// <remarks>
+        /// The schema's and not a connection's, because a schema outlives every connection that reads it
+        /// and its tables are read the same way for all of them. Which .NET type a caller finally sees is
+        /// a separate question, asked of the connection at the ADO.NET surface; this one is about which
+        /// class a value has while it is inside a plan, and a plan belongs to the schema it was built
+        /// against.
+        /// </remarks>
+        internal ClrTypeRegistry TypeRegistry => _typeRegistry;
 
         /// <summary>
         /// Gets the convention.
@@ -444,6 +483,12 @@ namespace Apache.Calcite.Adapter.AdoNet
 
             if (clazz == (Class)typeof(AdoDataSource))
                 return clazz.cast(DataSource);
+
+            // this is how a generated plan reaches it: Schemas.unwrap writes the call out, so the object
+            // is fetched from the schema at run time rather than baked into the tree, and a block of Java
+            // source can carry it as readily as an expression tree can
+            if (clazz == (Class)typeof(ClrTypeRegistry))
+                return clazz.cast(TypeRegistry);
 
             return null;
         }

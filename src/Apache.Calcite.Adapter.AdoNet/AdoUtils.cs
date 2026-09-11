@@ -22,9 +22,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// </summary>
         /// <param name="fields"></param>
         /// <returns></returns>
-        public static Function1 CreateObjectArrayRowBuilderFactory(List fields)
+        public static Function1 CreateObjectArrayRowBuilderFactory(List fields, Apache.Calcite.Data.Types.ClrTypeRegistry? typeRegistry = null)
         {
-            return new FuncFunction1<DbDataReader, object>(reader => new ObjectArrayRowBuilder(reader, fields));
+            return new FuncFunction1<DbDataReader, object>(reader => new ObjectArrayRowBuilder(reader, fields, typeRegistry));
         }
 
     }

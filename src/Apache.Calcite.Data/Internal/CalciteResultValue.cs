@@ -1,5 +1,6 @@
 ﻿using System;
 
+using Apache.Calcite.Data.Types;
 using Apache.Calcite.Extensions.Interop;
 
 using org.apache.calcite.rel.type;
@@ -38,6 +39,7 @@ namespace Apache.Calcite.Data.Internal
 
         static readonly DateTime UnixEpoch = new(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
+        readonly ClrTypeRegistry _registry;
         readonly RelDataType _type;
         readonly SqlTypeName _sqlType;
         readonly object? _value;
@@ -45,10 +47,12 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="type"></param>
+        /// <param name="registry">The connection's type mapping.</param>
+        /// <param name="type">The Calcite type of the column the value came from.</param>
         /// <param name="value"></param>
-        public CalciteResultValue(RelDataType type, object? value)
+        public CalciteResultValue(ClrTypeRegistry registry, RelDataType type, object? value)
         {
+            _registry = registry ?? throw new ArgumentNullException(nameof(registry));
             _type = type ?? throw new ArgumentNullException(nameof(type));
             _sqlType = type.getSqlTypeName();
             _value = value;
@@ -121,7 +125,13 @@ namespace Apache.Calcite.Data.Internal
 
             var target = typeof(T);
 
-            // the value as an ADO.NET caller reads it, which is what nearly every ask is for
+            // the conversion the connection's mapping states for this pair of types, which is where a
+            // caller's own type is reached
+            if (_registry.GetMapping(target, _type)?.FromCalcite(_value) is T mapped)
+                return mapped;
+
+            // the value as an ADO.NET caller reads it, which is what nearly every ask is for, and what
+            // every built-in mapping answers with
             if (CalciteValues.ToClr(_value, _type) is T converted)
                 return converted;
 
@@ -185,7 +195,7 @@ namespace Apache.Calcite.Data.Internal
         public object GetValue()
         {
             // a variant holding a null converts to one, so the coalesce is reachable and not a formality
-            return _value is null ? DBNull.Value : CalciteValues.ToClr(_value, _type) ?? DBNull.Value;
+            return _value is null ? DBNull.Value : _registry.FromCalcite(null, _type, _value) ?? DBNull.Value;
         }
 
         /// <summary>

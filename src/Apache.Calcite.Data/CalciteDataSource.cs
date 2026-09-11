@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Apache.Calcite.Data.Internal;
+using Apache.Calcite.Data.Types;
 
 namespace Apache.Calcite.Data
 {
@@ -58,6 +59,7 @@ namespace Apache.Calcite.Data
 
         readonly CalciteConnectionStringBuilder _options;
         readonly IReadOnlyList<Action<org.apache.calcite.schema.SchemaPlus>> _configure;
+        readonly ClrTypeMapper _typeMapper;
         readonly bool _pooling;
         readonly TimeSpan _idleLifetime;
         readonly TimeSpan _pruningInterval;
@@ -99,10 +101,11 @@ namespace Apache.Calcite.Data
         /// <param name="pooled">Whether the root is shared, or <see langword="null"/> to read the
         /// <c>Pooling</c> key.</param>
         /// <exception cref="ArgumentException">The pooling settings are not valid.</exception>
-        internal CalciteDataSource(CalciteConnectionStringBuilder options, IReadOnlyList<Action<org.apache.calcite.schema.SchemaPlus>> configure, bool? pooled = null)
+        internal CalciteDataSource(CalciteConnectionStringBuilder options, IReadOnlyList<Action<org.apache.calcite.schema.SchemaPlus>> configure, bool? pooled = null, ClrTypeMapper? typeMapper = null)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _configure = configure ?? throw new ArgumentNullException(nameof(configure));
+            _typeMapper = typeMapper ?? new ClrTypeMapper();
             _pooling = pooled ?? options.Pooling ?? true;
 
             var idleLifetime = options.ConnectionIdleLifetime ?? DefaultConnectionIdleLifetime;
@@ -118,6 +121,16 @@ namespace Apache.Calcite.Data
 
         /// <inheritdoc />
         public override string ConnectionString => _options.ConnectionString;
+
+        /// <summary>
+        /// Gets the CLR type mapping every connection of this data source starts from.
+        /// </summary>
+        /// <remarks>
+        /// What <see cref="CalciteDataSourceBuilder.TypeMapper"/> was configured with, or the built-in
+        /// chain where the data source was built from a connection string alone. A connection copies it
+        /// when it is created, so a resolver added to a connection is that connection's own.
+        /// </remarks>
+        public ClrTypeMapper TypeMapper => _typeMapper;
 
         /// <summary>
         /// Gets how often the provider looks at this data source for pruning, where it keeps it.
