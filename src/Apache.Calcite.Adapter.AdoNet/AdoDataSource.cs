@@ -1,4 +1,6 @@
 using System.Data.Common;
+using System.Threading;
+using System.Threading.Tasks;
 
 using Apache.Calcite.Adapter.AdoNet.Metadata;
 
@@ -10,8 +12,9 @@ namespace Apache.Calcite.Adapter.AdoNet
     /// </summary>
     /// <remarks>
     /// Implement this class to connect Calcite's ADO.NET adapter to a specific data source.
-    /// The adapter calls <see cref="OpenConnection"/> for each query it needs to execute and
-    /// <see cref="Metadata"/> to discover schemas, tables, and column definitions at planning time.
+    /// The adapter calls <see cref="OpenConnection"/>, or <see cref="OpenConnectionAsync"/> where the plan
+    /// is asynchronous, for each query it needs to execute, and <see cref="Metadata"/> to discover schemas,
+    /// tables, and column definitions at planning time.
     /// </remarks>
     public abstract class AdoDataSource
     {
@@ -21,6 +24,23 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// </summary>
         /// <returns>An open <see cref="DbConnection"/> ready for query execution.</returns>
         public abstract DbConnection OpenConnection();
+
+        /// <summary>
+        /// Opens a new connection to the underlying data source, without blocking.
+        /// </summary>
+        /// <param name="cancellationToken">Abandons the attempt.</param>
+        /// <returns>An open <see cref="DbConnection"/> ready for query execution.</returns>
+        /// <remarks>
+        /// What a plan of <c>ClrAsyncEnumerableConvention</c> opens its connection by. The default blocks on
+        /// <see cref="OpenConnection"/>, so a source written before this member still answers; a source over
+        /// a provider that opens asynchronously should override it, as both sources here do.
+        /// </remarks>
+        public virtual ValueTask<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return new ValueTask<DbConnection>(OpenConnection());
+        }
 
         /// <summary>
         /// Gets the connection string used to open connections to the underlying data source.

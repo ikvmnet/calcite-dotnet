@@ -1,5 +1,7 @@
 using System;
 using System.Data.Common;
+using System.Threading;
+using System.Threading.Tasks;
 
 using Apache.Calcite.Adapter.AdoNet.Metadata;
 
@@ -34,6 +36,9 @@ namespace Apache.Calcite.Adapter.AdoNet
 
         /// <inheritdoc />
         public override DbConnection OpenConnection() => _dataSource.OpenConnection();
+
+        /// <inheritdoc />
+        public override ValueTask<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default) => _dataSource.OpenConnectionAsync(cancellationToken);
 
         /// <inheritdoc />
         public override string ConnectionString => _dataSource.ConnectionString;

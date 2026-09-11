@@ -133,6 +133,8 @@ The two halves run on different engines, and deliberately. The predicates are S2
 | `ST_GEOG_BUFFER` | the region within a distance in metres, so it covers the same ground at every latitude |
 | `ST_GEOG_ISSIMPLE`, `ST_GEOG_ISRING` | whether a shape touches itself, asked of geodesic edges |
 | `ST_GEOG_BOUNDINGCIRCLE` | the smallest circle holding a shape, of constant distance rather than constant degrees |
+| `ST_GEOG_LOCATEALONG` | a point a fraction along each segment, offset sideways in metres |
+| `ST_GEOG_MINIMUMDIAMETER` | the narrowest way across, measured between great circles |
 | `ST_GEOG_LENGTH`, `ST_GEOG_PERIMETER` | metres |
 | `ST_GEOG_AREA` | square metres |
 

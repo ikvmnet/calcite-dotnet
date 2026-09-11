@@ -25,13 +25,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// <c>Schemas.unwrap</c>.
     /// </para>
     /// <para>
-    /// Both routes are here because they are compiled by different things and only one of them was ever
-    /// believed able to carry a mapping. A statement over <c>jdbc:calcite:</c>, and one over this
-    /// provider's own connection in its default mode, cross through <see cref="AdoToEnumerableConverter"/>
-    /// — Java source, compiled by Janino. <c>Synchronous=true</c> converts straight into
-    /// <c>ClrEnumerableConvention</c> through <see cref="AdoToClrEnumerableConverter"/>, an expression
-    /// tree. The value the resolver produces is a thousand higher than the column holds, which nothing but
-    /// a resolver reaching the scan could do.
+    /// All three routes out of <c>AdoConvention</c> are here, because they are compiled by different things
+    /// and only one of them was ever believed able to carry a mapping. This provider's default mode
+    /// converts straight into <c>ClrAsyncEnumerableConvention</c> through
+    /// <see cref="AdoToClrAsyncEnumerableConverter"/> and <c>Synchronous=true</c> into
+    /// <c>ClrEnumerableConvention</c> through <see cref="AdoToClrEnumerableConverter"/>, both expression
+    /// trees sharing one row builder; a statement over <c>jdbc:calcite:</c> crosses through
+    /// <see cref="AdoToEnumerableConverter"/>, which is Java source compiled by Janino. The value the
+    /// resolver produces is a thousand higher than the column holds, which nothing but a resolver reaching
+    /// the scan could do.
     /// </para>
     /// </remarks>
     [TestClass]
@@ -119,7 +121,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         [TestMethod]
-        public void AMappingOnTheSchemaReachesTheGeneratedReader()
+        public void AMappingOnTheSchemaReachesTheAsyncClrConverter()
         {
             using var connection = OpenConnection(synchronous: false, Mapper());
 
@@ -139,8 +141,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// And through Calcite's own connection, which is the only place the generated reader is all
-        /// there is — no Clr convention anywhere in the plan.
+        /// And through Calcite's own connection, which is the only route left that reaches the generated
+        /// reader: both of this provider's modes now convert straight into a Clr convention.
         /// </summary>
         [TestMethod]
         public void AMappingOnTheSchemaReachesCalcitesOwnConnection()

@@ -85,6 +85,39 @@ namespace Apache.Calcite.Geography.Runtime
 
 
 
+
+        /// <summary>
+        /// Returns the coordinate a fraction of the way along the geodesic between two coordinates, offset
+        /// sideways by a distance in metres.
+        /// </summary>
+        /// <param name="from"></param>
+        /// <param name="to"></param>
+        /// <param name="fraction"></param>
+        /// <param name="offset">Metres to the left of the direction of travel, negative for the right.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Two things a planar reading gets wrong at once. The point a fraction along a geodesic is not the
+        /// point that fraction along a straight line in degrees, and sideways is a direction that turns as
+        /// the geodesic goes — so the offset is taken from the azimuth <em>at the point reached</em>, which
+        /// is what <c>Direct</c> answers alongside it, rather than from the azimuth the geodesic set out on.
+        /// </remarks>
+        public static org.locationtech.jts.geom.Coordinate Along(
+            org.locationtech.jts.geom.Coordinate from,
+            org.locationtech.jts.geom.Coordinate to,
+            double fraction,
+            double offset)
+        {
+            var line = Geodesic.WGS84.Inverse(from.getY(), from.getX(), to.getY(), to.getX());
+            var at = Geodesic.WGS84.Direct(from.getY(), from.getX(), line.azi1, line.s12 * fraction);
+
+            if (offset == 0)
+                return new org.locationtech.jts.geom.Coordinate(at.lon2, at.lat2);
+
+            var aside = Geodesic.WGS84.Direct(at.lat2, at.lon2, at.azi2 - 90, offset);
+
+            return new org.locationtech.jts.geom.Coordinate(aside.lon2, aside.lat2);
+        }
+
         /// <summary>
         /// Returns the azimuth at the first coordinate of the geodesic to the second, in degrees clockwise
         /// from north.

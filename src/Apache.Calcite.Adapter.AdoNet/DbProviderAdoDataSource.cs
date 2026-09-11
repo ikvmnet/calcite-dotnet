@@ -1,5 +1,7 @@
 using System;
 using System.Data.Common;
+using System.Threading;
+using System.Threading.Tasks;
 
 using Apache.Calcite.Adapter.AdoNet.Metadata;
 
@@ -41,6 +43,15 @@ namespace Apache.Calcite.Adapter.AdoNet
             var cnn = _factory.CreateConnection() ?? throw new AdoCalciteException("Null result creating connection.");
             cnn.ConnectionString = _connectionString;
             cnn.Open();
+            return cnn;
+        }
+
+        /// <inheritdoc />
+        public override async ValueTask<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
+        {
+            var cnn = _factory.CreateConnection() ?? throw new AdoCalciteException("Null result creating connection.");
+            cnn.ConnectionString = _connectionString;
+            await cnn.OpenAsync(cancellationToken).ConfigureAwait(false);
             return cnn;
         }
 
