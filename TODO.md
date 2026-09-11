@@ -285,30 +285,47 @@ Calcite's adapter does not have: a `DbBatch` for a multi-row modify, and a bulk-
 (`SqlBulkCopy`, `NpgsqlBinaryImporter`) for `INSERT … SELECT` whose source is another convention, which is
 §12's machinery pointed at a write.
 
-### 14. Execution was synchronous; cancellation and timeout are still not wired
+### 14. Execution was synchronous; the connect still is, and cancellation and timeout are not wired
 
-**The converter is written.** `AdoToClrAsyncEnumerableConverter` and its rule are registered beside the
-other two, so a plan asked for in `ClrAsyncEnumerableConvention` — which is what the provider plans by
-default — converts straight out of the adapter and reads its rows through
-`AdoSequences.ReadAsync`, over `OpenConnectionAsync`, `ExecuteReaderAsync` and `ReadAsync`. The route it
-replaced was `EnumerableToClrAsyncEnumerableConverter` over `AdoToEnumerableConverter`: two crossings, a
-linq4j enumerator, and `DbDataReader.Read()` at the bottom, so the one place in a plan with network I/O to
-suspend on was the one place that blocked.
+**The converter is written** (#119). `AdoToClrAsyncEnumerableConverter` and its rule are registered beside
+the other two, so a plan asked for in `ClrAsyncEnumerableConvention` — which is what the provider plans by
+default — converts straight out of the adapter and reads its rows through `AdoSequences.ReadAsync`. The
+route it replaced was `EnumerableToClrAsyncEnumerableConverter` over `AdoToEnumerableConverter`: two
+crossings, a linq4j enumerator, and `DbDataReader.Read()` at the bottom, so the one place in a plan with
+network I/O to suspend on was the one place that blocked.
 
 The statement it sends is the synchronous converter's — same implementor, same writer, same row builder,
-shared rather than written again. One thing differs and is stated at the site: `ReadAsync` sends the
-statement on the first `MoveNextAsync` rather than where it is called, because a method returning an
-`IAsyncEnumerable` cannot await before it returns. `AdoSequencesTests` pins that, and
-`AdoClrEnumerableTests.ShouldReadTheSameRowsInBothConventions` holds the rows.
+shared rather than written again.
 
-Three remain:
+**What is asynchronous is the row loop, and only the row loop.** The statement is still sent at
+`GetAsyncEnumerator`, synchronously, through `OpenConnection()` and `ExecuteReader()`. That is where this
+convention acquires — linq4j acquires inside `enumerator()`, `AcquisitionTimingTests` holds that the whole
+cascade runs there, and `ClrAsyncEnumerableAdoNetTests` states that acquisition-time work is synchronous
+work because `GetAsyncEnumerator` cannot await.
 
-- **Cancellation.** `AdoSequences.ReadAsync` observes the token the caller passes to
-  `GetAsyncEnumerator`, and `AdoSequencesTests.ShouldObserveACancelledToken` holds that. What is not wired
-  is where such a token comes from: `DataContext.Variable.CANCEL_FLAG` is Calcite's cancellation channel
-  and nothing in the adapter reads it, so a statement a plan sent still runs to completion when the
-  statement is cancelled. On the synchronous path there is no token at all and `DbCommand.Cancel()` is what
-  it maps to.
+It was written the other way first, opening and executing on the first `MoveNextAsync`, which is the only
+other thing a method returning an `IAsyncEnumerable` can do. Measured, that moved where a rejected
+statement surfaces: out of `ExecuteReaderAsync` as a `CalciteException`, which is where the synchronous
+route and the old asynchronous route both put it, and into the first `ReadAsync` as a bare
+`AdoCalciteException`. `CalciteSession` calls `GetAsyncEnumerator` inside `ExecuteReaderAsync`, so
+acquiring there is the whole of the fix.
+`AdoClrEnumerableTests.ShouldSendTheStatementAtAcquisition` pins the acquisition point and
+`ShouldFailFromExecuteRatherThanFromTheFirstRead` the failure site; both fail against the other shape.
+
+Four remain:
+
+- **An asynchronous connect.** Getting `OpenConnectionAsync` and `ExecuteReaderAsync` as well means
+  awaiting somewhere earlier than the first row, and the only place is `ExecuteReaderAsync` itself.
+  Priming one row there was written and reverted: it fails `ShouldReadNothingUntilTheFirstRead`,
+  `ExecuteAsyncShouldAcquireTheLeafWithoutReading` and
+  `AnAsynchronousSortShouldAcquireAtExecuteAndDrainAtTheFirstRead`, which hold the opposite promise
+  deliberately. So this is a change to the convention's execution contract rather than to the adapter, and
+  it is the decision that gates it.
+- **Cancellation.** `AdoSequences.ReadAsync` observes the token the caller passes to `GetAsyncEnumerator`,
+  and `AdoClrEnumerableTests.ShouldObserveACancelledToken` holds that. What is not wired is where such a token
+  comes from: `DataContext.Variable.CANCEL_FLAG` is Calcite's cancellation channel and nothing in the
+  adapter reads it, so a statement a plan sent still runs to completion when the statement is cancelled. On
+  the synchronous path there is no token at all and `DbCommand.Cancel()` is what it maps to.
 - **Timeout.** `DbCommand.CommandTimeout` is never set, so every statement takes the provider default.
 - **Connection lifetime.** `AdoEnumerable.enumerator()` and `AdoSequences` open a connection per enumeration
   (`AdoEnumerable.cs:353`). For a plan with two pushed subtrees that is two connections, and for the
@@ -341,7 +358,7 @@ Ordered by what a query gains per unit of work:
 | 7 | `AdoCorrelate` (§4) | N+1 statements to one, but needs §1 first to be reachable |
 | 8 | statistics SPI (§10) | unlocks three core rules and everything cost-based |
 | 9 | DML (§13) | the known feature gap |
-| 10 | ~~async converter (§14)~~ | **done**; cancellation and timeout are what is left of §14 |
+| 10 | ~~async converter (§14)~~ | **done** (#119); the rows no longer block, the connect still does |
 | 11 | convention per data source (§11) | multi-schema databases join server-side |
 | 12 | `AdoSample`, `AdoUncollect`, `AdoTableFunctionScan`, `AdoMatch` | renderable, narrower demand |
 | 13 | cross-source shipping (§12) | the largest, and the one with no precedent to copy |
