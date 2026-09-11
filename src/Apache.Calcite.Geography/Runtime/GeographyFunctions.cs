@@ -1407,6 +1407,147 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
+        /// <c>ST_GEOG_LOCATEALONG</c>. Returns a point on every segment of the geography, a fraction of the
+        /// way along it and offset sideways by a distance in metres.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <param name="fraction"></param>
+        /// <param name="offset"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Every segment of every part, and a multi-point of the answers, as Calcite's does. What differs is
+        /// that the segment is a geodesic: halfway along one is not halfway along a straight line in degrees,
+        /// and the offset is taken to the left of the direction of travel <em>where the point lands</em>,
+        /// which on a geodesic is not the direction it set out in. The offset is metres rather than degrees,
+        /// like every other distance here.
+        /// </remarks>
+        public static Geometry? LocateAlong(Geometry? geog, java.lang.Object? fraction, java.lang.Object? offset)
+        {
+            if (geog is null || fraction is null || offset is null)
+                return null;
+
+            var along = Double(fraction);
+            var aside = Double(offset);
+            var found = new List<org.locationtech.jts.geom.Coordinate>();
+
+            for (var i = 0; i < geog.getNumGeometries(); i++)
+            {
+                var part = geog.getGeometryN(i).getCoordinates();
+
+                for (var j = 0; j < part.Length - 1; j++)
+                    found.Add(Ellipsoid.Along(part[j], part[j + 1], along, aside));
+            }
+
+            return Wgs84Of(Factory.createMultiPointFromCoords([.. found]));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MINIMUMDIAMETER</c>. Returns the shortest line across the geography's width.
+        /// </summary>
+        /// <param name="geog"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The width of a shape is the least distance between two parallel lines that hold it, and on the
+        /// Earth those lines are great circles rather than straight lines in degrees. The narrowest direction
+        /// is found the way it is found on a plane — the supporting line must lie along an edge of the convex
+        /// hull, so only those directions need trying — and for each the width is the greatest distance any
+        /// vertex stands from that edge's great circle.
+        ///
+        /// <para>The answer is the segment realising that width: from the vertex that stands furthest out to
+        /// the point on the great circle nearest it. A shape with no width — a single point, or points all on
+        /// one great circle — has no diameter to name, and answers an empty line.</para>
+        /// </remarks>
+        public static Geometry? MinimumDiameter(Geometry? geog)
+        {
+            if (geog is null)
+                return null;
+
+            // asked of the input rather than of the hull, because the hull of one point is not one point:
+            // S2 answers a degenerate loop with vertices enough to pass a count and no width to measure
+            var distinct = new java.util.HashSet();
+            foreach (var coordinate in geog.getCoordinates())
+                distinct.add(coordinate.toString());
+
+            if (distinct.size() < 3)
+                return Wgs84Of(Factory.createLineString([]));
+
+            var hull = ConvexHull(geog);
+            var ring = hull is null || hull.isEmpty() ? geog.getCoordinates() : hull.getCoordinates();
+
+            if (ring.Length < 3)
+                return Wgs84Of(Factory.createLineString([]));
+
+            var best = double.MaxValue;
+            org.locationtech.jts.geom.Coordinate? from = null;
+            org.locationtech.jts.geom.Coordinate? to = null;
+
+            for (var i = 0; i < ring.Length - 1; i++)
+            {
+                var normal = Normal(ring[i], ring[i + 1]);
+                if (normal is null)
+                    continue;
+
+                var width = 0.0;
+                org.locationtech.jts.geom.Coordinate? outer = null;
+                org.locationtech.jts.geom.Coordinate? foot = null;
+
+                foreach (var vertex in ring)
+                {
+                    var landing = Project(vertex, normal);
+                    var distance = Ellipsoid.Distance(vertex, landing);
+
+                    if (distance > width)
+                    {
+                        width = distance;
+                        outer = vertex;
+                        foot = landing;
+                    }
+                }
+
+                if (outer is not null && width < best)
+                {
+                    best = width;
+                    from = outer;
+                    to = foot;
+                }
+            }
+
+            return from is null || to is null
+                ? Wgs84Of(Factory.createLineString([]))
+                : Wgs84Of(Factory.createLineString([from, to]));
+        }
+
+        /// <summary>
+        /// The pole of the great circle through two coordinates, or <see langword="null"/> where they name
+        /// no circle.
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        static com.google.common.geometry.S2Point? Normal(org.locationtech.jts.geom.Coordinate a, org.locationtech.jts.geom.Coordinate b)
+        {
+            var p = com.google.common.geometry.S2LatLng.fromDegrees(a.getY(), a.getX()).toPoint();
+            var q = com.google.common.geometry.S2LatLng.fromDegrees(b.getY(), b.getX()).toPoint();
+            var cross = com.google.common.geometry.S2Point.crossProd(p, q);
+
+            return cross.norm() == 0 ? null : cross.normalize();
+        }
+
+        /// <summary>
+        /// The point of a great circle nearest a coordinate.
+        /// </summary>
+        /// <param name="vertex"></param>
+        /// <param name="normal">The pole of the circle.</param>
+        /// <returns></returns>
+        static org.locationtech.jts.geom.Coordinate Project(org.locationtech.jts.geom.Coordinate vertex, com.google.common.geometry.S2Point normal)
+        {
+            var p = com.google.common.geometry.S2LatLng.fromDegrees(vertex.getY(), vertex.getX()).toPoint();
+            var lifted = com.google.common.geometry.S2Point.sub(p, com.google.common.geometry.S2Point.mul(normal, p.dotProd(normal)));
+
+            return Coordinate(lifted.norm() == 0 ? p : lifted.normalize());
+        }
+
+        /// <summary>
         /// <c>ST_GEOG_BOUNDINGCIRCLE</c>. Returns the smallest circle containing the geography.
         /// </summary>
         /// <param name="geog"></param>
