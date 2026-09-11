@@ -1407,6 +1407,101 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
+        /// <c>ST_GEOG_OFFSETCURVE</c>. Returns the line drawn a distance in metres to one side of this one.
+        /// </summary>
+        /// <param name="line"></param>
+        /// <param name="distance">Metres to the left of the direction of travel, negative for the right.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Metres to one side of a geodesic, where Calcite's is degrees to one side of a straight line drawn
+        /// in them. Off the equator those are different curves and different distances: a degree to the north
+        /// of an east–west line is further than a degree to the east of a north–south one, so the planar
+        /// answer is not a constant distance from anything.
+        ///
+        /// <para>Each vertex is carried sideways along the perpendicular to the way the line is going there,
+        /// which at an interior vertex is taken as the direction from the vertex before to the vertex after.
+        /// That smooths a corner rather than mitring it. Calcite's third argument names a JTS buffer style —
+        /// the join and cap rules a planar offset needs — and has no counterpart here, so this takes two
+        /// arguments where Calcite's takes three; a style that says how to square off a corner in degrees
+        /// describes nothing this function does.</para>
+        /// </remarks>
+        public static Geometry? OffsetCurve(Geometry? line, java.lang.Object? distance)
+        {
+            if (line is null || distance is null || line is not org.locationtech.jts.geom.LineString path)
+                return null;
+
+            var metres = Double(distance);
+            var vertices = path.getCoordinates();
+
+            if (vertices.Length < 2)
+                return Wgs84Of(Factory.createLineString([]));
+
+            var moved = new org.locationtech.jts.geom.Coordinate[vertices.Length];
+
+            for (var i = 0; i < vertices.Length; i++)
+            {
+                // the way the line is going here: from the vertex before to the vertex after, so that a
+                // corner is rounded off rather than left to whichever of its two edges was asked
+                var before = vertices[i == 0 ? 0 : i - 1];
+                var after = vertices[i == vertices.Length - 1 ? i : i + 1];
+
+                moved[i] = Ellipsoid.Offset(vertices[i], Ellipsoid.Azimuth(before, after) - 90, metres);
+            }
+
+            return Wgs84Of(Factory.createLineString(moved));
+        }
+
+        /// <summary>
+        /// <c>ST_GEOG_MAKEELLIPSE</c>. Returns an ellipse of the given width and height in metres about a
+        /// point.
+        /// </summary>
+        /// <param name="point"></param>
+        /// <param name="width">The full extent east to west, in metres.</param>
+        /// <param name="height">The full extent north to south, in metres.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Metres each way, so the shape is the ellipse it says it is wherever it is drawn. Calcite's takes
+        /// degrees, and a degree east is not a degree north anywhere but the equator — so a planar ellipse of
+        /// equal width and height is a circle on the map and never on the ground.
+        ///
+        /// <para>Null for anything but a point, as Calcite's is. Thirty-two sides, the count every ring here
+        /// is drawn with.</para>
+        /// </remarks>
+        public static Geometry? MakeEllipse(Geometry? point, java.lang.Object? width, java.lang.Object? height)
+        {
+            if (point is null || width is null || height is null || point is not org.locationtech.jts.geom.Point centre)
+                return null;
+
+            var east = Double(width) / 2;
+            var north = Double(height) / 2;
+
+            if (east <= 0 || north <= 0 || centre.isEmpty())
+                return Wgs84Of(Factory.createPolygon());
+
+            var origin = centre.getCoordinate();
+            var ring = new org.locationtech.jts.geom.Coordinate[CircleSides + 1];
+
+            for (var i = 0; i < CircleSides; i++)
+            {
+                // the ellipse is walked by its parameter rather than by its azimuth, which is how JTS walks
+                // one too: the point at parameter t sits east by a·cos t and north by b·sin t, and that pair
+                // names both the bearing to travel on and how far
+                var t = 2 * System.Math.PI * i / CircleSides;
+                var sideways = east * System.Math.Cos(t);
+                var forward = north * System.Math.Sin(t);
+
+                var azimuth = System.Math.Atan2(sideways, forward) * 180 / System.Math.PI;
+                var reach = System.Math.Sqrt(sideways * sideways + forward * forward);
+
+                ring[i] = Ellipsoid.Offset(origin, azimuth, reach);
+            }
+
+            ring[CircleSides] = ring[0];
+
+            return Wgs84Of(Factory.createPolygon(ring));
+        }
+
+        /// <summary>
         /// <c>ST_GEOG_LOCATEALONG</c>. Returns a point on every segment of the geography, a fraction of the
         /// way along it and offset sideways by a distance in metres.
         /// </summary>
