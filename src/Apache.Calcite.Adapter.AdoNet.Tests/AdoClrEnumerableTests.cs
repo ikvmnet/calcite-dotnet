@@ -90,7 +90,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <returns></returns>
         List<string> Rows(string sql)
         {
-            using var cmd = _connection.CreateCommand();
+            return Rows(_connection, sql);
+        }
+
+        /// <summary>
+        /// Runs a query on the given connection and returns its rows as strings, so a comparison does not
+        /// depend on which numeric type a provider chose.
+        /// </summary>
+        /// <param name="connection"></param>
+        /// <param name="sql"></param>
+        /// <returns></returns>
+        static List<string> Rows(CalciteConnection connection, string sql)
+        {
+            using var cmd = connection.CreateCommand();
             cmd.CommandText = sql;
 
             var rows = new List<string>();
@@ -396,6 +408,63 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             cmd.CommandText = "SELECT empno, name FROM ADO.emps";
 
             Assert.ThrowsExactly<CalciteException>(() => cmd.ExecuteReader());
+        }
+
+        /// <summary>
+        /// The two conventions answer the same rows for the same statements.
+        /// </summary>
+        /// <remarks>
+        /// <c>ClrEnumerableDifferentialTests</c> for the adapter, and the same argument: the expected answer
+        /// is whatever the other convention says, so a divergence shows up as a disagreement rather than as
+        /// an assertion somebody wrote by hand. The five cover a scan, a filter, an aggregate, a real column
+        /// and a join, which is where the row builder and the pushed statement differ most.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldReadTheSameRowsInBothConventions()
+        {
+            using var synchronous = OpenConnection(synchronous: true);
+
+            foreach (var sql in new[]
+            {
+                "SELECT empno, name, deptno FROM ADO.emps ORDER BY empno",
+                "SELECT name FROM ADO.emps WHERE deptno = 20 ORDER BY name",
+                "SELECT deptno, COUNT(*) FROM ADO.emps GROUP BY deptno ORDER BY deptno",
+                "SELECT salary FROM ADO.emps ORDER BY empno",
+                "SELECT e.name, d.dname FROM ADO.emps e JOIN ADO.depts d ON e.deptno = d.deptno ORDER BY e.name",
+            })
+            {
+                CollectionAssert.AreEqual(Rows(synchronous, sql), Rows(_connection, sql), sql);
+            }
+        }
+
+        /// <summary>
+        /// A cancelled token stops the rows.
+        /// </summary>
+        /// <remarks>
+        /// The token the consumer hands <c>GetAsyncEnumerator</c> is the one that reaches the provider, this
+        /// convention having no token in the plan at all, and <c>WithCancellation</c> is how a consumer
+        /// supplies it.
+        ///
+        /// <para>The statement has already been sent by the time this throws: acquisition is synchronous and
+        /// takes no token, so what the token stops is the reading. Wiring
+        /// <c>DataContext.Variable.CANCEL_FLAG</c>, which would let a cancelled statement be abandoned
+        /// rather than merely unread, is §14 of <c>TODO.md</c> and is not here.</para>
+        /// </remarks>
+        [TestMethod]
+        public async Task ShouldObserveACancelledToken()
+        {
+            var source = new CountingAdoDataSource(_sqlite.DataSource);
+
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+
+            await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            {
+                await foreach (var _ in AdoSequences.ReadAsync(source, "SELECT NAME FROM EMPS", r => r.GetString(0), null).WithCancellation(cancellation.Token))
+                    Assert.Fail("a row was read under a cancelled token");
+            });
+
+            Assert.AreEqual(1, source.Closed, "and the connection the acquisition opened is closed");
         }
 
         /// <summary>
