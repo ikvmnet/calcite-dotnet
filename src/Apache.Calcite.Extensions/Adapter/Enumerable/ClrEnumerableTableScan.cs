@@ -62,10 +62,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (table is TransientTable)
                 return false;
 
-            // this convention's own table SPI, which is read directly rather than through linq4j. All four,
-            // because the node has a body for each kind of sequence: a table of either SPI can be read by
-            // either body, and the body that does not match reads the rows across.
-            if (table is IClrScannableTable or IClrQueryableTable or IClrAsyncScannableTable or IClrAsyncQueryableTable)
+            // this convention's own table SPI, which is read directly rather than through linq4j. One
+            // interface each, both halves on it, so there is nothing here to ask about which kind a table is.
+            if (table is IClrScannableTable or IClrQueryableTable)
                 return true;
 
             // see org.apache.calcite.prepare.RelOptTableImpl.getClassExpressionFunction
@@ -92,10 +91,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (table is IClrQueryableTable queryable)
                 return (java.lang.Class)queryable.ElementType;
 
-            if (table is IClrAsyncQueryableTable asyncQueryable)
-                return (java.lang.Class)asyncQueryable.ElementType;
-
-            if (table is IClrScannableTable or IClrAsyncScannableTable)
+            if (table is IClrScannableTable)
                 return (java.lang.Class)typeof(object[]);
 
             return EnumerableTableScan.deduceElementType(table);
@@ -203,7 +199,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             // this convention's own table SPI is read directly: the rows are already a .NET sequence, so
             // there is no linq4j tree to translate and no FromJava to read one back
-            if (unwrapped is IClrScannableTable or IClrQueryableTable or IClrAsyncScannableTable or IClrAsyncQueryableTable)
+            if (unwrapped is IClrScannableTable or IClrQueryableTable)
                 return implementor.Result(physType, ToRows(implementor, physType, ClrSource(implementor), true));
 
             var expression = table.getExpression(typeof(Queryable))
@@ -215,7 +211,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), Format());
 
@@ -226,7 +222,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             // this convention's own table SPI is read directly: the rows are already a .NET sequence, so
             // there is no linq4j tree to translate and no FromJava to read one back
-            if (unwrapped is IClrScannableTable or IClrQueryableTable or IClrAsyncScannableTable or IClrAsyncQueryableTable)
+            if (unwrapped is IClrScannableTable or IClrQueryableTable)
                 return implementor.ResultAsync(physType, ToRowsAsync(implementor, physType, ClrSourceAsync(implementor), true));
 
             var expression = table.getExpression(typeof(Queryable))
@@ -243,20 +239,23 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="implementor"></param>
         /// <returns></returns>
         /// <remarks>
-        /// An <see cref="IClrAsyncQueryableTable"/> writes its own reading into the plan, as a
-        /// <see cref="QueryableTable"/> does; an <see cref="IClrAsyncScannableTable"/> is called, as a
-        /// <see cref="ScannableTable"/> is. Either way what comes back is already an
+        /// <see cref="ClrSource"/> for the awaiting body: the same two SPIs, asked for their awaiting half.
+        /// An <see cref="IClrQueryableTable"/> writes its own reading into the plan, as a
+        /// <see cref="QueryableTable"/> does; an <see cref="IClrScannableTable"/> is called, as a
+        /// <see cref="ScannableTable"/> is. Either way what comes back is an
         /// <see cref="System.Collections.Generic.IAsyncEnumerable{T}"/> of the deduced element type.
         ///
-        /// <para>A table of the pulled SPI is read by <see cref="ClrSource"/> and crossed here, which is the
-        /// mirror of what <see cref="ClrSource"/> does with a table of the awaiting one. The crossing is at
-        /// the leaf either way, so everything above the scan is the plan's own kind.</para>
+        /// <para>There is no crossing here and there is nothing to choose. A table that has only pulled rows
+        /// answers these through the defaults on its own interface, so the read across happens inside the
+        /// table and this body is the same two lines whatever the table turns out to be. While the awaiting
+        /// half was a second interface, both bodies had to ask whether the table was of the other kind, and
+        /// a table that implemented both made the two ask each other until the stack ran out.</para>
         /// </remarks>
         Expression ClrSourceAsync(ClrEnumerableRelImplementor implementor)
         {
             var unwrapped = (Table)table.unwrap(typeof(Table));
 
-            if (unwrapped is IClrAsyncQueryableTable queryable)
+            if (unwrapped is IClrQueryableTable queryable)
             {
                 var names = table.getQualifiedName();
 
@@ -266,18 +265,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     ?? throw new java.lang.IllegalStateException($"{table}.GetExpression returned null");
             }
 
-            // a table of the pulled SPI, read by this body: nothing suspends, because the rows are already
-            // there to be pulled. The crossing costs a state machine and no thread, so the plan is simply
-            // not asynchronous over this leaf.
-            if (unwrapped is IClrScannableTable or IClrQueryableTable)
-                return ClrBuiltInMethod.CallAsync(
-                    ClrBuiltInMethod.ToAsyncEnumerable.MakeGenericMethod(ClrTypes.FromClass(elementType)),
-                    ClrSource(implementor));
-
             // reached as a constant, the way EnumerableRelImplementor.stash reaches an object a plan cannot
             // hold. An expression tree can hold one, so it is a constant rather than a stash.
             return Expression.Call(
-                Expression.Constant((IClrAsyncScannableTable)unwrapped, typeof(IClrAsyncScannableTable)),
+                Expression.Constant((IClrScannableTable)unwrapped, typeof(IClrScannableTable)),
                 ScanAsyncMethod,
                 implementor.Root);
         }
@@ -398,14 +389,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     ?? throw new java.lang.IllegalStateException($"{table}.GetExpression returned null");
             }
 
-            // a table of the awaiting SPI, read by this body: its rows are pulled across, which blocks a
-            // thread on each one. An IEnumerable has nowhere to suspend, so a caller who asked for the rows
-            // synchronously over a table that only produces them asynchronously gets exactly that.
-            if (unwrapped is IClrAsyncScannableTable or IClrAsyncQueryableTable)
-                return Expression.Call(null,
-                    ClrBuiltInMethod.ToEnumerable.MakeGenericMethod(ClrTypes.FromClass(elementType)),
-                    ClrSourceAsync(implementor));
-
             // reached as a constant, the way EnumerableRelImplementor.stash reaches an object a plan cannot
             // hold. An expression tree can hold one, so it is a constant rather than a stash.
             return Expression.Call(
@@ -419,10 +402,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             ?? throw new System.InvalidOperationException($"'{nameof(IClrScannableTable.Scan)}' is missing.");
 
         /// <summary>
-        /// <see cref="IClrAsyncScannableTable.ScanAsync"/>, which the awaiting body calls.
+        /// <see cref="IClrScannableTable.ScanAsync"/>, which the awaiting body calls.
         /// </summary>
-        static readonly System.Reflection.MethodInfo ScanAsyncMethod = typeof(IClrAsyncScannableTable).GetMethod(nameof(IClrAsyncScannableTable.ScanAsync))
-            ?? throw new System.InvalidOperationException($"'{nameof(IClrAsyncScannableTable.ScanAsync)}' is missing.");
+        static readonly System.Reflection.MethodInfo ScanAsyncMethod = typeof(IClrScannableTable).GetMethod(nameof(IClrScannableTable.ScanAsync))
+            ?? throw new System.InvalidOperationException($"'{nameof(IClrScannableTable.ScanAsync)}' is missing.");
 
         static readonly System.Reflection.MethodInfo AsList = ClrTypes.Resolve(BuiltInMethod.AS_LIST.method);
         static readonly System.Reflection.MethodInfo AsEnumerable = ClrTypes.Resolve(BuiltInMethod.AS_ENUMERABLE.method);

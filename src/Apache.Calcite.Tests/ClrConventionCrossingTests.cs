@@ -30,7 +30,7 @@ namespace Apache.Calcite.Tests
     /// cost the same — reading a synchronous leaf asynchronously never suspends, and reading an asynchronous
     /// one synchronously blocks a thread once per row.
     ///
-    /// <para><b>The schema is what forces a crossing.</b> <c>SALES</c> is an <c>IClrAsyncScannableTable</c>
+    /// <para><b>The schema is what forces a crossing.</b> <c>SALES</c> is a table writing <c>ScanAsync</c>
     /// and nothing else, so its rows arrive awaited; <c>SORTED</c> is a Calcite <c>ScannableTable</c>, read
     /// through linq4j and pulled. A query over either, implemented the other way, has to cross, and a query
     /// naming both crosses whichever way it is implemented.</para>

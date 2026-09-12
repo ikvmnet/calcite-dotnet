@@ -141,7 +141,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             switch (joinType.name())
             {
@@ -161,7 +161,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="implementor"></param>
         /// <param name="pref"></param>
         /// <returns></returns>
-        ClrEnumerableAsyncResult ImplementHashSemiJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrAsyncEnumerableResult ImplementHashSemiJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)left, pref);
             var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)right, pref);
@@ -202,7 +202,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// selectors and a flag saying whether at most one key is not null-safe, because that is the case a
         /// hash lookup alone can decide.</para>
         /// </remarks>
-        ClrEnumerableAsyncResult ImplementHashMarkJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrAsyncEnumerableResult ImplementHashMarkJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)left, pref);
             var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)right, pref);
@@ -289,7 +289,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="implementor"></param>
         /// <param name="pref"></param>
         /// <returns></returns>
-        ClrEnumerableAsyncResult ImplementHashJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrAsyncEnumerableResult ImplementHashJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)left, pref);
             var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)right, pref);

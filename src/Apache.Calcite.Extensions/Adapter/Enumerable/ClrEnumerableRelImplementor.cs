@@ -178,7 +178,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// called from a node. The two hierarchies are parallel and separate: a body calls the member of its
         /// own kind and nothing consults a mode, because there is no mode to consult.
         /// </remarks>
-        public ClrEnumerableAsyncResult VisitChildAsync(ClrEnumerableRel? parent, int ordinal, ClrEnumerableRel child, ClrEnumerablePrefer prefer)
+        public ClrAsyncEnumerableResult VisitChildAsync(ClrEnumerableRel? parent, int ordinal, ClrEnumerableRel child, ClrEnumerablePrefer prefer)
         {
             ArgumentNullException.ThrowIfNull(child);
 
@@ -200,7 +200,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// awaited result because its type says so, and nothing has to look at the expression to find out.
         /// </para>
         /// </remarks>
-        public ClrEnumerableResult Pulled(ClrEnumerableAsyncResult result)
+        public ClrEnumerableResult Pulled(ClrAsyncEnumerableResult result)
         {
             ArgumentNullException.ThrowIfNull(result);
 
@@ -222,11 +222,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// that does, because Calcite's own generator builds its window in linq4j and there is nothing to
         /// await. It costs a state machine and no thread.
         /// </remarks>
-        public ClrEnumerableAsyncResult Awaited(ClrEnumerableResult result)
+        public ClrAsyncEnumerableResult Awaited(ClrEnumerableResult result)
         {
             ArgumentNullException.ThrowIfNull(result);
 
-            return new ClrEnumerableAsyncResult(
+            return new ClrAsyncEnumerableResult(
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.ToAsyncEnumerable.MakeGenericMethod(result.PhysType.RowType), result.Expression),
                 result.PhysType,
                 result.Format);
@@ -305,7 +305,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         {
             ArgumentNullException.ThrowIfNull(rootRel);
 
-            ClrEnumerableAsyncResult implemented;
+            ClrAsyncEnumerableResult implemented;
 
             try
             {
@@ -322,7 +322,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (prefer == ClrEnumerablePrefer.Array
                 && result.Format == JavaRowFormat.ARRAY
                 && rootRel.getRowType().getFieldCount() == 1)
-                result = new ClrEnumerableAsyncResult(
+                result = new ClrAsyncEnumerableResult(
                     ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.Slice0Async.MakeGenericMethod(typeof(object)), result.Expression),
                     result.PhysType,
                     JavaRowFormat.SCALAR);
@@ -460,11 +460,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// quietly wrapped and costing a thread per row that nobody asked for. Where the wrap is wanted the
         /// node says so with <see cref="Awaited"/>.
         /// </remarks>
-        public ClrEnumerableAsyncResult ResultAsync(ClrPhysType physType, Expression expression)
+        public ClrAsyncEnumerableResult ResultAsync(ClrPhysType physType, Expression expression)
         {
             RequireRowType(physType, expression, typeof(IAsyncEnumerable<>));
 
-            return new ClrEnumerableAsyncResult(expression, physType, physType.Format);
+            return new ClrAsyncEnumerableResult(expression, physType, physType.Format);
         }
 
         /// <summary>

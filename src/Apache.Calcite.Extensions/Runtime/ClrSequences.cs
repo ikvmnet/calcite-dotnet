@@ -22,8 +22,13 @@ namespace Apache.Calcite.Extensions.Runtime
     /// suspends. <see cref="ToEnumerable{TSource}"/> blocks the calling thread once per row, which is the
     /// sync-over-async the asynchronous convention was written to avoid. Both exist because a plan that
     /// cannot be assembled is worse than one that is slow.</para>
+    ///
+    /// <para><b>Public because the table SPI asks for it.</b> An
+    /// <see cref="Apache.Calcite.Extensions.Schema.IClrScannableTable"/> whose rows are only ever awaited
+    /// still has to answer <c>Scan</c>, and <see cref="ToEnumerable{TSource}"/> is how it does that. A
+    /// contract that requires a conversion has to hand out the conversion.</para>
     /// </remarks>
-    static class ClrSequences
+    public static class ClrSequences
     {
 
         /// <summary>

@@ -299,50 +299,114 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// A table that can only be read asynchronously crosses once, at the leaf, and only in a synchronous
-        /// plan.
+        /// Each fork calls the table SPI member of its own kind, and the plan carries no crossing at a leaf.
         /// </summary>
         /// <remarks>
-        /// The crossing is what the mode costs when it disagrees with the leaf, and where it happens is the
-        /// claim: at the scan, not at the root, so everything above it is the plan's own kind. One call, not
-        /// one per node.
+        /// <b>This used to assert the opposite, and the change is the point.</b> While the awaiting half of
+        /// the table SPI was a second interface, the scan knew which half a table had and wrote the read
+        /// across into the plan, so a bridging call appeared in the compiled tree and could be counted
+        /// there. There is one interface now, carrying both halves, so the scan asks for the half that
+        /// matches its fork and the table answers: either with a real implementation, or with the interface
+        /// default, which does the read across inside the table.
+        ///
+        /// <para>What that costs is this test. The crossing is no longer visible in the plan, so nothing
+        /// here can count it, and the claim that a plan crosses <em>once</em> and <em>at the leaf</em> is
+        /// not a claim the tree can answer any more. What is still checkable is that each fork calls its own
+        /// member and that everything above the leaf belongs to that fork, which is what this now holds.
+        /// <c>ShouldReadTheSameRowsThroughEitherHalfOfTheTableSpi</c> holds the part that moved.</para>
         /// </remarks>
         [TestMethod]
-        public void ShouldCrossOnceAtAnAsynchronousLeaf()
+        public void ShouldCallTheTableSpiMemberOfItsOwnFork()
         {
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add("SALES", new AsyncRowsTable(AsyncTestRows.Sales, AsyncTestRows.SalesRowType, false));
 
             var physical = Plan("SELECT ID, LABEL FROM SALES WHERE ID > 3 ORDER BY ID", rootSchema);
-            var parameters = new java.util.HashMap();
 
-            var (synchronous, asynchronous, bridges) = Operators(Implement(physical, false, parameters));
+            var pulled = Operators(Implement(physical, false, new java.util.HashMap()));
 
-            bridges.Should().ContainSingle("the leaf awaits and the plan does not, so its rows are read across once");
-            bridges[0].Method.Name.Should().Be("ToEnumerable");
-            synchronous.Should().NotBeEmpty("everything above the leaf is the synchronous plan's own");
-            asynchronous.Should().BeEmpty("the leaf is the table's own sequence, not an operator of ours");
+            Scans(Implement(physical, false, new java.util.HashMap())).Should().Equal(["Scan"],
+                "the pulled fork asks the table for its pulled half, and this table answers it by blocking");
+            pulled.Synchronous.Should().NotBeEmpty("everything above the leaf is the pulled plan's own");
+            pulled.Asynchronous.Should().BeEmpty("no awaiting operator belongs in a pulled plan");
+            pulled.Bridges.Should().BeEmpty("the read across is the table's now, not the plan's");
 
             var awaiting = Operators(Implement(physical, true, new java.util.HashMap()));
 
-            awaiting.Bridges.Should().BeEmpty("the leaf already awaits, so an asynchronous plan crosses nothing");
+            Scans(Implement(physical, true, new java.util.HashMap())).Should().Equal(["ScanAsync"],
+                "the awaiting fork asks for the awaiting half, which this table really implements");
+            awaiting.Asynchronous.Should().NotBeEmpty("everything above the leaf is the awaiting plan's own");
+            awaiting.Synchronous.Should().BeEmpty("no pulled operator belongs in an awaiting plan");
+            awaiting.Bridges.Should().BeEmpty("nothing crosses: the table awaits and so does the plan");
         }
 
         /// <summary>
-        /// A table Calcite reads crosses once in an asynchronous plan, and that crossing never suspends.
+        /// A table with only a pulled half is still asked for the awaiting one, and the plan is otherwise
+        /// unchanged.
         /// </summary>
+        /// <remarks>
+        /// The mirror, over a table that writes <c>Scan</c> and takes the default <c>ScanAsync</c>. The plan
+        /// looks the same as for a table that implements both: one call to the awaiting member, and the cost
+        /// of the table having no awaiting rows to give is inside the table.
+        /// </remarks>
         [TestMethod]
-        public void ShouldCrossOnceAtASynchronousOnlyLeaf()
+        public void ShouldCallTheAwaitingMemberOfAPulledOnlyTable()
         {
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add("SORTED", new SyncOnlyRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType));
 
             var physical = Plan("SELECT K, V FROM SORTED WHERE K >= 2", rootSchema);
 
-            var (_, _, bridges) = Operators(Implement(physical, true, new java.util.HashMap()));
+            Scans(Implement(physical, true, new java.util.HashMap())).Should().Equal(["ScanAsync"],
+                "the awaiting fork asks for the awaiting half whether or not the table wrote one");
+            Scans(Implement(physical, false, new java.util.HashMap())).Should().Equal(["Scan"],
+                "and the pulled fork asks for the pulled one");
 
-            bridges.Should().ContainSingle("the leaf is pulled and the plan awaits, so its rows are read across once");
-            bridges[0].Method.Name.Should().Be("ToAsyncEnumerable");
+            Operators(Implement(physical, true, new java.util.HashMap())).Bridges.Should().BeEmpty(
+                "the default ScanAsync reads across inside the table, so the plan holds no bridge");
+        }
+
+        /// <summary>
+        /// Both halves of the table SPI answer the same rows, whichever half the table actually wrote.
+        /// </summary>
+        /// <remarks>
+        /// What the two crossing tests used to hold, moved to where the crossing now lives. A table with
+        /// only a pulled half is read through its defaulted awaiting one, and a table with only an awaiting
+        /// half through the pulled one it wrote over it; both have to answer the rows the other does.
+        /// </remarks>
+        [TestMethod]
+        public async Task ShouldReadTheSameRowsThroughEitherHalfOfTheTableSpi()
+        {
+            var context = new TestDataContext(Frameworks.createRootSchema(true), new java.util.HashMap());
+
+            var pulledOnly = new SyncOnlyRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType);
+            var awaitingOnly = new AsyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, true);
+
+            foreach (var table in new Apache.Calcite.Extensions.Schema.IClrScannableTable[] { pulledOnly, awaitingOnly })
+            {
+                var pulled = table.Scan(context).Select(Render).ToList();
+
+                var awaited = new List<string>();
+                await foreach (var row in table.ScanAsync(context))
+                    awaited.Add(Render(row));
+
+                awaited.Should().Equal(pulled, "both halves of {0} read the same table", table.GetType().Name);
+                pulled.Should().NotBeEmpty("the table has rows, or the comparison holds nothing");
+            }
+        }
+
+        /// <summary>
+        /// The table SPI members a plan calls, in the order the tree holds them.
+        /// </summary>
+        static List<string> Scans(LambdaExpression tree)
+        {
+            var calls = new List<MethodCallExpression>();
+            new Collector(calls).Visit(tree);
+
+            return calls
+                .Where(c => c.Method.DeclaringType == typeof(Apache.Calcite.Extensions.Schema.IClrScannableTable))
+                .Select(c => c.Method.Name)
+                .ToList();
         }
 
         /// <summary>

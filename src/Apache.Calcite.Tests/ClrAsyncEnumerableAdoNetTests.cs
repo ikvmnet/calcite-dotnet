@@ -18,7 +18,7 @@ namespace Apache.Calcite.Tests
     /// </summary>
     /// <remarks>
     /// The end the awaiting operators were written for, and the only tests that prove the whole path rather
-    /// than a piece of it: an <c>IClrAsyncScannableTable</c> in the schema, the implementor compiling a
+    /// than a piece of it: a table writing <c>ScanAsync</c> in the schema, the implementor compiling a
     /// <c>Func&lt;DataContext, IAsyncEnumerable&lt;object&gt;&gt;</c>, and <c>DbDataReader.ReadAsync</c>
     /// pulling the rows out.
     ///
@@ -117,7 +117,7 @@ namespace Apache.Calcite.Tests
         /// blocked on, from either entry point.
         /// </summary>
         /// <remarks>
-        /// An <c>IClrAsyncScannableTable</c> is not a <c>ScannableTable</c>, so neither the synchronous
+        /// An <c>IClrScannableTable</c> is not a <c>ScannableTable</c>, so neither the synchronous
         /// convention nor Calcite's own has a scan for it. The scan is planned here whatever the connection's
         /// mode, because there is one convention and the mode is not part of planning; a synchronous
         /// connection then reads the table's awaited rows across at the scan. <c>Read</c> blocks there per
@@ -465,7 +465,7 @@ namespace Apache.Calcite.Tests
         /// <remarks>
         /// "Read" is the word doing the work. Execute acquires: <c>GetAsyncEnumerator</c> now chains down
         /// the whole plan — <c>AcquisitionTimingTests</c> holds that a Calcite leaf's <c>enumerator()</c>
-        /// runs there — but this leaf is an <c>IClrAsyncScannableTable</c> whose <c>ScanAsync</c> is a C#
+        /// runs there — but this leaf is an <c>IClrScannableTable</c> whose <c>ScanAsync</c> is a C#
         /// iterator, and an iterator's body, its counting included, runs nothing until the first
         /// <c>MoveNextAsync</c>. So the table produces no row at Execute, which is this test's claim.
         ///

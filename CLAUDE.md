@@ -293,7 +293,7 @@ the rows will be read, and a plan cache would hold one entry for a statement rat
   virtual over them. Two defaults calling each other would compile for a node overriding neither and then
   recurse until the process dies, and a `StackOverflowException` cannot be caught.
 - **Each fork has its own result type, and that is what removes the last runtime test.** `Implement`
-  answers a `ClrEnumerableResult` and `ImplementAsync` a `ClrEnumerableAsyncResult`; `Result` and
+  answers a `ClrEnumerableResult` and `ImplementAsync` a `ClrAsyncEnumerableResult`; `Result` and
   `ResultAsync` each require their own sequence kind and name the node that broke it. Crossing is
   `implementor.Pulled` and `implementor.Awaited`, unconditional and written at the site that wants one.
   Before the split there was one result type, so a visit could only recover a node's kind by testing the
@@ -313,10 +313,25 @@ the rows will be read, and a plan cache would hold one entry for a statement rat
   `ArgumentException`. `ShouldAgreeOnAWindowTableFunction` holds it now. An adapter with only an awaiting
   client writes `ImplementAsync` and `Implement` as a delegation to it, which is safe for the same reason:
   a converter out of an adapter visits no child.
-- **The crossing is a node boundary, not a plan boundary.** An `IClrAsyncScannableTable` under a synchronous
-  plan blocks at the scan and everything above it is ordinary synchronous code, and the reverse. That is
-  what `ClrEnumerableModeTests` reads out of the compiled tree: which operator set each call landed on, that
-  every awaiting call carries its token, and that a crossing appears exactly where the schema forces one.
+- **The crossing is a node boundary, not a plan boundary.** A table that only awaits, read by a pulled
+  plan, blocks at the scan, and everything above it is ordinary pulled code; the reverse likewise. That is
+  what `ClrEnumerableModeTests` reads out of the compiled tree: which operator set each call landed on, and
+  that every awaiting call carries its token.
+- **The table SPI is one interface per table kind, with both halves on it**, matching the nodes: `Scan` is
+  required and `ScanAsync` defaults to it, and the same for a queryable table's two expressions. There were
+  four interfaces, and two of them could not answer the question the scan actually had. Each source builder
+  asked whether the table was of the *other* kind before asking whether it was of its own, so a table
+  implementing both scannable interfaces sent the two builders into mutual recursion and **overflowed the
+  stack while the plan was being built** — measured, not reasoned. One interface makes that unrepresentable
+  and deletes both cross branches. An awaiting-only table writes `Scan` over its own `ScanAsync` with
+  `ClrSequences.ToEnumerable`, which is why `ClrSequences` is public: a contract that requires a conversion
+  has to hand out the conversion.
+- **What that cost is a test.** The read across used to be written into the plan by the scan, so
+  `ClrEnumerableModeTests` could count bridging calls in the compiled tree and require exactly one, at the
+  leaf. The crossing is inside the table now, so the tree shows a plain call to `Scan` or `ScanAsync` and
+  that count is gone. What replaced it: each fork is held to calling its own SPI member, and
+  `ShouldReadTheSameRowsThroughEitherHalfOfTheTableSpi` reads a one-sided table both ways and requires the
+  same rows.
 - **What it cost.** Three of the four converters are gone (`ClrEnumerableToClrAsyncEnumerableConverter`,
   `ClrAsyncEnumerableToClrEnumerableConverter`, `EnumerableToClrAsyncEnumerableConverter`), and with them
   the two-hop `isGuaranteed` route those tests exercised. What it bought: `WITH RECURSIVE` and MATCH_RECOGNIZE

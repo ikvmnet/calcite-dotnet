@@ -133,7 +133,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             if (joinType.name() == nameof(JoinRelType.LEFT_MARK))
                 return ImplementNLMarkJoinAsync(implementor, pref);
@@ -153,7 +153,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// its non-equi part, and it is the three-valued one: a mark join's marker is null where a comparison
         /// was unknown, which is what makes <c>IN</c> over a nullable column answer UNKNOWN.
         /// </remarks>
-        ClrEnumerableAsyncResult ImplementNLMarkJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrAsyncEnumerableResult ImplementNLMarkJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)left, pref);
             var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)right, pref);
@@ -181,7 +181,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="implementor"></param>
         /// <param name="pref"></param>
         /// <returns></returns>
-        ClrEnumerableAsyncResult ImplementNLJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrAsyncEnumerableResult ImplementNLJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)left, pref);
             var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)right, pref);

@@ -357,7 +357,7 @@ namespace Apache.Calcite.Data.Internal
         /// <remarks>
         /// <b>Whether the rows are awaited is the connection's choice, not the entry point's.</b> The default
         /// is to await them, so that <c>ReadAsync</c> is asynchronous wherever the schema can be: an
-        /// <c>IClrAsyncScannableTable</c> is scanned asynchronously, a table of Calcite's SPI is read the way
+        /// <c>IClrScannableTable</c> that writes <c>ScanAsync</c> is scanned asynchronously, a table of Calcite's SPI is read the way
         /// Calcite reads it and wrapped in a sequence that completes synchronously — a state machine and no
         /// thread — and a statement the convention has no node for is implemented in
         /// <c>EnumerableConvention</c> with a converter carrying its rows. Nothing on the asynchronous

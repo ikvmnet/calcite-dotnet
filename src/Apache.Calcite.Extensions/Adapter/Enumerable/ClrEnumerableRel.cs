@@ -46,7 +46,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     ///
     /// <para><b>Each fork has its own result type, so the kind is checked rather than inferred.</b>
     /// <see cref="Implement"/> answers a <see cref="ClrEnumerableResult"/> and
-    /// <see cref="ImplementAsync"/> a <see cref="ClrEnumerableAsyncResult"/>, and the factory for each
+    /// <see cref="ImplementAsync"/> a <see cref="ClrAsyncEnumerableResult"/>, and the factory for each
     /// refuses a sequence of the other kind by name. Crossing between them is
     /// <see cref="ClrEnumerableRelImplementor.Awaited"/> and
     /// <see cref="ClrEnumerableRelImplementor.Pulled"/>, written at the site that wants it. Going to
@@ -103,7 +103,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// does would run the pulled visit, and its own pulled operators would then be handed inputs this
         /// hierarchy had already made awaited. Every node whose body visits a child writes this one.</para>
         /// </remarks>
-        ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref) => implementor.Awaited(Implement(implementor, pref));
+        ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref) => implementor.Awaited(Implement(implementor, pref));
 
         /// <inheritdoc cref="PhysicalNode.passThroughTraits" />
         Pair? PhysicalNode.passThroughTraits(RelTraitSet required) => null;

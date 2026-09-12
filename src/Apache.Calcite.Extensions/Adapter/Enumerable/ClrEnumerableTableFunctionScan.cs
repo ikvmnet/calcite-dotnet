@@ -82,7 +82,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <para>A table function the schema defines has no input at all — the call yields the sequence —
         /// so that half is the same body in both modes.</para>
         /// </remarks>
-        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             if (IsImplementorDefined((RexCall)getCall()))
                 return TvfImplementorBasedImplementAsync(implementor, pref);
@@ -144,7 +144,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// blocks a thread per row and is the only thing that can be done, a linq4j <c>Enumerable</c> having
         /// nowhere to suspend.
         /// </remarks>
-        ClrEnumerableAsyncResult TvfImplementorBasedImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrAsyncEnumerableResult TvfImplementorBasedImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var child = (ClrEnumerableRel)getInputs().get(0);
             var result = implementor.VisitChildAsync(this, 0, child, pref);

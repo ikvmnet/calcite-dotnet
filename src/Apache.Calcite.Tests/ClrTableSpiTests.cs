@@ -86,7 +86,7 @@ namespace Apache.Calcite.Tests
         /// <summary>
         /// A table of the asynchronous SPI that hands back an expression.
         /// </summary>
-        sealed class AsyncQueryableRowsTable : AbstractTable, IClrAsyncQueryableTable
+        sealed class AsyncQueryableRowsTable : AbstractTable, IClrQueryableTable
         {
 
             /// <inheritdoc />
@@ -98,6 +98,18 @@ namespace Apache.Calcite.Tests
             /// <inheritdoc />
             public Expression GetAsyncExpression(SchemaPlus? schema, string tableName) =>
                 Expression.Call(null, RowsMethod, Expression.Default(typeof(CancellationToken)));
+
+            /// <inheritdoc />
+            /// <remarks>
+            /// Written from the awaiting half, because there is no pulled reading of these rows to offer.
+            /// The other order, which the interface would have supplied for free, is the one this table
+            /// cannot use.
+            /// </remarks>
+            public Expression GetExpression(SchemaPlus? schema, string tableName) =>
+                Expression.Call(null, ToEnumerableMethod.MakeGenericMethod(ElementType), GetAsyncExpression(schema, tableName));
+
+            static readonly System.Reflection.MethodInfo ToEnumerableMethod =
+                typeof(Apache.Calcite.Extensions.Runtime.ClrSequences).GetMethod(nameof(Apache.Calcite.Extensions.Runtime.ClrSequences.ToEnumerable))!;
 
             static readonly System.Reflection.MethodInfo RowsMethod =
                 typeof(AsyncQueryableRowsTable).GetMethod(nameof(Rows), System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!;

@@ -158,7 +158,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             if (getJoinType().name() != nameof(JoinRelType.LEFT_MARK))
                 throw new java.lang.UnsupportedOperationException($"ClrEnumerableConditionalCorrelate does not support join type: {getJoinType()}");

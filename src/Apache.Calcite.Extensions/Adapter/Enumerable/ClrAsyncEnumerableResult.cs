@@ -28,7 +28,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// <see cref="IAsyncEnumerable{T}"/> at <see cref="IAsyncEnumerable{T}.GetAsyncEnumerator"/>, so a plan
     /// carries none and the operators take <c>default</c>.</para>
     /// </remarks>
-    public class ClrEnumerableAsyncResult
+    public class ClrAsyncEnumerableResult
     {
 
         /// <summary>
@@ -43,7 +43,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// of making one, exactly as for the pulled result. That method is where a sequence is required to be
         /// an <see cref="IAsyncEnumerable{T}"/> of the rows its physical type says it carries.
         /// </remarks>
-        internal ClrEnumerableAsyncResult(Expression expression, ClrPhysType physType, JavaRowFormat format)
+        internal ClrAsyncEnumerableResult(Expression expression, ClrPhysType physType, JavaRowFormat format)
         {
             Expression = expression ?? throw new ArgumentNullException(nameof(expression));
             PhysType = physType ?? throw new ArgumentNullException(nameof(physType));

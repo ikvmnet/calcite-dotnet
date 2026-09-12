@@ -247,7 +247,7 @@ namespace Apache.Calcite.Tests
     /// this convention from the other one — every test would pass over a sequence that is asynchronous in
     /// name only, and an operator that dropped its continuation would look correct.
     /// </remarks>
-    sealed class AsyncRowsTable(object?[][] rows, System.Func<RelDataTypeFactory, RelDataType> rowType, bool sorted) : AbstractTable, IClrAsyncScannableTable
+    sealed class AsyncRowsTable(object?[][] rows, System.Func<RelDataTypeFactory, RelDataType> rowType, bool sorted) : AbstractTable, IClrScannableTable
     {
 
         /// <summary>
@@ -293,6 +293,15 @@ namespace Apache.Calcite.Tests
 
         /// <inheritdoc />
         public IAsyncEnumerable<object?[]> ScanAsync(DataContext root) => Rows();
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// The awaiting-only table's half of the bargain. There is no pulled source to offer, so this blocks
+        /// a thread per row, which is what a caller reading these rows synchronously is asking for. Leaving
+        /// the interface default in place instead would be the mistake: it would wrap this, and a caller who
+        /// asked to await would get the blocking read back with a state machine around it.
+        /// </remarks>
+        public IEnumerable<object?[]> Scan(DataContext root) => Apache.Calcite.Extensions.Runtime.ClrSequences.ToEnumerable(ScanAsync(root));
 
         async IAsyncEnumerable<object?[]> Rows([EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
