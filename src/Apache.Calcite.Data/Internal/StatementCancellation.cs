@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 
 using java.util.concurrent.atomic;
@@ -7,7 +7,8 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// The cancellation of one executing statement, in both of the forms a plan can read.
+    /// The cancellation of one executing statement: the token its plan is enumerated with, and the flag its
+    /// <c>DataContext</c> carries.
     /// </summary>
     /// <remarks>
     /// A statement's plan may hold nodes of two calling conventions, and they do not cancel the same way. A
@@ -20,11 +21,20 @@ namespace Apache.Calcite.Data.Internal
     /// reaches exactly as far as the tables that read it, and a token reaches exactly as far as the
     /// operators that carry it.
     ///
-    /// <para><b>One source drives both.</b> The <see cref="DataContext"/> is the whole plan's, whichever
-    /// convention a node is in and on both sides of a converter, so the flag needs no help from the
-    /// converter to cross: setting it once reaches every Calcite node below every converter. What was
-    /// missing was anything to set it on the reader path, where the flag was made, put in the context and
-    /// then dropped.</para>
+    /// <para><b>On an awaiting plan the token is converted at the boundary, not here.</b>
+    /// <c>JavaSequences.FromJavaAsync</c> is the one crossing into Calcite's convention — the converter
+    /// builds a call to it, and so does a scan of a table of Calcite's SPI, which reaches no converter at
+    /// all — and it has the token in hand at <c>GetAsyncEnumerator</c> and the flag through the
+    /// <see cref="DataContext"/>. So it registers one against the other for as long as that sub-plan is
+    /// being read, and a plan with no Calcite sub-plan arms nothing. That is the same rule every other
+    /// value crossing between the two runtimes follows: the boundary is the adapter.</para>
+    ///
+    /// <para><b>A pulled plan is not cancellable, and nothing here pretends otherwise.</b> It carries no
+    /// token, <c>FromJava</c> takes none, and so there is nothing at its crossing to convert. This still
+    /// makes the flag, because the <c>DataContext</c> has to carry one either way and Calcite's own
+    /// <c>CalciteConnectionImpl.createDataContext</c> always puts one in, but no token is wired to it. A
+    /// synchronous read stops between rows and no further; <c>DbCommand.Cancel()</c>, when it is written,
+    /// is what would set the flag on that route.</para>
     ///
     /// <para>Cancelling is one-way and cancels the statement, not one read. That is what the shape allows —
     /// <c>MoveNextAsync</c> takes no token, so there is no cancelling a single row without cancelling the
@@ -37,7 +47,6 @@ namespace Apache.Calcite.Data.Internal
 
         readonly CancellationTokenSource _source;
         readonly AtomicBoolean _cancelFlag;
-        readonly CancellationTokenRegistration _registration;
 
         /// <summary>
         /// Initializes a new instance.
@@ -48,10 +57,6 @@ namespace Apache.Calcite.Data.Internal
         {
             _source = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _cancelFlag = new AtomicBoolean(false);
-
-            // the flag is the only channel a node of Calcite's convention has, and a plan that crosses a
-            // converter has both kinds of node under one DataContext
-            _registration = _source.Token.Register(static state => ((AtomicBoolean)state!).set(true), _cancelFlag);
         }
 
         /// <summary>
@@ -97,7 +102,6 @@ namespace Apache.Calcite.Data.Internal
         /// <inheritdoc />
         public void Dispose()
         {
-            _registration.Dispose();
             _source.Dispose();
         }
 

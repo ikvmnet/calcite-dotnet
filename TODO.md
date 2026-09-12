@@ -326,13 +326,18 @@ Four remain:
   convention's operators carry from `GetAsyncEnumerator` down to `AdoSequences.ReadAsync` and
   `DbDataReader.ReadAsync`, and the `AtomicBoolean` that goes into the `DataContext` as
   `DataContext.Variable.CANCEL_FLAG`, which is what a table of Calcite's convention polls —
-  `ListTransientTable` and the CSV, file and Kafka adapters' tables. **The converter has nothing to do**:
-  the `DataContext` is the whole plan's, so setting the flag once reaches every Calcite node below every
-  converter. What was missing was a caller to set it — the reader path made the flag, put it in the context
-  and dropped the handle, so only the DML path ever wired one. `AdoCancellationTests` holds the token end of
-  it against a real `DbDataReader`, `StatementCancellationTests` the flag end against a table that blocks.
-  A token given to `DbDataReader.ReadAsync` gets a registration against the statement for the length of the
-  call, which is what `SqlDataReader.ReadAsync` does with one — read, not remembered.
+  `ListTransientTable` and the CSV, file and Kafka adapters' tables. **The conversion between them is at the
+  boundary**, in `JavaSequences.FromJavaAsync`: that is the one crossing into Calcite's convention — the
+  converter builds a call to it, and so does a scan of a table of Calcite's SPI, which reaches no converter
+  at all — and it has the token at `GetAsyncEnumerator` and the flag through the `DataContext`, so it
+  registers one against the other for as long as that sub-plan is read. A plan with no Calcite sub-plan arms
+  nothing. `AdoCancellationTests` holds the token end against a real `DbDataReader`,
+  `StatementCancellationTests` the flag end against a table that blocks. A token given to
+  `DbDataReader.ReadAsync` gets a registration against the statement for the length of the call, which is
+  what `SqlDataReader.ReadAsync` does with one — read, not remembered.
+
+  **The synchronous route is not cancellable and does not claim to be.** A pulled plan carries no token and
+  `FromJava` has none to convert, so a synchronous read refuses at the next `ReadAsync` and no further.
 
   `DbCommand.Cancel()` is still a no-op. `StatementCancellation.Cancel()` is what it would call and the
   ADO.NET contract is what it costs: the command would have to hold the live statement, and the reader,

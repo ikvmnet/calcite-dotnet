@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -52,18 +52,15 @@ namespace Apache.Calcite.Data.Internal
         /// synchronous plan produces its rows synchronously, and saying so is what lets a caller written
         /// against <c>ReadAsync</c> work over one.
         ///
-        /// <para>The token is registered against the statement's cancellation for the duration of the read,
-        /// as it is on the awaiting result. It cannot interrupt <see cref="Read"/> itself — a pulled plan
-        /// carries no token and has nowhere to suspend — but it does set
-        /// <c>DataContext.Variable.CANCEL_FLAG</c>, which is the one channel a pulled plan has and what a
-        /// table of Calcite's polls between rows. Firing it takes another thread, which is the only way a
-        /// blocking read can be cancelled at all.</para>
+        /// <para><b>The token stops the reader between rows and no further, and there is nothing else it
+        /// could do.</b> A pulled plan carries no token — no operator of the synchronous set takes one and
+        /// <c>JavaSequences.FromJava</c> has none to convert at a crossing into Calcite's convention — so a
+        /// <see cref="Read"/> already under way cannot be interrupted. Registering the token against the
+        /// statement would reach nothing on this route and read as though it reached something. A caller
+        /// that needs a read it can cancel asks for the awaiting plan, which is the default.</para>
         /// </remarks>
         public override Task<bool> ReadAsync(CancellationToken cancellationToken)
         {
-            // registered before the check, as on the awaiting result and as SqlDataReader.ReadAsync does
-            using var registration = _cancellation?.Register(cancellationToken) ?? default;
-
             cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult(Read());
