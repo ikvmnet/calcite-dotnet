@@ -35,23 +35,18 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// remembered. Two defaults calling each other would compile for a node that overrides neither and then
     /// recurse until the process dies, and a <c>StackOverflowException</c> cannot be caught.</para>
     ///
-    /// <para><b>Whatever a node hands up is read across if it is not the kind being built.</b> A node whose
-    /// body serves both — every node of this convention, because they build through
-    /// <see cref="ClrEnumerableRelImplementor.Call"/> — writes <see cref="Implement"/> alone and nothing is
-    /// wrapped: forwarded through the default, the body is handed the awaiting implementor and builds the
-    /// awaiting operators. A <em>leaf</em> that can only build one kind also writes that one member alone and
-    /// hands up its own kind, which the implementor reads across.</para>
+    /// <para><b>What a node hands up is an expression yielding one kind of sequence or the other, and
+    /// converting between them is wrapping that expression.</b> The implementor does it: what a node hands
+    /// up that is not the kind being built is wrapped, once. Going to asynchronous costs a state machine and
+    /// no thread; going to synchronous blocks a thread per row, because an
+    /// <see cref="System.Collections.Generic.IEnumerable{T}"/> has nowhere to suspend.
     ///
-    /// <para><b>A node with inputs that can only build one kind needs the other member and one line of it</b>,
-    /// and the default is not that line. Measured, in both directions: the default hands the node the
-    /// implementor the plan is being built with, so <see cref="ClrEnumerableRelImplementor.VisitChild"/>
-    /// returns children of <em>that</em> kind, and a body naming the other operator set is refused by
-    /// <c>Expression.Call</c> with an <see cref="System.ArgumentException"/> about a parameter. What such a
-    /// node writes instead is <c>ImplementAsync(implementor, pref) =&gt;
-    /// implementor.Synchronously(this, pref)</c>, or
-    /// <c>Implement(implementor, pref) =&gt; implementor.Asynchronously(this, pref)</c> for an adapter with
-    /// no blocking client. Its whole subtree is then implemented in that node's kind and the crossing is at
-    /// the node — a state machine going one way, a blocked thread per row going the other.</para>
+    /// <para>The same wrapping is available to a node for its <em>inputs</em>, and a node whose body names
+    /// one operator set directly rather than going through <see cref="ClrEnumerableRelImplementor.Call"/>
+    /// needs it: <see cref="ClrEnumerableRelImplementor.VisitChild"/> answers in the kind the plan is being
+    /// built with, so such a body wraps what it gets before using it.
+    /// <c>ClrEnumerableTableFunctionScan</c> is the one node here that does, in one line, because a
+    /// generator of Calcite's is going to pull its rows.</para>
     /// </remarks>
     public interface ClrEnumerableRel : PhysicalNode
     {
@@ -70,9 +65,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <returns>The plan, the physical type of its rows, and their format.</returns>
         /// <remarks>
         /// The one member a node must write. It may hand up either kind of sequence whatever the implementor
-        /// is building: what does not match is read across, once, and the node is told nothing about it. A
-        /// node whose rows can only be awaited, and which has inputs, writes this as
-        /// <c>implementor.Asynchronously(this, pref)</c>.
+        /// is building: what does not match is read across, once, and the node is told nothing about it.
         /// </remarks>
         ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref);
 
@@ -85,11 +78,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <returns>The plan, the physical type of its rows, and their format.</returns>
         /// <remarks>
         /// Optional, and by default <see cref="Implement"/> on the same implementor: a body written through
-        /// <see cref="ClrEnumerableRelImplementor.Call"/> is already the awaiting one, and a leaf that is not
-        /// hands up a synchronous sequence which is then read across. Override it where the node's awaiting
-        /// body is genuinely different code — an adapter with a separate awaiting client, a leaf whose SPI
-        /// has two halves — or, where the node has inputs and only a synchronous body, as the one line
-        /// <c>implementor.Synchronously(this, pref)</c>.
+        /// <see cref="ClrEnumerableRelImplementor.Call"/> is already the awaiting one, and a body that is not
+        /// hands up a synchronous sequence which is then read across. Override it where the node's two
+        /// bodies genuinely differ — an adapter with a separate awaiting client, a leaf whose SPI has two
+        /// halves — and write <see cref="Implement"/> as a delegation to it where there is no synchronous
+        /// body to write at all.
         /// </remarks>
         ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref) => Implement(implementor, pref);
 
