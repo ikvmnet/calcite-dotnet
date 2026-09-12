@@ -241,6 +241,63 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
+        /// A table whose ANY columns hold collections, which is what a document store puts behind a path
+        /// that holds a JSON array.
+        /// </summary>
+        /// <remarks>
+        /// Its own table rather than two more columns on <c>ANYS</c>, because these values are not
+        /// aggregable and <c>ANYS</c> is read by every aggregate test there is.
+        ///
+        /// <para><c>TAGS</c> holds strings and has a null, which is the row an inner UNNEST drops and an
+        /// outer one keeps; <c>NUMS</c> holds two numeric classes and has an empty list, which is the other
+        /// row that produces nothing. The lists are <c>java.util.List</c> because that is what
+        /// <c>SqlFunctions.flatProduct</c> reads a collection as — an array column's value is one there
+        /// too.</para>
+        /// </remarks>
+        sealed class DocsTable : AbstractTable, ScannableTable
+        {
+
+            static java.util.List List(params object?[] items)
+            {
+                var list = new java.util.ArrayList();
+                foreach (var item in items)
+                    list.add(item);
+
+                return list;
+            }
+
+            static readonly object?[][] Rows =
+            [
+                [java.lang.Integer.valueOf(1), List("red", "green"), List(java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2))],
+                [java.lang.Integer.valueOf(2), List("blue"), List()],
+                [java.lang.Integer.valueOf(3), null, List(java.lang.Integer.valueOf(3), java.lang.Double.valueOf(4.5))],
+            ];
+
+            /// <inheritdoc />
+            public override RelDataType getRowType(RelDataTypeFactory typeFactory)
+            {
+                RelDataType Any() => typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.ANY), true);
+
+                return typeFactory.builder()
+                    .add("ID", typeFactory.createSqlType(SqlTypeName.INTEGER))
+                    .add("TAGS", Any())
+                    .add("NUMS", Any())
+                    .build();
+            }
+
+            /// <inheritdoc />
+            public org.apache.calcite.linq4j.Enumerable scan(DataContext root)
+            {
+                var list = new java.util.ArrayList();
+                foreach (var row in Rows)
+                    list.add(row);
+
+                return Linq4j.asEnumerable(list);
+            }
+
+        }
+
+        /// <summary>
         /// A table whose ANY columns hold the values a document store puts behind one — a GUID, a
         /// timestamp and a number, each written the way JSON writes it.
         /// </summary>
@@ -450,6 +507,7 @@ namespace Apache.Calcite.Tests
             rootSchema.add("WIDE", new WideTable());
             rootSchema.add("ANYS", new AnysTable());
             rootSchema.add("CASTS", new CastsTable());
+            rootSchema.add("DOCS", new DocsTable());
             rootSchema.add("FIB", org.apache.calcite.schema.impl.TableFunctionImpl.create(org.apache.calcite.util.Smalls.FIBONACCI_LIMIT_100_TABLE_METHOD));
 
             // A CUSTOM-format fixture, which every other table here is not. HrSchema's rows are instances of
@@ -1103,6 +1161,88 @@ namespace Apache.Calcite.Tests
         [TestMethod]
         public void ShouldAggregateDistinctlyOverAnAnyColumn() => Gives("SELECT COUNT(DISTINCT \"V\"), SUM(DISTINCT \"V\") FROM \"ANYS\"", "4|65.5");
 
+        // UNNEST over a column of type ANY, which is the other half of what a schema of ANY columns needs
+        // and has the same standing as the aggregates above: EnumerableUncollect asks
+        // NonNullableAccessors.getComponentTypeOrThrow for an element type an ANY has not got and throws
+        // before a row is read, so Calcite forms these plans and cannot run them. The answers are asserted by
+        // hand for that reason, and ShouldStillBeBeyondCalcite says when to come back.
+        //
+        // The plan every one of these takes is a correlate whose right input is the uncollect — Calcite's
+        // decorrelation cannot take an UNNEST of a correlation variable apart, which is why the correlate
+        // survives, and why this is the shape a document store's array traversal actually reaches.
+
+        [TestMethod]
+        public void ShouldUncollectAnAnyColumn() =>
+            Gives("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") AS t(\"X\")", "1|red", "1|green", "2|blue");
+
+        /// <summary>
+        /// UNNEST over an ANY column whose lists hold two numeric classes.
+        /// </summary>
+        /// <remarks>
+        /// Nothing converts an element on its way out — <c>SqlFunctions.flatProduct</c> answers a single
+        /// SCALAR field with <c>LIST_AS_ENUMERABLE</c>, which enumerates the list as it stands — so an
+        /// <c>Integer</c> and a <c>Double</c> in one column come through as themselves, which is what an ANY
+        /// column means.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldUncollectAnAnyColumnOfMixedNumericTypes() =>
+            Gives("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d, UNNEST(d.\"NUMS\") AS t(\"X\")", "1|1", "1|2", "3|3", "3|4.5");
+
+        /// <summary>
+        /// An outer UNNEST over an ANY column, which is where a null one shows.
+        /// </summary>
+        /// <remarks>
+        /// A null and an empty list answer alike, and for the same reason an array column's do:
+        /// <c>LIST_AS_ENUMERABLE</c> takes a null as the empty sequence, and a correlate emits nothing for an
+        /// outer row whose right side is empty. So an inner UNNEST drops the row — row 3 has a null
+        /// <c>TAGS</c> and row 2 an empty <c>NUMS</c>, and neither appears in the two tests above — and an
+        /// outer one keeps it against a null, which is what this asserts.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldOuterUncollectANullAnyColumn() =>
+            Gives("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d LEFT JOIN UNNEST(d.\"TAGS\") AS t(\"X\") ON TRUE",
+                "1|red", "1|green", "2|blue", "3|<null>");
+
+        /// <summary>
+        /// WITH ORDINALITY over an ANY column, which has no ordinal.
+        /// </summary>
+        /// <remarks>
+        /// Not a choice of this convention's. <c>SqlUnnestOperator.inferReturnType</c> answers a single
+        /// <c>$unnest</c> column of type ANY and stops, ordinality or not, and
+        /// <c>Uncollect.deriveUncollectRowType</c> does the same — so the validator already reports the table
+        /// as having one column, and naming two aliases for it is a validation error rather than anything a
+        /// node could answer. The node still carries <c>withOrdinality</c>, so what
+        /// <c>ClrEnumerableUncollect</c> does is keep the rows it emits to the width the row type declares.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldDropTheOrdinalityOfAnUncollectedAnyColumn() =>
+            Gives("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") WITH ORDINALITY AS t(\"X\")",
+                "1|red", "1|green", "2|blue");
+
+        /// <summary>
+        /// An aggregate over the column an UNNEST of an ANY column produces, which is itself ANY.
+        /// </summary>
+        /// <remarks>
+        /// The two additions meeting: the element type is unknown to the uncollect, so the column it produces
+        /// is ANY, and MIN and MAX over it are <see cref="ClrAnyAggImplementors"/>'s. A document store
+        /// counting and ranging over the elements of a path is the reason either of them exists.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAggregateOverAnUncollectedAnyColumn() =>
+            Gives("SELECT d.\"ID\", COUNT(*), MIN(t.\"X\"), MAX(t.\"X\") FROM \"DOCS\" d, UNNEST(d.\"NUMS\") AS t(\"X\") GROUP BY d.\"ID\" ORDER BY 1",
+                "1|2|1|2", "3|2|3|4.5");
+
+        /// <summary>
+        /// A filter on the outer row of an UNNEST over an ANY column.
+        /// </summary>
+        /// <remarks>
+        /// The calc lands under the correlate rather than over the uncollect, so this measures that the
+        /// correlate's left input can be something other than a bare scan while its right is the ANY path.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldFilterTheOuterRowOfAnUncollectedAnyColumn() =>
+            Gives("SELECT t.\"X\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") AS t(\"X\") WHERE d.\"ID\" = 1", "red", "green");
+
         /// <summary>
         /// Requires that these are still queries Calcite itself cannot run.
         /// </summary>
@@ -1146,6 +1286,10 @@ namespace Apache.Calcite.Tests
             StillBeyondCalcite("SELECT VAR_POP(\"V\") FROM \"ANYS\"");
             StillBeyondCalcite("SELECT MIN(\"V\") FILTER (WHERE \"ID\" > 1) FROM \"ANYS\"");
             StillBeyondCalcite("SELECT \"K\", MIN(\"V\"), SUM(\"V\") FROM \"ANYS\" GROUP BY \"K\"");
+
+            StillBeyondCalcite("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") AS t(\"X\")");
+            StillBeyondCalcite("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d LEFT JOIN UNNEST(d.\"TAGS\") AS t(\"X\") ON TRUE");
+            StillBeyondCalcite("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") WITH ORDINALITY AS t(\"X\")");
         }
 
         // and the same column read every way that already worked, so that a change here is known to be about

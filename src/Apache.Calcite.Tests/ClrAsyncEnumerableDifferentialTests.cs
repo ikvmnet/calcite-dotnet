@@ -56,6 +56,7 @@ namespace Apache.Calcite.Tests
                 rootSchema.add("WIDE", new AsyncRowsTable(AsyncTestRows.Wide, AsyncTestRows.WideRowType, false));
                 rootSchema.add("ANYS", new AsyncRowsTable(AsyncTestRows.Anys, AsyncTestRows.AnysRowType, false));
                 rootSchema.add("CASTS", new AsyncRowsTable(AsyncTestRows.Casts, AsyncTestRows.CastsRowType, false));
+                rootSchema.add("DOCS", new AsyncRowsTable(AsyncTestRows.Docs, AsyncTestRows.DocsRowType, false));
             }
             else
             {
@@ -64,6 +65,7 @@ namespace Apache.Calcite.Tests
                 rootSchema.add("WIDE", new SyncRowsTable(AsyncTestRows.Wide, AsyncTestRows.WideRowType, false));
                 rootSchema.add("ANYS", new SyncRowsTable(AsyncTestRows.Anys, AsyncTestRows.AnysRowType, false));
                 rootSchema.add("CASTS", new SyncRowsTable(AsyncTestRows.Casts, AsyncTestRows.CastsRowType, false));
+                rootSchema.add("DOCS", new SyncRowsTable(AsyncTestRows.Docs, AsyncTestRows.DocsRowType, false));
             }
 
             // a table function, which this convention has no node for: Calcite plans it and the converter
@@ -557,6 +559,37 @@ namespace Apache.Calcite.Tests
         [TestMethod]
         public Task ShouldAgreeOnAnUncollect() =>
             Same("SELECT * FROM UNNEST(ARRAY[1, 2, 3]) AS t(x)");
+
+        // UNNEST over a column of type ANY, whose element type is not known until a row is read. Neither
+        // convention gets this from Calcite — ClrEnumerableUncollect says why and
+        // ClrEnumerableDifferentialTests asserts the answers by hand — so what is checked here is that the
+        // asynchronous convention gives what the synchronous one gives, through its own node. The plan is a
+        // correlate over the uncollect in both, because decorrelation cannot take an UNNEST of a correlation
+        // variable apart.
+
+        [TestMethod]
+        public Task ShouldAgreeOnUncollectingAnAnyColumn() =>
+            SameThrough("ClrAsyncEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.TAGS) AS t(X)");
+
+        [TestMethod]
+        public Task ShouldAgreeOnUncollectingAnAnyColumnOfMixedNumericTypes() =>
+            SameThrough("ClrAsyncEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.NUMS) AS t(X)");
+
+        [TestMethod]
+        public Task ShouldAgreeOnOuterUncollectingAnAnyColumn() =>
+            SameThrough("ClrAsyncEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d LEFT JOIN UNNEST(d.TAGS) AS t(X) ON TRUE");
+
+        [TestMethod]
+        public Task ShouldAgreeOnUncollectingAnAnyColumnWithOrdinality() =>
+            SameThrough("ClrAsyncEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.TAGS) WITH ORDINALITY AS t(X)");
+
+        [TestMethod]
+        public Task ShouldAgreeOnAggregatingOverAnUncollectedAnyColumn() =>
+            SameThrough("ClrAsyncEnumerableUncollect", "SELECT d.ID, COUNT(*), MIN(t.X), MAX(t.X) FROM DOCS d, UNNEST(d.NUMS) AS t(X) GROUP BY d.ID ORDER BY 1");
+
+        [TestMethod]
+        public Task ShouldAgreeOnFilteringTheOuterRowOfAnUncollectedAnyColumn() =>
+            SameThrough("ClrAsyncEnumerableUncollect", "SELECT t.X FROM DOCS d, UNNEST(d.TAGS) AS t(X) WHERE d.ID = 1");
 
         [TestMethod]
         public Task ShouldAgreeOnACaseAndCoalesce() =>
