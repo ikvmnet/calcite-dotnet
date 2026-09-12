@@ -183,8 +183,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var comparator = keyClr.GenerateComparator(getTraitSet().getCollation() ?? throw new java.lang.NullPointerException($"getTraitSet().getCollation() is null; traits are {getTraitSet()}"));
 
             return implementor.Result(physType,
-                Expression.Call(null,
-                    ClrBuiltInMethod.SortedGroupBy.MakeGenericMethod(sourceType, keySelector.ReturnType, rowType),
+                implementor.Call(
+                    implementor.Methods.SortedGroupBy.MakeGenericMethod(sourceType, keySelector.ReturnType, rowType),
                     result.Expression,
                     keySelector,
                     Expression.Call(lambdaFactory, AccInitializer),

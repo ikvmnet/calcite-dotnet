@@ -5,16 +5,16 @@ using Apache.Calcite.Extensions.Runtime;
 
 using org.apache.calcite;
 
-namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
+namespace Apache.Calcite.Extensions.Adapter.Enumerable
 {
 
     /// <summary>
-    /// A compiled plan, held as the delegate it compiled to.
+    /// A compiled plan of the <see cref="ClrEnumerableConvention"/> calling convention that yields its rows
+    /// asynchronously.
     /// </summary>
-    /// <param name="plan">The compiled plan.</param>
-    /// <param name="elementType">The CLR type of one row.</param>
     /// <remarks>
-    /// <c>ClrBindable</c> over an <see cref="IAsyncEnumerable{T}"/>.
+    /// <see cref="ClrBindable"/> over an <see cref="IAsyncEnumerable{T}"/>. The plan behind it came from the
+    /// same nodes; what differs is which implementor built it.
     /// </remarks>
     sealed class ClrAsyncBindable(Func<DataContext, IAsyncEnumerable<object>> plan, Type elementType) : IClrAsyncBindable
     {

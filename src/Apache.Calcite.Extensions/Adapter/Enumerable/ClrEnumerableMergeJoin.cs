@@ -462,8 +462,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var comparator = comparatorPhysType.GenerateMergeJoinComparator(RelCollations.of(fieldCollations));
 
             return implementor.Result(physType,
-                Expression.Call(null,
-                    ClrBuiltInMethod.MergeJoin.MakeGenericMethod(leftType_, rightType_, leftKey.ReturnType, rowType),
+                implementor.Call(
+                    implementor.Methods.MergeJoin.MakeGenericMethod(leftType_, rightType_, leftKey.ReturnType, rowType),
                     leftResult.Expression,
                     rightResult.Expression,
                     leftKey,

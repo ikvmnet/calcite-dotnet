@@ -18,7 +18,6 @@ using org.apache.calcite.sql.type;
 using org.apache.calcite.tools;
 
 using Apache.Calcite.Extensions;
-using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Tests
@@ -102,10 +101,11 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// Plans a statement into one of the two conventions and returns the tree and the rows it gives.
+        /// Plans a statement, implements it the way asked for, and returns the tree and the rows it gives.
         /// </summary>
         /// <param name="sql"></param>
-        /// <param name="async">Whether to plan into the asynchronous convention.</param>
+        /// <param name="async">Whether to implement the plan as an asynchronous sequence. The planning is
+        /// the same either way; only the implementor differs.</param>
         /// <returns></returns>
         /// <remarks>
         /// <c>AGGREGATE_REDUCE_FUNCTIONS</c> for the same reason the differential suites register it: AVG has
@@ -118,13 +118,13 @@ namespace Apache.Calcite.Tests
             rootSchema.add("ANYS", new AnysTable());
 
             var rules = new java.util.ArrayList();
-            foreach (var rule in async ? ClrAsyncEnumerableRules.Rules() : ClrEnumerableRules.Rules())
+            foreach (var rule in ClrEnumerableRules.Rules())
                 rules.add(rule);
             rules.add(org.apache.calcite.rel.rules.CoreRules.AGGREGATE_REDUCE_FUNCTIONS);
             rules.add(org.apache.calcite.rel.rules.CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW);
 
             var calcRules = new java.util.ArrayList();
-            foreach (var rule in async ? ClrAsyncEnumerableRules.CalcRules() : ClrEnumerableRules.CalcRules())
+            foreach (var rule in ClrEnumerableRules.CalcRules())
                 calcRules.add(rule);
             foreach (var rule in RelOptRules.CALC_RULES.toArray())
                 calcRules.add(rule);
@@ -141,8 +141,7 @@ namespace Apache.Calcite.Tests
             var logical = planner.rel(planner.validate(planner.parse(sql))).project();
             var expanded = planner.transform(0, logical.getTraitSet(), logical);
 
-            var convention = async ? (Convention)ClrAsyncEnumerableConvention.Instance : ClrEnumerableConvention.Instance;
-            var chosen = planner.transform(1, expanded.getTraitSet().replace(convention).simplify(), expanded);
+            var chosen = planner.transform(1, expanded.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify(), expanded);
             var physical = planner.transform(2, chosen.getTraitSet(), chosen);
 
             var parameters = new java.util.HashMap();
@@ -151,20 +150,18 @@ namespace Apache.Calcite.Tests
 
             LambdaExpression tree;
 
+            // one planned root, implemented whichever way is asked for
+            var implementor = new ClrEnumerableRelImplementor(physical.getCluster().getRexBuilder(), parameters, async);
+            tree = implementor.ImplementRoot((ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
+
             if (async)
             {
-                var implementor = new ClrAsyncEnumerableRelImplementor(physical.getCluster().getRexBuilder(), parameters);
-                tree = implementor.ImplementRoot((ClrAsyncEnumerableRel)physical, ClrEnumerablePrefer.Array);
-
                 var plan = (Func<DataContext, IAsyncEnumerable<object>>)tree.Compile();
                 await foreach (var row in plan(context))
                     rows.Add(Render(row));
             }
             else
             {
-                var implementor = new ClrEnumerableRelImplementor(physical.getCluster().getRexBuilder(), parameters);
-                tree = implementor.ImplementRoot((ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
-
                 var plan = (Func<DataContext, IEnumerable<object>>)tree.Compile();
                 foreach (var row in plan(context))
                     rows.Add(Render(row));

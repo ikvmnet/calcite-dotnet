@@ -75,8 +75,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var comparator = collationComparator ?? Expression.Constant(null, typeof(java.util.Comparator));
 
             return implementor.Result(physType,
-                Expression.Call(null,
-                    ClrBuiltInMethod.OrderByWithFetchAndOffset.MakeGenericMethod(sourceType, keySelector.ReturnType),
+                implementor.Call(
+                    implementor.Methods.OrderByWithFetchAndOffset.MakeGenericMethod(sourceType, keySelector.ReturnType),
                     result.Expression,
                     keySelector,
                     comparator,

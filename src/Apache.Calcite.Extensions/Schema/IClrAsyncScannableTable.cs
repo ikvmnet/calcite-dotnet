@@ -11,16 +11,17 @@ namespace Apache.Calcite.Extensions.Schema
     /// </summary>
     /// <remarks>
     /// The counterpart of <see cref="ScannableTable"/>, member for member, with the sequence swapped. It is
-    /// the only leaf a plan of the <c>ClrAsyncEnumerableConvention</c> calling convention scans <em>itself</em>.
+    /// the only leaf a plan reading its rows with await scans <em>itself</em>.
     /// A query touching a <see cref="ScannableTable"/>, a <see cref="QueryableTable"/> or a
     /// <see cref="FilterableTable"/> is still planned -- Calcite reads it and a converter carries the rows
     /// across -- but that part of it is not asynchronous and cannot be.
     ///
-    /// <para>The converse does not hold. A plan asked for in <c>ClrEnumerableConvention</c> can read one of
-    /// these, across <c>ClrAsyncEnumerableToClrEnumerableConverter</c>, and it blocks a thread once per row
-    /// doing so. Whether that converter is available is a matter of which rules the planner was given: the
-    /// prepare pipeline registers one convention's rules and not the other's, so a query asked for
-    /// synchronously over one of these tables fails to plan rather than blocking.</para>
+    /// <para>The converse does not hold, and is not refused either. A plan compiled to an
+    /// <c>IEnumerable</c> reads one of these by blocking a thread once per row, at the scan, and everything
+    /// above the scan is ordinary synchronous code. That used to be a planning failure, because the
+    /// asynchronous convention's rules were not on the planner in synchronous mode; there is one convention
+    /// now, so the query plans and the caller who asked for rows synchronously over an awaiting table gets
+    /// exactly what that means.</para>
     ///
     /// <para>There is no cancellation parameter, and that is not an omission. A token enters an
     /// <see cref="IAsyncEnumerable{T}"/> at <see cref="IAsyncEnumerable{T}.GetAsyncEnumerator"/>, which is

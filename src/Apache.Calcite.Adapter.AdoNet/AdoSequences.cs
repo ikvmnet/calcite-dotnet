@@ -19,7 +19,7 @@ namespace Apache.Calcite.Adapter.AdoNet
     /// reads its rows without a linq4j enumerator between the reader and the operator above it.
     ///
     /// <para><see cref="ReadAsync{TRow}"/> is the same query for a plan of
-    /// <c>ClrAsyncEnumerableConvention</c>, reading its rows through <c>DbDataReader.ReadAsync</c>. This is
+    /// a plan that awaits, reading its rows through <c>DbDataReader.ReadAsync</c>. This is
     /// the one leaf in a plan with real network I/O to suspend on, which is why it has an asynchronous side
     /// at all when nothing else in the adapter does.</para>
     /// </remarks>

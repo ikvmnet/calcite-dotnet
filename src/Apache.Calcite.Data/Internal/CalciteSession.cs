@@ -99,11 +99,11 @@ namespace Apache.Calcite.Data.Internal
         /// <c>Apache.Calcite.Extensions</c> that consumes one are declared against the interface. A
         /// narrower door onto a pipeline typed the other way buys nothing and reads as though it did.</para>
         ///
-        /// <para>Every query is planned into one of the two Clr conventions and run as a compiled expression
-        /// tree — which one is the connection's choice, the way Calcite's own connection can ask for the
-        /// bindable convention. The default is <c>ClrAsyncEnumerableConvention</c>;
-        /// <see cref="CalciteConnectionStringBuilder.Synchronous"/> asks for <c>ClrEnumerableConvention</c>
-        /// instead. Either way Calcite's own rules stay on the planner, so a statement the chosen convention
+        /// <para>Every query is planned into <c>ClrEnumerableConvention</c> and run as a compiled expression
+        /// tree. Whether that tree yields an <c>IEnumerable</c> or an <c>IAsyncEnumerable</c> is the
+        /// connection's choice and is made when the plan is compiled rather than when it is planned: by
+        /// default the rows are awaited, and <see cref="CalciteConnectionStringBuilder.Synchronous"/> asks
+        /// for the other. Either way Calcite's own rules stay on the planner, so a statement the chosen convention
         /// has no node for is still planned and run — implemented in <c>EnumerableConvention</c>, with a
         /// converter carrying its rows.</para>
         /// </remarks>
@@ -195,8 +195,13 @@ namespace Apache.Calcite.Data.Internal
         /// <remarks>
         /// The context is still pushed onto <c>CalcitePrepare.Dummy</c>'s thread-local stack, because
         /// Calcite's own parse-to-rel reads it from there.
+        ///
+        /// <para>There is no mode here. A statement is planned once and the signature answers either
+        /// <c>Bind</c> or <c>BindAsync</c>, implementing the planned root the way the caller asked the first
+        /// time it asks. So <c>Synchronous</c> chooses how the rows are read and no longer what is
+        /// planned.</para>
         /// </remarks>
-        IClrPrepare.Signature Plan(CalciteExecuteRequest request, bool async = false)
+        IClrPrepare.Signature Plan(CalciteExecuteRequest request)
         {
             // the root's read lock, from the snapshot the context takes to the signature: the root may be
             // shared with connections altering it by DDL, and DDL takes the write side inside the prepare
@@ -208,7 +213,7 @@ namespace Apache.Calcite.Data.Internal
                 CalcitePrepare.Dummy.push(ctx);
                 try
                 {
-                    return _prepareFactory().PrepareSql(ctx, IClrPrepare.Query.Of(request.Sql), typeof(object[]), -1, async);
+                    return _prepareFactory().PrepareSql(ctx, IClrPrepare.Query.Of(request.Sql), typeof(object[]), -1);
                 }
                 finally
                 {
@@ -350,9 +355,8 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="cancellationToken">Token given to an asynchronous plan's enumerator.</param>
         /// <returns>A <see cref="CalciteResult"/> holding the signature and a row enumerator.</returns>
         /// <remarks>
-        /// <b>Which convention is the connection's choice, not the entry point's</b> — the way Calcite's own
-        /// connection can ask for the bindable convention. The default is <c>ClrAsyncEnumerableConvention</c>,
-        /// so that <c>ReadAsync</c> is asynchronous wherever the schema can be: an
+        /// <b>Whether the rows are awaited is the connection's choice, not the entry point's.</b> The default
+        /// is to await them, so that <c>ReadAsync</c> is asynchronous wherever the schema can be: an
         /// <c>IClrAsyncScannableTable</c> is scanned asynchronously, a table of Calcite's SPI is read the way
         /// Calcite reads it and wrapped in a sequence that completes synchronously — a state machine and no
         /// thread — and a statement the convention has no node for is implemented in
@@ -377,7 +381,7 @@ namespace Apache.Calcite.Data.Internal
 
             try
             {
-                var signature = Plan(request, async: !_synchronous);
+                var signature = Plan(request);
                 Bind(request, signature, out var dataContext, out _);
 
                 if (_synchronous)
@@ -442,7 +446,7 @@ namespace Apache.Calcite.Data.Internal
             var closeables = ActivateHooks(request.Hooks);
             try
             {
-                var signature = Plan(request, async: !_synchronous);
+                var signature = Plan(request);
                 Bind(request, signature, out var dataContext, out var cancelFlag);
 
                 var statementType = signature.StatementType;

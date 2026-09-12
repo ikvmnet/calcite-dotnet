@@ -19,13 +19,13 @@ namespace Apache.Calcite.Extensions.Interop
     /// and gets back a linq4j <c>Enumerable</c>.
     ///
     /// <para>There is one such converter and there is only going to be one, because there is only one
-    /// boundary where Janino is on the other side. <c>ClrAsyncEnumerableConvention</c> reads a Calcite
-    /// sub-plan but never feeds one: a sequence going that way would have to become a linq4j
+    /// boundary where Janino is on the other side. A sub-plan handed <em>to</em> Calcite is implemented
+    /// synchronously whatever the caller asked for: a sequence going that way would have to become a linq4j
     /// <c>Enumerator</c>, whose <c>moveNext</c> returns a <c>boolean</c> with nowhere to await, and the
     /// generated source it would be called from cannot await either.</para>
     ///
     /// <para>That is not a claim that the asynchronous convention has no converter out.
-    /// <c>ClrAsyncEnumerableToClrEnumerableConverter</c> is one, and it blocks a thread per row -- but both
+    /// reading an awaiting node's rows synchronously is one, and it blocks a thread per row -- but both
     /// its sides are <see cref="System.Linq.Expressions"/>, so it splices rather than compiling separately
     /// and leaves nothing here to call back into.</para>
     ///

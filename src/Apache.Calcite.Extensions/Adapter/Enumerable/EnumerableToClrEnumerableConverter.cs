@@ -69,7 +69,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var source = implementor.Translator.TranslateBody(result.block, typeof(org.apache.calcite.linq4j.Enumerable));
 
             return implementor.Result(physType,
-                Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), source));
+                implementor.Call(implementor.Methods.FromJava.MakeGenericMethod(rowType), source));
         }
 
     }

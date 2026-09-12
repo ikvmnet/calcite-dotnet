@@ -116,8 +116,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var rowType = physType.RowType;
 
             return implementor.Result(physType,
-                Expression.Call(null,
-                    ClrBuiltInMethod.SelectMany.MakeGenericMethod(sourceType, rowType),
+                implementor.Call(
+                    implementor.Methods.SelectMany.MakeGenericMethod(sourceType, rowType),
                     result.Expression,
                     ClrEnumUtils.Convert(implementor.Translator.Translate(lambda), typeof(org.apache.calcite.linq4j.function.Function1))));
         }

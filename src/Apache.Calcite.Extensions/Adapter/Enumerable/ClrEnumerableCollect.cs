@@ -69,7 +69,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var source = result.Expression;
             var sourceType = result.PhysType.RowType;
 
-            Expression collection;
+            // the sequence of one row that the collection is, rather than the collection and then a wrap:
+            // the two are one operator, because reading the input asynchronously has to be awaited
+            Expression rows;
 
             switch (collectionType.name())
             {
@@ -91,7 +93,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                         sourceType = source.Type.GetGenericArguments()[0];
                     }
 
-                    collection = Expression.Call(null, ClrBuiltInMethod.ToJavaList.MakeGenericMethod(sourceType), source);
+                    rows = implementor.Call(implementor.Methods.SingletonJavaList.MakeGenericMethod(sourceType), source);
                     break;
 
                 case nameof(SqlTypeName.MAP):
@@ -100,8 +102,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     var input = Expression.Parameter(sourceType, "input");
                     var array = Expression.Convert(input, typeof(object[]));
 
-                    collection = Expression.Call(null,
-                        ClrBuiltInMethod.ToJavaMap.MakeGenericMethod(sourceType),
+                    rows = implementor.Call(
+                        implementor.Methods.SingletonJavaMap.MakeGenericMethod(sourceType),
                         source,
                         Expression.Lambda(typeof(Func<,>).MakeGenericType(sourceType, typeof(object)), Expression.ArrayAccess(array, Expression.Constant(0)), input),
                         Expression.Lambda(typeof(Func<,>).MakeGenericType(sourceType, typeof(object)), Expression.ArrayAccess(array, Expression.Constant(1)), input));
@@ -111,8 +113,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     throw new java.lang.IllegalArgumentException($"unknown collection type {collectionType}");
             }
 
-            return implementor.Result(physType,
-                Expression.Call(null, ClrBuiltInMethod.Singleton.MakeGenericMethod(collection.Type), collection));
+            return implementor.Result(physType, rows);
         }
 
     }

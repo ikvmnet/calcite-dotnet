@@ -51,8 +51,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
                 var rowType = result.PhysType.RowType;
 
-                minusExp = Expression.Call(null,
-                    ClrBuiltInMethod.Except.MakeGenericMethod(rowType),
+                minusExp = implementor.Call(
+                    implementor.Methods.Except.MakeGenericMethod(rowType),
                     minusExp,
                     result.Expression,
                     result.PhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)),

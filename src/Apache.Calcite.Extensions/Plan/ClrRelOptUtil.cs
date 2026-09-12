@@ -1,4 +1,3 @@
-using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using org.apache.calcite.plan;
@@ -49,9 +48,6 @@ namespace Apache.Calcite.Extensions.Plan
             RelOptUtil.registerDefaultRules(planner, enableMaterializations, false);
 
             foreach (var rule in ClrEnumerableRules.Rules())
-                planner.addRule(rule);
-
-            foreach (var rule in ClrAsyncEnumerableRules.Rules())
                 planner.addRule(rule);
         }
 

@@ -104,8 +104,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 : collationComparator;
 
             body.Add(
-                Expression.Call(null,
-                    ClrBuiltInMethod.MergeUnion.MakeGenericMethod(rowType, sortKeySelector.ReturnType),
+                implementor.Call(
+                    implementor.Methods.MergeUnion.MakeGenericMethod(rowType, sortKeySelector.ReturnType),
                     sources,
                     sortKeySelector,
                     sortComparator,

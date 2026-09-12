@@ -7,17 +7,16 @@ using System.Threading.Tasks;
 
 using org.apache.calcite.linq4j.function;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Interop;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 using Apache.Calcite.Extensions.Runtime;
 
-namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
+namespace Apache.Calcite.Extensions.Adapter.Enumerable
 {
 
     /// <summary>
-    /// The sequence operators a plan of the <see cref="ClrAsyncEnumerableConvention"/> calling convention is
-    /// built from.
+    /// The sequence operators a plan of the <see cref="ClrEnumerableConvention"/> calling convention is built
+    /// from where it awaits its rows.
     /// </summary>
     /// <remarks>
     /// <see cref="ClrEnumerableDefaults"/>, operator for operator, over
@@ -2368,7 +2367,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <para>The token is an ordinary parameter here rather than an <c>[EnumeratorCancellation]</c> one,
         /// because this method is not the iterator -- the two bodies are, and each carries the attribute. It
         /// is declared at all so that the operator ends in a <see cref="CancellationToken"/>, which is what
-        /// <see cref="ClrAsyncBuiltInMethod.Call"/> requires of everything a plan calls.</para>
+        /// <see cref="ClrBuiltInMethod.Call"/> requires of everything a plan calls.</para>
         /// </remarks>
         public static IAsyncEnumerable<TResult> NestedLoopJoin<TSource, TInner, TResult>(
             IAsyncEnumerable<TSource> outer,
@@ -3359,7 +3358,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <returns></returns>
         /// <remarks>
         /// <see cref="ClrEnumerableDefaults.ToJavaList"/>. Not called from a plan -- an expression tree
-        /// cannot await it -- and kept for <see cref="ClrAsyncEnumerableCombine"/>, which needs the lists
+        /// cannot await it -- and kept for <see cref="ClrEnumerableCombine"/>, which needs the lists
         /// before it can combine them and does its awaiting inside an operator of its own.
         /// </remarks>
         public static async System.Threading.Tasks.ValueTask<java.util.List> ToJavaList<TSource>(
@@ -3419,7 +3418,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         /// <remarks>
-        /// Not an operator and not in <see cref="ClrAsyncBuiltInMethod"/>: no plan calls it. It is what an
+        /// Not an operator and not in <see cref="ClrBuiltInMethod"/>: no plan calls it. It is what an
         /// operator that cannot yield until it has read everything uses to do its awaiting in one place, so
         /// that the part of it which is not about waiting can be the synchronous convention's own code rather
         /// than a second copy of it.

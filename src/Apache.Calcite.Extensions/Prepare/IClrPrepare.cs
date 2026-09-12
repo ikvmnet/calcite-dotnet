@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 
-using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Runtime;
 
@@ -31,7 +30,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <param name="maxRowCount">The row limit, or a negative number for none.</param>
         /// <param name="async">Whether to prepare into the asynchronous convention.</param>
         /// <returns>The planned statement.</returns>
-        Signature PrepareSql(CalcitePrepare.Context context, Query query, System.Type elementType, long maxRowCount, bool async);
+        Signature PrepareSql(CalcitePrepare.Context context, Query query, System.Type elementType, long maxRowCount);
 
         /// <summary>
         /// Executes a DDL statement.
@@ -190,7 +189,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 if (bindable is null)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no plan to run.");
                 if (bindable is not IClrBindable sync)
-                    throw new InvalidOperationException($"{Sql ?? "The statement"} was prepared into an asynchronous convention; read it with {nameof(BindAsync)}.");
+                    throw new InvalidOperationException($"{Sql ?? "The statement"} has no synchronous plan.");
 
                 var rows = sync.Bind(root);
 
@@ -216,7 +215,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 if (bindable is null)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no plan to run.");
                 if (bindable is not IClrAsyncBindable async)
-                    throw new InvalidOperationException($"{Sql ?? "The statement"} was prepared into a synchronous convention; read it with {nameof(Bind)}.");
+                    throw new InvalidOperationException($"{Sql ?? "The statement"} has no asynchronous plan.");
 
                 var rows = async.Bind(root);
 

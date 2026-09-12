@@ -74,8 +74,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var keyType = keySelector.ReturnType;
 
             return implementor.Result(physType,
-                Expression.Call(null,
-                    ClrBuiltInMethod.OrderBy.MakeGenericMethod(sourceType, keyType),
+                implementor.Call(
+                    implementor.Methods.OrderBy.MakeGenericMethod(sourceType, keyType),
                     result.Expression,
                     keySelector,
                     comparator));

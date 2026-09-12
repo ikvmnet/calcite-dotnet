@@ -177,8 +177,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var matchPredicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), getLeft(), getRight(), leftResult.PhysType, rightResult.PhysType, getMatchCondition());
 
             return implementor.Result(physType,
-                Expression.Call(null,
-                    ClrBuiltInMethod.AsofJoin.MakeGenericMethod(leftType, rightType, leftKey.ReturnType, rowType),
+                implementor.Call(
+                    implementor.Methods.AsofJoin.MakeGenericMethod(leftType, rightType, leftKey.ReturnType, rowType),
                     leftResult.Expression,
                     rightResult.Expression,
                     leftKey,

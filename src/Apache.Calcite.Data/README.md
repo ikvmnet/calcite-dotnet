@@ -214,7 +214,7 @@ reused for the life of the `CalciteConnection` object.
 
 **`CommandType.Text` only.** Setting any other `CommandType` throws `NotSupportedException`. There is no stored-procedure concept in Calcite.
 
-**Every query is planned asynchronously unless the connection says otherwise.** The plan is the connection's, not the entry point's: by default it is built in the asynchronous convention, so `ReadAsync` is genuinely asynchronous wherever the schema can be, and a synchronous `Read` blocks per row only where the source really is asynchronous — which is what `Read` over an asynchronous source means in every ADO.NET provider. `Synchronous=true` plans in the synchronous convention instead: nothing ever waits, `ReadAsync` answers with completed tasks, and a query touching a table that can *only* produce rows asynchronously fails to plan.
+**Every query is read asynchronously unless the connection says otherwise.** A statement is planned once and the plan says nothing about how its rows will be read; the connection decides that when the plan is compiled. By default the rows are awaited, so `ReadAsync` is genuinely asynchronous wherever the schema can be, and a synchronous `Read` blocks per row only where the source really is asynchronous — which is what `Read` over an asynchronous source means in every ADO.NET provider. `Synchronous=true` compiles the same plan the other way: nothing ever waits and `ReadAsync` answers with completed tasks, except at a table that can *only* produce rows asynchronously, where the rows are read across and the thread blocks there.
 
 **Cancellation is per-statement.** A `CancellationToken` is observed before a statement is planned. On a DML statement it is wired to Calcite's cancel flag while the rows are drained. The token given to `ExecuteReaderAsync` also reaches the plan's enumerator, so cancelling it stops the leaf between rows; in `Synchronous` mode it is not wired to a reader's enumeration. `DbCommand.Cancel()` is a no-op.
 
@@ -312,7 +312,7 @@ cmd.RegisterHook(Hook.PROGRAM, /* ... */);
 
 Overloads accept a Java `Consumer`, a .NET `Action<object>`, or a primitive value to set as the hook's property. Connection hooks run before command hooks.
 
-`EXPLAIN PLAN FOR <query>` also works, and returns the rendered plan as a single row. It explains the plan the connection would run: `ClrAsyncEnumerable*` nodes by default, `ClrEnumerable*` ones when the connection string says `Synchronous` — the same plan from `ExecuteReader` and `ExecuteReaderAsync`, since the convention is the connection's choice rather than the entry point's.
+`EXPLAIN PLAN FOR <query>` also works, and returns the rendered plan as a single row. It is the same plan whatever the connection's mode and whichever entry point asks, because the mode is not part of the plan: it is `ClrEnumerable*` nodes either way, and how their rows will be read is settled after planning. **So an EXPLAIN cannot tell you whether a query will await.**
 
 ## Accessing the Calcite engine directly
 

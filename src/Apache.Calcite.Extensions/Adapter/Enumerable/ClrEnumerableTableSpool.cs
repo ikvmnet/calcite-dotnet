@@ -93,8 +93,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var rowType = result.PhysType.RowType;
 
             return implementor.Result(physType,
-                Expression.Call(null,
-                    ClrBuiltInMethod.LazyCollectionSpool.MakeGenericMethod(rowType),
+                implementor.Call(
+                    implementor.Methods.LazyCollectionSpool.MakeGenericMethod(rowType),
                     collection,
                     result.Expression));
         }

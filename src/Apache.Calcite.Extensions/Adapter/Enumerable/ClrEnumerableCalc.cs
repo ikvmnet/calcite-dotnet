@@ -177,7 +177,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 projectParameter);
 
             return implementor.Result(physType,
-                Expression.Call(null, ClrBuiltInMethod.Calc.MakeGenericMethod(inputType, outputType), result.Expression, predicate, selector));
+                implementor.Call(implementor.Methods.Calc.MakeGenericMethod(inputType, outputType), result.Expression, predicate, selector));
         }
 
     }

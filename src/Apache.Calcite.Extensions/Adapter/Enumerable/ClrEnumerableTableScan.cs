@@ -62,8 +62,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (table is TransientTable)
                 return false;
 
-            // this convention's own table SPI, which is read directly rather than through linq4j
-            if (table is IClrScannableTable or IClrQueryableTable)
+            // this convention's own table SPI, which is read directly rather than through linq4j. All four
+            // are handled whichever kind of sequence the plan is being built from: a table that yields the
+            // other kind is read across, which the scan says at the site.
+            if (table is IClrScannableTable or IClrQueryableTable or IClrAsyncScannableTable or IClrAsyncQueryableTable)
                 return true;
 
             // see org.apache.calcite.prepare.RelOptTableImpl.getClassExpressionFunction
@@ -90,7 +92,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (table is IClrQueryableTable queryable)
                 return (java.lang.Class)queryable.ElementType;
 
-            if (table is IClrScannableTable)
+            if (table is IClrAsyncQueryableTable asyncQueryable)
+                return (java.lang.Class)asyncQueryable.ElementType;
+
+            if (table is IClrScannableTable or IClrAsyncScannableTable)
                 return (java.lang.Class)typeof(object[]);
 
             return EnumerableTableScan.deduceElementType(table);
@@ -198,7 +203,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             // this convention's own table SPI is read directly: the rows are already a .NET sequence, so
             // there is no linq4j tree to translate and no FromJava to read one back
-            if (unwrapped is IClrScannableTable or IClrQueryableTable)
+            if (unwrapped is IClrScannableTable or IClrQueryableTable or IClrAsyncScannableTable or IClrAsyncQueryableTable)
                 return implementor.Result(physType, ToRows(implementor, physType, ClrSource(implementor), true));
 
             var expression = table.getExpression(typeof(Queryable))
@@ -251,27 +256,57 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         {
             var unwrapped = (Table)table.unwrap(typeof(Table));
 
-            if (unwrapped is IClrQueryableTable queryable)
+            // where a table implements the SPI of both kinds, the kind the plan is being built from is the
+            // one read, so that nothing is carried across for a table that need not be
+            if (implementor.Async)
             {
-                var names = table.getQualifiedName();
+                if (unwrapped is IClrAsyncQueryableTable asyncQueryable)
+                    return asyncQueryable.GetAsyncExpression(Schema(), Name())
+                        ?? throw new java.lang.IllegalStateException($"{table}.GetAsyncExpression returned null");
 
-                return queryable.GetExpression(
-                    ((org.apache.calcite.jdbc.CalciteSchema)table.unwrap(typeof(org.apache.calcite.jdbc.CalciteSchema)))?.plus(),
-                    (string)names.get(names.size() - 1))
-                    ?? throw new java.lang.IllegalStateException($"{table}.GetExpression returned null");
+                if (unwrapped is IClrAsyncScannableTable asyncScannable)
+                    return Expression.Call(
+                        Expression.Constant(asyncScannable, typeof(IClrAsyncScannableTable)),
+                        ScanAsyncMethod,
+                        implementor.Root);
             }
 
-            // reached as a constant, the way EnumerableRelImplementor.stash reaches an object a plan cannot
-            // hold. An expression tree can hold one, so it is a constant rather than a stash.
+            if (unwrapped is IClrQueryableTable queryable)
+                return queryable.GetExpression(Schema(), Name())
+                    ?? throw new java.lang.IllegalStateException($"{table}.GetExpression returned null");
+
+            if (unwrapped is IClrScannableTable scannable)
+                // reached as a constant, the way EnumerableRelImplementor.stash reaches an object a plan
+                // cannot hold. An expression tree can hold one, so it is a constant rather than a stash.
+                return Expression.Call(
+                    Expression.Constant(scannable, typeof(IClrScannableTable)),
+                    ScanMethod,
+                    implementor.Root);
+
+            if (unwrapped is IClrAsyncQueryableTable onlyAsyncQueryable)
+                return onlyAsyncQueryable.GetAsyncExpression(Schema(), Name())
+                    ?? throw new java.lang.IllegalStateException($"{table}.GetAsyncExpression returned null");
+
             return Expression.Call(
-                Expression.Constant((IClrScannableTable)unwrapped, typeof(IClrScannableTable)),
-                ScanMethod,
+                Expression.Constant((IClrAsyncScannableTable)unwrapped, typeof(IClrAsyncScannableTable)),
+                ScanAsyncMethod,
                 implementor.Root);
+
+            org.apache.calcite.schema.SchemaPlus? Schema() => ((org.apache.calcite.jdbc.CalciteSchema)table.unwrap(typeof(org.apache.calcite.jdbc.CalciteSchema)))?.plus();
+
+            string Name()
+            {
+                var names = table.getQualifiedName();
+                return (string)names.get(names.size() - 1);
+            }
         }
 
 
         static readonly System.Reflection.MethodInfo ScanMethod = typeof(IClrScannableTable).GetMethod(nameof(IClrScannableTable.Scan))
             ?? throw new System.InvalidOperationException($"'{nameof(IClrScannableTable.Scan)}' is missing.");
+
+        static readonly System.Reflection.MethodInfo ScanAsyncMethod = typeof(IClrAsyncScannableTable).GetMethod(nameof(IClrAsyncScannableTable.ScanAsync))
+            ?? throw new System.InvalidOperationException($"'{nameof(IClrAsyncScannableTable.ScanAsync)}' is missing.");
 
         static readonly System.Reflection.MethodInfo AsList = ClrTypes.Resolve(BuiltInMethod.AS_LIST.method);
         static readonly System.Reflection.MethodInfo AsEnumerable = ClrTypes.Resolve(BuiltInMethod.AS_ENUMERABLE.method);
@@ -291,7 +326,21 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             // a table of this convention's own SPI has already handed back a .NET sequence; one of Calcite's
             // handed back a linq4j Enumerable, which is read across the boundary. The rest is the same.
-            Expression Source(System.Type rowType) => native ? source : FromJava(rowType, source);
+            //
+            // A table of the SPI of the other kind hands back the other kind of sequence, and that is the
+            // one crossing here that costs something: a synchronous plan reading an asynchronous table
+            // blocks a thread per row, because an IEnumerable has nowhere to suspend. The reverse costs a
+            // state machine and no thread. Either way it is one call and the rows are not touched.
+            Expression Source(System.Type rowType)
+            {
+                if (native == false)
+                    return FromJava(implementor, rowType, source);
+
+                if (implementor.Methods.IsSequence(source))
+                    return source;
+
+                return implementor.Call(implementor.Methods.Bridge.MakeGenericMethod(source.Type.GetGenericArguments()[0]), source);
+            }
 
             if (physType.Format == JavaRowFormat.SCALAR
                 && ((java.lang.Class)typeof(object[])).isAssignableFrom(elementType)
@@ -299,8 +348,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 && (table.unwrap(typeof(ScannableTable)) != null
                     || table.unwrap(typeof(FilterableTable)) != null
                     || table.unwrap(typeof(ProjectableFilterableTable)) != null))
-                return Expression.Call(null,
-                    ClrBuiltInMethod.Slice0.MakeGenericMethod(physType.RowType),
+                return implementor.Call(
+                    implementor.Methods.Slice0.MakeGenericMethod(physType.RowType),
                     Source(element));
 
             var oldFormat = Format();
@@ -331,7 +380,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 implementor.Translator.Translate(calcite.record(expressionList)),
                 parameter);
 
-            return Expression.Call(null, ClrBuiltInMethod.Select.MakeGenericMethod(element, rowType), Source(element), selector);
+            return implementor.Call(implementor.Methods.Select.MakeGenericMethod(element, rowType), Source(element), selector);
         }
 
         /// <summary>
@@ -340,9 +389,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="element"></param>
         /// <param name="source"></param>
         /// <returns></returns>
-        static Expression FromJava(Type element, Expression source)
+        static Expression FromJava(ClrEnumerableRelImplementor implementor, Type element, Expression source)
         {
-            return Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(element), source);
+            return implementor.Call(implementor.Methods.FromJava.MakeGenericMethod(element), source);
         }
 
         /// <summary>

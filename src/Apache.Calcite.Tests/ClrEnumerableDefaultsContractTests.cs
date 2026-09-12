@@ -7,7 +7,6 @@ using FluentAssertions;
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using org.apache.calcite.linq4j.function;
@@ -99,7 +98,7 @@ namespace Apache.Calcite.Tests
             }
 
             var rows = new List<int>();
-            await foreach (var row in ClrAsyncEnumerableDefaults.Take(Source(), 2))
+            await foreach (var row in Apache.Calcite.Extensions.Adapter.Enumerable.ClrAsyncEnumerableDefaults.Take(Source(), 2))
                 rows.Add(row);
 
             rows.Should().Equal(0, 1);

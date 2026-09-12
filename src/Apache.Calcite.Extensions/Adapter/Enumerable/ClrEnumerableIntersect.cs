@@ -52,8 +52,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
                 var rowType = result.PhysType.RowType;
 
-                intersectExp = Expression.Call(null,
-                    ClrBuiltInMethod.Intersect.MakeGenericMethod(rowType),
+                intersectExp = implementor.Call(
+                    implementor.Methods.Intersect.MakeGenericMethod(rowType),
                     intersectExp,
                     result.Expression,
                     result.PhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)),

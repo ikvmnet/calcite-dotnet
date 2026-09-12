@@ -125,8 +125,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             }
 
             return implementor.Result(physType,
-                Expression.Call(null,
-                    ClrBuiltInMethod.AsEnumerable.MakeGenericMethod(rowType),
+                implementor.Call(
+                    implementor.Methods.AsEnumerable.MakeGenericMethod(rowType),
                     Expression.NewArrayInit(rowType, rows)));
         }
 

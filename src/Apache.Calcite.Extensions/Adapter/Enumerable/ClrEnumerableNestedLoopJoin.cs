@@ -159,8 +159,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var selector = ClrEnumUtils.MarkJoinSelector(implementor, physType, leftResult.PhysType);
 
             return implementor.Result(physType,
-                Expression.Call(null,
-                    ClrBuiltInMethod.LeftMarkNestedLoopJoin.MakeGenericMethod(leftType, rightType, rowType),
+                implementor.Call(
+                    implementor.Methods.LeftMarkNestedLoopJoin.MakeGenericMethod(leftType, rightType, rowType),
                     leftResult.Expression,
                     rightResult.Expression,
                     predicate,
@@ -188,8 +188,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);
 
             return implementor.Result(physType,
-                Expression.Call(null,
-                    ClrBuiltInMethod.NestedLoopJoin.MakeGenericMethod(leftType, rightType, rowType),
+                implementor.Call(
+                    implementor.Methods.NestedLoopJoin.MakeGenericMethod(leftType, rightType, rowType),
                     leftResult.Expression,
                     rightResult.Expression,
                     selector,

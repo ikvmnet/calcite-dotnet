@@ -52,8 +52,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 var rowType = result.PhysType.RowType;
 
                 unionExp = all
-                    ? Expression.Call(null, ClrBuiltInMethod.Concat.MakeGenericMethod(rowType), unionExp, result.Expression)
-                    : Expression.Call(null, ClrBuiltInMethod.Union.MakeGenericMethod(rowType), unionExp, result.Expression, result.PhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)));
+                    ? implementor.Call(implementor.Methods.Concat.MakeGenericMethod(rowType), unionExp, result.Expression)
+                    : implementor.Call(implementor.Methods.Union.MakeGenericMethod(rowType), unionExp, result.Expression, result.PhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)));
             }
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));

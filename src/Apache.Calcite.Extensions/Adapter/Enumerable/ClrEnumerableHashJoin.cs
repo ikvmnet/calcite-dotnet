@@ -166,8 +166,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var predicate = Predicate(implementor, leftResult.PhysType, rightResult.PhysType, leftType, rightType);
 
             return implementor.Result(physType,
-                Expression.Call(null,
-                    ClrBuiltInMethod.HashJoin.MakeGenericMethod(leftType, rightType, keyType, rowType),
+                implementor.Call(
+                    implementor.Methods.HashJoin.MakeGenericMethod(leftType, rightType, keyType, rowType),
                     leftResult.Expression,
                     rightResult.Expression,
                     leftKey,
@@ -199,8 +199,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var rightKey = NullAwareAccessor(rightResult.PhysType, joinInfo.rightKeys);
 
             return implementor.Result(physType,
-                Expression.Call(null,
-                    ClrBuiltInMethod.SemiJoin.MakeGenericMethod(leftType, rightType, leftKey.ReturnType),
+                implementor.Call(
+                    implementor.Methods.SemiJoin.MakeGenericMethod(leftType, rightType, leftKey.ReturnType),
                     leftResult.Expression,
                     rightResult.Expression,
                     leftKey,
@@ -293,8 +293,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var nullSafeKeyType = leftNullSafeKeySelector?.ReturnType ?? typeof(object);
 
             return implementor.Result(physType,
-                Expression.Call(null,
-                    ClrBuiltInMethod.LeftMarkHashJoin.MakeGenericMethod(leftType, rightType, keyType, nullSafeKeyType, rowType),
+                implementor.Call(
+                    implementor.Methods.LeftMarkHashJoin.MakeGenericMethod(leftType, rightType, keyType, nullSafeKeyType, rowType),
                     leftResult.Expression,
                     rightResult.Expression,
                     leftKeySelector,

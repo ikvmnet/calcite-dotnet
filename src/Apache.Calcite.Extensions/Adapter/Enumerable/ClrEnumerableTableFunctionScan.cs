@@ -111,7 +111,16 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.Prefer(result.Format));
 
             var sourceType = result.PhysType.RowType;
-            var source = Expression.Call(null, ClrBuiltInMethod.ToJava.MakeGenericMethod(sourceType), result.Expression);
+
+            // the window's rows are read by a generator of Calcite's, which takes a linq4j Enumerable and
+            // pulls it. An asynchronous input therefore has to be read across first, blocking a thread per
+            // row: generated Java cannot await, so there is no version of this that suspends. Everything
+            // above this node stays asynchronous.
+            var pulled = implementor.Async
+                ? Expression.Call(null, ToEnumerableMethod.MakeGenericMethod(sourceType), result.Expression)
+                : result.Expression;
+
+            var source = Expression.Call(null, ToJavaMethod.MakeGenericMethod(sourceType), pulled);
 
             var input_ = J.Expressions.parameter((java.lang.Class)typeof(org.apache.calcite.linq4j.Enumerable), "_input");
             var inputParameter = Expression.Parameter(typeof(org.apache.calcite.linq4j.Enumerable), "_input");
@@ -138,7 +147,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var rowType = physType.RowType;
 
             return implementor.Result(physType,
-                Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), windowed));
+                implementor.Call(implementor.Methods.FromJava.MakeGenericMethod(rowType), windowed));
         }
 
         /// <summary>
@@ -174,8 +183,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var rowType = physType.RowType;
 
             return implementor.Result(physType,
-                Expression.Call(null,
-                    ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType),
+                implementor.Call(
+                    implementor.Methods.FromJava.MakeGenericMethod(rowType),
                     implementor.Translator.TranslateBody(block.toBlock(), typeof(org.apache.calcite.linq4j.Enumerable))));
         }
 
@@ -183,6 +192,20 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// Returns whether the function yields a <see cref="QueryableTable"/>.
         /// </summary>
         /// <returns></returns>
+        /// <summary>
+        /// <see cref="Apache.Calcite.Extensions.Interop.JavaSequences.ToJava"/>, which hands a synchronous
+        /// sequence to linq4j.
+        /// </summary>
+        static readonly System.Reflection.MethodInfo ToJavaMethod = typeof(Apache.Calcite.Extensions.Interop.JavaSequences).GetMethod(nameof(Apache.Calcite.Extensions.Interop.JavaSequences.ToJava))
+            ?? throw new System.InvalidOperationException("'ToJava' is missing.");
+
+        /// <summary>
+        /// <see cref="Apache.Calcite.Extensions.Runtime.ClrSequences.ToEnumerable{TSource}"/>, which blocks
+        /// a thread per row.
+        /// </summary>
+        static readonly System.Reflection.MethodInfo ToEnumerableMethod = typeof(Apache.Calcite.Extensions.Runtime.ClrSequences).GetMethod(nameof(Apache.Calcite.Extensions.Runtime.ClrSequences.ToEnumerable))
+            ?? throw new System.InvalidOperationException("'ToEnumerable' is missing.");
+
         bool IsQueryable()
         {
             if (getCall() is not RexCall call)

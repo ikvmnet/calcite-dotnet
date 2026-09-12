@@ -77,12 +77,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     Expression.Call(null, MapMethod, Expression.NewArrayInit(typeof(object), args)),
                     row);
 
-                var mapped = Expression.Call(null,
-                    ClrBuiltInMethod.Select.MakeGenericMethod(sourceType, typeof(java.util.Map)),
+                var mapped = implementor.Call(
+                    implementor.Methods.Select.MakeGenericMethod(sourceType, typeof(java.util.Map)),
                     source,
                     selector);
 
-                lists.add(Expression.Call(null, ClrBuiltInMethod.ToJavaList.MakeGenericMethod(typeof(java.util.Map)), mapped));
+                // the sequence itself, where Calcite reads it into a list here. Each read has to be awaited
+                // on the asynchronous side and an expression tree cannot await, so the reading moved into the
+                // operator, which does it in this order and at this point either way
+                lists.add(mapped);
             }
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.ARRAY));
@@ -91,10 +94,18 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             for (int i = 0; i < lists.size(); i++)
                 arguments[i] = (Expression)lists.get(i);
 
-            var combined = Expression.Call(null, CombineQueryResultsMethod, Expression.NewArrayInit(typeof(java.util.List), arguments));
+            // which function combines the lists stays this node's decision, as it is Calcite's; the operator
+            // only does the reading
+            var read = Expression.Parameter(typeof(java.util.List[]), "lists");
+            var combine = Expression.Lambda<Func<java.util.List[], java.util.List>>(
+                Expression.Call(null, CombineQueryResultsMethod, read),
+                read);
 
             return implementor.Result(physType,
-                Expression.Call(null, ClrBuiltInMethod.FromJavaList.MakeGenericMethod(typeof(object[])), combined));
+                implementor.Call(
+                    implementor.Methods.CombineQueryResults.MakeGenericMethod(typeof(object[])),
+                    Expression.NewArrayInit(implementor.SequenceType(typeof(java.util.Map)), arguments),
+                    combine));
         }
 
         /// <summary>

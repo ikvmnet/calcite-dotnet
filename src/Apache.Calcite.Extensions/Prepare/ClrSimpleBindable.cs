@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 
-using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 using Apache.Calcite.Extensions.Runtime;
 
 using org.apache.calcite;
@@ -37,7 +36,7 @@ namespace Apache.Calcite.Extensions.Prepare
         {
             ArgumentNullException.ThrowIfNull(root);
 
-            return ClrAsyncEnumerableDefaults.Singleton(row);
+            return Adapter.Enumerable.ClrAsyncEnumerableDefaults.Singleton(row);
         }
 
         /// <inheritdoc />

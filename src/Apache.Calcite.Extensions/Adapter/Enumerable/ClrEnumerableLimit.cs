@@ -79,10 +79,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var v = result.Expression;
 
             if (offset != null)
-                v = Expression.Call(null, ClrBuiltInMethod.Skip.MakeGenericMethod(rowType), v, Count(implementor, offset));
+                v = implementor.Call(implementor.Methods.Skip.MakeGenericMethod(rowType), v, Count(implementor, offset));
 
             if (fetch != null)
-                v = Expression.Call(null, ClrBuiltInMethod.Take.MakeGenericMethod(rowType), v, Count(implementor, fetch));
+                v = implementor.Call(implementor.Methods.Take.MakeGenericMethod(rowType), v, Count(implementor, fetch));
 
             return implementor.Result(physType, v);
         }

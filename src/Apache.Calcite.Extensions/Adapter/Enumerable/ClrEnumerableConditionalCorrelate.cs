@@ -149,8 +149,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var selector = ClrEnumUtils.MarkJoinSelector(implementor, physType, leftResult.PhysType);
 
             return implementor.Result(physType,
-                Expression.Call(null,
-                    ClrBuiltInMethod.CorrelateLeftMarkJoin.MakeGenericMethod(leftType, rightType, rowType),
+                implementor.Call(
+                    implementor.Methods.CorrelateLeftMarkJoin.MakeGenericMethod(leftType, rightType, rowType),
                     leftResult.Expression,
                     inner,
                     predicate,

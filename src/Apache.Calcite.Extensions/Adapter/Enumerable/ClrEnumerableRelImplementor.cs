@@ -29,7 +29,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     ///
     /// <para>This is how a plan of this convention is run: cast the planned root to
     /// <see cref="ClrEnumerableRel"/>, pass it to <see cref="ImplementRoot"/>, and compile the lambda that
-    /// comes back into a <c>Func&lt;DataContext, IEnumerable&lt;object&gt;&gt;</c>.</para>
+    /// comes back into a <c>Func&lt;DataContext, IEnumerable&lt;object&gt;&gt;</c>, or a
+    /// <c>Func&lt;DataContext, IAsyncEnumerable&lt;object&gt;&gt;</c> where <see cref="Async"/>.</para>
+    ///
+    /// <para><b>The implementor carries the mode, and it is the only thing that does.</b> One plan implements
+    /// either way: <see cref="Methods"/> answers the operators over the sequence being built and
+    /// <see cref="Call"/> writes the call, so a node's <see cref="ClrEnumerableRel.Implement"/> is the same
+    /// code both times. Nothing about a <em>row</em> changes with the mode — the physical type, the Rex
+    /// translation, the correlation variables and the stash are the same — which is why the mode is here and
+    /// not in the convention, the rules or the plan.</para>
     /// </remarks>
     public class ClrEnumerableRelImplementor : IClrRelImplementor
     {
@@ -37,6 +45,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         readonly RexBuilder rexBuilder;
         readonly java.util.Map map;
         readonly Dictionary<string, CorrelInputGetter> corrVars = [];
+        readonly bool async;
 
         /// <summary>
         /// Initializes a new instance.
@@ -45,7 +54,21 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="internalParameters">The map values are stashed into, which must be the one the
         /// <see cref="DataContext"/> will serve at run time.</param>
         public ClrEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters) :
-            this(rexBuilder, internalParameters, Expression.Parameter(typeof(DataContext), "root"))
+            this(rexBuilder, internalParameters, false)
+        {
+
+        }
+
+        /// <summary>
+        /// Initializes a new instance building a plan of the given kind of sequence.
+        /// </summary>
+        /// <param name="rexBuilder">The builder for row expressions, from the plan's cluster.</param>
+        /// <param name="internalParameters">The map values are stashed into, which must be the one the
+        /// <see cref="DataContext"/> will serve at run time.</param>
+        /// <param name="async">Whether the plan yields an
+        /// <see cref="IAsyncEnumerable{T}"/> rather than an <see cref="IEnumerable{T}"/>.</param>
+        public ClrEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, bool async) :
+            this(rexBuilder, internalParameters, Expression.Parameter(typeof(DataContext), "root"), async)
         {
 
         }
@@ -65,16 +88,81 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// would produce an expression referring to a parameter the enclosing lambda does not declare, which
         /// fails at <c>Compile</c> rather than here.
         /// </remarks>
-        public ClrEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, ParameterExpression root)
+        public ClrEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, ParameterExpression root) :
+            this(rexBuilder, internalParameters, root, false)
+        {
+
+        }
+
+        /// <summary>
+        /// Initializes a new instance building a sub-plan of the given kind, of a plan already being
+        /// implemented.
+        /// </summary>
+        /// <param name="rexBuilder">The builder for row expressions, from the plan's cluster.</param>
+        /// <param name="internalParameters">The map values are stashed into, which must be the one the
+        /// <see cref="DataContext"/> will serve at run time.</param>
+        /// <param name="root">The parameter the <see cref="DataContext"/> arrives by, which must be the one
+        /// the enclosing plan's lambda declares.</param>
+        /// <param name="async">Whether this sub-plan yields an <see cref="IAsyncEnumerable{T}"/> rather than
+        /// an <see cref="IEnumerable{T}"/>.</param>
+        public ClrEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, ParameterExpression root, bool async)
         {
             this.rexBuilder = rexBuilder ?? throw new ArgumentNullException(nameof(rexBuilder));
             this.map = internalParameters ?? throw new ArgumentNullException(nameof(internalParameters));
+            this.async = async;
 
             Root = root ?? throw new ArgumentNullException(nameof(root));
             Translator = new LixToClrTranslator(map);
             Translator.Bind(DataContext.ROOT, Root);
 
             AllCorrelateVariables = new DelegateFunction1<string, RexToLixTranslator.InputGetter>(GetCorrelVariableGetter);
+        }
+
+        /// <summary>
+        /// Gets whether this implementor builds a plan yielding an <see cref="IAsyncEnumerable{T}"/> rather
+        /// than an <see cref="IEnumerable{T}"/>.
+        /// </summary>
+        /// <remarks>
+        /// A node reads this only where the mode changes something other than which operator a call lands on
+        /// — which table a leaf reads, or which way a converter carries rows. Everything else goes through
+        /// <see cref="Call"/> and does not need to know.
+        /// </remarks>
+        public bool Async => async;
+
+        /// <summary>
+        /// Gets the operators a node of this plan builds its calls from.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="ClrBuiltInMethod.Enumerable"/> or <see cref="ClrBuiltInMethod.AsyncEnumerable"/>,
+        /// which carry the same member names over the two operator sets.
+        /// </remarks>
+        public ClrBuiltInMethod Methods => async ? ClrBuiltInMethod.AsyncEnumerable : ClrBuiltInMethod.Enumerable;
+
+        /// <summary>
+        /// Builds a call to one of <see cref="Methods"/>.
+        /// </summary>
+        /// <param name="method">The operator, with its type arguments already applied.</param>
+        /// <param name="arguments">The arguments, less the cancellation token an asynchronous operator
+        /// ends in.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// What a node writes where its Calcite original writes <c>Expressions.call</c>. The token an
+        /// asynchronous operator takes is appended here rather than at the call site, so that the two modes
+        /// are the same code; <see cref="ClrBuiltInMethod.Call"/> says why the value is <c>default</c>.
+        /// </remarks>
+        public MethodCallExpression Call(System.Reflection.MethodInfo method, params Expression[] arguments)
+        {
+            return Methods.Call(method, arguments);
+        }
+
+        /// <summary>
+        /// Returns the type of a sequence of the given rows, of the kind this plan is built from.
+        /// </summary>
+        /// <param name="rowType"></param>
+        /// <returns></returns>
+        public Type SequenceType(Type rowType)
+        {
+            return Methods.SequenceType(rowType);
         }
 
         /// <summary>
@@ -138,7 +226,43 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <returns>The input's plan, physical type and row format.</returns>
         public ClrEnumerableResult VisitChild(ClrEnumerableRel? parent, int ordinal, ClrEnumerableRel child, ClrEnumerablePrefer prefer)
         {
-            return child.Implement(this, prefer);
+            ArgumentNullException.ThrowIfNull(child);
+
+            return Implement(child, prefer);
+        }
+
+        /// <summary>
+        /// Implements one node, and reads what it hands up across where that is not the kind of sequence
+        /// being built.
+        /// </summary>
+        /// <param name="node"></param>
+        /// <param name="prefer"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The one place <see cref="ClrEnumerableRel.ImplementAsync"/> is called, and the one place a plan of
+        /// one kind of sequence meets a node that builds the other. A node built through <see cref="Call"/>
+        /// hands up the kind being built and nothing happens here; a node that can only do one kind is read
+        /// across, which is a <em>node</em> boundary rather than a plan boundary, so a leaf that can only
+        /// await sits under a synchronous plan with everything above it unchanged, and the reverse.
+        ///
+        /// <para>What that costs runs one way only. Reading a synchronous sequence as an asynchronous one
+        /// costs a state machine and no thread, because the source is pulled and nothing suspends. Reading an
+        /// asynchronous one synchronously <b>blocks a thread per row</b>, because an
+        /// <see cref="IEnumerable{T}"/> has nowhere to suspend and no wrapper invents one. The rows
+        /// themselves are not touched either way: both kinds of plan ask the same type factory what a field
+        /// is, so the physical type comes back unchanged and the crossing is the one call.</para>
+        /// </remarks>
+        ClrEnumerableResult Implement(ClrEnumerableRel node, ClrEnumerablePrefer prefer)
+        {
+            var result = async ? node.ImplementAsync(this, prefer) : node.Implement(this, prefer);
+
+            if (Methods.IsSequence(result.Expression))
+                return result;
+
+            return new ClrEnumerableResult(
+                Call(Methods.Bridge.MakeGenericMethod(result.PhysType.RowType), result.Expression),
+                result.PhysType,
+                result.Format);
         }
 
         /// <summary>
@@ -157,11 +281,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </exception>
         public LambdaExpression ImplementRoot(ClrEnumerableRel rootRel, ClrEnumerablePrefer prefer)
         {
+            ArgumentNullException.ThrowIfNull(rootRel);
+
             ClrEnumerableResult result;
 
             try
             {
-                result = rootRel.Implement(this, prefer);
+                result = Implement(rootRel, prefer);
             }
             catch (Exception e)
             {
@@ -176,8 +302,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 && rootRel.getRowType().getFieldCount() == 1)
                 result = new ClrEnumerableResult(
                     // object, because nothing reads this but the caller of the query, and it is handed out as
-                    // a bare IEnumerable
-                    Expression.Call(null, ClrBuiltInMethod.Slice0.MakeGenericMethod(typeof(object)), result.Expression),
+                    // a bare sequence
+                    Call(Methods.Slice0.MakeGenericMethod(typeof(object)), result.Expression),
                     result.PhysType,
                     JavaRowFormat.SCALAR);
 
@@ -190,8 +316,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // a box class; RequireRowType holds every node to it; and the one other shape reaching here is
             // Slice0<object>. There was a boxing pass in front of this for a while, and it was unreachable
             // on every path -- the boxing it looked for has already happened in the physical type.
-            return Expression.Lambda<Func<DataContext, IEnumerable<object>>>(
-                Expression.Convert(result.Expression, typeof(IEnumerable<object>)),
+            var rows = SequenceType(typeof(object));
+
+            return Expression.Lambda(
+                typeof(Func<,>).MakeGenericType(typeof(DataContext), rows),
+                Expression.Convert(result.Expression, rows),
                 Root);
         }
 
@@ -271,22 +400,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <summary>
-        /// Registers on the asynchronous convention's implementor every correlation variable in scope here.
-        /// </summary>
-        /// <param name="async"></param>
-        /// <remarks>
-        /// <see cref="ReplayCorrelVariables(EnumerableRelImplementor)"/> across the other converter, and for
-        /// the same reason: a sub-plan run on a second implementor finds that implementor's correlation
-        /// variables, which are none. Here the registration really is the same one — both implementors hold
-        /// the same kind of getter over the same block — so nothing is rebuilt.
-        /// </remarks>
-        internal void ReplayCorrelVariables(AsyncEnumerable.ClrAsyncEnumerableRelImplementor async)
-        {
-            foreach (var pair in corrVars)
-                async.RegisterCorrelVariable(pair.Key, pair.Value.Parameter, pair.Value.Block, pair.Value.PhysType);
-        }
-
-        /// <summary>
         /// Creates the result a node's <c>Implement</c> returns.
         /// </summary>
         /// <param name="physType">How the rows are represented.</param>
@@ -321,11 +434,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <c>IOrderedEnumerable</c>: a check with a way out is a check only for the shapes that already
         /// pass.</para>
         /// </remarks>
-        static void RequireRowType(ClrPhysType physType, Expression expression)
+        void RequireRowType(ClrPhysType physType, Expression expression)
         {
             var expected = physType.RowType;
 
-            if (expression.Type.IsGenericType == false || expression.Type.GetGenericTypeDefinition() != typeof(IEnumerable<>))
+            // either kind is accepted here, and the caller reads across what does not match: a node is
+            // entitled to build only one of the two, and knowing which it built is that caller's business
+            // rather than the node's. What is not negotiable is the row.
+            if (ClrBuiltInMethod.Enumerable.IsSequence(expression) == false
+                && ClrBuiltInMethod.AsyncEnumerable.IsSequence(expression) == false)
                 throw new java.lang.IllegalStateException($"{Node()} handed up a {expression.Type} where a sequence of {expected} was wanted.");
 
             var actual = expression.Type.GetGenericArguments()[0];

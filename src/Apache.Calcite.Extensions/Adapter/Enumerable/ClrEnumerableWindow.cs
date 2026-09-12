@@ -326,8 +326,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var partitionSelector = PartitionSelector(translator, inputCalcite, group, sourceType);
             var keyType = partitionSelector?.ReturnType ?? typeof(object);
 
-            return Expression.Call(null,
-                ClrBuiltInMethod.Window.MakeGenericMethod(sourceType, keyType, accType, outputType),
+            return implementor.Call(
+                implementor.Methods.Window.MakeGenericMethod(sourceType, keyType, accType, outputType),
                 source,
                 (Expression?)partitionSelector ?? Expression.Constant(null, typeof(Func<,>).MakeGenericType(sourceType, keyType)),
                 comparator,

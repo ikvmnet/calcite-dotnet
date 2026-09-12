@@ -368,27 +368,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <returns></returns>
         /// <remarks>
         /// <c>PhysType.convertTo</c>.
+        ///
+        /// <para>The one member of this type that takes a <em>sequence</em> rather than a row, and so the one
+        /// that has to know which kind it was given. It reads that off the expression rather than asking for
+        /// an implementor, because a physical type has none and needs none: the reformatting selector is the
+        /// same either way, and only the <c>Select</c> it is passed to differs.</para>
         /// </remarks>
         Expression ConvertTo(Expression expression, JavaRowFormat targetFormat);
-
-        /// <summary>
-        /// Converts an asynchronous sequence of this physical type to one whose rows use the given row
-        /// format.
-        /// </summary>
-        /// <param name="expression"></param>
-        /// <param name="targetFormat"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// <see cref="ConvertTo(Expression, JavaRowFormat)"/> for a plan of the asynchronous convention, and
-        /// the one member of this type that has two of itself.
-        ///
-        /// <para>Calcite has no counterpart, so this is a divergence, and an additive one: <c>convertTo</c>
-        /// is the only member of <c>PhysType</c> that takes a <em>sequence</em> rather than a row, so it is
-        /// the only one a second convention cannot share. Moving it out to make this type purely row-shaped
-        /// would have been the smaller change and is not made, because this type mirrors <c>PhysType</c>
-        /// member for member and a member that is there because Calcite put it there stays.</para>
-        /// </remarks>
-        Expression ConvertToAsync(Expression expression, JavaRowFormat targetFormat);
 
     }
 

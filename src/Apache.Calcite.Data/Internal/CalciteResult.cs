@@ -28,7 +28,7 @@ namespace Apache.Calcite.Data.Internal
     /// mode, not the entry point's choice, so either crossing is the normal case rather than an edge.</para>
     ///
     /// <para>Neither is the sync-over-async this surface refuses, and the line is about who chose. A
-    /// <em>plan's</em> internals can block too — <c>ClrAsyncEnumerableToClrEnumerableConverter</c> is exactly
+    /// <em>plan's</em> internals can block too — an awaiting node read synchronously is exactly
     /// that, one blocked thread per row — and what makes it refusable there is that the planner would be
     /// choosing it, invisibly, on behalf of a caller who asked for nothing of the sort. That is why the
     /// prepare pipeline registers one convention's rules and not both, and so never produces a plan holding

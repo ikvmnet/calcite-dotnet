@@ -59,12 +59,16 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable
                 node = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableCalc.Create(node, program);
             }
 
-            IClrBindable bindable;
+            // both endings over the one planned root, each implemented and compiled the first time it is
+            // asked for. Which one a caller asks for is the whole of the difference between a statement read
+            // synchronously and one read with await, and it is no longer a decision the prepare has to make:
+            // the same statement answers either, and a plan cache would hold one entry for both.
+            ClrPreparedPlan plan;
             try
             {
                 org.apache.calcite.prepare.Prepare.CatalogReader.THREAD_LOCAL.set(CatalogReader);
                 InternalParameters.put("_conformance", Context.config().conformance());
-                bindable = ClrEnumerableInterpretable.ToBindable(InternalParameters, node, Prefer);
+                plan = new ClrPreparedPlan(InternalParameters, node, Prefer);
             }
             finally
             {
@@ -83,7 +87,7 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable
                 node,
                 MapTableModOp(isDml, root.kind),
                 isDml,
-                bindable,
+                plan,
                 // the type factory's answer, which is what the cursor factory is deduced from
                 ClrPhysTypeImpl.Of(
                     (org.apache.calcite.adapter.java.JavaTypeFactory)node.getCluster().getTypeFactory(),

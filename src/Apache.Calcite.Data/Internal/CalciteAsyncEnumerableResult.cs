@@ -9,7 +9,7 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Reads the rows of a plan of the <c>ClrAsyncEnumerableConvention</c> calling convention.
+    /// Reads the rows of a plan compiled to an <c>IAsyncEnumerable</c>.
     /// </summary>
     internal sealed class CalciteAsyncEnumerableResult : CalciteResult
     {

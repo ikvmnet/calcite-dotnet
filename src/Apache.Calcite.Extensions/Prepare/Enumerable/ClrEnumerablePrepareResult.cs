@@ -29,7 +29,7 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable
             RelNode rootRel,
             TableModify.Operation? tableModOp,
             bool isDml,
-            IClrBindable bindable,
+            Apache.Calcite.Extensions.Runtime.IClrBindableBase bindable,
             System.Type elementType) :
             base(rowType, parameterRowType, fieldOrigins, collations, rootRel, tableModOp, isDml)
         {
@@ -49,7 +49,7 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable
         /// <summary>
         /// Gets the compiled plan.
         /// </summary>
-        public IClrBindable Bindable { get; }
+        public Apache.Calcite.Extensions.Runtime.IClrBindableBase Bindable { get; }
 
         /// <inheritdoc />
         public override System.Type ElementType => elementType;

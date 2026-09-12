@@ -184,8 +184,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     accParameter);
 
                 return implementor.Result(physType,
-                    Expression.Call(null,
-                        ClrBuiltInMethod.GroupByMultiple.MakeGenericMethod(sourceType, keyType!, rowType),
+                    implementor.Call(
+                        implementor.Methods.GroupByMultiple.MakeGenericMethod(sourceType, keyType!, rowType),
                         result.Expression,
                         Expression.NewArrayInit(typeof(Func<,>).MakeGenericType(sourceType, keyType!), selectors),
                         Expression.Call(lambdaFactory, AccInitializer),
@@ -201,15 +201,17 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     implementor.Translator.TranslateBody(resultBlock.toBlock(), rowType),
                     accParameter);
 
+                // Calcite writes Singleton(aggregate(...)), two calls, the inner one evaluating to the row.
+                // One operator here, because an asynchronous fold has to be awaited and an expression tree
+                // cannot await; the synchronous operator is those same two calls, so the fold still runs
+                // where the expression is evaluated. See ClrEnumerableDefaults.SingletonAggregate.
                 return implementor.Result(physType,
-                    Expression.Call(null,
-                        ClrBuiltInMethod.Singleton.MakeGenericMethod(rowType),
-                        Expression.Call(null,
-                            ClrBuiltInMethod.Aggregate.MakeGenericMethod(sourceType, rowType),
-                            result.Expression,
-                            Expression.Call(Expression.Call(lambdaFactory, AccInitializer), Function0Apply),
-                            Expression.Call(lambdaFactory, AccAdder),
-                            Expression.Call(lambdaFactory, SingleGroupResultSelector, Function1Of(resultSelector, accType, rowType)))));
+                    implementor.Call(
+                        implementor.Methods.SingletonAggregate.MakeGenericMethod(sourceType, rowType),
+                        result.Expression,
+                        Expression.Call(Expression.Call(lambdaFactory, AccInitializer), Function0Apply),
+                        Expression.Call(lambdaFactory, AccAdder),
+                        Expression.Call(lambdaFactory, SingleGroupResultSelector, Function1Of(resultSelector, accType, rowType))));
             }
 
             // grouping by every field of the input with nothing to accumulate is a DISTINCT, and Calcite says
@@ -220,8 +222,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 var source = inputPhysType.ConvertTo(result.Expression, physType.Format);
 
                 return implementor.Result(physType,
-                    Expression.Call(null,
-                        ClrBuiltInMethod.Distinct.MakeGenericMethod(source.Type.GetGenericArguments()[0]),
+                    implementor.Call(
+                        implementor.Methods.Distinct.MakeGenericMethod(source.Type.GetGenericArguments()[0]),
                         source,
                         physType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer))));
             }
@@ -235,8 +237,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 accParameter);
 
             return implementor.Result(physType,
-                Expression.Call(null,
-                    ClrBuiltInMethod.GroupBy.MakeGenericMethod(sourceType, keySelector.ReturnType, rowType),
+                implementor.Call(
+                    implementor.Methods.GroupBy.MakeGenericMethod(sourceType, keySelector.ReturnType, rowType),
                     result.Expression,
                     keySelector,
                     Expression.Call(lambdaFactory, AccInitializer),

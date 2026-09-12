@@ -79,8 +79,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var rowType = seedResult.PhysType.RowType;
 
             body.Add(
-                Expression.Call(null,
-                    ClrBuiltInMethod.RepeatUnion.MakeGenericMethod(rowType),
+                implementor.Call(
+                    implementor.Methods.RepeatUnion.MakeGenericMethod(rowType),
                     seedResult.Expression,
                     iterationResult.Expression,
                     Expression.Constant(iterationLimit),
