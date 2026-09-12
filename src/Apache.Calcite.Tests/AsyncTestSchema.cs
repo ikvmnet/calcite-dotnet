@@ -104,7 +104,7 @@ namespace Apache.Calcite.Tests
         /// The same rows as <c>ClrEnumerableDifferentialTests.CastsTable</c>, whose remarks say what a cast
         /// out of ANY actually does. This convention reaches the same generator, and the point of running
         /// the queries here is that it keeps reaching it: the failure that raised the question was in
-        /// <c>ClrAsyncEnumerableDefaults.CalcRows</c>.
+        /// <c>ClrEnumerableDefaults.CalcRowsAsync</c>.
         /// </remarks>
         public static readonly object?[][] Casts =
         [

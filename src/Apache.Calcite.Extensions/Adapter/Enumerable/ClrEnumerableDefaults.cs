@@ -21,7 +21,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// of these are what <see cref="Enumerable"/> already does and say so; the ones that are not are the ones
     /// SQL needs and .NET has no operator for.
     /// </remarks>
-    static class ClrEnumerableDefaults
+    static partial class ClrEnumerableDefaults
     {
 
         /// <summary>

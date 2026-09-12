@@ -83,7 +83,7 @@ namespace Apache.Calcite.Tests
             var rounds = new Rounds();
             var rows = new List<int>();
 
-            await foreach (var row in Apache.Calcite.Extensions.Adapter.Enumerable.ClrAsyncEnumerableDefaults.RepeatUnion(AsyncOf(1), rounds.Async(), -1, true, null, null))
+            await foreach (var row in Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableDefaults.RepeatUnionAsync(AsyncOf(1), rounds.Async(), -1, true, null, null))
                 rows.Add(row);
 
             rows.Should().Equal(1, 100);

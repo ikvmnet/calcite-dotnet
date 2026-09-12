@@ -29,6 +29,50 @@ namespace Apache.Calcite.Tests
     {
 
         /// <summary>
+        /// The two operator sets are one type, and the suffix is what tells them apart.
+        /// </summary>
+        /// <remarks>
+        /// <c>ClrEnumerableDefaults</c> holds both halves since the merge, so a reader, the built-in method
+        /// table and <c>ClrEnumerableModeTests</c> all separate them by name rather than by declaring type.
+        /// That only works while the naming is exact, and nothing but this enforces it: an awaiting operator
+        /// added without the suffix would collide with its pulled twin and fail to compile, but one added
+        /// with a pulled signature and an <c>Async</c> name, or an awaiting one with no twin and no suffix,
+        /// would compile and quietly land in the wrong bucket of that test.
+        ///
+        /// <para>The rule is over the first parameter, because that is the sequence an operator reads and
+        /// the thing the two halves actually differ in. Operators that take no sequence at all are not
+        /// covered and do not need to be.</para>
+        /// </remarks>
+        [TestMethod]
+        public void ShouldNameEveryAwaitingOperatorWithTheSuffixAndNoOtherOperator()
+        {
+            var wrong = new List<string>();
+
+            foreach (var method in typeof(ClrEnumerableDefaults).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static))
+            {
+                var parameters = method.GetParameters();
+                if (parameters.Length == 0)
+                    continue;
+
+                var first = parameters[0].ParameterType;
+                if (first.IsGenericType == false)
+                    continue;
+
+                var definition = first.GetGenericTypeDefinition();
+                var awaits = definition == typeof(IAsyncEnumerable<>);
+                var pulls = definition == typeof(IEnumerable<>);
+
+                if (awaits == false && pulls == false)
+                    continue;
+
+                if (awaits != method.Name.EndsWith("Async", StringComparison.Ordinal))
+                    wrong.Add($"{method.Name} reads an {(awaits ? "IAsyncEnumerable" : "IEnumerable")}");
+            }
+
+            wrong.Should().BeEmpty("an operator reading an IAsyncEnumerable is named with the Async suffix and one reading an IEnumerable is not");
+        }
+
+        /// <summary>
         /// A satisfied fetch has drawn one row more than it returned.
         /// </summary>
         /// <remarks>
@@ -98,7 +142,7 @@ namespace Apache.Calcite.Tests
             }
 
             var rows = new List<int>();
-            await foreach (var row in Apache.Calcite.Extensions.Adapter.Enumerable.ClrAsyncEnumerableDefaults.Take(Source(), 2))
+            await foreach (var row in Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableDefaults.TakeAsync(Source(), 2))
                 rows.Add(row);
 
             rows.Should().Equal(0, 1);

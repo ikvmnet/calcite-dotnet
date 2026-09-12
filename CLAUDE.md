@@ -281,12 +281,20 @@ the rows will be read, and a plan cache would hold one entry for a statement rat
   down, and it forced every result to be type-tested on the way back to find out what a node had produced.
   There is no third place for it to hide: if something has to ask which kind it is in, the hierarchy is
   missing a member.
-- **A node has two bodies naming two static operator sets.** `Implement` names `ClrEnumerableDefaults`
-  through the unsuffixed members of `ClrBuiltInMethod`; `ImplementAsync` names `ClrAsyncEnumerableDefaults`
-  through the `Async`-suffixed members of the same table, and builds its calls with
-  `ClrBuiltInMethod.CallAsync`, which appends the trailing `CancellationToken` an expression tree will not
-  default. One table, two sets of names: which operator a node calls is decided where the node is written
-  and can be read there.
+- **A node has two bodies naming two static operator sets, and both sets are `ClrEnumerableDefaults`.**
+  `Implement` names its pulled operators through the unsuffixed members of `ClrBuiltInMethod`;
+  `ImplementAsync` names the `Async`-suffixed operators through the `Async`-suffixed members of the same
+  table, and builds its calls with `ClrBuiltInMethod.CallAsync`, which appends the trailing
+  `CancellationToken` an expression tree will not default. One class, one table, two sets of names: which
+  operator a node calls is decided where the node is written and can be read there.
+- **One class in two files, and the suffix is load bearing.** `ClrAsyncEnumerableDefaults` was a separate
+  class; merging it cost 71 renames and turned up eleven members that were the same code twice, now shared
+  — `PartitionIterator`, `IsMergeJoinSupported` and nine smaller helpers, one of which differed only in the
+  indentation of a brace. `ClrEnumerableDefaults.Async.cs` is the awaiting partial. Because the two sets no
+  longer differ by declaring type, everything that has to tell them apart reads the name, `ClrEnumerableModeTests`
+  included, and `ShouldNameEveryAwaitingOperatorWithTheSuffixAndNoOtherOperator` is what keeps that exact: an
+  operator reading an `IAsyncEnumerable` carries the suffix and one reading an `IEnumerable` does not. A
+  missing suffix on a twin fails to compile; the cases that would not are what that test covers.
 - **`Implement` is required; `ImplementAsync` is optional and defaults to it.** That is .NET's own shape,
   measured against the 10.0 reference assemblies rather than remembered: `DbCommand.ExecuteDbDataReader`,
   `DbDataReader.Read`, `DbConnection.Open` and `Stream.Read` are abstract, and every `Async` counterpart is
@@ -324,7 +332,7 @@ the rows will be read, and a plan cache would hold one entry for a statement rat
   implementing both scannable interfaces sent the two builders into mutual recursion and **overflowed the
   stack while the plan was being built** — measured, not reasoned. One interface makes that unrepresentable
   and deletes both cross branches. An awaiting-only table writes `Scan` by draining its own `ScanAsync`.
-  **The operator tables stay internal** — `ClrEnumerableDefaults`, `ClrAsyncEnumerableDefaults`,
+  **The operator tables stay internal** — `ClrEnumerableDefaults`,
   `ClrBuiltInMethod` and `ClrSequences` are what this convention's plans are built from, not a toolkit for
   an adapter, and an adapter builds against its own operations. `ClrSequences` was made public for one
   commit on the argument that a contract requiring a conversion has to hand out the conversion, and put

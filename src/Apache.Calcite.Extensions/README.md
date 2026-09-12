@@ -27,7 +27,7 @@ This package replaces that step. A query plan is compiled into a `System.Linq.Ex
 
 `ClrEnumerableConvention` mirrors Calcite's `EnumerableConvention` node for node and uses the same row types, and converter rules exist in both directions. A plan may hold nodes of both conventions: anything this convention has no rule for is planned by Calcite as usual, and rows cross between the two untouched.
 
-**One plan, read either way.** A plan of this convention is compiled to an `IEnumerable<object>` or an `IAsyncEnumerable<object>`, and which is decided when it is compiled rather than when it is planned. There is one convention, one set of rules and one tree of nodes; each node carries two bodies, one written against `ClrEnumerableDefaults` and one against `ClrAsyncEnumerableDefaults`, and the implementor offers a call hierarchy per kind rather than a mode to set. So the same prepared statement can be read synchronously by one caller and awaited by another, and an `EXPLAIN` cannot tell you which will happen.
+**One plan, read either way.** A plan of this convention is compiled to an `IEnumerable<object>` or an `IAsyncEnumerable<object>`, and which is decided when it is compiled rather than when it is planned. There is one convention, one set of rules and one tree of nodes; each node carries two bodies, both naming `ClrEnumerableDefaults`, whose pulled operators and `Async`-suffixed awaiting ones are the two sets. The implementor offers a call hierarchy per kind rather than a mode to set. So the same prepared statement can be read synchronously by one caller and awaited by another, and an `EXPLAIN` cannot tell you which will happen.
 
 ## Running a plan yourself
 
@@ -108,7 +108,7 @@ A Spark handler is not supported: `ToBindable` throws `UnsupportedOperationExcep
 
 The nodes (`ClrEnumerableCalc`, `ClrEnumerableHashJoin`, `ClrEnumerableWindow`, and the rest) and their rules are public too, so you can subclass or re-register them.
 
-**The operator sets are not public.** `ClrEnumerableDefaults`, `ClrAsyncEnumerableDefaults` and the `ClrBuiltInMethod` table that names them are internal to this package, which is what they have always been. A node you write outside it builds calls to its own methods with `Expression.Call`, and an awaiting one appends its own trailing `CancellationToken` as `Expression.Default(typeof(CancellationToken))` — an expression tree does not apply a default argument, and that `default` is what `[EnumeratorCancellation]` reads.
+**The operator sets are not public.** `ClrEnumerableDefaults`, which holds both, and the `ClrBuiltInMethod` table that names them are internal to this package, which is what they have always been. A node you write outside it builds calls to its own methods with `Expression.Call`, and an awaiting one appends its own trailing `CancellationToken` as `Expression.Default(typeof(CancellationToken))` — an expression tree does not apply a default argument, and that `default` is what `[EnumeratorCancellation]` reads.
 
 **The SQL-text prepare pipeline is internal to these packages.** `ClrPrepareImpl`, `ClrSignature` and the rest of `Apache.Calcite.Extensions.Prepare` are not part of the public API surface — `Apache.Calcite.Data` reaches them through `InternalsVisibleTo`. To run SQL text, use `Apache.Calcite.Data`; to drive the planner directly, use the public types above.
 

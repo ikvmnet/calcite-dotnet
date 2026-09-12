@@ -20,10 +20,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// Nothing here runs a query — the result is a plan, which
     /// <see cref="ClrEnumerableRelImplementor.ImplementRoot"/> turns into a lambda to compile.</para>
     ///
-    /// <para><b>A node has two bodies, one per kind of sequence.</b> <see cref="Implement"/> is written
-    /// against the pulled operators — <c>ClrEnumerableDefaults</c>, reached by the unsuffixed members of
-    /// <c>ClrBuiltInMethod</c> — and <see cref="ImplementAsync"/> against the awaiting ones —
-    /// <c>ClrAsyncEnumerableDefaults</c>, reached by the <c>Async</c>-suffixed members of the same table.
+    /// <para><b>A node has two bodies, one per kind of sequence.</b> Both name <c>ClrEnumerableDefaults</c>,
+    /// which holds both operator sets: <see cref="Implement"/> takes its pulled operators, reached by the
+    /// unsuffixed members of <c>ClrBuiltInMethod</c>, and <see cref="ImplementAsync"/> the awaiting ones,
+    /// reached by the <c>Async</c>-suffixed members of the same table.
     /// They are two static bodies naming two static operator sets, not one body over a dispatch: the
     /// operator a node calls is decided where the node is written and read there.</para>
     ///
@@ -93,7 +93,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="pref">How the parent would prefer this node's rows represented.</param>
         /// <returns>The plan, the physical type of its rows, and their format.</returns>
         /// <remarks>
-        /// The awaiting body: the same algorithm named against <c>ClrAsyncEnumerableDefaults</c>, through
+        /// The awaiting body: the same algorithm named against the <c>Async</c>-suffixed operators, through
         /// the <c>Async</c>-suffixed members of <c>ClrBuiltInMethod</c>, and built with
         /// <c>ClrBuiltInMethod.CallAsync</c> so that the trailing cancellation token an expression tree will
         /// not default is passed.

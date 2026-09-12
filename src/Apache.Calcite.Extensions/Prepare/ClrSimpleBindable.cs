@@ -36,7 +36,7 @@ namespace Apache.Calcite.Extensions.Prepare
         {
             ArgumentNullException.ThrowIfNull(root);
 
-            return Adapter.Enumerable.ClrAsyncEnumerableDefaults.Singleton(row);
+            return Adapter.Enumerable.ClrEnumerableDefaults.SingletonAsync(row);
         }
 
         /// <inheritdoc />

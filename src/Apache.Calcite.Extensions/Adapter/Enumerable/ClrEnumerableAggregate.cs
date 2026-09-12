@@ -386,7 +386,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 // one operator where the synchronous convention nests two. There the fold returns the row
                 // and Singleton wraps it; here the fold has to be awaited and an expression tree cannot
                 // await, so the composition is an operator rather than a tree. See
-                // ClrAsyncEnumerableDefaults.SingletonAggregate.
+                // ClrEnumerableDefaults.SingletonAggregateAsync.
                 return implementor.ResultAsync(physType,
                     ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.SingletonAggregateAsync.MakeGenericMethod(sourceType, rowType),
                         result.Expression,

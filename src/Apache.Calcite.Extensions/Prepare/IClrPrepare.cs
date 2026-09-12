@@ -222,7 +222,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 // apply the limit; in JDBC 0 means "no limit", but for us -1 means "no limit" and 0 is a
                 // valid limit
                 if (maxRowCount >= 0)
-                    rows = ClrAsyncEnumerableDefaults.Take(rows, maxRowCount);
+                    rows = ClrEnumerableDefaults.TakeAsync(rows, maxRowCount);
 
                 return rows;
             }

@@ -136,15 +136,23 @@ namespace Apache.Calcite.Tests
             var calls = new List<MethodCallExpression>();
             new Collector(calls).Visit(tree);
 
+            // the two operator sets are one type now, so the name is what tells them apart rather than the
+            // declaring type. That is exact rather than a heuristic: every awaiting operator ends in Async
+            // and no pulled one does, which ClrEnumerableDefaultsContractTests holds directly.
             var synchronous = calls
-                .Where(c => c.Method.DeclaringType?.Name == "ClrEnumerableDefaults"
-                    || (c.Method.DeclaringType?.Name == "JavaSequences" && c.Method.Name == "FromJava"))
+                .Where(c => Operator(c, "ClrEnumerableDefaults") && c.Method.Name.EndsWith("Async") == false)
                 .ToList();
 
             var asynchronous = calls
-                .Where(c => c.Method.DeclaringType?.Name == "ClrAsyncEnumerableDefaults"
-                    || (c.Method.DeclaringType?.Name == "JavaSequences" && c.Method.Name == "FromJavaAsync"))
+                .Where(c => Operator(c, "ClrEnumerableDefaults") && c.Method.Name.EndsWith("Async"))
                 .ToList();
+
+            static bool Operator(MethodCallExpression call, string declaring)
+            {
+                var name = call.Method.DeclaringType?.Name;
+
+                return name == declaring || name == "JavaSequences";
+            }
 
             var bridges = calls.Where(c => c.Method.DeclaringType?.Name == "ClrSequences").ToList();
 
