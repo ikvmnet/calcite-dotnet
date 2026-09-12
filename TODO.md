@@ -96,6 +96,276 @@ opens a connection to read the server version, and `AdoConvention.Dialect` is re
 that matches while planning. What is left is caching *across* metadata instances, which only matters
 when several schemas point at one database. Lowest priority; measure before assuming it matters.
 
+## ADO.NET adapter: what more it could push, audited 2026-09-07
+
+The section above compares us to `org.apache.calcite.adapter.jdbc` and lists where we fall short of it.
+This one asks the other question — what the adapter could do that Calcite's does not — and the answer is
+that the JDBC adapter pushes far less than `RelToSqlConverter` can write. `RelToSqlConverter` has a `visit`
+for `Join`, `Correlate`, `Filter`, `Project`, `Window`, `Aggregate`, `TableScan`, `Union`, `Intersect`,
+`Minus`, `Calc`, `Values`, `Sample`, `Sort`, `TableModify`, `Match`, `Uncollect` and `TableFunctionScan`.
+Nine of those have a node in this adapter. **Every gap below is a node rel2sql can already write SQL for**,
+so the work is a rel class and a converter rule, not a SQL generator.
+
+### How this was measured
+
+Thirty statements against the SQLite fixture through the Calcite JDBC driver, each run twice: once as
+`EXPLAIN PLAN FOR` to read the physical plan, once for real with a `Hook.QUERY_PLAN` handler counting the
+statements the adapter sent. A query that pushes fully sends one statement; a query that does not sends one
+per pushed subtree, and the plan names what was left in `EnumerableConvention`. The probe was a scratch test
+class in `Apache.Calcite.Adapter.AdoNet.Tests`, deleted afterwards; every number below came out of it.
+
+**Pushing fully today**, one statement each: filter, project, `HAVING`, `ORDER BY` with `OFFSET`/`FETCH`,
+`COUNT(DISTINCT)`, aggregate `FILTER`, `UNION ALL`, `INTERSECT` (through Calcite's count rewrite), `VALUES`
+joined to a table, a non-equi inner join, `DISTINCT`, and `NOT EXISTS` after decorrelation. The nine nodes
+we have carry a lot.
+
+### 1. A window function does not merely fail to push — it throws
+
+**`SELECT NAME, SUM(SALARY) OVER (PARTITION BY DEPTNO) FROM ADO.EMPS` fails with an `AssertionError`**:
+*"Relational expression LogicalWindow.ADO.ADO … has calling-convention ADO.ADO but does not implement the
+required interface AdoRel"*. So does a second one with two different `OVER` clauses, and so does
+`… ORDER BY x.SALARY DESC LIMIT 1` inside a `LATERAL`, which Calcite rewrites to `ROW_NUMBER()`.
+
+The cause is that `AdoProjectRule` deliberately admits a project containing `OVER` when the dialect
+supports window functions (`AdoProjectRule.cs:38`, upstream's condition), and
+`CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW` — registered by `RelOptUtil.registerDefaultRules` and
+matching any `Project` in any convention — then rewrites that `AdoProject` into a `LogicalWindow` carrying
+the trait set it took from the project. The trait says ADO; the class is `LogicalWindow`; the convention
+declares `AdoRel`; the assertion fires. Nothing in the suite reaches it because no adapter test uses `OVER`.
+
+`AdoWindow` is both the fix and the capability: `RelToSqlConverter.visit(Window)` writes the `OVER` list
+already. Gate the rule on `dialect.supportsWindowFunctions()`, which is what the project rule's condition
+was for.
+
+### 2. `GROUPING SETS`, `ROLLUP` and `CUBE` fetch the whole table
+
+`AdoAggregateRule.cs:44` refuses any aggregate with more than one group set, which is upstream's
+CALCITE-734 refusal. Measured: `GROUP BY ROLLUP(DEPTNO)`, `GROUP BY CUBE(DEPTNO, NAME)` and an explicit
+`GROUPING SETS` each plan to an `EnumerableAggregate` over `SELECT * FROM "EMPS"` — the whole table crosses
+the wire and is grouped in memory.
+
+`RelToSqlConverter.generateGroupList` writes `CUBE`, `ROLLUP` and `GROUPING SETS`, picking the form from
+`dialect.supportsGroupByWithRollup()` and `supportsGroupByWithCube()`, and `SqlImplementor` handles the
+`HAVING GROUPING(…) <> 0` case where the group set is wider than the union of the group sets. The refusal
+is older than the renderer. Lift it and gate on the two dialect methods.
+
+### 3. Semi- and anti-joins are two statements
+
+`AdoJoinRule.cs:83` returns null for `SEMI` and `ANTI`, on upstream's stated grounds that "it's not
+possible to convert semi-joins or anti-joins; they have fewer columns than regular joins". That is no longer
+true of the renderer: `RelToSqlConverter.visit(Join)` dispatches both to `visitAntiOrSemiJoin`, which writes
+`EXISTS` / `NOT EXISTS`. `Join.deriveRowType` gives a semi-join the left row type without help.
+
+Measured, `WHERE DEPTNO IN (SELECT …)` and `WHERE EXISTS (SELECT …)` both plan to `EnumerableHashJoin
+(joinType=[semi])` over two `AdoToEnumerableConverter`s — two statements, and the join done here.
+
+### 4. A `Correlate` that survives decorrelation runs one statement per row
+
+`AdoCorrelationDataContext` and its builder exist so that a correlation variable referenced from inside a
+pushed subtree becomes a dynamic parameter, bound per outer row. That is the JDBC adapter's answer and it
+costs a statement — and, because `AdoEnumerable.enumerator()` opens its own connection
+(`AdoEnumerable.cs:353`), a connection — for every row of the left input.
+
+`RelToSqlConverter.visit(Correlate)` writes the whole thing as `CROSS JOIN LATERAL`. An `AdoCorrelate` would
+turn N+1 statements into one wherever both sides are the same convention. The parameter path stays for the
+cases it is still the only answer: the right side in another convention, or a dialect without `LATERAL`.
+
+Top-N-per-group is the shape that makes this matter, and it is also blocked by §1 today.
+
+### 5. `TABLESAMPLE` becomes `RAND()`, and SQLite has no `RAND()`
+
+`SELECT * FROM ADO.EMPS TABLESAMPLE BERNOULLI(50)` plans to `AdoFilter(condition=[<(RAND(), 0.5)])` — 
+`CoreRules.SAMPLE_TO_FILTER` rewrote the sample and we pushed the rewrite — and execution fails with
+*"SQLite Error 1: 'no such function: RAND'"*. `RelToSqlConverter.visit(Sample)` writes a real `TABLESAMPLE`
+clause, so an `AdoSample` gated on the dialect both pushes the operator and stops the rewrite from being
+pushed in its place.
+
+This is one instance of a general hole — see §7.
+
+### 6. `MATCH_RECOGNIZE` over an ADO table cannot be implemented at all
+
+`SELECT * FROM (SELECT EMPNO, SALARY FROM ADO.EMPS) MATCH_RECOGNIZE (…)` plans to an `EnumerableMatch` over
+`AdoToEnumerableConverter` and then fails: *"Unable to implement EnumerableMatch … AdoToEnumerableConverter"*.
+So the operator is unreachable over this adapter today by either route. `RelToSqlConverter.visit(Match)`
+writes the clause, and Oracle and SQL Server 2022 have it. Whether that is worth a node is a separate
+question from the fact that the query currently has no plan; the failure should at least be understood.
+
+### 7. Nothing checks whether the target has the function or the type
+
+`SqlDialect.supportsFunction(SqlOperator, RelDataType, List<RelDataType>)` and
+`SqlDialect.supportsDataType(RelDataType)` are declared, are overridden by Firebolt, JethroData, Postgres,
+Vertica and Oracle — and **are called from nowhere in `calcite-core`**, measured by `git grep` over the
+1.42.0 tag. So `AdoFilterRule` and `AdoProjectRule` push any expression at all and the provider decides.
+§5 is that hole firing on `RAND`; `CHAR_LENGTH` happens to survive because `SqliteSqlDialect` renders it as
+`LENGTH`.
+
+A `RexVisitor` over the condition and the projects, refusing where `supportsFunction` says no, is the same
+shape as `CheckingUserDefinedFunctionVisitor`, which is already there and already runs on both. It costs a
+walk that is already being done and it converts a class of run-time provider errors into an operator that
+stays in memory.
+
+The same visitor is what would let a *user-defined* function push when the target has one. The current
+refusal is blanket: any `SqlFunction` whose `getFunctionType().isUserDefined()` stops the whole project or
+filter, whether or not the target could evaluate it.
+
+### 8. A `FULL JOIN` is pushed to dialects that cannot do one
+
+Upstream's `JdbcJoinRule.matches` refuses a join whose type the dialect rejects
+(`JdbcRules.java:372`, `dialect.supportsJoinType(joinType)`). `AdoJoinRule` has no `matches` override, so a
+`FULL JOIN` planned against MySQL is pushed and the server refuses it. This is a divergence that pushes
+*more* than upstream, which is why it has not shown up: SQLite and SQL Server both do full joins.
+
+### 9. The converters are not cheap, and it costs whole joins — measured
+
+`JdbcToEnumerableConverter.computeSelfCost` multiplies by `.1` (`JdbcToEnumerableConverter.java:88`).
+Neither `AdoToEnumerableConverter` nor `AdoToClrEnumerableConverter` overrides `computeSelfCost` at all, so
+leaving the adapter is priced at full row count and a plan that leaves it twice is not obviously worse than
+one that leaves it once.
+
+Measured by adding the `.1` to both converters and re-running the probe:
+
+| statement | statements before | after |
+|---|---|---|
+| `EMPS FULL JOIN DEPTS` | 2, `EnumerableHashJoin(full)` | 1, `AdoJoin(full)` |
+| `SELECT DNAME, (SELECT COUNT(*) FROM EMPS e WHERE e.DEPTNO = d.DEPTNO) FROM DEPTS d` | 2, `EnumerableMergeJoin(left)` | 1, the whole decorrelated tree pushed |
+
+Nothing else in the thirty changed except the semi-join, which got *worse*: with cheap converters the
+planner stops pushing the `GROUP BY` under the semi-join and pulls both tables whole, because §3 leaves it
+no way to push the join itself. The two belong together — the multiplier is upstream's number and the reason
+it is safe upstream is that upstream's rule set covers the join it makes attractive.
+
+### 10. The adapter tells the planner nothing about the data
+
+`AdoTable` does not implement `Statistic`; `RelOptTable.getStatistic()` answers Calcite's default, so every
+table has 100 rows, no keys, no collations and no referential constraints. That is not only a costing
+problem — three rules Calcite registers by default cannot fire without key metadata:
+`CoreRules.AGGREGATE_REMOVE`, `CoreRules.JOIN_ON_UNIQUE_TO_SEMI_JOIN` and the join-removal rules. Measured:
+`SELECT DISTINCT EMPNO FROM ADO.EMPS` pushes as `SELECT "EMPNO" FROM "EMPS" GROUP BY "EMPNO"`, and `EMPNO`
+is the table's key — with a `Statistic` saying so the aggregate disappears entirely.
+
+`AdoDatabaseMetadata` (`Metadata/AdoDatabaseMetadata.cs`) has `GetSchemas`, `GetTables` and `GetFields` and
+nothing else, so this starts with an SPI addition. The inputs exist on every provider:
+`DbConnection.GetSchema("Indexes")` / `"IndexColumns"`, `"ForeignKeys"`, and the information schema's
+`TABLE_CONSTRAINTS` / `KEY_COLUMN_USAGE`. Row counts are per-target — `sys.dm_db_partition_stats` on SQL
+Server, `pg_class.reltuples` on Postgres, `sqlite_stat1` where `ANALYZE` has run — which is an argument for
+a virtual method with a null default rather than a required one, and for the time-to-live the plan-cache
+section already argues for.
+
+### 11. Two schemas over one database do not join server-side
+
+`AdoConvention` is created per `AdoSchema`. Measured: two `AdoSchema`s registered over the *same* SQLite
+file join through `EnumerableMergeJoin` and two statements, because the two conventions are distinct and
+neither rule can see across. Calcite has the same shape and the same limitation.
+
+Keying the convention by data source rather than by schema — the pool `JdbcUtils.DataSourcePool` already
+implies, listed as §6 above — makes a multi-schema database one convention, and a three-way join across
+`dbo`, `sales` and `staging` becomes one statement. This is the cheapest of the structural items and it is
+the one a catalog schema (§4 above) makes reachable, since a catalog exposes exactly this shape.
+
+### 12. Cross-source: ship the small side rather than pulling both
+
+Nothing above helps a join whose sides are genuinely different databases. ADO.NET has three ways to make
+that a server-side join that JDBC's adapter never used: a table-valued parameter, a temporary table filled
+by a bulk copy, or a `VALUES` list inlined into the statement. The planner already knows which side is
+smaller — it is the one whose estimated row count is lower, which needs §10 to be true rather than
+defaulted.
+
+The rule shape is a converter that takes a join with one side in another convention, plans that side
+independently, and emits a statement whose right operand is the shipped rows. It is the largest item here
+and the only one with no Calcite precedent to copy; it is also the one that makes the adapter something
+other than a JDBC adapter.
+
+### 13. `INSERT` / `UPDATE` / `DELETE` still do not plan
+
+Already §1 of the section above; the probe confirms the failure mode is not a fallback but a planning
+error — *"There are not enough rules to produce a node with desired properties: convention=ENUMERABLE …
+Missing conversion is LogicalTableModify\[convention: NONE -> ENUMERABLE\]"* — for `INSERT … VALUES`,
+`INSERT … SELECT`, `UPDATE` and `DELETE` alike. Noted here because two capabilities hang off it that
+Calcite's adapter does not have: a `DbBatch` for a multi-row modify, and a bulk-copy path
+(`SqlBulkCopy`, `NpgsqlBinaryImporter`) for `INSERT … SELECT` whose source is another convention, which is
+§12's machinery pointed at a write.
+
+### 14. Execution was synchronous; the connect still is, and cancellation and timeout are not wired
+
+**The converter is written** (#119). `AdoToClrAsyncEnumerableConverter` and its rule are registered beside
+the other two, so a plan asked for in `ClrAsyncEnumerableConvention` — which is what the provider plans by
+default — converts straight out of the adapter and reads its rows through `AdoSequences.ReadAsync`. The
+route it replaced was `EnumerableToClrAsyncEnumerableConverter` over `AdoToEnumerableConverter`: two
+crossings, a linq4j enumerator, and `DbDataReader.Read()` at the bottom, so the one place in a plan with
+network I/O to suspend on was the one place that blocked.
+
+The statement it sends is the synchronous converter's — same implementor, same writer, same row builder,
+shared rather than written again.
+
+**What is asynchronous is the row loop, and only the row loop.** The statement is still sent at
+`GetAsyncEnumerator`, synchronously, through `OpenConnection()` and `ExecuteReader()`. That is where this
+convention acquires — linq4j acquires inside `enumerator()`, `AcquisitionTimingTests` holds that the whole
+cascade runs there, and `ClrAsyncEnumerableAdoNetTests` states that acquisition-time work is synchronous
+work because `GetAsyncEnumerator` cannot await.
+
+It was written the other way first, opening and executing on the first `MoveNextAsync`, which is the only
+other thing a method returning an `IAsyncEnumerable` can do. Measured, that moved where a rejected
+statement surfaces: out of `ExecuteReaderAsync` as a `CalciteException`, which is where the synchronous
+route and the old asynchronous route both put it, and into the first `ReadAsync` as a bare
+`AdoCalciteException`. `CalciteSession` calls `GetAsyncEnumerator` inside `ExecuteReaderAsync`, so
+acquiring there is the whole of the fix.
+`AdoClrEnumerableTests.ShouldSendTheStatementAtAcquisition` pins the acquisition point and
+`ShouldFailFromExecuteRatherThanFromTheFirstRead` the failure site; both fail against the other shape.
+
+Four remain:
+
+- **An asynchronous connect.** Getting `OpenConnectionAsync` and `ExecuteReaderAsync` as well means
+  awaiting somewhere earlier than the first row, and the only place is `ExecuteReaderAsync` itself.
+  Priming one row there was written and reverted: it fails `ShouldReadNothingUntilTheFirstRead`,
+  `ExecuteAsyncShouldAcquireTheLeafWithoutReading` and
+  `AnAsynchronousSortShouldAcquireAtExecuteAndDrainAtTheFirstRead`, which hold the opposite promise
+  deliberately. So this is a change to the convention's execution contract rather than to the adapter, and
+  it is the decision that gates it.
+- **Cancellation.** `AdoSequences.ReadAsync` observes the token the caller passes to `GetAsyncEnumerator`,
+  and `AdoClrEnumerableTests.ShouldObserveACancelledToken` holds that. What is not wired is where such a token
+  comes from: `DataContext.Variable.CANCEL_FLAG` is Calcite's cancellation channel and nothing in the
+  adapter reads it, so a statement a plan sent still runs to completion when the statement is cancelled. On
+  the synchronous path there is no token at all and `DbCommand.Cancel()` is what it maps to.
+- **Timeout.** `DbCommand.CommandTimeout` is never set, so every statement takes the provider default.
+- **Connection lifetime.** `AdoEnumerable.enumerator()` and `AdoSequences` open a connection per enumeration
+  (`AdoEnumerable.cs:353`). For a plan with two pushed subtrees that is two connections, and for the
+  per-row correlated path it is one per row. A connection held on the `DataContext` for the life of the
+  execution, and `DbCommand.Prepare()` on the statement that is about to be run per row, are both things
+  ADO.NET offers and this does not use. `CommandBehavior` is left at its default too — `SequentialAccess`
+  matters for wide rows and `SingleResult` is free.
+
+### 15. The catalog shows tables only
+
+`AdoSchema.cs:76` builds every discovered object as `Schema.TableType.TABLE` — already §2 above. Beyond
+that, `AdoBaseSchema.getFunctions` and `getTypeNames` return the empty defaults, so a server-side
+table-valued function or stored procedure cannot be named in a query. `RelToSqlConverter.visit
+(TableFunctionScan)` writes `TABLE(f(…))`, and ADO.NET reads a procedure's shape through
+`CommandType.StoredProcedure` and `DbDataReader.GetSchemaTable`. The same reader-shape route would give a
+raw-SQL passthrough table macro, which is the escape hatch every adapter of this kind ends up wanting.
+
+### What this adds up to
+
+Ordered by what a query gains per unit of work:
+
+| | item | why first |
+|---|---|---|
+| 1 | `AdoWindow` (§1) | a live crash, and the fix is the capability |
+| 2 | converter cost multiplier (§9) | two lines, measured to turn 2 statements into 1 twice |
+| 3 | semi/anti join (§3) | one rule; pairs with §9, which makes its absence worse |
+| 4 | grouping sets (§2) | one guard removed, two dialect calls added |
+| 5 | `supportsFunction` gate (§7) | converts run-time provider failures into in-memory operators |
+| 6 | `supportsJoinType` guard (§8) | a divergence that is wrong today |
+| 7 | `AdoCorrelate` (§4) | N+1 statements to one, but needs §1 first to be reachable |
+| 8 | statistics SPI (§10) | unlocks three core rules and everything cost-based |
+| 9 | DML (§13) | the known feature gap |
+| 10 | ~~async converter (§14)~~ | **done** (#119); the rows no longer block, the connect still does |
+| 11 | convention per data source (§11) | multi-schema databases join server-side |
+| 12 | `AdoSample`, `AdoUncollect`, `AdoTableFunctionScan`, `AdoMatch` | renderable, narrower demand |
+| 13 | cross-source shipping (§12) | the largest, and the one with no precedent to copy |
+
+`Calc` is on rel2sql's list and is deliberately not on this one: `JdbcCalc` exists upstream with no rule
+that produces it, and `AdoProject` and `AdoFilter` already push everything a calc would.
+
 ## A plan cache on the data source's root — *medium, and measured*
 
 Every statement pays parse, validate, Volcano, translation and `LambdaExpression.Compile` on every
