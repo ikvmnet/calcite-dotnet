@@ -115,6 +115,46 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return implementor.Result(physType, Expression.Block(body[^1].Type, [sources], body));
         }
 
+        /// <inheritdoc />
+        public override ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
+            var rowType = physType.RowType;
+
+            // the inputs go into a list, because the merge walks all of them at once rather than one after
+            // the other; Calcite builds the same list into the block it generates
+            var sources = Expression.Variable(typeof(java.util.List), "mergeUnionInputs");
+            var body = new List<Expression>
+            {
+                Expression.Assign(sources, Expression.New(ArrayListConstructor)),
+            };
+
+            for (int i = 0; i < getInputs().size(); i++)
+            {
+                var result = implementor.VisitChildAsync(this, i, (ClrEnumerableRel)getInputs().get(i), pref);
+                body.Add(Expression.Call(sources, CollectionAdd, Expression.Convert(result.Expression, typeof(object))));
+            }
+
+            var collation = getTraitSet().getCollation();
+            if (collation == null || collation.getFieldCollations().isEmpty())
+                throw new java.lang.IllegalStateException("ClrEnumerableMergeUnion with no collation");
+
+            var (sortKeySelector, collationComparator) = physType.GenerateCollationKey(collation.getFieldCollations());
+            var sortComparator = collationComparator == null
+                ? Expression.Constant(null, typeof(java.util.Comparator))
+                : collationComparator;
+
+            body.Add(
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.MergeUnionAsync.MakeGenericMethod(rowType, sortKeySelector.ReturnType),
+                    sources,
+                    sortKeySelector,
+                    sortComparator,
+                    Expression.Constant(all),
+                    physType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer))));
+
+            return implementor.ResultAsync(physType, Expression.Block(body[^1].Type, [sources], body));
+        }
+
         static readonly System.Reflection.ConstructorInfo ArrayListConstructor = typeof(java.util.ArrayList).GetConstructor([])
             ?? throw new System.InvalidOperationException("java.util.ArrayList has no no-arg constructor.");
 

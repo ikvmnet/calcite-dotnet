@@ -17,9 +17,8 @@ namespace Apache.Calcite.Tests
     /// Runs a query through the ADO.NET surface with the asynchronous convention doing the work.
     /// </summary>
     /// <remarks>
-    /// The end that convention was written for, and the only tests that prove the whole path rather than a
-    /// piece of it: an <c>IClrAsyncScannableTable</c> in the schema, the planner choosing
-    /// <c>ClrAsyncEnumerableConvention</c>, the implementor compiling a
+    /// The end the awaiting operators were written for, and the only tests that prove the whole path rather
+    /// than a piece of it: a table writing <c>ScanAsync</c> in the schema, the implementor compiling a
     /// <c>Func&lt;DataContext, IAsyncEnumerable&lt;object&gt;&gt;</c>, and <c>DbDataReader.ReadAsync</c>
     /// pulling the rows out.
     ///
@@ -118,12 +117,11 @@ namespace Apache.Calcite.Tests
         /// blocked on, from either entry point.
         /// </summary>
         /// <remarks>
-        /// An <c>IClrAsyncScannableTable</c> is not a <c>ScannableTable</c>, so neither the synchronous
-        /// convention nor Calcite's own has a scan for it. The planner carries both Clr conventions whichever
-        /// mode the connection is in — the mode decides the convention demanded of the root and nothing else
-        /// — so the scan is planned in <c>ClrAsyncEnumerableConvention</c> and
-        /// <c>ClrAsyncEnumerableToClrEnumerableConverter</c> carries its rows up to the synchronous root.
-        /// <c>Read</c> blocks there per row, which is what <c>Read</c> over an asynchronous source means.
+        /// An <c>IClrScannableTable</c> is not a <c>ScannableTable</c>, so neither the synchronous
+        /// convention nor Calcite's own has a scan for it. The scan is planned here whatever the connection's
+        /// mode, because there is one convention and the mode is not part of planning; a synchronous
+        /// connection then reads the table's awaited rows across at the scan. <c>Read</c> blocks there per
+        /// row, which is what <c>Read</c> over an asynchronous source means.
         ///
         /// <para>This mode used to refuse such a query, and the refusal was one by omission: the synchronous
         /// planner was simply given no rule that could reach the other convention. The same omission would
@@ -188,7 +186,7 @@ namespace Apache.Calcite.Tests
                 using var reader = await cmd.ExecuteReaderAsync();
 
                 (await reader.ReadAsync()).Should().BeTrue();
-                reader.GetString(0).Should().Contain("ClrAsyncEnumerable");
+                reader.GetString(0).Should().Contain("ClrEnumerable");
                 (await reader.ReadAsync()).Should().BeFalse("an EXPLAIN is one row");
 
                 table.Produced.Should().Be(0, "explaining a query does not run it");
@@ -196,33 +194,36 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// The same EXPLAIN over the same table renders the same plan from either entry point, and the
-        /// connection's mode is what changes it.
+        /// The same EXPLAIN renders the same plan from either entry point and in either mode, because the
+        /// plan no longer has a mode.
         /// </summary>
         /// <remarks>
-        /// A <see cref="SyncRowsTable"/> can be planned either way, so this is the whole of the point:
-        /// nothing in the SQL says which convention to plan, and nothing in the entry point does either.
-        /// The choice is the connection's — the way Calcite's own connection can ask for the bindable
-        /// convention — so <c>ExecuteReader</c> and <c>ExecuteReaderAsync</c> explain the same plan, for an
-        /// <c>EXPLAIN</c> exactly as for the query it explains.
+        /// This used to assert the opposite: the plan text named <c>ClrAsyncEnumerable</c> nodes on an
+        /// asynchronous connection and <c>ClrEnumerable</c> ones on a synchronous connection, and that was
+        /// how a caller could see which convention had been chosen. With one convention there is one plan,
+        /// and whether its rows are awaited is settled after planning, by the implementor. <b>So EXPLAIN can
+        /// no longer tell a caller how the rows will be read</b>, which is a real loss of visibility and the
+        /// honest consequence of the plan being the same object either way.
         /// </remarks>
         [TestMethod]
-        public async Task ShouldExplainTheModesConvention()
+        public async Task ShouldExplainTheSamePlanInEitherMode()
         {
             const string Sql = "EXPLAIN PLAN FOR SELECT K FROM SYNCONLY WHERE V = 'A'";
 
+            string? asynchronous = null;
+
             using (var c = Open(Model, root => root.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false))))
             {
+                asynchronous = Explain(c, Sql);
 
-                Explain(c, Sql).Should().Contain("ClrAsyncEnumerable");
-                (await ExplainAsync(c, Sql)).Should().Contain("ClrAsyncEnumerable");
+                asynchronous.Should().Contain("ClrEnumerable").And.NotContain("ClrAsyncEnumerable");
+                (await ExplainAsync(c, Sql)).Should().Be(asynchronous);
             }
 
             using (var c = Open(SynchronousModel, root => root.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false))))
             {
-
-                Explain(c, Sql).Should().Contain("ClrEnumerable").And.NotContain("ClrAsyncEnumerable");
-                (await ExplainAsync(c, Sql)).Should().Contain("ClrEnumerable").And.NotContain("ClrAsyncEnumerable");
+                Explain(c, Sql).Should().Be(asynchronous, "the connection's mode is not part of the plan");
+                (await ExplainAsync(c, Sql)).Should().Be(asynchronous);
             }
         }
 
@@ -251,7 +252,7 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// An EXPLAIN read as a scalar is the plan, by either method, and the mode's plan by both.
+        /// An EXPLAIN read as a scalar is the plan, by either method and in either mode.
         /// </summary>
         /// <remarks>
         /// <c>ExecuteScalar</c> and <c>ExecuteScalarAsync</c> are the reader path with one row and one column
@@ -270,9 +271,9 @@ namespace Apache.Calcite.Tests
                 cmd.CommandText = "EXPLAIN PLAN FOR SELECT K FROM SYNCONLY WHERE V = 'A'";
 
                 cmd.ExecuteScalar().Should().BeOfType<string>()
-                    .Which.Should().Contain("ClrAsyncEnumerable");
+                    .Which.Should().Contain("ClrEnumerable");
                 (await cmd.ExecuteScalarAsync()).Should().BeOfType<string>()
-                    .Which.Should().Contain("ClrAsyncEnumerable");
+                    .Which.Should().Contain("ClrEnumerable");
             }
 
             using (var c = Open(SynchronousModel, root => root.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false))))
@@ -326,10 +327,10 @@ namespace Apache.Calcite.Tests
         /// a provider, so the asynchronous result blocks instead.
         ///
         /// <para>That is not the sync-over-async the surface refuses, and the line is about who chose. A
-        /// plan can block inside itself too — <c>ClrAsyncEnumerableToClrEnumerableConverter</c> does, once
-        /// per row — and what makes that refusable is that the planner would be choosing it for a caller who
-        /// could not see it, which is why the prepare pipeline registers one convention's rules and not
-        /// both. Here the caller is choosing it in the open at the boundary.</para>
+        /// plan can block inside itself too — a synchronous plan over an awaiting table does, once per row at
+        /// the scan — and that is the caller's choice as well: they asked for the rows synchronously from a
+        /// table that only produces them asynchronously. Here the caller is choosing it in the open at the
+        /// boundary.</para>
         /// </remarks>
         [TestMethod]
         public async Task ShouldReadAnAsyncPlanSynchronouslyWhenAskedTo()
@@ -464,7 +465,7 @@ namespace Apache.Calcite.Tests
         /// <remarks>
         /// "Read" is the word doing the work. Execute acquires: <c>GetAsyncEnumerator</c> now chains down
         /// the whole plan — <c>AcquisitionTimingTests</c> holds that a Calcite leaf's <c>enumerator()</c>
-        /// runs there — but this leaf is an <c>IClrAsyncScannableTable</c> whose <c>ScanAsync</c> is a C#
+        /// runs there — but this leaf is an <c>IClrScannableTable</c> whose <c>ScanAsync</c> is a C#
         /// iterator, and an iterator's body, its counting included, runs nothing until the first
         /// <c>MoveNextAsync</c>. So the table produces no row at Execute, which is this test's claim.
         ///

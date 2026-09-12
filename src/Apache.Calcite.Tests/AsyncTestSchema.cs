@@ -119,7 +119,7 @@ namespace Apache.Calcite.Tests
         /// The same rows as <c>ClrEnumerableDifferentialTests.CastsTable</c>, whose remarks say what a cast
         /// out of ANY actually does. This convention reaches the same generator, and the point of running
         /// the queries here is that it keeps reaching it: the failure that raised the question was in
-        /// <c>ClrAsyncEnumerableDefaults.CalcRows</c>.
+        /// <c>ClrEnumerableDefaults.CalcRowsAsync</c>.
         /// </remarks>
         public static readonly object?[][] Casts =
         [
@@ -164,6 +164,37 @@ namespace Apache.Calcite.Tests
                 .add("REGION", typeFactory.createSqlType(SqlTypeName.VARCHAR))
                 .add("AMOUNT", typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.INTEGER), true))
                 .add("LABEL", typeFactory.createSqlType(SqlTypeName.VARCHAR))
+                .build();
+        }
+
+        /// <summary>
+        /// Timestamps an hour apart and one inside an hour, which is what a window table function needs to
+        /// have anything to put in two buckets.
+        /// </summary>
+        /// <remarks>
+        /// The same four rows the synchronous differential tests' EVENTS table holds, so that the two
+        /// harnesses put the same question to TUMBLE, HOP and SESSION.
+        /// </remarks>
+        public static readonly object?[][] Events =
+        [
+            [java.lang.Long.valueOf(EventsBase), java.lang.Integer.valueOf(1)],
+            [java.lang.Long.valueOf(EventsBase + (EventsHour / 6)), java.lang.Integer.valueOf(2)],
+            [java.lang.Long.valueOf(EventsBase + EventsHour), java.lang.Integer.valueOf(3)],
+            [java.lang.Long.valueOf(EventsBase + (EventsHour * 2) + (EventsHour / 2)), java.lang.Integer.valueOf(4)],
+        ];
+
+        const long EventsHour = 3600000L;
+
+        const long EventsBase = 1704067200000L;
+
+        /// <summary>
+        /// Returns the EVENTS row type.
+        /// </summary>
+        public static RelDataType EventsRowType(RelDataTypeFactory typeFactory)
+        {
+            return typeFactory.builder()
+                .add("ROWTIME", typeFactory.createSqlType(SqlTypeName.TIMESTAMP))
+                .add("ID", typeFactory.createSqlType(SqlTypeName.INTEGER))
                 .build();
         }
 
@@ -258,7 +289,7 @@ namespace Apache.Calcite.Tests
     /// this convention from the other one — every test would pass over a sequence that is asynchronous in
     /// name only, and an operator that dropped its continuation would look correct.
     /// </remarks>
-    sealed class AsyncRowsTable(object?[][] rows, System.Func<RelDataTypeFactory, RelDataType> rowType, bool sorted) : AbstractTable, IClrAsyncScannableTable
+    sealed class AsyncRowsTable(object?[][] rows, System.Func<RelDataTypeFactory, RelDataType> rowType, bool sorted) : AbstractTable, IClrScannableTable
     {
 
         /// <summary>
@@ -305,6 +336,15 @@ namespace Apache.Calcite.Tests
         /// <inheritdoc />
         public IAsyncEnumerable<object?[]> ScanAsync(DataContext root) => Rows();
 
+        /// <inheritdoc />
+        /// <remarks>
+        /// The awaiting-only table's half of the bargain. There is no pulled source to offer, so this blocks
+        /// a thread per row, which is what a caller reading these rows synchronously is asking for. Leaving
+        /// the interface default in place instead would be the mistake: it would wrap this, and a caller who
+        /// asked to await would get the blocking read back with a state machine around it.
+        /// </remarks>
+        public IEnumerable<object?[]> Scan(DataContext root) => BlockingDrain.Of(ScanAsync(root));
+
         async IAsyncEnumerable<object?[]> Rows([EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             SawCancellableToken = cancellationToken.CanBeCanceled;
@@ -330,6 +370,67 @@ namespace Apache.Calcite.Tests
                 await Task.Yield();
 
                 DisposedAsynchronously = true;
+            }
+        }
+
+    }
+
+
+    /// <summary>
+    /// Drains an awaited sequence on the calling thread.
+    /// </summary>
+    /// <remarks>
+    /// What a table whose rows only ever arrive asynchronously has to write for its <c>Scan</c>. It is here
+    /// rather than reached out of the convention on purpose: <c>ClrSequences</c> is internal, an adapter
+    /// outside this repository cannot call it, and a test table that did would be modelling something no
+    /// real implementer can write.
+    ///
+    /// <para><b>It is not four lines, and the first version written here was.</b> That one blocked on
+    /// <c>MoveNextAsync</c> directly and deadlocked
+    /// <c>ShouldReadAnAsynchronousLeafSynchronouslyUnderASynchronizationContext</c> — thirty seconds and a
+    /// hung thread. The operators of this convention await without <c>ConfigureAwait(false)</c>, so the
+    /// continuation is promised to whatever context is current at the moment of suspension, which is inside
+    /// <c>MoveNextAsync</c>'s synchronous phase and therefore before any wait begins. The context has to be
+    /// nulled <em>before</em> the call, not around the wait. <c>ClrSequences.ToEnumerable</c> says the same
+    /// thing and says it was measured; this is the second measurement.</para>
+    /// </remarks>
+    static class BlockingDrain
+    {
+
+        public static IEnumerable<T> Of<T>(IAsyncEnumerable<T> source)
+        {
+            var e = source.GetAsyncEnumerator();
+
+            try
+            {
+                while (Suppressed(() => e.MoveNextAsync().AsTask().GetAwaiter().GetResult()))
+                    yield return e.Current;
+            }
+            finally
+            {
+                Suppressed(() =>
+                {
+                    e.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    return true;
+                });
+            }
+        }
+
+        static bool Suppressed(System.Func<bool> body)
+        {
+            var context = SynchronizationContext.Current;
+            if (context == null)
+                return body();
+
+            SynchronizationContext.SetSynchronizationContext(null);
+
+            try
+            {
+                return body();
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(context);
             }
         }
 

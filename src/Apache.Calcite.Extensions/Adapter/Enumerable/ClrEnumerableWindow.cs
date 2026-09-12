@@ -110,7 +110,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             for (int windowIdx = 0; windowIdx < groups.size(); windowIdx++)
             {
                 var group = (Group)groups.get(windowIdx);
-                source = ImplementGroup(implementor, result, group, windowIdx, physType, source, pref, translatedConstants, variables, body, out physType);
+                source = ImplementGroup(implementor, result.PhysType, result.Format, group, windowIdx, physType, source, pref, translatedConstants, variables, body, out physType);
 
                 // one variable per group, as Calcite makes one "source" per group, so a later group reads what
                 // an earlier one produced rather than building it again
@@ -123,6 +123,48 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             body.Add(source);
 
             return implementor.Result(physType, Expression.Block(source.Type, variables, body));
+        }
+
+        /// <inheritdoc />
+        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var typeFactory = implementor.TypeFactory;
+            var child = (ClrEnumerableRel)getInput();
+            var result = implementor.VisitChildAsync(this, 0, child, pref);
+
+            // a window aggregate may name a constant past the input's own fields, so they are translated once
+            // and the input getter hands them out by index
+            var translatedConstants = new java.util.ArrayList(constants.size());
+            for (int i = 0; i < constants.size(); i++)
+            {
+                var constant = (RexLiteral)constants.get(i);
+                translatedConstants.add(RexToLixTranslator.translateLiteral(constant, constant.getType(), typeFactory, RexImpTable.NullAs.NULL));
+            }
+
+            // the comparators and collation keys are evaluated once and read by the lambdas of their group,
+            // which is what Calcite's "final Comparator comparator = ..." ahead of the loop is
+            var variables = new List<ParameterExpression>();
+            var body = new List<Expression>();
+
+            var physType = result.PhysType;
+            var source = result.Expression;
+
+            for (int windowIdx = 0; windowIdx < groups.size(); windowIdx++)
+            {
+                var group = (Group)groups.get(windowIdx);
+                source = ImplementGroupAsync(implementor, result.PhysType, result.Format, group, windowIdx, physType, source, pref, translatedConstants, variables, body, out physType);
+
+                // one variable per group, as Calcite makes one "source" per group, so a later group reads what
+                // an earlier one produced rather than building it again
+                var sourceVariable = Expression.Variable(source.Type, $"source{windowIdx}");
+                variables.Add(sourceVariable);
+                body.Add(Expression.Assign(sourceVariable, source));
+                source = sourceVariable;
+            }
+
+            body.Add(source);
+
+            return implementor.ResultAsync(physType, Expression.Block(source.Type, variables, body));
         }
 
         /// <summary>
@@ -142,7 +184,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <returns></returns>
         Expression ImplementGroup(
             ClrEnumerableRelImplementor implementor,
-            ClrEnumerableResult result,
+            ClrPhysType inputResultPhysType,
+            JavaRowFormat inputResultFormat,
             Group group,
             int windowIdx,
             ClrPhysType inputPhysType,
@@ -196,7 +239,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 typeBuilder.add(agg.call.name ?? throw new java.lang.NullPointerException($"agg.call.name for {agg.call}"), agg.call.type);
             }
 
-            outputPhysType = ClrPhysTypeImpl.Of(typeFactory, typeBuilder.build(), pref.Prefer(result.Format));
+            outputPhysType = ClrPhysTypeImpl.Of(typeFactory, typeBuilder.build(), pref.Prefer(inputResultFormat));
             var outputCalcite = PhysTypeImpl.of(typeFactory, outputPhysType.RelRowType, outputPhysType.Format, false);
 
             // a RANGE frame finds its bounds by binary search over the collation key rather than by counting
@@ -214,7 +257,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             }
 
             var loop = new WindowLoop(inputCalcite);
-            var inputGetter = new WindowRelInputGetter(loop.Row, inputCalcite, result.PhysType.RelRowType.getFieldCount(), translatedConstants);
+            var inputGetter = new WindowRelInputGetter(loop.Row, inputCalcite, inputResultPhysType.RelRowType.getFieldCount(), translatedConstants);
 
             // the output row is every input field, and then whatever each aggregate last computed
             var inputFieldCount = inputPhysType.RelRowType.getFieldCount();
@@ -227,7 +270,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var initBlock = new J.BlockBuilder();
             var stateTypes = new java.util.ArrayList();
             var initExpressions = new java.util.ArrayList();
-            DeclareAndResetState(typeFactory, result, constants, windowIdx, aggs, outputCalcite, outputRow, group.exclude, initBlock, stateTypes, initExpressions);
+            DeclareAndResetState(typeFactory, inputResultPhysType, constants, windowIdx, aggs, outputCalcite, outputRow, group.exclude, initBlock, stateTypes, initExpressions);
 
             var accPhysType = PhysTypeImplWorkaround.Of(typeFactory, typeFactory.createSyntheticType(stateTypes));
             ClrEnumerableAggregateBase.DeclareParentAccumulator(initExpressions, initBlock, accPhysType);
@@ -279,7 +322,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var frame = new java.util.function.DelegateFunction<J.BlockBuilder, WinAggFrameResultContext>(
                 block => new ClrWinAggFrameResultContext(
-                    block, typeFactory, implementor.Conformance, inputCalcite, result.PhysType.RelRowType.getFieldCount(),
+                    block, typeFactory, implementor.Conformance, inputCalcite, inputResultPhysType.RelRowType.getFieldCount(),
                     translatedConstants, comparator_, loop.Rows, loop.Index, loop.Start, loop.End, min_, loop.MaxX,
                     loop.HasRows, loop.FrameRowCount, loop.PartitionRowCount, loop.Position));
 
@@ -298,14 +341,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             {
                 var agg = (ClrAggImpState)aggs.get(i);
                 agg.Implementor.implementAdd(agg.context,
-                    new ClrWinAggAddContext(addBuilder, agg.state, frame, loop.Position, RexArguments(agg, result.PhysType.RelRowType, constants)));
+                    new ClrWinAggAddContext(addBuilder, agg.state, frame, loop.Position, RexArguments(agg, inputResultPhysType.RelRowType, constants)));
             }
 
             var cachedBuilder = new J.BlockBuilder();
-            var cached = ImplementResult(aggs, cachedBuilder, frame, true, result.PhysType.RelRowType, constants);
+            var cached = ImplementResult(aggs, cachedBuilder, frame, true, inputResultPhysType.RelRowType, constants);
 
             var uncachedBuilder = new J.BlockBuilder();
-            var uncached = ImplementResult(aggs, uncachedBuilder, frame, false, result.PhysType.RelRowType, constants);
+            var uncached = ImplementResult(aggs, uncachedBuilder, frame, false, inputResultPhysType.RelRowType, constants);
 
             var resetBlock = resetBuilder.toBlock();
             var addBlock = addBuilder.toBlock();
@@ -328,6 +371,227 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             return Expression.Call(null,
                 ClrBuiltInMethod.Window.MakeGenericMethod(sourceType, keyType, accType, outputType),
+                source,
+                (Expression?)partitionSelector ?? Expression.Constant(null, typeof(Func<,>).MakeGenericType(sourceType, keyType)),
+                comparator,
+                Expression.Constant(group.exclude, typeof(RexWindowExclusion)),
+                lowerBound,
+                upperBound,
+                Expression.Constant(group.isAlwaysNonEmpty()),
+                Expression.Constant(clampStart),
+                Expression.Constant(clampEnd),
+                Expression.Constant(group.lowerBound.isUnboundedPreceding() == false),
+                initializer,
+                (Expression?)reset ?? Expression.Constant(null, accumulatorType),
+                (Expression?)adder ?? Expression.Constant(null, accumulatorType),
+                (Expression?)cachedResult ?? Expression.Constant(null, accumulatorType),
+                (Expression?)uncachedResult ?? Expression.Constant(null, accumulatorType),
+                selector);
+        }
+
+        /// <summary>
+        /// Implements one window group over the sequence the group before it produced.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <param name="result">What the input produced, which is what the aggregate arguments are indexed against however many groups have run.</param>
+        /// <param name="group"></param>
+        /// <param name="windowIdx"></param>
+        /// <param name="inputPhysType"></param>
+        /// <param name="source"></param>
+        /// <param name="pref"></param>
+        /// <param name="translatedConstants"></param>
+        /// <param name="variables">Variables of the block the whole node becomes.</param>
+        /// <param name="body">Statements of that block.</param>
+        /// <param name="outputPhysType"></param>
+        /// <returns></returns>
+        Expression ImplementGroupAsync(
+            ClrEnumerableRelImplementor implementor,
+            ClrPhysType inputResultPhysType,
+            JavaRowFormat inputResultFormat,
+            Group group,
+            int windowIdx,
+            ClrPhysType inputPhysType,
+            Expression source,
+            ClrEnumerablePrefer pref,
+            java.util.List translatedConstants,
+            List<ParameterExpression> variables,
+            List<Expression> body,
+            out ClrPhysType outputPhysType)
+        {
+            var typeFactory = implementor.TypeFactory;
+            var translator = implementor.Translator;
+
+            // a partition is an Object[], as Calcite's is, so a row that is a primitive is boxed to go in it —
+            // and boxed the way the type factory says, because the comparator ordering the partition is
+            // Calcite's and takes a java.lang.Integer where the row type is an int
+            // the loop is this convention's, but everything inside it is Calcite's: the aggregate
+            // implementors write linq4j into blocks of Calcite's, the frame reads a row through Rex, and the
+            // output row is built with record. So the input and the output are each held twice -- ours for the
+            // sequence, the comparator and the collation key, all of which are delegates, and Calcite's for
+            // every field read that ends up inside one of those blocks.
+            var inputCalcite = PhysTypeImpl.of(typeFactory, inputPhysType.RelRowType, inputPhysType.Format, false);
+
+            var sourceType = inputPhysType.RowType;
+            source = source;
+
+            // orders the rows of a partition, and is what EXCLUDE and RANK ask whether two rows are peers
+            var comparator_ = J.Expressions.parameter((java.lang.Class)typeof(java.util.Comparator), $"comparator{windowIdx}");
+            var comparator = Hoist(translator, variables, body, comparator_,
+                inputPhysType.GenerateComparator(group.collation()), typeof(java.util.Comparator));
+
+            var aggs = new java.util.ArrayList();
+            var aggregateCalls = group.getAggregateCalls(this);
+            for (int aggIdx = 0; aggIdx < aggregateCalls.size(); aggIdx++)
+            {
+                var call = (AggregateCall)aggregateCalls.get(aggIdx);
+                if (call.ignoreNulls())
+                    throw new java.lang.UnsupportedOperationException("IGNORE NULLS not supported");
+
+                aggs.add(new ClrAggImpState(aggIdx, call, true));
+            }
+
+            // the output of this group is its input plus one field per aggregate
+            var typeBuilder = typeFactory.builder();
+            typeBuilder.addAll(inputPhysType.RelRowType.getFieldList());
+            for (int i = 0; i < aggs.size(); i++)
+            {
+                var agg = (ClrAggImpState)aggs.get(i);
+
+                // [CALCITE-4326] NullPointerException possible in EnumerableWindow when agg.call.name is null
+                typeBuilder.add(agg.call.name ?? throw new java.lang.NullPointerException($"agg.call.name for {agg.call}"), agg.call.type);
+            }
+
+            outputPhysType = ClrPhysTypeImpl.Of(typeFactory, typeBuilder.build(), pref.Prefer(inputResultFormat));
+            var outputCalcite = PhysTypeImpl.of(typeFactory, outputPhysType.RelRowType, outputPhysType.Format, false);
+
+            // a RANGE frame finds its bounds by binary search over the collation key rather than by counting
+            J.ParameterExpression? keySelector_ = null;
+            J.ParameterExpression? keyComparator_ = null;
+            if ((group.isRows || (group.upperBound.isUnbounded() && group.lowerBound.isUnbounded())) == false)
+            {
+                var (keySelector, collationComparator) = inputPhysType.GenerateCollationKey(group.collation().getFieldCollations());
+
+                keySelector_ = J.Expressions.parameter((java.lang.Class)typeof(Function1), $"keySelector{windowIdx}");
+                keyComparator_ = J.Expressions.parameter((java.lang.Class)typeof(java.util.Comparator), $"keyComparator{windowIdx}");
+
+                Hoist(translator, variables, body, keySelector_, keySelector, typeof(Function1));
+                Hoist(translator, variables, body, keyComparator_, collationComparator ?? throw new java.lang.NullPointerException("keyComparator"), typeof(java.util.Comparator));
+            }
+
+            var loop = new WindowLoop(inputCalcite);
+            var inputGetter = new WindowRelInputGetter(loop.Row, inputCalcite, inputResultPhysType.RelRowType.getFieldCount(), translatedConstants);
+
+            // the output row is every input field, and then whatever each aggregate last computed
+            var inputFieldCount = inputPhysType.RelRowType.getFieldCount();
+            var outputRow = new java.util.ArrayList();
+            for (int i = 0; i < inputFieldCount; i++)
+                outputRow.add(inputCalcite.fieldReference(loop.Row, i, outputCalcite.getJavaFieldType(i)));
+
+            // declareAndResetState: the state each aggregate accumulates in, the variable holding its last
+            // result, and the block that gives both their starting values
+            var initBlock = new J.BlockBuilder();
+            var stateTypes = new java.util.ArrayList();
+            var initExpressions = new java.util.ArrayList();
+            DeclareAndResetState(typeFactory, inputResultPhysType, constants, windowIdx, aggs, outputCalcite, outputRow, group.exclude, initBlock, stateTypes, initExpressions);
+
+            var accPhysType = PhysTypeImplWorkaround.Of(typeFactory, typeFactory.createSyntheticType(stateTypes));
+            ClrEnumerableAggregateBase.DeclareParentAccumulator(initExpressions, initBlock, accPhysType);
+
+            var accType = ClrTypes.Resolve(accPhysType.getJavaRowType());
+            var acc_ = J.Expressions.parameter(accPhysType.getJavaRowType(), "acc");
+            loop.Accumulator = acc_;
+
+            // what were local variables become fields of the accumulator, so the state is a value passed in and
+            // out of a lambda rather than something mutated where it was declared
+            for (int i = 0, slot = 0; i < aggs.size(); i++)
+            {
+                var agg = (ClrAggImpState)aggs.get(i);
+
+                var state = new java.util.ArrayList(agg.state.size());
+                for (int j = 0; j < agg.state.size(); j++)
+                    state.add(accPhysType.fieldReference(acc_, slot++));
+
+                agg.state = state;
+                agg.result = accPhysType.fieldReference(acc_, slot++);
+                outputRow.set(inputFieldCount + i, agg.result);
+            }
+
+            var initializer = Expression.Lambda(
+                typeof(Func<>).MakeGenericType(accType),
+                translator.TranslateBody(initBlock.toBlock(), accType));
+
+            // the frame bounds, each its own block because each is its own lambda
+            var min_ = J.Expressions.constant(0);
+
+            var lowerBuilder = new J.BlockBuilder();
+            var startUnchecked = TranslateBound(
+                RexToLixTranslator.forAggregation(typeFactory, lowerBuilder, inputGetter, implementor.Conformance),
+                typeFactory, loop.Index, loop.Row, min_, loop.MaxX, loop.Rows, group, true, inputCalcite, keySelector_, keyComparator_);
+            lowerBuilder.add(J.Expressions.return_(null, startUnchecked));
+
+            var upperBuilder = new J.BlockBuilder();
+            var endUnchecked = TranslateBound(
+                RexToLixTranslator.forAggregation(typeFactory, upperBuilder, inputGetter, implementor.Conformance),
+                typeFactory, loop.Index, loop.Row, min_, loop.MaxX, loop.Rows, group, false, inputCalcite, keySelector_, keyComparator_);
+            upperBuilder.add(J.Expressions.return_(null, endUnchecked));
+
+            // a bound that is unbounded, or that is the current row, is already inside the partition
+            var clampStart = group.lowerBound.isUnbounded() == false && ReferenceEquals(startUnchecked, loop.Index) == false;
+            var clampEnd = group.upperBound.isUnbounded() == false && ReferenceEquals(endUnchecked, loop.Index) == false;
+
+            var lowerBound = loop.Lambda(translator, lowerBuilder.toBlock(), typeof(int), null);
+            var upperBound = loop.Lambda(translator, upperBuilder.toBlock(), typeof(int), null);
+
+            var frame = new java.util.function.DelegateFunction<J.BlockBuilder, WinAggFrameResultContext>(
+                block => new ClrWinAggFrameResultContext(
+                    block, typeFactory, implementor.Conformance, inputCalcite, inputResultPhysType.RelRowType.getFieldCount(),
+                    translatedConstants, comparator_, loop.Rows, loop.Index, loop.Start, loop.End, min_, loop.MaxX,
+                    loop.HasRows, loop.FrameRowCount, loop.PartitionRowCount, loop.Position));
+
+            // reset, add, and the two halves of result, in the order Calcite calls the implementors in: the
+            // implementors keep state of their own across the calls
+            var resetBuilder = new J.BlockBuilder();
+            for (int i = 0; i < aggs.size(); i++)
+            {
+                var agg = (ClrAggImpState)aggs.get(i);
+                agg.Implementor.implementReset(agg.context,
+                    new WinAggResetContextImpl(resetBuilder, agg.state, loop.Index, loop.Start, loop.End, loop.HasRows, loop.FrameRowCount, loop.PartitionRowCount));
+            }
+
+            var addBuilder = new J.BlockBuilder();
+            for (int i = 0; i < aggs.size(); i++)
+            {
+                var agg = (ClrAggImpState)aggs.get(i);
+                agg.Implementor.implementAdd(agg.context,
+                    new ClrWinAggAddContext(addBuilder, agg.state, frame, loop.Position, RexArguments(agg, inputResultPhysType.RelRowType, constants)));
+            }
+
+            var cachedBuilder = new J.BlockBuilder();
+            var cached = ImplementResult(aggs, cachedBuilder, frame, true, inputResultPhysType.RelRowType, constants);
+
+            var uncachedBuilder = new J.BlockBuilder();
+            var uncached = ImplementResult(aggs, uncachedBuilder, frame, false, inputResultPhysType.RelRowType, constants);
+
+            var resetBlock = resetBuilder.toBlock();
+            var addBlock = addBuilder.toBlock();
+
+            var accumulatorType = typeof(Func<,,>).MakeGenericType(typeof(WindowFrame), accType, accType);
+            var reset = resetBlock.statements.size() == 0 ? null : loop.Lambda(translator, WithReturn(resetBlock, acc_), accType, accType);
+            var adder = addBlock.statements.size() == 0 ? null : loop.Lambda(translator, WithReturn(addBlock, acc_), accType, accType);
+            var cachedResult = cached == false ? null : loop.Lambda(translator, WithReturn(cachedBuilder.toBlock(), acc_), accType, accType);
+            var uncachedResult = uncached == false ? null : loop.Lambda(translator, WithReturn(uncachedBuilder.toBlock(), acc_), accType, accType);
+
+            var selectorBuilder = new J.BlockBuilder();
+            selectorBuilder.add(J.Expressions.return_(null, outputCalcite.record(outputRow)));
+
+            var outputType = outputPhysType.RowType;
+            var selector = loop.Lambda(translator, selectorBuilder.toBlock(), outputType, accType);
+
+            // the partition key, which is the one thing here that reads a row outside the loop
+            var partitionSelector = PartitionSelector(translator, inputCalcite, group, sourceType);
+            var keyType = partitionSelector?.ReturnType ?? typeof(object);
+
+            return ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.WindowAsync.MakeGenericMethod(sourceType, keyType, accType, outputType),
                 source,
                 (Expression?)partitionSelector ?? Expression.Constant(null, typeof(Func<,>).MakeGenericType(sourceType, keyType)),
                 comparator,
@@ -474,7 +738,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </remarks>
         static void DeclareAndResetState(
             JavaTypeFactory typeFactory,
-            ClrEnumerableResult result,
+            ClrPhysType inputResultPhysType,
             java.util.List constants,
             int windowIdx,
             java.util.List aggs,
@@ -488,7 +752,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             for (int i = 0; i < aggs.size(); i++)
             {
                 var agg = (ClrAggImpState)aggs.get(i);
-                agg.context = new ClrWinAggContext(agg, typeFactory, result.PhysType.RelRowType, constants, exclusion);
+                agg.context = new ClrWinAggContext(agg, typeFactory, inputResultPhysType.RelRowType, constants, exclusion);
 
                 var aggName = ClrEnumerableAggregateBase.AggName(agg);
                 var state = agg.Implementor.getStateType(agg.context);

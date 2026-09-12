@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
@@ -23,8 +22,8 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// The operators run under <c>ClrEnumerableConvention</c> and <c>ClrAsyncEnumerableConvention</c>, and
-    /// answer what Calcite's own engine answers.
+    /// The operators run under <c>ClrEnumerableConvention</c>, read either way, and answer what Calcite's own
+    /// engine answers.
     /// </summary>
     /// <remarks>
     /// <see cref="GeographyExecutionTests"/> runs everything through <c>EnumerableConvention</c>, where the
@@ -96,7 +95,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         [TestMethod]
-        public async Task ShouldAgreeWithCalciteInTheAsyncEnumerableConvention()
+        public async Task ShouldAgreeWithCalciteWhenTheSamePlanIsAwaited()
         {
             var differences = new List<string>();
             var rows = 0;
@@ -177,22 +176,17 @@ namespace Apache.Calcite.Geography.Tests
 
             // both lists, because a scan of this table lands in the synchronous convention and reaches the
             // asynchronous one through the converter that list carries -- the same reason
-            // ClrRelOptUtil.RegisterDefaultRules registers both whichever one a statement is planned into
-            var rules = new List<RelOptRule>();
-            rules.AddRange(ClrEnumerableRules.Rules());
-            rules.AddRange(ClrAsyncEnumerableRules.Rules());
-
-            var calcRules = new List<RelOptRule>();
-            calcRules.AddRange(ClrEnumerableRules.CalcRules());
-            calcRules.AddRange(ClrAsyncEnumerableRules.CalcRules());
+            // the same rules and the same plan as the synchronous run above; only the implementor differs
+            var rules = new List<RelOptRule>(ClrEnumerableRules.Rules());
+            var calcRules = new List<RelOptRule>(ClrEnumerableRules.CalcRules());
 
             var planner = Frameworks.getPlanner(Config(rootSchema, rules, calcRules));
             var logical = planner.rel(planner.validate(planner.parse(sql))).project();
-            var traits = logical.getTraitSet().replace(ClrAsyncEnumerableConvention.Instance).simplify();
-            var physical = (ClrAsyncEnumerableRel)planner.transform(0, traits, logical);
+            var traits = logical.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify();
+            var physical = (ClrEnumerableRel)planner.transform(0, traits, logical);
 
             var parameters = new java.util.HashMap();
-            var bindable = ClrAsyncEnumerableInterpretable.ToBindable(parameters, physical, ClrEnumerablePrefer.Array);
+            var bindable = ClrEnumerableInterpretable.ToAsyncBindable(parameters, physical, ClrEnumerablePrefer.Array);
 
             var rows = new List<string[]>();
             await foreach (var current in bindable.Bind(new TestDataContext(rootSchema, parameters)))

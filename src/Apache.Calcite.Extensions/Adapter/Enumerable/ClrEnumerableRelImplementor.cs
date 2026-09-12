@@ -24,12 +24,26 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// </summary>
     /// <remarks>
     /// The counterpart of Calcite's <c>EnumerableRelImplementor</c>, and used the same way: one instance
-    /// implements one plan. A node reaches its inputs through <see cref="VisitChild"/> and returns a
-    /// <see cref="ClrEnumerableResult"/>; <see cref="ImplementRoot"/> does the whole plan at once.
+    /// implements one plan.
     ///
-    /// <para>This is how a plan of this convention is run: cast the planned root to
-    /// <see cref="ClrEnumerableRel"/>, pass it to <see cref="ImplementRoot"/>, and compile the lambda that
-    /// comes back into a <c>Func&lt;DataContext, IEnumerable&lt;object&gt;&gt;</c>.</para>
+    /// <para><b>There are two call hierarchies here and they are parallel, not one hierarchy over a
+    /// flag.</b> <see cref="ImplementRoot"/> and <see cref="VisitChild"/> are the pulled one, and they call
+    /// only <see cref="ClrEnumerableRel.Implement"/>; <see cref="ImplementRootAsync"/> and
+    /// <see cref="VisitChildAsync"/> are the awaiting one, and they call only
+    /// <see cref="ClrEnumerableRel.ImplementAsync"/>. A body calls the visit of its own kind, so the kind
+    /// is settled statically at every step and this class holds no mode. There was a <c>bool async</c>
+    /// field for a while and it was the same dispatch the operator tables had already been rid of: it made
+    /// a node's inputs a runtime question and forced every result to be type-tested on the way back.</para>
+    ///
+    /// <para>So to run a plan of this convention: cast the planned root to
+    /// <see cref="ClrEnumerableRel"/>, pass it to whichever root member you want, and compile the lambda
+    /// that comes back into a <c>Func&lt;DataContext, IEnumerable&lt;object&gt;&gt;</c> or a
+    /// <c>Func&lt;DataContext, IAsyncEnumerable&lt;object&gt;&gt;</c>. One instance serves both, and the
+    /// same planned tree serves both.</para>
+    ///
+    /// <para>Nothing about a <em>row</em> differs between the two: the physical type, the Rex translation,
+    /// the correlation variables and the stash are shared outright, which is why this is one class with two
+    /// hierarchies rather than two classes.</para>
     /// </remarks>
     public class ClrEnumerableRelImplementor : IClrRelImplementor
     {
@@ -129,20 +143,98 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         public Function1 AllCorrelateVariables { get; }
 
         /// <summary>
-        /// Implements one input of a node.
+        /// Implements one input of a node, as a pulled sequence.
         /// </summary>
         /// <param name="parent">The node being implemented, or <see langword="null"/> for a root.</param>
         /// <param name="ordinal">Which input of <paramref name="parent"/> this is.</param>
         /// <param name="child">The input to implement.</param>
         /// <param name="prefer">How the parent wants the input's rows represented.</param>
-        /// <returns>The input's plan, physical type and row format.</returns>
+        /// <returns>The input's plan, physical type and row format, yielding an
+        /// <see cref="IEnumerable{T}"/>.</returns>
+        /// <remarks>
+        /// What a node's <see cref="ClrEnumerableRel.Implement"/> calls, and it calls the input's
+        /// <see cref="ClrEnumerableRel.Implement"/> in turn. The pulled hierarchy is closed: every call in
+        /// it reaches a pulled body and answers a pulled sequence, so a body written against the pulled
+        /// operators can compose what this returns without asking anything.
+        /// </remarks>
         public ClrEnumerableResult VisitChild(ClrEnumerableRel? parent, int ordinal, ClrEnumerableRel child, ClrEnumerablePrefer prefer)
         {
+            ArgumentNullException.ThrowIfNull(child);
+
             return child.Implement(this, prefer);
         }
 
         /// <summary>
-        /// Implements a whole plan as a function of the <see cref="DataContext"/> it will be bound with.
+        /// Implements one input of a node, as an awaited sequence.
+        /// </summary>
+        /// <param name="parent">The node being implemented, or <see langword="null"/> for a root.</param>
+        /// <param name="ordinal">Which input of <paramref name="parent"/> this is.</param>
+        /// <param name="child">The input to implement.</param>
+        /// <param name="prefer">How the parent wants the input's rows represented.</param>
+        /// <returns>The input's plan, physical type and row format, yielding an
+        /// <see cref="IAsyncEnumerable{T}"/>.</returns>
+        /// <remarks>
+        /// The awaiting counterpart, and the one place <see cref="ClrEnumerableRel.ImplementAsync"/> is
+        /// called from a node. The two hierarchies are parallel and separate: a body calls the member of its
+        /// own kind and nothing consults a mode, because there is no mode to consult.
+        /// </remarks>
+        public ClrAsyncEnumerableResult VisitChildAsync(ClrEnumerableRel? parent, int ordinal, ClrEnumerableRel child, ClrEnumerablePrefer prefer)
+        {
+            ArgumentNullException.ThrowIfNull(child);
+
+            return child.ImplementAsync(this, prefer);
+        }
+
+        /// <summary>
+        /// Reads an awaited result across to a pulled one.
+        /// </summary>
+        /// <param name="result">What the awaiting fork produced.</param>
+        /// <returns>The same rows, as an <see cref="IEnumerable{T}"/>.</returns>
+        /// <remarks>
+        /// A node whose only real body is the awaiting one writes <see cref="ClrEnumerableRel.Implement"/> as
+        /// a delegation through this. It <b>blocks a thread per row</b>, because an
+        /// <see cref="IEnumerable{T}"/> has nowhere to suspend, so writing it is a decision and it is made
+        /// where it can be read.
+        ///
+        /// <para>Unconditional, and that is the point of there being two result types. The argument is an
+        /// awaited result because its type says so, and nothing has to look at the expression to find out.
+        /// </para>
+        /// </remarks>
+        public ClrEnumerableResult Pulled(ClrAsyncEnumerableResult result)
+        {
+            ArgumentNullException.ThrowIfNull(result);
+
+            return new ClrEnumerableResult(
+                Expression.Call(null, ClrBuiltInMethod.ToEnumerable.MakeGenericMethod(result.PhysType.RowType), result.Expression),
+                result.PhysType,
+                result.Format);
+        }
+
+        /// <summary>
+        /// Reads a pulled result across to an awaited one.
+        /// </summary>
+        /// <param name="result">What the pulled fork produced.</param>
+        /// <returns>The same rows, as an <see cref="IAsyncEnumerable{T}"/>.</returns>
+        /// <remarks>
+        /// The mirror of <see cref="Pulled"/>, and the common one: it is what the default
+        /// <see cref="ClrEnumerableRel.ImplementAsync"/> is, and what a node writes when its awaiting body
+        /// has to hand a pulled sequence up anyway. <c>ClrEnumerableTableFunctionScan</c> is the one here
+        /// that does, because Calcite's own generator builds its window in linq4j and there is nothing to
+        /// await. It costs a state machine and no thread.
+        /// </remarks>
+        public ClrAsyncEnumerableResult Awaited(ClrEnumerableResult result)
+        {
+            ArgumentNullException.ThrowIfNull(result);
+
+            return new ClrAsyncEnumerableResult(
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.ToAsyncEnumerable.MakeGenericMethod(result.PhysType.RowType), result.Expression),
+                result.PhysType,
+                result.Format);
+        }
+
+        /// <summary>
+        /// Implements a whole plan as a function of the <see cref="DataContext"/> it will be bound with,
+        /// yielding its rows as an <see cref="IEnumerable{T}"/>.
         /// </summary>
         /// <param name="rootRel">The root of the plan, which must be of this convention.</param>
         /// <param name="prefer">How the caller wants rows represented.</param>
@@ -155,19 +247,29 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// A node of the plan could not be implemented. The message names the plan; the failure itself is the
         /// inner exception.
         /// </exception>
+        /// <remarks>
+        /// The entry point of the pulled hierarchy, whose counterpart is <see cref="ImplementRootAsync"/>.
+        /// Which one a caller calls is the whole of the choice: the convention, the rules, the planned tree
+        /// and this instance are the same either way, and nothing between here and a leaf reads a mode
+        /// because there is none to read.
+        /// </remarks>
         public LambdaExpression ImplementRoot(ClrEnumerableRel rootRel, ClrEnumerablePrefer prefer)
         {
-            ClrEnumerableResult result;
+            ArgumentNullException.ThrowIfNull(rootRel);
+
+            ClrEnumerableResult implemented;
 
             try
             {
-                result = rootRel.Implement(this, prefer);
+                implemented = rootRel.Implement(this, prefer);
             }
             catch (Exception e)
             {
                 throw new java.lang.IllegalStateException(
                     $"Unable to implement {org.apache.calcite.plan.RelOptUtil.toString(rootRel, org.apache.calcite.sql.SqlExplainLevel.ALL_ATTRIBUTES)}", e);
             }
+
+            var result = implemented;
 
             // a one column result is the value, not a one element row, which is what every caller of a query
             // expects and what EnumerableRelImplementor arranges the same way
@@ -176,22 +278,82 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 && rootRel.getRowType().getFieldCount() == 1)
                 result = new ClrEnumerableResult(
                     // object, because nothing reads this but the caller of the query, and it is handed out as
-                    // a bare IEnumerable
+                    // a bare sequence
                     Expression.Call(null, ClrBuiltInMethod.Slice0.MakeGenericMethod(typeof(object)), result.Expression),
                     result.PhysType,
                     JavaRowFormat.SCALAR);
 
-            // IEnumerable<object>, not the non-generic IEnumerable. Every IEnumerable<T> converts to the
-            // latter, so a sequence of the wrong element type would still compile and nothing would say so.
-            // The element type is named here for the same reason a node's is named in RequireRowType.
-            //
-            // The conversion is by variance and cannot fail: a row is never a value type. ClrPhysTypeImpl
-            // boxes what the type factory answers, so RowType is a synthetic record, an Object[], a List or
-            // a box class; RequireRowType holds every node to it; and the one other shape reaching here is
-            // Slice0<object>. There was a boxing pass in front of this for a while, and it was unreachable
-            // on every path -- the boxing it looked for has already happened in the physical type.
-            return Expression.Lambda<Func<DataContext, IEnumerable<object>>>(
-                Expression.Convert(result.Expression, typeof(IEnumerable<object>)),
+            return Lambda(result.Expression, typeof(IEnumerable<object>));
+        }
+
+        /// <summary>
+        /// Implements a whole plan as a function of the <see cref="DataContext"/> it will be bound with,
+        /// yielding its rows as an <see cref="IAsyncEnumerable{T}"/>.
+        /// </summary>
+        /// <param name="rootRel">The root of the plan, which must be of this convention.</param>
+        /// <param name="prefer">How the caller wants rows represented.</param>
+        /// <returns>
+        /// A lambda of one <see cref="DataContext"/> parameter whose value is the rows.
+        /// <see cref="System.Linq.Expressions.LambdaExpression.Compile()"/> gives a
+        /// <c>Func&lt;DataContext, IAsyncEnumerable&lt;object&gt;&gt;</c>.
+        /// </returns>
+        /// <exception cref="java.lang.IllegalStateException">
+        /// A node of the plan could not be implemented. The message names the plan; the failure itself is the
+        /// inner exception.
+        /// </exception>
+        public LambdaExpression ImplementRootAsync(ClrEnumerableRel rootRel, ClrEnumerablePrefer prefer)
+        {
+            ArgumentNullException.ThrowIfNull(rootRel);
+
+            ClrAsyncEnumerableResult implemented;
+
+            try
+            {
+                implemented = rootRel.ImplementAsync(this, prefer);
+            }
+            catch (Exception e)
+            {
+                throw new java.lang.IllegalStateException(
+                    $"Unable to implement {org.apache.calcite.plan.RelOptUtil.toString(rootRel, org.apache.calcite.sql.SqlExplainLevel.ALL_ATTRIBUTES)}", e);
+            }
+
+            var result = implemented;
+
+            if (prefer == ClrEnumerablePrefer.Array
+                && result.Format == JavaRowFormat.ARRAY
+                && rootRel.getRowType().getFieldCount() == 1)
+                result = new ClrAsyncEnumerableResult(
+                    ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.Slice0Async.MakeGenericMethod(typeof(object)), result.Expression),
+                    result.PhysType,
+                    JavaRowFormat.SCALAR);
+
+            return Lambda(result.Expression, typeof(IAsyncEnumerable<object>));
+        }
+
+        /// <summary>
+        /// Wraps a finished result as the lambda a caller compiles.
+        /// </summary>
+        /// <param name="result"></param>
+        /// <param name="rows">The sequence type the lambda returns.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>IEnumerable&lt;object&gt;</c>, not the non-generic <c>IEnumerable</c>. Every
+        /// <c>IEnumerable&lt;T&gt;</c> converts to the latter, so a sequence of the wrong element type would
+        /// still compile and nothing would say so. The element type is named for the same reason a node's is
+        /// named in <c>RequireRowType</c>.
+        ///
+        /// <para>The conversion is by variance and cannot fail: a row is never a value type.
+        /// <c>ClrPhysTypeImpl</c> boxes what the type factory answers, so a row type is a synthetic record,
+        /// an <c>Object[]</c>, a <c>List</c> or a box class; <c>RequireRowType</c> holds every node to it;
+        /// and the one other shape reaching here is a sliced <c>object</c>. There was a boxing pass in front
+        /// of this for a while, and it was unreachable on every path, the boxing it looked for having
+        /// already happened in the physical type.</para>
+        /// </remarks>
+        LambdaExpression Lambda(Expression sequence, Type rows)
+        {
+            return Expression.Lambda(
+                typeof(Func<,>).MakeGenericType(typeof(DataContext), rows),
+                Expression.Convert(sequence, rows),
                 Root);
         }
 
@@ -271,22 +433,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <summary>
-        /// Registers on the asynchronous convention's implementor every correlation variable in scope here.
-        /// </summary>
-        /// <param name="async"></param>
-        /// <remarks>
-        /// <see cref="ReplayCorrelVariables(EnumerableRelImplementor)"/> across the other converter, and for
-        /// the same reason: a sub-plan run on a second implementor finds that implementor's correlation
-        /// variables, which are none. Here the registration really is the same one — both implementors hold
-        /// the same kind of getter over the same block — so nothing is rebuilt.
-        /// </remarks>
-        internal void ReplayCorrelVariables(AsyncEnumerable.ClrAsyncEnumerableRelImplementor async)
-        {
-            foreach (var pair in corrVars)
-                async.RegisterCorrelVariable(pair.Key, pair.Value.Parameter, pair.Value.Block, pair.Value.PhysType);
-        }
-
-        /// <summary>
         /// Creates the result a node's <c>Implement</c> returns.
         /// </summary>
         /// <param name="physType">How the rows are represented.</param>
@@ -294,10 +440,31 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <returns></returns>
         public ClrEnumerableResult Result(ClrPhysType physType, Expression expression)
         {
-            RequireRowType(physType, expression);
+            RequireRowType(physType, expression, typeof(IEnumerable<>));
 
             // PhysTypeImpl keeps its format package-private, and getFormat is the same value in public
             return new ClrEnumerableResult(expression, physType, physType.Format);
+        }
+
+        /// <summary>
+        /// Builds the result of a node's <see cref="ClrEnumerableRel.ImplementAsync"/>.
+        /// </summary>
+        /// <param name="physType">What the node's rows are.</param>
+        /// <param name="expression">The sequence yielding them, which must be an
+        /// <see cref="IAsyncEnumerable{T}"/> of the physical row type.</param>
+        /// <returns></returns>
+        /// <exception cref="java.lang.IllegalStateException">The sequence is not that.</exception>
+        /// <remarks>
+        /// <see cref="Result"/> for the awaiting fork. The kind is required here rather than inferred later:
+        /// a node that builds a pulled sequence in its awaiting body is refused by name, instead of being
+        /// quietly wrapped and costing a thread per row that nobody asked for. Where the wrap is wanted the
+        /// node says so with <see cref="Awaited"/>.
+        /// </remarks>
+        public ClrAsyncEnumerableResult ResultAsync(ClrPhysType physType, Expression expression)
+        {
+            RequireRowType(physType, expression, typeof(IAsyncEnumerable<>));
+
+            return new ClrAsyncEnumerableResult(expression, physType, physType.Format);
         }
 
         /// <summary>
@@ -316,17 +483,22 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// it did: this method boxed for a while, and three nodes were wrong underneath it with every test
         /// passing.</para>
         ///
-        /// <para>A result that is not an <see cref="IEnumerable{T}"/> at all is refused as well. Letting one
+        /// <para>A result that is not a sequence at all is refused as well. Letting one
         /// through was how seven more nodes would have escaped had any of them handed up an array or an
         /// <c>IOrderedEnumerable</c>: a check with a way out is a check only for the shapes that already
         /// pass.</para>
+        ///
+        /// <para><paramref name="wanted"/> is not a mode. Each of the two result factories passes its own
+        /// kind, statically, because each belongs to one fork; the node being checked has already chosen
+        /// which factory to call by choosing which body to write it in.</para>
         /// </remarks>
-        static void RequireRowType(ClrPhysType physType, Expression expression)
+        static void RequireRowType(ClrPhysType physType, Expression expression, Type wanted)
         {
             var expected = physType.RowType;
+            var definition = expression.Type.IsGenericType ? expression.Type.GetGenericTypeDefinition() : null;
 
-            if (expression.Type.IsGenericType == false || expression.Type.GetGenericTypeDefinition() != typeof(IEnumerable<>))
-                throw new java.lang.IllegalStateException($"{Node()} handed up a {expression.Type} where a sequence of {expected} was wanted.");
+            if (definition != wanted)
+                throw new java.lang.IllegalStateException($"{Node()} handed up a {expression.Type} where a {wanted.Name} of {expected} was wanted.");
 
             var actual = expression.Type.GetGenericArguments()[0];
             if (actual == expected)

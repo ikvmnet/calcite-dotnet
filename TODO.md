@@ -287,15 +287,15 @@ Calcite's adapter does not have: a `DbBatch` for a multi-row modify, and a bulk-
 
 ### 14. Execution was synchronous; the connect still is, and cancellation and timeout are not wired
 
-**The converter is written** (#119). `AdoToClrAsyncEnumerableConverter` and its rule are registered beside
-the other two, so a plan asked for in `ClrAsyncEnumerableConvention` — which is what the provider plans by
-default — converts straight out of the adapter and reads its rows through `AdoSequences.ReadAsync`. The
-route it replaced was `EnumerableToClrAsyncEnumerableConverter` over `AdoToEnumerableConverter`: two
-crossings, a linq4j enumerator, and `DbDataReader.Read()` at the bottom, so the one place in a plan with
-network I/O to suspend on was the one place that blocked.
+**The awaiting route is written** (#119). `AdoToClrEnumerableConverter` writes both bodies, so a plan of
+`ClrEnumerableConvention` — which is what the provider plans by — converts straight out of the adapter
+whichever way it is compiled, and the awaiting one reads its rows through `AdoSequences.ReadAsync`. The
+route it replaced was a second converter over `AdoToEnumerableConverter`: two crossings, a linq4j
+enumerator, and `DbDataReader.Read()` at the bottom, so the one place in a plan with network I/O to
+suspend on was the one place that blocked.
 
-The statement it sends is the synchronous converter's — same implementor, same writer, same row builder,
-shared rather than written again.
+The statement it sends is the pulled body's — same implementor, same writer, same row builder, shared
+rather than written again.
 
 **What is asynchronous is the row loop, and only the row loop.** The statement is still sent at
 `GetAsyncEnumerator`, synchronously, through `OpenConnection()` and `ExecuteReader()`. That is where this
@@ -407,12 +407,12 @@ changes what the text means, not a digest of a plan already made.
 
 **A compiled plan is re-bindable.** The same signature, bound a second time and then from 8 tasks 25 times
 each with a fresh `StatementDataContext` per bind, answered the same rows as its first bind for every
-statement above in both conventions. This is the property a prepared statement relies on in Calcite —
+statement above, read either way. This is the property a prepared statement relies on in Calcite —
 `Bindable.bind` is called per execution — and the translation keeps it: an anonymous class's fields become
 variables of the block that builds the lambdas, and that block runs per bind.
 
 **A compiled plan does not reach back to the type factory it was planned with.** Bound with a data context
-carrying a fresh `JavaTypeFactoryImpl`, every statement above answered the same rows in both conventions.
+carrying a fresh `JavaTypeFactoryImpl`, every statement above answered the same rows read either way.
 The emitted record types are baked into the delegate, and nothing read at execution asks the factory for
 one. So a cache on the root can hand a plan compiled under one connection's factory to another connection,
 which is what a cache on the root means, the factory being per connection.
@@ -539,19 +539,17 @@ tree is smaller than the CLR's, so going the other way means deciding what to do
 no node for, and the answer for some of it will be "nothing". Worth doing when the boundary starts to
 matter; not before.
 
-Note the asynchronous convention needs none of this. It reads a Calcite sub-plan and never feeds one — there
-is no converter from it to `EnumerableConvention` and there cannot be, because Janino compiles generated
-source and generated source cannot await — so there is nothing on that side to translate. Its converters to
-and from `ClrEnumerableConvention` need no translation either: both sides are `System.Linq.Expressions` and
-both share `ClrPhysType`, so the sub-plan's expression is spliced into the tree being built and wrapped in
-one call. `ClrAsyncEnumerableToClrEnumerableConverter` is the one that costs something, and what it costs is
-a blocked thread per row rather than a compilation boundary.
+Note this is the same one boundary whether or not the plan awaits, and that the awaiting side of it is
+settled: generated Java cannot await, so a sub-plan handed to Calcite is implemented synchronously and an
+awaiting leaf inside it is read across, blocking a thread per row. Translating the tree would remove the
+callback and the stash; it would not remove that, and nothing can, short of Calcite compiling something other
+than Java.
 
 ## Audit findings: 45 operators, twelve agents, one method group each
 
 **The audit has run, and its findings are fixed.** 45 operators, twelve agents, one method group each:
 **30 equivalent, 17 divergent, 1 uncertain.** None of the 17 was visible to the differential suite, and all
-17 are now transcribed from Calcite's body in both conventions — `HashEquiJoin`'s leftover order,
+17 are now transcribed from Calcite's body into both operator sets — `HashEquiJoin`'s leftover order,
 `NestedLoopJoin`'s five, `RepeatUnion`'s termination test and clean-up ordering, `SemiJoin`'s two algorithms
 and its memoization, `Take`'s n+1 draw, `CorrelateJoin`'s refusal and null guard, `Cartesian`'s eagerness and
 `int` overflow, the call-time fold in `GroupBy`/`GroupByMultiple`/`AsofJoin`/`Window`, `JavaSequences`'

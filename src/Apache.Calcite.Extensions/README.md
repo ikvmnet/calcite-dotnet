@@ -27,27 +27,40 @@ This package replaces that step. A query plan is compiled into a `System.Linq.Ex
 
 `ClrEnumerableConvention` mirrors Calcite's `EnumerableConvention` node for node and uses the same row types, and converter rules exist in both directions. A plan may hold nodes of both conventions: anything this convention has no rule for is planned by Calcite as usual, and rows cross between the two untouched.
 
+**One plan, read either way.** A plan of this convention is compiled to an `IEnumerable<object>` or an `IAsyncEnumerable<object>`, and which is decided when it is compiled rather than when it is planned. There is one convention, one set of rules and one tree of nodes; each node carries two bodies, both naming `ClrEnumerableDefaults`, whose pulled operators and `Async`-suffixed awaiting ones are the two sets. The implementor offers a call hierarchy per kind rather than a mode to set. So the same prepared statement can be read synchronously by one caller and awaited by another, and an `EXPLAIN` cannot tell you which will happen.
+
 ## Running a plan yourself
 
-Plan into the convention with `ClrEnumerablePrograms`, then compile the root with `ClrEnumerableRelImplementor`. This example is executed by a test in the repository, so it cannot go stale silently:
+Put this convention's rules on the planner, run `Programs.standard()`, then compile the root with `ClrEnumerableRelImplementor`. This example is executed by a test in the repository, so it cannot go stale silently:
 
 ```csharp
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 using org.apache.calcite;
 using org.apache.calcite.tools;
 
+var calcRules = new java.util.ArrayList();
+foreach (var rule in ClrEnumerableRules.CalcRules())
+    calcRules.add(rule);
+
+// Programs.standard(), with this convention's rules put on the planner in front of it -- a
+// Frameworks planner carries Calcite's alone -- and its calc rules run afterwards, which is
+// Programs.calc once more over this convention's list. standard's own calc pass still runs
 var config = Frameworks.newConfigBuilder()
     .defaultSchema(rootSchema)
-    .programs(ClrEnumerablePrograms.Standard())
+    .programs(
+        Programs.sequence(
+            new AddRulesProgram(ClrEnumerableRules.Rules()),
+            Programs.standard(),
+            Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)))
     .build();
 
 var planner = Frameworks.getPlanner(config);
 var logical = planner.rel(planner.validate(planner.parse(sql))).project();
 
-// Standard() is one program, as Programs.standard() is, so this is one transform.
+// one sequence, so one transform, exactly as Programs.standard is driven.
 // the logical root's own traits, not an empty set: they carry the collation the ORDER BY produced,
 // and SortRemoveRule takes the sort away as unwanted if the required traits do not ask for it
-var traits = ClrEnumerablePrograms.DesiredRootTraitSet(logical.getTraitSet());
+var traits = logical.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify();
 var physical = (ClrEnumerableRel)planner.transform(0, traits, logical);
 
 // the root is a node of this convention; build its plan and compile it
@@ -64,9 +77,11 @@ foreach (var current in plan(dataContext))
 }
 ```
 
-`ClrEnumerableInterpretable.ToBindable(...)` is the alternative ending: it does the same work and hands back an `IClrBindable`, which you bind to a `DataContext` and enumerate. Use the implementor when you want the `LambdaExpression` itself.
+**To await the rows instead, call `ImplementRootAsync` on the same implementor** and compile to a `Func<DataContext, IAsyncEnumerable<object>>`. Nothing else changes: the same planned root, the same rules, the same physical types, the same instance. Each node's awaiting body is called instead of its pulled one, and a node that can only produce one kind of sequence is read across at that node.
 
-Three things about `ClrEnumerablePrograms.Standard()` are deliberate and worth knowing before you substitute your own program:
+`ClrEnumerableInterpretable.ToBindable(...)` and `ToAsyncBindable(...)` are the alternative endings: each does the same work and hands back an `IClrBindable` or an `IClrAsyncBindable`, which you bind to a `DataContext` and enumerate. Use the implementor when you want the `LambdaExpression` itself.
+
+Three things about this program are deliberate and worth knowing before you substitute your own:
 
 - **The calc rules are a separate pass.** `VolcanoCost.isLt` compares row counts and nothing else, so a project and a calc are never cheaper than one another and the planner keeps whichever it saw first. Rewriting unconditionally afterwards as a hep pass is what makes a project's refusal to implement itself safe. `Programs.standard()` does the same thing for the same reason.
 - **The planner pass registers Calcite's rules, then this convention's.** `Programs.standard()` installs none and plans with whatever is on the planner, which works because `RelOptUtil.registerDefaultRules` has already put Calcite's there. Nothing has heard of this convention, so `Rules()` registers — but it registers Calcite's set *as well as* ours, not instead of it. Dropping Calcite's takes with it the logical rewrites that belong to no convention, and `AVG`, every `DISTINCT` aggregate and every `OVER` window each need one of those before any planner sees them. It is also what lets a node this convention has no rule for be planned in `EnumerableConvention` and carried across a converter.
@@ -79,18 +94,21 @@ A Spark handler is not supported: `ToBindable` throws `UnsupportedOperationExcep
 | Type | Purpose |
 |------|---------|
 | `ClrEnumerableConvention` | The calling convention itself. `ClrEnumerableConvention.Instance` is the singleton trait. |
-| `ClrEnumerablePrograms` | The program a query is planned with: `Standard()`, and the individual `SubQuery()` / `Rules()` / `CalcRules()` passes it sequences. Also `DesiredRootTraitSet`. |
 | `ClrEnumerableRules` | The convention's rules: `Rules()` and `CalcRules()`. Add these to a planner you built yourself. |
-| `ClrEnumerableRelImplementor` | Builds the expression tree for a plan. `ImplementRoot` returns a `LambdaExpression`. |
-| `ClrEnumerableInterpretable` | `ToBindable` — implement, compile, and return an `IClrBindable`. |
-| `IClrBindable` | A compiled plan. `Bind(DataContext)` returns the rows; `ElementType` says what one row is. |
+| `ClrEnumerableRelImplementor` | Builds the expression tree for a plan. Two parallel hierarchies over one instance: `ImplementRoot` and `VisitChild` produce an `IEnumerable`, `ImplementRootAsync` and `VisitChildAsync` an `IAsyncEnumerable`. It carries no mode. `Pulled` and `Awaited` cross between them. |
+| `ClrEnumerableResult` / `ClrAsyncEnumerableResult` | What a node's two bodies answer, one type per kind, built by `Result` and `ResultAsync`. |
+| `ClrEnumerableInterpretable` | `ToBindable` and `ToAsyncBindable` — implement, compile, and return an `IClrBindable` or an `IClrAsyncBindable`. |
+| `IClrBindable` / `IClrAsyncBindable` | A compiled plan. `Bind(DataContext)` returns the rows; `ElementType` says what one row is. |
 | `ClrEnumerablePrefer` | How a caller wants rows represented — `Array` is what a prepared statement asks for. |
 | `ClrEnumerableRelFactories` | `RelBuilder` factories producing nodes of this convention. |
-| `ClrEnumerableRel` | The interface every node of this convention implements. |
+| `IClrScannableTable` / `IClrQueryableTable` | The table SPI: a table hands back .NET sequences rather than linq4j ones. One interface per table kind, carrying both halves. `Scan` and `GetExpression` are required; `ScanAsync` and `GetAsyncExpression` default to reading them across. A table whose rows only ever arrive asynchronously overrides those and drains its own sequence for the required half. |
+| `ClrEnumerableRel` | The interface every node of this convention implements. Two bodies: `Implement` over the pulled operators, required, and `ImplementAsync` over the awaiting ones, optional and defaulting to `Implement`. That default is safe exactly when a body does not visit a child, which is not the same as having no input: a body that asks for its input as a sequence and takes the default composes an awaited input into a pulled operator, which `Expression.Call` refuses. |
 | `CalciteConnectionProperties` | Typed .NET properties over Calcite's `java.util.Properties`. |
 | `CalciteConnectionPropertiesSchemaMap` | The `schema.*` sub-properties, as a dictionary. |
 
 The nodes (`ClrEnumerableCalc`, `ClrEnumerableHashJoin`, `ClrEnumerableWindow`, and the rest) and their rules are public too, so you can subclass or re-register them.
+
+**The operator sets are not public.** `ClrEnumerableDefaults`, which holds both, and the `ClrBuiltInMethod` table that names them are internal to this package, which is what they have always been. A node you write outside it builds calls to its own methods with `Expression.Call`, and an awaiting one appends its own trailing `CancellationToken` as `Expression.Default(typeof(CancellationToken))` — an expression tree does not apply a default argument, and that `default` is what `[EnumeratorCancellation]` reads.
 
 **The SQL-text prepare pipeline is internal to these packages.** `ClrPrepareImpl`, `ClrSignature` and the rest of `Apache.Calcite.Extensions.Prepare` are not part of the public API surface — `Apache.Calcite.Data` reaches them through `InternalsVisibleTo`. To run SQL text, use `Apache.Calcite.Data`; to drive the planner directly, use the public types above.
 

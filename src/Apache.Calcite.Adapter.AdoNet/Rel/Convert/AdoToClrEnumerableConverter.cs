@@ -38,12 +38,23 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
     /// <para>Opening the connection and filling the command's parameters happen once, so the expressions for
     /// the data source and the enricher are Calcite's own, translated where they are built. Only the row
     /// builder and the sequence are on the per-row path, and those are this convention's.</para>
+    ///
+    /// <para><b>Two bodies, and one line between them.</b> <see cref="Implement"/> reads the rows with
+    /// <see cref="AdoSequences.Read{TRow}"/> and <see cref="ImplementAsync"/> with
+    /// <see cref="AdoSequences.ReadAsync{TRow}"/>, where the provider's own <c>ReadAsync</c> and
+    /// <c>OpenAsync</c> are what the thread waits on. Everything else — the SQL, the parameters, the
+    /// enricher, the row builder — is the same code building the same tree, because none of it is about the
+    /// sequence. An adapter that could only do one of the two would write that body and leave the other to
+    /// delegate to it, which is safe here because a converter out of an adapter is a leaf.</para>
     /// </remarks>
     public class AdoToClrEnumerableConverter : ConverterImpl, ClrEnumerableRel
     {
 
         static readonly System.Reflection.MethodInfo ReadMethod = typeof(AdoSequences).GetMethod(nameof(AdoSequences.Read))
             ?? throw new InvalidOperationException($"'{nameof(AdoSequences.Read)}' is missing from {nameof(AdoSequences)}.");
+
+        static readonly System.Reflection.MethodInfo ReadAsyncMethod = typeof(AdoSequences).GetMethod(nameof(AdoSequences.ReadAsync))
+            ?? throw new InvalidOperationException($"'{nameof(AdoSequences.ReadAsync)}' is missing from {nameof(AdoSequences)}.");
 
         internal static readonly System.Reflection.MethodInfo GetDbReaderValueMethod = typeof(AdoReaderUtil).GetMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(SqlTypeName)])
             ?? throw new InvalidOperationException($"'{nameof(AdoReaderUtil.GetDbReaderValue)}' is missing from {nameof(AdoReaderUtil)}.");
@@ -111,6 +122,51 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                     enricher));
         }
 
+        /// <inheritdoc />
+        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            if (getInput() is not AdoRel self)
+                throw new AdoCalciteException("Unsupported input type.");
+
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
+            var rowType = physType.RowType;
+
+            if (self.getConvention() is not AdoConvention convention)
+                throw new AdoCalciteException($"getConvention() is null for {self}.");
+
+            var dataContextBuilder = new AdoClrCorrelationDataContextBuilder(implementor, implementor.Root);
+
+            var writer = GenerateSql(convention, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder, self, out var sqlImplementor);
+            var parameters = writer.Indexes;
+            var parameterTypeNames = AdoToEnumerableConverter.GetParameterTypeNames(sqlImplementor, parameters);
+
+            var sql = writer.toSqlString().getSql();
+            Hook.QUERY_PLAN.run(sql);
+
+            // the schema SPI defines a convention's expression as linq4j, so this is the one thing here that
+            // arrives as a linq4j tree, and it is translated where it is produced rather than composed into
+            // anything first. Everything else this node builds is an expression tree from the start.
+            var dataSource = implementor.Translator.Translate(Schemas.unwrap(convention.Expression, typeof(AdoDataSource)));
+
+            // a correlated sub-query leaves a parameter per correlation variable in the SQL, and the values
+            // live on the context the builder closed over the outer row. Without the enricher the command is
+            // handed to the provider unfilled.
+            var enricher = parameters.isEmpty()
+                ? (Expression)Expression.Constant(null, typeof(DbCommandEnricher))
+                : Expression.Call(null, CreateEnricherMethod, dataSource, Expression.Constant(parameters), Expression.Constant(parameterTypeNames), dataContextBuilder.Build());
+
+            // through ClrBuiltInMethod.CallAsync rather than Expression.Call, because the operator ends in
+            // a CancellationToken like every other awaiting one, and that is what appends the default the
+            // [EnumeratorCancellation] attribute reads
+            return implementor.ResultAsync(physType,
+                ClrBuiltInMethod.CallAsync(
+                    ReadAsyncMethod.MakeGenericMethod(rowType),
+                    dataSource,
+                    Expression.Constant(sql),
+                    RowBuilder(physType, rowType),
+                    enricher));
+        }
+
         /// <summary>
         /// Builds the delegate that reads one row from the data reader.
         /// </summary>
@@ -123,7 +179,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// already told the physical type the same thing: no field is a null, one field is the value itself,
         /// and only beyond that is a row an array.
         ///
-        /// <para>Shared with <see cref="AdoToClrAsyncEnumerableConverter"/>, which builds the same delegate
+        /// <para>Shared with <see cref="ImplementAsync"/>, which builds the same delegate
         /// against the same reader: a row is the same thing in both conventions and nothing about building
         /// one from a materialized reader position awaits.</para>
         /// </remarks>
@@ -186,7 +242,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// <param name="input"></param>
         /// <returns></returns>
         /// <remarks>
-        /// Shared with <see cref="AdoToClrAsyncEnumerableConverter"/>: the statement a subtree of the
+        /// Shared with <see cref="ImplementAsync"/>: the statement a subtree of the
         /// adapter's convention becomes does not depend on how its rows are read.
         /// </remarks>
         internal static AdoSqlWriter GenerateSql(AdoConvention convention, JavaTypeFactory typeFactory, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input, out AdoImplementor implementor)

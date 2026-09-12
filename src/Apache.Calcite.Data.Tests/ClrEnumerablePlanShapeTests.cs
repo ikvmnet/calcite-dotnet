@@ -83,9 +83,9 @@ namespace Apache.Calcite.Data.Tests
         [InlineData("SELECT a.x FROM (VALUES (1), (2)) AS a(x) JOIN (VALUES (1), (3)) AS b(x) ON a.x = b.x")]
         [InlineData("SELECT x FROM (VALUES (3), (1), (2)) AS t(x) ORDER BY x LIMIT 2")]
         [InlineData("SELECT x FROM (VALUES (1), (2)) AS a(x) UNION SELECT x FROM (VALUES (2), (3)) AS b(x)")]
-        public void Plan_should_be_built_in_the_async_convention_by_default(string sql)
+        public void Plan_should_be_built_in_this_convention_by_default(string sql)
         {
-            AssertEveryNode(Plan(ConnectionString, sql), "ClrAsyncEnumerable");
+            AssertEveryNode(Plan(ConnectionString, sql), "ClrEnumerable");
         }
 
         [Theory]
@@ -94,10 +94,12 @@ namespace Apache.Calcite.Data.Tests
         [InlineData("SELECT a.x FROM (VALUES (1), (2)) AS a(x) JOIN (VALUES (1), (3)) AS b(x) ON a.x = b.x")]
         [InlineData("SELECT x FROM (VALUES (3), (1), (2)) AS t(x) ORDER BY x LIMIT 2")]
         [InlineData("SELECT x FROM (VALUES (1), (2)) AS a(x) UNION SELECT x FROM (VALUES (2), (3)) AS b(x)")]
-        public void Plan_should_be_built_in_the_sync_convention_when_asked(string sql)
+        public void Plan_should_be_the_same_when_the_connection_is_synchronous(string sql)
         {
-            // "ClrEnumerable" is not a prefix of "ClrAsyncEnumerable", so this also proves the mode
-            // was not ignored
+            // the same plan, node for node: the connection's mode chooses how the rows are read and no
+            // longer what is planned, so a synchronous connection has nothing different to say here
+            Assert.Equal(Plan(ConnectionString, sql), Plan(SynchronousConnectionString, sql));
+
             AssertEveryNode(Plan(SynchronousConnectionString, sql), "ClrEnumerable");
         }
 

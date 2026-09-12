@@ -99,6 +99,37 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     result.Expression));
         }
 
+        /// <inheritdoc />
+        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            if (readType.name() != nameof(Spool.Type.LAZY) || writeType.name() != nameof(Spool.Type.LAZY))
+                throw new java.lang.UnsupportedOperationException("only LAZY read and LAZY write are supported");
+
+            var result = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)getInput(), pref);
+
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(result.Format));
+
+            // the table is looked up in the schema the plan is bound with, as Calcite looks it up, rather than
+            // read here and held: the collection belongs to the DataContext a run is given, and a plan
+            // compiled once can be bound more than once
+            var name = (string)getTable().getQualifiedName().get(getTable().getQualifiedName().size() - 1);
+            var collection = Expression.Call(
+                Expression.Convert(
+                    Expression.Call(
+                        Expression.Call(implementor.Root, DataContextGetRootSchema),
+                        SchemaGetTable,
+                        Expression.Constant(name)),
+                    typeof(ModifiableTable)),
+                ModifiableTableGetModifiableCollection);
+
+            var rowType = result.PhysType.RowType;
+
+            return implementor.ResultAsync(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.LazyCollectionSpoolAsync.MakeGenericMethod(rowType),
+                    collection,
+                    result.Expression));
+        }
+
         static readonly System.Reflection.MethodInfo DataContextGetRootSchema = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.DATA_CONTEXT_GET_ROOT_SCHEMA.method);
         static readonly System.Reflection.MethodInfo SchemaGetTable = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.SCHEMA_GET_TABLE.method);
         static readonly System.Reflection.MethodInfo ModifiableTableGetModifiableCollection = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.MODIFIABLE_TABLE_GET_MODIFIABLE_COLLECTION.method);

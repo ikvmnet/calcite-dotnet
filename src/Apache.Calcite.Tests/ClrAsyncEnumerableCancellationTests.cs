@@ -5,11 +5,12 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 
 using FluentAssertions;
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Tests
 {
@@ -81,21 +82,21 @@ namespace Apache.Calcite.Tests
             var source = Expression.Parameter(typeof(IAsyncEnumerable<object[]>), "source");
 
             // Slice0: a one column result is the value
-            Expression plan = ClrAsyncBuiltInMethod.Call(
-                ClrAsyncBuiltInMethod.Slice0.MakeGenericMethod(typeof(java.lang.Integer)),
+            Expression plan = ClrBuiltInMethod.CallAsync(
+                ClrBuiltInMethod.Slice0Async.MakeGenericMethod(typeof(java.lang.Integer)),
                 source);
 
             // Select: a per row delegate, synchronous as every row level delegate of this convention is
             var row = Expression.Parameter(typeof(java.lang.Integer), "row");
-            plan = ClrAsyncBuiltInMethod.Call(
-                ClrAsyncBuiltInMethod.Select.MakeGenericMethod(typeof(java.lang.Integer), typeof(object)),
+            plan = ClrBuiltInMethod.CallAsync(
+                ClrBuiltInMethod.SelectAsync.MakeGenericMethod(typeof(java.lang.Integer), typeof(object)),
                 plan,
                 Expression.Lambda<Func<java.lang.Integer, object>>(Expression.Convert(row, typeof(object)), row));
 
             // Where: keeps everything, so that what stops the sequence can only be the cancellation
             var kept = Expression.Parameter(typeof(object), "kept");
-            plan = ClrAsyncBuiltInMethod.Call(
-                ClrAsyncBuiltInMethod.Where.MakeGenericMethod(typeof(object)),
+            plan = ClrBuiltInMethod.CallAsync(
+                ClrBuiltInMethod.WhereAsync.MakeGenericMethod(typeof(object)),
                 plan,
                 Expression.Lambda<Func<object, bool>>(Expression.Constant(true), kept));
 

@@ -81,6 +81,29 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     comparator));
         }
 
+        /// <inheritdoc />
+        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var child = (ClrEnumerableRel)getInput();
+            var result = implementor.VisitChildAsync(this, 0, child, pref);
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), result.Format);
+
+            var inputPhysType = result.PhysType;
+            var (keySelector, collationComparator) = inputPhysType.GenerateCollationKey(collation.getFieldCollations());
+
+            var sourceType = inputPhysType.RowType;
+
+            var comparator = collationComparator ?? Expression.Constant(null, typeof(java.util.Comparator));
+
+            var keyType = keySelector.ReturnType;
+
+            return implementor.ResultAsync(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.OrderByAsync.MakeGenericMethod(sourceType, keyType),
+                    result.Expression,
+                    keySelector,
+                    comparator));
+        }
+
     }
 
 }

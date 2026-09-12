@@ -116,10 +116,6 @@ namespace Apache.Calcite.Extensions.Prepare
             foreach (var rule in Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableRules.CalcRules())
                 calcRules.add(rule);
 
-            foreach (var rule in Apache.Calcite.Extensions.Adapter.AsyncEnumerable.ClrAsyncEnumerableRules.CalcRules())
-                if (calcRules.contains(rule) == false)
-                    calcRules.add(rule);
-
             return Programs.sequence(
                 Programs.standard(),
                 Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE));

@@ -132,6 +132,78 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return ImplementNLJoin(implementor, pref);
         }
 
+        /// <inheritdoc />
+        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            if (joinType.name() == nameof(JoinRelType.LEFT_MARK))
+                return ImplementNLMarkJoinAsync(implementor, pref);
+
+            return ImplementNLJoinAsync(implementor, pref);
+        }
+
+        /// <summary>
+        /// Implements a mark join, which returns every left row with a marker saying whether the right side
+        /// had a match.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <param name="pref"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>implementNLMarkJoin</c>. The predicate is the whole condition rather than
+        /// its non-equi part, and it is the three-valued one: a mark join's marker is null where a comparison
+        /// was unknown, which is what makes <c>IN</c> over a nullable column answer UNKNOWN.
+        /// </remarks>
+        ClrAsyncEnumerableResult ImplementNLMarkJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)left, pref);
+            var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)right, pref);
+
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
+
+            var leftType = leftResult.PhysType.RowType;
+            var rightType = rightResult.PhysType.RowType;
+            var rowType = physType.RowType;
+
+            var predicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), left, right, leftResult.PhysType, rightResult.PhysType, getCondition(), true);
+            var selector = ClrEnumUtils.MarkJoinSelector(implementor, physType, leftResult.PhysType);
+
+            return implementor.ResultAsync(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.LeftMarkNestedLoopJoinAsync.MakeGenericMethod(leftType, rightType, rowType),
+                    leftResult.Expression,
+                    rightResult.Expression,
+                    predicate,
+                    selector));
+        }
+
+        /// <summary>
+        /// Implements the join by comparing every pair.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <param name="pref"></param>
+        /// <returns></returns>
+        ClrAsyncEnumerableResult ImplementNLJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)left, pref);
+            var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)right, pref);
+
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
+
+            var leftType = leftResult.PhysType.RowType;
+            var rightType = rightResult.PhysType.RowType;
+            var rowType = physType.RowType;
+
+            var predicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), left, right, leftResult.PhysType, rightResult.PhysType, getCondition());
+            var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);
+
+            return implementor.ResultAsync(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.NestedLoopJoinAsync.MakeGenericMethod(leftType, rightType, rowType),
+                    leftResult.Expression,
+                    rightResult.Expression,
+                    selector,
+                    predicate,
+                    Expression.Constant(ClrEnumUtils.ToLinq4jJoinType(joinType))));
+        }
+
         /// <summary>
         /// Implements a mark join, which returns every left row with a marker saying whether the right side
         /// had a match.

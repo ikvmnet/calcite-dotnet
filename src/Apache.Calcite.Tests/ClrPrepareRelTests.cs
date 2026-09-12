@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 
-using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Prepare;
 
@@ -35,9 +34,9 @@ namespace Apache.Calcite.Tests
         /// Puts a convention's rules on the planner the plan was built with, which is the planner
         /// <c>Prepare.optimize</c> reads off the root and therefore the one that chooses.
         /// </summary>
-        static RelNode Stocked(RelNode rel, bool async = false)
+        static RelNode Stocked(RelNode rel)
         {
-            foreach (var rule in async ? ClrAsyncEnumerableRules.Rules() : ClrEnumerableRules.Rules())
+            foreach (var rule in ClrEnumerableRules.Rules())
                 rel.getCluster().getPlanner().addRule(rule);
 
             return rel;
@@ -139,15 +138,13 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// A built plan reaches the asynchronous convention too.
+        /// A built plan can be read with await.
         /// </summary>
         /// <remarks>
-        /// <c>PrepareRel</c> named <c>ClrEnumerableRules</c> and constructed <c>ClrEnumerablePreparingStmt</c>
-        /// directly, so it planned synchronously whatever a caller asked for — it calls neither
-        /// <c>CreatePlanner</c> nor <c>GetPreparingStmt</c>, which is where the convention is chosen, and the
-        /// commit that wired the asynchronous convention through the pipeline therefore went straight past
-        /// it. A connection plans asynchronously by default, so <c>BindAsync</c> would have refused the
-        /// signature this returned.
+        /// The same signature the synchronous tests above bind: a statement is planned once and answers
+        /// either <c>Bind</c> or <c>BindAsync</c>, so a plan built through <see cref="RelBuilder"/> rather
+        /// than parsed is asynchronous on request like any other. This test predates that and used to have to
+        /// ask for a second convention up front, which <c>PrepareRel</c> could not do.
         /// </remarks>
         [TestMethod]
         public async System.Threading.Tasks.Task Should_run_a_built_plan_asynchronously()
@@ -155,9 +152,9 @@ namespace Apache.Calcite.Tests
             var rows = await ClrPrepareFixture.WithContext("", (context, rootSchema) =>
             {
                 var config = Frameworks.newConfigBuilder().defaultSchema(rootSchema.plus()).build();
-                var rel = Stocked(RelBuilder.create(config).scan("NUMS").build(), async: true);
+                var rel = Stocked(RelBuilder.create(config).scan("NUMS").build());
 
-                var signature = new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of(rel), typeof(object[]), -1, true);
+                var signature = new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of(rel), typeof(object[]), -1);
 
                 return Collect(signature.BindAsync(context.getDataContext()));
             });

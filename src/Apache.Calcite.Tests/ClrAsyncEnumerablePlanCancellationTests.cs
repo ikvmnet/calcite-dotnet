@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
@@ -94,9 +93,9 @@ namespace Apache.Calcite.Tests
 
             var rules = new java.util.ArrayList();
             var calcRules = new java.util.ArrayList();
-            foreach (var rule in ClrAsyncEnumerableRules.Rules())
+            foreach (var rule in ClrEnumerableRules.Rules())
                 rules.add(rule);
-            foreach (var rule in ClrAsyncEnumerableRules.CalcRules())
+            foreach (var rule in ClrEnumerableRules.CalcRules())
                 calcRules.add(rule);
             rules.add(org.apache.calcite.rel.rules.CoreRules.AGGREGATE_REDUCE_FUNCTIONS);
             foreach (var rule in RelOptRules.CALC_RULES.toArray())
@@ -113,11 +112,11 @@ namespace Apache.Calcite.Tests
             var planner = Frameworks.getPlanner(config);
             var logical = planner.rel(planner.validate(planner.parse(sql))).project();
             var expanded = planner.transform(0, logical.getTraitSet(), logical);
-            var chosen = planner.transform(1, expanded.getTraitSet().replace(ClrAsyncEnumerableConvention.Instance).simplify(), expanded);
+            var chosen = planner.transform(1, expanded.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify(), expanded);
             var physical = planner.transform(2, chosen.getTraitSet(), chosen);
 
             var parameters = new java.util.HashMap();
-            var bindable = ClrAsyncEnumerableInterpretable.ToBindable(parameters, (ClrAsyncEnumerableRel)physical, ClrEnumerablePrefer.Array);
+            var bindable = ClrEnumerableInterpretable.ToAsyncBindable(parameters, (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
 
             return (bindable.Bind(new PlanDataContext(rootSchema, parameters)), leaf);
         }

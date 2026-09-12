@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions;
-using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
@@ -20,17 +19,22 @@ namespace Apache.Calcite.Tests
 {
 
     /// <summary>
-    /// Runs the same query through the asynchronous convention and the synchronous one, and requires the
-    /// same rows.
+    /// Runs the same query with its plan implemented asynchronously and synchronously, and requires the same
+    /// rows.
     /// </summary>
     /// <remarks>
-    /// The comparison is against <see cref="ClrEnumerableConvention"/> rather than against Calcite, and that
-    /// is not a weaker oracle: the synchronous convention is checked against Calcite query by query in
+    /// The comparison is against the same plan read synchronously rather than against Calcite, and that is
+    /// not a weaker oracle: a plan of this convention is checked against Calcite query by query in
     /// <see cref="ClrEnumerableDifferentialTests"/>, so agreeing with it is agreeing with Calcite. It is also
-    /// the only comparison available — the asynchronous convention reads a table Calcite has no SPI for, so
-    /// its schema is its own and a three-way comparison would be comparing two different sets of rows.
+    /// the only comparison available — the asynchronous side reads a table Calcite has no SPI for, so its
+    /// schema is its own and a three-way comparison would be comparing two different sets of rows.
     ///
     /// <para>Both sides read <see cref="AsyncTestRows"/>, one copy, for exactly that reason.</para>
+    ///
+    /// <para><b>What this suite compares changed with the conventions.</b> It used to run two plans, one per
+    /// convention, over two schemas. It now runs one plan per schema and implements it twice, so a
+    /// disagreement is a disagreement between the two operator sets rather than between two node
+    /// hierarchies — which is what is left to get wrong.</para>
     /// </remarks>
     [TestClass]
     public class ClrAsyncEnumerableDifferentialTests
@@ -56,6 +60,7 @@ namespace Apache.Calcite.Tests
                 rootSchema.add("WIDE", new AsyncRowsTable(AsyncTestRows.Wide, AsyncTestRows.WideRowType, false));
                 rootSchema.add("ANYS", new AsyncRowsTable(AsyncTestRows.Anys, AsyncTestRows.AnysRowType, false));
                 rootSchema.add("CASTS", new AsyncRowsTable(AsyncTestRows.Casts, AsyncTestRows.CastsRowType, false));
+                rootSchema.add("EVENTS", new AsyncRowsTable(AsyncTestRows.Events, AsyncTestRows.EventsRowType, false));
                 rootSchema.add("DOCS", new AsyncRowsTable(AsyncTestRows.Docs, AsyncTestRows.DocsRowType, false));
             }
             else
@@ -65,11 +70,12 @@ namespace Apache.Calcite.Tests
                 rootSchema.add("WIDE", new SyncRowsTable(AsyncTestRows.Wide, AsyncTestRows.WideRowType, false));
                 rootSchema.add("ANYS", new SyncRowsTable(AsyncTestRows.Anys, AsyncTestRows.AnysRowType, false));
                 rootSchema.add("CASTS", new SyncRowsTable(AsyncTestRows.Casts, AsyncTestRows.CastsRowType, false));
+                rootSchema.add("EVENTS", new SyncRowsTable(AsyncTestRows.Events, AsyncTestRows.EventsRowType, false));
                 rootSchema.add("DOCS", new SyncRowsTable(AsyncTestRows.Docs, AsyncTestRows.DocsRowType, false));
             }
 
-            // a table function, which this convention has no node for: Calcite plans it and the converter
-            // carries its rows
+            // a table function the schema defines, whose call yields the sequence: ClrEnumerableTableFunctionScan
+            // takes it, and there is no input for either body to read
             rootSchema.add("NUMBERS", org.apache.calcite.schema.impl.TableFunctionImpl.create((java.lang.Class)typeof(NumbersTableFunction), "eval"));
 
             return rootSchema;
@@ -85,24 +91,24 @@ namespace Apache.Calcite.Tests
             var rules = new java.util.ArrayList();
             var calcRules = new java.util.ArrayList();
 
-            foreach (var rule in async ? ClrAsyncEnumerableRules.Rules() : ClrEnumerableRules.Rules())
+            foreach (var rule in ClrEnumerableRules.Rules())
             {
                 // dropped on both sides together, or the comparison is between two different plans
-                if (excludeMergeJoin && rule == (async ? ClrAsyncEnumerableRules.ClrAsyncEnumerableMergeJoinRule : ClrEnumerableRules.ClrEnumerableMergeJoinRule))
+                if (excludeMergeJoin && rule == ClrEnumerableRules.ClrEnumerableMergeJoinRule)
                     continue;
 
                 rules.add(rule);
             }
 
-            // the three rules each convention declares as fields and leaves out of its default list; a
-            // caller turns one on, and each side registers its own
+            // the three rules the convention declares as fields and leaves out of its default list; a caller
+            // turns one on
             if (sortedAggregate)
-                rules.add(async ? ClrAsyncEnumerableRules.ClrAsyncEnumerableSortedAggregateRule : ClrEnumerableRules.ClrEnumerableSortedAggregateRule);
+                rules.add(ClrEnumerableRules.ClrEnumerableSortedAggregateRule);
             if (batchNestedLoopJoin)
-                rules.add(async ? ClrAsyncEnumerableRules.ClrAsyncEnumerableBatchNestedLoopJoinRule : ClrEnumerableRules.ClrEnumerableBatchNestedLoopJoinRule);
+                rules.add(ClrEnumerableRules.ClrEnumerableBatchNestedLoopJoinRule);
             if (limitSort)
-                rules.add(async ? ClrAsyncEnumerableRules.ClrAsyncEnumerableLimitSortRule : ClrEnumerableRules.ClrEnumerableLimitSortRule);
-            foreach (var rule in async ? ClrAsyncEnumerableRules.CalcRules() : ClrEnumerableRules.CalcRules())
+                rules.add(ClrEnumerableRules.ClrEnumerableLimitSortRule);
+            foreach (var rule in ClrEnumerableRules.CalcRules())
                 calcRules.add(rule);
 
             rules.add(org.apache.calcite.rel.rules.CoreRules.AGGREGATE_REDUCE_FUNCTIONS);
@@ -122,8 +128,7 @@ namespace Apache.Calcite.Tests
             var logical = planner.rel(planner.validate(planner.parse(sql))).project();
             var expanded = planner.transform(0, logical.getTraitSet(), logical);
 
-            var convention = async ? (Convention)ClrAsyncEnumerableConvention.Instance : ClrEnumerableConvention.Instance;
-            var chosen = planner.transform(1, expanded.getTraitSet().replace(convention).simplify(), expanded);
+            var chosen = planner.transform(1, expanded.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify(), expanded);
             var physical = planner.transform(2, chosen.getTraitSet(), chosen);
 
             if (planOnly)
@@ -136,7 +141,7 @@ namespace Apache.Calcite.Tests
 
             if (async)
             {
-                var bindable = ClrAsyncEnumerableInterpretable.ToBindable(parameters, (ClrAsyncEnumerableRel)physical, ClrEnumerablePrefer.Array);
+                var bindable = ClrEnumerableInterpretable.ToAsyncBindable(parameters, (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
                 await foreach (var row in bindable.Bind(context))
                     rows.Add(Render(row));
             }
@@ -179,11 +184,11 @@ namespace Apache.Calcite.Tests
             var rootSchema = Schema(async);
 
             var rules = new java.util.ArrayList();
-            foreach (var rule in async ? ClrAsyncEnumerableRules.Rules() : ClrEnumerableRules.Rules())
+            foreach (var rule in ClrEnumerableRules.Rules())
                 rules.add(rule);
 
             var calcRules = new java.util.ArrayList();
-            foreach (var rule in async ? ClrAsyncEnumerableRules.CalcRules() : ClrEnumerableRules.CalcRules())
+            foreach (var rule in ClrEnumerableRules.CalcRules())
                 calcRules.add(rule);
             foreach (var rule in RelOptRules.CALC_RULES.toArray())
                 calcRules.add(rule);
@@ -195,11 +200,10 @@ namespace Apache.Calcite.Tests
             planner.addRelTraitDef(ConventionTraitDef.INSTANCE);
             planner.addRelTraitDef(RelCollationTraitDef.INSTANCE);
 
-            var convention = async ? (Convention)ClrAsyncEnumerableConvention.Instance : ClrEnumerableConvention.Instance;
             var empty = new java.util.ArrayList();
 
             var chosen = new DefaultRulesProgram(rules, false, false, false, add, remove)
-                .run(planner, logical, logical.getTraitSet().replace(convention).simplify(), empty, empty);
+                .run(planner, logical, logical.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify(), empty, empty);
 
             var physical = Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)
                 .run(planner, chosen, chosen.getTraitSet(), empty, empty);
@@ -214,7 +218,7 @@ namespace Apache.Calcite.Tests
 
             if (async)
             {
-                var bindable = ClrAsyncEnumerableInterpretable.ToBindable(parameters, (ClrAsyncEnumerableRel)physical, ClrEnumerablePrefer.Array);
+                var bindable = ClrEnumerableInterpretable.ToAsyncBindable(parameters, (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
                 await foreach (var row in bindable.Bind(context))
                     rows.Add(Render(row));
             }
@@ -352,7 +356,7 @@ namespace Apache.Calcite.Tests
         public Task ShouldAgreeOnAOneColumnScan() => Same("SELECT ID FROM SALES");
 
         [TestMethod]
-        public Task ShouldAgreeOnAFilter() => SameThrough("ClrAsyncEnumerableCalc", "SELECT * FROM SALES WHERE AMOUNT > 10");
+        public Task ShouldAgreeOnAFilter() => SameThrough("ClrEnumerableCalc", "SELECT * FROM SALES WHERE AMOUNT > 10");
 
         [TestMethod]
         public Task ShouldAgreeOnAProjection() => Same("SELECT ID, REGION FROM SALES");
@@ -364,16 +368,16 @@ namespace Apache.Calcite.Tests
         public Task ShouldAgreeOnANullableColumn() => Same("SELECT AMOUNT FROM SALES");
 
         [TestMethod]
-        public Task ShouldAgreeOnASort() => SameThrough("ClrAsyncEnumerableSort", "SELECT * FROM SALES ORDER BY AMOUNT");
+        public Task ShouldAgreeOnASort() => SameThrough("ClrEnumerableSort", "SELECT * FROM SALES ORDER BY AMOUNT");
 
         [TestMethod]
         public Task ShouldAgreeOnASortWithLimit() => Same("SELECT * FROM SALES ORDER BY ID OFFSET 1 ROWS FETCH NEXT 3 ROWS ONLY");
 
         [TestMethod]
-        public Task ShouldAgreeOnValues() => SameThrough("ClrAsyncEnumerableValues", "SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");
+        public Task ShouldAgreeOnValues() => SameThrough("ClrEnumerableValues", "SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");
 
         [TestMethod]
-        public Task ShouldAgreeOnAnAggregate() => SameThrough("ClrAsyncEnumerableAggregate", "SELECT REGION, SUM(AMOUNT) FROM SALES GROUP BY REGION");
+        public Task ShouldAgreeOnAnAggregate() => SameThrough("ClrEnumerableAggregate", "SELECT REGION, SUM(AMOUNT) FROM SALES GROUP BY REGION");
 
         [TestMethod]
         public Task ShouldAgreeOnACountOverEverything() => Same("SELECT COUNT(*) FROM SALES");
@@ -388,10 +392,10 @@ namespace Apache.Calcite.Tests
         // included.
 
         [TestMethod]
-        public Task ShouldAgreeOnAggregatingAnAnyColumn() => SameThrough("ClrAsyncEnumerableAggregate", "SELECT MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS");
+        public Task ShouldAgreeOnAggregatingAnAnyColumn() => SameThrough("ClrEnumerableAggregate", "SELECT MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS");
 
         [TestMethod]
-        public Task ShouldAgreeOnAGroupedAggregateOverAnAnyColumn() => SameThrough("ClrAsyncEnumerableAggregate", "SELECT K, MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS GROUP BY K ORDER BY K");
+        public Task ShouldAgreeOnAGroupedAggregateOverAnAnyColumn() => SameThrough("ClrEnumerableAggregate", "SELECT K, MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS GROUP BY K ORDER BY K");
 
         [TestMethod]
         public Task ShouldAgreeOnAggregatingAnAnyColumnOfStrings() => Same("SELECT MIN(S), MAX(S) FROM ANYS");
@@ -400,13 +404,13 @@ namespace Apache.Calcite.Tests
         public Task ShouldAgreeOnAggregatingAnEmptyAnyColumn() => Same("SELECT MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS WHERE K = 'NORTH'");
 
         [TestMethod]
-        public Task ShouldAgreeOnWindowingAnAggregateOverAnAnyColumn() => SameThrough("ClrAsyncEnumerableWindow", "SELECT ID, MIN(V) OVER (PARTITION BY K), MAX(V) OVER (PARTITION BY K), SUM(V) OVER (PARTITION BY K) FROM ANYS ORDER BY ID");
+        public Task ShouldAgreeOnWindowingAnAggregateOverAnAnyColumn() => SameThrough("ClrEnumerableWindow", "SELECT ID, MIN(V) OVER (PARTITION BY K), MAX(V) OVER (PARTITION BY K), SUM(V) OVER (PARTITION BY K) FROM ANYS ORDER BY ID");
 
         [TestMethod]
-        public Task ShouldAgreeOnARunningTotalOverAnAnyColumn() => SameThrough("ClrAsyncEnumerableWindow", "SELECT ID, SUM(V) OVER (ORDER BY ID) FROM ANYS ORDER BY ID");
+        public Task ShouldAgreeOnARunningTotalOverAnAnyColumn() => SameThrough("ClrEnumerableWindow", "SELECT ID, SUM(V) OVER (ORDER BY ID) FROM ANYS ORDER BY ID");
 
         [TestMethod]
-        public Task ShouldAgreeOnTakingAnyValueOfAnAnyColumn() => SameThrough("ClrAsyncEnumerableAggregate", "SELECT ANY_VALUE(V), ANY_VALUE(S) FROM ANYS");
+        public Task ShouldAgreeOnTakingAnyValueOfAnAnyColumn() => SameThrough("ClrEnumerableAggregate", "SELECT ANY_VALUE(V), ANY_VALUE(S) FROM ANYS");
 
         [TestMethod]
         public Task ShouldAgreeOnDeviatingOverAnAnyColumn() => Same("SELECT VAR_POP(V), VAR_SAMP(V) FROM ANYS");
@@ -477,11 +481,11 @@ namespace Apache.Calcite.Tests
 
         [TestMethod]
         public Task ShouldAgreeOnARightJoinsOwnOrderOverTwelveKeys() =>
-            SameThrough("ClrAsyncEnumerableHashJoin", "SELECT a.N, b.K FROM (SELECT * FROM WIDE WHERE N < 3) a RIGHT JOIN WIDE b ON a.K = b.K");
+            SameThrough("ClrEnumerableHashJoin", "SELECT a.N, b.K FROM (SELECT * FROM WIDE WHERE N < 3) a RIGHT JOIN WIDE b ON a.K = b.K");
 
         [TestMethod]
         public Task ShouldAgreeOnAFullJoinsOwnOrderOverTwelveKeys() =>
-            SameThrough("ClrAsyncEnumerableHashJoin", "SELECT a.N, b.K FROM (SELECT * FROM WIDE WHERE N < 3) a FULL JOIN WIDE b ON a.K = b.K");
+            SameThrough("ClrEnumerableHashJoin", "SELECT a.N, b.K FROM (SELECT * FROM WIDE WHERE N < 3) a FULL JOIN WIDE b ON a.K = b.K");
 
         [TestMethod]
         public Task ShouldAgreeOnASemiJoin() => Same("SELECT ID FROM SALES WHERE ID IN (SELECT K FROM SORTED)");
@@ -503,7 +507,7 @@ namespace Apache.Calcite.Tests
         /// </remarks>
         [TestMethod]
         public Task ShouldAgreeOnAMergeJoin() =>
-            SameThrough("ClrAsyncEnumerableMergeJoin", "SELECT a.K, b.V FROM SORTED a JOIN SORTED b ON a.K = b.K", excludeHashJoin: true);
+            SameThrough("ClrEnumerableMergeJoin", "SELECT a.K, b.V FROM SORTED a JOIN SORTED b ON a.K = b.K", excludeHashJoin: true);
 
         [TestMethod]
         public Task ShouldAgreeOnAMergeJoinWithTies() =>
@@ -569,27 +573,27 @@ namespace Apache.Calcite.Tests
 
         [TestMethod]
         public Task ShouldAgreeOnUncollectingAnAnyColumn() =>
-            SameThrough("ClrAsyncEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.TAGS) AS t(X)");
+            SameThrough("ClrEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.TAGS) AS t(X)");
 
         [TestMethod]
         public Task ShouldAgreeOnUncollectingAnAnyColumnOfMixedNumericTypes() =>
-            SameThrough("ClrAsyncEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.NUMS) AS t(X)");
+            SameThrough("ClrEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.NUMS) AS t(X)");
 
         [TestMethod]
         public Task ShouldAgreeOnOuterUncollectingAnAnyColumn() =>
-            SameThrough("ClrAsyncEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d LEFT JOIN UNNEST(d.TAGS) AS t(X) ON TRUE");
+            SameThrough("ClrEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d LEFT JOIN UNNEST(d.TAGS) AS t(X) ON TRUE");
 
         [TestMethod]
         public Task ShouldAgreeOnUncollectingAnAnyColumnWithOrdinality() =>
-            SameThrough("ClrAsyncEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.TAGS) WITH ORDINALITY AS t(X)");
+            SameThrough("ClrEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.TAGS) WITH ORDINALITY AS t(X)");
 
         [TestMethod]
         public Task ShouldAgreeOnAggregatingOverAnUncollectedAnyColumn() =>
-            SameThrough("ClrAsyncEnumerableUncollect", "SELECT d.ID, COUNT(*), MIN(t.X), MAX(t.X) FROM DOCS d, UNNEST(d.NUMS) AS t(X) GROUP BY d.ID ORDER BY 1");
+            SameThrough("ClrEnumerableUncollect", "SELECT d.ID, COUNT(*), MIN(t.X), MAX(t.X) FROM DOCS d, UNNEST(d.NUMS) AS t(X) GROUP BY d.ID ORDER BY 1");
 
         [TestMethod]
         public Task ShouldAgreeOnFilteringTheOuterRowOfAnUncollectedAnyColumn() =>
-            SameThrough("ClrAsyncEnumerableUncollect", "SELECT t.X FROM DOCS d, UNNEST(d.TAGS) AS t(X) WHERE d.ID = 1");
+            SameThrough("ClrEnumerableUncollect", "SELECT t.X FROM DOCS d, UNNEST(d.TAGS) AS t(X) WHERE d.ID = 1");
 
         [TestMethod]
         public Task ShouldAgreeOnACaseAndCoalesce() =>
@@ -657,17 +661,21 @@ namespace Apache.Calcite.Tests
         public Task ShouldAgreeOnAMarkedCorrelatedExists() =>
             Same("SELECT ID FROM SALES S1 WHERE EXISTS (SELECT 1 FROM SALES S2 WHERE S2.REGION = S1.REGION AND S2.ID > 3) ORDER BY ID", markJoin: true);
 
-        // what the converter into this convention unlocked. None of these has a node here, and before the
-        // converter each one made the whole query unplannable; now Calcite plans that part and the rest of
-        // the query is still asynchronous.
+        // A recursive query is the shape the two conventions used to differ on, and it is worth saying how.
+        // The repeat union and the table spool exist here, but the asynchronous convention left their rules
+        // out of its list on the grounds that nothing carried the interpreted transient scan's rows back --
+        // so a WITH RECURSIVE was planned wholly by Calcite under the converter in. There is one rule list
+        // now, so the union and the spool are this convention's own in either mode and only the transient
+        // scan is Calcite's, which is exactly what the synchronous side always did. SameThrough is what says
+        // so; without it these would pass on the old shape too.
 
         [TestMethod]
         public Task ShouldAgreeOnARecursiveQuery() =>
-            Same("WITH RECURSIVE t(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 4) SELECT n FROM t ORDER BY 1");
+            SameThrough("ClrEnumerableRepeatUnion", "WITH RECURSIVE t(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 4) SELECT n FROM t ORDER BY 1");
 
         [TestMethod]
         public Task ShouldAgreeOnARecursiveQueryOfSeveralColumns() =>
-            Same("WITH RECURSIVE t(n, m) AS (VALUES (1, 10) UNION ALL SELECT n + 1, m + 10 FROM t WHERE n < 4) SELECT n, m FROM t ORDER BY 1");
+            SameThrough("ClrEnumerableTableSpool", "WITH RECURSIVE t(n, m) AS (VALUES (1, 10) UNION ALL SELECT n + 1, m + 10 FROM t WHERE n < 4) SELECT n, m FROM t ORDER BY 1");
 
         // ------------------------------------------------------------------ built by hand
         //
@@ -722,12 +730,12 @@ namespace Apache.Calcite.Tests
         /// </summary>
         /// <remarks>
         /// The harness proving itself: that a rel built rather than parsed reaches this convention at all,
-        /// and reaches it through <c>ClrAsyncEnumerableCalc</c> rather than through a converter. Without this
+        /// and reaches it through <c>ClrEnumerableCalc</c> rather than through a converter. Without this
         /// a failure anywhere above is ambiguous between the shape and the route.
         /// </remarks>
         [TestMethod]
         public Task ShouldPlanAHandBuiltScanThroughThisConvention() =>
-            SameRelThrough("ClrAsyncEnumerableCalc", builder => builder
+            SameRelThrough("ClrEnumerableCalc", builder => builder
                 .scan("SORTED")
                 .filter(builder.call(org.apache.calcite.sql.fun.SqlStdOperatorTable.GREATER_THAN, builder.field(0), builder.literal(I(1))))
                 .build());
@@ -737,7 +745,37 @@ namespace Apache.Calcite.Tests
             Same("SELECT * FROM TABLE(NUMBERS(3))");
 
         /// <summary>
-        /// A table function joined to a table is refused, as it is in the synchronous convention.
+        /// A window table function over a table whose rows are awaited.
+        /// </summary>
+        /// <remarks>
+        /// The one node whose two bodies differ in <em>what they do with the input</em> rather than in which
+        /// operator set they name. Everything that builds a window is Calcite's and is linq4j, and a linq4j
+        /// <c>Enumerable</c> has nowhere to suspend, so the awaiting body pulls its input and blocks a thread
+        /// per row before handing it over. The rows above the node are awaited again, which is why this is a
+        /// differential test like the rest rather than a plan assertion.
+        ///
+        /// <para>Written because the pull was lost once. The node inherited the default
+        /// <c>ImplementAsync</c>, which handed <c>JavaSequences.ToJava</c> an <c>IAsyncEnumerable</c>, and
+        /// <c>Expression.Call</c> refused it. Nothing in the suite reached a window table function over an
+        /// awaited input, so the whole suite stayed green over it.</para>
+        /// </remarks>
+        [TestMethod]
+        public Task ShouldAgreeOnAWindowTableFunction() =>
+            Same("SELECT \"ID\", \"window_start\", \"window_end\" FROM TABLE(TUMBLE(TABLE \"EVENTS\", DESCRIPTOR(\"ROWTIME\"), INTERVAL '1' HOUR)) ORDER BY \"ID\"");
+
+        /// <summary>
+        /// A window table function whose rows are then aggregated.
+        /// </summary>
+        /// <remarks>
+        /// The window's output crosses back to awaited and an aggregate of this convention reads it, so the
+        /// crossing is exercised in both directions in one plan.
+        /// </remarks>
+        [TestMethod]
+        public Task ShouldAgreeOnAnAggregateOverAWindowTableFunction() =>
+            Same("SELECT \"window_start\", COUNT(*) FROM TABLE(TUMBLE(TABLE \"EVENTS\", DESCRIPTOR(\"ROWTIME\"), INTERVAL '1' HOUR)) GROUP BY \"window_start\" ORDER BY 1");
+
+        /// <summary>
+        /// A table function joined to a table is refused while the plan is implemented, and named.
         /// </summary>
         /// <remarks>
         /// The same defect of Calcite's that <c>ShouldRefuseATableFunctionInAJoin</c> records:
@@ -745,11 +783,13 @@ namespace Apache.Calcite.Tests
         /// rows on unchanged, so the sequence carries arrays where its row type says
         /// <c>java.lang.Integer</c>.
         ///
-        /// <para>It surfaces later here, and worse. In the synchronous convention the sort is our node, so
-        /// <c>RequireRowType</c> catches it while the plan is being implemented and names the node. Here the
-        /// whole subtree is Calcite's under one converter, and the converter believes what
-        /// <c>result.physType.getFormat()</c> tells it — which is the thing that is wrong. So the mismatch
-        /// is not visible statically and arrives as a cast at the first row read.</para>
+        /// <para><b>It surfaces here exactly as it does in a plan read synchronously, and that is the
+        /// change.</b> While there were two conventions this one had no table function rule, so the whole
+        /// subtree went to <c>EnumerableConvention</c> under a converter, the converter believed
+        /// <c>result.physType.getFormat()</c> — the thing that is wrong — and the mismatch arrived as an
+        /// <c>InvalidCastException</c> at the first row. The sort is now our node in either mode, so
+        /// <c>RequireRowType</c> catches it while the plan is being implemented and says which node handed
+        /// up what.</para>
         ///
         /// <para>Nothing to fix on this side: the convention does what Calcite does, and the check that
         /// would catch it is a check on Calcite's own answer about its own rows.</para>
@@ -759,34 +799,34 @@ namespace Apache.Calcite.Tests
         {
             var act = async () => await Run("SELECT s.ID FROM SALES s, TABLE(NUMBERS(6)) n WHERE s.ID = n.N ORDER BY 1", true);
 
-            await act.Should().ThrowAsync<InvalidCastException>();
+            (await act.Should().ThrowAsync<java.lang.IllegalStateException>())
+                .WithInnerException<java.lang.IllegalStateException>()
+                .WithMessage("*ClrEnumerableSort handed up a sequence of System.Object[] where its row type is java.lang.Integer*");
         }
 
         /// <summary>
-        /// MATCH_RECOGNIZE over an asynchronous table cannot be planned at all.
+        /// MATCH_RECOGNIZE over a table that only yields its rows asynchronously now plans, and runs.
         /// </summary>
         /// <remarks>
-        /// The design boundary, arriving where it was predicted to. Neither convention can write a
-        /// MATCH_RECOGNIZE — <c>PassedRowsInputGetter</c> and <c>PrevInputGetter</c> are package-private
-        /// types Calcite casts to by name — so the node has to be Calcite's. But Calcite's node needs its
-        /// input in <c>EnumerableConvention</c>, and its input here is an
-        /// <see cref="Schema.IClrAsyncScannableTable"/>, which Calcite cannot read by any route. The
-        /// converter goes the other way.
+        /// <b>A capability the unification bought, and a blocking one.</b> This query could not be planned at
+        /// all while there were two conventions: nothing here can write a MATCH_RECOGNIZE —
+        /// <c>PassedRowsInputGetter</c> and <c>PrevInputGetter</c> are package-private types Calcite casts to
+        /// by name — so the node has to be Calcite's, Calcite's node needs its input in
+        /// <c>EnumerableConvention</c>, and the asynchronous convention had no converter out for it to arrive
+        /// by. The planner said so and the query failed.
         ///
-        /// <para>So there is no plan, and the planner says so. That is the right answer rather than a gap:
-        /// the only thing that would make it plan is a converter out of this convention, which would block
-        /// once per row for a query nobody asked to have answered that way.</para>
-        ///
-        /// <para>The same query over a synchronous table plans, because then the whole subtree is
-        /// Calcite's — which is what <c>ShouldPlanASyncOnlyTableThroughTheConverter</c> exercises the
-        /// general form of.</para>
+        /// <para>Now the scan is a node of the one convention and the converter out is the one that always
+        /// existed. Calcite compiles its side with Janino and generated Java cannot await, so the sub-plan
+        /// under that converter is implemented synchronously and the asynchronous leaf inside it is read
+        /// across, <b>blocking a thread per row</b>. That is the cost, it is paid only by a query of this
+        /// shape, and the alternative it replaces is the query not running.</para>
         /// </remarks>
         [TestMethod]
-        public async Task ShouldRefuseAMatchRecognizeOverAnAsyncTable()
+        public async Task ShouldRunAMatchRecognizeOverAnAsyncTable()
         {
-            var act = async () => await Run("SELECT * FROM SALES MATCH_RECOGNIZE (ORDER BY ID MEASURES CLASSIFIER() AS cl PATTERN (a b) DEFINE a AS a.AMOUNT > 0, b AS b.AMOUNT > 0)", true);
+            var rows = await Run("SELECT * FROM SALES MATCH_RECOGNIZE (ORDER BY ID MEASURES CLASSIFIER() AS cl PATTERN (a b) DEFINE a AS a.AMOUNT > 0, b AS b.AMOUNT > 0)", true);
 
-            await act.Should().ThrowAsync<org.apache.calcite.plan.RelOptPlanner.CannotPlanException>();
+            rows.Should().NotBeEmpty();
         }
 
     }

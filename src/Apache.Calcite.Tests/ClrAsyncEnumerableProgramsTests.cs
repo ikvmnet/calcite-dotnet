@@ -15,7 +15,6 @@ using org.apache.calcite.sql.type;
 using org.apache.calcite.tools;
 
 using Apache.Calcite.Extensions;
-using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Tests
@@ -37,8 +36,8 @@ namespace Apache.Calcite.Tests
     /// <c>ClrPrepareImpl.CreatePlanner</c> for a prepared statement — this convention's.
     ///
     /// <para><c>ClrEnumerableQueryTests</c> is the synchronous counterpart and holds the same four queries.
-    /// The two programs are the same shape and were changed together, which is the reason to run both rather
-    /// than trust one.</para>
+    /// There is one program now and it is the same one either way, so what these two hold apart is not the
+    /// program but the pair of bodies each node answers with — the same planned root implemented twice.</para>
     /// </remarks>
     [TestClass]
     public class ClrAsyncEnumerableProgramsTests
@@ -88,14 +87,14 @@ namespace Apache.Calcite.Tests
             rootSchema.add("SALES", new AsyncRowsTable(AsyncTestRows.Sales, AsyncTestRows.SalesRowType, false));
 
             var calcRules = new java.util.ArrayList();
-            foreach (var rule in ClrAsyncEnumerableRules.CalcRules())
+            foreach (var rule in ClrEnumerableRules.CalcRules())
                 calcRules.add(rule);
 
             var config = Frameworks.newConfigBuilder()
                 .defaultSchema(rootSchema)
                 .programs(
                     Programs.sequence(
-                        new AddRulesProgram(ClrAsyncEnumerableRules.Rules()),
+                        new AddRulesProgram(ClrEnumerableRules.Rules()),
                         Programs.standard(),
                         Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)))
                 .build();
@@ -103,11 +102,11 @@ namespace Apache.Calcite.Tests
             var planner = Frameworks.getPlanner(config);
             var logical = planner.rel(planner.validate(planner.parse(sql))).project();
 
-            var traits = logical.getTraitSet().replace(ClrAsyncEnumerableConvention.Instance).simplify();
-            var physical = (ClrAsyncEnumerableRel)planner.transform(0, traits, logical);
+            var traits = logical.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify();
+            var physical = (ClrEnumerableRel)planner.transform(0, traits, logical);
 
             var parameters = new java.util.HashMap();
-            var bindable = ClrAsyncEnumerableInterpretable.ToBindable(parameters, physical, ClrEnumerablePrefer.Array);
+            var bindable = ClrEnumerableInterpretable.ToAsyncBindable(parameters, physical, ClrEnumerablePrefer.Array);
 
             var rows = new List<object[]>();
             await foreach (var current in bindable.Bind(new TestDataContext(rootSchema, parameters)))

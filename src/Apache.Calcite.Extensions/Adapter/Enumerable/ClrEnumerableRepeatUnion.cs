@@ -91,6 +91,48 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return implementor.Result(physType, body.Count == 1 ? body[0] : Expression.Block(body));
         }
 
+        /// <inheritdoc />
+        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var body = new System.Collections.Generic.List<Expression>();
+            Expression cleanUp = Expression.Constant(null, typeof(System.Action));
+
+            // the scratch table has to be in the schema while the query runs, because everything that reads it
+            // resolves it there by name
+            var transientTable = getTransientTable();
+            if (transientTable != null)
+            {
+                var name = (string)transientTable.getQualifiedName().get(transientTable.getQualifiedName().size() - 1);
+                var rootSchema = Expression.Call(implementor.Root, DataContextGetRootSchema);
+                // a TransientTable, which is what Calcite unwraps and stashes, and refused rather than
+                // written into the plan as a null the schema would reject when the query runs
+                var scratch = (org.apache.calcite.schema.TransientTable)transientTable.unwrap((java.lang.Class)typeof(org.apache.calcite.schema.TransientTable))
+                    ?? throw new java.lang.IllegalStateException($"{transientTable} is not a TransientTable");
+                var table = Expression.Constant(scratch, typeof(org.apache.calcite.schema.TransientTable));
+
+                body.Add(Expression.Call(rootSchema, SchemaPlusAdd, Expression.Constant(name), table));
+                cleanUp = Expression.Lambda<System.Action>(
+                    Expression.Call(Expression.Call(implementor.Root, DataContextGetRootSchema), SchemaPlusRemoveTable, Expression.Constant(name)));
+            }
+
+            var seedResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)getSeedRel(), pref);
+            var iterationResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)getIterativeRel(), pref);
+
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(seedResult.Format));
+            var rowType = seedResult.PhysType.RowType;
+
+            body.Add(
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.RepeatUnionAsync.MakeGenericMethod(rowType),
+                    seedResult.Expression,
+                    iterationResult.Expression,
+                    Expression.Constant(iterationLimit),
+                    Expression.Constant(all),
+                    physType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)),
+                    cleanUp));
+
+            return implementor.ResultAsync(physType, body.Count == 1 ? body[0] : Expression.Block(body));
+        }
+
         static readonly System.Reflection.MethodInfo DataContextGetRootSchema = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.DATA_CONTEXT_GET_ROOT_SCHEMA.method);
         static readonly System.Reflection.MethodInfo SchemaPlusAdd = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.SCHEMA_PLUS_ADD_TABLE.method);
         static readonly System.Reflection.MethodInfo SchemaPlusRemoveTable = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.SCHEMA_PLUS_REMOVE_TABLE.method);

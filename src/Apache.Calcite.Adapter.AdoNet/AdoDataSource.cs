@@ -31,7 +31,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="cancellationToken">Abandons the attempt.</param>
         /// <returns>An open <see cref="DbConnection"/> ready for query execution.</returns>
         /// <remarks>
-        /// What a plan of <c>ClrAsyncEnumerableConvention</c> opens its connection by. The default blocks on
+        /// What a plan reading its rows with await opens its connection by. The default blocks on
         /// <see cref="OpenConnection"/>, so a source written before this member still answers; a source over
         /// a provider that opens asynchronously should override it, as both sources here do.
         /// </remarks>

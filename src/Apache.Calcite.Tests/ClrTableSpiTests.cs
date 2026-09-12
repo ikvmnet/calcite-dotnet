@@ -6,7 +6,6 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Schema;
 
@@ -87,7 +86,7 @@ namespace Apache.Calcite.Tests
         /// <summary>
         /// A table of the asynchronous SPI that hands back an expression.
         /// </summary>
-        sealed class AsyncQueryableRowsTable : AbstractTable, IClrAsyncQueryableTable
+        sealed class AsyncQueryableRowsTable : AbstractTable, IClrQueryableTable
         {
 
             /// <inheritdoc />
@@ -99,6 +98,19 @@ namespace Apache.Calcite.Tests
             /// <inheritdoc />
             public Expression GetAsyncExpression(SchemaPlus? schema, string tableName) =>
                 Expression.Call(null, RowsMethod, Expression.Default(typeof(CancellationToken)));
+
+            /// <inheritdoc />
+            /// <remarks>
+            /// Written from the awaiting half, because there is no pulled reading of these rows to offer.
+            /// The other order, which the interface would have supplied for free, is the one this table
+            /// cannot use. The drain is the test's own, because the convention's is internal and an adapter
+            /// outside this repository would have to write its own too.
+            /// </remarks>
+            public Expression GetExpression(SchemaPlus? schema, string tableName) =>
+                Expression.Call(null, DrainMethod.MakeGenericMethod(ElementType), GetAsyncExpression(schema, tableName));
+
+            static readonly System.Reflection.MethodInfo DrainMethod =
+                typeof(BlockingDrain).GetMethod(nameof(BlockingDrain.Of))!;
 
             static readonly System.Reflection.MethodInfo RowsMethod =
                 typeof(AsyncQueryableRowsTable).GetMethod(nameof(Rows), System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!;
@@ -178,9 +190,9 @@ namespace Apache.Calcite.Tests
             var rules = new java.util.ArrayList();
             var calcRules = new java.util.ArrayList();
 
-            foreach (var rule in async ? ClrAsyncEnumerableRules.Rules() : ClrEnumerableRules.Rules())
+            foreach (var rule in ClrEnumerableRules.Rules())
                 rules.add(rule);
-            foreach (var rule in async ? ClrAsyncEnumerableRules.CalcRules() : ClrEnumerableRules.CalcRules())
+            foreach (var rule in ClrEnumerableRules.CalcRules())
                 calcRules.add(rule);
             foreach (var rule in RelOptRules.CALC_RULES.toArray())
                 calcRules.add(rule);
@@ -197,8 +209,7 @@ namespace Apache.Calcite.Tests
             var logical = planner.rel(planner.validate(planner.parse(sql))).project();
             var expanded = planner.transform(0, logical.getTraitSet(), logical);
 
-            var convention = async ? (Convention)ClrAsyncEnumerableConvention.Instance : ClrEnumerableConvention.Instance;
-            var chosen = planner.transform(1, expanded.getTraitSet().replace(convention).simplify(), expanded);
+            var chosen = planner.transform(1, expanded.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify(), expanded);
             var physical = planner.transform(2, chosen.getTraitSet(), chosen);
 
             var parameters = new java.util.HashMap();
@@ -207,7 +218,7 @@ namespace Apache.Calcite.Tests
 
             if (async)
             {
-                var bindable = ClrAsyncEnumerableInterpretable.ToBindable(parameters, (ClrAsyncEnumerableRel)physical, ClrEnumerablePrefer.Array);
+                var bindable = ClrEnumerableInterpretable.ToAsyncBindable(parameters, (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
                 var reader = bindable.Bind(context).GetAsyncEnumerator();
                 try
                 {
@@ -292,7 +303,7 @@ namespace Apache.Calcite.Tests
         {
             var (plan, rows) = Run(Sql, new AsyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false), true);
 
-            RelOptUtil.toString(plan).Should().Contain("ClrAsyncEnumerableTableScan");
+            RelOptUtil.toString(plan).Should().Contain("ClrEnumerableTableScan");
             rows.Should().Equal(Expected);
         }
 
@@ -301,7 +312,7 @@ namespace Apache.Calcite.Tests
         {
             var (plan, rows) = Run(Sql, new AsyncQueryableRowsTable(), true);
 
-            RelOptUtil.toString(plan).Should().Contain("ClrAsyncEnumerableTableScan");
+            RelOptUtil.toString(plan).Should().Contain("ClrEnumerableTableScan");
             rows.Should().Equal(Expected);
         }
 
@@ -309,10 +320,10 @@ namespace Apache.Calcite.Tests
         /// A table of Calcite's is read by this convention's own scan, without a converter.
         /// </summary>
         /// <remarks>
-        /// The point of reaching Calcite's tables the way Calcite reaches them. Before this the asynchronous
-        /// convention could not read a <see cref="ScannableTable"/> at all, so a query over one was a Calcite
-        /// subtree under <c>EnumerableToClrAsyncEnumerableConverter</c> — correct, but a converter and a
-        /// planning step for something that is one node.
+        /// The point of reaching Calcite's tables the way Calcite reaches them. Before this an awaited plan
+        /// could not read a <see cref="ScannableTable"/> at all, so a query over one was a Calcite subtree
+        /// under <c>EnumerableToClrEnumerableConverter</c> — correct, but a converter and a planning step
+        /// for something that is one node.
         ///
         /// <para>The converter is still there, and still needed, for what this convention has no node for at
         /// all — a table function, a MATCH_RECOGNIZE, a recursive query's transient scan.</para>
@@ -323,8 +334,8 @@ namespace Apache.Calcite.Tests
             var (plan, rows) = Run(Sql, new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false), true);
             var text = RelOptUtil.toString(plan);
 
-            text.Should().Contain("ClrAsyncEnumerableTableScan");
-            text.Should().NotContain("EnumerableToClrAsyncEnumerableConverter");
+            text.Should().Contain("ClrEnumerableTableScan");
+            text.Should().NotContain("EnumerableToClrEnumerableConverter");
             rows.Should().Equal(Expected);
         }
 
@@ -343,8 +354,8 @@ namespace Apache.Calcite.Tests
 
             ClrEnumerableTableScan.DeduceElementType(new ClrRowsTable()).Should().Be(arrays);
             ClrEnumerableTableScan.DeduceElementType(new ClrQueryableRowsTable()).Should().Be(arrays);
-            ClrAsyncEnumerableTableScan.DeduceElementType(new AsyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false)).Should().Be(arrays);
-            ClrAsyncEnumerableTableScan.DeduceElementType(new AsyncQueryableRowsTable()).Should().Be(arrays);
+            ClrEnumerableTableScan.DeduceElementType(new AsyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false)).Should().Be(arrays);
+            ClrEnumerableTableScan.DeduceElementType(new AsyncQueryableRowsTable()).Should().Be(arrays);
 
             // and a table of Calcite's own SPI is still Calcite's answer, unchanged
             ClrEnumerableTableScan.DeduceElementType(new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false))

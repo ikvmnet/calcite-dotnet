@@ -228,14 +228,15 @@ positional parameters converted by `ParameterBinder`, the command timeout in mil
 **`ActivateHooks` / `DeactivateHooks`** bind each `CalciteHookEntry` to the current thread with
 `Hook.addThread` for the duration of one request and close the handles in a `finally`.
 
-**`ExecuteReader` / `ExecuteReaderAsync`** share one core: plan into the connection's convention,
-bind, and — unless the statement is DDL — take the plan's enumerator. **Which convention is the
-connection's choice, not the entry point's**, the way Calcite's own connection can ask for the
-bindable convention. By default the plan is `ClrAsyncEnumerableConvention` and the core takes
+**`ExecuteReader` / `ExecuteReaderAsync`** share one core: plan the statement, bind, and — unless it
+is DDL — take the plan's enumerator. **Whether the rows are awaited is the connection's choice, not
+the entry point's**, and it is no longer a choice of convention: there is one, and the signature
+answers either `Bind` or `BindAsync`, implementing and compiling the planned root the first time
+that one is asked for. By default the core takes
 `signature.BindAsync(dataContext).GetAsyncEnumerator(cancellationToken)` into a
 `CalciteAsyncEnumerableResult` — the token enters here, at the enumerator, which is the only place a
 token can enter an `IAsyncEnumerable`, and cancelling it stops the leaf between rows. With
-`Synchronous` set the plan is `ClrEnumerableConvention` and the core takes
+`Synchronous` set the core takes
 `signature.Bind(dataContext).GetEnumerator()` into a `CalciteEnumerableResult`; the token is then
 only checked before planning. `ExecuteReaderAsync` is the core in a completed task — planning is
 synchronous work — and `ExecuteReader` is the core with `CancellationToken.None`.
@@ -275,10 +276,9 @@ reused as they stand. The driver had to be replaced because its one exit is a `B
 | `ClrSignature` | `CalcitePrepare.CalciteSignature` | The planned statement, member for member, with `Bindable` swapped for `IClrBindable` and `enumerable` for `Bind`. |
 
 `ClrPrepareImpl.Prepare` is the entry point this provider uses. It creates a `VolcanoPlanner` with
-`RelOptUtil.registerDefaultRules` **plus** one convention's rules — `ClrAsyncEnumerableRules.Rules()`
-when the `async` parameter says so, `ClrEnumerableRules.Rules()` otherwise, and never both — so
-Calcite's own rules stay on the planner and a statement the chosen convention has no node for is
-still planned and run in `EnumerableConvention`, with a converter carrying its rows. That is how a
+`RelOptUtil.registerDefaultRules` **plus** `ClrEnumerableRules.Rules()` — one list, because there is
+one convention — so Calcite's own rules stay on the planner and a statement this convention has no
+node for is still planned and run in `EnumerableConvention`, with a converter carrying its rows. That is how a
 table modification works here. `ClrPrepareQuery.Of(RelNode)` selects the branch that plans a `RelNode` that was
 built rather than parsed; it is exercised by tests and not reached from this project.
 
@@ -495,10 +495,10 @@ text form for it. If upstream exposes a variant's full `RuntimeTypeInformation`,
 4. **Request.** `ExecuteReader` builds a `CalciteExecuteRequest` from the text, the parameters, the
    timeout and the resolved hooks, and hands it to the session's reader core.
 5. **Plan.** The session pushes a `PrepareContext` onto `CalcitePrepare.Dummy` and calls
-   `ClrPrepareImpl.Prepare`, which parses, validates, converts to relational algebra, optimises into
-   the connection's convention — `ClrAsyncEnumerableConvention` by default,
-   `ClrEnumerableConvention` when the connection string says `Synchronous` — and compiles the chosen
-   plan to a delegate. The result is a `ClrSignature`.
+   `ClrPrepareImpl.Prepare`, which parses, validates, converts to relational algebra and optimises
+   into `ClrEnumerableConvention`. The plan is compiled to a delegate the first time the connection
+   asks for one, as an `IEnumerable` or an `IAsyncEnumerable` according to its mode; the same planned
+   root serves both. The result is a `ClrSignature`.
 6. **Bind.** Parameters are converted and assembled with the cancel flag, the timeout and the
    signature's internal parameters into a `StatementDataContext`.
 7. **Execute.** The plan's enumerator is taken — `BindAsync(...).GetAsyncEnumerator(token)` or
@@ -524,12 +524,10 @@ text and returns a `ClrExplainResult`; `Describe` wraps that text in a `ClrExpla
 yields one row.
 
 It is read by either reader, and `ClrExplainBindable` is the only bindable that is both an
-`IClrBindable` and an `IClrAsyncBindable`. Not a relaxation of the rule that each convention refuses
-the other's reader — an `EXPLAIN` is of neither convention, holding a string rather than a plan, so
-there is no pull for an awaited reader to hide. **Which convention gets explained is still decided
-by which method was called**, because the plan is optimized under that program before it is
-rendered: `ExecuteReaderAsync` on an `EXPLAIN` renders `ClrAsyncEnumerable*` nodes, and fails to
-plan wherever the query itself would.
+`IClrBindable` and an `IClrAsyncBindable`, holding a string rather than a plan. **What gets explained
+no longer depends on which method was called, or on the connection's mode**: there is one convention
+and one plan, so an `EXPLAIN` renders `ClrEnumerable*` nodes either way and fails to plan wherever
+the query itself would. It cannot say whether the query will await.
 
 ---
 

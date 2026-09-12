@@ -140,7 +140,7 @@ namespace Apache.Calcite.Data.Tests
             Assert.True(r.Read());
 
             var plan = r.GetValue(0)?.ToString() ?? "";
-            Assert.Contains("EnumerableToClrAsyncEnumerableConverter", plan);
+            Assert.Contains("EnumerableToClrEnumerableConverter", plan);
             Assert.Contains("TableModify", plan);
         }
 

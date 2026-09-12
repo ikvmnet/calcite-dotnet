@@ -87,6 +87,25 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return implementor.Result(physType, v);
         }
 
+        /// <inheritdoc />
+        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var child = (ClrEnumerableRel)getInput();
+            var result = implementor.VisitChildAsync(this, 0, child, pref);
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), result.Format);
+
+            var rowType = result.PhysType.RowType;
+            var v = result.Expression;
+
+            if (offset != null)
+                v = ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.SkipAsync.MakeGenericMethod(rowType), v, Count(implementor, offset));
+
+            if (fetch != null)
+                v = ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.TakeAsync.MakeGenericMethod(rowType), v, Count(implementor, fetch));
+
+            return implementor.ResultAsync(physType, v);
+        }
+
         /// <summary>
         /// Returns the expression giving a row count, which is a literal unless the query was prepared with a
         /// parameter in its place.

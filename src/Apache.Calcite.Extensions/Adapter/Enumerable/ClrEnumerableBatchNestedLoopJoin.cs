@@ -187,6 +187,74 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     Expression.Constant(getVariablesSet().size())));
         }
 
+        /// <inheritdoc />
+        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)getLeft(), pref);
+
+            // one correlation variable per batch position, each read out of the list the batch arrives in.
+            // Not optimising, for the reason ClrEnumerableCorrelate gives: the block is translated apart
+            // from the sub-plan that reads its variables.
+            var corrBlock = new J.BlockBuilder(false);
+
+            // the getters registered below are ones Calcite's Rex translation reads the outer row through,
+            // so they are given their physical type, built here from the three values ours carries
+            var leftCalcite = PhysTypeImpl.of(implementor.TypeFactory, leftResult.PhysType.RelRowType, leftResult.PhysType.Format, false);
+            var corrVarType = leftCalcite.getJavaRowType();
+            var corrArgList = J.Expressions.parameter(java.lang.reflect.Modifier.FINAL, (java.lang.reflect.Type)(java.lang.Class)typeof(java.util.List), "corrList");
+            var listParameter = Expression.Parameter(typeof(java.util.List), "corrList");
+            implementor.Translator.Bind(corrArgList, listParameter);
+
+            var names = new System.Collections.Generic.List<string>();
+            for (var i = getVariablesSet().iterator(); i.hasNext();)
+                names.Add(((CorrelationId)i.next()).getName());
+
+            for (int c = 0; c < names.Count; c++)
+            {
+                var corrArg = J.Expressions.parameter(java.lang.reflect.Modifier.FINAL, corrVarType, names[c]);
+
+                corrBlock.add(
+                    J.Expressions.declare(java.lang.reflect.Modifier.FINAL, corrArg,
+                        J.Expressions.convert_(
+                            J.Expressions.call(corrArgList, ListGet, J.Expressions.constant(java.lang.Integer.valueOf(c))),
+                            corrVarType)));
+
+                implementor.RegisterCorrelVariable(names[c], corrArg, corrBlock, leftCalcite);
+            }
+
+            var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)getRight(), pref);
+
+            foreach (var name in names)
+                implementor.ClearCorrelVariable(name);
+
+            // boxed, as every join here boxes: the selector takes boxed rows, and a left join hands it a null
+
+            implementor.Translator.TranslateStatements(corrBlock.toBlock(), out var declared, out var body);
+            body.Add(rightResult.Expression);
+
+            var leftType = leftResult.PhysType.RowType;
+            var rightType = rightResult.PhysType.RowType;
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
+            var rowType = physType.RowType;
+
+            var inner = Expression.Lambda(
+                typeof(Func<,>).MakeGenericType(typeof(java.util.List), rightResult.Expression.Type),
+                Expression.Block(rightResult.Expression.Type, declared, body),
+                listParameter);
+
+            var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);
+            var predicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), getLeft(), getRight(), leftResult.PhysType, rightResult.PhysType, getCondition());
+
+            return implementor.ResultAsync(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.CorrelateBatchJoinAsync.MakeGenericMethod(leftType, rightType, rowType),
+                    Expression.Constant(ClrEnumUtils.ToLinq4jJoinType(joinType)),
+                    leftResult.Expression,
+                    inner,
+                    selector,
+                    predicate,
+                    Expression.Constant(getVariablesSet().size())));
+        }
+
         static readonly java.lang.reflect.Method ListGet = ((java.lang.Class)typeof(java.util.List)).getMethod("get", [(java.lang.Class)typeof(int)]);
 
     }

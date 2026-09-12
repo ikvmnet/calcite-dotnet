@@ -352,8 +352,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var (selector, targetRowType) = Reformatter(targetFormat);
 
-            return AsyncEnumerable.ClrAsyncBuiltInMethod.Call(
-                AsyncEnumerable.ClrAsyncBuiltInMethod.Select.MakeGenericMethod(javaRowClass, targetRowType),
+            return ClrBuiltInMethod.CallAsync(
+                ClrBuiltInMethod.SelectAsync.MakeGenericMethod(javaRowClass, targetRowType),
                 expression,
                 selector);
         }

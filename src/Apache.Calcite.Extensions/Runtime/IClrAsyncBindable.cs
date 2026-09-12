@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 
-using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 
 using org.apache.calcite;
 
@@ -8,7 +7,7 @@ namespace Apache.Calcite.Extensions.Runtime
 {
 
     /// <summary>
-    /// A compiled plan of the <see cref="ClrAsyncEnumerableConvention"/> calling convention, bound to a
+    /// A compiled plan of the <see cref="ClrEnumerableConvention"/> calling convention, bound to a
     /// <see cref="DataContext"/> when it is run.
     /// </summary>
     /// <remarks>

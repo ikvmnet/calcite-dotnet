@@ -7,7 +7,6 @@ using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.rel.core;
-using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Adapter.AdoNet
@@ -15,8 +14,7 @@ namespace Apache.Calcite.Adapter.AdoNet
 
     /// <summary>
     /// Collects the correlation variables needed to construct an <see cref="AdoCorrelationDataContext"/> for a
-    /// correlated sub-query, for a plan of the <see cref="ClrEnumerableConvention"/> or
-    /// <see cref="ClrAsyncEnumerableConvention"/> calling convention.
+    /// correlated sub-query, for a plan of the <see cref="ClrEnumerableConvention"/> calling convention.
     /// </summary>
     /// <remarks>
     /// What <see cref="AdoCorrelationDataContextBuilderImpl"/> does for a plan of Calcite's convention. Two
@@ -29,9 +27,9 @@ namespace Apache.Calcite.Adapter.AdoNet
     /// reads into a block; this reads each field as an expression and builds the context directly, so no
     /// block is needed and nothing is left to translate.</para>
     ///
-    /// <para>One class serves both Clr conventions because everything it touches is about a <em>row</em> —
-    /// the getter and the translator — and a row is the same thing in each. Nothing here is about a
-    /// sequence.</para>
+    /// <para>One class serves both of a node's bodies because everything it touches is about a <em>row</em> —
+    /// the getter and the translator — and a row is the same thing whether the plan awaits. Nothing here is
+    /// about a sequence.</para>
     /// </remarks>
     public class AdoClrCorrelationDataContextBuilder : IAdoCorrelationDataContextBuilder
     {
@@ -53,21 +51,6 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="dataContext">The context the outer query was bound with.</param>
         /// <exception cref="ArgumentNullException"></exception>
         public AdoClrCorrelationDataContextBuilder(ClrEnumerableRelImplementor implementor, Expression dataContext) :
-            this(
-                (implementor ?? throw new ArgumentNullException(nameof(implementor))).GetCorrelVariableGetter,
-                implementor.Translator,
-                dataContext)
-        {
-
-        }
-
-        /// <summary>
-        /// Initializes a new instance.
-        /// </summary>
-        /// <param name="implementor">The implementor of the plan the correlation variables are registered on.</param>
-        /// <param name="dataContext">The context the outer query was bound with.</param>
-        /// <exception cref="ArgumentNullException"></exception>
-        public AdoClrCorrelationDataContextBuilder(ClrAsyncEnumerableRelImplementor implementor, Expression dataContext) :
             this(
                 (implementor ?? throw new ArgumentNullException(nameof(implementor))).GetCorrelVariableGetter,
                 implementor.Translator,

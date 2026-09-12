@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 
 using Apache.Calcite.Extensions.Adapter.Enumerable;
-using Apache.Calcite.Extensions.Prepare.AsyncEnumerable;
 using Apache.Calcite.Extensions.Prepare.Enumerable;
 using Apache.Calcite.Extensions.Rel.Metadata;
 using Apache.Calcite.Extensions.Runtime;
@@ -54,33 +53,24 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <param name="query">The statement's text, or a plan that was built rather than parsed.</param>
         /// <param name="elementType">What a caller wants a row to be. <c>Object[]</c> asks for an array.</param>
         /// <param name="maxRowCount">The row limit, or a negative number for none.</param>
-        /// <returns>The planned statement.</returns>
+        /// <returns>The planned statement, readable synchronously or with await.</returns>
+        /// <remarks>
+        /// There is no mode here, and there was one until the two Clr conventions became one. A statement is
+        /// planned once; <c>IClrPrepare.Signature.Bind</c> and <c>BindAsync</c> each implement the planned
+        /// root the way they need it, the first time they are asked.
+        /// </remarks>
         public IClrPrepare.Signature PrepareSql(CalcitePrepare.Context context, IClrPrepare.Query query, System.Type elementType, long maxRowCount)
-        {
-            return PrepareSql(context, query, elementType, maxRowCount, false);
-        }
-
-        /// <summary>
-        /// Plans and compiles one query into one of the two conventions.
-        /// </summary>
-        /// <param name="context">The schema, type factory and configuration to plan against.</param>
-        /// <param name="query">The statement's text, or a plan that was built rather than parsed.</param>
-        /// <param name="elementType">What a caller wants a row to be. <c>Object[]</c> asks for an array.</param>
-        /// <param name="maxRowCount">The row limit, or a negative number for none.</param>
-        /// <param name="async">Whether to prepare into the asynchronous convention.</param>
-        /// <returns>The planned statement.</returns>
-        public IClrPrepare.Signature PrepareSql(CalcitePrepare.Context context, IClrPrepare.Query query, System.Type elementType, long maxRowCount, bool async)
         {
             ArgumentNullException.ThrowIfNull(context);
             ArgumentNullException.ThrowIfNull(query);
 
-            return Prepare_(context, query, elementType, maxRowCount, async);
+            return Prepare_(context, query, elementType, maxRowCount);
         }
 
         /// <summary>
         /// Tries each planner in turn, and rethrows the last failure when none can plan the statement.
         /// </summary>
-        IClrPrepare.Signature Prepare_(CalcitePrepare.Context context, IClrPrepare.Query query, System.Type elementType, long maxRowCount, bool async)
+        IClrPrepare.Signature Prepare_(CalcitePrepare.Context context, IClrPrepare.Query query, System.Type elementType, long maxRowCount)
         {
             if (query.Sql is { } simpleSql && SIMPLE_SQLS.Contains(simpleSql))
                 return SimplePrepare(context, simpleSql);
@@ -104,7 +94,7 @@ namespace Apache.Calcite.Extensions.Prepare
 
                 try
                 {
-                    var preparingStmt = GetPreparingStmt(context, elementType, catalogReader, planner, async);
+                    var preparingStmt = GetPreparingStmt(context, elementType, catalogReader, planner);
                     return Prepare2_(context, query, elementType, maxRowCount, catalogReader, preparingStmt);
                 }
                 catch (RelOptPlanner.CannotPlanException e)
@@ -271,7 +261,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <param name="catalogReader"></param>
         /// <param name="planner"></param>
         /// <returns></returns>
-        protected virtual PreparingStmt GetPreparingStmt(CalcitePrepare.Context context, System.Type elementType, CalciteCatalogReader catalogReader, RelOptPlanner planner, bool async = false)
+        protected virtual PreparingStmt GetPreparingStmt(CalcitePrepare.Context context, System.Type elementType, CalciteCatalogReader catalogReader, RelOptPlanner planner)
         {
             var typeFactory = context.getTypeFactory();
             var prefer = elementType == typeof(object[])
@@ -279,17 +269,6 @@ namespace Apache.Calcite.Extensions.Prepare
                 : ClrEnumerablePrefer.Custom;
 
             var cluster = CreateCluster(planner, new RexBuilder(typeFactory));
-
-            if (async)
-                return new ClrAsyncEnumerablePreparingStmt(
-                    this,
-                    context,
-                    catalogReader,
-                    typeFactory,
-                    context.getRootSchema(),
-                    prefer,
-                    cluster,
-                    CreateConvertletTable());
 
             return new ClrEnumerablePreparingStmt(
                 this,

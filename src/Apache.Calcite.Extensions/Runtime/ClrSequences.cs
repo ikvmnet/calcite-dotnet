@@ -12,16 +12,21 @@ namespace Apache.Calcite.Extensions.Runtime
     /// <see cref="IAsyncEnumerable{T}"/>.
     /// </summary>
     /// <remarks>
-    /// This is the whole of what a converter between <c>ClrEnumerableConvention</c> and
-    /// <c>ClrAsyncEnumerableConvention</c> does. The rows are not touched, and there is nothing to touch: the
-    /// two conventions share <c>ClrPhysType</c>, so a row of one already is a row of the other. Only the
-    /// sequence around it differs.
+    /// This is the whole of what <c>ClrEnumerableRelImplementor</c> does when a node hands up the kind of
+    /// sequence the plan is not being built from. The rows are not touched, and there is nothing to touch: a
+    /// plan has one physical type whichever way it is read, so a row already is a row. Only the sequence
+    /// around it differs.
     ///
     /// <para>The two directions are not the same cost, and the asymmetry is the point.
     /// <see cref="ToAsyncEnumerable{TSource}"/> costs a state machine and no thread; nothing it produces ever
     /// suspends. <see cref="ToEnumerable{TSource}"/> blocks the calling thread once per row, which is the
     /// sync-over-async the asynchronous convention was written to avoid. Both exist because a plan that
     /// cannot be assembled is worse than one that is slow.</para>
+    ///
+    /// <para><b>Internal, and it stays internal.</b> It is what this convention's own plans are built from,
+    /// not a utility for an adapter. A table outside this assembly that has to bridge its own two halves
+    /// writes that itself, in whatever its target framework gives it; there is nothing here it needs, and
+    /// exposing the plan's own operators would invite an adapter to build against them.</para>
     /// </remarks>
     static class ClrSequences
     {
@@ -36,7 +41,7 @@ namespace Apache.Calcite.Extensions.Runtime
         /// <b>This blocks a thread per row, and there is no version of it that does not.</b> An
         /// <see cref="IEnumerable{T}"/> has nowhere to suspend, so a caller that wants rows from an
         /// asynchronous plan through this interface waits for them. That is a fact about
-        /// <see cref="IEnumerator{T}.MoveNext"/> rather than about this method.
+        /// <c>IEnumerator.MoveNext</c> rather than about this method.
         ///
         /// <para>The token is <see cref="CancellationToken.None"/> because the synchronous convention has no
         /// token to give: a plan of it is a <c>Func&lt;DataContext, IEnumerable&lt;object&gt;&gt;</c>, and the

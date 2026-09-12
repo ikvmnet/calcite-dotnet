@@ -65,6 +65,35 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return implementor.Result(physType, intersectExp ?? throw new java.lang.IllegalStateException("intersectExp"));
         }
 
+        /// <inheritdoc />
+        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            Expression? intersectExp = null;
+
+            for (int i = 0; i < getInputs().size(); i++)
+            {
+                var result = implementor.VisitChildAsync(this, i, (ClrEnumerableRel)getInputs().get(i), pref);
+
+                if (intersectExp == null)
+                {
+                    intersectExp = result.Expression;
+                    continue;
+                }
+
+                var rowType = result.PhysType.RowType;
+
+                intersectExp = ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.IntersectAsync.MakeGenericMethod(rowType),
+                    intersectExp,
+                    result.Expression,
+                    result.PhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)),
+                    Expression.Constant(all));
+            }
+
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
+
+            return implementor.ResultAsync(physType, intersectExp ?? throw new java.lang.IllegalStateException("intersectExp"));
+        }
+
     }
 
 }

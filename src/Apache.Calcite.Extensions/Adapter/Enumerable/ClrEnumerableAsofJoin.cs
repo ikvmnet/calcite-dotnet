@@ -189,6 +189,49 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     Expression.Constant(joinType.generatesNullsOnRight())));
         }
 
+        /// <inheritdoc />
+        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)getLeft(), pref);
+            var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)getRight(), pref);
+
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
+
+            // an ASOF join's condition is equalities and the match condition, and nothing else
+            var info = analyzeCondition();
+            if (info.nonEquiConditions.isEmpty() == false)
+                throw new java.lang.AssertionError();
+
+            var call = (RexCall)getMatchCondition();
+            var timestampComparator = GenerateTimestampComparator(rightResult.PhysType, call.getKind(), GetTimestampFieldIndex(call));
+
+            // the rows are boxed for the same reason a hash join boxes them: the selector and the predicate
+            // Calcite builds are against boxed rows, and a row here is compared to null
+            var leftType = leftResult.PhysType.RowType;
+            var rightType = rightResult.PhysType.RowType;
+            var rowType = physType.RowType;
+
+            // without nulls, as Calcite keys an ASOF join and has since 1.41: a key of two or more fields is
+            // null as a whole where any field of it is null, so a row with a null in its key matches nothing
+            // rather than matching another row with a null in the same place
+            var leftKey = leftResult.PhysType.GenerateAccessorWithoutNulls(info.leftKeys);
+            var rightKey = rightResult.PhysType.GenerateAccessorWithoutNulls(info.rightKeys);
+
+            var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);
+            var matchPredicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), getLeft(), getRight(), leftResult.PhysType, rightResult.PhysType, getMatchCondition());
+
+            return implementor.ResultAsync(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.AsofJoinAsync.MakeGenericMethod(leftType, rightType, leftKey.ReturnType, rowType),
+                    leftResult.Expression,
+                    rightResult.Expression,
+                    leftKey,
+                    rightKey,
+                    selector,
+                    matchPredicate,
+                    timestampComparator,
+                    Expression.Constant(joinType.generatesNullsOnRight())));
+        }
+
     }
 
 }

@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Apache.Calcite.Extensions.Adapter.AsyncEnumerable;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
@@ -21,26 +20,25 @@ namespace Apache.Calcite.Tests
 {
 
     /// <summary>
-    /// Runs a plan that holds nodes of both Clr calling conventions.
+    /// Runs one plan whose leaf yields the kind of sequence the plan is not being built from.
     /// </summary>
     /// <remarks>
-    /// A row crosses untouched, and here that is not an argument about type factories agreeing: the two
-    /// conventions share <c>ClrPhysType</c>, so a row of one already is a row of the other. Only the sequence
-    /// around it changes, and the two directions do not cost the same —
-    /// <c>ClrEnumerableToClrAsyncEnumerableConverter</c> never suspends, and
-    /// <c>ClrAsyncEnumerableToClrEnumerableConverter</c> blocks a thread once per row.
+    /// There is one convention and one plan; what differs is the implementor, and a leaf that can only build
+    /// one kind of sequence is read across by <c>ClrEnumerableRelImplementor</c>. The rows cross untouched,
+    /// and that is not an argument about type factories agreeing: the physical type is the same object either
+    /// way, so a row already is a row. Only the sequence around it changes, and the two directions do not
+    /// cost the same — reading a synchronous leaf asynchronously never suspends, and reading an asynchronous
+    /// one synchronously blocks a thread once per row.
     ///
-    /// <para><b>The schema is what forces a crossing.</b> <c>SALES</c> is an
-    /// <c>IClrAsyncScannableTable</c> and nothing else, so only the asynchronous convention has a scan rule
-    /// that matches it; <c>SORTED</c> is a Calcite <c>ScannableTable</c>, which only the synchronous one
-    /// reads. A query naming either against the wrong root convention has to cross, and a query naming both
-    /// has to cross whichever root it is given.</para>
+    /// <para><b>The schema is what forces a crossing.</b> <c>SALES</c> is a table writing <c>ScanAsync</c>
+    /// and nothing else, so its rows arrive awaited; <c>SORTED</c> is a Calcite <c>ScannableTable</c>, read
+    /// through linq4j and pulled. A query over either, implemented the other way, has to cross, and a query
+    /// naming both crosses whichever way it is implemented.</para>
     ///
-    /// <para>The <c>AcrossConverter</c> tests exist for the reason
-    /// <c>ClrEnumerableMixedConventionTests.ShouldCarryACalcAcrossTheConverter</c> gives: with both rule sets
-    /// registered the planner puts nearly everything on the root's side, so the converter only ever sees a
-    /// bare scan. Registering one convention's rules plus the single converter rule is what makes the
-    /// converter meet a real generated node.</para>
+    /// <para>These used to be tests about two conventions and the four converters between them. Three of
+    /// those converters are gone: the crossing is no longer a node the planner chooses and costs, but a call
+    /// the implementor adds where a node hands up the sequence it can build. What is asserted is the same
+    /// behaviour, which is the point of keeping them.</para>
     /// </remarks>
     [TestClass]
     public class ClrConventionCrossingTests
@@ -119,13 +117,8 @@ namespace Apache.Calcite.Tests
         /// </summary>
         static (IReadOnlyList<RelOptRule> Rules, IReadOnlyList<RelOptRule> CalcRules) Both()
         {
-            var rules = new List<RelOptRule>();
-            rules.AddRange(ClrEnumerableRules.Rules());
-            rules.AddRange(ClrAsyncEnumerableRules.Rules());
-
-            var calcRules = new List<RelOptRule>();
-            calcRules.AddRange(ClrEnumerableRules.CalcRules());
-            calcRules.AddRange(ClrAsyncEnumerableRules.CalcRules());
+            var rules = new List<RelOptRule>(ClrEnumerableRules.Rules());
+            var calcRules = new List<RelOptRule>(ClrEnumerableRules.CalcRules());
 
             return (rules, calcRules);
         }
@@ -151,9 +144,9 @@ namespace Apache.Calcite.Tests
         /// </summary>
         static async Task<List<string>> RunAsync(string sql, SchemaPlus rootSchema, IReadOnlyList<RelOptRule> rules, IReadOnlyList<RelOptRule> calcRules)
         {
-            var physical = Plan(sql, rootSchema, ClrAsyncEnumerableConvention.Instance, rules, calcRules);
+            var physical = Plan(sql, rootSchema, ClrEnumerableConvention.Instance, rules, calcRules);
             var parameters = new java.util.HashMap();
-            var bindable = ClrAsyncEnumerableInterpretable.ToBindable(parameters, (ClrAsyncEnumerableRel)physical, ClrEnumerablePrefer.Array);
+            var bindable = ClrEnumerableInterpretable.ToAsyncBindable(parameters, (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
 
             var rows = new List<string>();
             await foreach (var row in bindable.Bind(new TestDataContext(rootSchema, parameters)))
@@ -179,32 +172,15 @@ namespace Apache.Calcite.Tests
         /// and say nothing about the wait.
         /// </remarks>
         /// <summary>
-        /// A convention is reached when the only route to it runs through a second converter.
+        /// A table whose rows are only produced asynchronously is read by a plan implemented synchronously.
         /// </summary>
         /// <remarks>
-        /// The two bridges registered make <c>Enumerable -&gt; ClrAsyncEnumerable -&gt; ClrEnumerable</c> the
-        /// only route to the root convention: the direct <c>Enumerable -&gt; ClrEnumerable</c> rule is left
-        /// out, so the second hop would have to be applied to the converter the first produced, and
-        /// <c>ConverterRule</c>'s operand refuses to stack a converter on a converter of the same trait def.
-        /// What is left is <c>ConventionTraitDef</c>'s conversion graph, which a rule enters only by
-        /// answering <c>isGuaranteed</c> — so without that this statement cannot be planned at all.
+        /// <c>AsyncRowsTable</c> awaits on every row, so each <c>MoveNextAsync</c> here really is incomplete
+        /// when it is blocked on. A fixture that completed synchronously would exercise the fast path only
+        /// and say nothing about the wait.
         /// </remarks>
         [TestMethod]
-        public void ShouldBridgeThroughASecondConverter()
-        {
-            var rules = new List<RelOptRule>
-            {
-                ClrAsyncEnumerableRules.EnumerableToClrAsyncEnumerableConverterRule,
-                ClrEnumerableRules.ClrAsyncEnumerableToClrEnumerableConverterRule,
-            };
-
-            var rows = RunSync("SELECT K, V FROM SORTED WHERE K >= 2", Schema(), rules, []);
-
-            rows.Should().Equal(["2|B", "2|C", "4|D"]);
-        }
-
-        [TestMethod]
-        public void ShouldReadAnAsynchronousPlanSynchronously()
+        public void ShouldReadAnAsynchronousLeafSynchronously()
         {
             var (rules, calcRules) = Both();
             var rows = RunSync("SELECT ID, LABEL FROM SALES WHERE ID > 3", Schema(), rules, calcRules);
@@ -213,10 +189,10 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// A plan asked for asynchronously over a table only the synchronous convention can scan still runs.
+        /// A table whose rows are pulled is read by a plan implemented asynchronously.
         /// </summary>
         [TestMethod]
-        public async Task ShouldReadASynchronousPlanAsynchronously()
+        public async Task ShouldReadASynchronousLeafAsynchronously()
         {
             var (rules, calcRules) = Both();
             var rows = await RunAsync("SELECT K, V FROM SORTED WHERE K >= 2", Schema(), rules, calcRules);
@@ -240,7 +216,7 @@ namespace Apache.Calcite.Tests
         /// rather than hanging the suite.</para>
         /// </remarks>
         [TestMethod]
-        public void ShouldReadAnAsynchronousPlanSynchronouslyUnderASynchronizationContext()
+        public void ShouldReadAnAsynchronousLeafSynchronouslyUnderASynchronizationContext()
         {
             var (rules, calcRules) = Both();
 
@@ -291,11 +267,10 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// A join whose two sides can only be scanned in different conventions runs, whichever convention the
-        /// root is asked for.
+        /// A join whose two sides produce different kinds of sequence runs, implemented either way.
         /// </summary>
         [TestMethod]
-        public async Task ShouldJoinAcrossTheConventions()
+        public async Task ShouldJoinAcrossTheTwoKindsOfLeaf()
         {
             var (rules, calcRules) = Both();
 
@@ -309,41 +284,30 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// The blocking converter carries a generated node of the asynchronous convention, not merely a scan.
+        /// A generated calc sits above the crossing, in both directions, rather than the crossing being all
+        /// there is.
         /// </summary>
         /// <remarks>
-        /// Only the asynchronous rules are registered, plus the one converter that produces a synchronous
-        /// node, so the whole plan below the root is asynchronous and the calc under the converter is a
-        /// <c>ClrAsyncEnumerableCalc</c>.
+        /// The crossing is at the leaf and the calc above it is implemented in the mode being built, so a
+        /// real generated node reads a bridged sequence. Reaching that case used to need the rules
+        /// registered by hand, because with both conventions loaded the planner put everything on the root's
+        /// side and the converter only ever saw a bare scan.
         /// </remarks>
         [TestMethod]
-        public void ShouldCarryAnAsynchronousCalcAcrossTheConverter()
+        public async Task ShouldCarryAGeneratedCalcOverTheCrossing()
         {
-            var rules = new List<RelOptRule>(ClrAsyncEnumerableRules.Rules()) { ClrEnumerableRules.ClrAsyncEnumerableToClrEnumerableConverterRule };
-            var calcRules = new List<RelOptRule>(ClrAsyncEnumerableRules.CalcRules());
+            var (rules, calcRules) = Both();
 
-            var rows = RunSync("SELECT ID, LABEL FROM SALES WHERE ID > 3", Schema(), rules, calcRules);
+            RunSync("SELECT ID, LABEL FROM SALES WHERE ID > 3", Schema(), rules, calcRules)
+                .Should().Equal(["4|D", "5|E", "6|F"]);
 
-            rows.Should().Equal(["4|D", "5|E", "6|F"]);
+            (await RunAsync("SELECT K, V FROM SORTED WHERE K >= 2", Schema(), rules, calcRules))
+                .Should().Equal(["2|B", "2|C", "4|D"]);
         }
 
         /// <summary>
-        /// The non-suspending converter carries a generated node of the synchronous convention.
-        /// </summary>
-        [TestMethod]
-        public async Task ShouldCarryASynchronousCalcAcrossTheConverter()
-        {
-            var rules = new List<RelOptRule>(ClrEnumerableRules.Rules()) { ClrAsyncEnumerableRules.ClrEnumerableToClrAsyncEnumerableConverterRule };
-            var calcRules = new List<RelOptRule>(ClrEnumerableRules.CalcRules());
-
-            var rows = await RunAsync("SELECT K, V FROM SORTED WHERE K >= 2", Schema(), rules, calcRules);
-
-            rows.Should().Equal(["2|B", "2|C", "4|D"]);
-        }
-
-        /// <summary>
-        /// A synchronous caller that stops reading disposes the asynchronous plan under the converter, and
-        /// waits for the disposal rather than dropping it.
+        /// A synchronous caller that stops reading disposes the asynchronous leaf under it, and waits for
+        /// the disposal rather than dropping it.
         /// </summary>
         /// <remarks>
         /// <c>AsyncRowsTable</c> sets <c>DisposedAsynchronously</c> after an <c>await</c> in its
@@ -351,7 +315,7 @@ namespace Apache.Calcite.Tests
         /// converter that called <c>DisposeAsync</c> and discarded the <c>ValueTask</c> would leave it false.
         /// </remarks>
         [TestMethod]
-        public void ShouldDisposeTheAsynchronousPlanWhenTheReaderStops()
+        public void ShouldDisposeTheAsynchronousLeafWhenTheReaderStops()
         {
             var (rules, calcRules) = Both();
             var sales = new AsyncRowsTable(AsyncTestRows.Sales, AsyncTestRows.SalesRowType, false);

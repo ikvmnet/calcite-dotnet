@@ -130,6 +130,43 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     Expression.NewArrayInit(rowType, rows)));
         }
 
+        /// <inheritdoc />
+        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var typeFactory = (JavaTypeFactory)getCluster().getTypeFactory();
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferCustom());
+            // Calcite boxes here too, EnumerableValues building its array with Primitive.box(rowClass)
+            var rowType = physType.RowType;
+
+            var fields = getRowType().getFieldList();
+            var rows = new List<Expression>();
+
+            for (int i = 0; i < tuples.size(); i++)
+            {
+                var tuple = (java.util.List)tuples.get(i);
+                var literals = new List<Expression>(tuple.size());
+
+                // Rex produces a literal in linq4j, so each is translated as it is produced rather than
+                // composed into a row first
+                for (int j = 0; j < tuple.size(); j++)
+                    literals.Add(
+                        implementor.Translator.Translate(
+                            RexToLixTranslator.translateLiteral(
+                                (RexLiteral)tuple.get(j),
+                                ((RelDataTypeField)fields.get(j)).getType(),
+                                typeFactory,
+                                RexImpTable.NullAs.NULL)));
+
+                // a null literal translates to a constant of Object, and Java may assign that to a field of
+                // any reference type where an array initializer may not
+                rows.Add(ClrEnumUtils.Convert(physType.Record(literals), rowType));
+            }
+
+            return implementor.ResultAsync(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.AsEnumerableAsync.MakeGenericMethod(rowType),
+                    Expression.NewArrayInit(rowType, rows)));
+        }
+
     }
 
 }
