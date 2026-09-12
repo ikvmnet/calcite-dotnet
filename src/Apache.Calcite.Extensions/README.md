@@ -27,7 +27,7 @@ This package replaces that step. A query plan is compiled into a `System.Linq.Ex
 
 `ClrEnumerableConvention` mirrors Calcite's `EnumerableConvention` node for node and uses the same row types, and converter rules exist in both directions. A plan may hold nodes of both conventions: anything this convention has no rule for is planned by Calcite as usual, and rows cross between the two untouched.
 
-**One plan, read either way.** A plan of this convention is compiled to an `IEnumerable<object>` or an `IAsyncEnumerable<object>`, and which is decided when it is compiled rather than when it is planned. There is one convention, one set of rules and one tree of nodes; each node carries two bodies, one written against `ClrEnumerableDefaults` and one against `ClrAsyncEnumerableDefaults`, and `ClrEnumerableRelImplementor` calls whichever matches the sequence it was constructed to build. So the same prepared statement can be read synchronously by one caller and awaited by another, and an `EXPLAIN` cannot tell you which will happen.
+**One plan, read either way.** A plan of this convention is compiled to an `IEnumerable<object>` or an `IAsyncEnumerable<object>`, and which is decided when it is compiled rather than when it is planned. There is one convention, one set of rules and one tree of nodes; each node carries two bodies, one written against `ClrEnumerableDefaults` and one against `ClrAsyncEnumerableDefaults`, and the implementor offers a call hierarchy per kind rather than a mode to set. So the same prepared statement can be read synchronously by one caller and awaited by another, and an `EXPLAIN` cannot tell you which will happen.
 
 ## Running a plan yourself
 
@@ -77,7 +77,7 @@ foreach (var current in plan(dataContext))
 }
 ```
 
-**To await the rows instead, pass `async: true` to the implementor** and compile to a `Func<DataContext, IAsyncEnumerable<object>>`. Nothing else changes — the same planned root, the same rules, the same physical types — and each node's awaiting body is called instead of its pulled one. A node that can only produce one kind of sequence is read across at that node.
+**To await the rows instead, call `ImplementRootAsync` on the same implementor** and compile to a `Func<DataContext, IAsyncEnumerable<object>>`. Nothing else changes: the same planned root, the same rules, the same physical types, the same instance. Each node's awaiting body is called instead of its pulled one, and a node that can only produce one kind of sequence is read across at that node.
 
 `ClrEnumerableInterpretable.ToBindable(...)` and `ToAsyncBindable(...)` are the alternative endings: each does the same work and hands back an `IClrBindable` or an `IClrAsyncBindable`, which you bind to a `DataContext` and enumerate. Use the implementor when you want the `LambdaExpression` itself.
 
@@ -95,7 +95,8 @@ A Spark handler is not supported: `ToBindable` throws `UnsupportedOperationExcep
 |------|---------|
 | `ClrEnumerableConvention` | The calling convention itself. `ClrEnumerableConvention.Instance` is the singleton trait. |
 | `ClrEnumerableRules` | The convention's rules: `Rules()` and `CalcRules()`. Add these to a planner you built yourself. |
-| `ClrEnumerableRelImplementor` | Builds the expression tree for a plan. `ImplementRoot` returns a `LambdaExpression`; the `async` constructor argument chooses which kind of sequence it yields. |
+| `ClrEnumerableRelImplementor` | Builds the expression tree for a plan. Two parallel hierarchies over one instance: `ImplementRoot` and `VisitChild` produce an `IEnumerable`, `ImplementRootAsync` and `VisitChildAsync` an `IAsyncEnumerable`. It carries no mode. `Pulled` and `Awaited` cross between them. |
+| `ClrEnumerableResult` / `ClrEnumerableAsyncResult` | What a node's two bodies answer, one type per kind, built by `Result` and `ResultAsync`. |
 | `ClrEnumerableInterpretable` | `ToBindable` and `ToAsyncBindable` — implement, compile, and return an `IClrBindable` or an `IClrAsyncBindable`. |
 | `IClrBindable` / `IClrAsyncBindable` | A compiled plan. `Bind(DataContext)` returns the rows; `ElementType` says what one row is. |
 | `ClrEnumerablePrefer` | How a caller wants rows represented — `Array` is what a prepared statement asks for. |

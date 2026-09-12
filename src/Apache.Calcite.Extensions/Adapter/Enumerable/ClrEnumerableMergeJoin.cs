@@ -476,11 +476,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var typeFactory = implementor.TypeFactory;
-            var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)getLeft(), pref);
-            var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)getRight(), pref);
+            var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)getLeft(), pref);
+            var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)getRight(), pref);
 
             var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.PreferArray());
 
@@ -552,7 +552,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var comparatorPhysType = ClrPhysTypeImpl.Of(typeFactory, typeBuilder.build(), JavaRowFormat.LIST);
             var comparator = comparatorPhysType.GenerateMergeJoinComparator(RelCollations.of(fieldCollations));
 
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.MergeJoinAsync.MakeGenericMethod(leftType_, rightType_, leftKey.ReturnType, rowType),
                     leftResult.Expression,
                     rightResult.Expression,

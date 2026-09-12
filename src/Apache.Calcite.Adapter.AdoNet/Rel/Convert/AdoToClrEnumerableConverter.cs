@@ -123,7 +123,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             if (getInput() is not AdoRel self)
                 throw new AdoCalciteException("Unsupported input type.");
@@ -158,7 +158,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             // through ClrBuiltInMethod.CallAsync rather than Expression.Call, because the operator ends in
             // a CancellationToken like every other awaiting one, and that is what appends the default the
             // [EnumeratorCancellation] attribute reads
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(
                     ReadAsyncMethod.MakeGenericMethod(rowType),
                     dataSource,

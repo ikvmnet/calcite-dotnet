@@ -116,7 +116,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public override ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public override ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
             var rowType = physType.RowType;
@@ -131,7 +131,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             for (int i = 0; i < getInputs().size(); i++)
             {
-                var result = implementor.VisitChild(this, i, (ClrEnumerableRel)getInputs().get(i), pref);
+                var result = implementor.VisitChildAsync(this, i, (ClrEnumerableRel)getInputs().get(i), pref);
                 body.Add(Expression.Call(sources, CollectionAdd, Expression.Convert(result.Expression, typeof(object))));
             }
 
@@ -152,7 +152,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     Expression.Constant(all),
                     physType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer))));
 
-            return implementor.Result(physType, Expression.Block(body[^1].Type, [sources], body));
+            return implementor.ResultAsync(physType, Expression.Block(body[^1].Type, [sources], body));
         }
 
         static readonly System.Reflection.ConstructorInfo ArrayListConstructor = typeof(java.util.ArrayList).GetConstructor([])

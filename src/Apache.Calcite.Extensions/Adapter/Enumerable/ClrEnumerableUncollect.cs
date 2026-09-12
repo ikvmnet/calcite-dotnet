@@ -123,10 +123,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var child = (ClrEnumerableRel)getInput();
-            var result = implementor.VisitChild(this, 0, child, pref);
+            var result = implementor.VisitChildAsync(this, 0, child, pref);
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), JavaRowFormat.LIST);
 
             var fieldCounts = new java.util.ArrayList();
@@ -182,7 +182,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var sourceType = result.PhysType.RowType;
             var rowType = physType.RowType;
 
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.SelectManyAsync.MakeGenericMethod(sourceType, rowType),
                     result.Expression,
                     ClrEnumUtils.Convert(implementor.Translator.Translate(lambda), typeof(org.apache.calcite.linq4j.function.Function1))));

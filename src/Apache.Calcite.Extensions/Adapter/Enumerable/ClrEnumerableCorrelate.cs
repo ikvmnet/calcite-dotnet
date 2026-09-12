@@ -139,9 +139,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
-            var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)getLeft(), pref);
+            var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)getLeft(), pref);
 
             // the variables holding the fields of the outer row are declared into this block by the getter
             // Calcite installs, and the inner sub-plan reads them, so the two share one scope
@@ -162,7 +162,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             implementor.Translator.Bind(corrArg, corrParameter);
 
             implementor.RegisterCorrelVariable(getCorrelVariable(), corrArg, corrBlock, leftCalcite);
-            var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)getRight(), pref);
+            var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)getRight(), pref);
             implementor.ClearCorrelVariable(getCorrelVariable());
 
 
@@ -181,7 +181,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var selector = ClrEnumUtils.JoinSelector(implementor, getJoinType(), physType, leftResult.PhysType, rightResult.PhysType);
 
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.CorrelateJoinAsync.MakeGenericMethod(leftType, rightType, rowType),
                     leftResult.Expression,
                     inner,

@@ -131,7 +131,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var typeFactory = (JavaTypeFactory)getCluster().getTypeFactory();
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferCustom());
@@ -162,7 +162,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 rows.Add(ClrEnumUtils.Convert(physType.Record(literals), rowType));
             }
 
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.AsEnumerableAsync.MakeGenericMethod(rowType),
                     Expression.NewArrayInit(rowType, rows)));
         }

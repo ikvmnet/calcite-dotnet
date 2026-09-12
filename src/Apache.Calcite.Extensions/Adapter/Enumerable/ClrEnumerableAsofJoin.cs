@@ -190,10 +190,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
-            var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)getLeft(), pref);
-            var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)getRight(), pref);
+            var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)getLeft(), pref);
+            var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)getRight(), pref);
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
 
@@ -220,7 +220,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);
             var matchPredicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), getLeft(), getRight(), leftResult.PhysType, rightResult.PhysType, getMatchCondition());
 
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.AsofJoinAsync.MakeGenericMethod(leftType, rightType, leftKey.ReturnType, rowType),
                     leftResult.Expression,
                     rightResult.Expression,

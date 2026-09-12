@@ -116,12 +116,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var child = (ClrEnumerableRel)getInput();
 
             // rows are asked for as arrays, though as Calcite notes the child need not oblige
-            var result = implementor.VisitChild(this, 0, child, ClrEnumerablePrefer.Array);
+            var result = implementor.VisitChildAsync(this, 0, child, ClrEnumerablePrefer.Array);
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), JavaRowFormat.LIST);
 
             var collectionType = getCollectionType();
@@ -171,7 +171,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     throw new java.lang.IllegalArgumentException($"unknown collection type {collectionType}");
             }
 
-            return implementor.Result(physType, rows);
+            return implementor.ResultAsync(physType, rows);
         }
 
     }

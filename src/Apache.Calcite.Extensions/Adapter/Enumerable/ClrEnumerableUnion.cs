@@ -62,13 +62,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public virtual ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public virtual ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             Expression? unionExp = null;
 
             for (int i = 0; i < getInputs().size(); i++)
             {
-                var result = implementor.VisitChild(this, i, (ClrEnumerableRel)getInputs().get(i), pref);
+                var result = implementor.VisitChildAsync(this, i, (ClrEnumerableRel)getInputs().get(i), pref);
 
                 if (unionExp == null)
                 {
@@ -85,7 +85,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
 
-            return implementor.Result(physType, unionExp ?? throw new java.lang.IllegalStateException("unionExp"));
+            return implementor.ResultAsync(physType, unionExp ?? throw new java.lang.IllegalStateException("unionExp"));
         }
 
     }

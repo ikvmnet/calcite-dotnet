@@ -115,9 +115,11 @@ namespace Apache.Calcite.Tests
         /// </summary>
         static LambdaExpression Implement(RelNode physical, bool async, java.util.Map parameters)
         {
-            var implementor = new ClrEnumerableRelImplementor(physical.getCluster().getRexBuilder(), parameters, async);
+            var implementor = new ClrEnumerableRelImplementor(physical.getCluster().getRexBuilder(), parameters);
 
-            return implementor.ImplementRoot((ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
+            return async
+                ? implementor.ImplementRootAsync((ClrEnumerableRel)physical, ClrEnumerablePrefer.Array)
+                : implementor.ImplementRoot((ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
         }
 
         /// <summary>

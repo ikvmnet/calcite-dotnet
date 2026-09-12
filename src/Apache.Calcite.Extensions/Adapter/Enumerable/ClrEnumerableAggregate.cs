@@ -246,11 +246,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var typeFactory = implementor.TypeFactory;
             var child = (ClrEnumerableRel)getInput();
-            var result = implementor.VisitChild(this, 0, child, pref);
+            var result = implementor.VisitChildAsync(this, 0, child, pref);
 
             var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.PreferCustom());
             var inputPhysType = result.PhysType;
@@ -366,7 +366,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     keyParameter,
                     accParameter);
 
-                return implementor.Result(physType,
+                return implementor.ResultAsync(physType,
                     ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.GroupByMultipleAsync.MakeGenericMethod(sourceType, keyType!, rowType),
                         result.Expression,
                         Expression.NewArrayInit(typeof(Func<,>).MakeGenericType(sourceType, keyType!), selectors),
@@ -387,7 +387,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 // and Singleton wraps it; here the fold has to be awaited and an expression tree cannot
                 // await, so the composition is an operator rather than a tree. See
                 // ClrAsyncEnumerableDefaults.SingletonAggregate.
-                return implementor.Result(physType,
+                return implementor.ResultAsync(physType,
                     ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.SingletonAggregateAsync.MakeGenericMethod(sourceType, rowType),
                         result.Expression,
                         Expression.Call(Expression.Call(lambdaFactory, AccInitializer), Function0Apply),
@@ -402,7 +402,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             {
                 var source = inputPhysType.ConvertToAsync(result.Expression, physType.Format);
 
-                return implementor.Result(physType,
+                return implementor.ResultAsync(physType,
                     ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.DistinctAsync.MakeGenericMethod(source.Type.GetGenericArguments()[0]),
                         source,
                         physType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer))));
@@ -416,7 +416,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 keyParameter,
                 accParameter);
 
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.GroupByAsync.MakeGenericMethod(sourceType, keySelector.ReturnType, rowType),
                     result.Expression,
                     keySelector,

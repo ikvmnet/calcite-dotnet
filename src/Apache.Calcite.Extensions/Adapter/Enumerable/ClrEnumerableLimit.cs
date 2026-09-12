@@ -88,10 +88,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var child = (ClrEnumerableRel)getInput();
-            var result = implementor.VisitChild(this, 0, child, pref);
+            var result = implementor.VisitChildAsync(this, 0, child, pref);
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), result.Format);
 
             var rowType = result.PhysType.RowType;
@@ -103,7 +103,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (fetch != null)
                 v = ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.TakeAsync.MakeGenericMethod(rowType), v, Count(implementor, fetch));
 
-            return implementor.Result(physType, v);
+            return implementor.ResultAsync(physType, v);
         }
 
         /// <summary>

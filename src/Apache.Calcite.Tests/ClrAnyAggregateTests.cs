@@ -151,8 +151,10 @@ namespace Apache.Calcite.Tests
             LambdaExpression tree;
 
             // one planned root, implemented whichever way is asked for
-            var implementor = new ClrEnumerableRelImplementor(physical.getCluster().getRexBuilder(), parameters, async);
-            tree = implementor.ImplementRoot((ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
+            var implementor = new ClrEnumerableRelImplementor(physical.getCluster().getRexBuilder(), parameters);
+            tree = async
+                ? implementor.ImplementRootAsync((ClrEnumerableRel)physical, ClrEnumerablePrefer.Array)
+                : implementor.ImplementRoot((ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
 
             if (async)
             {

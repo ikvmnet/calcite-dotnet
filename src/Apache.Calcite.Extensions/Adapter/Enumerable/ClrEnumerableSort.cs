@@ -82,10 +82,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var child = (ClrEnumerableRel)getInput();
-            var result = implementor.VisitChild(this, 0, child, pref);
+            var result = implementor.VisitChildAsync(this, 0, child, pref);
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), result.Format);
 
             var inputPhysType = result.PhysType;
@@ -97,7 +97,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var keyType = keySelector.ReturnType;
 
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.OrderByAsync.MakeGenericMethod(sourceType, keyType),
                     result.Expression,
                     keySelector,

@@ -82,12 +82,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <para>A table function the schema defines has no input at all — the call yields the sequence —
         /// so that half is the same body in both modes.</para>
         /// </remarks>
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             if (IsImplementorDefined((RexCall)getCall()))
                 return TvfImplementorBasedImplementAsync(implementor, pref);
 
-            return DefaultTableFunctionImplement(implementor);
+            // a table function the schema defines yields the sequence itself, and what it yields is linq4j's,
+            // so there is nothing here to await and one body serves both. The crossing is said out loud
+            // rather than inferred from what came back.
+            return implementor.Awaited(DefaultTableFunctionImplement(implementor));
         }
 
         /// <summary>
@@ -127,7 +130,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var child = (ClrEnumerableRel)getInputs().get(0);
             var result = implementor.VisitChild(this, 0, child, pref);
 
-            return TvfImplementorBasedWindow(implementor, pref, result, result.Expression);
+            return TvfImplementorBasedWindow(implementor, pref, result.PhysType, result.Format, result.Expression);
         }
 
         /// <summary>
@@ -141,15 +144,19 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// blocks a thread per row and is the only thing that can be done, a linq4j <c>Enumerable</c> having
         /// nowhere to suspend.
         /// </remarks>
-        ClrEnumerableResult TvfImplementorBasedImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrEnumerableAsyncResult TvfImplementorBasedImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var child = (ClrEnumerableRel)getInputs().get(0);
-            var result = implementor.VisitChild(this, 0, child, pref);
+            var result = implementor.VisitChildAsync(this, 0, child, pref);
 
-            return TvfImplementorBasedWindow(implementor, pref, result,
-                Expression.Call(null,
-                    ClrBuiltInMethod.ToEnumerable.MakeGenericMethod(result.PhysType.RowType),
-                    result.Expression));
+            // both crossings are written here, and neither is a surprise: the input is pulled so that
+            // Calcite's generator can read it, and what the generator gives back is pulled too, so the rows
+            // are read across again on the way out. The rest of the plan awaits.
+            return implementor.Awaited(
+                TvfImplementorBasedWindow(implementor, pref, result.PhysType, result.Format,
+                    Expression.Call(null,
+                        ClrBuiltInMethod.ToEnumerable.MakeGenericMethod(result.PhysType.RowType),
+                        result.Expression)));
         }
 
         /// <summary>
@@ -157,7 +164,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </summary>
         /// <param name="implementor"></param>
         /// <param name="pref"></param>
-        /// <param name="result">What the input's body handed up, read for its physical type and format.</param>
+        /// <param name="inputPhysType">The input's physical type.</param>
+        /// <param name="inputFormat">How the input represents a row.</param>
         /// <param name="pulled">The input's rows as an <see cref="System.Collections.Generic.IEnumerable{T}"/>
         /// of its physical row type.</param>
         /// <returns></returns>
@@ -165,12 +173,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// Everything from here down is Calcite's and is linq4j, so both bodies share it. It is not a
         /// dispatch: which sequence <paramref name="pulled"/> was made from is settled by the caller.
         /// </remarks>
-        ClrEnumerableResult TvfImplementorBasedWindow(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref, ClrEnumerableResult result, Expression pulled)
+        ClrEnumerableResult TvfImplementorBasedWindow(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref, ClrPhysType inputPhysType, JavaRowFormat inputFormat, Expression pulled)
         {
             var typeFactory = implementor.TypeFactory;
-            var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.Prefer(result.Format));
+            var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.Prefer(inputFormat));
 
-            var sourceType = result.PhysType.RowType;
+            var sourceType = inputPhysType.RowType;
             var source = Expression.Call(null, ClrBuiltInMethod.ToJava.MakeGenericMethod(sourceType), pulled);
 
             var input_ = J.Expressions.parameter((java.lang.Class)typeof(org.apache.calcite.linq4j.Enumerable), "_input");
@@ -186,7 +194,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     DataContext.ROOT,
                     (RexCall)getCall(),
                     input_,
-                    PhysTypeImpl.of(typeFactory, result.PhysType.RelRowType, result.PhysType.Format, false),
+                    PhysTypeImpl.of(typeFactory, inputPhysType.RelRowType, inputPhysType.Format, false),
                     PhysTypeImpl.of(typeFactory, physType.RelRowType, physType.Format, false)));
 
             var windowed = Expression.Block(

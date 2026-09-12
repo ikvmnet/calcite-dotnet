@@ -65,13 +65,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             Expression? minusExp = null;
 
             for (int i = 0; i < getInputs().size(); i++)
             {
-                var result = implementor.VisitChild(this, i, (ClrEnumerableRel)getInputs().get(i), pref);
+                var result = implementor.VisitChildAsync(this, i, (ClrEnumerableRel)getInputs().get(i), pref);
 
                 if (minusExp == null)
                 {
@@ -90,7 +90,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
 
-            return implementor.Result(physType, minusExp ?? throw new java.lang.IllegalStateException("minusExp"));
+            return implementor.ResultAsync(physType, minusExp ?? throw new java.lang.IllegalStateException("minusExp"));
         }
 
     }

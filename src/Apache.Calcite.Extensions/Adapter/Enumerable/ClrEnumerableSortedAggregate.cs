@@ -194,14 +194,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             if (isSimple(this) == false)
                 throw new java.lang.UnsupportedOperationException("ClrEnumerableSortedAggregate: grouping sets");
 
             var typeFactory = implementor.TypeFactory;
             var child = (ClrEnumerableRel)getInput();
-            var result = implementor.VisitChild(this, 0, child, pref);
+            var result = implementor.VisitChildAsync(this, 0, child, pref);
 
             var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.PreferCustom());
             var inputPhysType = result.PhysType;
@@ -279,7 +279,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // which is why it comes from the collation this node carries rather than from equality
             var comparator = keyClr.GenerateComparator(getTraitSet().getCollation() ?? throw new java.lang.NullPointerException($"getTraitSet().getCollation() is null; traits are {getTraitSet()}"));
 
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.SortedGroupByAsync.MakeGenericMethod(sourceType, keySelector.ReturnType, rowType),
                     result.Expression,
                     keySelector,

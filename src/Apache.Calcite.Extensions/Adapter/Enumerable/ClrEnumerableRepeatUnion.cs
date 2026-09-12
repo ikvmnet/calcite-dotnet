@@ -92,7 +92,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var body = new System.Collections.Generic.List<Expression>();
             Expression cleanUp = Expression.Constant(null, typeof(System.Action));
@@ -115,8 +115,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     Expression.Call(Expression.Call(implementor.Root, DataContextGetRootSchema), SchemaPlusRemoveTable, Expression.Constant(name)));
             }
 
-            var seedResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)getSeedRel(), pref);
-            var iterationResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)getIterativeRel(), pref);
+            var seedResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)getSeedRel(), pref);
+            var iterationResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)getIterativeRel(), pref);
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(seedResult.Format));
             var rowType = seedResult.PhysType.RowType;
@@ -130,7 +130,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     physType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)),
                     cleanUp));
 
-            return implementor.Result(physType, body.Count == 1 ? body[0] : Expression.Block(body));
+            return implementor.ResultAsync(physType, body.Count == 1 ? body[0] : Expression.Block(body));
         }
 
         static readonly System.Reflection.MethodInfo DataContextGetRootSchema = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.DATA_CONTEXT_GET_ROOT_SCHEMA.method);

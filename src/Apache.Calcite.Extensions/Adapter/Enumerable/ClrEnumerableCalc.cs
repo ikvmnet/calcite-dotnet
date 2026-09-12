@@ -181,11 +181,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var typeFactory = implementor.TypeFactory;
             var child = (ClrEnumerableRel)getInput();
-            var result = implementor.VisitChild(this, 0, child, pref);
+            var result = implementor.VisitChildAsync(this, 0, child, pref);
             var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.Prefer(result.Format));
 
             // a calc is Rex and nothing else: the condition and the projects are both Calcite's to
@@ -252,7 +252,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 implementor.Translator.TranslateBody(projectBuilder.toBlock(), outputType),
                 projectParameter);
 
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.CalcAsync.MakeGenericMethod(inputType, outputType), result.Expression, predicate, selector));
         }
 

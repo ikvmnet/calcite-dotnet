@@ -100,12 +100,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             if (readType.name() != nameof(Spool.Type.LAZY) || writeType.name() != nameof(Spool.Type.LAZY))
                 throw new java.lang.UnsupportedOperationException("only LAZY read and LAZY write are supported");
 
-            var result = implementor.VisitChild(this, 0, (ClrEnumerableRel)getInput(), pref);
+            var result = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)getInput(), pref);
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(result.Format));
 
@@ -124,7 +124,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var rowType = result.PhysType.RowType;
 
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.LazyCollectionSpoolAsync.MakeGenericMethod(rowType),
                     collection,
                     result.Expression));

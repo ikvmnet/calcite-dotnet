@@ -188,9 +188,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
-            var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)getLeft(), pref);
+            var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)getLeft(), pref);
 
             // one correlation variable per batch position, each read out of the list the batch arrives in.
             // Not optimising, for the reason ClrEnumerableCorrelate gives: the block is translated apart
@@ -222,7 +222,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 implementor.RegisterCorrelVariable(names[c], corrArg, corrBlock, leftCalcite);
             }
 
-            var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)getRight(), pref);
+            var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)getRight(), pref);
 
             foreach (var name in names)
                 implementor.ClearCorrelVariable(name);
@@ -245,7 +245,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);
             var predicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), getLeft(), getRight(), leftResult.PhysType, rightResult.PhysType, getCondition());
 
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.CorrelateBatchJoinAsync.MakeGenericMethod(leftType, rightType, rowType),
                     Expression.Constant(ClrEnumUtils.ToLinq4jJoinType(joinType)),
                     leftResult.Expression,

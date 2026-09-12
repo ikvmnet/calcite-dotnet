@@ -25,10 +25,17 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// <c>ClrBuiltInMethod</c> — and <see cref="ImplementAsync"/> against the awaiting ones —
     /// <c>ClrAsyncEnumerableDefaults</c>, reached by the <c>Async</c>-suffixed members of the same table.
     /// They are two static bodies naming two static operator sets, not one body over a dispatch: the
-    /// operator a node calls is decided where the node is written and read there.
-    /// <see cref="ClrEnumerableRelImplementor"/> is constructed for one kind and calls only that body, so
-    /// whoever builds the implementor chooses; nothing in the plan, and nothing in the planner, knows the
-    /// difference. That is why there is one convention and one set of rules rather than two of each.</para>
+    /// operator a node calls is decided where the node is written and read there.</para>
+    ///
+    /// <para><b>The two bodies are two call hierarchies, kept apart the whole way down.</b>
+    /// <see cref="Implement"/> reaches its inputs through
+    /// <see cref="ClrEnumerableRelImplementor.VisitChild"/>, which calls the input's
+    /// <see cref="Implement"/>; <see cref="ImplementAsync"/> reaches them through
+    /// <see cref="ClrEnumerableRelImplementor.VisitChildAsync"/>, which calls the input's
+    /// <see cref="ImplementAsync"/>. So a body always sees inputs of its own kind and the implementor holds
+    /// no mode at all. Whoever calls the root member chooses; nothing in the plan, and nothing in the
+    /// planner, knows the difference. That is why there is one convention and one set of rules rather than
+    /// two of each.</para>
     ///
     /// <para><b><see cref="Implement"/> is required and <see cref="ImplementAsync"/> is optional</b>, which is
     /// the shape .NET itself uses wherever a type does both: <c>DbCommand.ExecuteDbDataReader</c>,
@@ -37,20 +44,23 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// remembered. Two defaults calling each other would compile for a node that overrides neither and then
     /// recurse until the process dies, and a <c>StackOverflowException</c> cannot be caught.</para>
     ///
-    /// <para><b>What a node hands up is an expression yielding one kind of sequence or the other, and
-    /// converting between them is wrapping that expression.</b> The implementor does it: what a node hands
-    /// up that is not the kind being built is wrapped, once. Going to asynchronous costs a state machine and
-    /// no thread; going to synchronous blocks a thread per row, because an
-    /// <see cref="System.Collections.Generic.IEnumerable{T}"/> has nowhere to suspend.</para>
+    /// <para><b>Each fork has its own result type, so the kind is checked rather than inferred.</b>
+    /// <see cref="Implement"/> answers a <see cref="ClrEnumerableResult"/> and
+    /// <see cref="ImplementAsync"/> a <see cref="ClrEnumerableAsyncResult"/>, and the factory for each
+    /// refuses a sequence of the other kind by name. Crossing between them is
+    /// <see cref="ClrEnumerableRelImplementor.Awaited"/> and
+    /// <see cref="ClrEnumerableRelImplementor.Pulled"/>, written at the site that wants it. Going to
+    /// asynchronous costs a state machine and no thread; going to synchronous blocks a thread per row,
+    /// because an <see cref="System.Collections.Generic.IEnumerable{T}"/> has nowhere to suspend.</para>
     ///
-    /// <para><b>That wrapping is what makes the default safe, and it is only safe for a leaf.</b>
-    /// <see cref="ClrEnumerableRelImplementor.VisitChild"/> answers in the kind the plan is being built
-    /// with, so a node with inputs that inherits the default composes an awaited input into a pulled
-    /// operator, and <c>Expression.Call</c> refuses it — measured, in both directions. A leaf has no input
-    /// to be handed the wrong kind, so it may write one body and let the implementor read its rows across;
-    /// every node here that has an input writes both. Where only the awaiting body exists at all — an
-    /// adapter whose client is asynchronous — write <see cref="Implement"/> as the delegation and let it be
-    /// the side that is read across.</para>
+    /// <para><b>That is what makes the default safe, and it is safe exactly when a body does not compose an
+    /// input.</b> The awaiting hierarchy hands a body awaited inputs, so a node that inherits the default
+    /// runs its pulled body there and composes an awaited input into a pulled operator, which
+    /// <c>Expression.Call</c> refuses — measured, in both directions. The test is the child visit rather
+    /// than the input count: a node with an input it never asks for as a sequence is safe with one body,
+    /// which is why the interpreter has one, and every node whose body visits a child writes both. Where
+    /// only the awaiting body exists at all — an adapter whose client is asynchronous — write
+    /// <see cref="Implement"/> as the delegation and let it be the side that is read across.</para>
     /// </remarks>
     public interface ClrEnumerableRel : PhysicalNode
     {
@@ -66,19 +76,20 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <returns>The plan, the physical type of its rows, and their format.</returns>
         /// <remarks>
         /// The one member a node must write, and the body of the pulled pair: it names
-        /// <c>ClrEnumerableDefaults</c> through the unsuffixed members of <c>ClrBuiltInMethod</c> and its
-        /// inputs arrive as <see cref="System.Collections.Generic.IEnumerable{T}"/>. It may hand up either
-        /// kind of sequence — what does not match is read across, once, and the node is told nothing about
-        /// it.
+        /// <c>ClrEnumerableDefaults</c> through the unsuffixed members of <c>ClrBuiltInMethod</c>, and it
+        /// reaches its inputs through <see cref="ClrEnumerableRelImplementor.VisitChild"/>, which always
+        /// answers an <see cref="System.Collections.Generic.IEnumerable{T}"/>. Build the return value with
+        /// <see cref="ClrEnumerableRelImplementor.Result"/>, which refuses anything that is not one.
         /// </remarks>
         ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref);
 
         /// <summary>
         /// Builds the plan for this node where the plan being built awaits its rows.
         /// </summary>
-        /// <param name="implementor">The implementor of the plan being built, whose
-        /// <see cref="ClrEnumerableRelImplementor.VisitChild"/> answers in
-        /// <see cref="System.Collections.Generic.IAsyncEnumerable{T}"/>.</param>
+        /// <param name="implementor">The implementor of the plan being built. Reach the inputs through its
+        /// <see cref="ClrEnumerableRelImplementor.VisitChildAsync"/>, never its
+        /// <see cref="ClrEnumerableRelImplementor.VisitChild"/>: this body is the awaiting hierarchy and the
+        /// pulled visit would hand it a pulled input and a pulled subtree beneath.</param>
         /// <param name="pref">How the parent would prefer this node's rows represented.</param>
         /// <returns>The plan, the physical type of its rows, and their format.</returns>
         /// <remarks>
@@ -87,12 +98,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <c>ClrBuiltInMethod.CallAsync</c> so that the trailing cancellation token an expression tree will
         /// not default is passed.
         ///
-        /// <para>Optional, and by default <see cref="Implement"/>, whose sequence is then read across. That
-        /// default is for a leaf: a node with inputs that takes it composes an awaited input into a pulled
-        /// operator and <c>Expression.Call</c> refuses it. Every node here that has an input writes this
-        /// body.</para>
+        /// <para>Optional, and by default <see cref="ClrEnumerableRelImplementor.Awaited"/> over
+        /// <see cref="Implement"/>. That default holds only for a body that never visits a child: one that
+        /// does would run the pulled visit, and its own pulled operators would then be handed inputs this
+        /// hierarchy had already made awaited. Every node whose body visits a child writes this one.</para>
         /// </remarks>
-        ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref) => Implement(implementor, pref);
+        ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref) => implementor.Awaited(Implement(implementor, pref));
 
         /// <inheritdoc cref="PhysicalNode.passThroughTraits" />
         Pair? PhysicalNode.passThroughTraits(RelTraitSet required) => null;

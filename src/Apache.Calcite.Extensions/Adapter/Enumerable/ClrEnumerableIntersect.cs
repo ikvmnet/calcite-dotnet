@@ -66,13 +66,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             Expression? intersectExp = null;
 
             for (int i = 0; i < getInputs().size(); i++)
             {
-                var result = implementor.VisitChild(this, i, (ClrEnumerableRel)getInputs().get(i), pref);
+                var result = implementor.VisitChildAsync(this, i, (ClrEnumerableRel)getInputs().get(i), pref);
 
                 if (intersectExp == null)
                 {
@@ -91,7 +91,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
 
-            return implementor.Result(physType, intersectExp ?? throw new java.lang.IllegalStateException("intersectExp"));
+            return implementor.ResultAsync(physType, intersectExp ?? throw new java.lang.IllegalStateException("intersectExp"));
         }
 
     }

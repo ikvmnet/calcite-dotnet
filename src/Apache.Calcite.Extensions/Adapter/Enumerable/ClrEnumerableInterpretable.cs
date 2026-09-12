@@ -60,7 +60,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             ArgumentNullException.ThrowIfNull(rel);
 
 
-            var implementor = new ClrEnumerableRelImplementor(rel.getCluster().getRexBuilder(), internalParameters, false);
+            var implementor = new ClrEnumerableRelImplementor(rel.getCluster().getRexBuilder(), internalParameters);
             var lambda = implementor.ImplementRoot(rel, prefer);
             var plan = (Func<DataContext, IEnumerable<object>>)lambda.Compile();
 
@@ -79,8 +79,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <c>await foreach</c>.</returns>
         /// <remarks>
         /// <see cref="ToBindable"/> over an <see cref="IAsyncEnumerable{T}"/>, and the <em>same</em> planned
-        /// root: which of the two is called is the whole of the difference between a plan that awaits and one
-        /// that does not. A caller may call both on one plan and get two delegates over the same nodes, which
+        /// root read by an implementor of the same kind: which of the two root members is called is the
+        /// whole of the difference between a plan that awaits and one that does not. A caller may call both on one plan and get two delegates over the same nodes, which
         /// is what lets a prepared statement be read either way.
         /// </remarks>
         public static IClrAsyncBindable ToAsyncBindable(java.util.Map internalParameters, ClrEnumerableRel rel, ClrEnumerablePrefer prefer)
@@ -88,8 +88,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             ArgumentNullException.ThrowIfNull(internalParameters);
             ArgumentNullException.ThrowIfNull(rel);
 
-            var implementor = new ClrEnumerableRelImplementor(rel.getCluster().getRexBuilder(), internalParameters, true);
-            var lambda = implementor.ImplementRoot(rel, prefer);
+            var implementor = new ClrEnumerableRelImplementor(rel.getCluster().getRexBuilder(), internalParameters);
+            var lambda = implementor.ImplementRootAsync(rel, prefer);
             var plan = (Func<DataContext, IAsyncEnumerable<object>>)lambda.Compile();
 
             return new ClrAsyncBindable(plan, ElementType(implementor, rel, prefer));

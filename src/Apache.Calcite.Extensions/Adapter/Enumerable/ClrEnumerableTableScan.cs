@@ -215,7 +215,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), Format());
 
@@ -227,14 +227,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // this convention's own table SPI is read directly: the rows are already a .NET sequence, so
             // there is no linq4j tree to translate and no FromJava to read one back
             if (unwrapped is IClrScannableTable or IClrQueryableTable or IClrAsyncScannableTable or IClrAsyncQueryableTable)
-                return implementor.Result(physType, ToRowsAsync(implementor, physType, ClrSourceAsync(implementor), true));
+                return implementor.ResultAsync(physType, ToRowsAsync(implementor, physType, ClrSourceAsync(implementor), true));
 
             var expression = table.getExpression(typeof(Queryable))
                 ?? throw new java.lang.IllegalStateException($"Unable to implement {RelOptUtil.toString(this, org.apache.calcite.sql.SqlExplainLevel.ALL_ATTRIBUTES)}: {table}.getExpression(Queryable.class) returned null");
 
             var source = ToEnumerable(implementor.Translator.Translate(expression));
 
-            return implementor.Result(physType, ToRowsAsync(implementor, physType, source, false));
+            return implementor.ResultAsync(physType, ToRowsAsync(implementor, physType, source, false));
         }
 
         /// <summary>

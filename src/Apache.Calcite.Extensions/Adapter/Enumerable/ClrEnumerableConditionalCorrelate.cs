@@ -158,12 +158,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             if (getJoinType().name() != nameof(JoinRelType.LEFT_MARK))
                 throw new java.lang.UnsupportedOperationException($"ClrEnumerableConditionalCorrelate does not support join type: {getJoinType()}");
 
-            var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)getLeft(), pref);
+            var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)getLeft(), pref);
 
             // not optimising, for the reason ClrEnumerableCorrelate gives: the block is translated apart from
             // the sub-plan that reads its variables
@@ -177,7 +177,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             implementor.Translator.Bind(corrArg, corrParameter);
 
             implementor.RegisterCorrelVariable(getCorrelVariable(), corrArg, corrBlock, leftCalcite);
-            var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)getRight(), pref);
+            var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)getRight(), pref);
             implementor.ClearCorrelVariable(getCorrelVariable());
 
             // three-valued, because a mark join's marker is null where a comparison was unknown
@@ -199,7 +199,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var selector = ClrEnumUtils.MarkJoinSelector(implementor, physType, leftResult.PhysType);
 
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.CorrelateLeftMarkJoinAsync.MakeGenericMethod(leftType, rightType, rowType),
                     leftResult.Expression,
                     inner,

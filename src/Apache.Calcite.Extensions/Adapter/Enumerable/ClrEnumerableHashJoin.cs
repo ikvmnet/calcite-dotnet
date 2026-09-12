@@ -141,7 +141,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             switch (joinType.name())
             {
@@ -161,10 +161,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="implementor"></param>
         /// <param name="pref"></param>
         /// <returns></returns>
-        ClrEnumerableResult ImplementHashSemiJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrEnumerableAsyncResult ImplementHashSemiJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
-            var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
-            var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
+            var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)left, pref);
+            var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)right, pref);
 
             var physType = leftResult.PhysType;
             var leftType = leftResult.PhysType.RowType;
@@ -174,7 +174,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var leftKey = NullAwareAccessor(leftResult.PhysType, joinInfo.leftKeys);
             var rightKey = NullAwareAccessor(rightResult.PhysType, joinInfo.rightKeys);
 
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.SemiJoinAsync.MakeGenericMethod(leftType, rightType, leftKey.ReturnType),
                     leftResult.Expression,
                     rightResult.Expression,
@@ -202,10 +202,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// selectors and a flag saying whether at most one key is not null-safe, because that is the case a
         /// hash lookup alone can decide.</para>
         /// </remarks>
-        ClrEnumerableResult ImplementHashMarkJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrEnumerableAsyncResult ImplementHashMarkJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
-            var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
-            var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
+            var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)left, pref);
+            var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)right, pref);
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
 
@@ -267,7 +267,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var keyType = leftKeySelector.ReturnType;
             var nullSafeKeyType = leftNullSafeKeySelector?.ReturnType ?? typeof(object);
 
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.LeftMarkHashJoinAsync.MakeGenericMethod(leftType, rightType, keyType, nullSafeKeyType, rowType),
                     leftResult.Expression,
                     rightResult.Expression,
@@ -289,10 +289,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="implementor"></param>
         /// <param name="pref"></param>
         /// <returns></returns>
-        ClrEnumerableResult ImplementHashJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrEnumerableAsyncResult ImplementHashJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
-            var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
-            var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
+            var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)left, pref);
+            var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)right, pref);
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
             var keyPhysType = leftResult.PhysType.Project(joinInfo.leftKeys, JavaRowFormat.LIST);
@@ -308,7 +308,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);
             var predicate = Predicate(implementor, leftResult.PhysType, rightResult.PhysType, leftType, rightType);
 
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.HashJoinAsync.MakeGenericMethod(leftType, rightType, keyType, rowType),
                     leftResult.Expression,
                     rightResult.Expression,

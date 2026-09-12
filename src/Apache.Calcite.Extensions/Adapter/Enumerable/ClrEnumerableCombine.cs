@@ -98,14 +98,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrEnumerableAsyncResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             var lists = new java.util.ArrayList();
 
             for (int ord = 0; ord < getInputs().size(); ord++)
             {
                 var input = (ClrEnumerableRel)getInputs().get(ord);
-                var result = implementor.VisitChild(this, ord, input, pref);
+                var result = implementor.VisitChildAsync(this, ord, input, pref);
 
                 var source = result.Expression;
                 var sourceType = source.Type.GetGenericArguments()[0];
@@ -153,7 +153,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 Expression.Call(null, CombineQueryResultsMethod, read),
                 read);
 
-            return implementor.Result(physType,
+            return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.CombineQueryResultsAsync.MakeGenericMethod(typeof(object[])),
                     Expression.NewArrayInit(typeof(System.Collections.Generic.IAsyncEnumerable<java.util.Map>), arguments),
                     combine));
