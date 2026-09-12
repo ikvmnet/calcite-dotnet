@@ -97,6 +97,21 @@ namespace Apache.Calcite.Tests
         ];
 
         /// <summary>
+        /// The values a document store puts behind a path that holds a JSON array.
+        /// </summary>
+        /// <remarks>
+        /// The same rows as <c>ClrEnumerableDifferentialTests.DocsTable</c>, which is what makes the
+        /// synchronous convention an oracle for this one — and it is the only oracle there is, because
+        /// Calcite cannot implement an UNNEST over a column of type ANY at all.
+        /// </remarks>
+        public static readonly object?[][] Docs =
+        [
+            [java.lang.Integer.valueOf(1), List("red", "green"), List(java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2))],
+            [java.lang.Integer.valueOf(2), List("blue"), List()],
+            [java.lang.Integer.valueOf(3), null, List(java.lang.Integer.valueOf(3), java.lang.Double.valueOf(4.5))],
+        ];
+
+        /// <summary>
         /// The values a document store puts behind an ANY column — a GUID, a timestamp and a number, each
         /// written the way JSON writes it.
         /// </summary>
@@ -174,6 +189,33 @@ namespace Apache.Calcite.Tests
                 .add("V", typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.ANY), true))
                 .add("S", typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.ANY), true))
                 .build();
+        }
+
+        /// <summary>
+        /// Returns the DOCS row type.
+        /// </summary>
+        public static RelDataType DocsRowType(RelDataTypeFactory typeFactory)
+        {
+            RelDataType Any() => typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.ANY), true);
+
+            return typeFactory.builder()
+                .add("ID", typeFactory.createSqlType(SqlTypeName.INTEGER))
+                .add("TAGS", Any())
+                .add("NUMS", Any())
+                .build();
+        }
+
+        /// <summary>
+        /// Returns a <c>java.util.List</c> of the items given, which is what a collection behind an ANY
+        /// column has to be for <c>SqlFunctions.flatProduct</c> to read it.
+        /// </summary>
+        static java.util.List List(params object?[] items)
+        {
+            var list = new java.util.ArrayList();
+            foreach (var item in items)
+                list.add(item);
+
+            return list;
         }
 
     }

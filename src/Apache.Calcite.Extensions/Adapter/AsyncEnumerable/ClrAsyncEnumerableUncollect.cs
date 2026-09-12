@@ -26,7 +26,8 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
 
         /// <summary>
         /// Creates a <see cref="ClrAsyncEnumerableUncollect"/>. Each field of the input must be an array or a
-        /// multiset.
+        /// multiset, or the input must be the single column of type ANY that
+        /// <see cref="IsSingleAnyColumn"/> is about.
         /// </summary>
         /// <param name="traitSet"></param>
         /// <param name="input"></param>
@@ -69,33 +70,52 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
             org.apache.calcite.linq4j.tree.Expression? flatListForSingleItem = null;
 
             var fields = child.getRowType().getFieldList();
-            for (int i = 0; i < fields.size(); i++)
+            var ordinality = withOrdinality;
+
+            if (IsSingleAnyColumn(fields))
             {
-                var type = ((RelDataTypeField)fields.get(i)).getType();
+                // the same pair every non-struct element type emits below, which SqlFunctions.flatProduct
+                // answers with LIST_AS_ENUMERABLE: it reads the run-time value as a java.util.List and takes
+                // a null as the empty sequence, which is what UNNEST of a null array answers anyway
+                fieldCounts.add(java.lang.Integer.valueOf(-1));
+                inputTypes.add(SqlFunctions.FlatProductInputType.SCALAR);
 
-                if (type is MapSqlType)
+                // the ordinality goes with the row type rather than with the request, because that ANY branch
+                // of deriveUncollectRowType builds one column whatever WITH ORDINALITY said, as
+                // SqlUnnestOperator.inferReturnType does before it. An ordinal here would be a second value
+                // in a row the physical type has one field for.
+                ordinality = false;
+            }
+            else
+            {
+                for (int i = 0; i < fields.size(); i++)
                 {
-                    fieldCounts.add(java.lang.Integer.valueOf(2));
-                    inputTypes.add(SqlFunctions.FlatProductInputType.MAP);
-                    continue;
-                }
+                    var type = ((RelDataTypeField)fields.get(i)).getType();
 
-                var elementType = org.apache.calcite.sql.type.NonNullableAccessors.getComponentTypeOrThrow(type);
-                if (elementType.isStruct() == false)
-                {
-                    fieldCounts.add(java.lang.Integer.valueOf(-1));
-                    inputTypes.add(SqlFunctions.FlatProductInputType.SCALAR);
-                    continue;
-                }
+                    if (type is MapSqlType)
+                    {
+                        fieldCounts.add(java.lang.Integer.valueOf(2));
+                        inputTypes.add(SqlFunctions.FlatProductInputType.MAP);
+                        continue;
+                    }
 
-                // CALCITE-4063: one field, itself a struct of one item, and no ordinality, means the result is
-                // a scalar rather than a list of one
-                if (elementType.getFieldCount() == 1 && fields.size() == 1 && withOrdinality == false)
-                    flatListForSingleItem = org.apache.calcite.linq4j.tree.Expressions.call(BuiltInMethod.FLAT_LIST.method);
-                else
-                {
-                    fieldCounts.add(java.lang.Integer.valueOf(elementType.getFieldCount()));
-                    inputTypes.add(SqlFunctions.FlatProductInputType.LIST);
+                    var elementType = org.apache.calcite.sql.type.NonNullableAccessors.getComponentTypeOrThrow(type);
+                    if (elementType.isStruct() == false)
+                    {
+                        fieldCounts.add(java.lang.Integer.valueOf(-1));
+                        inputTypes.add(SqlFunctions.FlatProductInputType.SCALAR);
+                        continue;
+                    }
+
+                    // CALCITE-4063: one field, itself a struct of one item, and no ordinality, means the result is
+                    // a scalar rather than a list of one
+                    if (elementType.getFieldCount() == 1 && fields.size() == 1 && withOrdinality == false)
+                        flatListForSingleItem = org.apache.calcite.linq4j.tree.Expressions.call(BuiltInMethod.FLAT_LIST.method);
+                    else
+                    {
+                        fieldCounts.add(java.lang.Integer.valueOf(elementType.getFieldCount()));
+                        inputTypes.add(SqlFunctions.FlatProductInputType.LIST);
+                    }
                 }
             }
 
@@ -111,7 +131,7 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                 ?? org.apache.calcite.linq4j.tree.Expressions.call(
                     BuiltInMethod.FLAT_PRODUCT.method,
                     org.apache.calcite.linq4j.tree.Expressions.constant(counts),
-                    org.apache.calcite.linq4j.tree.Expressions.constant(java.lang.Boolean.valueOf(withOrdinality)),
+                    org.apache.calcite.linq4j.tree.Expressions.constant(java.lang.Boolean.valueOf(ordinality)),
                     org.apache.calcite.linq4j.tree.Expressions.constant(types));
 
             var sourceType = result.PhysType.RowType;
@@ -121,6 +141,30 @@ namespace Apache.Calcite.Extensions.Adapter.AsyncEnumerable
                 ClrAsyncBuiltInMethod.Call(ClrAsyncBuiltInMethod.SelectMany.MakeGenericMethod(sourceType, rowType),
                     result.Expression,
                     ClrEnumUtils.Convert(implementor.Translator.Translate(lambda), typeof(org.apache.calcite.linq4j.function.Function1))));
+        }
+
+        /// <summary>
+        /// Whether the input is the one column of type ANY that <c>Uncollect.deriveUncollectRowType</c>
+        /// answers with a single ANY column of its own.
+        /// </summary>
+        /// <param name="fields">the input's fields</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Not a port, and an addition rather than a defect: <c>EnumerableUncollect</c> cannot implement this
+        /// shape either, and fails before a row is read — it asks
+        /// <c>NonNullableAccessors.getComponentTypeOrThrow</c> for an element type an ANY has not got, which
+        /// is a plan Calcite forms and then throws <c>componentType is null for ANY</c> over.
+        /// <see cref="ClrAnyAggImplementors"/> is the same argument for the aggregates, and says more about
+        /// why a column of type ANY is the ordinary case rather than an exotic one.
+        ///
+        /// <para>The test is <c>deriveUncollectRowType</c>'s own, which is what makes it exact rather than a
+        /// guess: one field and ANY is the only shape that reaches the branch, because two fields of which
+        /// one is ANY throws <c>unnestArgument</c> while the node is being built and never arrives here.</para>
+        /// </remarks>
+        static bool IsSingleAnyColumn(java.util.List fields)
+        {
+            return fields.size() == 1
+                && ((RelDataTypeField)fields.get(0)).getType().getSqlTypeName() == SqlTypeName.ANY;
         }
 
     }
