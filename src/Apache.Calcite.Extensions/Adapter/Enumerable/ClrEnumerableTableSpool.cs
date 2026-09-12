@@ -93,8 +93,39 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var rowType = result.PhysType.RowType;
 
             return implementor.Result(physType,
-                implementor.Call(
-                    implementor.Methods.LazyCollectionSpool.MakeGenericMethod(rowType),
+                Expression.Call(null,
+                    ClrBuiltInMethod.LazyCollectionSpool.MakeGenericMethod(rowType),
+                    collection,
+                    result.Expression));
+        }
+
+        /// <inheritdoc />
+        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            if (readType.name() != nameof(Spool.Type.LAZY) || writeType.name() != nameof(Spool.Type.LAZY))
+                throw new java.lang.UnsupportedOperationException("only LAZY read and LAZY write are supported");
+
+            var result = implementor.VisitChild(this, 0, (ClrEnumerableRel)getInput(), pref);
+
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(result.Format));
+
+            // the table is looked up in the schema the plan is bound with, as Calcite looks it up, rather than
+            // read here and held: the collection belongs to the DataContext a run is given, and a plan
+            // compiled once can be bound more than once
+            var name = (string)getTable().getQualifiedName().get(getTable().getQualifiedName().size() - 1);
+            var collection = Expression.Call(
+                Expression.Convert(
+                    Expression.Call(
+                        Expression.Call(implementor.Root, DataContextGetRootSchema),
+                        SchemaGetTable,
+                        Expression.Constant(name)),
+                    typeof(ModifiableTable)),
+                ModifiableTableGetModifiableCollection);
+
+            var rowType = result.PhysType.RowType;
+
+            return implementor.Result(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.LazyCollectionSpoolAsync.MakeGenericMethod(rowType),
                     collection,
                     result.Expression));
         }

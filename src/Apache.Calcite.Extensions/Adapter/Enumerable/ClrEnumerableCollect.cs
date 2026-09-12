@@ -69,9 +69,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var source = result.Expression;
             var sourceType = result.PhysType.RowType;
 
-            // the sequence of one row that the collection is, rather than the collection and then a wrap:
-            // the two are one operator, because reading the input asynchronously has to be awaited
-            Expression rows;
+            Expression collection;
 
             switch (collectionType.name())
             {
@@ -93,7 +91,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                         sourceType = source.Type.GetGenericArguments()[0];
                     }
 
-                    rows = implementor.Call(implementor.Methods.SingletonJavaList.MakeGenericMethod(sourceType), source);
+                    collection = Expression.Call(null, ClrBuiltInMethod.ToJavaList.MakeGenericMethod(sourceType), source);
                     break;
 
                 case nameof(SqlTypeName.MAP):
@@ -102,8 +100,68 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     var input = Expression.Parameter(sourceType, "input");
                     var array = Expression.Convert(input, typeof(object[]));
 
-                    rows = implementor.Call(
-                        implementor.Methods.SingletonJavaMap.MakeGenericMethod(sourceType),
+                    collection = Expression.Call(null,
+                        ClrBuiltInMethod.ToJavaMap.MakeGenericMethod(sourceType),
+                        source,
+                        Expression.Lambda(typeof(Func<,>).MakeGenericType(sourceType, typeof(object)), Expression.ArrayAccess(array, Expression.Constant(0)), input),
+                        Expression.Lambda(typeof(Func<,>).MakeGenericType(sourceType, typeof(object)), Expression.ArrayAccess(array, Expression.Constant(1)), input));
+                    break;
+
+                default:
+                    throw new java.lang.IllegalArgumentException($"unknown collection type {collectionType}");
+            }
+
+            return implementor.Result(physType,
+                Expression.Call(null, ClrBuiltInMethod.Singleton.MakeGenericMethod(collection.Type), collection));
+        }
+
+        /// <inheritdoc />
+        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var child = (ClrEnumerableRel)getInput();
+
+            // rows are asked for as arrays, though as Calcite notes the child need not oblige
+            var result = implementor.VisitChild(this, 0, child, ClrEnumerablePrefer.Array);
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), JavaRowFormat.LIST);
+
+            var collectionType = getCollectionType();
+            var source = result.Expression;
+            var sourceType = result.PhysType.RowType;
+
+            // the sequence of one row, rather than the collection the synchronous node builds and then
+            // wraps: the two steps are one operator here, because the reading has to be awaited
+            Expression rows;
+
+            switch (collectionType.name())
+            {
+                case nameof(SqlTypeName.ARRAY):
+                case nameof(SqlTypeName.MULTISET):
+                    var componentType = ((RelDataTypeField)getRowType().getFieldList().get(0)).getType().getComponentType()
+                        ?? throw new java.lang.NullPointerException();
+                    var childRecordType = ((RelDataTypeField)result.PhysType.RelRowType.getFieldList().get(0)).getType();
+
+                    if (SqlTypeUtil.sameNamedType(componentType, childRecordType) == false)
+                    {
+                        // every element of a multiset is a record, so a scalar is wrapped in something that can
+                        // hold one; an array of a single field stays scalar so it still compares correctly
+                        var targetFormat = collectionType.name() == nameof(SqlTypeName.ARRAY) && child.getRowType().getFieldCount() == 1
+                            ? JavaRowFormat.SCALAR
+                            : JavaRowFormat.ARRAY;
+
+                        source = result.PhysType.ConvertToAsync(source, targetFormat);
+                        sourceType = source.Type.GetGenericArguments()[0];
+                    }
+
+                    rows = ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.SingletonJavaListAsync.MakeGenericMethod(sourceType), source);
+                    break;
+
+                case nameof(SqlTypeName.MAP):
+                    // the key and the value are the first two fields of each row, and the order they arrive in
+                    // is kept, so no comparer is given
+                    var input = Expression.Parameter(sourceType, "input");
+                    var array = Expression.Convert(input, typeof(object[]));
+
+                    rows = ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.SingletonJavaMapAsync.MakeGenericMethod(sourceType),
                         source,
                         Expression.Lambda(typeof(Func<,>).MakeGenericType(sourceType, typeof(object)), Expression.ArrayAccess(array, Expression.Constant(0)), input),
                         Expression.Lambda(typeof(Func<,>).MakeGenericType(sourceType, typeof(object)), Expression.ArrayAccess(array, Expression.Constant(1)), input));

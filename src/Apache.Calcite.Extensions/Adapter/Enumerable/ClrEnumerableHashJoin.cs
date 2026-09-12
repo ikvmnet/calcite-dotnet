@@ -140,6 +140,187 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             }
         }
 
+        /// <inheritdoc />
+        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            switch (joinType.name())
+            {
+                case nameof(JoinRelType.SEMI):
+                case nameof(JoinRelType.ANTI):
+                    return ImplementHashSemiJoinAsync(implementor, pref);
+                case nameof(JoinRelType.LEFT_MARK):
+                    return ImplementHashMarkJoinAsync(implementor, pref);
+                default:
+                    return ImplementHashJoinAsync(implementor, pref);
+            }
+        }
+
+        /// <summary>
+        /// Implements a semi or an anti join, which return the left input alone.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <param name="pref"></param>
+        /// <returns></returns>
+        ClrEnumerableResult ImplementHashSemiJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
+            var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
+
+            var physType = leftResult.PhysType;
+            var leftType = leftResult.PhysType.RowType;
+            var rightType = rightResult.PhysType.RowType;
+
+            var keyPhysType = leftResult.PhysType.Project(joinInfo.leftKeys, JavaRowFormat.LIST);
+            var leftKey = NullAwareAccessor(leftResult.PhysType, joinInfo.leftKeys);
+            var rightKey = NullAwareAccessor(rightResult.PhysType, joinInfo.rightKeys);
+
+            return implementor.Result(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.SemiJoinAsync.MakeGenericMethod(leftType, rightType, leftKey.ReturnType),
+                    leftResult.Expression,
+                    rightResult.Expression,
+                    leftKey,
+                    rightKey,
+                    keyPhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)),
+                    Expression.Constant(joinType.name() == nameof(JoinRelType.ANTI)),
+                    Predicate(implementor, leftResult.PhysType, rightResult.PhysType, leftType, rightType)));
+        }
+
+        /// <summary>
+        /// Implements a mark join, which returns every left row with a marker saying whether the right side
+        /// had a match.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <param name="pref"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>implementHashMarkJoin</c>, statement for statement. Both predicates are the
+        /// three-valued ones, because the marker is three-valued: a mark join has to tell FALSE from UNKNOWN,
+        /// which is what makes <c>x IN (…)</c> over a nullable column answer UNKNOWN.
+        ///
+        /// <para>The join keys split in two. A null-safe key is IS NOT DISTINCT FROM and answers only
+        /// TRUE or FALSE; a not null-safe one is EQUALS and answers three ways. The runtime takes both key
+        /// selectors and a flag saying whether at most one key is not null-safe, because that is the case a
+        /// hash lookup alone can decide.</para>
+        /// </remarks>
+        ClrEnumerableResult ImplementHashMarkJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
+            var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
+
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
+
+            var leftType = leftResult.PhysType.RowType;
+            var rightType = rightResult.PhysType.RowType;
+            var rowType = physType.RowType;
+
+            var rexBuilder = getCluster().getRexBuilder();
+
+            LambdaExpression? nonEquiPredicate = null;
+            if (joinInfo.nonEquiConditions.isEmpty() == false)
+            {
+                var nonEquiCondition = RexUtil.composeConjunction(rexBuilder, joinInfo.nonEquiConditions, true);
+                if (nonEquiCondition != null)
+                    nonEquiPredicate = ClrEnumUtils.GeneratePredicate(implementor, rexBuilder, left, right, leftResult.PhysType, rightResult.PhysType, nonEquiCondition, true);
+            }
+
+            var equiCondition = joinInfo.getEquiCondition(left, right, rexBuilder);
+            var equiPredicate = ClrEnumUtils.GeneratePredicate(implementor, rexBuilder, left, right, leftResult.PhysType, rightResult.PhysType, equiCondition, true);
+
+            // the null-aware accessor yields null where a not null-safe key is null, which is how the runtime
+            // learns that a comparison is unknown rather than false
+            var leftKeySelector = NullAwareAccessor(leftResult.PhysType, joinInfo.leftKeys);
+            var rightKeySelector = NullAwareAccessor(rightResult.PhysType, joinInfo.rightKeys);
+
+            var notNullSafeKeyCount = 0;
+            var leftNullSafeKeys = new java.util.ArrayList();
+            var rightNullSafeKeys = new java.util.ArrayList();
+
+            for (int i = 0; i < joinInfo.nullExclusionFlags.size(); i++)
+            {
+                if (((java.lang.Boolean)joinInfo.nullExclusionFlags.get(i)).booleanValue())
+                {
+                    notNullSafeKeyCount++;
+                }
+                else
+                {
+                    leftNullSafeKeys.add(joinInfo.leftKeys.get(i));
+                    rightNullSafeKeys.add(joinInfo.rightKeys.get(i));
+                }
+            }
+
+            var leftNullSafeKeySelector = leftNullSafeKeys.isEmpty()
+                ? null
+                : Accessor(leftResult.PhysType, ImmutableIntList.copyOf(leftNullSafeKeys));
+            var rightNullSafeKeySelector = rightNullSafeKeys.isEmpty()
+                ? null
+                : Accessor(rightResult.PhysType, ImmutableIntList.copyOf(rightNullSafeKeys));
+
+            var atMostOneNotNullSafeKey = notNullSafeKeyCount <= 1;
+
+            var nullSafeKeyPhysType = leftResult.PhysType.Project(leftNullSafeKeys, JavaRowFormat.LIST);
+            var nullSafeKeyComparer = nullSafeKeyPhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer));
+            var keyPhysType = leftResult.PhysType.Project(joinInfo.leftKeys, JavaRowFormat.LIST);
+            var keyComparer = keyPhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer));
+
+            var selector = ClrEnumUtils.MarkJoinSelector(implementor, physType, leftResult.PhysType);
+
+            var keyType = leftKeySelector.ReturnType;
+            var nullSafeKeyType = leftNullSafeKeySelector?.ReturnType ?? typeof(object);
+
+            return implementor.Result(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.LeftMarkHashJoinAsync.MakeGenericMethod(leftType, rightType, keyType, nullSafeKeyType, rowType),
+                    leftResult.Expression,
+                    rightResult.Expression,
+                    leftKeySelector,
+                    rightKeySelector,
+                    (Expression?)leftNullSafeKeySelector ?? Expression.Constant(null, typeof(Func<,>).MakeGenericType(leftType, nullSafeKeyType)),
+                    (Expression?)rightNullSafeKeySelector ?? Expression.Constant(null, typeof(Func<,>).MakeGenericType(rightType, nullSafeKeyType)),
+                    Expression.Constant(atMostOneNotNullSafeKey),
+                    selector,
+                    keyComparer,
+                    nullSafeKeyComparer,
+                    (Expression?)nonEquiPredicate ?? Expression.Constant(null, typeof(Func<,,>).MakeGenericType(leftType, rightType, typeof(java.lang.Boolean))),
+                    equiPredicate));
+        }
+
+        /// <summary>
+        /// Implements every join that returns fields of both inputs.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <param name="pref"></param>
+        /// <returns></returns>
+        ClrEnumerableResult ImplementHashJoinAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)left, pref);
+            var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)right, pref);
+
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
+            var keyPhysType = leftResult.PhysType.Project(joinInfo.leftKeys, JavaRowFormat.LIST);
+
+            var leftType = leftResult.PhysType.RowType;
+            var rightType = rightResult.PhysType.RowType;
+            var rowType = physType.RowType;
+
+            var leftKey = NullAwareAccessor(leftResult.PhysType, joinInfo.leftKeys);
+            var rightKey = NullAwareAccessor(rightResult.PhysType, joinInfo.rightKeys);
+            var keyType = leftKey.ReturnType;
+
+            var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);
+            var predicate = Predicate(implementor, leftResult.PhysType, rightResult.PhysType, leftType, rightType);
+
+            return implementor.Result(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.HashJoinAsync.MakeGenericMethod(leftType, rightType, keyType, rowType),
+                    leftResult.Expression,
+                    rightResult.Expression,
+                    leftKey,
+                    rightKey,
+                    selector,
+                    keyPhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)),
+                    Expression.Constant(joinType.generatesNullsOnLeft()),
+                    Expression.Constant(joinType.generatesNullsOnRight()),
+                    predicate));
+        }
+
         /// <summary>
         /// Implements every join that returns fields of both inputs.
         /// </summary>
@@ -166,8 +347,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var predicate = Predicate(implementor, leftResult.PhysType, rightResult.PhysType, leftType, rightType);
 
             return implementor.Result(physType,
-                implementor.Call(
-                    implementor.Methods.HashJoin.MakeGenericMethod(leftType, rightType, keyType, rowType),
+                Expression.Call(null,
+                    ClrBuiltInMethod.HashJoin.MakeGenericMethod(leftType, rightType, keyType, rowType),
                     leftResult.Expression,
                     rightResult.Expression,
                     leftKey,
@@ -199,8 +380,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var rightKey = NullAwareAccessor(rightResult.PhysType, joinInfo.rightKeys);
 
             return implementor.Result(physType,
-                implementor.Call(
-                    implementor.Methods.SemiJoin.MakeGenericMethod(leftType, rightType, leftKey.ReturnType),
+                Expression.Call(null,
+                    ClrBuiltInMethod.SemiJoin.MakeGenericMethod(leftType, rightType, leftKey.ReturnType),
                     leftResult.Expression,
                     rightResult.Expression,
                     leftKey,
@@ -293,8 +474,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var nullSafeKeyType = leftNullSafeKeySelector?.ReturnType ?? typeof(object);
 
             return implementor.Result(physType,
-                implementor.Call(
-                    implementor.Methods.LeftMarkHashJoin.MakeGenericMethod(leftType, rightType, keyType, nullSafeKeyType, rowType),
+                Expression.Call(null,
+                    ClrBuiltInMethod.LeftMarkHashJoin.MakeGenericMethod(leftType, rightType, keyType, nullSafeKeyType, rowType),
                     leftResult.Expression,
                     rightResult.Expression,
                     leftKeySelector,

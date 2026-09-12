@@ -149,8 +149,58 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var selector = ClrEnumUtils.MarkJoinSelector(implementor, physType, leftResult.PhysType);
 
             return implementor.Result(physType,
-                implementor.Call(
-                    implementor.Methods.CorrelateLeftMarkJoin.MakeGenericMethod(leftType, rightType, rowType),
+                Expression.Call(null,
+                    ClrBuiltInMethod.CorrelateLeftMarkJoin.MakeGenericMethod(leftType, rightType, rowType),
+                    leftResult.Expression,
+                    inner,
+                    predicate,
+                    selector));
+        }
+
+        /// <inheritdoc />
+        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            if (getJoinType().name() != nameof(JoinRelType.LEFT_MARK))
+                throw new java.lang.UnsupportedOperationException($"ClrEnumerableConditionalCorrelate does not support join type: {getJoinType()}");
+
+            var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)getLeft(), pref);
+
+            // not optimising, for the reason ClrEnumerableCorrelate gives: the block is translated apart from
+            // the sub-plan that reads its variables
+            var corrBlock = new J.BlockBuilder(false);
+            // the getter registered below is one Calcite's Rex translation reads the outer row through,
+            // so it is given their physical type, built here from the three values ours carries
+            var leftCalcite = PhysTypeImpl.of(implementor.TypeFactory, leftResult.PhysType.RelRowType, leftResult.PhysType.Format, false);
+            var corrArg = J.Expressions.parameter(java.lang.reflect.Modifier.FINAL, leftCalcite.getJavaRowType(), getCorrelVariable());
+
+            var corrParameter = Expression.Parameter(leftResult.PhysType.RowType, getCorrelVariable());
+            implementor.Translator.Bind(corrArg, corrParameter);
+
+            implementor.RegisterCorrelVariable(getCorrelVariable(), corrArg, corrBlock, leftCalcite);
+            var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)getRight(), pref);
+            implementor.ClearCorrelVariable(getCorrelVariable());
+
+            // three-valued, because a mark join's marker is null where a comparison was unknown
+            var predicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), getLeft(), getRight(), leftResult.PhysType, rightResult.PhysType, getCondition(), true);
+
+
+            implementor.Translator.TranslateStatements(corrBlock.toBlock(), out var declared, out var body);
+            body.Add(rightResult.Expression);
+
+            var leftType = leftResult.PhysType.RowType;
+            var rightType = rightResult.PhysType.RowType;
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
+            var rowType = physType.RowType;
+
+            var inner = Expression.Lambda(
+                typeof(Func<,>).MakeGenericType(leftType, rightResult.Expression.Type),
+                Expression.Block(rightResult.Expression.Type, declared, body),
+                corrParameter);
+
+            var selector = ClrEnumUtils.MarkJoinSelector(implementor, physType, leftResult.PhysType);
+
+            return implementor.Result(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.CorrelateLeftMarkJoinAsync.MakeGenericMethod(leftType, rightType, rowType),
                     leftResult.Expression,
                     inner,
                     predicate,

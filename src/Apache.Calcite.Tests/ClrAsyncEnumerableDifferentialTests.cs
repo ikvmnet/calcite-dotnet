@@ -60,6 +60,7 @@ namespace Apache.Calcite.Tests
                 rootSchema.add("WIDE", new AsyncRowsTable(AsyncTestRows.Wide, AsyncTestRows.WideRowType, false));
                 rootSchema.add("ANYS", new AsyncRowsTable(AsyncTestRows.Anys, AsyncTestRows.AnysRowType, false));
                 rootSchema.add("CASTS", new AsyncRowsTable(AsyncTestRows.Casts, AsyncTestRows.CastsRowType, false));
+                rootSchema.add("EVENTS", new AsyncRowsTable(AsyncTestRows.Events, AsyncTestRows.EventsRowType, false));
             }
             else
             {
@@ -68,10 +69,11 @@ namespace Apache.Calcite.Tests
                 rootSchema.add("WIDE", new SyncRowsTable(AsyncTestRows.Wide, AsyncTestRows.WideRowType, false));
                 rootSchema.add("ANYS", new SyncRowsTable(AsyncTestRows.Anys, AsyncTestRows.AnysRowType, false));
                 rootSchema.add("CASTS", new SyncRowsTable(AsyncTestRows.Casts, AsyncTestRows.CastsRowType, false));
+                rootSchema.add("EVENTS", new SyncRowsTable(AsyncTestRows.Events, AsyncTestRows.EventsRowType, false));
             }
 
-            // a table function, which this convention has no node for: Calcite plans it and the converter
-            // carries its rows
+            // a table function the schema defines, whose call yields the sequence: ClrEnumerableTableFunctionScan
+            // takes it, and there is no input for either body to read
             rootSchema.add("NUMBERS", org.apache.calcite.schema.impl.TableFunctionImpl.create((java.lang.Class)typeof(NumbersTableFunction), "eval"));
 
             return rootSchema;
@@ -709,6 +711,36 @@ namespace Apache.Calcite.Tests
         [TestMethod]
         public Task ShouldAgreeOnATableFunction() =>
             Same("SELECT * FROM TABLE(NUMBERS(3))");
+
+        /// <summary>
+        /// A window table function over a table whose rows are awaited.
+        /// </summary>
+        /// <remarks>
+        /// The one node whose two bodies differ in <em>what they do with the input</em> rather than in which
+        /// operator set they name. Everything that builds a window is Calcite's and is linq4j, and a linq4j
+        /// <c>Enumerable</c> has nowhere to suspend, so the awaiting body pulls its input and blocks a thread
+        /// per row before handing it over. The rows above the node are awaited again, which is why this is a
+        /// differential test like the rest rather than a plan assertion.
+        ///
+        /// <para>Written because the pull was lost once. The node inherited the default
+        /// <c>ImplementAsync</c>, which handed <c>JavaSequences.ToJava</c> an <c>IAsyncEnumerable</c>, and
+        /// <c>Expression.Call</c> refused it. Nothing in the suite reached a window table function over an
+        /// awaited input, so the whole suite stayed green over it.</para>
+        /// </remarks>
+        [TestMethod]
+        public Task ShouldAgreeOnAWindowTableFunction() =>
+            Same("SELECT \"ID\", \"window_start\", \"window_end\" FROM TABLE(TUMBLE(TABLE \"EVENTS\", DESCRIPTOR(\"ROWTIME\"), INTERVAL '1' HOUR)) ORDER BY \"ID\"");
+
+        /// <summary>
+        /// A window table function whose rows are then aggregated.
+        /// </summary>
+        /// <remarks>
+        /// The window's output crosses back to awaited and an aggregate of this convention reads it, so the
+        /// crossing is exercised in both directions in one plan.
+        /// </remarks>
+        [TestMethod]
+        public Task ShouldAgreeOnAnAggregateOverAWindowTableFunction() =>
+            Same("SELECT \"window_start\", COUNT(*) FROM TABLE(TUMBLE(TABLE \"EVENTS\", DESCRIPTOR(\"ROWTIME\"), INTERVAL '1' HOUR)) GROUP BY \"window_start\" ORDER BY 1");
 
         /// <summary>
         /// A table function joined to a table is refused while the plan is implemented, and named.

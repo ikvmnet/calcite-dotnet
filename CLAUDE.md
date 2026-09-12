@@ -267,24 +267,36 @@ registered by ours, so an interpreted node still lands in `EnumerableConvention`
 
 **There is one Clr convention, and whether a plan awaits is the implementor's, not the planner's.** There
 were two — `ClrEnumerableConvention` and `ClrAsyncEnumerableConvention`, node for node and rule for rule.
-Normalised and diffed, 60 files were the same code but for a `using` and `ClrAsyncBuiltInMethod.Call(...)`
-where the other wrote `Expression.Call(null, ...)`; only `Aggregate`, `Collect`, `Combine` and the scan
-differed in shape. So the mode moved to `ClrEnumerableRelImplementor`, which carries `Async`, answers
-`Methods` — `ClrBuiltInMethod.Enumerable` or `.AsyncEnumerable`, the same member names over the two operator
-sets — and appends the trailing `CancellationToken` in `Call`. A node's `Implement` is then one body for
-both. **A plan has no mode**, so `EXPLAIN` no longer tells a caller how the rows will be read, and a plan
-cache would hold one entry for a statement rather than two.
+Normalised and diffed, 60 files were the same code but for a `using` and an `Async`-suffixed operator name;
+only `Aggregate`, `Collect`, `Combine` and the scan differed in shape. So the two class hierarchies became
+one and the two bodies moved into one node. `ClrEnumerableRelImplementor` is constructed for one kind of
+sequence and calls the matching body. **A plan has no mode**, so `EXPLAIN` no longer tells a caller how the
+rows will be read, and a plan cache would hold one entry for a statement rather than two.
 
+- **A node has two bodies naming two static operator sets, and that is deliberately not a dispatch.**
+  `Implement` names `ClrEnumerableDefaults` through the unsuffixed members of `ClrBuiltInMethod`;
+  `ImplementAsync` names `ClrAsyncEnumerableDefaults` through the `Async`-suffixed members of the same
+  table, and builds its calls with `ClrBuiltInMethod.CallAsync`, which appends the trailing
+  `CancellationToken` an expression tree will not default. One table, two sets of names: which operator a
+  node calls is decided where the node is written and can be read there. An earlier attempt put the choice
+  behind `implementor.Methods` and `implementor.Call`; that made the operator set a runtime value and it is
+  gone.
 - **`Implement` is required; `ImplementAsync` is optional and defaults to it.** That is .NET's own shape,
   measured against the 10.0 reference assemblies rather than remembered: `DbCommand.ExecuteDbDataReader`,
   `DbDataReader.Read`, `DbConnection.Open` and `Stream.Read` are abstract, and every `Async` counterpart is
   virtual over them. Two defaults calling each other would compile for a node overriding neither and then
   recurse until the process dies, and a `StackOverflowException` cannot be caught.
 - **Whatever a node hands up is read across if it is not the kind being built**, once, by the implementor.
-  So an adapter with only a blocking client writes `Implement` alone; one with only an awaiting client
-  overrides `ImplementAsync` and writes `Implement` as a delegation to it. Going to asynchronous costs a
-  state machine and no thread; going to synchronous **blocks a thread per row**, because an `IEnumerable`
-  has nowhere to suspend.
+  Going to asynchronous costs a state machine and no thread; going to synchronous **blocks a thread per
+  row**, because an `IEnumerable` has nowhere to suspend.
+- **That default is only safe for a leaf, and taking it on a node with inputs fails.** `VisitChild` answers
+  in the kind being built, so a node that inherits the default composes an awaited input into a pulled
+  operator and `Expression.Call` refuses it — measured, both directions. It cost this once already:
+  `ClrEnumerableTableFunctionScan` lost its input pull in a restore, and no test in the suite reached a
+  window table function over an awaited table, so 830 tests stayed green over an `ArgumentException`.
+  `ShouldAgreeOnAWindowTableFunction` holds it now. An adapter with only an awaiting client writes
+  `ImplementAsync` and `Implement` as a delegation to it, which is safe for the same reason: a converter
+  out of an adapter is a leaf.
 - **The crossing is a node boundary, not a plan boundary.** An `IClrAsyncScannableTable` under a synchronous
   plan blocks at the scan and everything above it is ordinary synchronous code, and the reverse. That is
   what `ClrEnumerableModeTests` reads out of the compiled tree: which operator set each call landed on, that

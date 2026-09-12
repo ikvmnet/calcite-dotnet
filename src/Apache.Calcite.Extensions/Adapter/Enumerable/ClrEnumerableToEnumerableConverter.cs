@@ -81,12 +81,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <inheritdoc />
         public EnumerableRel.Result implement(EnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
         {
-            // the same map, so what this side stashes reaches the DataContext the plan is bound with.
-            //
-            // Synchronous, always, and not because the caller asked: what reads this sub-plan is Java that
-            // Janino compiles, and generated Java cannot await. A node under here that can only build an
-            // asynchronous sequence is read across by the implementor, blocking a thread per row -- which is
-            // the same thing this converter would have to do itself, done in the one place that knows how.
+            // the same map, so what this side stashes reaches the DataContext the plan is bound with
             var clr = new ClrEnumerableRelImplementor(implementor.getRexBuilder(), implementor.map);
             var result = clr.VisitChild(null, 0, (ClrEnumerableRel)getInput(), ClrEnumerablePrefers.FromCalcite(pref));
 

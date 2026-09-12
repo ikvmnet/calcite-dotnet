@@ -69,7 +69,28 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var source = implementor.Translator.TranslateBody(result.block, typeof(org.apache.calcite.linq4j.Enumerable));
 
             return implementor.Result(physType,
-                implementor.Call(implementor.Methods.FromJava.MakeGenericMethod(rowType), source));
+                Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), source));
+        }
+
+        /// <inheritdoc />
+        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            // the same map, so a value Calcite stashes reaches the DataContext this plan is bound with
+            var enumerable = new EnumerableRelImplementor(implementor.RexBuilder, implementor.Map);
+
+            // and the same correlation variables, because a sub-plan of Calcite's under a correlate of this
+            // convention reads the outer row through them
+            implementor.ReplayCorrelVariables(enumerable);
+
+            var result = enumerable.visitChild(null, 0, (EnumerableRel)getInput(), pref.ToCalcite());
+
+            // a physical type is a type factory, a row type and a format, and theirs answers all three
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, result.physType.getRowType(), result.physType.getFormat(), false);
+            var rowType = physType.RowType;
+            var source = implementor.Translator.TranslateBody(result.block, typeof(org.apache.calcite.linq4j.Enumerable));
+
+            return implementor.Result(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.FromJavaAsync.MakeGenericMethod(rowType), source));
         }
 
     }

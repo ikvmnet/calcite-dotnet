@@ -36,8 +36,8 @@ namespace Apache.Calcite.Tests
     /// <c>ClrPrepareImpl.CreatePlanner</c> for a prepared statement — this convention's.
     ///
     /// <para><c>ClrEnumerableQueryTests</c> is the synchronous counterpart and holds the same four queries.
-    /// The two programs are the same shape and were changed together, which is the reason to run both rather
-    /// than trust one.</para>
+    /// There is one program now and it is the same one either way, so what these two hold apart is not the
+    /// program but the pair of bodies each node answers with — the same planned root implemented twice.</para>
     /// </remarks>
     [TestClass]
     public class ClrAsyncEnumerableProgramsTests

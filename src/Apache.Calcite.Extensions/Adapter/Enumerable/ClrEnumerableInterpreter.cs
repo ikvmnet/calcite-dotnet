@@ -98,7 +98,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var rowType = physType.RowType;
 
             return implementor.Result(physType,
-                implementor.Call(implementor.Methods.FromJava.MakeGenericMethod(rowType), source));
+                Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), source));
         }
 
         /// <summary>

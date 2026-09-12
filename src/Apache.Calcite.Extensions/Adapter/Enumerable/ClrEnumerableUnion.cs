@@ -52,8 +52,35 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 var rowType = result.PhysType.RowType;
 
                 unionExp = all
-                    ? implementor.Call(implementor.Methods.Concat.MakeGenericMethod(rowType), unionExp, result.Expression)
-                    : implementor.Call(implementor.Methods.Union.MakeGenericMethod(rowType), unionExp, result.Expression, result.PhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)));
+                    ? Expression.Call(null, ClrBuiltInMethod.Concat.MakeGenericMethod(rowType), unionExp, result.Expression)
+                    : Expression.Call(null, ClrBuiltInMethod.Union.MakeGenericMethod(rowType), unionExp, result.Expression, result.PhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)));
+            }
+
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
+
+            return implementor.Result(physType, unionExp ?? throw new java.lang.IllegalStateException("unionExp"));
+        }
+
+        /// <inheritdoc />
+        public virtual ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            Expression? unionExp = null;
+
+            for (int i = 0; i < getInputs().size(); i++)
+            {
+                var result = implementor.VisitChild(this, i, (ClrEnumerableRel)getInputs().get(i), pref);
+
+                if (unionExp == null)
+                {
+                    unionExp = result.Expression;
+                    continue;
+                }
+
+                var rowType = result.PhysType.RowType;
+
+                unionExp = all
+                    ? ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.ConcatAsync.MakeGenericMethod(rowType), unionExp, result.Expression)
+                    : ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.UnionAsync.MakeGenericMethod(rowType), unionExp, result.Expression, result.PhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)));
             }
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));

@@ -462,8 +462,98 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var comparator = comparatorPhysType.GenerateMergeJoinComparator(RelCollations.of(fieldCollations));
 
             return implementor.Result(physType,
-                implementor.Call(
-                    implementor.Methods.MergeJoin.MakeGenericMethod(leftType_, rightType_, leftKey.ReturnType, rowType),
+                Expression.Call(null,
+                    ClrBuiltInMethod.MergeJoin.MakeGenericMethod(leftType_, rightType_, leftKey.ReturnType, rowType),
+                    leftResult.Expression,
+                    rightResult.Expression,
+                    leftKey,
+                    rightKey,
+                    predicate,
+                    selector,
+                    Expression.Constant(ClrEnumUtils.ToLinq4jJoinType(joinType)),
+                    comparator,
+                    leftKeyPhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer))));
+        }
+
+        /// <inheritdoc />
+        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var typeFactory = implementor.TypeFactory;
+            var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)getLeft(), pref);
+            var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)getRight(), pref);
+
+            var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.PreferArray());
+
+            // Calcite types these off the physical type and does not box them. It cannot go wrong there:
+            // there is no Enumerable<int> in Java, so the sequence and a parameter typed int cannot disagree.
+            // Here they can. The sequences below are boxed because a join must box — the selector and
+            // predicate Calcite builds are against boxed rows, and an outer join hands the selector a null —
+            // and the key selector is a lambda over one row of the boxed sequence, so this has to be the same
+            // decision. Only a one-column input tells the two apart, every wider row being a reference
+            // already, which is why Primitive.box is a no-op for all of them.
+            // the rows are boxed for the two reasons a hash join boxes them: the selector and the predicate
+            // are built against boxed rows, and a LEFT join hands the selector a null right row, which a
+            // primitive cannot be. The element type is read off the sequence rather than off the physical
+            // type, because those two part company where a one-column input is a scalar.
+            var leftType_ = leftResult.PhysType.RowType;
+            var rightType_ = rightResult.PhysType.RowType;
+            var rowType = physType.RowType;
+
+            var left_ = Expression.Parameter(leftType_, "left");
+            var right_ = Expression.Parameter(rightType_, "right");
+
+            // each key field is read at the type the two sides have in common, so that one comparator can
+            // order both inputs
+            var leftExpressions = new List<Expression>();
+            var rightExpressions = new List<Expression>();
+            for (int i = 0; i < joinInfo.leftKeys.size(); i++)
+            {
+                var leftIndex = ((java.lang.Integer)joinInfo.leftKeys.get(i)).intValue();
+                var rightIndex = ((java.lang.Integer)joinInfo.rightKeys.get(i)).intValue();
+
+                var leftType = ((RelDataTypeField)getLeft().getRowType().getFieldList().get(leftIndex)).getType();
+                var rightType = ((RelDataTypeField)getRight().getRowType().getFieldList().get(rightIndex)).getType();
+                var keyType = typeFactory.leastRestrictive(com.google.common.collect.ImmutableList.of(leftType, rightType))
+                    ?? throw new java.lang.NullPointerException($"leastRestrictive returns null for {leftType} and {rightType}");
+                var keyClass = ClrTypes.Resolve(typeFactory.getJavaClass(keyType));
+
+                leftExpressions.Add(ClrEnumUtils.Convert(leftResult.PhysType.FieldReference(left_, leftIndex), keyClass));
+                rightExpressions.Add(ClrEnumUtils.Convert(rightResult.PhysType.FieldReference(right_, rightIndex), keyClass));
+            }
+
+            var leftKeyPhysType = leftResult.PhysType.Project(joinInfo.leftKeys, JavaRowFormat.LIST);
+            var rightKeyPhysType = rightResult.PhysType.Project(joinInfo.rightKeys, JavaRowFormat.LIST);
+
+            var leftKey = Expression.Lambda(leftKeyPhysType.Record(leftExpressions), left_);
+            var rightKey = Expression.Lambda(rightKeyPhysType.Record(rightExpressions), right_);
+
+            var predicate = Predicate(implementor, leftResult.PhysType, rightResult.PhysType, leftType_, rightType_);
+            var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);
+
+            // the keys are sorted ascending with nulls last, whatever the collation the inputs carry, because
+            // that is what the algorithm walks
+            var fieldCollations = new java.util.ArrayList(joinInfo.leftKeys.size());
+            for (int i = 0; i < joinInfo.leftKeys.size(); i++)
+                fieldCollations.add(new RelFieldCollation(i, RelFieldCollation.Direction.ASCENDING, RelFieldCollation.NullDirection.LAST));
+
+            // the comparator's key is nullable where either side's is, so that a null from one input is
+            // ordered against a value from the other
+            var typeBuilder = typeFactory.builder();
+            var leftFields = leftKeyPhysType.RelRowType.getFieldList();
+            var rightFields = rightKeyPhysType.RelRowType.getFieldList();
+            for (int i = 0; i < leftFields.size(); i++)
+            {
+                var leftField = (RelDataTypeField)leftFields.get(i);
+                var rightField = (RelDataTypeField)rightFields.get(i);
+                typeBuilder.add(leftField.getName(),
+                    typeFactory.createTypeWithNullability(leftField.getType(), leftField.getType().isNullable() || rightField.getType().isNullable()));
+            }
+
+            var comparatorPhysType = ClrPhysTypeImpl.Of(typeFactory, typeBuilder.build(), JavaRowFormat.LIST);
+            var comparator = comparatorPhysType.GenerateMergeJoinComparator(RelCollations.of(fieldCollations));
+
+            return implementor.Result(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.MergeJoinAsync.MakeGenericMethod(leftType_, rightType_, leftKey.ReturnType, rowType),
                     leftResult.Expression,
                     rightResult.Expression,
                     leftKey,

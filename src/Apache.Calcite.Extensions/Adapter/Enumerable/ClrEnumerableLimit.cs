@@ -79,10 +79,29 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var v = result.Expression;
 
             if (offset != null)
-                v = implementor.Call(implementor.Methods.Skip.MakeGenericMethod(rowType), v, Count(implementor, offset));
+                v = Expression.Call(null, ClrBuiltInMethod.Skip.MakeGenericMethod(rowType), v, Count(implementor, offset));
 
             if (fetch != null)
-                v = implementor.Call(implementor.Methods.Take.MakeGenericMethod(rowType), v, Count(implementor, fetch));
+                v = Expression.Call(null, ClrBuiltInMethod.Take.MakeGenericMethod(rowType), v, Count(implementor, fetch));
+
+            return implementor.Result(physType, v);
+        }
+
+        /// <inheritdoc />
+        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var child = (ClrEnumerableRel)getInput();
+            var result = implementor.VisitChild(this, 0, child, pref);
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), result.Format);
+
+            var rowType = result.PhysType.RowType;
+            var v = result.Expression;
+
+            if (offset != null)
+                v = ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.SkipAsync.MakeGenericMethod(rowType), v, Count(implementor, offset));
+
+            if (fetch != null)
+                v = ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.TakeAsync.MakeGenericMethod(rowType), v, Count(implementor, fetch));
 
             return implementor.Result(physType, v);
         }

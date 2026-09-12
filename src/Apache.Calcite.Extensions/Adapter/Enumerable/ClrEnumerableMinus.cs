@@ -51,8 +51,37 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
                 var rowType = result.PhysType.RowType;
 
-                minusExp = implementor.Call(
-                    implementor.Methods.Except.MakeGenericMethod(rowType),
+                minusExp = Expression.Call(null,
+                    ClrBuiltInMethod.Except.MakeGenericMethod(rowType),
+                    minusExp,
+                    result.Expression,
+                    result.PhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)),
+                    Expression.Constant(all));
+            }
+
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
+
+            return implementor.Result(physType, minusExp ?? throw new java.lang.IllegalStateException("minusExp"));
+        }
+
+        /// <inheritdoc />
+        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            Expression? minusExp = null;
+
+            for (int i = 0; i < getInputs().size(); i++)
+            {
+                var result = implementor.VisitChild(this, i, (ClrEnumerableRel)getInputs().get(i), pref);
+
+                if (minusExp == null)
+                {
+                    minusExp = result.Expression;
+                    continue;
+                }
+
+                var rowType = result.PhysType.RowType;
+
+                minusExp = ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.ExceptAsync.MakeGenericMethod(rowType),
                     minusExp,
                     result.Expression,
                     result.PhysType.Comparer() ?? Expression.Constant(null, typeof(org.apache.calcite.linq4j.function.EqualityComparer)),

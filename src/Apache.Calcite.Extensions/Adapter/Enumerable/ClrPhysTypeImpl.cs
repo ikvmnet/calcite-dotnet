@@ -335,13 +335,25 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var (selector, targetRowType) = Reformatter(targetFormat);
 
-            // whichever kind of sequence arrived, reformatted by that kind's Select. Which kind it is, is a
-            // property of the expression the caller already built, so there is nothing to be told and no
-            // implementor to ask: the selector is the same either way.
-            var methods = ClrBuiltInMethod.For(expression);
+            return Expression.Call(null,
+                ClrBuiltInMethod.Select.MakeGenericMethod(javaRowClass, targetRowType),
+                expression,
+                selector);
+        }
 
-            return methods.Call(
-                methods.Select.MakeGenericMethod(javaRowClass, targetRowType),
+        /// <inheritdoc />
+        public Expression ConvertToAsync(Expression expression, JavaRowFormat targetFormat)
+        {
+            ArgumentNullException.ThrowIfNull(expression);
+            ArgumentNullException.ThrowIfNull(targetFormat);
+
+            if (format == targetFormat)
+                return expression;
+
+            var (selector, targetRowType) = Reformatter(targetFormat);
+
+            return ClrBuiltInMethod.CallAsync(
+                ClrBuiltInMethod.SelectAsync.MakeGenericMethod(javaRowClass, targetRowType),
                 expression,
                 selector);
         }

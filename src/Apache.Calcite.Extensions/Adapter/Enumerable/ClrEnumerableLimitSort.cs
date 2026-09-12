@@ -75,8 +75,30 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var comparator = collationComparator ?? Expression.Constant(null, typeof(java.util.Comparator));
 
             return implementor.Result(physType,
-                implementor.Call(
-                    implementor.Methods.OrderByWithFetchAndOffset.MakeGenericMethod(sourceType, keySelector.ReturnType),
+                Expression.Call(null,
+                    ClrBuiltInMethod.OrderByWithFetchAndOffset.MakeGenericMethod(sourceType, keySelector.ReturnType),
+                    result.Expression,
+                    keySelector,
+                    comparator,
+                    offset == null ? Expression.Constant(0) : ClrEnumerableLimit.Count(implementor, offset),
+                    fetch == null ? Expression.Constant(int.MaxValue) : ClrEnumerableLimit.Count(implementor, fetch)));
+        }
+
+        /// <inheritdoc />
+        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var child = (ClrEnumerableRel)getInput();
+            var result = implementor.VisitChild(this, 0, child, pref);
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), result.Format);
+
+            var inputPhysType = result.PhysType;
+            var (keySelector, collationComparator) = inputPhysType.GenerateCollationKey(collation.getFieldCollations());
+            var sourceType = inputPhysType.RowType;
+
+            var comparator = collationComparator ?? Expression.Constant(null, typeof(java.util.Comparator));
+
+            return implementor.Result(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.OrderByWithFetchAndOffsetAsync.MakeGenericMethod(sourceType, keySelector.ReturnType),
                     result.Expression,
                     keySelector,
                     comparator,

@@ -177,7 +177,83 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 projectParameter);
 
             return implementor.Result(physType,
-                implementor.Call(implementor.Methods.Calc.MakeGenericMethod(inputType, outputType), result.Expression, predicate, selector));
+                Expression.Call(null, ClrBuiltInMethod.Calc.MakeGenericMethod(inputType, outputType), result.Expression, predicate, selector));
+        }
+
+        /// <inheritdoc />
+        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var typeFactory = implementor.TypeFactory;
+            var child = (ClrEnumerableRel)getInput();
+            var result = implementor.VisitChild(this, 0, child, pref);
+            var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.Prefer(result.Format));
+
+            // a calc is Rex and nothing else: the condition and the projects are both Calcite's to
+            // translate, and each takes its own physical type -- one to read a field of the input with, one
+            // to read the storage types of the output off. So both are built here, where they are used.
+            var inputCalcite = PhysTypeImpl.of(typeFactory, result.PhysType.RelRowType, result.PhysType.Format, false);
+            var outputCalcite = PhysTypeImpl.of(typeFactory, physType.RelRowType, physType.Format, false);
+
+            var inputJavaType = inputCalcite.getJavaRowType();
+            var inputType = result.PhysType.RowType;
+            var outputType = physType.RowType;
+
+            var rexBuilder = getCluster().getRexBuilder();
+            var mq = getCluster().getMetadataQuery();
+            var predicates = mq.getPulledUpPredicates(child);
+            var simplify = new RexSimplify(rexBuilder, predicates, RexUtil.EXECUTOR);
+            var program = base.program.normalize(rexBuilder, simplify);
+
+            var predicateType = typeof(Func<,>).MakeGenericType(inputType, typeof(bool));
+            Expression predicate = Expression.Constant(null, predicateType);
+
+            if (program.getCondition() != null)
+            {
+                // one row parameter per lambda, where Calcite has one for the whole enumerator
+                var row = J.Expressions.parameter(inputJavaType, "row");
+                var parameter = Expression.Parameter(inputType, "row");
+                implementor.Translator.Bind(row, parameter);
+
+                var builder = new J.BlockBuilder();
+                var condition = RexToLixTranslator.translateCondition(
+                    program,
+                    typeFactory,
+                    builder,
+                    new RexToLixTranslator.InputGetterImpl(row, inputCalcite),
+                    implementor.AllCorrelateVariables,
+                    implementor.Conformance);
+                builder.add(J.Expressions.return_(null, condition));
+
+                predicate = Expression.Lambda(
+                    predicateType,
+                    implementor.Translator.TranslateBody(builder.toBlock(), typeof(bool)),
+                    parameter);
+            }
+
+            var projectRow = J.Expressions.parameter(inputJavaType, "row");
+            var projectParameter = Expression.Parameter(inputType, "row");
+            implementor.Translator.Bind(projectRow, projectParameter);
+
+            var projectBuilder = new J.BlockBuilder();
+            var expressions = RexToLixTranslator.translateProjects(
+                program,
+                typeFactory,
+                implementor.Conformance,
+                projectBuilder,
+                null,
+                outputCalcite,
+                DataContext.ROOT,
+                new RexToLixTranslator.InputGetterImpl(projectRow, inputCalcite),
+                implementor.AllCorrelateVariables);
+            projectBuilder.add(J.Expressions.return_(null, outputCalcite.record(expressions)));
+
+            var selector = Expression.Lambda(
+                typeof(Func<,>).MakeGenericType(inputType, outputType),
+                implementor.Translator.TranslateBody(projectBuilder.toBlock(), outputType),
+                projectParameter);
+
+            return implementor.Result(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.CalcAsync.MakeGenericMethod(inputType, outputType), result.Expression, predicate, selector));
         }
 
     }

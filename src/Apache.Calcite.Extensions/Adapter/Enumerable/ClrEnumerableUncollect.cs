@@ -116,8 +116,74 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var rowType = physType.RowType;
 
             return implementor.Result(physType,
-                implementor.Call(
-                    implementor.Methods.SelectMany.MakeGenericMethod(sourceType, rowType),
+                Expression.Call(null,
+                    ClrBuiltInMethod.SelectMany.MakeGenericMethod(sourceType, rowType),
+                    result.Expression,
+                    ClrEnumUtils.Convert(implementor.Translator.Translate(lambda), typeof(org.apache.calcite.linq4j.function.Function1))));
+        }
+
+        /// <inheritdoc />
+        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var child = (ClrEnumerableRel)getInput();
+            var result = implementor.VisitChild(this, 0, child, pref);
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), JavaRowFormat.LIST);
+
+            var fieldCounts = new java.util.ArrayList();
+            var inputTypes = new java.util.ArrayList();
+            org.apache.calcite.linq4j.tree.Expression? flatListForSingleItem = null;
+
+            var fields = child.getRowType().getFieldList();
+            for (int i = 0; i < fields.size(); i++)
+            {
+                var type = ((RelDataTypeField)fields.get(i)).getType();
+
+                if (type is MapSqlType)
+                {
+                    fieldCounts.add(java.lang.Integer.valueOf(2));
+                    inputTypes.add(SqlFunctions.FlatProductInputType.MAP);
+                    continue;
+                }
+
+                var elementType = org.apache.calcite.sql.type.NonNullableAccessors.getComponentTypeOrThrow(type);
+                if (elementType.isStruct() == false)
+                {
+                    fieldCounts.add(java.lang.Integer.valueOf(-1));
+                    inputTypes.add(SqlFunctions.FlatProductInputType.SCALAR);
+                    continue;
+                }
+
+                // CALCITE-4063: one field, itself a struct of one item, and no ordinality, means the result is
+                // a scalar rather than a list of one
+                if (elementType.getFieldCount() == 1 && fields.size() == 1 && withOrdinality == false)
+                    flatListForSingleItem = org.apache.calcite.linq4j.tree.Expressions.call(BuiltInMethod.FLAT_LIST.method);
+                else
+                {
+                    fieldCounts.add(java.lang.Integer.valueOf(elementType.getFieldCount()));
+                    inputTypes.add(SqlFunctions.FlatProductInputType.LIST);
+                }
+            }
+
+            var counts = new int[fieldCounts.size()];
+            for (int i = 0; i < counts.Length; i++)
+                counts[i] = ((java.lang.Integer)fieldCounts.get(i)).intValue();
+
+            var types = new SqlFunctions.FlatProductInputType[inputTypes.size()];
+            for (int i = 0; i < types.Length; i++)
+                types[i] = (SqlFunctions.FlatProductInputType)inputTypes.get(i);
+
+            var lambda = flatListForSingleItem
+                ?? org.apache.calcite.linq4j.tree.Expressions.call(
+                    BuiltInMethod.FLAT_PRODUCT.method,
+                    org.apache.calcite.linq4j.tree.Expressions.constant(counts),
+                    org.apache.calcite.linq4j.tree.Expressions.constant(java.lang.Boolean.valueOf(withOrdinality)),
+                    org.apache.calcite.linq4j.tree.Expressions.constant(types));
+
+            var sourceType = result.PhysType.RowType;
+            var rowType = physType.RowType;
+
+            return implementor.Result(physType,
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.SelectManyAsync.MakeGenericMethod(sourceType, rowType),
                     result.Expression,
                     ClrEnumUtils.Convert(implementor.Translator.Translate(lambda), typeof(org.apache.calcite.linq4j.function.Function1))));
         }

@@ -77,14 +77,66 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     Expression.Call(null, MapMethod, Expression.NewArrayInit(typeof(object), args)),
                     row);
 
-                var mapped = implementor.Call(
-                    implementor.Methods.Select.MakeGenericMethod(sourceType, typeof(java.util.Map)),
+                var mapped = Expression.Call(null,
+                    ClrBuiltInMethod.Select.MakeGenericMethod(sourceType, typeof(java.util.Map)),
                     source,
                     selector);
 
-                // the sequence itself, where Calcite reads it into a list here. Each read has to be awaited
-                // on the asynchronous side and an expression tree cannot await, so the reading moved into the
-                // operator, which does it in this order and at this point either way
+                lists.add(Expression.Call(null, ClrBuiltInMethod.ToJavaList.MakeGenericMethod(typeof(java.util.Map)), mapped));
+            }
+
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.ARRAY));
+
+            var arguments = new Expression[lists.size()];
+            for (int i = 0; i < lists.size(); i++)
+                arguments[i] = (Expression)lists.get(i);
+
+            var combined = Expression.Call(null, CombineQueryResultsMethod, Expression.NewArrayInit(typeof(java.util.List), arguments));
+
+            return implementor.Result(physType,
+                Expression.Call(null, ClrBuiltInMethod.FromJavaList.MakeGenericMethod(typeof(object[])), combined));
+        }
+
+        /// <inheritdoc />
+        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var lists = new java.util.ArrayList();
+
+            for (int ord = 0; ord < getInputs().size(); ord++)
+            {
+                var input = (ClrEnumerableRel)getInputs().get(ord);
+                var result = implementor.VisitChild(this, ord, input, pref);
+
+                var source = result.Expression;
+                var sourceType = source.Type.GetGenericArguments()[0];
+                var row = Expression.Parameter(sourceType, $"row{ord}");
+
+                var fields = input.getRowType().getFieldList();
+                var fieldCount = fields.size();
+
+                // one name and one value per field, which is what SqlFunctions.map takes. A row of one field
+                // is the value itself, because its physical row format is SCALAR
+                var args = new Expression[fieldCount * 2];
+                for (int i = 0; i < fieldCount; i++)
+                {
+                    args[i * 2] = Expression.Constant(((RelDataTypeField)fields.get(i)).getName(), typeof(object));
+                    args[i * 2 + 1] = fieldCount > 1
+                        ? Expression.ArrayIndex(Expression.Convert(row, typeof(object[])), Expression.Constant(i))
+                        : ClrEnumUtils.Convert(row, typeof(object));
+                }
+
+                var selector = Expression.Lambda(
+                    typeof(Func<,>).MakeGenericType(sourceType, typeof(java.util.Map)),
+                    Expression.Call(null, MapMethod, Expression.NewArrayInit(typeof(object), args)),
+                    row);
+
+                var mapped = ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.SelectAsync.MakeGenericMethod(sourceType, typeof(java.util.Map)),
+                    source,
+                    selector);
+
+                // the sequence itself, where the synchronous node reads it into a list here. Each read has to
+                // be awaited and an expression tree cannot await, so the reading moves into the operator and
+                // what the tree carries is the input
                 lists.add(mapped);
             }
 
@@ -94,17 +146,16 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             for (int i = 0; i < lists.size(); i++)
                 arguments[i] = (Expression)lists.get(i);
 
-            // which function combines the lists stays this node's decision, as it is Calcite's; the operator
-            // only does the reading
+            // which function combines the lists stays this node's decision, as it is in the other
+            // convention; the operator only does the reading
             var read = Expression.Parameter(typeof(java.util.List[]), "lists");
             var combine = Expression.Lambda<Func<java.util.List[], java.util.List>>(
                 Expression.Call(null, CombineQueryResultsMethod, read),
                 read);
 
             return implementor.Result(physType,
-                implementor.Call(
-                    implementor.Methods.CombineQueryResults.MakeGenericMethod(typeof(object[])),
-                    Expression.NewArrayInit(implementor.SequenceType(typeof(java.util.Map)), arguments),
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.CombineQueryResultsAsync.MakeGenericMethod(typeof(object[])),
+                    Expression.NewArrayInit(typeof(System.Collections.Generic.IAsyncEnumerable<java.util.Map>), arguments),
                     combine));
         }
 

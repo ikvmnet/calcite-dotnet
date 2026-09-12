@@ -20,12 +20,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// Nothing here runs a query — the result is a plan, which
     /// <see cref="ClrEnumerableRelImplementor.ImplementRoot"/> turns into a lambda to compile.</para>
     ///
-    /// <para><b>The sequence a plan runs as is the implementor's, not the node's.</b> A node builds its call
-    /// through <see cref="ClrEnumerableRelImplementor.Call"/> over
-    /// <see cref="ClrEnumerableRelImplementor.Methods"/>, and the same <see cref="Implement"/> then yields an
-    /// <see cref="System.Collections.Generic.IEnumerable{T}"/> or an
-    /// <see cref="System.Collections.Generic.IAsyncEnumerable{T}"/> according to the implementor it was given.
-    /// Whoever constructs the implementor chooses; nothing in the plan, and nothing in the planner, knows the
+    /// <para><b>A node has two bodies, one per kind of sequence.</b> <see cref="Implement"/> is written
+    /// against the pulled operators — <c>ClrEnumerableDefaults</c>, reached by the unsuffixed members of
+    /// <c>ClrBuiltInMethod</c> — and <see cref="ImplementAsync"/> against the awaiting ones —
+    /// <c>ClrAsyncEnumerableDefaults</c>, reached by the <c>Async</c>-suffixed members of the same table.
+    /// They are two static bodies naming two static operator sets, not one body over a dispatch: the
+    /// operator a node calls is decided where the node is written and read there.
+    /// <see cref="ClrEnumerableRelImplementor"/> is constructed for one kind and calls only that body, so
+    /// whoever builds the implementor chooses; nothing in the plan, and nothing in the planner, knows the
     /// difference. That is why there is one convention and one set of rules rather than two of each.</para>
     ///
     /// <para><b><see cref="Implement"/> is required and <see cref="ImplementAsync"/> is optional</b>, which is
@@ -39,14 +41,16 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// converting between them is wrapping that expression.</b> The implementor does it: what a node hands
     /// up that is not the kind being built is wrapped, once. Going to asynchronous costs a state machine and
     /// no thread; going to synchronous blocks a thread per row, because an
-    /// <see cref="System.Collections.Generic.IEnumerable{T}"/> has nowhere to suspend.
+    /// <see cref="System.Collections.Generic.IEnumerable{T}"/> has nowhere to suspend.</para>
     ///
-    /// <para>The same wrapping is available to a node for its <em>inputs</em>, and a node whose body names
-    /// one operator set directly rather than going through <see cref="ClrEnumerableRelImplementor.Call"/>
-    /// needs it: <see cref="ClrEnumerableRelImplementor.VisitChild"/> answers in the kind the plan is being
-    /// built with, so such a body wraps what it gets before using it.
-    /// <c>ClrEnumerableTableFunctionScan</c> is the one node here that does, in one line, because a
-    /// generator of Calcite's is going to pull its rows.</para>
+    /// <para><b>That wrapping is what makes the default safe, and it is only safe for a leaf.</b>
+    /// <see cref="ClrEnumerableRelImplementor.VisitChild"/> answers in the kind the plan is being built
+    /// with, so a node with inputs that inherits the default composes an awaited input into a pulled
+    /// operator, and <c>Expression.Call</c> refuses it — measured, in both directions. A leaf has no input
+    /// to be handed the wrong kind, so it may write one body and let the implementor read its rows across;
+    /// every node here that has an input writes both. Where only the awaiting body exists at all — an
+    /// adapter whose client is asynchronous — write <see cref="Implement"/> as the delegation and let it be
+    /// the side that is read across.</para>
     /// </remarks>
     public interface ClrEnumerableRel : PhysicalNode
     {
@@ -56,33 +60,37 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </summary>
         /// <param name="implementor">Reach the inputs through
         /// <see cref="ClrEnumerableRelImplementor.VisitChild"/>, and build the return value with
-        /// <see cref="ClrEnumerableRelImplementor.Result"/>. Its
-        /// <see cref="ClrEnumerableRelImplementor.Methods"/> and
-        /// <see cref="ClrEnumerableRelImplementor.Call"/> are what make one body serve both kinds of
-        /// sequence.</param>
+        /// <see cref="ClrEnumerableRelImplementor.Result"/>.</param>
         /// <param name="pref">How the parent would prefer this node's rows represented. A node may return
         /// another format; the result says which it chose.</param>
         /// <returns>The plan, the physical type of its rows, and their format.</returns>
         /// <remarks>
-        /// The one member a node must write. It may hand up either kind of sequence whatever the implementor
-        /// is building: what does not match is read across, once, and the node is told nothing about it.
+        /// The one member a node must write, and the body of the pulled pair: it names
+        /// <c>ClrEnumerableDefaults</c> through the unsuffixed members of <c>ClrBuiltInMethod</c> and its
+        /// inputs arrive as <see cref="System.Collections.Generic.IEnumerable{T}"/>. It may hand up either
+        /// kind of sequence — what does not match is read across, once, and the node is told nothing about
+        /// it.
         /// </remarks>
         ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref);
 
         /// <summary>
         /// Builds the plan for this node where the plan being built awaits its rows.
         /// </summary>
-        /// <param name="implementor">An implementor whose <see cref="ClrEnumerableRelImplementor.Async"/> is
-        /// set, so that <see cref="ClrEnumerableRelImplementor.Call"/> lands on the awaiting operators.</param>
+        /// <param name="implementor">The implementor of the plan being built, whose
+        /// <see cref="ClrEnumerableRelImplementor.VisitChild"/> answers in
+        /// <see cref="System.Collections.Generic.IAsyncEnumerable{T}"/>.</param>
         /// <param name="pref">How the parent would prefer this node's rows represented.</param>
         /// <returns>The plan, the physical type of its rows, and their format.</returns>
         /// <remarks>
-        /// Optional, and by default <see cref="Implement"/> on the same implementor: a body written through
-        /// <see cref="ClrEnumerableRelImplementor.Call"/> is already the awaiting one, and a body that is not
-        /// hands up a synchronous sequence which is then read across. Override it where the node's two
-        /// bodies genuinely differ — an adapter with a separate awaiting client, a leaf whose SPI has two
-        /// halves — and write <see cref="Implement"/> as a delegation to it where there is no synchronous
-        /// body to write at all.
+        /// The awaiting body: the same algorithm named against <c>ClrAsyncEnumerableDefaults</c>, through
+        /// the <c>Async</c>-suffixed members of <c>ClrBuiltInMethod</c>, and built with
+        /// <c>ClrBuiltInMethod.CallAsync</c> so that the trailing cancellation token an expression tree will
+        /// not default is passed.
+        ///
+        /// <para>Optional, and by default <see cref="Implement"/>, whose sequence is then read across. That
+        /// default is for a leaf: a node with inputs that takes it composes an awaited input into a pulled
+        /// operator and <c>Expression.Call</c> refuses it. Every node here that has an input writes this
+        /// body.</para>
         /// </remarks>
         ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref) => Implement(implementor, pref);
 

@@ -27,9 +27,9 @@ namespace Apache.Calcite.Adapter.AdoNet
     /// reads into a block; this reads each field as an expression and builds the context directly, so no
     /// block is needed and nothing is left to translate.</para>
     ///
-    /// <para>One class serves a plan of either kind of sequence, because everything it touches is about a
-    /// <em>row</em> — the getter and the translator — and a row is the same thing whether the plan awaits.
-    /// Nothing here is about a sequence.</para>
+    /// <para>One class serves both of a node's bodies because everything it touches is about a <em>row</em> —
+    /// the getter and the translator — and a row is the same thing whether the plan awaits. Nothing here is
+    /// about a sequence.</para>
     /// </remarks>
     public class AdoClrCorrelationDataContextBuilder : IAdoCorrelationDataContextBuilder
     {

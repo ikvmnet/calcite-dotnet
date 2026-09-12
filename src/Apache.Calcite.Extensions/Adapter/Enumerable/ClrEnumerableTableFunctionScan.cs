@@ -71,6 +71,25 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return DefaultTableFunctionImplement(implementor);
         }
 
+        /// <inheritdoc />
+        /// <remarks>
+        /// The window's rows are read by a generator of Calcite's, which takes a linq4j <c>Enumerable</c>
+        /// and pulls it, so this body's only difference from <see cref="Implement"/> is that it pulls its
+        /// input first, blocking a thread per row. Generated Java cannot await and there is no version of
+        /// this that suspends. Everything above the node stays asynchronous, because the implementor reads
+        /// what this hands up back across.
+        ///
+        /// <para>A table function the schema defines has no input at all — the call yields the sequence —
+        /// so that half is the same body in both modes.</para>
+        /// </remarks>
+        public ClrEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            if (IsImplementorDefined((RexCall)getCall()))
+                return TvfImplementorBasedImplementAsync(implementor, pref);
+
+            return DefaultTableFunctionImplement(implementor);
+        }
+
         /// <summary>
         /// Returns whether the call is one <c>RexImpTable</c> implements — TUMBLE, HOP or SESSION — rather
         /// than one the schema defines.
@@ -105,22 +124,54 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </remarks>
         ClrEnumerableResult TvfImplementorBasedImplement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
-            var typeFactory = implementor.TypeFactory;
             var child = (ClrEnumerableRel)getInputs().get(0);
             var result = implementor.VisitChild(this, 0, child, pref);
+
+            return TvfImplementorBasedWindow(implementor, pref, result, result.Expression);
+        }
+
+        /// <summary>
+        /// Implements a window table function whose input arrives awaited.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <param name="pref"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The one line that differs: the input is pulled before it is handed to Calcite's generator, which
+        /// blocks a thread per row and is the only thing that can be done, a linq4j <c>Enumerable</c> having
+        /// nowhere to suspend.
+        /// </remarks>
+        ClrEnumerableResult TvfImplementorBasedImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        {
+            var child = (ClrEnumerableRel)getInputs().get(0);
+            var result = implementor.VisitChild(this, 0, child, pref);
+
+            return TvfImplementorBasedWindow(implementor, pref, result,
+                Expression.Call(null,
+                    ClrBuiltInMethod.ToEnumerable.MakeGenericMethod(result.PhysType.RowType),
+                    result.Expression));
+        }
+
+        /// <summary>
+        /// Builds the window over an input already in hand as a pulled sequence.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <param name="pref"></param>
+        /// <param name="result">What the input's body handed up, read for its physical type and format.</param>
+        /// <param name="pulled">The input's rows as an <see cref="System.Collections.Generic.IEnumerable{T}"/>
+        /// of its physical row type.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Everything from here down is Calcite's and is linq4j, so both bodies share it. It is not a
+        /// dispatch: which sequence <paramref name="pulled"/> was made from is settled by the caller.
+        /// </remarks>
+        ClrEnumerableResult TvfImplementorBasedWindow(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref, ClrEnumerableResult result, Expression pulled)
+        {
+            var typeFactory = implementor.TypeFactory;
             var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.Prefer(result.Format));
 
             var sourceType = result.PhysType.RowType;
-
-            // the window's rows are read by a generator of Calcite's, which takes a linq4j Enumerable and
-            // pulls it. An asynchronous input therefore has to be read across first, blocking a thread per
-            // row: generated Java cannot await, so there is no version of this that suspends. Everything
-            // above this node stays asynchronous.
-            var pulled = implementor.Async
-                ? Expression.Call(null, ToEnumerableMethod.MakeGenericMethod(sourceType), result.Expression)
-                : result.Expression;
-
-            var source = Expression.Call(null, ToJavaMethod.MakeGenericMethod(sourceType), pulled);
+            var source = Expression.Call(null, ClrBuiltInMethod.ToJava.MakeGenericMethod(sourceType), pulled);
 
             var input_ = J.Expressions.parameter((java.lang.Class)typeof(org.apache.calcite.linq4j.Enumerable), "_input");
             var inputParameter = Expression.Parameter(typeof(org.apache.calcite.linq4j.Enumerable), "_input");
@@ -147,7 +198,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var rowType = physType.RowType;
 
             return implementor.Result(physType,
-                implementor.Call(implementor.Methods.FromJava.MakeGenericMethod(rowType), windowed));
+                Expression.Call(null, ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType), windowed));
         }
 
         /// <summary>
@@ -183,8 +234,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var rowType = physType.RowType;
 
             return implementor.Result(physType,
-                implementor.Call(
-                    implementor.Methods.FromJava.MakeGenericMethod(rowType),
+                Expression.Call(null,
+                    ClrBuiltInMethod.FromJava.MakeGenericMethod(rowType),
                     implementor.Translator.TranslateBody(block.toBlock(), typeof(org.apache.calcite.linq4j.Enumerable))));
         }
 
@@ -192,20 +243,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// Returns whether the function yields a <see cref="QueryableTable"/>.
         /// </summary>
         /// <returns></returns>
-        /// <summary>
-        /// <see cref="Apache.Calcite.Extensions.Interop.JavaSequences.ToJava"/>, which hands a synchronous
-        /// sequence to linq4j.
-        /// </summary>
-        static readonly System.Reflection.MethodInfo ToJavaMethod = typeof(Apache.Calcite.Extensions.Interop.JavaSequences).GetMethod(nameof(Apache.Calcite.Extensions.Interop.JavaSequences.ToJava))
-            ?? throw new System.InvalidOperationException("'ToJava' is missing.");
-
-        /// <summary>
-        /// <see cref="Apache.Calcite.Extensions.Runtime.ClrSequences.ToEnumerable{TSource}"/>, which blocks
-        /// a thread per row.
-        /// </summary>
-        static readonly System.Reflection.MethodInfo ToEnumerableMethod = typeof(Apache.Calcite.Extensions.Runtime.ClrSequences).GetMethod(nameof(Apache.Calcite.Extensions.Runtime.ClrSequences.ToEnumerable))
-            ?? throw new System.InvalidOperationException("'ToEnumerable' is missing.");
-
         bool IsQueryable()
         {
             if (getCall() is not RexCall call)

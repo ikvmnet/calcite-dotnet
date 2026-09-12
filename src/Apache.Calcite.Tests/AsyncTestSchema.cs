@@ -153,6 +153,37 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
+        /// Timestamps an hour apart and one inside an hour, which is what a window table function needs to
+        /// have anything to put in two buckets.
+        /// </summary>
+        /// <remarks>
+        /// The same four rows the synchronous differential tests' EVENTS table holds, so that the two
+        /// harnesses put the same question to TUMBLE, HOP and SESSION.
+        /// </remarks>
+        public static readonly object?[][] Events =
+        [
+            [java.lang.Long.valueOf(EventsBase), java.lang.Integer.valueOf(1)],
+            [java.lang.Long.valueOf(EventsBase + (EventsHour / 6)), java.lang.Integer.valueOf(2)],
+            [java.lang.Long.valueOf(EventsBase + EventsHour), java.lang.Integer.valueOf(3)],
+            [java.lang.Long.valueOf(EventsBase + (EventsHour * 2) + (EventsHour / 2)), java.lang.Integer.valueOf(4)],
+        ];
+
+        const long EventsHour = 3600000L;
+
+        const long EventsBase = 1704067200000L;
+
+        /// <summary>
+        /// Returns the EVENTS row type.
+        /// </summary>
+        public static RelDataType EventsRowType(RelDataTypeFactory typeFactory)
+        {
+            return typeFactory.builder()
+                .add("ROWTIME", typeFactory.createSqlType(SqlTypeName.TIMESTAMP))
+                .add("ID", typeFactory.createSqlType(SqlTypeName.INTEGER))
+                .build();
+        }
+
+        /// <summary>
         /// Returns the SORTED row type.
         /// </summary>
         public static RelDataType SortedRowType(RelDataTypeFactory typeFactory)
