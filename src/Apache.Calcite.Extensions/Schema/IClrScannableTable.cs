@@ -30,12 +30,11 @@ namespace Apache.Calcite.Extensions.Schema
     ///
     /// <para><b>A table chooses which halves it writes.</b> Rows that are already in hand: write
     /// <see cref="Scan"/> and take the default. Rows that arrive over a wire: write both, so that neither
-    /// caller pays for the other. Rows that can <em>only</em> be awaited: write
-    /// <see cref="ScanAsync"/> and write <see cref="Scan"/> as
-    /// <see cref="ClrSequences.ToEnumerable{TSource}"/> over it, which is why that method is public.
-    /// Leaving <see cref="ScanAsync"/> to the default in that last case is the one arrangement to avoid: the
-    /// default would wrap a blocking wrap, and a caller who asked to await would get a thread blocked per
-    /// row for nothing.</para>
+    /// caller pays for the other. Rows that can <em>only</em> be awaited: write <see cref="ScanAsync"/>, and
+    /// write <see cref="Scan"/> by draining it, with whatever the target framework offers. Leaving
+    /// <see cref="ScanAsync"/> to the default in that last case is the one arrangement to avoid: the default
+    /// would wrap a blocking drain, and a caller who asked to await would get a thread blocked per row for
+    /// nothing.</para>
     ///
     /// <para>The other half of Calcite's table SPI is <see cref="QueryableTable"/>, whose counterpart here
     /// is <see cref="IClrQueryableTable"/>: a table states an element type of its own and hands back an

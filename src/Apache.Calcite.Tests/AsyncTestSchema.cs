@@ -301,7 +301,7 @@ namespace Apache.Calcite.Tests
         /// the interface default in place instead would be the mistake: it would wrap this, and a caller who
         /// asked to await would get the blocking read back with a state machine around it.
         /// </remarks>
-        public IEnumerable<object?[]> Scan(DataContext root) => Apache.Calcite.Extensions.Runtime.ClrSequences.ToEnumerable(ScanAsync(root));
+        public IEnumerable<object?[]> Scan(DataContext root) => BlockingDrain.Of(ScanAsync(root));
 
         async IAsyncEnumerable<object?[]> Rows([EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
@@ -328,6 +328,67 @@ namespace Apache.Calcite.Tests
                 await Task.Yield();
 
                 DisposedAsynchronously = true;
+            }
+        }
+
+    }
+
+
+    /// <summary>
+    /// Drains an awaited sequence on the calling thread.
+    /// </summary>
+    /// <remarks>
+    /// What a table whose rows only ever arrive asynchronously has to write for its <c>Scan</c>. It is here
+    /// rather than reached out of the convention on purpose: <c>ClrSequences</c> is internal, an adapter
+    /// outside this repository cannot call it, and a test table that did would be modelling something no
+    /// real implementer can write.
+    ///
+    /// <para><b>It is not four lines, and the first version written here was.</b> That one blocked on
+    /// <c>MoveNextAsync</c> directly and deadlocked
+    /// <c>ShouldReadAnAsynchronousLeafSynchronouslyUnderASynchronizationContext</c> — thirty seconds and a
+    /// hung thread. The operators of this convention await without <c>ConfigureAwait(false)</c>, so the
+    /// continuation is promised to whatever context is current at the moment of suspension, which is inside
+    /// <c>MoveNextAsync</c>'s synchronous phase and therefore before any wait begins. The context has to be
+    /// nulled <em>before</em> the call, not around the wait. <c>ClrSequences.ToEnumerable</c> says the same
+    /// thing and says it was measured; this is the second measurement.</para>
+    /// </remarks>
+    static class BlockingDrain
+    {
+
+        public static IEnumerable<T> Of<T>(IAsyncEnumerable<T> source)
+        {
+            var e = source.GetAsyncEnumerator();
+
+            try
+            {
+                while (Suppressed(() => e.MoveNextAsync().AsTask().GetAwaiter().GetResult()))
+                    yield return e.Current;
+            }
+            finally
+            {
+                Suppressed(() =>
+                {
+                    e.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    return true;
+                });
+            }
+        }
+
+        static bool Suppressed(System.Func<bool> body)
+        {
+            var context = SynchronizationContext.Current;
+            if (context == null)
+                return body();
+
+            SynchronizationContext.SetSynchronizationContext(null);
+
+            try
+            {
+                return body();
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(context);
             }
         }
 

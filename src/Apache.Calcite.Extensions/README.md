@@ -101,8 +101,7 @@ A Spark handler is not supported: `ToBindable` throws `UnsupportedOperationExcep
 | `IClrBindable` / `IClrAsyncBindable` | A compiled plan. `Bind(DataContext)` returns the rows; `ElementType` says what one row is. |
 | `ClrEnumerablePrefer` | How a caller wants rows represented — `Array` is what a prepared statement asks for. |
 | `ClrEnumerableRelFactories` | `RelBuilder` factories producing nodes of this convention. |
-| `IClrScannableTable` / `IClrQueryableTable` | The table SPI: a table hands back .NET sequences rather than linq4j ones. One interface per table kind, carrying both halves. `Scan` and `GetExpression` are required; `ScanAsync` and `GetAsyncExpression` default to reading them across, and a table whose rows only ever arrive asynchronously overrides those and builds the required half with `ClrSequences.ToEnumerable`. |
-| `ClrSequences` | `ToEnumerable` and `ToAsyncEnumerable`, the two reads across. Public because the table SPI asks a one-sided table to use one. |
+| `IClrScannableTable` / `IClrQueryableTable` | The table SPI: a table hands back .NET sequences rather than linq4j ones. One interface per table kind, carrying both halves. `Scan` and `GetExpression` are required; `ScanAsync` and `GetAsyncExpression` default to reading them across. A table whose rows only ever arrive asynchronously overrides those and drains its own sequence for the required half. |
 | `ClrEnumerableRel` | The interface every node of this convention implements. Two bodies: `Implement` over the pulled operators, required, and `ImplementAsync` over the awaiting ones, optional and defaulting to `Implement`. That default is for a leaf — a node with inputs that takes it composes an awaited input into a pulled operator. |
 | `CalciteConnectionProperties` | Typed .NET properties over Calcite's `java.util.Properties`. |
 | `CalciteConnectionPropertiesSchemaMap` | The `schema.*` sub-properties, as a dictionary. |

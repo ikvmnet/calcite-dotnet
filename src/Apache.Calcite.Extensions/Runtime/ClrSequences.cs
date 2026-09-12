@@ -23,12 +23,12 @@ namespace Apache.Calcite.Extensions.Runtime
     /// sync-over-async the asynchronous convention was written to avoid. Both exist because a plan that
     /// cannot be assembled is worse than one that is slow.</para>
     ///
-    /// <para><b>Public because the table SPI asks for it.</b> An
-    /// <see cref="Apache.Calcite.Extensions.Schema.IClrScannableTable"/> whose rows are only ever awaited
-    /// still has to answer <c>Scan</c>, and <see cref="ToEnumerable{TSource}"/> is how it does that. A
-    /// contract that requires a conversion has to hand out the conversion.</para>
+    /// <para><b>Internal, and it stays internal.</b> It is what this convention's own plans are built from,
+    /// not a utility for an adapter. A table outside this assembly that has to bridge its own two halves
+    /// writes that itself, in whatever its target framework gives it; there is nothing here it needs, and
+    /// exposing the plan's own operators would invite an adapter to build against them.</para>
     /// </remarks>
-    public static class ClrSequences
+    static class ClrSequences
     {
 
         /// <summary>

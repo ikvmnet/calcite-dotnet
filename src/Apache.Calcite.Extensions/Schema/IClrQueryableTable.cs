@@ -25,8 +25,8 @@ namespace Apache.Calcite.Extensions.Schema
     /// exactly as for <see cref="IClrScannableTable"/> and for the nodes of this convention. A table writes
     /// the halves it has; the default builds the awaiting expression by reading the pulled one across, which
     /// costs a state machine and no thread. A table whose reading can only be awaited writes
-    /// <see cref="GetAsyncExpression"/> and builds <see cref="GetExpression"/> from it with
-    /// <see cref="ClrSequences.ToEnumerable{TSource}"/>.</para>
+    /// <see cref="GetAsyncExpression"/> and builds <see cref="GetExpression"/> as a call to a drain of its
+    /// own.</para>
     ///
     /// <para><c>QueryableTable.asQueryable</c> has no counterpart and is not an omission: a linq4j
     /// <c>Queryable</c> is Java's LINQ, translated by <c>LixToRelTranslator</c>, which is package-private

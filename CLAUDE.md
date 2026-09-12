@@ -323,9 +323,18 @@ the rows will be read, and a plan cache would hold one entry for a statement rat
   asked whether the table was of the *other* kind before asking whether it was of its own, so a table
   implementing both scannable interfaces sent the two builders into mutual recursion and **overflowed the
   stack while the plan was being built** — measured, not reasoned. One interface makes that unrepresentable
-  and deletes both cross branches. An awaiting-only table writes `Scan` over its own `ScanAsync` with
-  `ClrSequences.ToEnumerable`, which is why `ClrSequences` is public: a contract that requires a conversion
-  has to hand out the conversion.
+  and deletes both cross branches. An awaiting-only table writes `Scan` by draining its own `ScanAsync`.
+  **The operator tables stay internal** — `ClrEnumerableDefaults`, `ClrAsyncEnumerableDefaults`,
+  `ClrBuiltInMethod` and `ClrSequences` are what this convention's plans are built from, not a toolkit for
+  an adapter, and an adapter builds against its own operations. `ClrSequences` was made public for one
+  commit on the argument that a contract requiring a conversion has to hand out the conversion, and put
+  back. **Know what that costs the implementer**, because the obvious drain is wrong: blocking on
+  `MoveNextAsync` directly deadlocks under a synchronization context, since these operators await without
+  `ConfigureAwait(false)` and the continuation is promised at the moment of suspension, inside the call and
+  before any wait. The context has to be nulled before the call. Measured twice: once when
+  `ClrSequences.ToEnumerable` was written, and again when a four-line drain in `AsyncTestSchema` hung
+  `ShouldReadAnAsynchronousLeafSynchronouslyUnderASynchronizationContext` for thirty seconds. An
+  awaiting-only table has to get that right, and the test tables here show the shape.
 - **What that cost is a test.** The read across used to be written into the plan by the scan, so
   `ClrEnumerableModeTests` could count bridging calls in the compiled tree and require exactly one, at the
   leaf. The crossing is inside the table now, so the tree shows a plain call to `Scan` or `ScanAsync` and
