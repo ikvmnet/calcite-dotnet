@@ -15,18 +15,22 @@ namespace Apache.Calcite.Data.Internal
     {
 
         readonly IAsyncEnumerator<object>? _enumerator;
+        readonly StatementCancellation? _cancellation;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
         /// <param name="signature"></param>
-        /// <param name="enumerator">The plan's enumerator, already given the caller's cancellation token,
+        /// <param name="enumerator">The plan's enumerator, already given the statement's cancellation token,
         /// or <see langword="null"/> where there is nothing to read.</param>
         /// <param name="recordsAffected"></param>
-        public CalciteAsyncEnumerableResult(IClrPrepare.Signature signature, IAsyncEnumerator<object>? enumerator, long recordsAffected = -1) :
+        /// <param name="cancellation">The statement's cancellation, which this owns and disposes: it lives
+        /// as long as the rows do.</param>
+        public CalciteAsyncEnumerableResult(IClrPrepare.Signature signature, IAsyncEnumerator<object>? enumerator, long recordsAffected = -1, StatementCancellation? cancellation = null) :
             base(signature, recordsAffected)
         {
             _enumerator = enumerator;
+            _cancellation = cancellation;
         }
 
         /// <inheritdoc />
@@ -71,20 +75,35 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="cancellationToken"></param>
         /// <returns>Whether there was a row.</returns>
         /// <remarks>
-        /// <b>The token that reaches the leaf is the one given to <c>ExecuteReaderAsync</c>, not this one.</b>
-        /// An <see cref="IAsyncEnumerable{T}"/> takes its token at
-        /// <see cref="IAsyncEnumerable{T}.GetAsyncEnumerator"/>, which happened once when this was made;
-        /// <c>DbDataReader.ReadAsync</c> offers a token per call and there is nowhere to put a later one. So
-        /// a token passed only here stops the reader between rows — which is what the check below does — but
-        /// cannot interrupt a table already waiting on I/O.
+        /// <b>The token the leaf is enumerating under is the statement's, fixed at
+        /// <see cref="IAsyncEnumerable{T}.GetAsyncEnumerator"/> when this was made.</b>
+        /// <c>DbDataReader.ReadAsync</c> offers a token per call and <c>MoveNextAsync</c> takes none, so a
+        /// token given here cannot be handed to the sequence; what it gets instead is a registration against
+        /// the statement's cancellation, for the duration of the call. Cancelling it therefore cancels the
+        /// statement rather than the row — there is no cancelling one <c>MoveNextAsync</c> out of a
+        /// sequence — and the reader is dead afterwards rather than resumable.
         ///
-        /// <para>Nothing can be done about that without giving every operator a token the plan threads,
-        /// which is the design this convention deliberately does not have: a token enters at the enumerator
-        /// and the language carries it the rest of the way.</para>
+        /// <para><b>Every call takes its own token, and the registration lasts only that call.</b> So a
+        /// reader can be read repeatedly under a different token each time, and a token cancelled after its
+        /// read has returned reaches nothing — the registration is already gone. What one read's token
+        /// cannot do is leave the reader usable after cancelling it: the statement is what gets cancelled,
+        /// because that is the only thing there is to cancel.</para>
+        ///
+        /// <para>That is what <c>SqlDataReader.ReadAsync</c> does, read rather than remembered: it registers
+        /// the token it is given against <c>SqlCommand.Cancel</c>, scoped to the call with a disposable
+        /// holder. <b>It registers before it checks whether the token is already cancelled</b>, and says
+        /// why — "to catch any already expired tokens to be able to trigger cancellation event" — so a read
+        /// asked for under a dead token kills the statement rather than being quietly declined. The order
+        /// here is the same, and it is the order that makes a token cancelled a moment before the call and a
+        /// moment after it do the same thing.</para>
         /// </remarks>
         public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
         {
             ThrowIfDisposed();
+
+            // registered before the check, as SqlDataReader.ReadAsync registers before its own
+            using var registration = _cancellation?.Register(cancellationToken) ?? default;
+
             cancellationToken.ThrowIfCancellationRequested();
 
             if (_enumerator is null || await _enumerator.MoveNextAsync().ConfigureAwait(false) == false)
@@ -104,25 +123,32 @@ namespace Apache.Calcite.Data.Internal
         /// </remarks>
         protected override void Release()
         {
-            if (_enumerator is null)
-                return;
-
-            var context = SynchronizationContext.Current;
-            if (context is null)
-            {
-                Wait(_enumerator.DisposeAsync());
-                return;
-            }
-
-            SynchronizationContext.SetSynchronizationContext(null);
-
             try
             {
-                Wait(_enumerator.DisposeAsync());
+                if (_enumerator is null)
+                    return;
+
+                var context = SynchronizationContext.Current;
+                if (context is null)
+                {
+                    Wait(_enumerator.DisposeAsync());
+                    return;
+                }
+
+                SynchronizationContext.SetSynchronizationContext(null);
+
+                try
+                {
+                    Wait(_enumerator.DisposeAsync());
+                }
+                finally
+                {
+                    SynchronizationContext.SetSynchronizationContext(context);
+                }
             }
             finally
             {
-                SynchronizationContext.SetSynchronizationContext(context);
+                _cancellation?.Dispose();
             }
 
             static void Wait(ValueTask pending)
@@ -137,8 +163,15 @@ namespace Apache.Calcite.Data.Internal
         /// <inheritdoc />
         protected override async ValueTask ReleaseAsync()
         {
-            if (_enumerator is not null)
-                await _enumerator.DisposeAsync().ConfigureAwait(false);
+            try
+            {
+                if (_enumerator is not null)
+                    await _enumerator.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                _cancellation?.Dispose();
+            }
         }
 
     }

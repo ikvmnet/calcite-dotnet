@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Apache.Calcite.Extensions.Prepare;
 
 using java.util;
-using java.util.concurrent.atomic;
 
 using org.apache.calcite;
 using org.apache.calcite.adapter.java;
@@ -269,11 +268,11 @@ namespace Apache.Calcite.Data.Internal
         /// the statement was planned against, not the live root, so a statement executes against what
         /// it planned against. Null for DDL, as upstream's is.
         /// </summary>
-        void Bind(CalciteExecuteRequest request, IClrPrepare.Signature signature, out DataContext dataContext, out AtomicBoolean cancelFlag)
+        void Bind(CalciteExecuteRequest request, IClrPrepare.Signature signature, CancellationToken cancellationToken, out DataContext dataContext, out StatementCancellation cancellation)
         {
-            cancelFlag = new AtomicBoolean(false);
+            cancellation = new StatementCancellation(cancellationToken);
             var boundParameters = ParameterBinder.Bind(request.Parameters);
-            dataContext = new StatementDataContext(signature.RootSchema, _typeFactory, _config, _defaultSchemaPath, cancelFlag, request.CommandTimeoutSeconds * 1000L, boundParameters, signature.InternalParameters);
+            dataContext = new StatementDataContext(signature.RootSchema, _typeFactory, _config, _defaultSchemaPath, cancellation.CancelFlag, request.CommandTimeoutSeconds * 1000L, boundParameters, signature.InternalParameters);
         }
 
         /// <summary>
@@ -377,28 +376,34 @@ namespace Apache.Calcite.Data.Internal
 
             ThrowIfDisposed();
 
+            // acquisition sends the statement, and for an adapter leaf it opens a connection to send it on,
+            // so a token already cancelled has to stop here rather than at the first read
+            cancellationToken.ThrowIfCancellationRequested();
+
             var closeables = ActivateHooks(request.Hooks);
 
             try
             {
                 var signature = Plan(request);
-                Bind(request, signature, out var dataContext, out _);
+                Bind(request, signature, cancellationToken, out var dataContext, out var cancellation);
 
+                // the result owns the cancellation from here: it lives as long as the rows do, and a reader
+                // holds it open long after this method has returned
                 if (_synchronous)
                 {
                     IEnumerator<object>? enumerator = null;
                     if (!IsDdl(signature.StatementType))
                         enumerator = signature.Bind(dataContext).GetEnumerator();
 
-                    return new CalciteEnumerableResult(signature, enumerator, 0);
+                    return new CalciteEnumerableResult(signature, enumerator, 0, cancellation);
                 }
                 else
                 {
                     IAsyncEnumerator<object>? enumerator = null;
                     if (!IsDdl(signature.StatementType))
-                        enumerator = signature.BindAsync(dataContext).GetAsyncEnumerator(cancellationToken);
+                        enumerator = signature.BindAsync(dataContext).GetAsyncEnumerator(cancellation.Token);
 
-                    return new CalciteAsyncEnumerableResult(signature, enumerator, 0);
+                    return new CalciteAsyncEnumerableResult(signature, enumerator, 0, cancellation);
                 }
             }
             catch (CalciteException)
@@ -447,7 +452,8 @@ namespace Apache.Calcite.Data.Internal
             try
             {
                 var signature = Plan(request);
-                Bind(request, signature, out var dataContext, out var cancelFlag);
+                Bind(request, signature, cancellationToken, out var dataContext, out var cancellation);
+                using var _ = cancellation;
 
                 var statementType = signature.StatementType;
 
@@ -465,19 +471,15 @@ namespace Apache.Calcite.Data.Internal
                 else
                 {
                     // DML (INSERT/UPDATE/DELETE/MERGE): drain the enumerator to trigger execution.
-                    // Wire the cancellation token to the Calcite cancel flag only here, where we
-                    // are enumerating and need Calcite's check-points to be able to interrupt the
-                    // loop. The registration is scoped to this block only.
                     // RelOptUtil.createDmlRowType gives DML one ROWCOUNT column, and
                     // Meta.CursorFactory.deduce answers OBJECT for a single column before it looks at
                     // the element type -- measured -- so the row is the boxed count itself and not an
                     // array holding it. The array branch below is for a plan that says otherwise.
                     recordsAffected = 0;
-                    using var _ = cancellationToken.Register(() => cancelFlag.set(true));
 
                     var cur = _synchronous
                         ? FirstRow(signature.Bind(dataContext))
-                        : FirstRow(signature.BindAsync(dataContext), cancellationToken);
+                        : FirstRow(signature.BindAsync(dataContext), cancellation.Token);
 
                     if (cur is object[] row && row.Length > 0)
                         recordsAffected = ToInt64(row[0]);

@@ -18,6 +18,7 @@ namespace Apache.Calcite.Data.Internal
     {
 
         readonly IEnumerator<object>? _enumerator;
+        readonly StatementCancellation? _cancellation;
 
         /// <summary>
         /// Initializes a new instance.
@@ -26,10 +27,12 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="enumerator">The plan's enumerator, or <see langword="null"/> where there is nothing
         /// to read — a DDL statement has already taken effect, and a DML one reports a count.</param>
         /// <param name="recordsAffected"></param>
-        public CalciteEnumerableResult(IClrPrepare.Signature signature, IEnumerator<object>? enumerator, long recordsAffected = -1) :
+        /// <param name="cancellation">The statement's cancellation, which this owns and disposes.</param>
+        public CalciteEnumerableResult(IClrPrepare.Signature signature, IEnumerator<object>? enumerator, long recordsAffected = -1, StatementCancellation? cancellation = null) :
             base(signature, recordsAffected)
         {
             _enumerator = enumerator;
+            _cancellation = cancellation;
         }
 
         /// <inheritdoc />
@@ -48,9 +51,19 @@ namespace Apache.Calcite.Data.Internal
         /// <see cref="Read"/> in a completed task. There is nothing asynchronous here to be over: a
         /// synchronous plan produces its rows synchronously, and saying so is what lets a caller written
         /// against <c>ReadAsync</c> work over one.
+        ///
+        /// <para>The token is registered against the statement's cancellation for the duration of the read,
+        /// as it is on the awaiting result. It cannot interrupt <see cref="Read"/> itself — a pulled plan
+        /// carries no token and has nowhere to suspend — but it does set
+        /// <c>DataContext.Variable.CANCEL_FLAG</c>, which is the one channel a pulled plan has and what a
+        /// table of Calcite's polls between rows. Firing it takes another thread, which is the only way a
+        /// blocking read can be cancelled at all.</para>
         /// </remarks>
         public override Task<bool> ReadAsync(CancellationToken cancellationToken)
         {
+            // registered before the check, as on the awaiting result and as SqlDataReader.ReadAsync does
+            using var registration = _cancellation?.Register(cancellationToken) ?? default;
+
             cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult(Read());
@@ -59,7 +72,14 @@ namespace Apache.Calcite.Data.Internal
         /// <inheritdoc />
         protected override void Release()
         {
-            _enumerator?.Dispose();
+            try
+            {
+                _enumerator?.Dispose();
+            }
+            finally
+            {
+                _cancellation?.Dispose();
+            }
         }
 
         /// <inheritdoc />

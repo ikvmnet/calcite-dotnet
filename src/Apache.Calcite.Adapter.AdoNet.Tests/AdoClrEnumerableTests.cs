@@ -451,9 +451,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// supplies it.
         ///
         /// <para>The statement has already been sent by the time this throws: acquisition is synchronous and
-        /// takes no token, so what the token stops is the reading. Wiring
-        /// <c>DataContext.Variable.CANCEL_FLAG</c>, which would let a cancelled statement be abandoned
-        /// rather than merely unread, is §14 of <c>TODO.md</c> and is not here.</para>
+        /// takes no token, so what the token stops is the reading.</para>
+        ///
+        /// <para>This reads the operator directly, so the token is the test's own. Where the token comes
+        /// from when the adapter is reached through the provider — and how the same cancellation reaches a
+        /// subtree of Calcite's convention, which reads <c>DataContext.Variable.CANCEL_FLAG</c> and no token
+        /// at all — is <c>AdoCancellationTests</c> and <c>StatementCancellationTests</c>.</para>
         /// </remarks>
         [TestMethod]
         public async Task ShouldObserveACancelledToken()
