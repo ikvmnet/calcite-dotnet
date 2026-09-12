@@ -266,6 +266,84 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <summary>
+        /// Implements a node on an implementor that builds synchronous sequences, and reads its rows back
+        /// into the kind this implementor is building.
+        /// </summary>
+        /// <param name="node">The node, whose <see cref="ClrEnumerableRel.Implement"/> is what runs.</param>
+        /// <param name="pref">How the parent wants the rows represented.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <b>What a node with inputs writes when its body can only build one kind of sequence.</b> The
+        /// default <see cref="ClrEnumerableRel.ImplementAsync"/> hands the node <em>this</em> implementor,
+        /// which is right for a body built through <see cref="Call"/> and right for a leaf — a leaf hands up
+        /// whichever kind it makes and the rows are read across — but wrong for a node that has inputs and
+        /// names one operator set directly: its children come back as the other kind of sequence and
+        /// <c>Expression.Call</c> refuses them, with an <see cref="ArgumentException"/> naming a parameter
+        /// rather than the problem. Measured, in both directions.
+        ///
+        /// <para>So such a node overrides the member it cannot serve and writes one line:
+        /// <c>ImplementAsync(implementor, pref) =&gt; implementor.Synchronously(this, pref)</c>. <b>The whole
+        /// subtree under it is then implemented synchronously</b>, because the children are visited by the
+        /// sub-implementor, and the crossing is at this node rather than at the leaves. That is the cost, and
+        /// it is the only shape available: a synchronous body cannot consume an awaited sequence, and no
+        /// wrapper can make it.</para>
+        /// </remarks>
+        public ClrEnumerableResult Synchronously(ClrEnumerableRel node, ClrEnumerablePrefer pref)
+        {
+            return InTheOtherKind(node, pref, false);
+        }
+
+        /// <summary>
+        /// Implements a node on an implementor that builds awaited sequences, and reads its rows back into
+        /// the kind this implementor is building.
+        /// </summary>
+        /// <param name="node">The node, whose <see cref="ClrEnumerableRel.ImplementAsync"/> is what
+        /// runs.</param>
+        /// <param name="pref">How the parent wants the rows represented.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <see cref="Synchronously"/> mirrored, and what an adapter over a back end with no blocking client
+        /// writes for its <see cref="ClrEnumerableRel.Implement"/> when the node has inputs:
+        /// <c>Implement(implementor, pref) =&gt; implementor.Asynchronously(this, pref)</c>. <b>The rows are
+        /// then read across by blocking a thread on each one</b>, which is what asking an awaiting node for
+        /// rows through <c>IEnumerator.MoveNext</c> means, and the whole subtree under it awaits.
+        /// </remarks>
+        public ClrEnumerableResult Asynchronously(ClrEnumerableRel node, ClrEnumerablePrefer pref)
+        {
+            return InTheOtherKind(node, pref, true);
+        }
+
+        /// <summary>
+        /// Implements a node on a sub-implementor of the given kind and reads the result across.
+        /// </summary>
+        /// <remarks>
+        /// The sub-implementor is given this plan's <see cref="Root"/> and correlation variables, as a
+        /// converter's is: the two trees are one tree, so the sub-plan's expression is spliced into it rather
+        /// than compiled separately, and a correlated sub-query below still finds the variable it reads its
+        /// outer row by.
+        ///
+        /// <para>Asked for the kind already being built, this is the node's own body and nothing is wrapped;
+        /// a node has no reason to ask for that, but asking is not an error.</para>
+        /// </remarks>
+        ClrEnumerableResult InTheOtherKind(ClrEnumerableRel node, ClrEnumerablePrefer pref, bool async)
+        {
+            ArgumentNullException.ThrowIfNull(node);
+
+            if (async == this.async)
+                return async ? node.ImplementAsync(this, pref) : node.Implement(this, pref);
+
+            var other = new ClrEnumerableRelImplementor(rexBuilder, map, Root, async);
+            ReplayCorrelVariables(other);
+
+            var result = async ? node.ImplementAsync(other, pref) : node.Implement(other, pref);
+
+            return new ClrEnumerableResult(
+                Call(Methods.Bridge.MakeGenericMethod(result.PhysType.RowType), result.Expression),
+                result.PhysType,
+                result.Format);
+        }
+
+        /// <summary>
         /// Implements a whole plan as a function of the <see cref="DataContext"/> it will be bound with.
         /// </summary>
         /// <param name="rootRel">The root of the plan, which must be of this convention.</param>
@@ -397,6 +475,22 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         {
             foreach (var pair in corrVars)
                 enumerable.registerCorrelVariable(pair.Key, pair.Value.Parameter, pair.Value.Block, pair.Value.PhysType);
+        }
+
+        /// <summary>
+        /// Registers on another implementor of this class every correlation variable in scope here.
+        /// </summary>
+        /// <param name="other"></param>
+        /// <remarks>
+        /// <see cref="ReplayCorrelVariables(EnumerableRelImplementor)"/> for a sub-implementor of the other
+        /// kind of sequence, and for the same reason: a sub-plan run on a second implementor finds that
+        /// implementor's correlation variables, which are none. Here the registration really is the same one
+        /// — both implementors hold the same kind of getter over the same block — so nothing is rebuilt.
+        /// </remarks>
+        internal void ReplayCorrelVariables(ClrEnumerableRelImplementor other)
+        {
+            foreach (var pair in corrVars)
+                other.RegisterCorrelVariable(pair.Key, pair.Value.Parameter, pair.Value.Block, pair.Value.PhysType);
         }
 
         /// <summary>

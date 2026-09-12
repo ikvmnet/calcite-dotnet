@@ -281,10 +281,16 @@ cache would hold one entry for a statement rather than two.
   virtual over them. Two defaults calling each other would compile for a node overriding neither and then
   recurse until the process dies, and a `StackOverflowException` cannot be caught.
 - **Whatever a node hands up is read across if it is not the kind being built**, once, by the implementor.
-  So an adapter with only a blocking client writes `Implement` alone; one with only an awaiting client
-  overrides `ImplementAsync` and writes `Implement` as a delegation to it. Going to asynchronous costs a
-  state machine and no thread; going to synchronous **blocks a thread per row**, because an `IEnumerable`
-  has nowhere to suspend.
+  Going to asynchronous costs a state machine and no thread; going to synchronous **blocks a thread per
+  row**, because an `IEnumerable` has nowhere to suspend.
+- **That default is enough for a mode-agnostic body or a leaf, and not for a node with inputs.** The
+  default `ImplementAsync` hands the node *this* implementor, so `VisitChild` returns children of the kind
+  being built, and a body naming the other operator set is refused by `Expression.Call` with an
+  `ArgumentException` about a parameter — measured in both directions, and it says nothing about the cause.
+  A one-sided node with inputs writes `implementor.Synchronously(this, pref)` or
+  `implementor.Asynchronously(this, pref)` in the member it cannot serve: its subtree is then implemented
+  in its own kind and the crossing is at that node. `ShouldRunASynchronousOnlyNodeInAnAwaitingPlan` and
+  `ShouldRunAnAwaitingOnlyNodeInASynchronousPlan` hold both.
 - **The crossing is a node boundary, not a plan boundary.** An `IClrAsyncScannableTable` under a synchronous
   plan blocks at the scan and everything above it is ordinary synchronous code, and the reverse. That is
   what `ClrEnumerableModeTests` reads out of the compiled tree: which operator set each call landed on, that
