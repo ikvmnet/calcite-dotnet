@@ -22,13 +22,12 @@ namespace Apache.Calcite.Data.Tests
     /// node of <c>ClrEnumerableConvention</c> reads the <see cref="CancellationToken"/> its sequence was
     /// given at <c>GetAsyncEnumerator</c>; a node of Calcite's <c>EnumerableConvention</c> reads
     /// <c>DataContext.Variable.CANCEL_FLAG</c>. <c>AdoCancellationTests</c> in the adapter's suite holds the
-    /// token end, ending at a real <c>DbDataReader</c>. This holds the flag end, and the crossing between
-    /// them: <c>JavaSequences.FromJavaAsync</c>, which every read of a Calcite sub-plan goes through, has
-    /// the token at <c>GetAsyncEnumerator</c> and the flag through the <c>DataContext</c> and registers one
-    /// against the other.
+    /// token end, ending at a real <c>DbDataReader</c>. This holds the flag end: <c>StatementDataContext</c>
+    /// takes the statement's token and puts the flag in its map, the way it takes the connection's time zone
+    /// name and puts a <c>java.util.TimeZone</c> there.
     ///
     /// <para>The tables here are Calcite's <c>ScannableTable</c> rather than this convention's SPI, so the
-    /// scan is in <c>EnumerableConvention</c> and the crossing is real.</para>
+    /// scan really is in <c>EnumerableConvention</c> and really does read the flag.</para>
     ///
     /// <para>The flag is asserted directly rather than through an effect of it. A cancelled statement fails
     /// at the reader too, the token being the same one, so a test that only required the read to throw would
@@ -84,9 +83,10 @@ namespace Apache.Calcite.Data.Tests
         /// </summary>
         /// <remarks>
         /// The enumerator's own token was fixed at <c>GetAsyncEnumerator</c> and <c>MoveNextAsync</c> takes
-        /// none, so what a per-call token gets is a registration against the statement's cancellation —
-        /// which is how <c>SqlDataReader.ReadAsync</c> reaches a command already in flight. Cancelling it
-        /// cancels the statement rather than the row, which is the only thing the shape allows.
+        /// none, so what a per-call token gets is a registration against the statement's source — which is
+        /// how <c>SqlDataReader.ReadAsync</c> reaches a command already in flight. Cancelling that source
+        /// sets the flag, because the context registered it there. Cancelling it cancels the statement
+        /// rather than the row, which is the only thing the shape allows.
         ///
         /// <para><b>The registration is scoped to the call</b>, as SqlClient's is, so this cancels while a
         /// read is in progress rather than after one has returned: a token handed to a read that has already
@@ -121,22 +121,20 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The synchronous route does not carry a cancellation, and does not claim to.
+        /// And on the synchronous route, because the flag is the context's rather than the convention's.
         /// </summary>
         /// <remarks>
-        /// A pulled plan has no token: no operator of the synchronous set takes one, and
-        /// <c>JavaSequences.FromJava</c> has none to convert where it crosses into Calcite's convention. So
-        /// there is nothing at that boundary to set the flag from, and nothing upstream sets it either —
-        /// wiring one there would be a cancellation that reaches the reader between rows and no further,
-        /// dressed as one that reaches the table.
+        /// A pulled plan carries no token — no operator of the synchronous set takes one — but the flag does
+        /// not come from the plan. It comes from <c>StatementDataContext</c>, which every statement has and
+        /// which knows nothing about how its rows will be read, so a table of Calcite's convention polls a
+        /// flag tied to the caller's token whichever way the reader above it works.
         ///
-        /// <para>What a synchronous caller gets is the check at the top of <c>ReadAsync</c>: the next read
-        /// refuses. A caller who needs a read it can actually cancel asks for the awaiting plan, which is
-        /// the default and which <see cref="Should_set_calcites_cancel_flag_from_the_callers_token"/>
-        /// covers.</para>
+        /// <para>What the synchronous route does not get is cancellation of the operators <em>above</em>
+        /// that table: they hold no token and a <c>Read</c> already under way cannot be interrupted. The
+        /// next read refuses, and that is the whole of it.</para>
         /// </remarks>
         [Fact]
-        public async Task Should_not_claim_a_cancellation_on_the_synchronous_route()
+        public async Task Should_set_calcites_cancel_flag_on_the_synchronous_route_too()
         {
             var table = new FlagCapturingTable();
             using var connection = OpenConnection(table, synchronous: true);
@@ -154,7 +152,7 @@ namespace Apache.Calcite.Data.Tests
 
             cancellation.Cancel();
 
-            Assert.False(table.CancelFlag.get());
+            Assert.True(table.CancelFlag.get());
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await reader.ReadAsync(cancellation.Token));
         }

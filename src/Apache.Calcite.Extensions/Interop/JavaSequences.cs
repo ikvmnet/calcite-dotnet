@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 
@@ -74,8 +74,6 @@ namespace Apache.Calcite.Extensions.Interop
         /// </summary>
         /// <typeparam name="TSource"></typeparam>
         /// <param name="source"></param>
-        /// <param name="root">The context the statement is running against, which is where the sub-plan
-        /// below this reads its cancellation.</param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         /// <remarks>
@@ -88,25 +86,13 @@ namespace Apache.Calcite.Extensions.Interop
         /// convention refuses, which is a caller blocked waiting. A plan reading a Calcite sub-plan this way
         /// is simply not asynchronous over that part of itself, and cannot be.</para>
         ///
-        /// <para><b>This is where a cancellation crosses, because this is where the rows do.</b> Above it a
-        /// node reads a <see cref="System.Threading.CancellationToken"/>; below it a node reads
-        /// <c>DataContext.Variable.CANCEL_FLAG</c>, an <c>AtomicBoolean</c> that a table polls -- Calcite's
-        /// own <c>ListTransientTable</c> and the CSV, file and Kafka adapters' tables -- and no operator of
-        /// <c>EnumerableDefaults</c> polls for them. The token is in hand here and the flag is reachable
-        /// through <paramref name="root"/>, so the registration belongs here rather than somewhere upstream
-        /// that guesses a bridge will be needed: a plan with no Calcite sub-plan arms nothing. It is the
-        /// same rule as every other value that crosses between the two runtimes -- the boundary is the
-        /// adapter.</para>
-        ///
-        /// <para>The per-row check below is not the same thing and does not replace it. That stops rows
-        /// crossing once the token has fired; the flag is what reaches a table that is <em>inside</em>
-        /// <c>moveNext()</c> and will not come back to be checked.</para>
-        ///
-        /// <para><see cref="FromJava{TSource}"/> has no counterpart to this and cannot: a pulled plan
-        /// carries no token to convert. A cancellation reaches Calcite on that route by the statement
-        /// setting the flag directly.</para>
+        /// <para>The per-row check stops rows crossing once the token has fired. It is not what stops the
+        /// sub-plan below: a table of Calcite's convention reads <c>DataContext.Variable.CANCEL_FLAG</c>
+        /// and may be inside <c>moveNext()</c> and never come back to be checked. Tying that flag to the
+        /// statement's token is <c>StatementDataContext</c>'s job, where every other fact a statement hands
+        /// Calcite is put into the form Calcite reads it in.</para>
         /// </remarks>
-        public static IAsyncEnumerable<TSource> FromJavaAsync<TSource>(org.apache.calcite.linq4j.Enumerable source, org.apache.calcite.DataContext root, System.Threading.CancellationToken cancellationToken = default)
+        public static IAsyncEnumerable<TSource> FromJavaAsync<TSource>(org.apache.calcite.linq4j.Enumerable source, System.Threading.CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(source);
 
@@ -116,24 +102,8 @@ namespace Apache.Calcite.Extensions.Interop
             return new Runtime.ClrAsyncEnumerable<TSource>(token =>
             {
                 var enumerator = source.enumerator();
-                return new Runtime.AcquiredAsyncEnumerator<TSource>(FromJavaAsyncRows<TSource>(enumerator, CancelFlag(root), token), new AsyncJavaCloseable(enumerator));
+                return new Runtime.AcquiredAsyncEnumerator<TSource>(FromJavaAsyncRows<TSource>(enumerator, token), new AsyncJavaCloseable(enumerator));
             });
-        }
-
-        /// <summary>
-        /// The flag the sub-plan below a crossing polls, or null where the context carries none.
-        /// </summary>
-        /// <remarks>
-        /// <c>DataContext.Variable.CANCEL_FLAG.get</c> answers null for a context that never put one in --
-        /// a <see cref="org.apache.calcite.DataContext"/> is an SPI a caller may implement, and Calcite's
-        /// own readers of the flag all allow for its absence.
-        /// </remarks>
-        static java.util.concurrent.atomic.AtomicBoolean? CancelFlag(org.apache.calcite.DataContext root)
-        {
-            if (root is null)
-                return null;
-
-            return org.apache.calcite.DataContext.Variable.CANCEL_FLAG.get(root) as java.util.concurrent.atomic.AtomicBoolean;
         }
 
         /// <summary>
@@ -141,16 +111,8 @@ namespace Apache.Calcite.Extensions.Interop
         /// here suspends, and that is the honest shape of it: the source is pulled, and an asynchronous
         /// sequence that always completes synchronously costs a state machine and no thread.
         /// </summary>
-        /// <remarks>
-        /// The registration lives exactly as long as this enumerator does, so a sub-plan that is finished
-        /// with arms nothing, and the flag is set only while there is Java below to read it.
-        /// </remarks>
-        static async IAsyncEnumerator<TSource> FromJavaAsyncRows<TSource>(org.apache.calcite.linq4j.Enumerator enumerator, java.util.concurrent.atomic.AtomicBoolean? cancelFlag, System.Threading.CancellationToken cancellationToken)
+        static async IAsyncEnumerator<TSource> FromJavaAsyncRows<TSource>(org.apache.calcite.linq4j.Enumerator enumerator, System.Threading.CancellationToken cancellationToken)
         {
-            using var registration = cancelFlag is null
-                ? default
-                : cancellationToken.Register(static state => ((java.util.concurrent.atomic.AtomicBoolean)state!).set(true), cancelFlag);
-
             while (enumerator.moveNext())
             {
                 cancellationToken.ThrowIfCancellationRequested();

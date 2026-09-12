@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 using java.lang;
 using java.util;
@@ -95,9 +95,14 @@ namespace Apache.Calcite.Extensions.Prepare
             return CalcitePrepare.Dummy.getSparkHandler(false);
         }
 
+        /// <remarks>
+        /// <c>CalcitePrepare.Context.getDataContext</c>, which is what planning reads a value out of rather
+        /// than what a statement executes against — so there is no cancellation to give it, and no timeout
+        /// or parameters either. A statement's own context is built by <c>CalciteSession.Bind</c>.
+        /// </remarks>
         public DataContext getDataContext()
         {
-            return new StatementDataContext(_rootSchema, _typeFactory, _config, _defaultSchemaPath, new AtomicBoolean(false), 0, [], null);
+            return new StatementDataContext(_rootSchema, _typeFactory, _config, _defaultSchemaPath, System.Threading.CancellationToken.None, 0, [], null);
         }
 
         /// <summary>

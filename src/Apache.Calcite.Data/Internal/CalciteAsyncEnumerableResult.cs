@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,7 +15,8 @@ namespace Apache.Calcite.Data.Internal
     {
 
         readonly IAsyncEnumerator<object>? _enumerator;
-        readonly StatementCancellation? _cancellation;
+        readonly IDisposable? _dataContext;
+        readonly CancellationTokenSource? _cancellation;
 
         /// <summary>
         /// Initializes a new instance.
@@ -24,12 +25,15 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="enumerator">The plan's enumerator, already given the statement's cancellation token,
         /// or <see langword="null"/> where there is nothing to read.</param>
         /// <param name="recordsAffected"></param>
-        /// <param name="cancellation">The statement's cancellation, which this owns and disposes: it lives
-        /// as long as the rows do.</param>
-        public CalciteAsyncEnumerableResult(IClrPrepare.Signature signature, IAsyncEnumerator<object>? enumerator, long recordsAffected = -1, StatementCancellation? cancellation = null) :
+        /// <param name="dataContext">The statement's context, which holds the registration tying its token
+        /// to Calcite's cancel flag.</param>
+        /// <param name="cancellation">The source the plan's enumerator was taken under, linked to the
+        /// caller's token. This owns and disposes both: they live as long as the rows do.</param>
+        public CalciteAsyncEnumerableResult(IClrPrepare.Signature signature, IAsyncEnumerator<object>? enumerator, long recordsAffected = -1, IDisposable? dataContext = null, CancellationTokenSource? cancellation = null) :
             base(signature, recordsAffected)
         {
             _enumerator = enumerator;
+            _dataContext = dataContext;
             _cancellation = cancellation;
         }
 
@@ -102,7 +106,9 @@ namespace Apache.Calcite.Data.Internal
             ThrowIfDisposed();
 
             // registered before the check, as SqlDataReader.ReadAsync registers before its own
-            using var registration = _cancellation?.Register(cancellationToken) ?? default;
+            using var registration = _cancellation is not null && cancellationToken.CanBeCanceled
+                ? cancellationToken.Register(static state => ((CancellationTokenSource)state!).Cancel(), _cancellation)
+                : default;
 
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -148,6 +154,7 @@ namespace Apache.Calcite.Data.Internal
             }
             finally
             {
+                _dataContext?.Dispose();
                 _cancellation?.Dispose();
             }
 
@@ -170,6 +177,7 @@ namespace Apache.Calcite.Data.Internal
             }
             finally
             {
+                _dataContext?.Dispose();
                 _cancellation?.Dispose();
             }
         }

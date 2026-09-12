@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -18,7 +19,8 @@ namespace Apache.Calcite.Data.Internal
     {
 
         readonly IEnumerator<object>? _enumerator;
-        readonly StatementCancellation? _cancellation;
+        readonly IDisposable? _dataContext;
+        readonly CancellationTokenSource? _cancellation;
 
         /// <summary>
         /// Initializes a new instance.
@@ -27,11 +29,14 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="enumerator">The plan's enumerator, or <see langword="null"/> where there is nothing
         /// to read — a DDL statement has already taken effect, and a DML one reports a count.</param>
         /// <param name="recordsAffected"></param>
-        /// <param name="cancellation">The statement's cancellation, which this owns and disposes.</param>
-        public CalciteEnumerableResult(IClrPrepare.Signature signature, IEnumerator<object>? enumerator, long recordsAffected = -1, StatementCancellation? cancellation = null) :
+        /// <param name="dataContext">The statement's context, which holds the registration tying its token
+        /// to Calcite's cancel flag.</param>
+        /// <param name="cancellation">The statement's cancellation source.</param>
+        public CalciteEnumerableResult(IClrPrepare.Signature signature, IEnumerator<object>? enumerator, long recordsAffected = -1, IDisposable? dataContext = null, CancellationTokenSource? cancellation = null) :
             base(signature, recordsAffected)
         {
             _enumerator = enumerator;
+            _dataContext = dataContext;
             _cancellation = cancellation;
         }
 
@@ -75,6 +80,7 @@ namespace Apache.Calcite.Data.Internal
             }
             finally
             {
+                _dataContext?.Dispose();
                 _cancellation?.Dispose();
             }
         }

@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Threading;
 
 using java.util.concurrent.atomic;
 
@@ -22,8 +23,34 @@ namespace Apache.Calcite.Extensions.Prepare
     /// <summary>
     /// The <see cref="DataContext"/> a statement executes against.
     /// </summary>
-    internal sealed class StatementDataContext : DataContext
+    /// <remarks>
+    /// Every entry of the map this builds is a fact of the executing statement in the form Calcite's
+    /// generated code reads it: the connection's time zone name as a <c>java.util.TimeZone</c>, its locale
+    /// name as a <c>java.util.Locale</c>, the command timeout in seconds as a <c>java.lang.Long</c> of
+    /// milliseconds, the bound parameters as Java values. This is the adapter between a statement and
+    /// Calcite's runtime, and there is one of it.
+    ///
+    /// <para><b>Cancellation is one of those facts.</b> On this side a statement is cancelled by a
+    /// <see cref="CancellationToken"/>; Calcite's side reads <c>DataContext.Variable.CANCEL_FLAG</c>, an
+    /// <see cref="AtomicBoolean"/> that a table polls -- <c>ListTransientTable</c>, and the CSV, file and
+    /// Kafka adapters' tables, no operator of <c>EnumerableDefaults</c> polling it for them. So the token
+    /// comes in and the flag goes in the map, exactly as the time zone and the locale do.</para>
+    ///
+    /// <para>It has to be a registration rather than a flag that reads the token, because
+    /// <c>AtomicBoolean.get()</c> is <c>final</c> -- measured against the assembly, not remembered -- so
+    /// there is no subclass of it that answers from a token. That registration is why this is
+    /// <see cref="IDisposable"/>: left behind, it would hold the flag alive on the caller's token for as
+    /// long as that token lives.</para>
+    ///
+    /// <para>The flag is wired whichever way the rows are read. It is Calcite's channel and knows nothing
+    /// about the convention above it, so a Calcite sub-plan under a pulled plan is cancelled by it too --
+    /// what a pulled plan does not get is cancellation of the operators above that sub-plan, which carry
+    /// no token.</para>
+    /// </remarks>
+    internal sealed class StatementDataContext : DataContext, IDisposable
     {
+
+        readonly CancellationTokenRegistration _cancelRegistration;
 
         readonly CalciteSchema? _rootSchema;
         readonly JavaTypeFactory _typeFactory;
@@ -39,7 +66,8 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <param name="typeFactory">The type factory the statement was planned with.</param>
         /// <param name="config">The connection configuration, which supplies the time zone and locale.</param>
         /// <param name="defaultSchemaPath">The default schema path, which the SQL advisor resolves against.</param>
-        /// <param name="cancelFlag">The flag a running plan polls at its check points.</param>
+        /// <param name="cancellationToken">The statement's cancellation, which becomes the flag Calcite's
+        /// side polls.</param>
         /// <param name="queryTimeoutMillis">The query timeout in milliseconds, or zero for none.</param>
         /// <param name="parameters">Bound positional query parameters, addressed as <c>?0</c>, <c>?1</c>, ….</param>
         /// <param name="internalParameters">The values planning stashed, which the compiled plan reads back
@@ -49,13 +77,19 @@ namespace Apache.Calcite.Extensions.Prepare
             JavaTypeFactory typeFactory,
             CalciteConnectionConfig config,
             IReadOnlyList<string> defaultSchemaPath,
-            AtomicBoolean cancelFlag,
+            CancellationToken cancellationToken,
             long queryTimeoutMillis,
             IReadOnlyList<object?> parameters,
             java.util.Map? internalParameters = null)
         {
             _rootSchema = rootSchema;
             _typeFactory = typeFactory ?? throw new ArgumentNullException(nameof(typeFactory));
+
+            var cancelFlag = new AtomicBoolean(false);
+            _cancelRegistration = cancellationToken.CanBeCanceled
+                ? cancellationToken.Register(static state => ((AtomicBoolean)state!).set(true), cancelFlag)
+                : default;
+
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _defaultSchemaPath = defaultSchemaPath ?? [];
 
@@ -175,6 +209,14 @@ namespace Apache.Calcite.Extensions.Prepare
                 .withCaseSensitive(_config.caseSensitive());
 
             return new SqlAdvisor(validator, parserConfig);
+        }
+
+        /// <summary>
+        /// Releases the registration that ties the statement's token to the cancel flag.
+        /// </summary>
+        public void Dispose()
+        {
+            _cancelRegistration.Dispose();
         }
 
     }

@@ -1,4 +1,4 @@
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 
 using Apache.Calcite.Extensions.Linq4j.Tree;
 
@@ -89,10 +89,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var rowType = physType.RowType;
             var source = implementor.Translator.TranslateBody(result.block, typeof(org.apache.calcite.linq4j.Enumerable));
 
-            // the root goes with it: below this crossing a node reads DataContext.Variable.CANCEL_FLAG and
-            // no token, so the bridge is where the caller's token becomes the flag
             return implementor.ResultAsync(physType,
-                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.FromJavaAsync.MakeGenericMethod(rowType), source, implementor.Root));
+                ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.FromJavaAsync.MakeGenericMethod(rowType), source));
         }
 
     }

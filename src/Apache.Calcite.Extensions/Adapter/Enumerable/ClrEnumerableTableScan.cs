@@ -375,7 +375,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             // a table of this convention's own SPI has already handed back a .NET sequence; one of Calcite's
             // handed back a linq4j Enumerable, which is read across the boundary. The rest is the same.
-            Expression Source(System.Type rowType) => native ? source : FromJavaAsync(rowType, source, implementor.Root);
+            Expression Source(System.Type rowType) => native ? source : FromJavaAsync(rowType, source);
 
             if (physType.Format == JavaRowFormat.SCALAR
                 && ((java.lang.Class)typeof(object[])).isAssignableFrom(elementType)
@@ -434,9 +434,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="element"></param>
         /// <param name="source"></param>
         /// <returns></returns>
-        static Expression FromJavaAsync(Type element, Expression source, Expression root)
+        static Expression FromJavaAsync(Type element, Expression source)
         {
-            return ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.FromJavaAsync.MakeGenericMethod(element), source, root);
+            return ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.FromJavaAsync.MakeGenericMethod(element), source);
         }
 
         /// <summary>

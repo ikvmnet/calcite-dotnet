@@ -268,11 +268,15 @@ namespace Apache.Calcite.Data.Internal
         /// the statement was planned against, not the live root, so a statement executes against what
         /// it planned against. Null for DDL, as upstream's is.
         /// </summary>
-        void Bind(CalciteExecuteRequest request, IClrPrepare.Signature signature, CancellationToken cancellationToken, out DataContext dataContext, out StatementCancellation cancellation)
+        /// <remarks>
+        /// The token goes in with the parameters and the timeout, and comes out the other side as the
+        /// <c>CANCEL_FLAG</c> a node of Calcite's convention polls. That conversion is the context's, where
+        /// the time zone's and the locale's are.
+        /// </remarks>
+        void Bind(CalciteExecuteRequest request, IClrPrepare.Signature signature, CancellationToken cancellationToken, out StatementDataContext dataContext)
         {
-            cancellation = new StatementCancellation(cancellationToken);
             var boundParameters = ParameterBinder.Bind(request.Parameters);
-            dataContext = new StatementDataContext(signature.RootSchema, _typeFactory, _config, _defaultSchemaPath, cancellation.CancelFlag, request.CommandTimeoutSeconds * 1000L, boundParameters, signature.InternalParameters);
+            dataContext = new StatementDataContext(signature.RootSchema, _typeFactory, _config, _defaultSchemaPath, cancellationToken, request.CommandTimeoutSeconds * 1000L, boundParameters, signature.InternalParameters);
         }
 
         /// <summary>
@@ -385,17 +389,22 @@ namespace Apache.Calcite.Data.Internal
             try
             {
                 var signature = Plan(request);
-                Bind(request, signature, cancellationToken, out var dataContext, out var cancellation);
 
-                // the result owns the cancellation from here: it lives as long as the rows do, and a reader
-                // holds it open long after this method has returned
+                // linked to the caller's, so that a token arriving later at DbDataReader.ReadAsync has
+                // something to cancel, and so that both halves of the statement's cancellation -- the token
+                // the plan is enumerated with and the flag its context carries -- are the one cancellation
+                var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                Bind(request, signature, cancellation.Token, out var dataContext);
+
+                // the result owns both from here: they live as long as the rows do, and a reader holds them
+                // open long after this method has returned
                 if (_synchronous)
                 {
                     IEnumerator<object>? enumerator = null;
                     if (!IsDdl(signature.StatementType))
                         enumerator = signature.Bind(dataContext).GetEnumerator();
 
-                    return new CalciteEnumerableResult(signature, enumerator, 0, cancellation);
+                    return new CalciteEnumerableResult(signature, enumerator, 0, dataContext, cancellation);
                 }
                 else
                 {
@@ -403,7 +412,7 @@ namespace Apache.Calcite.Data.Internal
                     if (!IsDdl(signature.StatementType))
                         enumerator = signature.BindAsync(dataContext).GetAsyncEnumerator(cancellation.Token);
 
-                    return new CalciteAsyncEnumerableResult(signature, enumerator, 0, cancellation);
+                    return new CalciteAsyncEnumerableResult(signature, enumerator, 0, dataContext, cancellation);
                 }
             }
             catch (CalciteException)
@@ -452,8 +461,8 @@ namespace Apache.Calcite.Data.Internal
             try
             {
                 var signature = Plan(request);
-                Bind(request, signature, cancellationToken, out var dataContext, out var cancellation);
-                using var _ = cancellation;
+                Bind(request, signature, cancellationToken, out var dataContext);
+                using var _ = dataContext;
 
                 var statementType = signature.StatementType;
 
@@ -479,7 +488,7 @@ namespace Apache.Calcite.Data.Internal
 
                     var cur = _synchronous
                         ? FirstRow(signature.Bind(dataContext))
-                        : FirstRow(signature.BindAsync(dataContext), cancellation.Token);
+                        : FirstRow(signature.BindAsync(dataContext), cancellationToken);
 
                     if (cur is object[] row && row.Length > 0)
                         recordsAffected = ToInt64(row[0]);
