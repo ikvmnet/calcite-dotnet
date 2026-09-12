@@ -200,11 +200,10 @@ namespace Apache.Calcite.Tests
             planner.addRelTraitDef(ConventionTraitDef.INSTANCE);
             planner.addRelTraitDef(RelCollationTraitDef.INSTANCE);
 
-            var convention = async ? ClrEnumerableConvention.Instance : ClrEnumerableConvention.Instance;
             var empty = new java.util.ArrayList();
 
             var chosen = new DefaultRulesProgram(rules, false, false, false, add, remove)
-                .run(planner, logical, logical.getTraitSet().replace(convention).simplify(), empty, empty);
+                .run(planner, logical, logical.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify(), empty, empty);
 
             var physical = Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)
                 .run(planner, chosen, chosen.getTraitSet(), empty, empty);

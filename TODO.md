@@ -287,15 +287,15 @@ Calcite's adapter does not have: a `DbBatch` for a multi-row modify, and a bulk-
 
 ### 14. Execution was synchronous; the connect still is, and cancellation and timeout are not wired
 
-**The converter is written** (#119). `AdoToClrAsyncEnumerableConverter` and its rule are registered beside
-the other two, so a plan asked for in `ClrAsyncEnumerableConvention` — which is what the provider plans by
-default — converts straight out of the adapter and reads its rows through `AdoSequences.ReadAsync`. The
-route it replaced was `EnumerableToClrAsyncEnumerableConverter` over `AdoToEnumerableConverter`: two
-crossings, a linq4j enumerator, and `DbDataReader.Read()` at the bottom, so the one place in a plan with
-network I/O to suspend on was the one place that blocked.
+**The awaiting route is written** (#119). `AdoToClrEnumerableConverter` writes both bodies, so a plan of
+`ClrEnumerableConvention` — which is what the provider plans by — converts straight out of the adapter
+whichever way it is compiled, and the awaiting one reads its rows through `AdoSequences.ReadAsync`. The
+route it replaced was a second converter over `AdoToEnumerableConverter`: two crossings, a linq4j
+enumerator, and `DbDataReader.Read()` at the bottom, so the one place in a plan with network I/O to
+suspend on was the one place that blocked.
 
-The statement it sends is the synchronous converter's — same implementor, same writer, same row builder,
-shared rather than written again.
+The statement it sends is the pulled body's — same implementor, same writer, same row builder, shared
+rather than written again.
 
 **What is asynchronous is the row loop, and only the row loop.** The statement is still sent at
 `GetAsyncEnumerator`, synchronously, through `OpenConnection()` and `ExecuteReader()`. That is where this

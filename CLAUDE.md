@@ -287,10 +287,11 @@ the rows will be read, and a plan cache would hold one entry for a statement rat
   table, and builds its calls with `ClrBuiltInMethod.CallAsync`, which appends the trailing
   `CancellationToken` an expression tree will not default. One class, one table, two sets of names: which
   operator a node calls is decided where the node is written and can be read there.
-- **One class in two files, and the suffix is load bearing.** `ClrAsyncEnumerableDefaults` was a separate
+- **One class, one file, and the suffix is load bearing.** `ClrAsyncEnumerableDefaults` was a separate
   class; merging it cost 71 renames and turned up eleven members that were the same code twice, now shared
   — `PartitionIterator`, `IsMergeJoinSupported` and nine smaller helpers, one of which differed only in the
-  indentation of a brace. `ClrEnumerableDefaults.Async.cs` is the awaiting partial. Because the two sets no
+  indentation of a brace. Both sets are in `ClrEnumerableDefaults.cs`, the pulled ones and then the
+  awaiting ones after a banner. Because the two sets no
   longer differ by declaring type, everything that has to tell them apart reads the name, `ClrEnumerableModeTests`
   included, and `ShouldNameEveryAwaitingOperatorWithTheSuffixAndNoOtherOperator` is what keeps that exact: an
   operator reading an `IAsyncEnumerable` carries the suffix and one reading an `IEnumerable` does not. A

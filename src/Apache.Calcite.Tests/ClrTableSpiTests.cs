@@ -190,9 +190,9 @@ namespace Apache.Calcite.Tests
             var rules = new java.util.ArrayList();
             var calcRules = new java.util.ArrayList();
 
-            foreach (var rule in async ? ClrEnumerableRules.Rules() : ClrEnumerableRules.Rules())
+            foreach (var rule in ClrEnumerableRules.Rules())
                 rules.add(rule);
-            foreach (var rule in async ? ClrEnumerableRules.CalcRules() : ClrEnumerableRules.CalcRules())
+            foreach (var rule in ClrEnumerableRules.CalcRules())
                 calcRules.add(rule);
             foreach (var rule in RelOptRules.CALC_RULES.toArray())
                 calcRules.add(rule);
@@ -209,8 +209,7 @@ namespace Apache.Calcite.Tests
             var logical = planner.rel(planner.validate(planner.parse(sql))).project();
             var expanded = planner.transform(0, logical.getTraitSet(), logical);
 
-            var convention = async ? ClrEnumerableConvention.Instance : ClrEnumerableConvention.Instance;
-            var chosen = planner.transform(1, expanded.getTraitSet().replace(convention).simplify(), expanded);
+            var chosen = planner.transform(1, expanded.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify(), expanded);
             var physical = planner.transform(2, chosen.getTraitSet(), chosen);
 
             var parameters = new java.util.HashMap();
@@ -321,10 +320,10 @@ namespace Apache.Calcite.Tests
         /// A table of Calcite's is read by this convention's own scan, without a converter.
         /// </summary>
         /// <remarks>
-        /// The point of reaching Calcite's tables the way Calcite reaches them. Before this the asynchronous
-        /// convention could not read a <see cref="ScannableTable"/> at all, so a query over one was a Calcite
-        /// subtree under <c>EnumerableToClrAsyncEnumerableConverter</c> — correct, but a converter and a
-        /// planning step for something that is one node.
+        /// The point of reaching Calcite's tables the way Calcite reaches them. Before this an awaited plan
+        /// could not read a <see cref="ScannableTable"/> at all, so a query over one was a Calcite subtree
+        /// under <c>EnumerableToClrEnumerableConverter</c> — correct, but a converter and a planning step
+        /// for something that is one node.
         ///
         /// <para>The converter is still there, and still needed, for what this convention has no node for at
         /// all — a table function, a MATCH_RECOGNIZE, a recursive query's transient scan.</para>
@@ -336,7 +335,7 @@ namespace Apache.Calcite.Tests
             var text = RelOptUtil.toString(plan);
 
             text.Should().Contain("ClrEnumerableTableScan");
-            text.Should().NotContain("EnumerableToClrAsyncEnumerableConverter");
+            text.Should().NotContain("EnumerableToClrEnumerableConverter");
             rows.Should().Equal(Expected);
         }
 

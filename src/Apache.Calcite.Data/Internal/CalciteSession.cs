@@ -429,8 +429,8 @@ namespace Apache.Calcite.Data.Internal
         /// Synchronous, and <see cref="ExecuteNonQueryAsync"/> is this method in a completed task. The plan
         /// is the connection's here as everywhere: a table modification is not a node either Clr convention
         /// implements, so the modify itself is Calcite's <c>EnumerableTableModify</c> in both modes, and
-        /// under the asynchronous root its count row crosses <c>EnumerableToClrAsyncEnumerableConverter</c>
-        /// and completes synchronously — the drain never truly waits, but it blocks with the synchronization
+        /// under the asynchronous root its count row crosses <c>EnumerableToClrEnumerableConverter</c>'s
+        /// awaiting body and completes synchronously — the drain never truly waits, but it blocks with the synchronization
         /// context suppressed all the same, because correctness must not depend on what the sub-plan happens
         /// to be. There is still no asynchronous DML in the node-level sense — the modify cannot suspend —
         /// and the asynchronous root does not pretend otherwise; what it keeps is one plan per statement per
