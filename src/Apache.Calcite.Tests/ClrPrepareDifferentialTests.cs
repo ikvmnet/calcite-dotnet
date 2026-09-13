@@ -202,6 +202,13 @@ namespace Apache.Calcite.Tests
         [DataRow("SELECT SUM(N) FROM NUMS HAVING SUM(N) > 0")]
         [DataRow("SELECT a.N FROM NUMS a JOIN SALES s ON a.N = s.ID ORDER BY a.N")]
         [DataRow("SELECT s.ID FROM SALES s JOIN NUMS a ON s.ID = a.N ORDER BY s.ID")]
+        [DataRow("SELECT DISTINCT r FROM (SELECT ROW(x, y) AS r FROM (VALUES (1, 'a'), (1, 'a'), (2, NULL), (2, NULL)) AS v(x, y)) AS t ORDER BY r")]
+        [DataRow("SELECT r, COUNT(*) AS c FROM (SELECT ROW(x, y) AS r FROM (VALUES (1, 'a'), (2, NULL), (2, NULL)) AS v(x, y)) AS t GROUP BY r ORDER BY c")]
+        [DataRow("SELECT r, COUNT(*) AS c FROM (SELECT ROW(ROW(x, y), z) AS r FROM (VALUES (1, 'a', 10), (1, 'a', 10), (2, 'b', 20)) AS v(x, y, z)) AS t GROUP BY r ORDER BY c")]
+        [DataRow("SELECT ROW(x, y) AS r FROM (VALUES (1, 'a'), (2, NULL)) AS v(x, y) UNION SELECT ROW(x, y) AS r FROM (VALUES (2, NULL)) AS w(x, y) ORDER BY r")]
+        [DataRow("SELECT ROW(x, y) AS r FROM (VALUES (1, 'a'), (2, 'b')) AS v(x, y) INTERSECT SELECT ROW(x, y) AS r FROM (VALUES (2, 'b'), (3, 'c')) AS w(x, y)")]
+        [DataRow("SELECT COUNT(*) AS c FROM (SELECT DISTINCT m FROM (VALUES MAP[1, 2, 3, 4], MAP[3, 4, 1, 2]) AS t(m))")]
+        [DataRow("SELECT COUNT(*) AS c FROM (VALUES MAP[1, 2, 3, 4], MAP[3, 4, 1, 2]) AS t(m) GROUP BY m")]
         public void Should_agree_with_calcite(string sql)
         {
             List<string> calcite;

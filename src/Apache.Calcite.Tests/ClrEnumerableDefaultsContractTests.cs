@@ -124,6 +124,57 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
+        /// A negative count skips nothing and fetches nothing.
+        /// </summary>
+        /// <remarks>
+        /// <c>EnumerableDefaults.skip</c> and <c>take</c> are <c>skipWhile</c> and <c>takeWhile</c> over a
+        /// 1-based counter, so a negative count is simply a predicate that is false at the first row.
+        /// CALCITE-7557 is the same contract stated against the other end: <c>Linq4j.ListEnumerable</c> took
+        /// a <c>subList</c> and threw on one, and now clamps. There is no list fast path here, so the
+        /// counters are the whole of it — this is what says so.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldSkipNothingAndFetchNothingForANegativeCount()
+        {
+            static IEnumerable<int> Source() => [0, 1, 2, 3, 4];
+
+            ClrEnumerableDefaults.Skip(Source(), -1).ToList().Should().Equal(0, 1, 2, 3, 4);
+            ClrEnumerableDefaults.Take(Source(), -1).ToList().Should().BeEmpty();
+
+            ClrEnumerableDefaults.Skip(Source(), java.math.BigDecimal.valueOf(-1)).ToList().Should().Equal(0, 1, 2, 3, 4);
+            ClrEnumerableDefaults.Take(Source(), java.math.BigDecimal.valueOf(-1)).ToList().Should().BeEmpty();
+        }
+
+        /// <inheritdoc cref="ShouldSkipNothingAndFetchNothingForANegativeCount" />
+        [TestMethod]
+        public async Task ShouldSkipNothingAndFetchNothingForANegativeCountAsync()
+        {
+            static async IAsyncEnumerable<int> Source()
+            {
+                for (var i = 0; i < 5; i++)
+                {
+                    yield return i;
+                    await Task.CompletedTask;
+                }
+            }
+
+            static async Task<List<int>> Rows(IAsyncEnumerable<int> source)
+            {
+                var rows = new List<int>();
+                await foreach (var row in source)
+                    rows.Add(row);
+
+                return rows;
+            }
+
+            (await Rows(ClrEnumerableDefaults.SkipAsync(Source(), -1))).Should().Equal(0, 1, 2, 3, 4);
+            (await Rows(ClrEnumerableDefaults.TakeAsync(Source(), -1))).Should().BeEmpty();
+
+            (await Rows(ClrEnumerableDefaults.SkipAsync(Source(), java.math.BigDecimal.valueOf(-1)))).Should().Equal(0, 1, 2, 3, 4);
+            (await Rows(ClrEnumerableDefaults.TakeAsync(Source(), java.math.BigDecimal.valueOf(-1)))).Should().BeEmpty();
+        }
+
+        /// <summary>
         /// The asynchronous fetch draws the same rows as the synchronous one.
         /// </summary>
         [TestMethod]

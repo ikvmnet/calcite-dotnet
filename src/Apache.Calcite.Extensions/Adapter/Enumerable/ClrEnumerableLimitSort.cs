@@ -73,6 +73,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var sourceType = inputPhysType.RowType;
 
             var comparator = collationComparator ?? Expression.Constant(null, typeof(java.util.Comparator));
+            var roundingPolicy = ClrEnumerableLimit.RoundingPolicy(implementor);
 
             return implementor.Result(physType,
                 Expression.Call(null,
@@ -80,8 +81,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     result.Expression,
                     keySelector,
                     comparator,
-                    offset == null ? Expression.Constant(0) : ClrEnumerableLimit.Count(implementor, offset),
-                    fetch == null ? Expression.Constant(int.MaxValue) : ClrEnumerableLimit.Count(implementor, fetch)));
+                    offset == null ? Expression.Constant(java.math.BigDecimal.ZERO) : ClrEnumerableLimit.Count(implementor, offset, "OFFSET", roundingPolicy),
+                    fetch == null ? Expression.Constant(java.math.BigDecimal.valueOf(int.MaxValue)) : ClrEnumerableLimit.Count(implementor, fetch, "FETCH", roundingPolicy)));
         }
 
         /// <inheritdoc />
@@ -96,14 +97,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var sourceType = inputPhysType.RowType;
 
             var comparator = collationComparator ?? Expression.Constant(null, typeof(java.util.Comparator));
+            var roundingPolicy = ClrEnumerableLimit.RoundingPolicy(implementor);
 
             return implementor.ResultAsync(physType,
                 ClrBuiltInMethod.CallAsync(ClrBuiltInMethod.OrderByWithFetchAndOffsetAsync.MakeGenericMethod(sourceType, keySelector.ReturnType),
                     result.Expression,
                     keySelector,
                     comparator,
-                    offset == null ? Expression.Constant(0) : ClrEnumerableLimit.Count(implementor, offset),
-                    fetch == null ? Expression.Constant(int.MaxValue) : ClrEnumerableLimit.Count(implementor, fetch)));
+                    offset == null ? Expression.Constant(java.math.BigDecimal.ZERO) : ClrEnumerableLimit.Count(implementor, offset, "OFFSET", roundingPolicy),
+                    fetch == null ? Expression.Constant(java.math.BigDecimal.valueOf(int.MaxValue)) : ClrEnumerableLimit.Count(implementor, fetch, "FETCH", roundingPolicy)));
         }
 
     }

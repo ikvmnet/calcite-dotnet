@@ -68,6 +68,14 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable
             {
                 org.apache.calcite.prepare.Prepare.CatalogReader.THREAD_LOCAL.set(CatalogReader);
                 InternalParameters.put("_conformance", Context.config().conformance());
+
+                // a caller that wants a fractional FETCH or OFFSET rounded its own way puts the policy on the
+                // planner's context, and the limit reads it back out of the data context. The planner is the
+                // cluster's, which is the one CalcitePrepareImpl asks
+                var roundingPolicy = node.getCluster().getPlanner().getContext().unwrap((java.lang.Class)typeof(org.apache.calcite.adapter.enumerable.FetchOffsetRoundingPolicy));
+                if (roundingPolicy != null)
+                    InternalParameters.put(Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableRelImplementor.FetchOffsetRoundingPolicy, roundingPolicy);
+
                 plan = new ClrPreparedPlan(InternalParameters, node, Prefer);
             }
             finally

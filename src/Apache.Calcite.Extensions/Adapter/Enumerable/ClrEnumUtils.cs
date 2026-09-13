@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -341,6 +341,17 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var toPrimitive = ClrPrimitive.Of(type);
             var fromBox = ClrPrimitive.OfBox(expression.Type);
 
+            // an object or a string wanted as a number: a cast is what Java would write and it throws on a
+            // string, so Calcite converts instead -- CALCITE-6284, where binding a string to a parameter
+            // compared against an integer column gave a ClassCastException rather than saying which value
+            // was not a number
+            if (type == typeof(java.lang.Number) && (expression.Type == typeof(object) || expression.Type == typeof(string)))
+                return Expression.Condition(
+                    Expression.Equal(expression, Expression.Constant(null, expression.Type)),
+                    Expression.Constant(null, typeof(java.math.BigDecimal)),
+                    Expression.Call(null, ToBigDecimal, Convert(expression, typeof(object))),
+                    typeof(java.math.BigDecimal));
+
             // int to Integer, and int to Long by way of long, exactly as Java widens before it boxes
             if (fromPrimitive != null && ClrPrimitive.OfBox(type) is J.Primitive toBox)
                 return Box(Number(expression, toBox), toBox);
@@ -422,6 +433,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             return null;
         }
+
+        /// <summary>
+        /// <c>SqlFunctions.toBigDecimal(Object)</c>, which reads a number out of whatever it is given and
+        /// says which value it could not.
+        /// </summary>
+        static readonly MethodInfo ToBigDecimal = typeof(org.apache.calcite.runtime.SqlFunctions).GetMethod(nameof(org.apache.calcite.runtime.SqlFunctions.toBigDecimal), [typeof(object)]) ?? throw new java.lang.NoSuchMethodError("SqlFunctions.toBigDecimal(Object)");
 
         /// <summary>
         /// The members Calcite names through <c>BuiltInMethod</c> for a datetime as a row stores it.

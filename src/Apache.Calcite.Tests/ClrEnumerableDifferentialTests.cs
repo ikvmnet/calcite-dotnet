@@ -1573,6 +1573,51 @@ namespace Apache.Calcite.Tests
             SameLimitSort("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" DESC OFFSET 5 ROWS FETCH NEXT 10 ROWS ONLY");
 
         /// <summary>
+        /// A FETCH and an OFFSET wider than an <c>int</c>.
+        /// </summary>
+        /// <remarks>
+        /// The counts are read as a <c>BigDecimal</c> rather than an <c>int</c>, which is what CALCITE-7624
+        /// is for. Upstream's own sort.iq asserted <c>Integer overflow: 3000000000 is out of range for
+        /// INT</c> here and now asserts the rows.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnALimitWiderThanAnInt() =>
+            Same("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET 2500000000 ROWS FETCH NEXT 3000000000 ROWS ONLY");
+
+        /// <summary>
+        /// A FETCH wider than an <c>int</c>, over the bounded sort.
+        /// </summary>
+        /// <remarks>
+        /// The limit sort adds the offset to the fetch to size its map, so it is where a count that cannot be
+        /// an <c>int</c> is most easily read as one.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortWiderThanAnInt() =>
+            SameLimitSort("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET 2 ROWS FETCH NEXT 3000000000 ROWS ONLY");
+
+        /// <summary>
+        /// A FETCH and an OFFSET that are not whole numbers.
+        /// </summary>
+        /// <remarks>
+        /// A count is a <c>BigDecimal</c>, and <c>rowsRequired</c> rounds it to the row it reaches into
+        /// rather than truncating: OFFSET 1.5 skips two rows and FETCH 2.5 takes three. Comparing against the
+        /// whole-number query says which way, where agreeing with the other convention alone would not — a
+        /// truncating implementation would answer OFFSET 1 FETCH 2 and both would answer it together.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnAFractionalLimit()
+        {
+            const string fractional = "SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET 1.5 ROWS FETCH NEXT 2.5 ROWS ONLY";
+            const string rounded = "SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY";
+
+            SameLimitSort(fractional);
+
+            var rows = Run(fractional, true, limitSort: true);
+            rows.Should().HaveCount(3);
+            rows.Should().Equal(Run(rounded, true, limitSort: true));
+        }
+
+        /// <summary>
         /// Both conventions plan a limit sort for the queries above, rather than one of them planning a limit
         /// over a sort.
         /// </summary>
@@ -1762,6 +1807,54 @@ namespace Apache.Calcite.Tests
 
         [TestMethod]
         public void ShouldAgreeOnANullPartitionKey() => Same("SELECT \"ID\", COUNT(*) OVER (PARTITION BY \"AMOUNT\") FROM \"SALES\" ORDER BY \"ID\"");
+
+        /// <summary>
+        /// FIRST_VALUE and LAST_VALUE carrying IGNORE NULLS.
+        /// </summary>
+        /// <remarks>
+        /// CALCITE-7701. A window aggregate carrying IGNORE NULLS was refused outright; it is implemented for
+        /// these two, so the refusal now asks what the function is. What reads the flag is the implementor
+        /// Calcite hands us, through <c>WinAggContext.ignoreNulls</c>.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnFirstValueIgnoringNulls() =>
+            Same("SELECT \"ID\", \"AMOUNT\", FIRST_VALUE(\"AMOUNT\") IGNORE NULLS OVER (ORDER BY \"ID\" ROWS 2 PRECEDING) FROM \"SALES\" ORDER BY \"ID\"");
+
+        /// <inheritdoc cref="ShouldAgreeOnFirstValueIgnoringNulls" />
+        [TestMethod]
+        public void ShouldAgreeOnLastValueIgnoringNulls() =>
+            Same("SELECT \"ID\", \"AMOUNT\", LAST_VALUE(\"AMOUNT\") IGNORE NULLS OVER (ORDER BY \"ID\" ROWS 2 PRECEDING) FROM \"SALES\" ORDER BY \"ID\"");
+
+        /// <inheritdoc cref="ShouldAgreeOnFirstValueIgnoringNulls" />
+        [TestMethod]
+        public void ShouldAgreeOnFirstValueRespectingNulls() =>
+            Same("SELECT \"ID\", \"AMOUNT\", FIRST_VALUE(\"AMOUNT\") RESPECT NULLS OVER (ORDER BY \"ID\" ROWS 2 PRECEDING) FROM \"SALES\" ORDER BY \"ID\"");
+
+        /// <summary>
+        /// A window aggregate carrying a FILTER.
+        /// </summary>
+        /// <remarks>
+        /// CALCITE-7595, which is three pieces: the validator accepts the clause, <c>RexImpTable</c> gained a
+        /// FILTER implementor, and <c>WinAggAddContext.rexFilterArgument</c> stopped answering null.
+        ///
+        /// <para>These reach the first two and not the third. <c>SqlToRelConverter</c> turns the FILTER into a
+        /// <c>CASE</c> in the calc below the window, so the window's <c>AggregateCall</c> carries no filter
+        /// argument at all — measured by dumping the plan, and again by a probe that throws where one arrives
+        /// and never fired. What they do hold is that both conventions answer the query alike.</para>
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnAFilteredWindowCount() =>
+            Same("SELECT \"ID\", COUNT(*) FILTER (WHERE \"AMOUNT\" > 15) OVER (PARTITION BY \"REGION\") FROM \"SALES\" ORDER BY \"ID\"");
+
+        /// <inheritdoc cref="ShouldAgreeOnAFilteredWindowCount" />
+        [TestMethod]
+        public void ShouldAgreeOnAFilteredWindowSum() =>
+            Same("SELECT \"ID\", SUM(\"AMOUNT\") FILTER (WHERE \"AMOUNT\" IS NOT NULL) OVER (PARTITION BY \"REGION\") FROM \"SALES\" ORDER BY \"ID\"");
+
+        /// <inheritdoc cref="ShouldAgreeOnAFilteredWindowCount" />
+        [TestMethod]
+        public void ShouldAgreeOnTwoFilteredWindowAggregates() =>
+            Same("SELECT \"ID\", COUNT(*) FILTER (WHERE \"AMOUNT\" > 15) OVER (PARTITION BY \"REGION\"), SUM(\"AMOUNT\") FILTER (WHERE \"AMOUNT\" <= 15) OVER (PARTITION BY \"REGION\") FROM \"SALES\" ORDER BY \"ID\"");
 
         [TestMethod]
         public void ShouldAgreeOnAnEmptyFrame() => Same("SELECT \"ID\", SUM(\"AMOUNT\") OVER (ORDER BY \"ID\" ROWS BETWEEN 3 PRECEDING AND 2 PRECEDING) FROM \"SALES\" ORDER BY \"ID\"");

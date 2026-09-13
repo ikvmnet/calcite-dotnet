@@ -52,6 +52,18 @@ driver this one is modelled on*, has the reading. Not to be confused with
   two that have already bitten are in this file — `ClassNameFilter`'s allowlist, which appeared partway
   through the August snapshots, and `FLAT_PRODUCT`.
 
+  **And the modules of one snapshot can come apart in `.m2`, which the build will not tell you.** Every
+  project caches the timestamped snapshot it resolved in `obj\Debug\<tfm>\<Project>.maven.cache`, and
+  Maven copies that timestamped jar over the one shared `calcite-core-1.43.0-SNAPSHOT.jar`. So two projects
+  built on different days hold different builds, each rewrites the other's jar, and a copy that fails
+  because the jar is in use leaves a `.jar.<digits>.tmp` behind and the module keeps whatever it had.
+  Measured: a September `calcite-core` over an August `calcite-linq4j` threw
+  `NoSuchMethodError: Types.isValidJavaIdentifier` — added upstream 2026-08-18, CALCITE-7726 — out of
+  `JavaTypeFactoryImpl.createSyntheticType`, so **179 of 855 tests failed and the build was green**. The one
+  sign at build time is `warning IKVM0117: Emitted java.lang.NoSuchMethodError in ...`, which names the
+  method. **Read it.** The fix is to delete the stale `.maven.cache` and rebuild; check afterwards that
+  every `-SNAPSHOT.jar` copy is the same timestamped build.
+
   | arrived in | |
   |---|---|
   | 1.41 | `rel.core.AsofJoin`, `EnumerableAsofJoin`, `ENUMERABLE_ASOFJOIN_RULE` |

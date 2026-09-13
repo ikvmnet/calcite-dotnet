@@ -561,6 +561,53 @@ awaiting leaf inside it is read across, blocking a thread per row. Translating t
 callback and the stash; it would not remove that, and nothing can, short of Calcite compiling something other
 than Java.
 
+## Audit findings: every mirrored class against 1.43, audited 2026-09-13
+
+**The nodes, rules and helpers of this convention were derived from Calcite's, so moving to 1.43 means
+re-deriving them rather than compiling against it.** Every `Clr*` class was mapped to the Calcite class it
+mirrors and `git log calcite-1.42.0..HEAD` run over that file. Twenty of them had changed. What follows is
+the disposition of each, so that the next reading starts from here rather than from the whole log again.
+
+**Carried into this convention.**
+
+| | |
+|---|---|
+| CALCITE-7624 | a FETCH and an OFFSET are a `BigDecimal`. `ClrEnumerableLimit`, `ClrEnumerableLimitSort`, four operators in `ClrEnumerableDefaults`, and the bounded sort transcribed from upstream's body — which brought a trim fix ours never had |
+| CALCITE-7624 | the `FetchOffsetRoundingPolicy` a caller sets on the planner's context, stashed by `ClrEnumerablePreparingStmt` as `CalcitePrepareImpl` stashes it |
+| CALCITE-7678 | `Functions.deepComparer` where a field contains a struct, and `GenerateNullAwareAccessor`'s null test descending into a struct field |
+| CALCITE-6284 | an object or a string converted to a number rather than cast |
+| CALCITE-7701 | IGNORE NULLS refused only for the functions that do not implement it |
+| CALCITE-7595 | `rexFilterArgument` answering the field a window aggregate's FILTER reads |
+| CALCITE-7631, 7640 | the `RexImplementorTable` an `AggImpState` is built with, and the one `generatePredicate` translates against |
+| CALCITE-7670, 7669, 7583 | the uncollect, re-derived rather than patched |
+| CALCITE-6767, 7334, 6087 | the aggregate base, the merge join, the sorted aggregate rule's empty group set |
+| CALCITE-7592, 7662 | a FETCH or an OFFSET that is an expression, in the limit and in the merge union rule |
+
+**Not applicable, and why.**
+
+- **CALCITE-7206**, the duplicate `compare(Object, Object)` bridge method, is a fact about generated Java
+  source. `ClrPhysTypeImpl.GenerateComparator` builds a `DelegateComparator` and has no bridge method.
+- **CALCITE-7689** (MAP equality), **7728** and **7729** (what `OptimizeShuttle` and `BlockBuilder.optimize`
+  may discard) are in classes this project calls rather than mirrors, so the fix arrives in the jar.
+  `LixToClrTranslator` runs Calcite's own shuttle and there is no inlining of ours.
+- **CALCITE-7557** clamps a negative count in `Linq4j.ListEnumerable`'s list fast path. **No generated plan
+  reaches that path, in either engine.** It is an override of `Enumerable.skip`, so it needs virtual dispatch
+  on a linq4j sequence, and `EnumerableLimit` — the only thing in core that generates a skip or a take — has
+  named the *static* `EnumerableDefaults.skip(Enumerable, BigDecimal)` since 7624. `BuiltInMethod.SKIP` and
+  `TAKE`, the `ExtendedEnumerable` pair that would dispatch, have no caller left in `core/src/main/java` at
+  all — measured, and it is why the four `int` entries in `ClrBuiltInMethod` could go. The fast path serves
+  hand-written linq4j. What this project had to match was the counters, which already agreed, and
+  `ClrEnumerableDefaultsContractTests` now says so.
+- **CALCITE-7682, 7683, 7684, 7691** are the SESSION, HOP and TUMBLE enumerators, and **7510**'s
+  `EnumerableDefaults.update` is DML. Both are Calcite's own code reached through a generated tree.
+- **CALCITE-7650** and **7725** are annotations and a comment. **CALCITE-7750** is `Primitive.checkOverflow`,
+  which `ClrPrimitive` does not mirror.
+
+**One of the ports has no test that reaches it.** `RexFilterArgument`'s second branch is unreached, because
+`SqlToRelConverter` rewrites a window aggregate's FILTER into a `CASE` below the window — measured by
+dumping the plan and by a probe that throws where a filter argument arrives and never fired. It is written
+because Calcite writes it, and the site says so.
+
 ## Audit findings: 45 operators, twelve agents, one method group each
 
 **The audit has run, and its findings are fixed.** 45 operators, twelve agents, one method group each:
