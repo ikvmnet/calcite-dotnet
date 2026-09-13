@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 using org.apache.calcite.runtime;
@@ -1420,7 +1420,10 @@ namespace Apache.Calcite.Geography.Runtime
         ///
         /// <para>Each vertex is carried sideways along the perpendicular to the way the line is going there,
         /// which at an interior vertex is taken as the direction from the vertex before to the vertex after.
-        /// That smooths a corner rather than mitring it. Calcite's third argument names a JTS buffer style —
+        /// That smooths a corner rather than mitring it. A closed line has no interior to speak of — every
+        /// vertex is one, the first and the last being the same point — so the vertex before the first is
+        /// the one before the repeated last and the vertex after the last is the second, and the offset of
+        /// a ring is a ring. Calcite's third argument names a JTS buffer style —
         /// the join and cap rules a planar offset needs — and has no counterpart here, so this takes two
         /// arguments where Calcite's takes three; a style that says how to square off a corner in degrees
         /// describes nothing this function does.</para>
@@ -1436,14 +1439,21 @@ namespace Apache.Calcite.Geography.Runtime
             if (vertices.Length < 2)
                 return Wgs84Of(Factory.createLineString([]));
 
+            // a closed line has no ends: the vertex before the first is the one before the repeated last,
+            // and the vertex after the last is the second. Read as though it had ends, the shared vertex is
+            // carried two different ways -- once for the edge leaving it and once for the edge arriving --
+            // and the offset of a ring comes back open, by twice the distance across the corner.
+            var closed = path.isClosed() && vertices.Length >= 4;
+            var last = vertices.Length - 1;
+
             var moved = new org.locationtech.jts.geom.Coordinate[vertices.Length];
 
             for (var i = 0; i < vertices.Length; i++)
             {
                 // the way the line is going here: from the vertex before to the vertex after, so that a
                 // corner is rounded off rather than left to whichever of its two edges was asked
-                var before = vertices[i == 0 ? 0 : i - 1];
-                var after = vertices[i == vertices.Length - 1 ? i : i + 1];
+                var before = vertices[i == 0 ? (closed ? last - 1 : 0) : i - 1];
+                var after = vertices[i == last ? (closed ? 1 : i) : i + 1];
 
                 moved[i] = Ellipsoid.Offset(vertices[i], Ellipsoid.Azimuth(before, after) - 90, metres);
             }

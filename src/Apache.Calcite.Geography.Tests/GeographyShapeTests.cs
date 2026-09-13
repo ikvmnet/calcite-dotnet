@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 using Apache.Calcite.Geography.Runtime;
 
@@ -189,6 +189,56 @@ namespace Apache.Calcite.Geography.Tests
                 "SELECT ST_GEOG_AREA(ST_GEOG_MAKEELLIPSE(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 20000.0, 10000.0))")[0][0];
             (ellipse is java.lang.Number b ? b.doubleValue() : double.NaN).Should().BeGreaterThan(0);
         }
+
+        /// <summary>
+        /// A closed line offsets to a closed line.
+        /// </summary>
+        /// <remarks>
+        /// A ring has no ends, so the vertex it begins and finishes on has to be carried one way and not
+        /// two. Read as though the line had ends, the first vertex takes its direction from the edge leaving
+        /// it and the last from the edge arriving, and the same point lands in two places: a ten kilometre
+        /// offset of a square came back open with fourteen kilometres between its ends, which is the
+        /// diagonal across the corner.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldOffsetAClosedLineToAClosedLine()
+        {
+            var ring = Wkt("LINESTRING(-1 -1, 1 -1, 1 1, -1 1, -1 -1)");
+            var offset = (org.locationtech.jts.geom.LineString)GeographyFunctions.OffsetCurve(ring, java.lang.Double.valueOf(10 * Kilometre))!;
+
+            offset.isClosed().Should().BeTrue("the line it was drawn beside is closed");
+            offset.getNumPoints().Should().Be(ring.getNumPoints(), "a vertex is carried, not added or dropped");
+        }
+
+        /// <summary>
+        /// And it carries the shared vertex the way it carries any other corner.
+        /// </summary>
+        /// <remarks>
+        /// Closing the ring is not enough on its own — the shared vertex could be closed by carrying it the
+        /// wrong way twice. So the same corner is offset in both shapes it can appear in: as the interior
+        /// vertex of an open line, and as the point a ring begins and finishes on. It has to land in the
+        /// same place, because a ring's first vertex <em>is</em> an interior one.
+        ///
+        /// <para>Its distance from the line is not the distance asked for, and that is the smoothing the
+        /// function documents rather than a fault: a vertex is carried the full distance along the bisector,
+        /// so a right-angled corner ends up the cosine of forty-five degrees of it from either edge.</para>
+        /// </remarks>
+        [TestMethod]
+        public void ShouldCarryTheSharedVertexAsAnInteriorOne()
+        {
+            var ring = Wkt("LINESTRING(-1 -1, 1 -1, 1 1, -1 1, -1 -1)");
+            var open = Wkt("LINESTRING(-1 1, -1 -1, 1 -1)");
+
+            var offsetRing = (org.locationtech.jts.geom.LineString)GeographyFunctions.OffsetCurve(ring, java.lang.Double.valueOf(10 * Kilometre))!;
+            var offsetOpen = (org.locationtech.jts.geom.LineString)GeographyFunctions.OffsetCurve(open, java.lang.Double.valueOf(10 * Kilometre))!;
+
+            var shared = offsetRing.getCoordinateN(0);
+            var interior = offsetOpen.getCoordinateN(1);
+
+            shared.x.Should().BeApproximately(interior.x, 1e-9, "the corner at (-1,-1) is the same corner in both");
+            shared.y.Should().BeApproximately(interior.y, 1e-9, "the corner at (-1,-1) is the same corner in both");
+        }
+
 
     }
 
