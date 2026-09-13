@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
@@ -229,6 +229,9 @@ namespace Apache.Calcite.Tests
         /// <c>[EnumeratorCancellation]</c> replaces with the token the caller gives
         /// <c>GetAsyncEnumerator</c>. An operator called without it would not compile, and one called with
         /// something else would silently ignore the caller's cancellation.
+        ///
+        /// <para>The statement's own token reaches the same place from the other end: the awaiting root
+        /// reads it off the <c>DataContext</c> and wraps the plan so that it is the enumerator's token.</para>
         /// </remarks>
         [TestMethod]
         public void ShouldBuildTheAwaitingOperatorsAsynchronously()

@@ -321,11 +321,27 @@ Four remain:
   `AnAsynchronousSortShouldAcquireAtExecuteAndDrainAtTheFirstRead`, which hold the opposite promise
   deliberately. So this is a change to the convention's execution contract rather than to the adapter, and
   it is the decision that gates it.
-- **Cancellation.** `AdoSequences.ReadAsync` observes the token the caller passes to `GetAsyncEnumerator`,
-  and `AdoClrEnumerableTests.ShouldObserveACancelledToken` holds that. What is not wired is where such a token
-  comes from: `DataContext.Variable.CANCEL_FLAG` is Calcite's cancellation channel and nothing in the
-  adapter reads it, so a statement a plan sent still runs to completion when the statement is cancelled. On
-  the synchronous path there is no token at all and `DbCommand.Cancel()` is what it maps to.
+- **Cancellation is wired; `DbCommand.Cancel()` is not.** `StatementCancellation` holds one cancellation per
+  executing statement in both of the forms a plan can read it: a `CancellationToken`, which this
+  convention's operators carry from `GetAsyncEnumerator` down to `AdoSequences.ReadAsync` and
+  `DbDataReader.ReadAsync`, and the `AtomicBoolean` that goes into the `DataContext` as
+  `DataContext.Variable.CANCEL_FLAG`, which is what a table of Calcite's convention polls —
+  `ListTransientTable` and the CSV, file and Kafka adapters' tables. **The conversion between them is at the
+  boundary**, in `JavaSequences.FromJavaAsync`: that is the one crossing into Calcite's convention — the
+  converter builds a call to it, and so does a scan of a table of Calcite's SPI, which reaches no converter
+  at all — and it has the token at `GetAsyncEnumerator` and the flag through the `DataContext`, so it
+  registers one against the other for as long as that sub-plan is read. A plan with no Calcite sub-plan arms
+  nothing. `AdoCancellationTests` holds the token end against a real `DbDataReader`,
+  `StatementCancellationTests` the flag end against a table that blocks. A token given to
+  `DbDataReader.ReadAsync` gets a registration against the statement for the length of the call, which is
+  what `SqlDataReader.ReadAsync` does with one — read, not remembered.
+
+  **The synchronous route is not cancellable and does not claim to be.** A pulled plan carries no token and
+  `FromJava` has none to convert, so a synchronous read refuses at the next `ReadAsync` and no further.
+
+  `DbCommand.Cancel()` is still a no-op. `StatementCancellation.Cancel()` is what it would call and the
+  ADO.NET contract is what it costs: the command would have to hold the live statement, and the reader,
+  which outlives the execute call, owns it now.
 - **Timeout.** `DbCommand.CommandTimeout` is never set, so every statement takes the provider default.
 - **Connection lifetime.** `AdoEnumerable.enumerator()` and `AdoSequences` open a connection per enumeration
   (`AdoEnumerable.cs:353`). For a plan with two pushed subtrees that is two connections, and for the

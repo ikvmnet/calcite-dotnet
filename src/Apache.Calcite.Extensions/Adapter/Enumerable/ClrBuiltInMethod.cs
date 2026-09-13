@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Reflection;
 
 using Apache.Calcite.Extensions.Interop;
@@ -550,8 +550,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <para>The value appended is <c>default</c>, and that is not a token being thrown away. It is what
         /// <c>[EnumeratorCancellation]</c> reads: the compiler's iterator uses the token given to
         /// <see cref="System.Collections.Generic.IAsyncEnumerable{T}.GetAsyncEnumerator"/> in place of a
-        /// parameter that arrived as <c>default</c>. Passing <c>default</c> from the plan is what lets the
-        /// caller's token reach every operator without the plan carrying one.</para>
+        /// parameter that arrived as <c>default</c>, and a factory operator reads that token directly. So
+        /// the plan carries no token and every operator still gets one.
+        ///
+        /// <para>The statement's own cancellation reaches the same place from the other end:
+        /// <c>ClrEnumerableRelImplementor.ImplementRootAsync</c> reads it off the <c>DataContext</c> and
+        /// wraps the plan so that it <em>is</em> the enumerator's token. See
+        /// <c>Runtime.ClrDataContexts</c>.</para>
         /// </remarks>
         public static System.Linq.Expressions.MethodCallExpression CallAsync(MethodInfo method, params System.Linq.Expressions.Expression[] arguments)
         {

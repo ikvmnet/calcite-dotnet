@@ -1,3 +1,4 @@
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,6 +19,8 @@ namespace Apache.Calcite.Data.Internal
     {
 
         readonly IEnumerator<object>? _enumerator;
+        readonly IDisposable? _dataContext;
+        readonly CancellationTokenSource? _cancellation;
 
         /// <summary>
         /// Initializes a new instance.
@@ -26,10 +29,15 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="enumerator">The plan's enumerator, or <see langword="null"/> where there is nothing
         /// to read — a DDL statement has already taken effect, and a DML one reports a count.</param>
         /// <param name="recordsAffected"></param>
-        public CalciteEnumerableResult(IClrPrepare.Signature signature, IEnumerator<object>? enumerator, long recordsAffected = -1) :
+        /// <param name="dataContext">The statement's context, which holds the registration tying its token
+        /// to Calcite's cancel flag.</param>
+        /// <param name="cancellation">The statement's cancellation source.</param>
+        public CalciteEnumerableResult(IClrPrepare.Signature signature, IEnumerator<object>? enumerator, long recordsAffected = -1, IDisposable? dataContext = null, CancellationTokenSource? cancellation = null) :
             base(signature, recordsAffected)
         {
             _enumerator = enumerator;
+            _dataContext = dataContext;
+            _cancellation = cancellation;
         }
 
         /// <inheritdoc />
@@ -48,6 +56,13 @@ namespace Apache.Calcite.Data.Internal
         /// <see cref="Read"/> in a completed task. There is nothing asynchronous here to be over: a
         /// synchronous plan produces its rows synchronously, and saying so is what lets a caller written
         /// against <c>ReadAsync</c> work over one.
+        ///
+        /// <para><b>The token stops the reader between rows and no further, and there is nothing else it
+        /// could do.</b> A pulled plan carries no token — no operator of the synchronous set takes one and
+        /// <c>JavaSequences.FromJava</c> has none to convert at a crossing into Calcite's convention — so a
+        /// <see cref="Read"/> already under way cannot be interrupted. Registering the token against the
+        /// statement would reach nothing on this route and read as though it reached something. A caller
+        /// that needs a read it can cancel asks for the awaiting plan, which is the default.</para>
         /// </remarks>
         public override Task<bool> ReadAsync(CancellationToken cancellationToken)
         {
@@ -59,7 +74,15 @@ namespace Apache.Calcite.Data.Internal
         /// <inheritdoc />
         protected override void Release()
         {
-            _enumerator?.Dispose();
+            try
+            {
+                _enumerator?.Dispose();
+            }
+            finally
+            {
+                _dataContext?.Dispose();
+                _cancellation?.Dispose();
+            }
         }
 
         /// <inheritdoc />

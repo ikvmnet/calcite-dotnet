@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 
@@ -85,6 +85,12 @@ namespace Apache.Calcite.Extensions.Interop
         /// synchronously costs a state machine and no thread -- it is not the sync-over-async this
         /// convention refuses, which is a caller blocked waiting. A plan reading a Calcite sub-plan this way
         /// is simply not asynchronous over that part of itself, and cannot be.</para>
+        ///
+        /// <para>The per-row check stops rows crossing once the token has fired. It is not what stops the
+        /// sub-plan below: a table of Calcite's convention reads <c>DataContext.Variable.CANCEL_FLAG</c>
+        /// and may be inside <c>moveNext()</c> and never come back to be checked. Tying that flag to the
+        /// statement's token is <c>StatementDataContext</c>'s job, where every other fact a statement hands
+        /// Calcite is put into the form Calcite reads it in.</para>
         /// </remarks>
         public static IAsyncEnumerable<TSource> FromJavaAsync<TSource>(org.apache.calcite.linq4j.Enumerable source, System.Threading.CancellationToken cancellationToken = default)
         {

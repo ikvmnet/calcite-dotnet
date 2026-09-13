@@ -1,6 +1,8 @@
-using System;
+﻿using System;
 
 using Apache.Calcite.Extensions.Prepare;
+
+using FluentAssertions;
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -25,7 +27,7 @@ namespace Apache.Calcite.Tests
     public class StatementDataContextTests
     {
 
-        static StatementDataContext Context(string? timeZone = null, string? locale = null)
+        static StatementDataContext Context(string? timeZone = null, string? locale = null, System.Threading.CancellationToken cancellationToken = default)
         {
             var props = new java.util.Properties();
             if (timeZone != null)
@@ -41,7 +43,7 @@ namespace Apache.Calcite.Tests
                 new JavaTypeFactoryImpl(),
                 config,
                 [],
-                new java.util.concurrent.atomic.AtomicBoolean(false),
+                cancellationToken,
                 0,
                 []);
         }
@@ -114,6 +116,72 @@ namespace Apache.Calcite.Tests
         public void Should_answer_null_for_an_unknown_name()
         {
             Assert.IsNull(Context().get("nothingIsCalledThis"));
+        }
+
+        /// <summary>
+        /// The statement's token arrives as the flag Calcite's side polls.
+        /// </summary>
+        /// <remarks>
+        /// The same adaptation the time zone and the locale get: a .NET-side fact of the statement is put
+        /// into the map in the form Calcite's generated code reads it. The flag has to be a registration
+        /// rather than an <c>AtomicBoolean</c> that answers from the token, because <c>AtomicBoolean.get()</c>
+        /// is <c>final</c> — measured against the IKVM assembly.
+        ///
+        /// <para>What reads it is a table: <c>ListTransientTable</c>, and the CSV, file and Kafka adapters'
+        /// tables. No operator of <c>EnumerableDefaults</c> polls it for them, so the flag reaches exactly as
+        /// far as the tables that read it.</para>
+        /// </remarks>
+        [TestMethod]
+        public void Should_answer_a_cancel_flag_that_follows_the_statements_token()
+        {
+            using var cancellation = new System.Threading.CancellationTokenSource();
+            using var context = Context(cancellationToken: cancellation.Token);
+
+            var flag = (java.util.concurrent.atomic.AtomicBoolean)DataContext.Variable.CANCEL_FLAG.get(context);
+            flag.Should().NotBeNull();
+            flag.get().Should().BeFalse();
+
+            cancellation.Cancel();
+
+            flag.get().Should().BeTrue();
+        }
+
+        /// <summary>
+        /// Disposing the context releases the registration, so a long-lived token stops holding the flag.
+        /// </summary>
+        /// <remarks>
+        /// A caller's token outlives a statement — a request token runs many of them — so a registration
+        /// left behind is one live callback and one flag held per statement for the life of that token.
+        /// </remarks>
+        [TestMethod]
+        public void Should_release_the_cancel_flag_when_disposed()
+        {
+            using var cancellation = new System.Threading.CancellationTokenSource();
+            var context = Context(cancellationToken: cancellation.Token);
+
+            var flag = (java.util.concurrent.atomic.AtomicBoolean)DataContext.Variable.CANCEL_FLAG.get(context);
+            context.Dispose();
+
+            cancellation.Cancel();
+
+            flag.get().Should().BeFalse("the registration went with the context");
+        }
+
+        /// <summary>
+        /// A statement with no cancellation registers nothing, and still has a flag.
+        /// </summary>
+        /// <remarks>
+        /// Calcite's own <c>CalciteConnectionImpl.createDataContext</c> always puts one in the map, and a
+        /// table reads it without asking whether anybody can set it.
+        /// </remarks>
+        [TestMethod]
+        public void Should_answer_a_cancel_flag_for_an_uncancellable_statement()
+        {
+            using var context = Context();
+
+            var flag = (java.util.concurrent.atomic.AtomicBoolean)DataContext.Variable.CANCEL_FLAG.get(context);
+            flag.Should().NotBeNull();
+            flag.get().Should().BeFalse();
         }
 
     }
