@@ -158,18 +158,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </remarks>
         internal static Expression RoundingPolicy(ClrEnumerableRelImplementor implementor)
         {
-            var policy = implementor.Map.get(FetchOffsetRoundingPolicyKey);
+            var policy = implementor.Map.get(ClrEnumerableRelImplementor.FetchOffsetRoundingPolicy);
 
             return policy == null
                 ? Expression.Constant(FetchOffsetRoundingPolicy.NONE, typeof(FetchOffsetRoundingPolicy))
                 : implementor.Stash(policy, (java.lang.Class)typeof(FetchOffsetRoundingPolicy));
         }
-
-        /// <summary>
-        /// The key a caller's <c>FetchOffsetRoundingPolicy</c> is stashed under, which is
-        /// <c>EnumerableRelImplementor.FETCH_OFFSET_ROUNDING_POLICY</c>.
-        /// </summary>
-        const string FetchOffsetRoundingPolicyKey = "_fetchOffsetRoundingPolicy";
 
         /// <summary>
         /// <c>EnumUtils.numberToBigDecimal</c>, which checks that a FETCH or OFFSET evaluated to a

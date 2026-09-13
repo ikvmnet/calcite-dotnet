@@ -48,6 +48,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     public class ClrEnumerableRelImplementor : IClrRelImplementor
     {
 
+        /// <summary>
+        /// The key a caller's <c>FetchOffsetRoundingPolicy</c> is stashed under.
+        /// </summary>
+        /// <remarks>
+        /// <c>EnumerableRelImplementor.FETCH_OFFSET_ROUNDING_POLICY</c>, spelled the same, because the two
+        /// conventions read one map and a caller sets one key.
+        /// </remarks>
+        public const string FetchOffsetRoundingPolicy = "_fetchOffsetRoundingPolicy";
+
         readonly RexBuilder rexBuilder;
         readonly java.util.Map map;
         readonly Dictionary<string, CorrelInputGetter> corrVars = [];
