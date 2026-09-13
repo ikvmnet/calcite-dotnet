@@ -423,6 +423,17 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 for (int i = 0; i < agg.call.getArgList().size(); i++)
                     args.add(RexInputRef.of(((java.lang.Integer)agg.call.getArgList().get(i)).intValue(), inputTypes));
 
+                // a percentile function -- PERCENTILE_CONT, PERCENTILE_DISC -- takes the fraction as its
+                // only argument but aggregates over the WITHIN GROUP (ORDER BY ...) column, so that column
+                // is handed over as an extra argument for the accumulator to collect. Already in order: the
+                // source sorter put it there
+                if (agg.call.getAggregation().isPercentile())
+                {
+                    var collations = agg.call.collation.getFieldCollations();
+                    for (int i = 0; i < collations.size(); i++)
+                        args.add(RexInputRef.of(((RelFieldCollation)collations.get(i)).getFieldIndex(), inputTypes));
+                }
+
                 return args;
             }
 

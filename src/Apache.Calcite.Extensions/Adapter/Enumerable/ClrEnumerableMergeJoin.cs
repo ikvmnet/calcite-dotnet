@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 
@@ -433,6 +433,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var leftKeyPhysType = leftResult.PhysType.Project(joinInfo.leftKeys, JavaRowFormat.LIST);
             var rightKeyPhysType = rightResult.PhysType.Project(joinInfo.rightKeys, JavaRowFormat.LIST);
 
+            // Calcite forces Function1 on these two, because linq4j's Expressions.lambda deduces Predicate1
+            // for a single BOOLEAN key and that does not match mergeJoin's signature. There is nothing to
+            // force here: Expression.Lambda resolves its delegate through Expression.GetDelegateType, which
+            // answers Func<> and never a predicate type, so a bool key gives Func<TSource, bool> and TKey
+            // binds to bool
             var leftKey = Expression.Lambda(leftKeyPhysType.Record(leftExpressions), left_);
             var rightKey = Expression.Lambda(rightKeyPhysType.Record(rightExpressions), right_);
 
@@ -524,6 +529,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var leftKeyPhysType = leftResult.PhysType.Project(joinInfo.leftKeys, JavaRowFormat.LIST);
             var rightKeyPhysType = rightResult.PhysType.Project(joinInfo.rightKeys, JavaRowFormat.LIST);
 
+            // Calcite forces Function1 on these two, because linq4j's Expressions.lambda deduces Predicate1
+            // for a single BOOLEAN key and that does not match mergeJoin's signature. There is nothing to
+            // force here: Expression.Lambda resolves its delegate through Expression.GetDelegateType, which
+            // answers Func<> and never a predicate type, so a bool key gives Func<TSource, bool> and TKey
+            // binds to bool
             var leftKey = Expression.Lambda(leftKeyPhysType.Record(leftExpressions), left_);
             var rightKey = Expression.Lambda(rightKeyPhysType.Record(rightExpressions), right_);
 

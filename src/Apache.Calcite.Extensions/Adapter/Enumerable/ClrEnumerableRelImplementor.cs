@@ -137,6 +137,18 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         public java.util.Map Map => map;
 
         /// <summary>
+        /// Gets the table of implementors a translated call is written with.
+        /// </summary>
+        /// <remarks>
+        /// <c>EnumerableRelImplementor.getRexImplementorTable</c>: whatever a caller stashed under
+        /// <c>_rexImplementorTable</c>, and <c>RexImpTable.INSTANCE</c> where none did. It is read off the
+        /// same map the rest of the stashed state is, so a caller that registered implementors of its own
+        /// reaches a plan of this convention exactly as it reaches one of Calcite's.
+        /// </remarks>
+        public RexImplementorTable RexImplementorTable =>
+            (RexImplementorTable)map.getOrDefault("_rexImplementorTable", RexImpTable.INSTANCE);
+
+        /// <summary>
         /// Gets the lookup from a correlation variable's name to its getter, to hand to a generator of
         /// Calcite's that translates row expressions.
         /// </summary>

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -304,7 +304,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                         new RexToLixTranslator.InputGetterImpl(inputs),
                         implementor.AllCorrelateVariables,
                         implementor.Conformance,
-                        nullable)));
+                        nullable,
+                        implementor.RexImplementorTable)));
 
             var resultType = nullable ? typeof(java.lang.Boolean) : typeof(bool);
 
