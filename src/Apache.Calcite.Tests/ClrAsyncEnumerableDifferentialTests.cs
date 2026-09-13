@@ -332,6 +332,42 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
+        /// Requires that a statement fails the same way whichever half of the convention reads it.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <param name="message">Part of the message the pulled half fails with.</param>
+        /// <remarks>
+        /// <see cref="Same"/> for a statement that throws. The awaiting half has to fail where the pulled
+        /// half fails and for the same reason — a refusal is an answer, and the two bodies of a node are
+        /// required to agree on it as much as on rows. Whether that refusal is Calcite's is the sync
+        /// suite's question, which compares against <c>EnumerableConvention</c>.
+        /// </remarks>
+        static async Task SameFailure(string sql, string message)
+        {
+            static async Task<string> Failure(string sql, bool async)
+            {
+                try
+                {
+                    await Run(sql, async);
+                    return "<no failure>";
+                }
+                catch (Exception e)
+                {
+                    while (e.InnerException is not null)
+                        e = e.InnerException;
+
+                    return $"{e.GetType().Name}: {e.Message}";
+                }
+            }
+
+            var awaited = await Failure(sql, true);
+            var pulled = await Failure(sql, false);
+
+            pulled.Should().Contain(message, "'{0}' should fail this way when pulled", sql);
+            awaited.Should().Be(pulled, "'{0}' should fail the way the pulled half fails", sql);
+        }
+
+        /// <summary>
         /// Requires the same rows, and that the asynchronous convention really planned the node aimed at.
         /// </summary>
         /// <remarks>
@@ -442,7 +478,8 @@ namespace Apache.Calcite.Tests
         public Task ShouldAgreeOnCastingAnAnyColumnOfMillisToATimestamp() => Same("SELECT ID, CAST(M AS TIMESTAMP) FROM CASTS ORDER BY ID");
 
         [TestMethod]
-        public Task ShouldAgreeOnCastingAnAnyColumnToUuidChangingNothing() => Same("SELECT ID, CAST(G AS UUID) FROM CASTS ORDER BY ID");
+        public Task ShouldAgreeOnRefusingAUuidCastOfAnAnyColumn() =>
+            SameFailure("SELECT ID, CAST(G AS UUID) FROM CASTS ORDER BY ID", "to type 'java.util.UUID'");
 
         [TestMethod]
         public Task ShouldAgreeOnCastingAnAnyColumnThroughVarcharToUuid() => Same("SELECT ID, CAST(CAST(G AS VARCHAR) AS UUID) FROM CASTS ORDER BY ID");

@@ -607,11 +607,18 @@ What remains below is what was deliberate, and what is still unproven.
   `NullPointerException` — and `implementRoot` attaches it with `addSuppressed` rather than as a cause, so
   it is not in the exception chain at all. Ours raises the message that assertion carries.
 
-  **Nothing here is missing, and there is a lever.** With `forceDecorrelate=false` the correlate survives,
-  `ClrEnumerableCorrelate` binds the variable and the statement gives the right answer —
+  **Nothing here is missing, and there are two levers.** With `forceDecorrelate=false` the correlate
+  survives, `ClrEnumerableCorrelate` binds the variable and the statement gives the right answer —
   `ShouldRunACorrelatedExistsOverAnUncollectWithoutDecorrelation`. So the plan the decorrelator produces is
-  malformed and the plan it leaves alone is not. The fix is upstream; the workaround is
-  `CalciteConnectionStringBuilder.ForceDecorrelate` set false.
+  malformed and the plan it leaves alone is not.
+
+  **The better lever is 1.43's second decorrelator.** `Programs.DecorrelateProgram` chooses between
+  `RelDecorrelator` and `TopDownGeneralDecorrelator` on `topDownGeneralDecorrelationEnabled`, and the
+  top-down one answers this statement correctly *with* decorrelation — measured, `OK [1]` where the default
+  throws. `RelDecorrelator` itself is unchanged in the parts at fault: 288 lines differ between 1.42 and
+  1.43 and none of them touch `removeCorrelationViaRule`, its three rules, or the bail-outs. The property
+  is 1.43 only. Turning it on by default is a decision not yet taken — it is a different algorithm over
+  every statement, not a fix aimed at this one.
 
 ### The SPI contract, which needs no enforcing
 
