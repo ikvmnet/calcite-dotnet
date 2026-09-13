@@ -49,7 +49,9 @@
     </ItemGroup>
 
     <PropertyGroup>
-        <MavenAdditionalRepositories>$(MavenAdditionalRepositories);jboss=https://repository.jboss.org/nexus/content/groups/public;</MavenAdditionalRepositories>
+        <!-- 1.43 is unreleased and Apache publishes it as a snapshot, so every project that names calcite
+             reads it from there rather than from a copy of the artifacts checked into this repository. -->
+        <MavenAdditionalRepositories>$(MavenAdditionalRepositories);jboss=https://repository.jboss.org/nexus/content/groups/public;apache-snapshots=https://repository.apache.org/content/repositories/snapshots/;</MavenAdditionalRepositories>
     </PropertyGroup>
 
 </Project>

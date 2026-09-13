@@ -1,4 +1,4 @@
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
@@ -98,21 +98,31 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     }
 
                     var elementType = org.apache.calcite.sql.type.NonNullableAccessors.getComponentTypeOrThrow(type);
-                    if (elementType.isStruct() == false)
+                    if (elementType.isStruct() && expandStructFields)
+                    {
+                        // CALCITE-4063: one field, itself a struct of one item, and no ordinality, means the
+                        // result is a scalar rather than a list of one. The outer variant answers one null
+                        // scalar for an empty or null collection.
+                        if (elementType.getFieldCount() == 1 && fields.size() == 1 && withOrdinality == false)
+                            flatListForSingleItem = org.apache.calcite.linq4j.tree.Expressions.call(
+                                isOuter ? BuiltInMethod.FLAT_LIST_OUTER.method : BuiltInMethod.FLAT_LIST.method);
+                        else
+                        {
+                            fieldCounts.add(java.lang.Integer.valueOf(elementType.getFieldCount()));
+                            inputTypes.add(SqlFunctions.FlatProductInputType.LIST);
+                        }
+                    }
+                    else if (elementType.isStruct())
+                    {
+                        // a struct element kept whole occupies a single output column, like a scalar one, but
+                        // its row value is converted out of the collection's internal list representation
+                        fieldCounts.add(java.lang.Integer.valueOf(-1));
+                        inputTypes.add(SqlFunctions.FlatProductInputType.STRUCT);
+                    }
+                    else
                     {
                         fieldCounts.add(java.lang.Integer.valueOf(-1));
                         inputTypes.add(SqlFunctions.FlatProductInputType.SCALAR);
-                        continue;
-                    }
-
-                    // CALCITE-4063: one field, itself a struct of one item, and no ordinality, means the result is
-                    // a scalar rather than a list of one
-                    if (elementType.getFieldCount() == 1 && fields.size() == 1 && withOrdinality == false)
-                        flatListForSingleItem = org.apache.calcite.linq4j.tree.Expressions.call(BuiltInMethod.FLAT_LIST.method);
-                    else
-                    {
-                        fieldCounts.add(java.lang.Integer.valueOf(elementType.getFieldCount()));
-                        inputTypes.add(SqlFunctions.FlatProductInputType.LIST);
                     }
                 }
             }
@@ -127,10 +137,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var lambda = flatListForSingleItem
                 ?? org.apache.calcite.linq4j.tree.Expressions.call(
-                    BuiltInMethod.FLAT_PRODUCT.method,
+                    BuiltInMethod.FLAT_ZIP.method,
                     org.apache.calcite.linq4j.tree.Expressions.constant(counts),
                     org.apache.calcite.linq4j.tree.Expressions.constant(java.lang.Boolean.valueOf(ordinality)),
-                    org.apache.calcite.linq4j.tree.Expressions.constant(types));
+                    org.apache.calcite.linq4j.tree.Expressions.constant(types),
+                    org.apache.calcite.linq4j.tree.Expressions.constant(java.lang.Boolean.valueOf(isOuter)));
 
             var sourceType = result.PhysType.RowType;
             var rowType = physType.RowType;
@@ -184,21 +195,31 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     }
 
                     var elementType = org.apache.calcite.sql.type.NonNullableAccessors.getComponentTypeOrThrow(type);
-                    if (elementType.isStruct() == false)
+                    if (elementType.isStruct() && expandStructFields)
+                    {
+                        // CALCITE-4063: one field, itself a struct of one item, and no ordinality, means the
+                        // result is a scalar rather than a list of one. The outer variant answers one null
+                        // scalar for an empty or null collection.
+                        if (elementType.getFieldCount() == 1 && fields.size() == 1 && withOrdinality == false)
+                            flatListForSingleItem = org.apache.calcite.linq4j.tree.Expressions.call(
+                                isOuter ? BuiltInMethod.FLAT_LIST_OUTER.method : BuiltInMethod.FLAT_LIST.method);
+                        else
+                        {
+                            fieldCounts.add(java.lang.Integer.valueOf(elementType.getFieldCount()));
+                            inputTypes.add(SqlFunctions.FlatProductInputType.LIST);
+                        }
+                    }
+                    else if (elementType.isStruct())
+                    {
+                        // a struct element kept whole occupies a single output column, like a scalar one, but
+                        // its row value is converted out of the collection's internal list representation
+                        fieldCounts.add(java.lang.Integer.valueOf(-1));
+                        inputTypes.add(SqlFunctions.FlatProductInputType.STRUCT);
+                    }
+                    else
                     {
                         fieldCounts.add(java.lang.Integer.valueOf(-1));
                         inputTypes.add(SqlFunctions.FlatProductInputType.SCALAR);
-                        continue;
-                    }
-
-                    // CALCITE-4063: one field, itself a struct of one item, and no ordinality, means the result is
-                    // a scalar rather than a list of one
-                    if (elementType.getFieldCount() == 1 && fields.size() == 1 && withOrdinality == false)
-                        flatListForSingleItem = org.apache.calcite.linq4j.tree.Expressions.call(BuiltInMethod.FLAT_LIST.method);
-                    else
-                    {
-                        fieldCounts.add(java.lang.Integer.valueOf(elementType.getFieldCount()));
-                        inputTypes.add(SqlFunctions.FlatProductInputType.LIST);
                     }
                 }
             }
@@ -213,10 +234,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var lambda = flatListForSingleItem
                 ?? org.apache.calcite.linq4j.tree.Expressions.call(
-                    BuiltInMethod.FLAT_PRODUCT.method,
+                    BuiltInMethod.FLAT_ZIP.method,
                     org.apache.calcite.linq4j.tree.Expressions.constant(counts),
                     org.apache.calcite.linq4j.tree.Expressions.constant(java.lang.Boolean.valueOf(ordinality)),
-                    org.apache.calcite.linq4j.tree.Expressions.constant(types));
+                    org.apache.calcite.linq4j.tree.Expressions.constant(types),
+                    org.apache.calcite.linq4j.tree.Expressions.constant(java.lang.Boolean.valueOf(isOuter)));
 
             var sourceType = result.PhysType.RowType;
             var rowType = physType.RowType;
