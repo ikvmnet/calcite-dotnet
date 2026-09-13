@@ -33,27 +33,78 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <returns></returns>
         public static ClrEnumerableUncollect Create(RelTraitSet traitSet, RelNode input, bool withOrdinality)
         {
-            return new ClrEnumerableUncollect(input.getCluster(), traitSet, input, withOrdinality, com.google.common.collect.ImmutableList.of());
+            return Create(traitSet, input, withOrdinality, true, false);
         }
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Creates a <see cref="ClrEnumerableUncollect"/>.
+        /// </summary>
+        /// <param name="traitSet"></param>
+        /// <param name="input"></param>
+        /// <param name="withOrdinality">whether the output carries an ORDINALITY column</param>
+        /// <param name="expandStructFields">whether a collection of a struct gives one column per field of
+        /// it, rather than one column holding the element whole</param>
+        /// <param name="isOuter">whether an empty or null collection gives one row of nulls, as a LEFT JOIN
+        /// would, rather than no row at all</param>
+        /// <returns></returns>
+        public static ClrEnumerableUncollect Create(RelTraitSet traitSet, RelNode input, bool withOrdinality, bool expandStructFields, bool isOuter)
+        {
+            return new ClrEnumerableUncollect(input.getCluster(), traitSet, input, withOrdinality, com.google.common.collect.ImmutableList.of(), expandStructFields, isOuter);
+        }
+
+        /// <summary>
+        /// Initializes a new instance. Use <see cref="Create(RelTraitSet, RelNode, bool)"/> unless you know
+        /// what you are doing.
         /// </summary>
         /// <param name="cluster"></param>
         /// <param name="traitSet"></param>
         /// <param name="input"></param>
         /// <param name="withOrdinality"></param>
         /// <param name="itemAliases"></param>
+        /// <remarks>
+        /// <c>expandStructFields</c> is derived from the aliases being absent, which is what
+        /// <see cref="Uncollect"/>'s own constructor of this arity does and why this delegates rather than
+        /// naming a default: non-empty aliases historically meant the struct is not expanded.
+        /// </remarks>
         public ClrEnumerableUncollect(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, bool withOrdinality, java.util.List itemAliases) :
-            base(cluster, traitSet, input, withOrdinality, itemAliases)
+            this(cluster, traitSet, input, withOrdinality, itemAliases, itemAliases.isEmpty(), false)
+        {
+
+        }
+
+        /// <summary>
+        /// Initializes a new instance. Use <see cref="Create(RelTraitSet, RelNode, bool, bool, bool)"/>
+        /// unless you know what you are doing.
+        /// </summary>
+        /// <param name="cluster"></param>
+        /// <param name="traitSet"></param>
+        /// <param name="input"></param>
+        /// <param name="withOrdinality"></param>
+        /// <param name="itemAliases"></param>
+        /// <param name="expandStructFields"></param>
+        /// <param name="isOuter"></param>
+        public ClrEnumerableUncollect(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, bool withOrdinality, java.util.List itemAliases, bool expandStructFields, bool isOuter) :
+            base(cluster, traitSet, input, withOrdinality, itemAliases, expandStructFields, isOuter)
         {
 
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// <c>EnumerableUncollect.copy</c>, which carries the two fields 1.43 added and hands on no aliases.
+        /// Dropping <c>isOuter</c> would make a copy mean something the original did not — an uncollect that
+        /// yields a row of nulls for an empty collection becoming one that yields no row.
+        ///
+        /// <para>The aliases are not carried because they cannot be: <c>Uncollect.itemAliases</c> is private
+        /// and has no getter. Calcite's own node is in the same position and does the same thing, every one
+        /// of its constructors passing <c>Collections.emptyList()</c>. It matters only that the flags are
+        /// passed explicitly — the constructor that takes aliases instead <em>derives</em>
+        /// <c>expandStructFields</c> from their absence, so going through it here would set that field from
+        /// an emptiness that says nothing about the node being copied.</para>
+        /// </remarks>
         public override RelNode copy(RelTraitSet traitSet, RelNode input)
         {
-            return new ClrEnumerableUncollect(getCluster(), traitSet, input, withOrdinality, com.google.common.collect.ImmutableList.of());
+            return new ClrEnumerableUncollect(getCluster(), traitSet, input, withOrdinality, com.google.common.collect.ImmutableList.of(), expandStructFields, isOuter);
         }
 
         /// <inheritdoc />
