@@ -13,7 +13,7 @@ namespace Apache.Calcite.Extensions.Runtime
     /// <para>Calcite's <c>EnumerableWindow</c> declares these as local variables of the generated method and the
     /// aggregate implementors write expressions naming them. <see cref="ClrEnumerableDefaults.Window"/> owns the loop
     /// instead, so they are values it hands to the lambdas; one instance is reused for every row, exactly as
-    /// one set of variables is.
+    /// one set of variables is.</para>
     ///
     /// <para>Every index is into <see cref="Rows"/>, which is one partition sorted by the window's ordering.
     /// A start of -1 means the frame is empty, which is what <see cref="HasRows"/> says.</para>
