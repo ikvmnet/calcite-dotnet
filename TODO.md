@@ -590,8 +590,14 @@ the disposition of each, so that the next reading starts from here rather than f
 - **CALCITE-7689** (MAP equality), **7728** and **7729** (what `OptimizeShuttle` and `BlockBuilder.optimize`
   may discard) are in classes this project calls rather than mirrors, so the fix arrives in the jar.
   `LixToClrTranslator` runs Calcite's own shuttle and there is no inlining of ours.
-- **CALCITE-7557** clamps a negative count in `Linq4j.ListEnumerable`'s list fast path. There is no list fast
-  path here; the counters already agreed, and `ClrEnumerableDefaultsContractTests` now says so.
+- **CALCITE-7557** clamps a negative count in `Linq4j.ListEnumerable`'s list fast path. **No generated plan
+  reaches that path, in either engine.** It is an override of `Enumerable.skip`, so it needs virtual dispatch
+  on a linq4j sequence, and `EnumerableLimit` — the only thing in core that generates a skip or a take — has
+  named the *static* `EnumerableDefaults.skip(Enumerable, BigDecimal)` since 7624. `BuiltInMethod.SKIP` and
+  `TAKE`, the `ExtendedEnumerable` pair that would dispatch, have no caller left in `core/src/main/java` at
+  all — measured, and it is why the four `int` entries in `ClrBuiltInMethod` could go. The fast path serves
+  hand-written linq4j. What this project had to match was the counters, which already agreed, and
+  `ClrEnumerableDefaultsContractTests` now says so.
 - **CALCITE-7682, 7683, 7684, 7691** are the SESSION, HOP and TUMBLE enumerators, and **7510**'s
   `EnumerableDefaults.update` is DML. Both are Calcite's own code reached through a generated tree.
 - **CALCITE-7650** and **7725** are annotations and a comment. **CALCITE-7750** is `Primitive.checkOverflow`,
