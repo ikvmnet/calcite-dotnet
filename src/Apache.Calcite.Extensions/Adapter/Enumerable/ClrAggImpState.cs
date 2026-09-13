@@ -1,4 +1,4 @@
-﻿using org.apache.calcite.adapter.enumerable;
+using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.rel.core;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable

@@ -1,4 +1,4 @@
-﻿using Apache.Calcite.Extensions.Linq4j.Tree;
+using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.adapter.java;
