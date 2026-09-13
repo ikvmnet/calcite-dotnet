@@ -127,6 +127,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 { DataContext.Variable.STDOUT.camelName, streams[1] },
                 { DataContext.Variable.STDERR.camelName, streams[2] },
                 { DataContext.Variable.CANCEL_FLAG.camelName, cancelFlag },
+                { Runtime.ClrDataContexts.CancellationTokenName, cancellationToken },
                 { DataContext.Variable.TIMEOUT.camelName, java.lang.Long.valueOf(queryTimeoutMillis) },
             };
 

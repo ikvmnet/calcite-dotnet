@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -238,7 +238,7 @@ namespace Apache.Calcite.Extensions.Runtime
         /// Disposes the acquired synchronous enumerator from an asynchronous disposal, which completes
         /// synchronously.
         /// </summary>
-        sealed class SynchronousDisposal(IDisposable disposable) : IAsyncDisposable
+        internal sealed class SynchronousDisposal(IDisposable disposable) : IAsyncDisposable
         {
 
             /// <inheritdoc />

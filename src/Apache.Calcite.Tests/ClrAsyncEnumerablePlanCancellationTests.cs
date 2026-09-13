@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -81,12 +81,12 @@ namespace Apache.Calcite.Tests
             return Plan(sql, "ANYS", new AsyncRowsTable(ManyAnys(rowCount), AsyncTestRows.AnysRowType, false));
         }
 
-        static (IAsyncEnumerable<object> Rows, AsyncRowsTable Leaf) Plan(string sql, int rowCount)
+        static (IAsyncEnumerable<object> Rows, AsyncRowsTable Leaf) Plan(string sql, int rowCount, CancellationToken cancellationToken = default)
         {
-            return Plan(sql, "SORTED", new AsyncRowsTable(Many(rowCount), AsyncTestRows.SortedRowType, false));
+            return Plan(sql, "SORTED", new AsyncRowsTable(Many(rowCount), AsyncTestRows.SortedRowType, false), cancellationToken);
         }
 
-        static (IAsyncEnumerable<object> Rows, AsyncRowsTable Leaf) Plan(string sql, string name, AsyncRowsTable leaf)
+        static (IAsyncEnumerable<object> Rows, AsyncRowsTable Leaf) Plan(string sql, string name, AsyncRowsTable leaf, CancellationToken cancellationToken = default)
         {
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add(name, leaf);
@@ -117,6 +117,9 @@ namespace Apache.Calcite.Tests
 
             var parameters = new java.util.HashMap();
             var bindable = ClrEnumerableInterpretable.ToAsyncBindable(parameters, (ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
+
+            // where a statement's context stashes it, which is what the awaiting root reads
+            parameters.put(Apache.Calcite.Extensions.Runtime.ClrDataContexts.CancellationTokenName, cancellationToken);
 
             return (bindable.Bind(new PlanDataContext(rootSchema, parameters)), leaf);
         }
@@ -326,6 +329,40 @@ namespace Apache.Calcite.Tests
 
             leaf.Produced.Should().Be(atBreak, "the leaf must not still be producing after the plan was abandoned");
             leaf.Produced.Should().BeLessThan(100);
+        }
+
+        /// <summary>
+        /// A plan is cancelled by the token its <c>DataContext</c> carries, with nothing given to
+        /// <c>GetAsyncEnumerator</c>.
+        /// </summary>
+        /// <remarks>
+        /// The other tests here cancel at the enumerator, which is .NET's own way in and reaches the
+        /// operators through <c>[EnumeratorCancellation]</c>. This is the plan's own channel and the one
+        /// that matters for symmetry with Calcite's half: the context carries the statement's cancellation
+        /// in both forms — a <c>CancellationToken</c> under <c>ClrDataContexts.CancellationTokenName</c> for this convention
+        /// and the <c>AtomicBoolean</c> under <c>CANCEL_FLAG</c> for Calcite's — and the awaiting root reads
+        /// the one it can use off the same <c>root</c> parameter that carries everything else.
+        ///
+        /// <para><c>GetAsyncEnumerator</c> is given nothing, so a plan that had gone on relying on the
+        /// enumerator's token would read to the end and fail here.</para>
+        /// </remarks>
+        [TestMethod]
+        public async Task ShouldCancelFromTheDataContext()
+        {
+            using var cancellation = new CancellationTokenSource();
+            var (rows, leaf) = Plan("SELECT k, v FROM SORTED", 5000, cancellation.Token);
+
+            var read = 0;
+
+            await Assert.ThrowsExactlyAsync<OperationCanceledException>(async () =>
+            {
+                await foreach (var _ in rows)
+                    if (++read == 10)
+                        cancellation.Cancel();
+            });
+
+            read.Should().Be(10, "the rows stopped where the cancellation was asked for");
+            leaf.Produced.Should().BeLessThan(5000, "the leaf was not run to the end");
         }
 
     }

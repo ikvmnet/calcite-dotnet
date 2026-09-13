@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq.Expressions;
@@ -327,7 +327,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     result.PhysType,
                     JavaRowFormat.SCALAR);
 
-            return Lambda(result.Expression, typeof(IAsyncEnumerable<object>));
+            return LambdaAsync(result.Expression, typeof(IAsyncEnumerable<object>));
         }
 
         /// <summary>
@@ -356,6 +356,50 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 Expression.Convert(sequence, rows),
                 Root);
         }
+
+        /// <summary>
+        /// <see cref="Lambda"/>, over a block that declares the parameter every awaiting operator's token
+        /// argument names.
+        /// </summary>
+        /// <param name="sequence"></param>
+        /// <param name="rows">The sequence type the lambda returns.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The statement's cancellation comes off the <see cref="DataContext"/>, the way the time zone, the
+        /// parameters and Calcite's own cancel flag do, and becomes the token the plan is enumerated under.
+        /// The plan itself holds none: from the wrapper down, each operator passes the token it was given
+        /// at <c>GetAsyncEnumerator</c> to its source's.
+        ///
+        /// <para>Read once per execution, because the context is taken once per execution. A consumer's own
+        /// token still reaches the operators alongside it — <see cref="ClrEnumerables.WithCancellation"/>
+        /// links the two.</para>
+        ///
+        /// <para>The pulled root has no counterpart to this and needs none: no operator of the synchronous
+        /// set takes a token, and there is nowhere in a pulled sequence to put one.</para>
+        /// </remarks>
+        LambdaExpression LambdaAsync(Expression sequence, Type rows)
+        {
+            var element = sequence.Type.IsGenericType && sequence.Type.GetGenericTypeDefinition() == typeof(IAsyncEnumerable<>)
+                ? sequence.Type.GetGenericArguments()[0]
+                : typeof(object);
+
+            var wrapped = Expression.Call(
+                null,
+                WithCancellation.MakeGenericMethod(element),
+                sequence,
+                Expression.Call(null, ClrDataContexts.GetCancellationTokenMethod, Root));
+
+            return Expression.Lambda(
+                typeof(Func<,>).MakeGenericType(typeof(DataContext), rows),
+                Expression.Convert(wrapped, rows),
+                Root);
+        }
+
+        /// <summary>
+        /// <see cref="ClrEnumerables.WithCancellation{TSource}"/>, which the awaiting root wraps its plan in.
+        /// </summary>
+        static readonly System.Reflection.MethodInfo WithCancellation = typeof(ClrEnumerables).GetMethod(nameof(ClrEnumerables.WithCancellation), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
+            ?? throw new InvalidOperationException($"'{nameof(ClrEnumerables.WithCancellation)}' is missing.");
 
         /// <summary>
         /// Returns the expression by which a plan reaches an object that cannot be written into it.

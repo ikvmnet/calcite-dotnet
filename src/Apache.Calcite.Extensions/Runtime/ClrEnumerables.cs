@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Threading;
@@ -49,6 +49,45 @@ namespace Apache.Calcite.Extensions.Runtime
             {
                 var e = source.GetAsyncEnumerator(cancellationToken);
                 return new AcquiredAsyncEnumerator<TResult>(rows(e, cancellationToken), e);
+            });
+        }
+
+
+        /// <summary>
+        /// Returns a sequence that is enumerated under <paramref name="cancellationToken"/> as well as
+        /// whatever its own reader gives it.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="cancellationToken">The statement's cancellation, read off its <c>DataContext</c>.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// What an awaiting root is wrapped in, and the whole of how the statement's token gets into a
+        /// plan. From here the existing chain does the carrying: each operator hands the token it was given
+        /// at <c>GetAsyncEnumerator</c> to its source's, down to the leaf, which is where a token is
+        /// finally handed to something that can act on it — <c>DbDataReader.ReadAsync(token)</c>.
+        ///
+        /// <para>It does not displace the reader's own token. Where both can be cancelled the two are
+        /// linked and the linked source is disposed with the enumerator; where either cannot, the other is
+        /// passed through and nothing is allocated. So <c>WithCancellation</c> over a plan still works
+        /// alongside the statement's own cancellation, and the ordinary case — the same token in both,
+        /// which is what <c>CalciteSession</c> arranges — allocates nothing.</para>
+        /// </remarks>
+        internal static IAsyncEnumerable<TSource> WithCancellation<TSource>(IAsyncEnumerable<TSource> source, CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+
+            if (cancellationToken.CanBeCanceled == false)
+                return source;
+
+            return new ClrAsyncEnumerable<TSource>(reader =>
+            {
+                if (reader.CanBeCanceled == false || reader == cancellationToken)
+                    return source.GetAsyncEnumerator(cancellationToken);
+
+                var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, reader);
+
+                return new AcquiredAsyncEnumerator<TSource>(source.GetAsyncEnumerator(linked.Token), new ClrSequences.SynchronousDisposal(linked));
             });
         }
 
