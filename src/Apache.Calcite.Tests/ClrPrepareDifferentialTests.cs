@@ -4,6 +4,8 @@ using System.Text;
 
 using Apache.Calcite.Extensions.Prepare;
 
+using FluentAssertions;
+
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using org.apache.calcite;
@@ -218,6 +220,98 @@ namespace Apache.Calcite.Tests
 
             CollectionAssert.AreEqual(calcite, clr,
                 $"{sql}{Environment.NewLine}calcite: [{string.Join(", ", calcite)}]{Environment.NewLine}clr:     [{string.Join(", ", clr)}]");
+        }
+
+        /// <summary>
+        /// Two rows and an array column, inline, so that the shape needs no schema.
+        /// </summary>
+        const string Docs = "(VALUES (1, ARRAY['red','green']), (2, ARRAY['blue'])) AS d(ID, TAGS)";
+
+        /// <summary>
+        /// The same, under a second alias, standing in for the view the report uses.
+        /// </summary>
+        const string Docs2 = "(VALUES (1, ARRAY['red','green']), (2, ARRAY['blue'])) AS d2(ID, TAGS)";
+
+        /// <summary>
+        /// A correlated <c>EXISTS</c> whose inner relation contains an <c>UNNEST</c>, correlated on a
+        /// column that is not the unnested one.
+        /// </summary>
+        const string CorrelatedExistsOverAnUncollect =
+            "SELECT d.ID FROM " + Docs + " WHERE EXISTS (" +
+            "SELECT 1 FROM (SELECT d2.ID AS PID, t.X AS CITY FROM " + Docs2 + ", UNNEST(d2.TAGS) AS t(X)) c " +
+            "WHERE c.PID = d.ID AND c.CITY = 'red')";
+
+        /// <summary>
+        /// Prepares and runs a statement with decorrelation turned off.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <returns></returns>
+        static List<string> RunClrWithoutDecorrelation(string sql)
+        {
+            return ClrPrepareFixture.WithContext(sql, (context, _) =>
+            {
+                var signature = new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of(sql), typeof(object[]), -1);
+
+                var rows = new List<string>();
+                foreach (var row in signature.Bind(context.getDataContext()))
+                    rows.Add(Render(row));
+
+                return rows;
+            },
+            p => p.setProperty(CalciteConnectionProperty.FORCE_DECORRELATE.camelName(), "false"));
+        }
+
+        /// <summary>
+        /// Both conventions fail a correlated <c>EXISTS</c> whose inner relation contains an
+        /// <c>UNNEST</c>, and the fault is the decorrelator's.
+        /// </summary>
+        /// <remarks>
+        /// <c>RelDecorrelator</c> rewrites the correlate into a join and leaves the correlation live inside
+        /// the right input, so the plan reaching the implementor references a variable nothing binds:
+        /// <c>Calc($cor1.ID) / NestedLoopJoin(condition=true) / [scan, Aggregate/Calc($cor1)]</c>. A join
+        /// does not bind a correlation variable; only a <c>Correlate</c> does.
+        ///
+        /// <para><b>Calcite fails on the same plan</b>, so this is reproduced rather than introduced, and
+        /// the assertion is on both so that a fix upstream tells us to follow. What differs is only the
+        /// report. <c>EnumerableRelImplementor.getCorrelVariableGetter</c> guards with an <c>assert</c>,
+        /// which is off at run time, so Calcite reads null out of its map and throws a bare
+        /// <c>NullPointerException</c> — and <c>implementRoot</c> attaches it with <c>addSuppressed</c>
+        /// rather than as a cause, so it is not even in the exception chain. Ours raises the message the
+        /// assertion carries.</para>
+        ///
+        /// <para>Issue 125. The uncorrelated forms over the same relation run, and so does this one without
+        /// decorrelation — see <see cref="ShouldRunACorrelatedExistsOverAnUncollectWithoutDecorrelation"/>,
+        /// which is what says the correlate itself is sound and only the rewrite is not.</para>
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnFailingACorrelatedExistsOverAnUncollect()
+        {
+            Assert.Throws<java.lang.IllegalStateException>(
+                () => RunCalcite(CorrelatedExistsOverAnUncollect),
+                "Calcite implements this plan; if it has been fixed upstream, follow it");
+
+            var mine = Assert.Throws<java.lang.IllegalStateException>(
+                () => RunClr(CorrelatedExistsOverAnUncollect));
+
+            string.Join(" <- ", Chain(mine)).Should().Contain("Correlation variable",
+                "the reason is the unbound variable, and unlike Calcite's we say so");
+        }
+
+        /// <summary>
+        /// And it runs, correctly, with decorrelation turned off.
+        /// </summary>
+        /// <remarks>
+        /// The correlate the decorrelator would have removed is kept, <c>ClrEnumerableCorrelate</c> binds
+        /// the variable, and the answer is the one SQL says. So nothing in this convention is missing: the
+        /// plan the decorrelator produces is malformed and the plan it leaves alone is not.
+        ///
+        /// <para>It is also the only lever a caller has today —
+        /// <c>CalciteConnectionStringBuilder.ForceDecorrelate</c> set false.</para>
+        /// </remarks>
+        [TestMethod]
+        public void ShouldRunACorrelatedExistsOverAnUncollectWithoutDecorrelation()
+        {
+            RunClrWithoutDecorrelation(CorrelatedExistsOverAnUncollect).Should().Equal(["1"]);
         }
 
     }

@@ -596,6 +596,22 @@ What remains below is what was deliberate, and what is still unproven.
   only where the bound has no offset, so with one the key stays `java.lang.Integer` and the `subtract` built
   on it unboxes a null. `ShouldAgreeOnFailingARangeFrameWithAnOffsetOverANullableKey` asserts that *both*
   conventions throw, so if Calcite ever fixes it we are told to follow.
+- **A correlated `EXISTS` whose inner relation contains an `UNNEST` does not decorrelate** — issue 125.
+  `RelDecorrelator` rewrites the correlate into a join and leaves the correlation live inside the right
+  input, so the implementor is handed `Calc($cor1.ID) / NestedLoopJoin(condition=true) / [scan,
+  Aggregate/Calc($cor1)]` and nothing binds `$cor1`; a join does not bind a correlation variable, only a
+  `Correlate` does. `ShouldAgreeOnFailingACorrelatedExistsOverAnUncollect` asserts both conventions throw.
+
+  **The report differs and ours is the better one.** `EnumerableRelImplementor.getCorrelVariableGetter`
+  guards with an `assert`, which is off at run time, so Calcite reads null out of its map and throws a bare
+  `NullPointerException` — and `implementRoot` attaches it with `addSuppressed` rather than as a cause, so
+  it is not in the exception chain at all. Ours raises the message that assertion carries.
+
+  **Nothing here is missing, and there is a lever.** With `forceDecorrelate=false` the correlate survives,
+  `ClrEnumerableCorrelate` binds the variable and the statement gives the right answer —
+  `ShouldRunACorrelatedExistsOverAnUncollectWithoutDecorrelation`. So the plan the decorrelator produces is
+  malformed and the plan it leaves alone is not. The fix is upstream; the workaround is
+  `CalciteConnectionStringBuilder.ForceDecorrelate` set false.
 
 ### The SPI contract, which needs no enforcing
 
