@@ -40,16 +40,36 @@ driver this one is modelled on*, has the reading. Not to be confused with
   `src\Apache.Calcite.Tests\bin\Debug\net8.0\Apache.Calcite.Tests.exe --filter FullyQualifiedName~Name`.
   The whole suite is about 133 seconds that way against about 215 through `dotnet test`; a single test is
   seconds. `--blame-hang --blame-hang-timeout 90s` names the test that hangs.
-- **Calcite is checked out at `D:\calcite`, and it is 1.43.0-SNAPSHOT.** The projects reference **1.42.0**,
-  which is released; `Apache.Calcite.Data.Tests` alone references **1.43.0-SNAPSHOT**, from
-  `https://repository.apache.org/content/repositories/snapshots/`, for `calcite-server` and the
-  `EnumerableTableModify` rewrite. **Three versions, so "it is in the tree" settles nothing.** Read the
-  source, then check the member against the tag you actually reference:
+- **Everything references 1.43.0-SNAPSHOT, and `D:\calcite` is that same branch.** The snapshot comes from
+  `https://repository.apache.org/content/repositories/snapshots/`, named once in `Directory.Build.props`
+  rather than per project. **1.43 is unreleased**: it was targeted for the end of August 2026 and slipped,
+  Avatica 1.29.0 being the named blocker and still unreleased; on the recent cadence (1.38→1.42 ran 2 to 7
+  months apart) October to December 2026 is the honest range. Nothing of this is released either, which is
+  why the move was affordable.
 
-  | in | |
+  **A snapshot is a moving target**, rebuilt daily, so a member that is there today may not be there in the
+  build that ships. Pin nothing on memory: read the source, and expect the tree and the jar to differ. The
+  two that have already bitten are in this file — `ClassNameFilter`'s allowlist, which appeared partway
+  through the August snapshots, and `FLAT_PRODUCT`.
+
+  | arrived in | |
   |---|---|
-  | 1.42 (referenced) | `EnumerableCombine`, `EnumerableConditionalCorrelate` and their rules, `EnumUtils.markJoinSelector` and the mark-join paths, `PhysType.generateNullAwareAccessor`, `JoinInfo.nullExclusionFlags` |
-  | 1.43 (unreleased) | `org.apache.calcite.rel.core.Asof`, `FetchOffsetRoundingPolicy`, `RexImplementorTable(s)`, and `EnumerableTableModify`'s five private helpers — the UPDATE/DELETE/INSERT rewrite, CALCITE-7510 |
+  | 1.41 | `rel.core.AsofJoin`, `EnumerableAsofJoin`, `ENUMERABLE_ASOFJOIN_RULE` |
+  | 1.42 | `EnumerableCombine`, `EnumerableConditionalCorrelate` and their rules, `EnumUtils.markJoinSelector` and the mark-join paths, `PhysType.generateNullAwareAccessor`, `JoinInfo.nullExclusionFlags` |
+  | 1.43 | `org.apache.calcite.rel.core.Asof`, `FetchOffsetRoundingPolicy`, `RexImplementorTable(s)`, `EnumerableTableModify`'s five private helpers (CALCITE-7510), `TopDownGeneralDecorrelator`, and `case UUID` in `JavaTypeFactoryImpl.getJavaClass` |
+
+  **What 1.43 cost to move to, measured, was one node.** `EnumerableUncollect` was reworked:
+  `BuiltInMethod.FLAT_PRODUCT` became `FLAT_ZIP` and took a fourth `isOuter` argument, `FLAT_LIST` gained a
+  `FLAT_LIST_OUTER` variant, and a struct element kept whole became a new `FlatProductInputType.STRUCT`.
+  `ClrEnumerableUncollect` carries all of it, in both bodies. `Uncollect`'s five-argument constructor
+  survives and infers the two fields the class gained, which is why nothing else failed to compile.
+
+  **And two tests changed meaning rather than breaking.** `ShouldReachEveryBuiltInMethod` is a census of
+  Calcite's table and counts 607 where 1.42 had 594 — all thirteen resolve, which is the thing it is for.
+  And a `CAST(any AS UUID)` used to convert nothing, because `getJavaClass` had no UUID case and the target
+  class was `Object`; 1.43 gave UUID a class, so the same statement now asks for an `Object`-to-`UUID`
+  conversion over a string and throws. Both conventions throw alike, so it is reproduced rather than ours —
+  `ShouldAgreeOnRefusingAUuidCastOfAnAnyColumn`.
 
   **1.43's DELETE cannot compile over a one-column table** *under Janino*. CALCITE-7510 emits
   `(int) sinkRow` from a `sinkRow` declared `Object`; javac accepts that and **Janino does not** — measured.
@@ -65,11 +85,13 @@ driver this one is modelled on*, has the reading. Not to be confused with
   Calcite's own `AbstractSchema$Factory` included. `Apache.Calcite.Data.Tests` sets the property in a module
   initializer, before `CalciteSystemProperty` reads it; a .NET class needs both its CLR name and its IKVM
   `cli.` name allowed, because Calcite writes `getClass().getName()` into the model it synthesises for
-  `SchemaFactory`. The 1.42 the provider ships has the denylist only, and `D:\calcite` has not caught up.
+  `SchemaFactory`. **Every entry point needs one**: `Apache.Calcite.Geography.Tests` too, because
+  `SqlSpatialTypeOperatorTable`'s constructor registers `SpatialTypeFunctions` through
+  `ModelHandler.addFunctions` — 44 of its 200 tests failed on that one line until it had one.
 
-  **`AsofJoin` is neither** — `rel.core.AsofJoin`, `EnumerableAsofJoin` and `ENUMERABLE_ASOFJOIN_RULE` are
-  all in 1.41, and a claim that it was 1.42 stood in this file for a while on the strength of the wrong
-  class name. `rel.core.Asof` is a different class and is 1.43, not 1.42 as this file said.
+  **`AsofJoin` is not `Asof`** — `rel.core.AsofJoin`, `EnumerableAsofJoin` and `ENUMERABLE_ASOFJOIN_RULE`
+  are 1.41; `rel.core.Asof` is a different class and is 1.43. A claim that `AsofJoin` was 1.42 stood in this
+  file for a while on the strength of the wrong class name.
 - **The version this file gives has been wrong twice, both times by reading the tree.** It said the tree was
   1.42.0-SNAPSHOT after upstream had moved to 1.43, and called the TableModify rewrite a 1.42 feature when
   1.42's copy of that file is byte-identical to 1.41's. `git tag --list` and `git cat-file -e <tag>:<path>`

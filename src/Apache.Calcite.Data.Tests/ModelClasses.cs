@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 
 namespace Apache.Calcite.Data.Tests
 {
@@ -7,12 +7,12 @@ namespace Apache.Calcite.Data.Tests
     /// Lets a model name a class of this assembly.
     /// </summary>
     /// <remarks>
-    /// This project references calcite-core 1.43.0-SNAPSHOT, and from the snapshots of August 2026 a model
-    /// may load a class by name — a schema factory, a function, a driver — only where the
-    /// <c>calcite.model.classes.allowed</c> system property lists its package; the default is empty, and
-    /// empty means nothing. The 1.42.0 the provider ships against has only the denylist. The property is
+    /// From the snapshots of August 2026 a model may load a class by name — a schema factory, a function,
+    /// a driver — only where the <c>calcite.model.classes.allowed</c> system property lists its package;
+    /// the default is empty, and empty means nothing, Calcite's own factories included. The property is
     /// read once, when <c>CalciteSystemProperty</c> initialises, so it is set here, before any test can
-    /// touch a Calcite class.
+    /// touch a Calcite class. <c>Apache.Calcite.Geography.Tests</c> has the same, for the operator table
+    /// <c>SqlSpatialTypeOperatorTable</c> builds through <c>ModelHandler.addFunctions</c>.
     /// </remarks>
     internal static class ModelClasses
     {

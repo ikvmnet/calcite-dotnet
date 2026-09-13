@@ -152,7 +152,9 @@ namespace Apache.Calcite.Tests.Tree
 
             Assert.IsTrue(failures.Count == 0, $"{called} called, {invoked.Count} invoked, {failures.Count} failed:{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
 
-            called.Should().Be(594);
+            // a census of Calcite's table, so it moves with the version: 594 under 1.42, 607 under 1.43.
+            // What matters is that the thirteen that arrived all resolve, which the failure list above says
+            called.Should().Be(607);
             invoked.Should().BeEquivalentTo([
                 "STRING_TO_UPPER: public java.lang.String java.lang.String.toUpperCase()",
                 "OBJECT_TO_STRING: public java.lang.String java.lang.Object.toString()",

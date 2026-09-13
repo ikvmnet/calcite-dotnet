@@ -1328,12 +1328,29 @@ namespace Apache.Calcite.Tests
         public void ShouldAgreeOnRefusingATimestampCastOfAnAnyColumnOfText() => SameFailure("SELECT CAST(\"T\" AS TIMESTAMP) FROM \"CASTS\"", "For input string: \"2026-01-01 00:00:00\"");
 
         /// <summary>
-        /// A UUID whose source is ANY converts nothing at all: <c>JavaTypeFactoryImpl.getJavaClass</c> has
-        /// no UUID case, so the target class is <c>Object</c> and the cast is the identity. The string
-        /// arrives at the projection wearing a type it does not have.
+        /// A UUID whose source is ANY refuses the cast, because the conversion is a Java cast rather than
+        /// a parse and a string is not a <c>UUID</c>.
         /// </summary>
+        /// <remarks>
+        /// The usual ANY story: <c>RexToLixTranslator.getConvertExpression</c> matches no source branch for
+        /// ANY, so the cast ends at <c>EnumUtils.convert(operand, typeFactory.getJavaClass(targetType))</c>
+        /// — a conversion between two <em>classes</em>, with no idea a SQL cast was asked for. What that
+        /// gives depends on which class the target has, and <b>1.43 gave UUID one</b>:
+        /// <c>JavaTypeFactoryImpl.getJavaClass</c> gained <c>case UUID: return UUID.class</c>, where 1.42
+        /// had no UUID case at all.
+        ///
+        /// <para>So the same statement changed meaning between the two. Under 1.42 the target class was
+        /// <c>Object</c>, the conversion was the identity, and the string arrived at the projection wearing
+        /// a type it did not have — this test was <c>Same</c>, and named for it. Under 1.43 the conversion
+        /// is <c>Object</c> to <c>UUID</c> over a value that is a string, and it throws.</para>
+        ///
+        /// <para>Both conventions throw and throw alike, which is what <c>SameFailure</c> requires, so this
+        /// is Calcite's behaviour reproduced rather than ours. A parse would need a UUID source branch in
+        /// <c>getConvertExpression</c>, which is an argument to have upstream.</para>
+        /// </remarks>
         [TestMethod]
-        public void ShouldAgreeOnCastingAnAnyColumnToUuidChangingNothing() => Same("SELECT \"ID\", CAST(\"G\" AS UUID) FROM \"CASTS\" ORDER BY \"ID\"");
+        public void ShouldAgreeOnRefusingAUuidCastOfAnAnyColumn() =>
+            SameFailure("SELECT \"ID\", CAST(\"G\" AS UUID) FROM \"CASTS\" ORDER BY \"ID\"", "to type 'java.util.UUID'");
 
         /// <summary>
         /// And that the second cast is what converts, VARCHAR being a source branch every target has.

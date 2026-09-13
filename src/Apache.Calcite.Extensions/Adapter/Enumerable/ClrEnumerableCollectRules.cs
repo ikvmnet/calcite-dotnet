@@ -1,4 +1,4 @@
-using java.util.function;
+﻿using java.util.function;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -86,7 +86,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var input = uncollect.getInput();
             var newInput = convert(input, input.getTraitSet().replace(ClrEnumerableConvention.Instance));
 
-            return ClrEnumerableUncollect.Create(traitSet, newInput, uncollect.withOrdinality);
+            return ClrEnumerableUncollect.Create(traitSet, newInput, uncollect.withOrdinality, uncollect.expandStructFields, uncollect.isOuter);
         }
 
     }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq.Expressions;
 
 using Apache.Calcite.Extensions.Linq4j.Tree;
@@ -51,8 +51,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     throw new InvalidRelException("distinct aggregation not supported");
                 if (call.distinctKeys != null)
                     throw new InvalidRelException("within-distinct aggregation not supported");
-                if (RexImpTable.INSTANCE.get(call.getAggregation(), false) == null)
-                    throw new InvalidRelException($"aggregation {call.getAggregation()} not supported");
+
+                // whether anything can implement the function is the rule's question now, not this one's.
+                // Asked here it could only be asked of RexImpTable.INSTANCE, which is not the table the node
+                // will be implemented against -- ClrEnumerableAggregateRule asks the cluster's
             }
         }
 
@@ -89,7 +91,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var aggs = new java.util.ArrayList();
             for (int i = 0; i < getAggCallList().size(); i++)
-                aggs.add(new ClrAggImpState(i, (AggregateCall)getAggCallList().get(i), false));
+                aggs.add(new ClrAggImpState(i, (AggregateCall)getAggCallList().get(i), false, RexImplementorTables.of(getCluster())));
 
             // the accumulator's state, and the block that sets it to its starting value
             var initExpressions = new java.util.ArrayList();
@@ -272,7 +274,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var aggs = new java.util.ArrayList();
             for (int i = 0; i < getAggCallList().size(); i++)
-                aggs.add(new ClrAggImpState(i, (AggregateCall)getAggCallList().get(i), false));
+                aggs.add(new ClrAggImpState(i, (AggregateCall)getAggCallList().get(i), false, RexImplementorTables.of(getCluster())));
 
             // the accumulator's state, and the block that sets it to its starting value
             var initExpressions = new java.util.ArrayList();

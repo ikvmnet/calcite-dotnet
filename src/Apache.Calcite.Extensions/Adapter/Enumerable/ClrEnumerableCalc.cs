@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq.Expressions;
 
 using Apache.Calcite.Extensions.Linq4j.Tree;
@@ -168,7 +168,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 outputCalcite,
                 DataContext.ROOT,
                 new RexToLixTranslator.InputGetterImpl(projectRow, inputCalcite),
-                implementor.AllCorrelateVariables);
+                implementor.AllCorrelateVariables,
+                implementor.RexImplementorTable);
             projectBuilder.add(J.Expressions.return_(null, outputCalcite.record(expressions)));
 
             var selector = Expression.Lambda(
@@ -244,7 +245,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 outputCalcite,
                 DataContext.ROOT,
                 new RexToLixTranslator.InputGetterImpl(projectRow, inputCalcite),
-                implementor.AllCorrelateVariables);
+                implementor.AllCorrelateVariables,
+                implementor.RexImplementorTable);
             projectBuilder.add(J.Expressions.return_(null, outputCalcite.record(expressions)));
 
             var selector = Expression.Lambda(

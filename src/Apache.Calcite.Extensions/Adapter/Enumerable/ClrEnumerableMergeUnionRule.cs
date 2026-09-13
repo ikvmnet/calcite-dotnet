@@ -67,10 +67,22 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             RexNode? inputFetch = null;
             if (sort.fetch != null)
             {
-                if (sort.offset == null)
-                    inputFetch = sort.fetch;
-                else if (sort.fetch is RexLiteral fetch && sort.offset is RexLiteral offset)
-                    inputFetch = call.builder().literal(RexLiteral.bigDecimalValue(fetch)!.add(RexLiteral.bigDecimalValue(offset)));
+                // pushing it down evaluates the bound once per input rather than once, so a bound that need
+                // not answer the same twice cannot be pushed at all -- not even the offset, which is summed
+                // into it
+                var safeToReevaluate =
+                    RexUtil.isDeterministic(sort.fetch) &&
+                    (sort.offset == null || RexUtil.isDeterministic(sort.offset));
+
+                if (safeToReevaluate)
+                {
+                    if (sort.offset == null)
+                        inputFetch = sort.fetch;
+                    else
+                        // an expression rather than only a pair of literals, which is what the arithmetic on
+                        // RexLiteral.bigDecimalValue could reach
+                        inputFetch = RexUtil.makeOffsetFetchSum(sort.getCluster().getRexBuilder(), sort.offset, sort.fetch);
+                }
             }
 
             var builder = call.builder();
