@@ -225,7 +225,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 if (call.ignoreNulls())
                     throw new java.lang.UnsupportedOperationException("IGNORE NULLS not supported");
 
-                aggs.add(new ClrAggImpState(aggIdx, call, true));
+                aggs.add(new ClrAggImpState(aggIdx, call, true, RexImplementorTables.of(getCluster())));
             }
 
             // the output of this group is its input plus one field per aggregate
@@ -447,7 +447,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 if (call.ignoreNulls())
                     throw new java.lang.UnsupportedOperationException("IGNORE NULLS not supported");
 
-                aggs.add(new ClrAggImpState(aggIdx, call, true));
+                aggs.add(new ClrAggImpState(aggIdx, call, true, RexImplementorTables.of(getCluster())));
             }
 
             // the output of this group is its input plus one field per aggregate

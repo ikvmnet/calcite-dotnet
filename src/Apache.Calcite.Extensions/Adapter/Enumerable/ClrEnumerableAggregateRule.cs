@@ -1,5 +1,6 @@
 using java.util.function;
 
+using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.convert;
@@ -42,6 +43,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         {
             var aggregate = (Aggregate)rel;
             var traitSet = rel.getCluster().traitSet().replace(ClrEnumerableConvention.Instance);
+
+            // an aggregate whose function nothing can implement is refused here rather than left to fail
+            // while the chosen plan is being implemented. The table is the cluster's, so a caller that put
+            // its own implementors on the cluster is asked about them and not about Calcite's defaults
+            var implementors = RexImplementorTables.of(rel.getCluster());
+            for (var i = aggregate.getAggCallList().iterator(); i.hasNext();)
+                if (implementors.get(((AggregateCall)i.next()).getAggregation(), false) == null)
+                    return null;
 
             try
             {
