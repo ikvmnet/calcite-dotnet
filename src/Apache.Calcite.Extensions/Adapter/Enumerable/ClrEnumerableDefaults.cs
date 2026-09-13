@@ -243,6 +243,46 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <summary>
+        /// Bypasses a number of rows.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>EnumerableDefaults.skip(source, BigDecimal)</c>, which is <c>skipWhileBigDecimal</c> where the
+        /// other is <c>skipWhile</c>. Same operator, a counter that holds whatever a FETCH or OFFSET
+        /// expression evaluated to — CALCITE-7624, where an <c>int</c> could not.
+        /// </remarks>
+        public static IEnumerable<TSource> Skip<TSource>(IEnumerable<TSource> source, java.math.BigDecimal count)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(count);
+
+            return source.Acquiring(e => SkipRows(e, count));
+        }
+
+        /// <summary>
+        /// The row loop of <see cref="Skip{TSource}(IEnumerable{TSource}, java.math.BigDecimal)"/>, over an
+        /// enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TSource> SkipRows<TSource>(IEnumerator<TSource> source, java.math.BigDecimal count)
+        {
+            var n = java.math.BigDecimal.ZERO;
+
+            while (source.MoveNext())
+            {
+                if (n.compareTo(count) < 0)
+                {
+                    n = n.add(java.math.BigDecimal.ONE);
+                    continue;
+                }
+
+                yield return source.Current;
+            }
+        }
+
+        /// <summary>
         /// Takes a number of rows.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>
@@ -310,6 +350,40 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             while (source.MoveNext() && ++n < count)
                 yield return source.Current;
+        }
+
+        /// <summary>
+        /// Takes a number of rows.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <c>EnumerableDefaults.take(source, BigDecimal)</c>, which is <c>takeWhileBigDecimal</c>. The
+        /// counter's width is the point, as it is for <see cref="Skip{TSource}(IEnumerable{TSource}, java.math.BigDecimal)"/>.
+        /// </remarks>
+        public static IEnumerable<TSource> Take<TSource>(IEnumerable<TSource> source, java.math.BigDecimal count)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(count);
+
+            return source.Acquiring(e => TakeRows(e, count));
+        }
+
+        /// <summary>
+        /// The row loop of <see cref="Take{TSource}(IEnumerable{TSource}, java.math.BigDecimal)"/>, over an
+        /// enumerator the factory acquired.
+        /// </summary>
+        static IEnumerator<TSource> TakeRows<TSource>(IEnumerator<TSource> source, java.math.BigDecimal count)
+        {
+            var n = java.math.BigDecimal.ZERO;
+
+            while (source.MoveNext() && n.compareTo(count) < 0)
+            {
+                n = n.add(java.math.BigDecimal.ONE);
+                yield return source.Current;
+            }
         }
 
         /// <summary>
@@ -2872,12 +2946,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// better when there are few distinct keys. The list per key starts as a single element, as
         /// linq4j's does.</para>
         /// </remarks>
-        public static IEnumerable<TSource> OrderByWithFetchAndOffset<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, int offset, int fetch)
+        public static IEnumerable<TSource> OrderByWithFetchAndOffset<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, java.math.BigDecimal offset, java.math.BigDecimal fetch)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(keySelector);
+            ArgumentNullException.ThrowIfNull(offset);
+            ArgumentNullException.ThrowIfNull(fetch);
 
-            if (fetch == 0)
+            if (fetch.compareTo(java.math.BigDecimal.ZERO) <= 0)
                 return [];
 
             return Ordered(source, keySelector, comparator, offset, fetch);
@@ -2905,7 +2981,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// and swaps in an <c>ArrayList</c> when a second row arrives. Ours is always a
         /// <see cref="List{T}"/>. That is an allocation difference, not a logical one.</para>
         /// </remarks>
-        static IEnumerable<TSource> Ordered<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, int offset, int fetch)
+        static IEnumerable<TSource> Ordered<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, java.math.BigDecimal offset, java.math.BigDecimal fetch)
         {
             // linq4j reads the input into the tree map inside enumerator() -- obtaining this enumerator
             // runs the bounded sort, and the offset trim with it
@@ -2916,18 +2992,19 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// The drain and trim of <see cref="Ordered"/>, run by the factory, returning an enumerator over
         /// the finished map.
         /// </summary>
-        static IEnumerator<TSource> OrderedRows<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, int offset, int fetch)
+        static IEnumerator<TSource> OrderedRows<TSource, TKey>(IEnumerable<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, java.math.BigDecimal offset, java.math.BigDecimal fetch)
         {
             var map = comparator == null ? new java.util.TreeMap() : new java.util.TreeMap(comparator);
-            var size = 0L;
-            var needed = fetch + (long)offset;
+            var size = java.math.BigDecimal.ZERO;
+            var actualOffset = offset.max(java.math.BigDecimal.ZERO);
+            var needed = RowsRequired(actualOffset).add(RowsRequired(fetch));
 
             // read the input into a tree map
             foreach (var row in source)
             {
                 var key = (object?)keySelector(row);
 
-                if (needed >= 0 && size >= needed)
+                if (needed.signum() >= 0 && size.compareTo(needed) >= 0)
                 {
                     // the current row will never appear in the output, so just skip it
                     var lastKey = map.lastKey();
@@ -2941,7 +3018,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     else
                         last.RemoveAt(last.Count - 1);
 
-                    size--;
+                    size = size.subtract(java.math.BigDecimal.ONE);
                 }
 
                 // add the current element to the map
@@ -2950,29 +3027,36 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 else
                     map.put(key, new List<TSource> { row });
 
-                size++;
+                size = size.add(java.math.BigDecimal.ONE);
             }
 
             // skip the first 'offset' rows by deleting them from the map
-            if (offset > 0)
+            if (actualOffset.compareTo(java.math.BigDecimal.ZERO) > 0)
             {
-                // search the key up to (but excluding) which we have to remove entries from the map
-                var skipped = 0;
+                // search the key up to which we have to remove entries from the map
+                var skipped = java.math.BigDecimal.ZERO;
+                var rowsToSkip = RowsRequired(actualOffset);
                 var found = false;
+                var removeUntilInclusive = false;
                 object? until = null;
 
                 for (var i = map.entrySet().iterator(); i.hasNext();)
                 {
                     var entry = (java.util.Map.Entry)i.next();
                     var rows = (List<TSource>)entry.getValue();
-                    skipped += rows.Count;
+                    skipped = skipped.add(java.math.BigDecimal.valueOf(rows.Count));
 
-                    if (skipped > offset)
+                    if (skipped.compareTo(rowsToSkip) >= 0)
                     {
                         // we might need to remove entries from the list
-                        var keep = skipped - offset;
-                        if (keep < rows.Count)
-                            rows.RemoveRange(0, rows.Count - keep);
+                        var keep = skipped.subtract(rowsToSkip);
+                        if (keep.compareTo(java.math.BigDecimal.valueOf(rows.Count)) < 0)
+                        {
+                            if (keep.signum() == 0)
+                                removeUntilInclusive = true;
+                            else
+                                rows.RemoveRange(0, rows.Count - keep.intValueExact());
+                        }
 
                         until = entry.getKey();
                         found = true;
@@ -2984,10 +3068,23 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 if (found == false)
                     return System.Linq.Enumerable.Empty<TSource>().GetEnumerator();
 
-                map.headMap(until, false).clear();
+                map.headMap(until, removeUntilInclusive).clear();
             }
 
             return WalkOrdered<TSource>(map);
+        }
+
+        /// <summary>
+        /// The number of rows a FETCH or OFFSET count asks for.
+        /// </summary>
+        /// <remarks>
+        /// <c>EnumerableDefaults.rowsRequired</c>. A count is a <c>BigDecimal</c> because the expression it
+        /// came from need not be an integer, and a fractional one asks for the row it reaches into: CEILING,
+        /// not truncation. A negative count asks for nothing.
+        /// </remarks>
+        static java.math.BigDecimal RowsRequired(java.math.BigDecimal count)
+        {
+            return count.max(java.math.BigDecimal.ZERO).setScale(0, java.math.RoundingMode.CEILING);
         }
 
         /// <summary>
@@ -3501,6 +3598,47 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <summary>
+        /// Bypasses a number of rows.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="count"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <see cref="Skip{TSource}(IEnumerable{TSource}, java.math.BigDecimal)"/>, which is
+        /// <c>EnumerableDefaults.skip(source, BigDecimal)</c>.
+        /// </remarks>
+        public static IAsyncEnumerable<TSource> SkipAsync<TSource>(IAsyncEnumerable<TSource> source, java.math.BigDecimal count, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(count);
+
+            return source.Acquiring((e, token) => SkipRowsAsync(e, count));
+        }
+
+        /// <summary>
+        /// The row loop of
+        /// <see cref="SkipAsync{TSource}(IAsyncEnumerable{TSource}, java.math.BigDecimal, CancellationToken)"/>,
+        /// over an enumerator the factory acquired.
+        /// </summary>
+        static async IAsyncEnumerator<TSource> SkipRowsAsync<TSource>(IAsyncEnumerator<TSource> source, java.math.BigDecimal count)
+        {
+            var n = java.math.BigDecimal.ZERO;
+
+            while (await source.MoveNextAsync())
+            {
+                if (n.compareTo(count) < 0)
+                {
+                    n = n.add(java.math.BigDecimal.ONE);
+                    continue;
+                }
+
+                yield return source.Current;
+            }
+        }
+
+        /// <summary>
         /// Takes a number of rows.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>
@@ -3573,6 +3711,42 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <summary>
+        /// Takes a number of rows.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="count"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <see cref="Take{TSource}(IEnumerable{TSource}, java.math.BigDecimal)"/>, which is
+        /// <c>EnumerableDefaults.take(source, BigDecimal)</c>.
+        /// </remarks>
+        public static IAsyncEnumerable<TSource> TakeAsync<TSource>(IAsyncEnumerable<TSource> source, java.math.BigDecimal count, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(count);
+
+            return source.Acquiring((e, token) => TakeRowsAsync(e, count));
+        }
+
+        /// <summary>
+        /// The row loop of
+        /// <see cref="TakeAsync{TSource}(IAsyncEnumerable{TSource}, java.math.BigDecimal, CancellationToken)"/>,
+        /// over an enumerator the factory acquired.
+        /// </summary>
+        static async IAsyncEnumerator<TSource> TakeRowsAsync<TSource>(IAsyncEnumerator<TSource> source, java.math.BigDecimal count)
+        {
+            var n = java.math.BigDecimal.ZERO;
+
+            while (await source.MoveNextAsync() && n.compareTo(count) < 0)
+            {
+                n = n.add(java.math.BigDecimal.ONE);
+                yield return source.Current;
+            }
+        }
+
+        /// <summary>
         /// Orders rows by a key, skipping and taking as it goes.
         /// </summary>
         /// <typeparam name="TSource"></typeparam>
@@ -3588,12 +3762,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <see cref="ClrEnumerableDefaults.OrderByWithFetchAndOffset"/>: a sort carrying a limit rather than
         /// a sort followed by one.
         /// </remarks>
-        public static IAsyncEnumerable<TSource> OrderByWithFetchAndOffsetAsync<TSource, TKey>(IAsyncEnumerable<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, int offset, int fetch, CancellationToken cancellationToken = default)
+        public static IAsyncEnumerable<TSource> OrderByWithFetchAndOffsetAsync<TSource, TKey>(IAsyncEnumerable<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, java.math.BigDecimal offset, java.math.BigDecimal fetch, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(keySelector);
+            ArgumentNullException.ThrowIfNull(offset);
+            ArgumentNullException.ThrowIfNull(fetch);
 
-            if (fetch == 0)
+            if (fetch.compareTo(java.math.BigDecimal.ZERO) <= 0)
                 return EmptyAsync<TSource>();
 
             // linq4j reads the input into the tree map inside enumerator(). GetAsyncEnumerator cannot
@@ -3605,14 +3781,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
         /// <summary>
         /// The drain and trim of <see cref="OrderByWithFetchAndOffsetAsync"/>, over an enumerator the factory
-        /// acquired: linq4j's bounded <c>java.util.TreeMap</c>, transcribed as the synchronous file's
-        /// <c>OrderedRowsAsync</c> transcribes it, holding at most <c>offset + fetch</c> rows.
+        /// acquired: linq4j's bounded <c>java.util.TreeMap</c>, transcribed as <see cref="OrderedRows"/>
+        /// transcribes it, holding at most <c>offset + fetch</c> rows.
         /// </summary>
-        static async IAsyncEnumerator<TSource> OrderedRowsAsync<TSource, TKey>(IAsyncEnumerator<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, int offset, int fetch)
+        static async IAsyncEnumerator<TSource> OrderedRowsAsync<TSource, TKey>(IAsyncEnumerator<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, java.math.BigDecimal offset, java.math.BigDecimal fetch)
         {
             var map = comparator == null ? new java.util.TreeMap() : new java.util.TreeMap(comparator);
-            var size = 0L;
-            var needed = fetch + (long)offset;
+            var size = java.math.BigDecimal.ZERO;
+            var actualOffset = offset.max(java.math.BigDecimal.ZERO);
+            var needed = RowsRequired(actualOffset).add(RowsRequired(fetch));
 
             // read the input into a tree map
             while (await source.MoveNextAsync())
@@ -3620,7 +3797,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 var row = source.Current;
                 var key = (object?)keySelector(row);
 
-                if (needed >= 0 && size >= needed)
+                if (needed.signum() >= 0 && size.compareTo(needed) >= 0)
                 {
                     // the current row will never appear in the output, so just skip it
                     var lastKey = map.lastKey();
@@ -3634,7 +3811,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     else
                         last.RemoveAt(last.Count - 1);
 
-                    size--;
+                    size = size.subtract(java.math.BigDecimal.ONE);
                 }
 
                 // add the current element to the map
@@ -3643,29 +3820,36 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 else
                     map.put(key, new List<TSource> { row });
 
-                size++;
+                size = size.add(java.math.BigDecimal.ONE);
             }
 
             // skip the first 'offset' rows by deleting them from the map
-            if (offset > 0)
+            if (actualOffset.compareTo(java.math.BigDecimal.ZERO) > 0)
             {
-                // search the key up to (but excluding) which we have to remove entries from the map
-                var skipped = 0;
+                // search the key up to which we have to remove entries from the map
+                var skipped = java.math.BigDecimal.ZERO;
+                var rowsToSkip = RowsRequired(actualOffset);
                 var found = false;
+                var removeUntilInclusive = false;
                 object? until = null;
 
                 for (var i = map.entrySet().iterator(); i.hasNext();)
                 {
                     var entry = (java.util.Map.Entry)i.next();
                     var rows = (List<TSource>)entry.getValue();
-                    skipped += rows.Count;
+                    skipped = skipped.add(java.math.BigDecimal.valueOf(rows.Count));
 
-                    if (skipped > offset)
+                    if (skipped.compareTo(rowsToSkip) >= 0)
                     {
                         // we might need to remove entries from the list
-                        var keep = skipped - offset;
-                        if (keep < rows.Count)
-                            rows.RemoveRange(0, rows.Count - keep);
+                        var keep = skipped.subtract(rowsToSkip);
+                        if (keep.compareTo(java.math.BigDecimal.valueOf(rows.Count)) < 0)
+                        {
+                            if (keep.signum() == 0)
+                                removeUntilInclusive = true;
+                            else
+                                rows.RemoveRange(0, rows.Count - keep.intValueExact());
+                        }
 
                         until = entry.getKey();
                         found = true;
@@ -3677,7 +3861,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 if (found == false)
                     yield break;
 
-                map.headMap(until, false).clear();
+                map.headMap(until, removeUntilInclusive).clear();
             }
 
             for (var i = map.values().iterator(); i.hasNext();)

@@ -1573,6 +1573,51 @@ namespace Apache.Calcite.Tests
             SameLimitSort("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" DESC OFFSET 5 ROWS FETCH NEXT 10 ROWS ONLY");
 
         /// <summary>
+        /// A FETCH and an OFFSET wider than an <c>int</c>.
+        /// </summary>
+        /// <remarks>
+        /// The counts are read as a <c>BigDecimal</c> rather than an <c>int</c>, which is what CALCITE-7624
+        /// is for. Upstream's own sort.iq asserted <c>Integer overflow: 3000000000 is out of range for
+        /// INT</c> here and now asserts the rows.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnALimitWiderThanAnInt() =>
+            Same("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET 2500000000 ROWS FETCH NEXT 3000000000 ROWS ONLY");
+
+        /// <summary>
+        /// A FETCH wider than an <c>int</c>, over the bounded sort.
+        /// </summary>
+        /// <remarks>
+        /// The limit sort adds the offset to the fetch to size its map, so it is where a count that cannot be
+        /// an <c>int</c> is most easily read as one.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnALimitSortWiderThanAnInt() =>
+            SameLimitSort("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET 2 ROWS FETCH NEXT 3000000000 ROWS ONLY");
+
+        /// <summary>
+        /// A FETCH and an OFFSET that are not whole numbers.
+        /// </summary>
+        /// <remarks>
+        /// A count is a <c>BigDecimal</c>, and <c>rowsRequired</c> rounds it to the row it reaches into
+        /// rather than truncating: OFFSET 1.5 skips two rows and FETCH 2.5 takes three. Comparing against the
+        /// whole-number query says which way, where agreeing with the other convention alone would not — a
+        /// truncating implementation would answer OFFSET 1 FETCH 2 and both would answer it together.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnAFractionalLimit()
+        {
+            const string fractional = "SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET 1.5 ROWS FETCH NEXT 2.5 ROWS ONLY";
+            const string rounded = "SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY";
+
+            SameLimitSort(fractional);
+
+            var rows = Run(fractional, true, limitSort: true);
+            rows.Should().HaveCount(3);
+            rows.Should().Equal(Run(rounded, true, limitSort: true));
+        }
+
+        /// <summary>
         /// Both conventions plan a limit sort for the queries above, rather than one of them planning a limit
         /// over a sort.
         /// </summary>

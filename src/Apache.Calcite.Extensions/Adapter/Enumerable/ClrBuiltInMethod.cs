@@ -64,18 +64,22 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         public static readonly MethodInfo OrderBy = Of(nameof(ClrEnumerableDefaults.OrderBy));
 
         /// <summary>
-        /// <see cref="ClrEnumerableDefaults.Skip"/>.
-        /// </summary>
-        public static readonly MethodInfo Skip = Of(nameof(ClrEnumerableDefaults.Skip));
-
-        /// <summary>
-        /// <see cref="ClrEnumerableDefaults.Take{TSource}(System.Collections.Generic.IEnumerable{TSource}, int)"/>.
+        /// <see cref="ClrEnumerableDefaults.Skip{TSource}(System.Collections.Generic.IEnumerable{TSource}, java.math.BigDecimal)"/>.
         /// </summary>
         /// <remarks>
-        /// The <c>int</c> overload, which is <c>BuiltInMethod.TAKE</c>; a plan's fetch is an <c>int</c>. The
-        /// <c>long</c> one is the row limit a caller asks a prepared statement for.
+        /// <c>BuiltInMethod.SKIP_BIG_DECIMAL</c>. What a limit is built from now: a FETCH or an OFFSET
+        /// arrives as a <c>BigDecimal</c> so that a bound an <c>int</c> could not hold still runs, which is
+        /// CALCITE-7624.
         /// </remarks>
-        public static readonly MethodInfo Take = Of(nameof(ClrEnumerableDefaults.Take), null, typeof(int));
+        public static readonly MethodInfo SkipBigDecimal = Of(nameof(ClrEnumerableDefaults.Skip), null, typeof(java.math.BigDecimal));
+
+        /// <summary>
+        /// <see cref="ClrEnumerableDefaults.Take{TSource}(System.Collections.Generic.IEnumerable{TSource}, java.math.BigDecimal)"/>.
+        /// </summary>
+        /// <remarks>
+        /// <c>BuiltInMethod.TAKE_BIG_DECIMAL</c>, and <see cref="SkipBigDecimal"/>'s twin.
+        /// </remarks>
+        public static readonly MethodInfo TakeBigDecimal = Of(nameof(ClrEnumerableDefaults.Take), null, typeof(java.math.BigDecimal));
 
         /// <summary>
         /// <see cref="ClrEnumerableDefaults.Concat"/>.
@@ -336,18 +340,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         public static readonly MethodInfo OrderByAsync = Of(nameof(ClrEnumerableDefaults.OrderByAsync));
 
         /// <summary>
-        /// <see cref="ClrEnumerableDefaults.Skip"/>.
+        /// <see cref="ClrEnumerableDefaults.SkipAsync{TSource}(System.Collections.Generic.IAsyncEnumerable{TSource}, java.math.BigDecimal, System.Threading.CancellationToken)"/>.
         /// </summary>
-        public static readonly MethodInfo SkipAsync = Of(nameof(ClrEnumerableDefaults.SkipAsync));
+        public static readonly MethodInfo SkipBigDecimalAsync = Of(nameof(ClrEnumerableDefaults.SkipAsync), null, typeof(java.math.BigDecimal), typeof(System.Threading.CancellationToken));
 
         /// <summary>
-        /// <c>ClrEnumerableDefaults.Take</c>.
+        /// <see cref="ClrEnumerableDefaults.TakeAsync{TSource}(System.Collections.Generic.IAsyncEnumerable{TSource}, java.math.BigDecimal, System.Threading.CancellationToken)"/>.
         /// </summary>
-        /// <remarks>
-        /// The <c>int</c> overload, as <c>ClrBuiltInMethod.Take</c> is; a plan's fetch is an <c>int</c>. The
-        /// <c>long</c> one is the row limit a caller asks a prepared statement for.
-        /// </remarks>
-        public static readonly MethodInfo TakeAsync = Of(nameof(ClrEnumerableDefaults.TakeAsync), null, typeof(int), typeof(System.Threading.CancellationToken));
+        public static readonly MethodInfo TakeBigDecimalAsync = Of(nameof(ClrEnumerableDefaults.TakeAsync), null, typeof(java.math.BigDecimal), typeof(System.Threading.CancellationToken));
 
         /// <summary>
         /// <see cref="ClrEnumerableDefaults.OrderByWithFetchAndOffset"/>.
