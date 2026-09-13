@@ -223,7 +223,17 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             {
                 var call = (AggregateCall)aggregateCalls.get(aggIdx);
                 if (call.ignoreNulls())
-                    throw new java.lang.UnsupportedOperationException("IGNORE NULLS not supported");
+                {
+                    switch (call.getAggregation().getKind().name())
+                    {
+                        case nameof(SqlKind.FIRST_VALUE):
+                        case nameof(SqlKind.LAST_VALUE):
+                            // IGNORE NULLS is implemented for these below
+                            break;
+                        default:
+                            throw new java.lang.UnsupportedOperationException("IGNORE NULLS not supported");
+                    }
+                }
 
                 aggs.add(new ClrAggImpState(aggIdx, call, true, RexImplementorTables.of(getCluster())));
             }
@@ -341,7 +351,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             {
                 var agg = (ClrAggImpState)aggs.get(i);
                 agg.Implementor.implementAdd(agg.context,
-                    new ClrWinAggAddContext(addBuilder, agg.state, frame, loop.Position, RexArguments(agg, inputResultPhysType.RelRowType, constants)));
+                    new ClrWinAggAddContext(addBuilder, agg.state, frame, loop.Position, RexArguments(agg, inputResultPhysType.RelRowType, constants), RexFilterArgument(agg, inputResultPhysType.RelRowType)));
             }
 
             var cachedBuilder = new J.BlockBuilder();
@@ -445,7 +455,17 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             {
                 var call = (AggregateCall)aggregateCalls.get(aggIdx);
                 if (call.ignoreNulls())
-                    throw new java.lang.UnsupportedOperationException("IGNORE NULLS not supported");
+                {
+                    switch (call.getAggregation().getKind().name())
+                    {
+                        case nameof(SqlKind.FIRST_VALUE):
+                        case nameof(SqlKind.LAST_VALUE):
+                            // IGNORE NULLS is implemented for these below
+                            break;
+                        default:
+                            throw new java.lang.UnsupportedOperationException("IGNORE NULLS not supported");
+                    }
+                }
 
                 aggs.add(new ClrAggImpState(aggIdx, call, true, RexImplementorTables.of(getCluster())));
             }
@@ -563,7 +583,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             {
                 var agg = (ClrAggImpState)aggs.get(i);
                 agg.Implementor.implementAdd(agg.context,
-                    new ClrWinAggAddContext(addBuilder, agg.state, frame, loop.Position, RexArguments(agg, inputResultPhysType.RelRowType, constants)));
+                    new ClrWinAggAddContext(addBuilder, agg.state, frame, loop.Position, RexArguments(agg, inputResultPhysType.RelRowType, constants), RexFilterArgument(agg, inputResultPhysType.RelRowType)));
             }
 
             var cachedBuilder = new J.BlockBuilder();
@@ -848,6 +868,29 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <summary>
+        /// Returns the reference to the field a window aggregate's FILTER reads, or null where the call has
+        /// no FILTER.
+        /// </summary>
+        /// <param name="agg"></param>
+        /// <param name="inputRowType"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The <c>rexFilterArgument</c> of the anonymous <c>WinAggAddContext</c> in
+        /// <c>EnumerableWindow.implementAdd</c>, which answered null and was marked REVIEW until
+        /// CALCITE-7595.
+        ///
+        /// <para>No query in this suite reaches the second branch, and it is written because Calcite writes
+        /// it rather than because a test failed without it. <c>SqlToRelConverter</c> rewrites
+        /// <c>COUNT(*) FILTER (WHERE p) OVER w</c> into <c>COUNT(CASE WHEN p THEN 0 END) OVER w</c> in the
+        /// calc below the window — measured, by dumping the plan — so the <c>AggregateCall</c> the window
+        /// meets has <c>filterArg</c> of -1. A <c>LogicalWindow</c> built another way need not.</para>
+        /// </remarks>
+        static RexNode? RexFilterArgument(AggImpState agg, RelDataType inputRowType)
+        {
+            return agg.call.filterArg < 0 ? null : RexInputRef.of(agg.call.filterArg, inputRowType);
+        }
+
+        /// <summary>
         /// Returns the expression giving one bound of the frame.
         /// </summary>
         /// <param name="translator"></param>
@@ -1090,10 +1133,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="exclusion"></param>
         /// <remarks>
         /// The anonymous <c>WinAggContext</c> of <c>declareAndResetState</c>. A window has no grouping, so the
-        /// four members about one refuse, exactly as Calcite's does. It is not sealed only because
-        /// <c>ignoreNulls</c> has to be virtual — see that member.
+        /// four members about one refuse, exactly as Calcite's does.
         /// </remarks>
-        class ClrWinAggContext(AggImpState agg, JavaTypeFactory typeFactory, RelDataType inputRowType, java.util.List constants, RexWindowExclusion exclusion) : WinAggContext
+        sealed class ClrWinAggContext(AggImpState agg, JavaTypeFactory typeFactory, RelDataType inputRowType, java.util.List constants, RexWindowExclusion exclusion) : WinAggContext
         {
 
             /// <inheritdoc />
@@ -1132,17 +1174,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             /// </summary>
             /// <returns></returns>
             /// <remarks>
-            /// <c>WinAggContext.ignoreNulls</c>, which CALCITE-7701 added in 1.43. This project compiles
-            /// against 1.42, where the interface has no such member, so the compiler cannot see this as an
-            /// implementation and emits it non-virtual — and a non-virtual method never fills an interface
-            /// slot, so under a 1.43 calcite-core the runtime refuses to load the class at all:
-            /// <c>Method 'ignoreNulls' in type 'ClrWinAggContext' does not have an implementation</c>.
-            /// Declaring it virtual, which costs the class its <c>sealed</c>, lets the runtime bind it to
-            /// the slot when it meets the newer interface, and costs nothing when it meets the older one.
-            /// IGNORE NULLS is still refused before any of this runs, so the answer is always false today;
-            /// it reads the call, as Calcite's does, for when that guard lifts.
+            /// <c>WinAggContext.ignoreNulls</c>, which CALCITE-7701 added along with the FIRST_VALUE and
+            /// LAST_VALUE implementors that read it.
             /// </remarks>
-            public virtual bool ignoreNulls() => agg.call.ignoreNulls();
+            public bool ignoreNulls() => agg.call.ignoreNulls();
 
         }
 
@@ -1273,7 +1308,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="frame"></param>
         /// <param name="position"></param>
         /// <param name="rexArgs"></param>
-        sealed class ClrWinAggAddContext(J.BlockBuilder block, java.util.List accumulator, java.util.function.Function frame, J.ParameterExpression position, java.util.List rexArgs) :
+        /// <param name="filterArg"></param>
+        sealed class ClrWinAggAddContext(J.BlockBuilder block, java.util.List accumulator, java.util.function.Function frame, J.ParameterExpression position, java.util.List rexArgs, RexNode? filterArg) :
             WinAggAddContextImpl(block, accumulator, frame)
         {
 
@@ -1284,7 +1320,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             public override java.util.List rexArguments() => rexArgs;
 
             /// <inheritdoc />
-            public override RexNode? rexFilterArgument() => null;
+            public override RexNode? rexFilterArgument() => filterArg;
 
         }
 

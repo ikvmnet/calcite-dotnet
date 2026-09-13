@@ -1808,6 +1808,54 @@ namespace Apache.Calcite.Tests
         [TestMethod]
         public void ShouldAgreeOnANullPartitionKey() => Same("SELECT \"ID\", COUNT(*) OVER (PARTITION BY \"AMOUNT\") FROM \"SALES\" ORDER BY \"ID\"");
 
+        /// <summary>
+        /// FIRST_VALUE and LAST_VALUE carrying IGNORE NULLS.
+        /// </summary>
+        /// <remarks>
+        /// CALCITE-7701. A window aggregate carrying IGNORE NULLS was refused outright; it is implemented for
+        /// these two, so the refusal now asks what the function is. What reads the flag is the implementor
+        /// Calcite hands us, through <c>WinAggContext.ignoreNulls</c>.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnFirstValueIgnoringNulls() =>
+            Same("SELECT \"ID\", \"AMOUNT\", FIRST_VALUE(\"AMOUNT\") IGNORE NULLS OVER (ORDER BY \"ID\" ROWS 2 PRECEDING) FROM \"SALES\" ORDER BY \"ID\"");
+
+        /// <inheritdoc cref="ShouldAgreeOnFirstValueIgnoringNulls" />
+        [TestMethod]
+        public void ShouldAgreeOnLastValueIgnoringNulls() =>
+            Same("SELECT \"ID\", \"AMOUNT\", LAST_VALUE(\"AMOUNT\") IGNORE NULLS OVER (ORDER BY \"ID\" ROWS 2 PRECEDING) FROM \"SALES\" ORDER BY \"ID\"");
+
+        /// <inheritdoc cref="ShouldAgreeOnFirstValueIgnoringNulls" />
+        [TestMethod]
+        public void ShouldAgreeOnFirstValueRespectingNulls() =>
+            Same("SELECT \"ID\", \"AMOUNT\", FIRST_VALUE(\"AMOUNT\") RESPECT NULLS OVER (ORDER BY \"ID\" ROWS 2 PRECEDING) FROM \"SALES\" ORDER BY \"ID\"");
+
+        /// <summary>
+        /// A window aggregate carrying a FILTER.
+        /// </summary>
+        /// <remarks>
+        /// CALCITE-7595, which is three pieces: the validator accepts the clause, <c>RexImpTable</c> gained a
+        /// FILTER implementor, and <c>WinAggAddContext.rexFilterArgument</c> stopped answering null.
+        ///
+        /// <para>These reach the first two and not the third. <c>SqlToRelConverter</c> turns the FILTER into a
+        /// <c>CASE</c> in the calc below the window, so the window's <c>AggregateCall</c> carries no filter
+        /// argument at all — measured by dumping the plan, and again by a probe that throws where one arrives
+        /// and never fired. What they do hold is that both conventions answer the query alike.</para>
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnAFilteredWindowCount() =>
+            Same("SELECT \"ID\", COUNT(*) FILTER (WHERE \"AMOUNT\" > 15) OVER (PARTITION BY \"REGION\") FROM \"SALES\" ORDER BY \"ID\"");
+
+        /// <inheritdoc cref="ShouldAgreeOnAFilteredWindowCount" />
+        [TestMethod]
+        public void ShouldAgreeOnAFilteredWindowSum() =>
+            Same("SELECT \"ID\", SUM(\"AMOUNT\") FILTER (WHERE \"AMOUNT\" IS NOT NULL) OVER (PARTITION BY \"REGION\") FROM \"SALES\" ORDER BY \"ID\"");
+
+        /// <inheritdoc cref="ShouldAgreeOnAFilteredWindowCount" />
+        [TestMethod]
+        public void ShouldAgreeOnTwoFilteredWindowAggregates() =>
+            Same("SELECT \"ID\", COUNT(*) FILTER (WHERE \"AMOUNT\" > 15) OVER (PARTITION BY \"REGION\"), SUM(\"AMOUNT\") FILTER (WHERE \"AMOUNT\" <= 15) OVER (PARTITION BY \"REGION\") FROM \"SALES\" ORDER BY \"ID\"");
+
         [TestMethod]
         public void ShouldAgreeOnAnEmptyFrame() => Same("SELECT \"ID\", SUM(\"AMOUNT\") OVER (ORDER BY \"ID\" ROWS BETWEEN 3 PRECEDING AND 2 PRECEDING) FROM \"SALES\" ORDER BY \"ID\"");
 
