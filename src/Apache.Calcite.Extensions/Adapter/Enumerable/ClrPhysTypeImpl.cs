@@ -396,7 +396,56 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <inheritdoc />
         public Expression? Comparer()
         {
-            return format.Comparer();
+            var comparer = format.Comparer();
+            if (comparer != null)
+                return comparer;
+
+            if (AnyFieldContainsStruct(rowType))
+                // a row or a key holding a struct needs deep equality: what a struct is at run time is an
+                // Object[] or a List, and those compare a nested Object[] by reference. This is the "not
+                // distinct" semantics GROUP BY, DISTINCT and the set operators are defined in terms of
+                return Expression.Call(null, DeepComparer);
+
+            return null;
+        }
+
+        /// <summary>
+        /// Returns whether any field of the row type holds a struct, itself or within a collection or a map.
+        /// </summary>
+        /// <remarks>
+        /// <c>PhysTypeImpl.anyFieldContainsStruct</c>, which is private.
+        /// </remarks>
+        static bool AnyFieldContainsStruct(RelDataType rowType)
+        {
+            for (var i = rowType.getFieldList().iterator(); i.hasNext();)
+                if (ContainsStruct(((RelDataTypeField)i.next()).getType()))
+                    return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Returns whether a type holds a struct, itself or within a collection or a map.
+        /// </summary>
+        /// <remarks>
+        /// <c>PhysTypeImpl.containsStruct</c>, which is private.
+        /// </remarks>
+        static bool ContainsStruct(RelDataType type)
+        {
+            if (type.isStruct())
+                return true;
+
+            var componentType = type.getComponentType();
+            if (componentType != null && ContainsStruct(componentType))
+                return true;
+
+            var keyType = type.getKeyType();
+            if (keyType != null && ContainsStruct(keyType))
+                return true;
+
+            var valueType = type.getValueType();
+
+            return valueType != null && ContainsStruct(valueType);
         }
 
         /// <inheritdoc />
@@ -534,10 +583,55 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // null, so a list of one is a list rather than the element itself
             var body = GetListExpressionAllowSingleElement(list);
             for (int i = list.Count - 1; i >= 0; i--)
-                if (JavaLists.Bool(nullExclusionFlags, i))
-                    body = ClrEnumUtils.NullIfNull(list[i], body);
+            {
+                if (JavaLists.Bool(nullExclusionFlags, i) == false)
+                    continue;
+
+                var fieldType = ((RelDataTypeField)rowType.getFieldList().get(JavaLists.Int(fields, i))).getType();
+
+                // under the SQL = operator a NULL never compares TRUE, and neither can a ROW holding a NULL
+                // field at any depth: comparing its fields pairwise is UNKNOWN or FALSE, and the key is null
+                // for both
+                body = fieldType.isStruct()
+                    ? Expression.Condition(
+                        StructIsNullOrContainsNull(list[i], fieldType),
+                        Expression.Constant(null, body.Type),
+                        body,
+                        body.Type)
+                    : ClrEnumUtils.NullIfNull(list[i], body);
+            }
 
             return Expression.Lambda(body, v1);
+        }
+
+        /// <summary>
+        /// Returns the expression testing whether a value of a ROW type is null or holds a null field.
+        /// </summary>
+        /// <remarks>
+        /// <c>PhysTypeImpl.structIsNullOrContainsNullExpression</c>, which is private. It descends into a
+        /// struct-typed field and not into a collection-typed one.
+        /// </remarks>
+        static Expression StructIsNullOrContainsNull(Expression e, RelDataType type)
+        {
+            Expression result = Expression.Equal(e, Expression.Constant(null, e.Type));
+
+            for (int i = 0; i < type.getFieldList().size(); i++)
+            {
+                var field = (RelDataTypeField)type.getFieldList().get(i);
+                var fieldType = field.getType();
+                if (fieldType.isStruct() == false && fieldType.isNullable() == false)
+                    continue;
+
+                // structAccess takes either of the runtime representations of a struct, and only runs where
+                // e is not null, the OR being short circuit
+                var access = Expression.Call(null, StructAccess, ClrEnumUtils.Convert(e, typeof(object)), Expression.Constant(i), Expression.Constant(field.getName()));
+
+                result = Expression.OrElse(result, fieldType.isStruct()
+                    ? StructIsNullOrContainsNull(access, fieldType)
+                    : Expression.Equal(access, Expression.Constant(null, access.Type)));
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -752,6 +846,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
         /// <inheritdoc cref="NullsComparator" />
         static readonly MethodInfo NullsComparator2 = ClrTypes.Resolve(BuiltInMethod.NULLS_COMPARATOR2.method);
+
+        /// <inheritdoc cref="NullsComparator" />
+        static readonly MethodInfo DeepComparer = ClrTypes.Resolve(BuiltInMethod.DEEP_COMPARER.method);
+
+        /// <inheritdoc cref="NullsComparator" />
+        static readonly MethodInfo StructAccess = ClrTypes.Resolve(BuiltInMethod.STRUCT_ACCESS.method);
 
     }
 
