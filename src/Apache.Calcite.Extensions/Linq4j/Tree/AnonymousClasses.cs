@@ -32,6 +32,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             [typeof(org.apache.calcite.linq4j.function.Function0)] = typeof(DelegateFunction0<>),
             [typeof(org.apache.calcite.linq4j.function.Function1)] = typeof(DelegateFunction1Of<,>),
             [typeof(org.apache.calcite.linq4j.function.Function2)] = typeof(DelegateFunction2<,,>),
+            [typeof(org.apache.calcite.linq4j.function.Predicate1)] = typeof(DelegatePredicate1<>),
+            [typeof(org.apache.calcite.linq4j.function.Predicate2)] = typeof(DelegatePredicate2<,>),
         };
 
         /// <summary>
@@ -42,6 +44,17 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// a boolean. Neither has a result worth naming the adapter by.
         /// </remarks>
         static readonly HashSet<Type> ByArgument = [typeof(DelegateComparator<>), typeof(DelegatePredicate<>)];
+
+        /// <summary>
+        /// The interfaces named by every type they take, with no result to name them by.
+        /// </summary>
+        /// <remarks>
+        /// A linq4j predicate answers a primitive <see cref="bool"/> declared on itself rather than a
+        /// <c>Function</c>'s value, so the adapter is closed over what it takes and nothing else. That is
+        /// what separates these from <see cref="ByArgument"/>, which names an interface by its first
+        /// parameter because the rest repeat it.
+        /// </remarks>
+        static readonly HashSet<Type> ByArguments = [typeof(DelegatePredicate1<>), typeof(DelegatePredicate2<,>)];
 
         /// <summary>
         /// The interfaces an anonymous class implements with more than one method, and the order its methods
@@ -118,7 +131,10 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             // an adapter whose every parameter type is fixed has nothing to close over
             var closed = adapter.IsGenericTypeDefinition == false
                 ? adapter
-                : adapter.MakeGenericType(ByArgument.Contains(adapter) ? [lambda.Parameters[0].Type] : Arguments(lambda));
+                : adapter.MakeGenericType(
+                    ByArgument.Contains(adapter) ? [lambda.Parameters[0].Type] :
+                    ByArguments.Contains(adapter) ? Parameters(lambda) :
+                    Arguments(lambda));
             var constructor = closed.GetConstructor([lambda.Type])
                 ?? closed.GetConstructors()[0];
 
@@ -147,6 +163,20 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 return inner;
 
             return null;
+        }
+
+        /// <summary>
+        /// Returns the parameter types of a lambda.
+        /// </summary>
+        /// <param name="lambda"></param>
+        /// <returns></returns>
+        static Type[] Parameters(LambdaExpression lambda)
+        {
+            var parameters = new Type[lambda.Parameters.Count];
+            for (int i = 0; i < parameters.Length; i++)
+                parameters[i] = lambda.Parameters[i].Type;
+
+            return parameters;
         }
 
         /// <summary>
