@@ -417,7 +417,7 @@ values, and `item(key)` reads each value back.
 
 **A `MULTISET`, a `ROW`, and a map whose keys are not character values are refused.** A multiset
 answers null to every `item`; a row answers only to field names the variant does not carry; a
-non-character key comes back null from the cast that would enumerate it. Calcite 1.42 exposes no
+non-character key comes back null from the cast that would enumerate it. Calcite 1.43 exposes no
 public route to any of their contents, so `GetValue` throws and names which it was, rather than
 handing back the `VariantValue` — that would put a Java object in a caller's hands — or inventing a
 text form for it. If upstream exposes a variant's full `RuntimeTypeInformation`, all three open up.
