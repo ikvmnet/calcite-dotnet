@@ -49,6 +49,10 @@ namespace Apache.Calcite.Data.Tests
         /// The property that chooses <c>TopDownGeneralDecorrelator</c> over <c>RelDecorrelator</c> is
         /// written under the name Calcite reads it by.
         /// </summary>
+        /// <remarks>
+        /// The name comes from <c>camelName()</c> rather than from a literal, because a transcribed one
+        /// asserts the spelling in the tree that was read and the jar is what runs.
+        /// </remarks>
         [TestMethod]
         public void CanSetTopDownGeneralDecorrelationEnabled()
         {
@@ -56,7 +60,7 @@ namespace Apache.Calcite.Data.Tests
             var c = new CalciteConnectionProperties(p);
             c.TopDownGeneralDecorrelationEnabled = true;
             Assert.AreEqual(true, c.TopDownGeneralDecorrelationEnabled);
-            Assert.AreEqual("true", p.getProperty("topDownGeneralDecorrelationEnabled"));
+            Assert.AreEqual("true", p.getProperty(CalciteConnectionProperty.TOPDOWN_GENERAL_DECORRELATION_ENABLED.camelName()));
         }
 
         [TestMethod]

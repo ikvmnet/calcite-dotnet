@@ -2,6 +2,8 @@
 
 using Apache.Calcite.Data.Internal;
 
+using org.apache.calcite.config;
+
 using Xunit;
 
 namespace Apache.Calcite.Data.Tests
@@ -125,9 +127,13 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The key is the one Calcite reads the property by, so a connection string carries it to the
-        /// engine unchanged.
+        /// A connection string carries the key to the engine under the name Calcite reads the property by.
         /// </summary>
+        /// <remarks>
+        /// Which is not the same as the key's own spelling, and the assertion must not be written as one:
+        /// <c>DbConnectionStringBuilder</c> lower-cases a keyword it parses, and what puts Calcite's name
+        /// back is the <c>CalciteEngineProperties</c> entry. So the expected name is <c>camelName()</c>.
+        /// </remarks>
         [Fact]
         public void TopDownGeneralDecorrelationEnabled_should_round_trip_and_default_to_unset()
         {
@@ -139,7 +145,7 @@ namespace Apache.Calcite.Data.Tests
             Assert.True(rebuilt.TopDownGeneralDecorrelationEnabled);
 
             var engine = CalciteEngineProperties.Build(rebuilt);
-            Assert.Equal("true", engine.getProperty("topDownGeneralDecorrelationEnabled"));
+            Assert.Equal("true", engine.getProperty(CalciteConnectionProperty.TOPDOWN_GENERAL_DECORRELATION_ENABLED.camelName()));
 
             rebuilt.TopDownGeneralDecorrelationEnabled = null;
             Assert.False(rebuilt.ContainsKey(CalciteConnectionStringBuilder.TopDownGeneralDecorrelationEnabledKey));
