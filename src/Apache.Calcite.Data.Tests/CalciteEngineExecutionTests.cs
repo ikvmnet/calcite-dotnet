@@ -33,6 +33,37 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(3, Convert.ToInt32(cmd.ExecuteScalar()));
         }
 
+        /// <summary>
+        /// A correlated <c>EXISTS</c> over an <c>UNNEST</c>, which the default decorrelator rewrites into a
+        /// plan nothing binds, runs under <c>TopDownGeneralDecorrelationEnabled</c>.
+        /// </summary>
+        /// <remarks>
+        /// This is the statement of issue 125, and the only thing that makes it answer rather than throw is
+        /// the connection string reaching <c>Programs.DecorrelateProgram</c>: it chooses between
+        /// <c>RelDecorrelator</c> and <c>TopDownGeneralDecorrelator</c> on the property this key carries. So
+        /// it is the option's end-to-end test as much as the statement's — nothing else in this project
+        /// reads the key.
+        /// </remarks>
+        [Fact]
+        public void Should_execute_a_correlated_exists_over_an_uncollect_with_top_down_decorrelation()
+        {
+            var connectionString = new CalciteConnectionStringBuilder(TestModels.InlineEmptyModelConnectionString)
+            {
+                TopDownGeneralDecorrelationEnabled = true,
+            };
+
+            using var c = new CalciteConnection(connectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText =
+                "SELECT d.ID FROM (VALUES (1, ARRAY['red','green']), (2, ARRAY['blue'])) AS d(ID, TAGS) WHERE EXISTS (" +
+                "SELECT 1 FROM (SELECT d2.ID AS PID, t.X AS CITY FROM " +
+                "(VALUES (1, ARRAY['red','green']), (2, ARRAY['blue'])) AS d2(ID, TAGS), UNNEST(d2.TAGS) AS t(X)) c " +
+                "WHERE c.PID = d.ID AND c.CITY = 'red')";
+
+            Assert.Equal(1, Convert.ToInt32(cmd.ExecuteScalar()));
+        }
+
         [Fact]
         public void Should_execute_string_expression()
         {

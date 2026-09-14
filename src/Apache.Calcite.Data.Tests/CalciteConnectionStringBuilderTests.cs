@@ -1,5 +1,6 @@
 ﻿using System.Data.Common;
 
+using Apache.Calcite.Data.Internal;
 
 using Xunit;
 
@@ -121,6 +122,27 @@ namespace Apache.Calcite.Data.Tests
 
             Assert.Equal(a.DataSourceKey, b.DataSourceKey);
             Assert.NotEqual(a.DataSourceKey, c.DataSourceKey);
+        }
+
+        /// <summary>
+        /// The key is the one Calcite reads the property by, so a connection string carries it to the
+        /// engine unchanged.
+        /// </summary>
+        [Fact]
+        public void TopDownGeneralDecorrelationEnabled_should_round_trip_and_default_to_unset()
+        {
+            var b = new CalciteConnectionStringBuilder();
+            Assert.Null(b.TopDownGeneralDecorrelationEnabled);
+
+            b.TopDownGeneralDecorrelationEnabled = true;
+            var rebuilt = new CalciteConnectionStringBuilder(b.ConnectionString);
+            Assert.True(rebuilt.TopDownGeneralDecorrelationEnabled);
+
+            var engine = CalciteEngineProperties.Build(rebuilt);
+            Assert.Equal("true", engine.getProperty("topDownGeneralDecorrelationEnabled"));
+
+            rebuilt.TopDownGeneralDecorrelationEnabled = null;
+            Assert.False(rebuilt.ContainsKey(CalciteConnectionStringBuilder.TopDownGeneralDecorrelationEnabledKey));
         }
 
         [Fact]

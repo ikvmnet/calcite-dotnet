@@ -32,6 +32,8 @@ namespace Apache.Calcite.Data.Tests
             Assert.AreEqual("", c.Locale);
             Assert.AreEqual(null, c.QuotedCasing);
             Assert.AreEqual(null, c.UnquotedCasing);
+            Assert.AreEqual(true, c.ForceDecorrelate);
+            Assert.AreEqual(false, c.TopDownGeneralDecorrelationEnabled);
         }
 
         [TestMethod]
@@ -41,6 +43,20 @@ namespace Apache.Calcite.Data.Tests
             var c = new CalciteConnectionProperties(p);
             c.ApproximateDecimal = true;
             Assert.AreEqual(true, c.ApproximateDecimal);
+        }
+
+        /// <summary>
+        /// The property that chooses <c>TopDownGeneralDecorrelator</c> over <c>RelDecorrelator</c> is
+        /// written under the name Calcite reads it by.
+        /// </summary>
+        [TestMethod]
+        public void CanSetTopDownGeneralDecorrelationEnabled()
+        {
+            var p = new Properties();
+            var c = new CalciteConnectionProperties(p);
+            c.TopDownGeneralDecorrelationEnabled = true;
+            Assert.AreEqual(true, c.TopDownGeneralDecorrelationEnabled);
+            Assert.AreEqual("true", p.getProperty("topDownGeneralDecorrelationEnabled"));
         }
 
         [TestMethod]

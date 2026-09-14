@@ -148,6 +148,7 @@ props.MaterializationsEnabled = false;
 | `TimeZone` | `string` | JVM default | Session time zone. |
 | `Locale` | `string` | `Locale.ROOT` | Session locale. |
 | `ForceDecorrelate` | `bool` | `true` | Aggressive subquery de-correlation. |
+| `TopDownGeneralDecorrelationEnabled` | `bool` | `false` | De-correlate with `TopDownGeneralDecorrelator` rather than `RelDecorrelator`. |
 | `MaterializationsEnabled` | `bool` | `true` | Use materializations in the planner. |
 | `CreateMaterializations` | `bool` | `true` | Create materializations on the fly. |
 | `TypeCoercion` | `bool` | `true` | Implicit type coercion during validation. |
@@ -166,7 +167,7 @@ props.MaterializationsEnabled = false;
 | `MetaTableFactory` / `MetaColumnFactory` | `string` | — | Avatica metadata factories. |
 | `TypeSystem` | `string` | — | Type system class name. |
 
-Defaults are Calcite's own, read from `CalciteConnectionProperty` in the version this package references (1.42).
+Defaults are Calcite's own, read from `CalciteConnectionProperty` in the version this package references (1.43).
 
 ## `CalciteConnectionPropertiesSchemaMap`
 
