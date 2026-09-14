@@ -133,6 +133,11 @@ namespace Apache.Calcite.Data.Tests
         /// Which is not the same as the key's own spelling, and the assertion must not be written as one:
         /// <c>DbConnectionStringBuilder</c> lower-cases a keyword it parses, and what puts Calcite's name
         /// back is the <c>CalciteEngineProperties</c> entry. So the expected name is <c>camelName()</c>.
+        ///
+        /// <para>Nor is the value compared as a string. A <see cref="bool"/> set on the builder comes back
+        /// out of the connection string as <c>True</c>, which <c>Build</c> writes through
+        /// <c>ToString()</c>; Calcite parses it with <c>Boolean.parseBoolean</c> and does not care. So what
+        /// is asserted is the read Calcite itself does — <c>wrap(properties).getBoolean()</c>.</para>
         /// </remarks>
         [Fact]
         public void TopDownGeneralDecorrelationEnabled_should_round_trip_and_default_to_unset()
@@ -145,7 +150,8 @@ namespace Apache.Calcite.Data.Tests
             Assert.True(rebuilt.TopDownGeneralDecorrelationEnabled);
 
             var engine = CalciteEngineProperties.Build(rebuilt);
-            Assert.Equal("true", engine.getProperty(CalciteConnectionProperty.TOPDOWN_GENERAL_DECORRELATION_ENABLED.camelName()));
+            Assert.NotNull(engine.getProperty(CalciteConnectionProperty.TOPDOWN_GENERAL_DECORRELATION_ENABLED.camelName()));
+            Assert.True(CalciteConnectionProperty.TOPDOWN_GENERAL_DECORRELATION_ENABLED.wrap(engine).getBoolean());
 
             rebuilt.TopDownGeneralDecorrelationEnabled = null;
             Assert.False(rebuilt.ContainsKey(CalciteConnectionStringBuilder.TopDownGeneralDecorrelationEnabledKey));
