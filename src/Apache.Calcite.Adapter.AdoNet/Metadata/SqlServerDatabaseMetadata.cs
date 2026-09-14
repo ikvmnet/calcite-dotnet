@@ -2,8 +2,13 @@
 using System.Data;
 using System.Data.Common;
 
+using org.apache.calcite.rel.type;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.dialect;
+using org.apache.calcite.sql.fun;
+using org.apache.calcite.sql.parser;
+using org.apache.calcite.sql.type;
+using org.apache.calcite.sql.util;
 
 namespace Apache.Calcite.Adapter.AdoNet.Metadata
 {
@@ -53,15 +58,62 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         }
 
         /// <inheritdoc />
-        /// <inheritdoc />
         /// <remarks>
         /// Worked out once and kept: deriving it asks the server for its version, and the convention reads
-        /// it for every rule that matches while planning. SqlClient binds the default parameter form, so
-        /// there is no syntax to state.
+        /// it for every rule that matches while planning.
         /// </remarks>
         public override SqlDialect Dialect => _dialect ??= CreateDialect();
 
         SqlDialect? _dialect;
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// SqlClient binds the default <c>@P</c> parameter form, so the naming is the interface's own. What this states
+        /// is a rewrite: a <c>UUID</c> literal unparses as the standard typed literal <c>UUID '…'</c> —
+        /// <c>SqlUuidLiteral.unparse</c> consults no dialect — and SQL Server has neither that literal syntax nor the
+        /// <c>UUID</c> type name, so it answers "Incorrect syntax" on the string. Until Calcite lets the dialect render
+        /// the literal, the syntax turns each one into <c>CAST('…' AS uniqueidentifier)</c>, naming the type the way the
+        /// dialect's own cast spec does. It is a dialect concern done from the driver's side because that is the seam
+        /// there is.
+        /// </remarks>
+        public override IAdoSqlSyntax Syntax => _syntax ??= new SqlServerSqlSyntax();
+
+        IAdoSqlSyntax? _syntax;
+
+        /// <summary>
+        /// The SQL Server driver's syntax: the default parameter naming, and a rewrite of every <c>UUID</c> literal
+        /// into a cast a server with no <c>UUID</c> literal can parse.
+        /// </summary>
+        sealed class SqlServerSqlSyntax : IAdoSqlSyntax
+        {
+
+            /// <inheritdoc />
+            public SqlNode Rewrite(SqlNode statement, SqlDialect dialect, RelDataTypeFactory typeFactory)
+            {
+                return (SqlNode)statement.accept(new UuidLiteralShuttle(dialect, typeFactory));
+            }
+
+            /// <summary>
+            /// Rewrites every <c>UUID</c> literal into an explicit cast of its text, so the dialect names the type.
+            /// </summary>
+            sealed class UuidLiteralShuttle(SqlDialect dialect, RelDataTypeFactory typeFactory) : SqlShuttle
+            {
+
+                /// <inheritdoc />
+                public override SqlNode visit(SqlLiteral literal)
+                {
+                    if (literal.getTypeName()?.name() != nameof(SqlTypeName.UUID))
+                        return base.visit(literal);
+
+                    var value = (java.util.UUID)literal.getValueAs((java.lang.Class)typeof(java.util.UUID));
+                    var text = SqlLiteral.createCharString(value.toString(), SqlParserPos.ZERO);
+                    var spec = dialect.getCastSpec(typeFactory.createSqlType(SqlTypeName.UUID));
+                    return SqlStdOperatorTable.CAST.createCall(SqlParserPos.ZERO, text, spec);
+                }
+
+            }
+
+        }
 
         /// <summary>
         /// Asks the server what it is, and describes it to Calcite.

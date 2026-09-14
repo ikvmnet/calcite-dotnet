@@ -1,8 +1,11 @@
+using org.apache.calcite.rel.type;
+using org.apache.calcite.sql;
+
 namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Says how a driver names a query parameter.
+    /// Says how a driver names a query parameter, and gives it the last say on the SQL a statement unparses to.
     /// </summary>
     /// <remarks>
     /// Deliberately not the dialect. A dialect is a property of the <i>server</i> — what SQL it understands
@@ -31,6 +34,23 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// </para>
         /// </remarks>
         string GetParameterName(int index) => "@P" + index;
+
+        /// <summary>
+        /// Returns the statement to unparse, given the one Calcite produced — the last chance to rewrite the SQL
+        /// tree before it becomes text.
+        /// </summary>
+        /// <param name="statement">The statement Calcite translated the plan to.</param>
+        /// <param name="dialect">The dialect the statement is being written for.</param>
+        /// <param name="typeFactory">The type factory, for a rewrite that has to name a type.</param>
+        /// <returns>The statement to unparse, unchanged by default.</returns>
+        /// <remarks>
+        /// A generic seam for the corrections a driver's SQL needs that Calcite's own unparse does not make — where a
+        /// node unparses the same for every dialect because it consults none, and the result is wrong for one of them.
+        /// The default returns the statement untouched; a provider that needs a rewrite overrides this. It is not the
+        /// dialect's job made the driver's: the dialect is where such a thing belongs, and this is where it can be done
+        /// until the dialect can.
+        /// </remarks>
+        SqlNode Rewrite(SqlNode statement, SqlDialect dialect, RelDataTypeFactory typeFactory) => statement;
 
     }
 
