@@ -12,29 +12,6 @@ None of the items below are covered by tests either way: the 98 adapter tests ex
 only. Every bug found in this adapter so far has been in code nothing executed, so write the
 failing test first.
 
-### 0b. ODBC and OleDb cannot answer what they are
-
-`OdbcDatabaseMetadata` and `OleDbDatabaseMetadata` throw from `Dialect`, `GetDefaultSchema` and
-`ParseDbType`. That reads like laziness; it is not. ODBC is a transport, not a database — one
-`OdbcConnection` may front SQL Server, Oracle, PostgreSQL, DB2 or Teradata, each with a different
-grammar. No dialect follows from "this is ODBC", so there is nothing to return without connecting.
-
-Calcite treats this as the general case rather than a special one. `SqlDialectFactoryImpl.create`
-takes a live `DatabaseMetaData`, reads `getDatabaseProductName()`, and returns the matching dialect;
-`JdbcUtils.DialectPool` caches the answer per data source so it is asked once. The ADO.NET input is
-the same: `DbConnection.GetSchema(DbMetaDataCollectionNames.DataSourceInformation)` yields
-`DataSourceProductName` and version.
-
-This is the clearest case for keeping the dialect and the parameter syntax apart. For ODBC the
-dialect is unknown until a connection is opened, because it belongs to the server behind the bridge;
-the parameter form is known statically, because ODBC always binds positional `?`. One member could
-not answer both.
-
-And `?` is the case `GetParameterName(int)` cannot express — a bare marker carries no position. So
-ODBC needs more than a different string: `AdoEnumerable.SetParameter` sets `ParameterName` and relies
-on the name matching the marker, and ODBC binds by the order of the parameter collection instead.
-Supporting it means a positional path through the enricher.
-
 ### 1. DML never reaches the provider
 
 `INSERT` / `UPDATE` / `DELETE` do not push down. Calcite has three pieces we have none of:
@@ -87,14 +64,14 @@ a single registration.
 Decide whether this path is wanted at all before adding it — symmetry with Calcite is not a reason
 on its own.
 
-### 6. Dialect and data source lookups are not cached
+### 6. Dialect and data source lookups are not cached across metadata instances
 
 `JdbcUtils.DialectPool` and `JdbcUtils.DataSourcePool` cache by key, per data source, across schemas.
-
-`SqlServerDatabaseMetadata` now memoizes its own dialect, which was the pressing part: deriving it
-opens a connection to read the server version, and `AdoConvention.Dialect` is read for every rule
-that matches while planning. What is left is caching *across* metadata instances, which only matters
-when several schemas point at one database. Lowest priority; measure before assuming it matters.
+Every metadata implementation that derives its dialect from a live connection memoizes it, which was
+the pressing part: deriving it opens a connection to read the server version, and
+`AdoConvention.Dialect` is read for every rule that matches while planning. What is left is caching
+*across* metadata instances, which only matters when several schemas point at one database. Lowest
+priority; measure before assuming it matters.
 
 ## ADO.NET adapter: what more it could push, audited 2026-09-07
 
@@ -285,34 +262,13 @@ Calcite's adapter does not have: a `DbBatch` for a multi-row modify, and a bulk-
 (`SqlBulkCopy`, `NpgsqlBinaryImporter`) for `INSERT … SELECT` whose source is another convention, which is
 §12's machinery pointed at a write.
 
-### 14. Execution was synchronous; the connect still is, and cancellation and timeout are not wired
+### 14. The connect is synchronous, and timeout and `Cancel()` are not wired
 
-**The awaiting route is written** (#119). `AdoToClrEnumerableConverter` writes both bodies, so a plan of
-`ClrEnumerableConvention` — which is what the provider plans by — converts straight out of the adapter
-whichever way it is compiled, and the awaiting one reads its rows through `AdoSequences.ReadAsync`. The
-route it replaced was a second converter over `AdoToEnumerableConverter`: two crossings, a linq4j
-enumerator, and `DbDataReader.Read()` at the bottom, so the one place in a plan with network I/O to
-suspend on was the one place that blocked.
-
-The statement it sends is the pulled body's — same implementor, same writer, same row builder, shared
-rather than written again.
-
-**What is asynchronous is the row loop, and only the row loop.** The statement is still sent at
-`GetAsyncEnumerator`, synchronously, through `OpenConnection()` and `ExecuteReader()`. That is where this
-convention acquires — linq4j acquires inside `enumerator()`, `AcquisitionTimingTests` holds that the whole
-cascade runs there, and `ClrAsyncEnumerableAdoNetTests` states that acquisition-time work is synchronous
-work because `GetAsyncEnumerator` cannot await.
-
-It was written the other way first, opening and executing on the first `MoveNextAsync`, which is the only
-other thing a method returning an `IAsyncEnumerable` can do. Measured, that moved where a rejected
-statement surfaces: out of `ExecuteReaderAsync` as a `CalciteException`, which is where the synchronous
-route and the old asynchronous route both put it, and into the first `ReadAsync` as a bare
-`AdoCalciteException`. `CalciteSession` calls `GetAsyncEnumerator` inside `ExecuteReaderAsync`, so
-acquiring there is the whole of the fix.
-`AdoClrEnumerableTests.ShouldSendTheStatementAtAcquisition` pins the acquisition point and
-`ShouldFailFromExecuteRatherThanFromTheFirstRead` the failure site; both fail against the other shape.
-
-Four remain:
+The row loop awaits; the statement does not. It is sent at `GetAsyncEnumerator`, synchronously, through
+`OpenConnection()` and `ExecuteReader()`. That is where this convention acquires — linq4j acquires inside
+`enumerator()`, `AcquisitionTimingTests` holds that the whole cascade runs there, and
+`ClrAsyncEnumerableAdoNetTests` states that acquisition-time work is synchronous work because
+`GetAsyncEnumerator` cannot await.
 
 - **An asynchronous connect.** Getting `OpenConnectionAsync` and `ExecuteReaderAsync` as well means
   awaiting somewhere earlier than the first row, and the only place is `ExecuteReaderAsync` itself.
@@ -321,25 +277,7 @@ Four remain:
   `AnAsynchronousSortShouldAcquireAtExecuteAndDrainAtTheFirstRead`, which hold the opposite promise
   deliberately. So this is a change to the convention's execution contract rather than to the adapter, and
   it is the decision that gates it.
-- **Cancellation is wired; `DbCommand.Cancel()` is not.** `StatementCancellation` holds one cancellation per
-  executing statement in both of the forms a plan can read it: a `CancellationToken`, which this
-  convention's operators carry from `GetAsyncEnumerator` down to `AdoSequences.ReadAsync` and
-  `DbDataReader.ReadAsync`, and the `AtomicBoolean` that goes into the `DataContext` as
-  `DataContext.Variable.CANCEL_FLAG`, which is what a table of Calcite's convention polls —
-  `ListTransientTable` and the CSV, file and Kafka adapters' tables. **The conversion between them is at the
-  boundary**, in `JavaSequences.FromJavaAsync`: that is the one crossing into Calcite's convention — the
-  converter builds a call to it, and so does a scan of a table of Calcite's SPI, which reaches no converter
-  at all — and it has the token at `GetAsyncEnumerator` and the flag through the `DataContext`, so it
-  registers one against the other for as long as that sub-plan is read. A plan with no Calcite sub-plan arms
-  nothing. `AdoCancellationTests` holds the token end against a real `DbDataReader`,
-  `StatementCancellationTests` the flag end against a table that blocks. A token given to
-  `DbDataReader.ReadAsync` gets a registration against the statement for the length of the call, which is
-  what `SqlDataReader.ReadAsync` does with one — read, not remembered.
-
-  **The synchronous route is not cancellable and does not claim to be.** A pulled plan carries no token and
-  `FromJava` has none to convert, so a synchronous read refuses at the next `ReadAsync` and no further.
-
-  `DbCommand.Cancel()` is still a no-op. `StatementCancellation.Cancel()` is what it would call and the
+- **`DbCommand.Cancel()` is a no-op.** `StatementCancellation.Cancel()` is what it would call and the
   ADO.NET contract is what it costs: the command would have to hold the live statement, and the reader,
   which outlives the execute call, owns it now.
 - **Timeout.** `DbCommand.CommandTimeout` is never set, so every statement takes the provider default.
@@ -374,10 +312,9 @@ Ordered by what a query gains per unit of work:
 | 7 | `AdoCorrelate` (§4) | N+1 statements to one, but needs §1 first to be reachable |
 | 8 | statistics SPI (§10) | unlocks three core rules and everything cost-based |
 | 9 | DML (§13) | the known feature gap |
-| 10 | ~~async converter (§14)~~ | **done** (#119); the rows no longer block, the connect still does |
-| 11 | convention per data source (§11) | multi-schema databases join server-side |
-| 12 | `AdoSample`, `AdoUncollect`, `AdoTableFunctionScan`, `AdoMatch` | renderable, narrower demand |
-| 13 | cross-source shipping (§12) | the largest, and the one with no precedent to copy |
+| 10 | convention per data source (§11) | multi-schema databases join server-side |
+| 11 | `AdoSample`, `AdoUncollect`, `AdoTableFunctionScan`, `AdoMatch` | renderable, narrower demand |
+| 12 | cross-source shipping (§12) | the largest, and the one with no precedent to copy |
 
 `Calc` is on rel2sql's list and is deliberately not on this one: `JdbcCalc` exists upstream with no rule
 that produces it, and `AdoProject` and `AdoFilter` already push everything a calc would.
@@ -471,20 +408,10 @@ which is what a cache on the root means, the factory being per connection.
 Sized against measured coverage: `Apache.Calcite.Data` 69.9%, `Apache.Calcite.Adapter.AdoNet` ~60%.
 Listed worst-first by uncovered lines.
 
-- **`AdoEnumerable.ToProviderValue`** — done. `Boolean`, `Double`, `BigDecimal` and `ByteString` were
-  unexercised because SQLite's fixture has no column of those types;
-  `GenericProviderCorrelationTests.CorrelatingOnAColumnConvertsItsValueForTheProvider` correlates on one of
-  each in `SqlServerFixture`'s `TYPES`, through all three drivers. `Character` is still unreached, Calcite
-  having no type that arrives as one.
 - **`CalciteResultValue`** — 56%, **282 uncovered**, the largest single gap anywhere. It is the whole
   type-conversion surface, and the `DATE`-as-milliseconds bug lived in exactly this kind of code.
 - **`AdoSchemaFactory` from a Calcite model** — 0%. The operand-driven path is the primary documented
   way anyone configures an adapter, and nothing proves it works.
-- **`AdoInformationSchemaDatabaseMetadata`** — was 130 lines at 0%, and the whole of it was wrong:
-  `DataRow.Field<int?>` on SQL Server's `tinyint` precision threw on every table with a numeric column, so
-  no query against SQL Server had ever run. `SqlServerQueryTests` covers it now, on a Windows machine with
-  LocalDB. It is no longer shared with Odbc and OleDb: neither driver's collections have the information
-  schema's shape, and both now read their own.
 - **Connection strings, parameters, batches** — `CalciteConnectionStringBuilder` 35% (148 uncovered),
   `CalciteParameterCollection` 55% (78), `CalciteBatchCommandCollection` 21% (62). Mechanical, high
   line yield.
@@ -492,10 +419,6 @@ Listed worst-first by uncovered lines.
 Also at 0% and worth deciding about rather than covering: `AdoTableQueryable` (no provider ships, see
 §5), `AdoUpdateEnumerable` (orphaned, see §1), and the twelve `Ado*Factory` relational factories with
 `AdoRules.GetRules(convention, relBuilderFactory)`, which nothing calls.
-
-`CalciteTransaction` is 46 lines at 0% because `BeginDbTransaction` always throws and the tests
-correctly assert that. It is unreachable, not untested, and it stays — it is part of the ADO.NET
-surface whether or not the operation succeeds.
 
 ## Smaller items
 
@@ -510,11 +433,6 @@ surface whether or not the operation succeeds.
   that proves least: an ODBC driver over Oracle or DB2 reports its catalog differently in ways only that
   driver will show. The type-code tables are from ODBC's `sql.h` and OLE DB's `oledb.h` rather than from
   one driver, but only SQL Server's codes have been seen.
-- A temporal correlation value is now decoded before binding — a `DATE` left the plan as a day count and
-  SQL Server answered "Operand type clash: date is incompatible with int" through all three drivers; only
-  SQLite had tolerated the raw count. Two driver limits remain, pinned by tests: `System.Data.OleDb` cannot
-  bind a `DateTimeOffset` (Variant marshal refuses it) and binds a `TimeSpan` through `DBTIME`, which drops
-  fractional seconds — measured, `01:02:03.500` compares equal to `01:02:03` and unequal to itself.
 - **Upstream, and worth reporting**: `MssqlSqlDialect` does not override `supportsGroupByLiteral`, and SQL
   Server cannot group by a constant in either form — `GROUP BY (1 = 1)` is "Incorrect syntax near '='" and
   `GROUP BY 1` is "Each GROUP BY expression must contain at least one column that is not an outer
@@ -561,117 +479,21 @@ awaiting leaf inside it is read across, blocking a thread per row. Translating t
 callback and the stash; it would not remove that, and nothing can, short of Calcite compiling something other
 than Java.
 
-## Audit findings: every mirrored class against 1.43, audited 2026-09-13
+## Decide whether to turn on 1.43's top-down decorrelator
 
-**The nodes, rules and helpers of this convention were derived from Calcite's, so moving to 1.43 means
-re-deriving them rather than compiling against it.** Every `Clr*` class was mapped to the Calcite class it
-mirrors and `git log calcite-1.42.0..HEAD` run over that file. Twenty of them had changed. What follows is
-the disposition of each, so that the next reading starts from here rather than from the whole log again.
+A correlated `EXISTS` whose inner relation contains an `UNNEST` does not decorrelate — issue 125.
+`RelDecorrelator` rewrites the correlate into a join and leaves the correlation live inside the right
+input, so the implementor is handed `Calc($cor1.ID) / NestedLoopJoin(condition=true) / [scan,
+Aggregate/Calc($cor1)]` and nothing binds `$cor1`; a join does not bind a correlation variable, only a
+`Correlate` does. Both conventions throw alike, which
+`ShouldAgreeOnFailingACorrelatedExistsOverAnUncollect` holds, and with `forceDecorrelate=false` the
+correlate survives and the statement answers correctly, so the plan the decorrelator produces is
+malformed and the plan it leaves alone is not.
 
-**Carried into this convention.**
-
-| | |
-|---|---|
-| CALCITE-7624 | a FETCH and an OFFSET are a `BigDecimal`. `ClrEnumerableLimit`, `ClrEnumerableLimitSort`, four operators in `ClrEnumerableDefaults`, and the bounded sort transcribed from upstream's body — which brought a trim fix ours never had |
-| CALCITE-7624 | the `FetchOffsetRoundingPolicy` a caller sets on the planner's context, stashed by `ClrEnumerablePreparingStmt` as `CalcitePrepareImpl` stashes it |
-| CALCITE-7678 | `Functions.deepComparer` where a field contains a struct, and `GenerateNullAwareAccessor`'s null test descending into a struct field |
-| CALCITE-6284 | an object or a string converted to a number rather than cast |
-| CALCITE-7701 | IGNORE NULLS refused only for the functions that do not implement it |
-| CALCITE-7595 | `rexFilterArgument` answering the field a window aggregate's FILTER reads |
-| CALCITE-7631, 7640 | the `RexImplementorTable` an `AggImpState` is built with, and the one `generatePredicate` translates against |
-| CALCITE-7670, 7669, 7583 | the uncollect, re-derived rather than patched |
-| CALCITE-6767, 7334, 6087 | the aggregate base, the merge join, the sorted aggregate rule's empty group set |
-| CALCITE-7592, 7662 | a FETCH or an OFFSET that is an expression, in the limit and in the merge union rule |
-
-**Not applicable, and why.**
-
-- **CALCITE-7206**, the duplicate `compare(Object, Object)` bridge method, is a fact about generated Java
-  source. `ClrPhysTypeImpl.GenerateComparator` builds a `DelegateComparator` and has no bridge method.
-- **CALCITE-7689** (MAP equality), **7728** and **7729** (what `OptimizeShuttle` and `BlockBuilder.optimize`
-  may discard) are in classes this project calls rather than mirrors, so the fix arrives in the jar.
-  `LixToClrTranslator` runs Calcite's own shuttle and there is no inlining of ours.
-- **CALCITE-7557** clamps a negative count in `Linq4j.ListEnumerable`'s list fast path. **No generated plan
-  reaches that path, in either engine.** It is an override of `Enumerable.skip`, so it needs virtual dispatch
-  on a linq4j sequence, and `EnumerableLimit` — the only thing in core that generates a skip or a take — has
-  named the *static* `EnumerableDefaults.skip(Enumerable, BigDecimal)` since 7624. `BuiltInMethod.SKIP` and
-  `TAKE`, the `ExtendedEnumerable` pair that would dispatch, have no caller left in `core/src/main/java` at
-  all — measured, and it is why the four `int` entries in `ClrBuiltInMethod` could go. The fast path serves
-  hand-written linq4j. What this project had to match was the counters, which already agreed, and
-  `ClrEnumerableDefaultsContractTests` now says so.
-- **CALCITE-7682, 7683, 7684, 7691** are the SESSION, HOP and TUMBLE enumerators, and **7510**'s
-  `EnumerableDefaults.update` is DML. Both are Calcite's own code reached through a generated tree.
-- **CALCITE-7650** and **7725** are annotations and a comment. **CALCITE-7750** is `Primitive.checkOverflow`,
-  which `ClrPrimitive` does not mirror.
-
-**One of the ports has no test that reaches it.** `RexFilterArgument`'s second branch is unreached, because
-`SqlToRelConverter` rewrites a window aggregate's FILTER into a `CASE` below the window — measured by
-dumping the plan and by a probe that throws where a filter argument arrives and never fired. It is written
-because Calcite writes it, and the site says so.
-
-## Audit findings: 45 operators, twelve agents, one method group each
-
-**The audit has run, and its findings are fixed.** 45 operators, twelve agents, one method group each:
-**30 equivalent, 17 divergent, 1 uncertain.** None of the 17 was visible to the differential suite, and all
-17 are now transcribed from Calcite's body into both operator sets — `HashEquiJoin`'s leftover order,
-`NestedLoopJoin`'s five, `RepeatUnion`'s termination test and clean-up ordering, `SemiJoin`'s two algorithms
-and its memoization, `Take`'s n+1 draw, `CorrelateJoin`'s refusal and null guard, `Cartesian`'s eagerness and
-`int` overflow, the call-time fold in `GroupBy`/`GroupByMultiple`/`AsofJoin`/`Window`, `JavaSequences`'
-`reset`, and the deletion of `Count`/`IntersectAll`/`ExceptAll`.
-
-Every one of those was then re-checked against the 1.42 source rather than against the agent report that
-found it, and one had been filed wrongly: `Window`'s laziness was recorded as a divergence to keep, on the
-grounds that it returns the same rows in the same order and only reaches them sooner. `EnumerableWindow`
-generates an `ArrayList`, appends each output row to it and evaluates to `Linq4j.asEnumerable(list)`, once
-per window group — so Calcite computes the whole window where the expression is evaluated, and keeping ours
-lazy was a decision the port is not entitled to make. It collects now.
-
-What no query can reach is pinned directly instead: `ClrEnumerableNestedLoopJoinTests`,
-`ClrRepeatUnionTests`, `ClrEnumerableDefaultsContractTests`.
-
-Two of the asynchronous twins cannot follow Calcite exactly, and say so at the site: a method returning an
-`IAsyncEnumerable` cannot await before it returns, so the fold in `GroupBy`/`GroupByMultiple`/`AsofJoin` and
-the list in `NestedLoopJoinAsList` happen on the first `MoveNextAsync` rather than at the call. Every row is
-still computed before the first is yielded, which is the property the ordering rests on.
-
-What remains below is what was deliberate, and what is still unproven.
-
-### Defects of Calcite's that are reproduced, and tested as such
-
-- **`Window`'s EXCLUDE over an UNBOUNDED/UNBOUNDED frame**: the outer guard is still false after row 0, so
-  the exclusion never takes effect.
-- **A RANGE bound with an offset over a nullable order key throws.** `translateBound` boxes the key type
-  only where the bound has no offset, so with one the key stays `java.lang.Integer` and the `subtract` built
-  on it unboxes a null. `ShouldAgreeOnFailingARangeFrameWithAnOffsetOverANullableKey` asserts that *both*
-  conventions throw, so if Calcite ever fixes it we are told to follow.
-- **A correlated `EXISTS` whose inner relation contains an `UNNEST` does not decorrelate** — issue 125.
-  `RelDecorrelator` rewrites the correlate into a join and leaves the correlation live inside the right
-  input, so the implementor is handed `Calc($cor1.ID) / NestedLoopJoin(condition=true) / [scan,
-  Aggregate/Calc($cor1)]` and nothing binds `$cor1`; a join does not bind a correlation variable, only a
-  `Correlate` does. `ShouldAgreeOnFailingACorrelatedExistsOverAnUncollect` asserts both conventions throw.
-
-  **The report differs and ours is the better one.** `EnumerableRelImplementor.getCorrelVariableGetter`
-  guards with an `assert`, which is off at run time, so Calcite reads null out of its map and throws a bare
-  `NullPointerException` — and `implementRoot` attaches it with `addSuppressed` rather than as a cause, so
-  it is not in the exception chain at all. Ours raises the message that assertion carries.
-
-  **Nothing here is missing, and there are two levers.** With `forceDecorrelate=false` the correlate
-  survives, `ClrEnumerableCorrelate` binds the variable and the statement gives the right answer —
-  `ShouldRunACorrelatedExistsOverAnUncollectWithoutDecorrelation`. So the plan the decorrelator produces is
-  malformed and the plan it leaves alone is not.
-
-  **The better lever is 1.43's second decorrelator.** `Programs.DecorrelateProgram` chooses between
-  `RelDecorrelator` and `TopDownGeneralDecorrelator` on `topDownGeneralDecorrelationEnabled`, and the
-  top-down one answers this statement correctly *with* decorrelation — measured, `OK [1]` where the default
-  throws. `RelDecorrelator` itself is unchanged in the parts at fault: 288 lines differ between 1.42 and
-  1.43 and none of them touch `removeCorrelationViaRule`, its three rules, or the bail-outs. The property
-  is 1.43 only. Turning it on by default is a decision not yet taken — it is a different algorithm over
-  every statement, not a fix aimed at this one.
-
-### The SPI contract, which needs no enforcing
-
-A table of this convention's SPI returns what the type factory says, which is Java's — the same contract
-Calcite puts on `ScannableTable`, and for the same reason. Nothing checks it and nothing needs to: what
-reads a field is `SqlFunctions.toInt` or a cast to the boxed type the row type declares, both Calcite's own,
-so a table that gets it wrong stops on its first row.
-`ShouldFailOverATableWhoseValuesAreNotTheTypeFactorys` holds that, so that the failure is not one day read
-as a defect in the scan and answered with a per-row conversion every correct table would pay for.
+`Programs.DecorrelateProgram` chooses between `RelDecorrelator` and `TopDownGeneralDecorrelator` on
+`topDownGeneralDecorrelationEnabled`, and the top-down one answers this statement correctly *with*
+decorrelation — measured, `OK [1]` where the default throws. `RelDecorrelator` itself is unchanged in
+the parts at fault: 288 lines differ between 1.42 and 1.43 and none of them touch
+`removeCorrelationViaRule`, its three rules, or the bail-outs. The property is 1.43 only. Turning it on
+by default is a decision not yet taken — it is a different algorithm over every statement, not a fix
+aimed at this one.

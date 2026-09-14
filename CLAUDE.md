@@ -13,8 +13,9 @@ instead of Janino, and the prepare pipeline that gets a statement to one.
 | `Apache.Calcite.Extensions` | `ClrEnumerableConvention`, the prepare pipeline, and the IKVM interop helpers |
 | `Apache.Calcite.Geography` | optional; a `GEOGRAPHY` type distinct from Calcite's `GEOMETRY`, the `ST_GEOG_*` operator table, and a geodesic evaluator over Google's S2. Nothing else references it, and it references nothing else here |
 
-`TODO.md` has the outstanding work on the ADO.NET adapter, sized and reasoned, and the findings of the
-operator audit against linq4j — 45 methods read side by side, 17 of them divergent.
+`TODO.md` has the outstanding work, sized and reasoned: the ADO.NET adapter's gaps and what more it
+could push, a plan cache, the test suites not yet written, and the decisions not yet taken. It holds
+nothing that is done — a finished item is deleted from it, not marked.
 
 **Where ADO.NET leaves `Apache.Calcite.Data` a choice, `Microsoft.Data.SqlClient` settles it** — what a
 typed getter accepts, what `GetFieldValue<T>` converts, what `GetFieldType` claims for a column whose

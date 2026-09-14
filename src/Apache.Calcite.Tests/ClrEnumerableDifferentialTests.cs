@@ -2324,7 +2324,7 @@ namespace Apache.Calcite.Tests
         // column has a SCALAR physical type, EnumerableMatch builds the key with Expressions.new_ on its Java
         // row type, and that emits "new Integer()" — Janino: "No applicable constructor/method found for zero
         // actual parameters". Measured on EnumerableConvention alone, so it is Calcite's defect, and it is the
-        // same one as "new Object[]()" a few lines further on in that node. See TODO.md.
+        // same one as "new Object[]()" a few lines further on in that node.
 
         [TestMethod]
         public void ShouldPlanMatchRecognizeUnderAConverter() =>
