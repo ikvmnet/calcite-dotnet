@@ -251,6 +251,7 @@ All keys are exposed as typed properties on `CalciteConnectionStringBuilder`. Ke
 | `TimeZone` | `string` | JVM default | Session time zone, e.g. `UTC` or `gmt-3`. |
 | `TypeCoercion` | `bool` | `true` | Whether implicit type coercion is applied during validation. |
 | `ForceDecorrelate` | `bool` | `true` | Whether the planner aggressively de-correlates subqueries. |
+| `TopDownGeneralDecorrelationEnabled` | `bool` | `false` | Whether that de-correlation is done by `TopDownGeneralDecorrelator` rather than `RelDecorrelator`. It chooses the decorrelator, not whether there is one — `ForceDecorrelate` decides that. |
 | `MaterializationsEnabled` | `bool` | `true` | Whether the planner may use materializations. None are supplied here — see above. |
 | `CreateMaterializations` | `bool` | `true` | Whether materializations are created on the fly. |
 | `ApproximateDecimal` | `bool` | `false` | Allow approximate DECIMAL aggregate results. |
@@ -263,7 +264,7 @@ All keys are exposed as typed properties on `CalciteConnectionStringBuilder`. Ke
 | `TypeSystem` | `string` | — | Type system class name. |
 | `parserFactory` | `string` | — | Custom SQL parser factory, e.g. `org.apache.calcite.sql.parser.ddl.SqlDdlParserImpl#FACTORY`. |
 
-Defaults are Calcite's own, from `CalciteConnectionProperty` in the version this package references (1.42).
+Defaults are Calcite's own, from `CalciteConnectionProperty` in the version this package references (1.43).
 
 ## Identifier casing
 

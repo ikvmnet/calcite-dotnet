@@ -249,11 +249,12 @@ namespace Apache.Calcite.Tests
             "WHERE c.PID = d.ID AND c.CITY = 'red')";
 
         /// <summary>
-        /// Prepares and runs a statement with decorrelation turned off.
+        /// Prepares and runs a statement under connection properties of the caller's choosing.
         /// </summary>
         /// <param name="sql"></param>
+        /// <param name="connectionProperties"></param>
         /// <returns></returns>
-        static List<string> RunClrWithoutDecorrelation(string sql)
+        static List<string> RunClrWith(string sql, Action<java.util.Properties> connectionProperties)
         {
             return ClrPrepareFixture.WithContext(sql, (context, _) =>
             {
@@ -265,7 +266,27 @@ namespace Apache.Calcite.Tests
 
                 return rows;
             },
-            p => p.setProperty(CalciteConnectionProperty.FORCE_DECORRELATE.camelName(), "false"));
+            connectionProperties);
+        }
+
+        /// <summary>
+        /// Prepares and runs a statement with decorrelation turned off.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <returns></returns>
+        static List<string> RunClrWithoutDecorrelation(string sql)
+        {
+            return RunClrWith(sql, p => p.setProperty(CalciteConnectionProperty.FORCE_DECORRELATE.camelName(), "false"));
+        }
+
+        /// <summary>
+        /// Prepares and runs a statement with the top-down general decorrelator.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <returns></returns>
+        static List<string> RunClrWithTopDownDecorrelation(string sql)
+        {
+            return RunClrWith(sql, p => p.setProperty(CalciteConnectionProperty.TOPDOWN_GENERAL_DECORRELATION_ENABLED.camelName(), "true"));
         }
 
         /// <summary>
@@ -312,13 +333,34 @@ namespace Apache.Calcite.Tests
         /// the variable, and the answer is the one SQL says. So nothing in this convention is missing: the
         /// plan the decorrelator produces is malformed and the plan it leaves alone is not.
         ///
-        /// <para>It is also the only lever a caller has today —
-        /// <c>CalciteConnectionStringBuilder.ForceDecorrelate</c> set false.</para>
+        /// <para>It is one of the two levers a caller has —
+        /// <c>CalciteConnectionStringBuilder.ForceDecorrelate</c> set false. The other keeps the
+        /// decorrelation and changes the decorrelator, see
+        /// <see cref="ShouldRunACorrelatedExistsOverAnUncollectWithTopDownDecorrelation"/>.</para>
         /// </remarks>
         [TestMethod]
         public void ShouldRunACorrelatedExistsOverAnUncollectWithoutDecorrelation()
         {
             RunClrWithoutDecorrelation(CorrelatedExistsOverAnUncollect).Should().Equal(["1"]);
+        }
+
+        /// <summary>
+        /// And it runs, correctly, with the top-down general decorrelator instead.
+        /// </summary>
+        /// <remarks>
+        /// <c>Programs.DecorrelateProgram</c> chooses between <c>RelDecorrelator</c> and
+        /// <c>TopDownGeneralDecorrelator</c> on <c>topDownGeneralDecorrelationEnabled</c>, and the top-down
+        /// one rewrites this statement into a plan that binds what it references. So the second lever keeps
+        /// the decorrelation rather than turning it off, which is what
+        /// <see cref="ShouldRunACorrelatedExistsOverAnUncollectWithoutDecorrelation"/> costs.
+        ///
+        /// <para>1.43 and later. It is a different algorithm over every statement, so it is not on by
+        /// default here any more than it is upstream.</para>
+        /// </remarks>
+        [TestMethod]
+        public void ShouldRunACorrelatedExistsOverAnUncollectWithTopDownDecorrelation()
+        {
+            RunClrWithTopDownDecorrelation(CorrelatedExistsOverAnUncollect).Should().Equal(["1"]);
         }
 
     }

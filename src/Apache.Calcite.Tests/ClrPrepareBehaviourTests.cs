@@ -6,6 +6,7 @@ using Apache.Calcite.Extensions.Prepare;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using org.apache.calcite.avatica;
+using org.apache.calcite.config;
 using org.apache.calcite.jdbc;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql;
@@ -402,7 +403,7 @@ namespace Apache.Calcite.Tests
 
                 return (string)new List<object>(signature.Bind(context.getDataContext()))[0];
             },
-            p => p.setProperty("topDownGeneralDecorrelationEnabled", "true"));
+            p => p.setProperty(CalciteConnectionProperty.TOPDOWN_GENERAL_DECORRELATION_ENABLED.camelName(), "true"));
 
             StringAssert.DoesNotMatch(plan, new System.Text.RegularExpressions.Regex("Correlate"), plan);
         }

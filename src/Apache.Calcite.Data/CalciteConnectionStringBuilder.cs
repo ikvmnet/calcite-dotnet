@@ -106,6 +106,12 @@ namespace Apache.Calcite.Data
         public const string ForceDecorrelateKey = "forceDecorrelate";
 
         /// <summary>
+        /// Connection string key for whether the de-correlation is done by the top-down general
+        /// decorrelator.
+        /// </summary>
+        public const string TopDownGeneralDecorrelationEnabledKey = "topDownGeneralDecorrelationEnabled";
+
+        /// <summary>
         /// Connection string key for the collection of built-in functions and operators.
         /// </summary>
         public const string FunKey = "fun";
@@ -418,6 +424,25 @@ namespace Apache.Calcite.Data
             {
                 if (value is null) Remove(ForceDecorrelateKey);
                 else this[ForceDecorrelateKey] = value.Value;
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets whether the de-correlation is done by <c>TopDownGeneralDecorrelator</c> rather than
+        /// <c>RelDecorrelator</c>. Default is <c>false</c>.
+        /// </summary>
+        /// <remarks>
+        /// It is the decorrelator, not whether there is one: <see cref="ForceDecorrelate"/> decides that,
+        /// and this chooses which one does it. The two differ on statements <c>RelDecorrelator</c> cannot
+        /// rewrite — a correlated <c>EXISTS</c> over an <c>UNNEST</c> among them.
+        /// </remarks>
+        public bool? TopDownGeneralDecorrelationEnabled
+        {
+            get => TryGetBool(TopDownGeneralDecorrelationEnabledKey);
+            set
+            {
+                if (value is null) Remove(TopDownGeneralDecorrelationEnabledKey);
+                else this[TopDownGeneralDecorrelationEnabledKey] = value.Value;
             }
         }
 

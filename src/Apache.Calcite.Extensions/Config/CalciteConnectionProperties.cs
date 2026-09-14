@@ -395,6 +395,20 @@ namespace Apache.Calcite.Extensions.Config
         }
 
         /// <summary>
+        /// If the de-correlation is done by <c>TopDownGeneralDecorrelator</c> rather than
+        /// <c>RelDecorrelator</c>.
+        /// </summary>
+        /// <remarks>
+        /// <c>Programs.DecorrelateProgram</c> chooses between the two on this property, and chooses at all
+        /// only where <see cref="ForceDecorrelate"/> is set, which it is by default. 1.43 and later.
+        /// </remarks>
+        public bool TopDownGeneralDecorrelationEnabled
+        {
+            get => GetBoolean(CalciteConnectionProperty.TOPDOWN_GENERAL_DECORRELATION_ENABLED);
+            set => SetBoolean(CalciteConnectionProperty.TOPDOWN_GENERAL_DECORRELATION_ENABLED, value);
+        }
+
+        /// <summary>
         /// Type system.
         /// </summary>
         public string TypeSystem

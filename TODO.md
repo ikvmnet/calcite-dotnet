@@ -494,6 +494,13 @@ malformed and the plan it leaves alone is not.
 `topDownGeneralDecorrelationEnabled`, and the top-down one answers this statement correctly *with*
 decorrelation — measured, `OK [1]` where the default throws. `RelDecorrelator` itself is unchanged in
 the parts at fault: 288 lines differ between 1.42 and 1.43 and none of them touch
-`removeCorrelationViaRule`, its three rules, or the bail-outs. The property is 1.43 only. Turning it on
-by default is a decision not yet taken — it is a different algorithm over every statement, not a fix
-aimed at this one.
+`removeCorrelationViaRule`, its three rules, or the bail-outs. The property is 1.43 only.
+
+**That lever is reachable now.** `CalciteConnectionStringBuilder.TopDownGeneralDecorrelationEnabled` and
+`CalciteConnectionProperties.TopDownGeneralDecorrelationEnabled` write the property Calcite reads, and
+nothing else in this project reads it: the choice is `Programs.DecorrelateProgram`'s, out of the connection
+config, and the pipeline already skips its own decorrelation where the property is set.
+`ShouldRunACorrelatedExistsOverAnUncollectWithTopDownDecorrelation` holds the statement through the prepare
+pipeline and `Should_execute_a_correlated_exists_over_an_uncollect_with_top_down_decorrelation` through the
+connection string. Turning it on *by default* is still a decision not taken — it is a different algorithm
+over every statement, not a fix aimed at this one.
