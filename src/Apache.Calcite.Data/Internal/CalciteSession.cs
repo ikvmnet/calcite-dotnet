@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Prepare;
+using Apache.Calcite.Extensions.Runtime;
 
 using java.util;
 
@@ -326,7 +327,26 @@ namespace Apache.Calcite.Data.Internal
         /// </remarks>
         public CalciteResult ExecuteReader(CalciteExecuteRequest request)
         {
-            return ExecuteReaderCore(request, CancellationToken.None);
+            // whether a plan awaits is the connection's choice and not this entry point's, so both entry
+            // points run the same core and a synchronous caller blocks on it -- which is what
+            // CalciteAsyncEnumerableResult.Read already does for a row. In synchronous mode the core never
+            // awaits and this completes without waiting for anything.
+            var context = SynchronizationContext.Current;
+            if (context is null)
+                return ExecuteReaderCoreAsync(request, CancellationToken.None).GetAwaiter().GetResult();
+
+            // suppressed around the whole call rather than around the wait, for the reason
+            // CalciteAsyncEnumerableResult.Read gives and measured there
+            SynchronizationContext.SetSynchronizationContext(null);
+
+            try
+            {
+                return ExecuteReaderCoreAsync(request, CancellationToken.None).GetAwaiter().GetResult();
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(context);
+            }
         }
 
         /// <summary>
@@ -341,14 +361,16 @@ namespace Apache.Calcite.Data.Internal
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="request"/> is <see langword="null"/>.</exception>
         /// <exception cref="CalciteException">Thrown when planning or execution fails.</exception>
         /// <remarks>
-        /// <see cref="ExecuteReaderCore"/> in a completed task — planning is synchronous work and nothing
-        /// here awaits. Nothing is read until the first <c>ReadAsync</c>.
+        /// <see cref="ExecuteReaderCoreAsync"/>. Planning is synchronous work, but acquisition is not
+        /// finished when it returns: each leaf started its request where it was acquired, and the core
+        /// awaits them before handing back a reader. So a refused statement is reported from here.
+        /// Nothing is read until the first <c>ReadAsync</c>.
         /// </remarks>
         public Task<CalciteResult> ExecuteReaderAsync(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            return Task.FromResult(ExecuteReaderCore(request, cancellationToken));
+            return ExecuteReaderCoreAsync(request, cancellationToken);
         }
 
         /// <summary>
@@ -374,7 +396,7 @@ namespace Apache.Calcite.Data.Internal
         /// <c>Read</c> blocks there. Registering one convention and not the other would refuse a schema
         /// whose own rules target the other, which nothing here can rule out.</para>
         /// </remarks>
-        CalciteResult ExecuteReaderCore(CalciteExecuteRequest request, CancellationToken cancellationToken)
+        async Task<CalciteResult> ExecuteReaderCoreAsync(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(request);
 
@@ -410,7 +432,29 @@ namespace Apache.Calcite.Data.Internal
                 {
                     IAsyncEnumerator<object>? enumerator = null;
                     if (!IsDdl(signature.StatementType))
+                    {
                         enumerator = signature.BindAsync(dataContext).GetAsyncEnumerator(cancellation.Token);
+
+                        // acquisition started each leaf's request and could not await it, GetAsyncEnumerator
+                        // having nowhere to suspend; this is where they are observed. So a statement the
+                        // provider refused is reported from the call that executed it, and no row is read to
+                        // learn it -- DbCommand.ExecuteReaderAsync is where a provider parses the first
+                        // response, and that is what each leaf awaited.
+                        if (enumerator is IClrStartable startable)
+                        {
+                            try
+                            {
+                                await startable.StartAsync().ConfigureAwait(false);
+                            }
+                            catch
+                            {
+                                // what the leaves opened is nobody else's to close: the result that would
+                                // have owned the enumerator is never returned
+                                await enumerator.DisposeAsync().ConfigureAwait(false);
+                                throw;
+                            }
+                        }
+                    }
 
                     return new CalciteAsyncEnumerableResult(signature, enumerator, 0, dataContext, cancellation);
                 }

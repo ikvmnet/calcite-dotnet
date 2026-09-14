@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
@@ -375,10 +376,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// </summary>
         /// <remarks>
         /// <c>DbCommand.ExecuteReaderAsync</c> sends the command text and builds the reader, so a caller
-        /// expects a bad statement back from there rather than from the first <c>ReadAsync</c>. Nothing in
-        /// the adapter can promise that on its own: the leaf opens its connection and executes on the first
-        /// <c>MoveNextAsync</c>, because <c>GetAsyncEnumerator</c> cannot await. What holds it is the
-        /// provider reading one row inside <c>ExecuteReaderAsync</c>.
+        /// expects a bad statement back from there rather than from the first <c>ReadAsync</c>. What holds
+        /// it is that the leaf opens its connection and executes in <c>GetAsyncEnumerator</c> --
+        /// <c>ShouldSendTheStatementAtAcquisition</c> next door -- and
+        /// <c>CalciteSession.ExecuteReaderCore</c> calls that. No row is read there;
+        /// <c>AcquisitionTimingTests</c> holds that separately. Because <c>GetAsyncEnumerator</c> cannot
+        /// await, the connect and the execute block the calling thread, which is what
+        /// <c>AdoSequences.ReadAsync</c> states and costs.
         ///
         /// <para>The leaf is failed rather than the schema, because the schema is read again while planning:
         /// dropping the table would make this a validation failure and say nothing about where the statement
@@ -398,6 +402,95 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             // the call itself, not the block: a reader handed back and failing on its first ReadAsync is
             // exactly what this is here to refuse
             await Assert.ThrowsExactlyAsync<CalciteException>(async () => await cmd.ExecuteReaderAsync());
+        }
+
+        /// <summary>
+        /// <c>ExecuteReaderAsync</c> does not hold the calling thread while the statement is sent.
+        /// </summary>
+        /// <remarks>
+        /// The point of the whole arrangement, and the thing that was false before it. Acquisition cannot
+        /// await -- <c>GetAsyncEnumerator</c> has nowhere to suspend -- so a leaf that waited there for its
+        /// connection and its reader waited on the caller's thread, and <c>ExecuteReaderAsync</c> was
+        /// asynchronous in name only. A leaf that <em>starts</em> its request instead returns at the first
+        /// suspension, and Execute awaits it where awaiting is possible.
+        ///
+        /// <para><b>Two delays rather than one, because planning is synchronous and is the larger number.</b>
+        /// Timing a single execute measures the parse, the validate and the plan as well, which run on the
+        /// calling thread and are supposed to; measured at well over a second on a cold fixture against a
+        /// 400ms connect. What isolates the connect is that it should not move the time the <em>call</em>
+        /// takes at all, while it moves the time the <em>reader</em> takes by its whole length.</para>
+        /// </remarks>
+        [TestMethod]
+        public async Task ShouldNotHoldTheCallerWhileTheStatementIsSent()
+        {
+            var source = new DelayingAdoDataSource(_sqlite.DataSource);
+            using var connection = OpenConnection(source);
+
+            // planning is per execute and the first one also pays for the metadata and the jit, so the
+            // comparison is between the second and the third
+            source.Delay = TimeSpan.Zero;
+            await Execute();
+
+            source.Delay = TimeSpan.FromMilliseconds(100);
+            var (shortCall, shortTotal) = await Execute();
+
+            source.Delay = TimeSpan.FromMilliseconds(900);
+            var (longCall, longTotal) = await Execute();
+
+            Assert.IsTrue(
+                longCall - shortCall < 400,
+                $"the connect should not be on the calling thread: the call took {shortCall}ms then {longCall}ms for a connect 800ms longer");
+
+            Assert.IsTrue(
+                longTotal - shortTotal >= 600,
+                $"and the reader should still wait for it: the reader took {shortTotal}ms then {longTotal}ms");
+
+            async Task<(long Call, long Total)> Execute()
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "SELECT empno, name FROM ADO.emps";
+
+                var watch = Stopwatch.StartNew();
+                var executing = cmd.ExecuteReaderAsync();
+                var call = watch.ElapsedMilliseconds;
+
+                await using var reader = await executing;
+
+                return (call, watch.ElapsedMilliseconds);
+            }
+        }
+
+        /// <summary>
+        /// A data source whose connections take a while to open, without blocking to do it.
+        /// </summary>
+        sealed class DelayingAdoDataSource(DbDataSource dataSource) : AdoDataSource
+        {
+
+            readonly AdoDatabaseMetadata _metadata = AdoDatabaseMetadataFactoryImpl.Instance.Create(dataSource);
+
+            /// <summary>
+            /// Gets or sets how long an asynchronous open takes.
+            /// </summary>
+            public TimeSpan Delay { get; set; }
+
+            /// <inheritdoc />
+            public override DbConnection OpenConnection() => dataSource.OpenConnection();
+
+            /// <inheritdoc />
+            public override async ValueTask<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
+            {
+                if (Delay > TimeSpan.Zero)
+                    await Task.Delay(Delay, cancellationToken).ConfigureAwait(false);
+
+                return await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            /// <inheritdoc />
+            public override string ConnectionString => dataSource.ConnectionString;
+
+            /// <inheritdoc />
+            public override AdoDatabaseMetadata Metadata => _metadata;
+
         }
 
         /// <summary>
@@ -450,8 +543,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// convention having no token in the plan at all, and <c>WithCancellation</c> is how a consumer
         /// supplies it.
         ///
-        /// <para>The statement has already been sent by the time this throws: acquisition is synchronous and
-        /// takes no token, so what the token stops is the reading.</para>
+        /// <para><b>Nothing is opened.</b> Acquisition starts the request rather than completing it, and
+        /// starting it hands the token to <c>AdoDataSource.OpenConnectionAsync</c>, which observes it before
+        /// it opens anything. So a token already cancelled costs no connection at all -- where this
+        /// previously opened one synchronously, sent the statement, and closed it again.</para>
         ///
         /// <para>This reads the operator directly, so the token is the test's own. Where the token comes
         /// from when the adapter is reached through the provider — and how the same cancellation reaches a
@@ -472,7 +567,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
                     Assert.Fail("a row was read under a cancelled token");
             });
 
-            Assert.AreEqual(1, source.Closed, "and the connection the acquisition opened is closed");
+            Assert.AreEqual(0, source.Opened, "a cancelled token is observed before a connection is opened");
+            Assert.AreEqual(0, source.Closed, "and so there is nothing to close");
         }
 
         /// <summary>

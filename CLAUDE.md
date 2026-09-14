@@ -39,7 +39,11 @@ driver this one is modelled on*, has the reading. Not to be confused with
   the `dotnet test` host by about a third:
   `src\Apache.Calcite.Tests\bin\Debug\net8.0\Apache.Calcite.Tests.exe --filter FullyQualifiedName~Name`.
   The whole suite is about 133 seconds that way against about 215 through `dotnet test`; a single test is
-  seconds. `--blame-hang --blame-hang-timeout 90s` names the test that hangs.
+  seconds. **`--blame-hang` is not one of its options** — the exe answers `Unknown option` and prints its
+  usage; it is a VSTest flag, and this runs on Microsoft.Testing.Platform. What the exe has is
+  `--timeout`, a bound on the whole run; naming the test that hangs needs the
+  `Microsoft.Testing.Extensions.HangDump` package, which is not referenced. Bisect by class filter
+  instead.
 - **Everything references 1.43.0-SNAPSHOT, and `D:\calcite` is that same branch.** The snapshot comes from
   `https://repository.apache.org/content/repositories/snapshots/`, named once in `Directory.Build.props`
   rather than per project. **1.43 is unreleased**: it was targeted for the end of August 2026 and slipped,
@@ -152,7 +156,46 @@ row-comparing test could see it. `ClrEnumerable` and `Acquiring` in `Runtime` pu
 drains in the first `MoveNextAsync`, stated at the site. Timing is held by `AcquisitionTimingTests`, which
 reads a counting leaf's acquisitions and its rows as two numbers — and note the operators whose eagerness
 is *call*-time are linq4j's own call-time drains (`union`, `distinct`, `asofJoin`, `groupBy`, the window,
-`nestedLoopJoinAsList`): do not "fix" them toward the factory.
+`nestedLoopJoinAsList`): **in the pulled set**, do not "fix" them toward the factory, because the call is
+*earlier* than the factory and that is where linq4j drains.
+
+**Their awaiting twins are a different case, and twelve of them were wrong.** A drain cannot happen at the
+call in the awaiting set — an `IAsyncEnumerable` method cannot await before it returns — so those twins were
+written as raw `async IAsyncEnumerable` iterators, and a raw iterator defers *everything* to its first
+`MoveNextAsync`, the source's acquisition along with the fold. So a plan topped by one acquired nothing at
+Execute: measured at 0 leaf acquisitions for GROUP BY, DISTINCT and UNION where a filter and a sort read 1.
+`ShouldFailFromExecuteRatherThanFromTheFirstRead` passed only because its query is one of the shapes that
+did acquire. `ConcatAsync`, `UnionAsync`, `IntersectAsync`, `ExceptAsync`, `AsofJoinAsync`, `DistinctAsync`,
+`GroupByAsync`, `GroupByMultipleAsync`, `SingletonAggregateAsync`, `SingletonJavaListAsync`,
+`SingletonJavaMapAsync` and `WindowAsync` now acquire in the factory and drain on the first `MoveNextAsync`,
+which is what `OrderByAsync` always did: **acquiring a source enumerator is synchronous, so only the drain
+had to move late.** `AcquisitionTimingTests` holds all eight shapes now, and holds `Produced` at 0 beside
+each, because a fix that moved the drain instead of the acquisition would pass the first half and fail the
+second.
+
+**A leaf starts its request at acquisition and cannot finish it there.** `GetAsyncEnumerator` has nowhere to
+suspend, so `AdoSequences.ReadAsync` issues `OpenConnectionAsync` and `DbCommand.ExecuteReaderAsync` without
+awaiting them and hands back an enumerator holding the request in flight — never one holding a send known to
+have succeeded. `IClrStartable` is how something that *can* await observes it: `AcquiredAsyncEnumerator`
+forwards `StartAsync` to its row loop and to everything the factory acquired, so one call at the root reaches
+every leaf, and that is the whole reason the twelve above had to be fixed first. `CalciteSession`'s Execute
+awaits it, so a refused statement is reported from the call that executed it with **no row read** — which is
+what `DbCommand.ExecuteReaderAsync` does itself, that being where a provider parses the first response.
+Measured: reading one row instead would not do, because a sort or an aggregate drains its whole input on the
+first `MoveNextAsync`. A leaf acquired later — a correlated sub-plan's, which does not exist until its outer
+row — is not reached, and its failure surfaces at the read that built it. Nothing recovers that.
+
+**`ExecuteReaderAsync` used to block and the mode fork did not help.** It was
+`Task.FromResult(ExecuteReaderCore(...))` and awaited nothing, while the leaf connected and executed
+synchronously inside `GetAsyncEnumerator`, so `DbCommand.ExecuteReaderAsync` held the caller's thread for a
+connection open and a statement execute. The `if (_synchronous)` fork inside the core chose the plan and the
+enumerator kind, not whether the method awaits, and a synchronous method cannot await however it is written.
+The core is `ExecuteReaderCoreAsync` now: the awaiting mode awaits, and **the synchronous entry point blocks
+on it** with the synchronization context suppressed around the whole call, which is what
+`CalciteAsyncEnumerableResult.Read` already did for a row and says was measured. Planning is still
+synchronous and is the larger number — over a second on a cold fixture against a 400ms connect — so timing a
+single execute measures the parse and the plan, not the leaf;
+`ShouldNotHoldTheCallerWhileTheStatementIsSent` compares two connect delays instead.
 
 **A claim about how something fails is a claim to run.** Reasoning from a comparator's semantics gave "a
 CLR-boxed row element and a Java-boxed one compare unequal, their hashes agree, so a set operator quietly

@@ -12,9 +12,8 @@ namespace Apache.Calcite.Adapter.AdoNet
     /// </summary>
     /// <remarks>
     /// Implement this class to connect Calcite's ADO.NET adapter to a specific data source.
-    /// The adapter calls <see cref="OpenConnection"/>, or <see cref="OpenConnectionAsync"/> where the plan
-    /// is asynchronous, for each query it needs to execute, and <see cref="Metadata"/> to discover schemas,
-    /// tables, and column definitions at planning time.
+    /// The adapter calls <see cref="OpenConnection"/> for each query it needs to execute, and
+    /// <see cref="Metadata"/> to discover schemas, tables, and column definitions at planning time.
     /// </remarks>
     public abstract class AdoDataSource
     {
@@ -31,9 +30,15 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="cancellationToken">Abandons the attempt.</param>
         /// <returns>An open <see cref="DbConnection"/> ready for query execution.</returns>
         /// <remarks>
-        /// What a plan reading its rows with await opens its connection by. The default blocks on
-        /// <see cref="OpenConnection"/>, so a source written before this member still answers; a source over
-        /// a provider that opens asynchronously should override it, as both sources here do.
+        /// <b>The adapter does not call this.</b> A plan of either convention opens its connection through
+        /// <see cref="OpenConnection"/>: <c>AdoSequences.Execute</c> is shared by the pulled and the
+        /// awaiting sequence, and it runs in the factory — <c>GetAsyncEnumerator</c>, where this convention
+        /// puts acquisition and which cannot await. So connecting and executing block a thread, and only
+        /// the rows are read with await. <c>AdoSequences.ReadAsync</c> says what that costs and why the
+        /// acquisition model requires it.
+        ///
+        /// <para>It is declared for a caller that opens a connection itself, and the default blocks on
+        /// <see cref="OpenConnection"/> so that a source which does not override it still answers.</para>
         /// </remarks>
         public virtual ValueTask<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
         {

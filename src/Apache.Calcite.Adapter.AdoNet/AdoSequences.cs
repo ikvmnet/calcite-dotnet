@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Threading;
+using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Runtime;
@@ -68,22 +69,23 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// and the row builder are the same, and a row is built from the reader synchronously in both, there
         /// being nothing in reading a materialized row to await.
         ///
-        /// <para><b>The statement is sent at <c>GetAsyncEnumerator</c>, and sent synchronously.</b> That is
-        /// where this convention puts acquisition — linq4j acquires inside <c>enumerator()</c>, and
-        /// <c>AcquisitionTimingTests</c> holds that the whole cascade runs there — and
-        /// <c>GetAsyncEnumerator</c> cannot await, so acquisition-time work is synchronous work, exactly as
-        /// it is for a table whose <c>ScanAsync</c> opens something before returning its sequence.
-        /// <c>CalciteSession</c> calls <c>GetAsyncEnumerator</c> inside <c>ExecuteReaderAsync</c>, so a
-        /// statement the provider rejects fails from the call that executed it rather than from the first
-        /// <c>ReadAsync</c> — which is what an ADO.NET consumer expects, and what a leaf that opened on its
-        /// first <c>MoveNextAsync</c> could not give.</para>
+        /// <para><b>The connect and the execute are started at <c>GetAsyncEnumerator</c> and awaited nowhere
+        /// in it.</b> That is where this convention acquires, and <c>GetAsyncEnumerator</c> cannot await, so
+        /// what it can do is begin the work and hand back an enumerator holding it in flight — never one
+        /// holding a send known to have succeeded. Nothing blocks: the request goes through
+        /// <c>OpenConnectionAsync</c> and <c>DbCommand.ExecuteReaderAsync</c>, and the factory returns at
+        /// their first suspension.</para>
         ///
-        /// <para><b>So connecting and executing block a thread and only the rows do not.</b> That is the
-        /// trade this convention's acquisition model imposes, and it is the whole of what is left: the row
-        /// loop is where a query spends its time. Making the connect asynchronous as well would mean
-        /// awaiting it somewhere, and the only place earlier than the first row is
-        /// <c>ExecuteReaderAsync</c> itself — which <c>ShouldReadNothingUntilTheFirstRead</c> and
-        /// <c>AcquisitionTimingTests</c> deliberately hold to reading nothing.</para>
+        /// <para><b>Observing it is <c>IClrStartable</c>.</b> <c>AcquiredAsyncEnumerator</c> forwards that
+        /// to everything a factory acquired, so <c>CalciteSession</c>'s Execute awaits every leaf of the
+        /// plan and a statement the provider rejects is reported from the call that executed it, with no row
+        /// read — which is what an ADO.NET consumer expects, and what <c>DbCommand.ExecuteReaderAsync</c>
+        /// does itself, that being where a provider parses the first response. The first
+        /// <c>MoveNextAsync</c> awaits the same request, so a caller that never starts it still gets a
+        /// reader that behaves.</para>
+        ///
+        /// <para>Two leaves therefore have their requests in flight together rather than one after the
+        /// other, because each was started where it was acquired and only the observing is sequential.</para>
         /// </remarks>
         public static IAsyncEnumerable<TRow> ReadAsync<TRow>(AdoDataSource dataSource, string sql, Func<DbDataReader, TRow> rowBuilder, DbCommandEnricher? enricher, CancellationToken cancellationToken = default)
         {
@@ -96,9 +98,9 @@ namespace Apache.Calcite.Adapter.AdoNet
             // blocks, so the row loop below cannot be trusted with them
             return new ClrAsyncEnumerable<TRow>(token =>
             {
-                Execute(dataSource, sql, enricher, out var connection, out var command, out var reader);
+                var pending = new PendingRead(dataSource, sql, enricher, token);
 
-                return new AcquiredAsyncEnumerator<TRow>(RowsAsync(reader, rowBuilder, token), reader, command, connection);
+                return new AcquiredAsyncEnumerator<TRow>(RowsAsync(pending, rowBuilder, token), pending);
             });
         }
 
@@ -113,7 +115,8 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="reader"></param>
         /// <exception cref="AdoCalciteException">The query could not be executed.</exception>
         /// <remarks>
-        /// Shared by both sequences, which acquire the same way and differ only in how they read a row.
+        /// The pulled sequence's. <see cref="ReadAsync{TRow}"/> issues the same request through
+        /// <see cref="PendingRead"/> instead, which starts it rather than waiting for it.
         /// </remarks>
         static void Execute(AdoDataSource dataSource, string sql, DbCommandEnricher? enricher, out DbConnection connection, out DbCommand command, out DbDataReader reader)
         {
@@ -168,10 +171,106 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="rowBuilder"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        static async IAsyncEnumerator<TRow> RowsAsync<TRow>(DbDataReader reader, Func<DbDataReader, TRow> rowBuilder, CancellationToken cancellationToken)
+        static async IAsyncEnumerator<TRow> RowsAsync<TRow>(PendingRead pending, Func<DbDataReader, TRow> rowBuilder, CancellationToken cancellationToken)
         {
+            var reader = await pending.ReaderAsync().ConfigureAwait(false);
+
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 yield return rowBuilder(reader);
+        }
+
+        /// <summary>
+        /// A connect and an execute begun at acquisition, awaited by whoever gets there first.
+        /// </summary>
+        /// <remarks>
+        /// The constructor starts the request and returns at its first suspension, which is what lets
+        /// <c>GetAsyncEnumerator</c> issue a statement without blocking. Everything the request opened is
+        /// owned here and closed by <see cref="DisposeAsync"/>, including where the request failed partway
+        /// and where no row was ever read.
+        ///
+        /// <para>One request, awaited by <see cref="StartAsync"/> at Execute and by
+        /// <see cref="ReaderAsync"/> at the first row, in either order and any number of times — so a
+        /// rejected statement is reported to both, and a caller that skips the first still sees it.</para>
+        /// </remarks>
+        sealed class PendingRead : IClrStartable, IAsyncDisposable
+        {
+
+            readonly Task<DbDataReader> _request;
+
+            DbConnection? _connection;
+            DbCommand? _command;
+            DbDataReader? _reader;
+
+            /// <summary>
+            /// Initializes a new instance, beginning the request.
+            /// </summary>
+            /// <param name="dataSource"></param>
+            /// <param name="sql"></param>
+            /// <param name="enricher"></param>
+            /// <param name="cancellationToken"></param>
+            public PendingRead(AdoDataSource dataSource, string sql, DbCommandEnricher? enricher, CancellationToken cancellationToken)
+            {
+                _request = RequestAsync(dataSource, sql, enricher, cancellationToken);
+            }
+
+            /// <summary>
+            /// Opens a connection, fills the command and executes the statement.
+            /// </summary>
+            /// <exception cref="AdoCalciteException">The query could not be executed.</exception>
+            async Task<DbDataReader> RequestAsync(AdoDataSource dataSource, string sql, DbCommandEnricher? enricher, CancellationToken cancellationToken)
+            {
+                try
+                {
+                    _connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+                    _command = _connection.CreateCommand();
+                    _command.CommandText = sql;
+                    enricher?.Enrich(_command);
+
+                    return _reader = await _command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (DbException e)
+                {
+                    throw new AdoCalciteException("Exception while enumerating query.", e);
+                }
+            }
+
+            /// <inheritdoc />
+            public ValueTask StartAsync() => new ValueTask(_request);
+
+            /// <summary>
+            /// Returns the executed reader, awaiting the request where it has not finished.
+            /// </summary>
+            /// <returns></returns>
+            public Task<DbDataReader> ReaderAsync() => _request;
+
+            /// <inheritdoc />
+            /// <remarks>
+            /// The request is awaited before anything is closed, because what it opened is assigned as it
+            /// runs and a disposal racing it would close nothing. Its failure is swallowed here and nowhere
+            /// else: whoever awaited it has already been told, and a disposal is not the place to report it
+            /// a second time.
+            /// </remarks>
+            public async ValueTask DisposeAsync()
+            {
+                try
+                {
+                    await _request.ConfigureAwait(false);
+                }
+                catch
+                {
+                    // reported to the reader or to the starter; closing is all that is left to do
+                }
+
+                if (_reader is not null)
+                    await _reader.DisposeAsync().ConfigureAwait(false);
+
+                if (_command is not null)
+                    await _command.DisposeAsync().ConfigureAwait(false);
+
+                if (_connection is not null)
+                    await _connection.DisposeAsync().ConfigureAwait(false);
+            }
+
         }
 
     }

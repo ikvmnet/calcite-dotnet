@@ -137,6 +137,36 @@ namespace Apache.Calcite.Extensions.Runtime
     }
 
     /// <summary>
+    /// An enumerator carrying work its acquisition began, which can be awaited before any row is read.
+    /// </summary>
+    /// <remarks>
+    /// <c>GetAsyncEnumerator</c> cannot await, so a leaf that issues a request at acquisition can only
+    /// <em>start</em> it: the enumerator it returns holds a send in flight, not a send known to have
+    /// succeeded. This is how something that can await -- the provider's Execute -- observes that send
+    /// without reading a row.
+    ///
+    /// <para><see cref="AcquiredAsyncEnumerator{T}"/> forwards it to everything a factory acquired, and
+    /// every operator of this convention acquires through one, so a single call at the root reaches every
+    /// leaf that was acquired. A leaf acquired later -- a correlated sub-plan's, which does not exist until
+    /// its outer row does -- is not reached, and its failure surfaces at the read that built it.</para>
+    ///
+    /// <para>Probed for rather than required, the way <c>await using</c> probes for
+    /// <see cref="IAsyncDisposable"/>: an enumerator with nothing in flight has nothing to say and most
+    /// have nothing in flight.</para>
+    /// </remarks>
+    interface IClrStartable
+    {
+
+        /// <summary>
+        /// Awaits the work this enumerator's acquisition began. Called at most once, before the first
+        /// <c>MoveNextAsync</c>, and doing nothing is a valid answer.
+        /// </summary>
+        /// <returns></returns>
+        ValueTask StartAsync();
+
+    }
+
+    /// <summary>
     /// A sequence whose <see cref="IEnumerable{T}.GetEnumerator"/> runs a factory.
     /// </summary>
     /// <remarks>
@@ -276,7 +306,7 @@ namespace Apache.Calcite.Extensions.Runtime
     /// iterator that never moved runs none of its <c>finally</c> blocks, so what the factory acquired
     /// is disposed here, unconditionally.
     /// </remarks>
-    sealed class AcquiredAsyncEnumerator<T> : IAsyncEnumerator<T>
+    sealed class AcquiredAsyncEnumerator<T> : IAsyncEnumerator<T>, IClrStartable
     {
 
         readonly IAsyncEnumerator<T> _rows;
@@ -301,6 +331,23 @@ namespace Apache.Calcite.Extensions.Runtime
 
         /// <inheritdoc />
         public ValueTask<bool> MoveNextAsync() => _rows.MoveNextAsync();
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// Forwarded to the row loop and then to everything the factory acquired, so that one call at the
+        /// root of a plan reaches every leaf beneath it. Sequential, and that costs nothing: each leaf
+        /// started its own work at acquisition, so awaiting them one after another observes requests that
+        /// are already in flight together.
+        /// </remarks>
+        public async ValueTask StartAsync()
+        {
+            if (_rows is IClrStartable rows)
+                await rows.StartAsync().ConfigureAwait(false);
+
+            foreach (var acquired in _acquired)
+                if (acquired is IClrStartable startable)
+                    await startable.StartAsync().ConfigureAwait(false);
+        }
 
         /// <inheritdoc />
         public async ValueTask DisposeAsync()
