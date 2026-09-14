@@ -3777,14 +3777,28 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="source"></param>
         /// <param name="other"></param>
         /// <returns></returns>
-        public static async IAsyncEnumerable<TSource> ConcatAsync<TSource>(IAsyncEnumerable<TSource> source, IAsyncEnumerable<TSource> other,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-{
-            await foreach (var row in source.WithCancellation(cancellationToken))
-                yield return row;
+        public static IAsyncEnumerable<TSource> ConcatAsync<TSource>(IAsyncEnumerable<TSource> source, IAsyncEnumerable<TSource> other,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(other);
 
-            await foreach (var row in other.WithCancellation(cancellationToken))
-                yield return row;
+            // both acquired here, where every operator of this convention acquires, so that one
+            // GetAsyncEnumerator at the root reaches the leaves under either side. The second source is
+            // therefore open while the first drains, which is what reaching its leaf at Execute costs.
+            return ClrEnumerables.Acquiring(source, other, (a, b, token) => ConcatRowsAsync(a, b));
+        }
+
+        /// <summary>
+        /// The row loop of <see cref="ConcatAsync"/>, over enumerators the factory acquired.
+        /// </summary>
+        static async IAsyncEnumerator<TSource> ConcatRowsAsync<TSource>(IAsyncEnumerator<TSource> source, IAsyncEnumerator<TSource> other)
+        {
+            while (await source.MoveNextAsync())
+                yield return source.Current;
+
+            while (await other.MoveNextAsync())
+                yield return other.Current;
         }
 
 
@@ -3796,17 +3810,31 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="other"></param>
         /// <param name="comparer"></param>
         /// <returns></returns>
-        public static async IAsyncEnumerable<TSource> UnionAsync<TSource>(IAsyncEnumerable<TSource> source, IAsyncEnumerable<TSource> other, EqualityComparer? comparer,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-{
+        public static IAsyncEnumerable<TSource> UnionAsync<TSource>(IAsyncEnumerable<TSource> source, IAsyncEnumerable<TSource> other, EqualityComparer? comparer,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(other);
+
+            // both acquired here, where every operator of this convention acquires, so that one
+            // GetAsyncEnumerator at the root reaches the leaves under either side. The second source is
+            // therefore open while the first drains, which is what reaching its leaf at Execute costs.
+            return ClrEnumerables.Acquiring(source, other, (a, b, token) => UnionRowsAsync(a, b, comparer));
+        }
+
+        /// <summary>
+        /// The drain of <see cref="UnionAsync"/>, over enumerators the factory acquired.
+        /// </summary>
+        static async IAsyncEnumerator<TSource> UnionRowsAsync<TSource>(IAsyncEnumerator<TSource> source, IAsyncEnumerator<TSource> other, EqualityComparer? comparer)
+        {
             // a java.util.HashSet, and not because the CLR has nothing to hold rows in: what a set operator
             // yields a row in is the order of the collection it held them in, and Calcite's is this one. See
             // JavaHashingTests for why that order is the same in every process.
             var set = new java.util.HashSet();
-            await foreach (var row in (source).WithCancellation(cancellationToken))
-                set.add(JavaWrapped.Of(comparer, JavaValues.From(row)));
-            await foreach (var row in (other).WithCancellation(cancellationToken))
-                set.add(JavaWrapped.Of(comparer, JavaValues.From(row)));
+            while (await source.MoveNextAsync())
+                set.add(JavaWrapped.Of(comparer, JavaValues.From(source.Current)));
+            while (await other.MoveNextAsync())
+                set.add(JavaWrapped.Of(comparer, JavaValues.From(other.Current)));
 
             foreach (var row in Unwrap<TSource>(set))
                 yield return row;
@@ -3823,18 +3851,32 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="comparer"></param>
         /// <param name="all">Whether a row present more than once in each is returned more than once.</param>
         /// <returns></returns>
-        public static async IAsyncEnumerable<TSource> IntersectAsync<TSource>(IAsyncEnumerable<TSource> source, IAsyncEnumerable<TSource> other, EqualityComparer? comparer, bool all,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-{
+        public static IAsyncEnumerable<TSource> IntersectAsync<TSource>(IAsyncEnumerable<TSource> source, IAsyncEnumerable<TSource> other, EqualityComparer? comparer, bool all,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(other);
+
+            // both acquired here, where every operator of this convention acquires, so that one
+            // GetAsyncEnumerator at the root reaches the leaves under either side. The second source is
+            // therefore open while the first drains, which is what reaching its leaf at Execute costs.
+            return ClrEnumerables.Acquiring(source, other, (a, b, token) => IntersectRowsAsync(a, b, comparer, all));
+        }
+
+        /// <summary>
+        /// The drain of <see cref="IntersectAsync"/>, over enumerators the factory acquired.
+        /// </summary>
+        static async IAsyncEnumerator<TSource> IntersectRowsAsync<TSource>(IAsyncEnumerator<TSource> source, IAsyncEnumerator<TSource> other, EqualityComparer? comparer, bool all)
+        {
             // ALL keeps a row once per pairing, so the collection counts rather than merely holding
             var set1 = Collection(all);
-            await foreach (var row in (other).WithCancellation(cancellationToken))
-                set1.add(JavaWrapped.Of(comparer, JavaValues.From(row)));
+            while (await other.MoveNextAsync())
+                set1.add(JavaWrapped.Of(comparer, JavaValues.From(other.Current)));
 
             var result = Collection(all);
-            await foreach (var row in (source).WithCancellation(cancellationToken))
-                if (set1.remove(JavaWrapped.Of(comparer, JavaValues.From(row))))
-                    result.add(JavaWrapped.Of(comparer, JavaValues.From(row)));
+            while (await source.MoveNextAsync())
+                if (set1.remove(JavaWrapped.Of(comparer, JavaValues.From(source.Current))))
+                    result.add(JavaWrapped.Of(comparer, JavaValues.From(source.Current)));
 
             foreach (var row in Unwrap<TSource>(result))
                 yield return row;
@@ -3851,15 +3893,29 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="comparer"></param>
         /// <param name="all">Whether a row is removed once per appearance in the second rather than entirely.</param>
         /// <returns></returns>
-        public static async IAsyncEnumerable<TSource> ExceptAsync<TSource>(IAsyncEnumerable<TSource> source, IAsyncEnumerable<TSource> other, EqualityComparer? comparer, bool all,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-{
-            var collection = Collection(all);
-            await foreach (var row in (source).WithCancellation(cancellationToken))
-                collection.add(JavaWrapped.Of(comparer, JavaValues.From(row)));
+        public static IAsyncEnumerable<TSource> ExceptAsync<TSource>(IAsyncEnumerable<TSource> source, IAsyncEnumerable<TSource> other, EqualityComparer? comparer, bool all,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(other);
 
-            await foreach (var row in (other).WithCancellation(cancellationToken))
-                collection.remove(JavaWrapped.Of(comparer, JavaValues.From(row)));
+            // both acquired here, where every operator of this convention acquires, so that one
+            // GetAsyncEnumerator at the root reaches the leaves under either side. The second source is
+            // therefore open while the first drains, which is what reaching its leaf at Execute costs.
+            return ClrEnumerables.Acquiring(source, other, (a, b, token) => ExceptRowsAsync(a, b, comparer, all));
+        }
+
+        /// <summary>
+        /// The drain of <see cref="ExceptAsync"/>, over enumerators the factory acquired.
+        /// </summary>
+        static async IAsyncEnumerator<TSource> ExceptRowsAsync<TSource>(IAsyncEnumerator<TSource> source, IAsyncEnumerator<TSource> other, EqualityComparer? comparer, bool all)
+        {
+            var collection = Collection(all);
+            while (await source.MoveNextAsync())
+                collection.add(JavaWrapped.Of(comparer, JavaValues.From(source.Current)));
+
+            while (await other.MoveNextAsync())
+                collection.remove(JavaWrapped.Of(comparer, JavaValues.From(other.Current)));
 
             foreach (var row in Unwrap<TSource>(collection))
                 yield return row;
@@ -3873,12 +3929,25 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="source"></param>
         /// <param name="comparer"></param>
         /// <returns></returns>
-        public static async IAsyncEnumerable<TSource> DistinctAsync<TSource>(IAsyncEnumerable<TSource> source, EqualityComparer? comparer,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-{
+        public static IAsyncEnumerable<TSource> DistinctAsync<TSource>(IAsyncEnumerable<TSource> source, EqualityComparer? comparer,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+
+            // acquired here, where every operator of this convention acquires, so that one
+            // GetAsyncEnumerator at the root reaches the leaves under it. Only the drain waits for the first
+            // MoveNextAsync, because only the drain awaits.
+            return source.Acquiring((e, token) => DistinctRowsAsync(e, comparer));
+        }
+
+        /// <summary>
+        /// The drain of <see cref="DistinctAsync"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static async IAsyncEnumerator<TSource> DistinctRowsAsync<TSource>(IAsyncEnumerator<TSource> source, EqualityComparer? comparer)
+        {
             var set = new java.util.HashSet();
-            await foreach (var row in (source).WithCancellation(cancellationToken))
-                set.add(JavaWrapped.Of(comparer, JavaValues.From(row)));
+            while (await source.MoveNextAsync())
+                set.add(JavaWrapped.Of(comparer, JavaValues.From(source.Current)));
 
             foreach (var row in Unwrap<TSource>(set))
                 yield return row;
@@ -4543,7 +4612,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <c>MoveNextAsync</c>. Every index is still complete before the first row is yielded. Same
         /// constraint as <see cref="NestedLoopJoinAsListAsync"/>.</para>
         /// </remarks>
-        public static async IAsyncEnumerable<TResult> AsofJoinAsync<TSource, TInner, TKey, TResult>(
+        public static IAsyncEnumerable<TResult> AsofJoinAsync<TSource, TInner, TKey, TResult>(
             IAsyncEnumerable<TSource> outer,
             IAsyncEnumerable<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
@@ -4552,14 +4621,38 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             Func<TSource, TInner, bool> matchComparator,
             java.util.Comparator timestampComparator,
             bool emitNullsOnRight,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-{
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(outer);
+            ArgumentNullException.ThrowIfNull(inner);
+
+            // both acquired here, where every operator of this convention acquires, so that one
+            // GetAsyncEnumerator at the root reaches the leaves under either side. The inner is therefore
+            // open while the outer is indexed, which is what reaching its leaf at Execute costs.
+            return ClrEnumerables.Acquiring(outer, inner, (a, b, token) => AsofJoinRowsAsync<TSource, TInner, TKey, TResult>(a, b, outerKeySelector, innerKeySelector, resultSelector, matchComparator, timestampComparator, emitNullsOnRight));
+        }
+
+        /// <summary>
+        /// The two drains and the join pass of <see cref="AsofJoinAsync"/>, over enumerators the factory
+        /// acquired.
+        /// </summary>
+        static async IAsyncEnumerator<TResult> AsofJoinRowsAsync<TSource, TInner, TKey, TResult>(
+            IAsyncEnumerator<TSource> outer,
+            IAsyncEnumerator<TInner> inner,
+            Func<TSource, TKey> outerKeySelector,
+            Func<TInner, TKey> innerKeySelector,
+            Func<TSource?, TInner?, TResult> resultSelector,
+            Func<TSource, TInner, bool> matchComparator,
+            java.util.Comparator timestampComparator,
+            bool emitNullsOnRight)
+        {
             var leftIndex = new java.util.HashMap();
             var rightIndex = new java.util.HashMap();
             var outerWithNullKeys = new List<TSource>();
 
-            await foreach (var row in (outer).WithCancellation(cancellationToken))
+            while (await outer.MoveNextAsync())
             {
+                var row = outer.Current;
                 var key = outerKeySelector(row);
                 if (key == null)
                 {
@@ -4581,8 +4674,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 ((List<TInner>)rightIndex.get(boxed)).Add(default!);
             }
 
-            await foreach (var row in (inner).WithCancellation(cancellationToken))
+            while (await inner.MoveNextAsync())
             {
+                var row = inner.Current;
                 var key = innerKeySelector(row);
                 if (key == null)
                     continue;
@@ -5806,21 +5900,41 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// still complete before the first one is yielded, which is the property the order rests on. Same
         /// constraint as <see cref="NestedLoopJoinAsListAsync"/>.</para>
         /// </remarks>
-        public static async IAsyncEnumerable<TResult> GroupByAsync<TSource, TKey, TResult>(
+        public static IAsyncEnumerable<TResult> GroupByAsync<TSource, TKey, TResult>(
             IAsyncEnumerable<TSource> source,
             Func<TSource, TKey> keySelector,
             Function0 accumulatorInitializer,
             Function2 accumulatorAdder,
             Function2 resultSelector,
             EqualityComparer? comparer,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-{
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+
+            // acquired here, where every operator of this convention acquires, so that one
+            // GetAsyncEnumerator at the root reaches the leaves under it. Only the drain waits for the first
+            // MoveNextAsync, because only the drain awaits.
+            return source.Acquiring((e, token) => GroupByRowsAsync<TSource, TKey, TResult>(e, keySelector, accumulatorInitializer, accumulatorAdder, resultSelector, comparer));
+        }
+
+        /// <summary>
+        /// The fold of <see cref="GroupByAsync"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static async IAsyncEnumerator<TResult> GroupByRowsAsync<TSource, TKey, TResult>(
+            IAsyncEnumerator<TSource> source,
+            Func<TSource, TKey> keySelector,
+            Function0 accumulatorInitializer,
+            Function2 accumulatorAdder,
+            Function2 resultSelector,
+            EqualityComparer? comparer)
+        {
             // a java.util.HashMap, because the order the groups come out in is the map's and Calcite's is
             // this one. Holding the insertion order instead gave a different answer to the same GROUP BY.
             var accumulators = new java.util.HashMap();
 
-            await foreach (var row in (source).WithCancellation(cancellationToken))
+            while (await source.MoveNextAsync())
             {
+                var row = source.Current;
                 var key = JavaWrapped.Of(comparer, JavaValues.From(keySelector(row)));
                 var accumulator = accumulators.get(key) ?? accumulatorInitializer.apply();
 
@@ -5860,21 +5974,42 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// still complete before the first one is yielded, which is the property the order rests on. Same
         /// constraint as <see cref="NestedLoopJoinAsListAsync"/>.</para>
         /// </remarks>
-        public static async IAsyncEnumerable<TResult> GroupByMultipleAsync<TSource, TKey, TResult>(
+        public static IAsyncEnumerable<TResult> GroupByMultipleAsync<TSource, TKey, TResult>(
             IAsyncEnumerable<TSource> source,
             Func<TSource, TKey>[] keySelectors,
             Function0 accumulatorInitializer,
             Function2 accumulatorAdder,
             Function2 resultSelector,
             EqualityComparer? comparer,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-{
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+
+            // acquired here, where every operator of this convention acquires, so that one
+            // GetAsyncEnumerator at the root reaches the leaves under it. Only the drain waits for the first
+            // MoveNextAsync, because only the drain awaits.
+            return source.Acquiring((e, token) => GroupByMultipleRowsAsync<TSource, TKey, TResult>(e, keySelectors, accumulatorInitializer, accumulatorAdder, resultSelector, comparer));
+        }
+
+        /// <summary>
+        /// The fold of <see cref="GroupByMultipleAsync"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static async IAsyncEnumerator<TResult> GroupByMultipleRowsAsync<TSource, TKey, TResult>(
+            IAsyncEnumerator<TSource> source,
+            Func<TSource, TKey>[] keySelectors,
+            Function0 accumulatorInitializer,
+            Function2 accumulatorAdder,
+            Function2 resultSelector,
+            EqualityComparer? comparer)
+        {
             // a java.util.HashMap, for the reason GroupByAsync gives: the order the groups come out in is the
             // map's, and Calcite's map is this one
             var accumulators = new java.util.HashMap();
 
-            await foreach (var row in (source).WithCancellation(cancellationToken))
+            while (await source.MoveNextAsync())
             {
+                var row = source.Current;
+
                 foreach (var keySelector in (keySelectors))
                 {
                     var key = JavaWrapped.Of(comparer, JavaValues.From(keySelector(row)));
@@ -5934,7 +6069,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// before it returns, so the rows are produced on the first <c>MoveNextAsync</c> instead. Same
         /// constraint as <see cref="NestedLoopJoinAsListAsync"/>.</para>
         /// </remarks>
-        public static async IAsyncEnumerable<TResult> WindowAsync<TSource, TKey, TAccumulator, TResult>(
+        public static IAsyncEnumerable<TResult> WindowAsync<TSource, TKey, TAccumulator, TResult>(
             IAsyncEnumerable<TSource> source,
             Func<TSource, TKey>? partitionSelector,
             java.util.Comparator comparator,
@@ -5951,8 +6086,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             Func<WindowFrame, TAccumulator, TAccumulator>? cachedResult,
             Func<WindowFrame, TAccumulator, TAccumulator>? uncachedResult,
             Func<WindowFrame, TAccumulator, TResult> selector,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-{
+            CancellationToken cancellationToken = default)
+        {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(comparator);
             ArgumentNullException.ThrowIfNull(lowerBound);
@@ -5960,6 +6095,34 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             ArgumentNullException.ThrowIfNull(accumulatorInitializer);
             ArgumentNullException.ThrowIfNull(selector);
 
+            // acquired here, where every operator of this convention acquires, so that one
+            // GetAsyncEnumerator at the root reaches the leaves under it. Only the drain waits for the first
+            // MoveNextAsync, because only the drain awaits.
+            return source.Acquiring((e, token) => WindowRowsAsync<TSource, TKey, TAccumulator, TResult>(e, partitionSelector, comparator, exclude, lowerBound, upperBound, alwaysNonEmpty, clampStart, clampEnd, lowerBoundCanChange, accumulatorInitializer, reset, adder, cachedResult, uncachedResult, selector));
+        }
+
+        /// <summary>
+        /// The drain and the window pass of <see cref="WindowAsync"/>, over an enumerator the factory
+        /// acquired.
+        /// </summary>
+        static async IAsyncEnumerator<TResult> WindowRowsAsync<TSource, TKey, TAccumulator, TResult>(
+            IAsyncEnumerator<TSource> source,
+            Func<TSource, TKey>? partitionSelector,
+            java.util.Comparator comparator,
+            org.apache.calcite.rex.RexWindowExclusion exclude,
+            Func<WindowFrame, int> lowerBound,
+            Func<WindowFrame, int> upperBound,
+            bool alwaysNonEmpty,
+            bool clampStart,
+            bool clampEnd,
+            bool lowerBoundCanChange,
+            Func<TAccumulator> accumulatorInitializer,
+            Func<WindowFrame, TAccumulator, TAccumulator>? reset,
+            Func<WindowFrame, TAccumulator, TAccumulator>? adder,
+            Func<WindowFrame, TAccumulator, TAccumulator>? cachedResult,
+            Func<WindowFrame, TAccumulator, TAccumulator>? uncachedResult,
+            Func<WindowFrame, TAccumulator, TResult> selector)
+        {
             // an exclusion that is not "no other" makes every frame a fresh one, because the same bounds do not
             // mean the same rows once the current row's peers are taken out of them
             var excluding = exclude == null || exclude.name() != nameof(org.apache.calcite.rex.RexWindowExclusion.EXCLUDE_NO_OTHER);
@@ -5967,7 +6130,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var frame = new WindowFrame();
             var accumulator = accumulatorInitializer();
 
-            var (collection, iterator) = PartitionIterator(await BufferAsync(source, cancellationToken).ConfigureAwait(false), partitionSelector, comparator);
+            var (collection, iterator) = PartitionIterator(await BufferAsync(source).ConfigureAwait(false), partitionSelector, comparator);
             var list = new List<TResult>(PartitionCollectionSize(collection));
 
             while (iterator.hasNext())
@@ -6289,25 +6452,41 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// awaited and <b>an expression tree cannot await</b>, so the composition cannot be written as a
         /// tree and is written as an operator instead.
         ///
-        /// <para>It is also lazier than the pair it replaces. The synchronous <c>Aggregate</c> runs when
-        /// <c>SingletonAsync</c> is called, which is when the compiled plan is invoked rather than when it is
-        /// enumerated; this folds on the first <c>MoveNextAsync</c>, which is where the work belongs.</para>
+        /// <para>The synchronous <c>Aggregate</c> runs when <c>SingletonAsync</c> is called, which is when
+        /// the compiled plan is invoked rather than when it is enumerated. This acquires its source at
+        /// <c>GetAsyncEnumerator</c> and folds on the first <c>MoveNextAsync</c>: the fold awaits and a
+        /// factory cannot, but acquiring does not await, so it does not wait with it.</para>
         ///
         /// <para>The fold itself does not buffer, as the synchronous one does not.</para>
         /// </remarks>
-        public static async IAsyncEnumerable<TResult> SingletonAggregateAsync<TSource, TResult>(
+        public static IAsyncEnumerable<TResult> SingletonAggregateAsync<TSource, TResult>(
             IAsyncEnumerable<TSource> source,
             object seed,
             Function2 accumulatorAdder,
             Function1 resultSelector,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(source);
 
+            // acquired here, where every operator of this convention acquires, so that one
+            // GetAsyncEnumerator at the root reaches the leaves under it. Only the drain waits for the first
+            // MoveNextAsync, because only the drain awaits.
+            return source.Acquiring((e, token) => SingletonAggregateRowsAsync<TSource, TResult>(e, seed, accumulatorAdder, resultSelector));
+        }
+
+        /// <summary>
+        /// The fold of <see cref="SingletonAggregateAsync"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static async IAsyncEnumerator<TResult> SingletonAggregateRowsAsync<TSource, TResult>(
+            IAsyncEnumerator<TSource> source,
+            object seed,
+            Function2 accumulatorAdder,
+            Function1 resultSelector)
+        {
             var accumulator = seed;
 
-            await foreach (var row in source.WithCancellation(cancellationToken))
-                accumulator = accumulatorAdder.apply(accumulator, row);
+            while (await source.MoveNextAsync())
+                accumulator = accumulatorAdder.apply(accumulator, source.Current);
 
             yield return JavaValues.As<TResult>(resultSelector.apply(accumulator));
         }
@@ -6324,16 +6503,27 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <see cref="SingletonAggregateAsync"/> gives. A <c>java.util.List</c>, because this is a value in a row
         /// and the reader of that row is Calcite's.
         /// </remarks>
-        public static async IAsyncEnumerable<java.util.List> SingletonJavaListAsync<TSource>(
+        public static IAsyncEnumerable<java.util.List> SingletonJavaListAsync<TSource>(
             IAsyncEnumerable<TSource> source,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(source);
 
+            // acquired here, where every operator of this convention acquires, so that one
+            // GetAsyncEnumerator at the root reaches the leaves under it. Only the drain waits for the first
+            // MoveNextAsync, because only the drain awaits.
+            return source.Acquiring((e, token) => SingletonJavaListRowsAsync(e));
+        }
+
+        /// <summary>
+        /// The drain of <see cref="SingletonJavaListAsync"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static async IAsyncEnumerator<java.util.List> SingletonJavaListRowsAsync<TSource>(IAsyncEnumerator<TSource> source)
+        {
             var list = new java.util.ArrayList();
 
-            await foreach (var row in source.WithCancellation(cancellationToken))
-                list.add(row);
+            while (await source.MoveNextAsync())
+                list.add(source.Current);
 
             yield return list;
         }
@@ -6352,18 +6542,35 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <see cref="SingletonAggregateAsync"/> gives. A <c>LinkedHashMap</c>, so that the order the rows
         /// arrived in is the order the map keeps.
         /// </remarks>
-        public static async IAsyncEnumerable<java.util.Map> SingletonJavaMapAsync<TSource>(
+        public static IAsyncEnumerable<java.util.Map> SingletonJavaMapAsync<TSource>(
             IAsyncEnumerable<TSource> source,
             Func<TSource, object> keySelector,
             Func<TSource, object> valueSelector,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(source);
 
+            // acquired here, where every operator of this convention acquires, so that one
+            // GetAsyncEnumerator at the root reaches the leaves under it. Only the drain waits for the first
+            // MoveNextAsync, because only the drain awaits.
+            return source.Acquiring((e, token) => SingletonJavaMapRowsAsync(e, keySelector, valueSelector));
+        }
+
+        /// <summary>
+        /// The drain of <see cref="SingletonJavaMapAsync"/>, over an enumerator the factory acquired.
+        /// </summary>
+        static async IAsyncEnumerator<java.util.Map> SingletonJavaMapRowsAsync<TSource>(
+            IAsyncEnumerator<TSource> source,
+            Func<TSource, object> keySelector,
+            Func<TSource, object> valueSelector)
+        {
             var map = new java.util.LinkedHashMap();
 
-            await foreach (var row in source.WithCancellation(cancellationToken))
+            while (await source.MoveNextAsync())
+            {
+                var row = source.Current;
                 map.put(keySelector(row), valueSelector(row));
+            }
 
             yield return map;
         }
@@ -6448,6 +6655,20 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             await foreach (var row in source.WithCancellation(cancellationToken))
                 buffer.Add(row);
+
+            return buffer;
+        }
+
+        /// <summary>
+        /// <see cref="BufferAsync{TSource}(IAsyncEnumerable{TSource}, CancellationToken)"/> over an
+        /// enumerator a factory already acquired, which carries the token it was acquired with.
+        /// </summary>
+        static async System.Threading.Tasks.ValueTask<List<TSource>> BufferAsync<TSource>(IAsyncEnumerator<TSource> source)
+        {
+            var buffer = new List<TSource>();
+
+            while (await source.MoveNextAsync())
+                buffer.Add(source.Current);
 
             return buffer;
         }

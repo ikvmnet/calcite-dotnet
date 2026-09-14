@@ -126,7 +126,7 @@ namespace Apache.Calcite.Extensions.Runtime
         /// </summary>
         /// <typeparam name="TSource"></typeparam>
         /// <param name="enumerator"></param>
-        static void BlockDispose<TSource>(IAsyncEnumerator<TSource> enumerator)
+        internal static void BlockDispose<TSource>(IAsyncEnumerator<TSource> enumerator)
         {
             var context = SynchronizationContext.Current;
             if (context == null)

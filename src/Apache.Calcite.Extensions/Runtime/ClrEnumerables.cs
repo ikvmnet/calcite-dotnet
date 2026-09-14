@@ -52,6 +52,49 @@ namespace Apache.Calcite.Extensions.Runtime
             });
         }
 
+        /// <summary>
+        /// <see cref="Acquiring{TSource, TResult}(IAsyncEnumerable{TSource}, Func{IAsyncEnumerator{TSource}, CancellationToken, IAsyncEnumerator{TResult}})"/>
+        /// for an operator reading two sources, which acquires both before the loop runs.
+        /// </summary>
+        /// <typeparam name="TFirst"></typeparam>
+        /// <typeparam name="TSecond"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="first"></param>
+        /// <param name="second"></param>
+        /// <param name="rows">Builds the row loop over the two acquired enumerators and the caller's token.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Both are acquired, and both are owned: an operator over two sources reaches the leaves under
+        /// both at <c>GetAsyncEnumerator</c>, which is what lets a caller learn at Execute that either
+        /// statement was refused.
+        ///
+        /// <para><b>The second acquisition can throw</b> -- a leaf sends its statement here -- and the
+        /// first is then nobody else's to close, because the sequence that would have owned it is never
+        /// returned. Closing it is an awaited operation happening in a method that cannot await, so it
+        /// blocks, with the synchronization context suppressed for the reason
+        /// <c>ClrSequences.BlockDispose</c> gives. It runs only on that failure.</para>
+        /// </remarks>
+        internal static IAsyncEnumerable<TResult> Acquiring<TFirst, TSecond, TResult>(IAsyncEnumerable<TFirst> first, IAsyncEnumerable<TSecond> second, Func<IAsyncEnumerator<TFirst>, IAsyncEnumerator<TSecond>, CancellationToken, IAsyncEnumerator<TResult>> rows)
+        {
+            return new ClrAsyncEnumerable<TResult>(cancellationToken =>
+            {
+                var a = first.GetAsyncEnumerator(cancellationToken);
+
+                IAsyncEnumerator<TSecond> b;
+                try
+                {
+                    b = second.GetAsyncEnumerator(cancellationToken);
+                }
+                catch
+                {
+                    ClrSequences.BlockDispose(a);
+                    throw;
+                }
+
+                return new AcquiredAsyncEnumerator<TResult>(rows(a, b, cancellationToken), a, b);
+            });
+        }
+
 
         /// <summary>
         /// Returns a sequence that is enumerated under <paramref name="cancellationToken"/> as well as

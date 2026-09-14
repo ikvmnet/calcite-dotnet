@@ -243,6 +243,54 @@ namespace Apache.Calcite.Tests
             }
         }
 
+        /// <summary>
+        /// Every operator acquires, so Execute reaches the leaf whatever is stacked above it.
+        /// </summary>
+        /// <remarks>
+        /// The shapes that did not. An operator written as a raw <c>async IAsyncEnumerable</c> iterator
+        /// defers its whole body to the first <c>MoveNextAsync</c>, its source's acquisition along with its
+        /// drain, so a plan topped by one acquired nothing at Execute and the leaf's statement was never
+        /// sent there -- measured at 0 for GROUP BY, DISTINCT and UNION while
+        /// <see cref="ExecuteAsyncShouldAcquireTheLeafWithoutReading"/> read 1 for a filter and said the
+        /// cascade was general. It was not; it was the shape that test happened to use.
+        ///
+        /// <para>Twelve operators were converted to acquire in the factory and drain on the first
+        /// <c>MoveNextAsync</c>, which is what <c>OrderByAsync</c> already did. Acquiring a source
+        /// enumerator is synchronous, so only the drain had to stay late.</para>
+        ///
+        /// <para><c>Produced</c> is the other half and matters as much: acquiring must not read. A fix that
+        /// moved the drain instead of the acquisition would pass the first assertion and fail this one.</para>
+        /// </remarks>
+        [TestMethod]
+        [DataRow("SELECT ID, COUNT(*) FROM T GROUP BY ID", 1, DisplayName = "group by")]
+        [DataRow("SELECT DISTINCT ID FROM T", 1, DisplayName = "distinct")]
+        [DataRow("SELECT COUNT(*) FROM T", 1, DisplayName = "aggregate with no group")]
+        [DataRow("SELECT ID, COUNT(*) OVER () FROM T", 1, DisplayName = "window")]
+        [DataRow("SELECT ID FROM T UNION SELECT ID FROM T", 2, DisplayName = "union")]
+        [DataRow("SELECT ID FROM T UNION ALL SELECT ID FROM T", 2, DisplayName = "union all")]
+        [DataRow("SELECT ID FROM T INTERSECT SELECT ID FROM T", 2, DisplayName = "intersect")]
+        [DataRow("SELECT ID FROM T EXCEPT SELECT ID FROM T", 2, DisplayName = "except")]
+        public async Task ExecuteAsyncShouldAcquireTheLeafUnderADrainingOperator(string sql, int acquisitions)
+        {
+            var (c, table) = Open(Model);
+            using (c)
+            {
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = sql;
+
+                await using var reader = await cmd.ExecuteReaderAsync();
+
+                table.EnumeratorCalls.Should().Be(acquisitions, "Execute acquires down to every leaf of {0}", sql);
+                table.Produced.Should().Be(0, "acquiring is not reading");
+
+                while (await reader.ReadAsync())
+                {
+                }
+
+                table.Produced.Should().Be(3 * acquisitions, "the rows are read once the reader is read");
+            }
+        }
+
     }
 
 }
