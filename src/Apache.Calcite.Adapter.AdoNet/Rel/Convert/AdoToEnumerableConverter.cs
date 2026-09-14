@@ -228,11 +228,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// <returns></returns>
         AdoSqlWriter GenerateSql(AdoConvention convention, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input, out AdoImplementor implementor)
         {
-            implementor = new AdoImplementor(convention.Dialect, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder);
+            var typeFactory = (JavaTypeFactory)getCluster().getTypeFactory();
+            implementor = new AdoImplementor(convention.Dialect, typeFactory, dataContextBuilder);
             var result = implementor.visitRoot(input);
 
             var writer = new AdoSqlWriter(convention.Dialect, convention.Syntax);
-            result.asStatement().unparse(writer, 0, 0);
+            convention.Syntax.Rewrite(result.asStatement(), convention.Dialect, typeFactory).unparse(writer, 0, 0);
             return writer;
         }
 
