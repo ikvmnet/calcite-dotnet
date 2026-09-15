@@ -5,6 +5,8 @@ using Apache.Calcite.Extensions.Interop;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
 
+using Apache.Calcite.Data.Common;
+
 namespace Apache.Calcite.Data.Internal
 {
 
@@ -39,6 +41,7 @@ namespace Apache.Calcite.Data.Internal
         static readonly DateTime UnixEpoch = new(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
         readonly RelDataType _type;
+        readonly ClrTypeRegistry _registry;
         readonly SqlTypeName _sqlType;
         readonly object? _value;
 
@@ -46,10 +49,12 @@ namespace Apache.Calcite.Data.Internal
         /// Initializes a new instance.
         /// </summary>
         /// <param name="type"></param>
+        /// <param name="registry">The mappings the value is read through.</param>
         /// <param name="value"></param>
-        public CalciteResultValue(RelDataType type, object? value)
+        public CalciteResultValue(RelDataType type, ClrTypeRegistry registry, object? value)
         {
             _type = type ?? throw new ArgumentNullException(nameof(type));
+            _registry = registry ?? throw new ArgumentNullException(nameof(registry));
             _sqlType = type.getSqlTypeName();
             _value = value;
         }
@@ -94,7 +99,7 @@ namespace Apache.Calcite.Data.Internal
         /// <returns></returns>
         object? Untyped()
         {
-            return IsUntyped ? CalciteValues.ToClr(_value, _type) : null;
+            return IsUntyped && _value is not null ? _registry.FromCalcite(null, _type, _value) : null;
         }
 
         /// <summary>
@@ -133,8 +138,13 @@ namespace Apache.Calcite.Data.Internal
             var target = typeof(T);
 
             // the value as an ADO.NET caller reads it, which is what nearly every ask is for
-            if (CalciteValues.ToClr(_value, _type) is T converted)
+            if (_registry.FromCalcite(null, _type, _value) is T converted)
                 return converted;
+
+            // a conversion the chain carries only when both types are named, which is where a caller says
+            // it wants one of the readings that is nobody's default
+            if (_registry.GetMapping(Nullable.GetUnderlyingType(target) ?? target, _type) is { } named && named.FromCalcite(_value) is T asked)
+                return asked;
 
             // Handle common ADO.NET types
             if (target == typeof(string))
@@ -196,7 +206,7 @@ namespace Apache.Calcite.Data.Internal
         public object GetValue()
         {
             // a variant holding a null converts to one, so the coalesce is reachable and not a formality
-            return _value is null ? DBNull.Value : CalciteValues.ToClr(_value, _type) ?? DBNull.Value;
+            return _value is null ? DBNull.Value : _registry.FromCalcite(null, _type, _value) ?? DBNull.Value;
         }
 
         /// <summary>

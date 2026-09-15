@@ -150,6 +150,16 @@ namespace Apache.Calcite.Data.Common
                 clrTypePredicate: static t => t is null || t == typeof(object[]),
                 relTypePredicate: static t => t.isStruct());
 
+            // a VARIANT carries its own type per value, so it is read by asking the value what it is and
+            // mapping it as that, through this same registry
+            m.Add(
+                typeof(object),
+                SqlTypeName.VARIANT,
+                static (context, relType, _) => new VariantClrTypeMapping(context, relType),
+                ClrTypeMatch.RelDefault,
+                clrTypePredicate: static t => t is null || t == typeof(object),
+                relTypePredicate: static t => t.getSqlTypeName() == SqlTypeName.VARIANT);
+
             // the type whose only value is null. Reading one is null whatever a provider handed over, and
             // writing one is null whatever a caller wrote: java.lang.Void is what holds it and it has no
             // instances
@@ -161,8 +171,7 @@ namespace Apache.Calcite.Data.Common
             m.Add(
                 typeof(object),
                 SqlTypeName.ANY,
-                CalciteValues.ToShape,
-                CalciteValues.FromShape,
+                static (context, relType, _) => new AnyClrTypeMapping(context, relType),
                 ClrTypeMatch.RelDefault,
                 clrTypePredicate: static t => t is null || t == typeof(object),
                 relTypePredicate: static _ => true);
@@ -171,8 +180,7 @@ namespace Apache.Calcite.Data.Common
             m.Add(
                 typeof(object),
                 SqlTypeName.ANY,
-                CalciteValues.ToShape,
-                CalciteValues.FromShape,
+                static (context, relType, _) => new AnyClrTypeMapping(context, relType),
                 ClrTypeMatch.ClrDefault,
                 clrTypePredicate: static _ => true);
         }

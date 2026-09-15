@@ -585,6 +585,33 @@ namespace Apache.Calcite.Data.Common
             _ => throw new ClrTypeMappingException($"A UUID is held in a UuidValue, and a {value.GetType()} is not one."),
         };
 
+        /// <summary>
+        /// The number of nanoseconds in one <see cref="TimeSpan"/> tick.
+        /// </summary>
+        const long NanosecondsPerTick = 100;
+
+        /// <summary>
+        /// Returns a <c>java.time.LocalDateTime</c> as the <see cref="DateTime"/> holding the same fields.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns>The date and time, with no zone, because a local date and time has none.</returns>
+        static DateTime FromLocalDateTime(java.time.LocalDateTime value)
+        {
+            return new DateTime(value.getYear(), value.getMonthValue(), value.getDayOfMonth(), value.getHour(), value.getMinute(), value.getSecond())
+                .AddTicks(value.getNano() / NanosecondsPerTick);
+        }
+
+        /// <summary>
+        /// Returns an instant and an offset as the <see cref="DateTimeOffset"/> naming the same moment.
+        /// </summary>
+        /// <param name="instant"></param>
+        /// <param name="offset"></param>
+        /// <returns>The moment, at the given offset.</returns>
+        static DateTimeOffset FromInstant(java.time.Instant instant, java.time.ZoneOffset offset)
+        {
+            return new DateTimeOffset(UnixEpoch.AddMilliseconds(instant.toEpochMilli()), TimeSpan.Zero).ToOffset(TimeSpan.FromSeconds(offset.getTotalSeconds()));
+        }
+
         #region Shapes
 
         /// <summary>
@@ -644,9 +671,19 @@ namespace Apache.Calcite.Data.Common
                 java.sql.Timestamp v => UnixEpoch.AddMilliseconds(v.getTime()),
                 java.sql.Date v => UnixEpoch.AddMilliseconds(v.getTime()),
                 java.sql.Time v => TimeSpan.FromMilliseconds(v.getTime()),
+                // java.util.Date after the three java.sql ones, which are its subclasses
+                java.util.Date v => UnixEpoch.AddMilliseconds(v.getTime()),
+                java.time.LocalDate v => new DateOnly(v.getYear(), v.getMonthValue(), v.getDayOfMonth()),
+                java.time.LocalTime v => new TimeOnly(v.toNanoOfDay() / NanosecondsPerTick),
+                java.time.LocalDateTime v => FromLocalDateTime(v),
+                java.time.Instant v => new DateTimeOffset(UnixEpoch.AddMilliseconds(v.toEpochMilli()), TimeSpan.Zero),
+                java.time.OffsetDateTime v => FromInstant(v.toInstant(), v.getOffset()),
+                java.time.ZonedDateTime v => FromInstant(v.toInstant(), v.getOffset()),
+                java.time.Duration v => TimeSpan.FromTicks(v.getSeconds() * TimeSpan.TicksPerSecond + v.getNano() / NanosecondsPerTick),
                 ByteString v => v.getBytes(),
                 org.apache.calcite.util.UuidValue v => JavaUuids.ToGuid(v),
                 java.util.UUID v => JavaUuids.ToGuid(v),
+                java.math.BigInteger v => new System.Numerics.BigInteger(v.toByteArray(), isUnsigned: false, isBigEndian: true),
                 org.joou.UByte v => unchecked((byte)v.byteValue()),
                 org.joou.UShort v => unchecked((ushort)v.shortValue()),
                 org.joou.UInteger v => unchecked((uint)v.intValue()),

@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Prepare;
 
+using Apache.Calcite.Data.Common;
+
 namespace Apache.Calcite.Data.Internal
 {
 
@@ -24,13 +26,14 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="signature"></param>
         /// <param name="enumerator">The plan's enumerator, already given the statement's cancellation token,
         /// or <see langword="null"/> where there is nothing to read.</param>
+        /// <param name="registry">The mappings the session reads values through.</param>
         /// <param name="recordsAffected"></param>
         /// <param name="dataContext">The statement's context, which holds the registration tying its token
         /// to Calcite's cancel flag.</param>
         /// <param name="cancellation">The source the plan's enumerator was taken under, linked to the
         /// caller's token. This owns and disposes both: they live as long as the rows do.</param>
-        public CalciteAsyncEnumerableResult(IClrPrepare.Signature signature, IAsyncEnumerator<object>? enumerator, long recordsAffected = -1, IDisposable? dataContext = null, CancellationTokenSource? cancellation = null) :
-            base(signature, recordsAffected)
+        public CalciteAsyncEnumerableResult(IClrPrepare.Signature signature, ClrTypeRegistry registry, IAsyncEnumerator<object>? enumerator, long recordsAffected = -1, IDisposable? dataContext = null, CancellationTokenSource? cancellation = null) :
+            base(signature, registry, recordsAffected)
         {
             _enumerator = enumerator;
             _dataContext = dataContext;

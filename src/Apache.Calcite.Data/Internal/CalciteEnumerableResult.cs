@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Prepare;
 
+using Apache.Calcite.Data.Common;
+
 namespace Apache.Calcite.Data.Internal
 {
 
@@ -28,12 +30,13 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="signature"></param>
         /// <param name="enumerator">The plan's enumerator, or <see langword="null"/> where there is nothing
         /// to read — a DDL statement has already taken effect, and a DML one reports a count.</param>
+        /// <param name="registry">The mappings the session reads values through.</param>
         /// <param name="recordsAffected"></param>
         /// <param name="dataContext">The statement's context, which holds the registration tying its token
         /// to Calcite's cancel flag.</param>
         /// <param name="cancellation">The statement's cancellation source.</param>
-        public CalciteEnumerableResult(IClrPrepare.Signature signature, IEnumerator<object>? enumerator, long recordsAffected = -1, IDisposable? dataContext = null, CancellationTokenSource? cancellation = null) :
-            base(signature, recordsAffected)
+        public CalciteEnumerableResult(IClrPrepare.Signature signature, ClrTypeRegistry registry, IEnumerator<object>? enumerator, long recordsAffected = -1, IDisposable? dataContext = null, CancellationTokenSource? cancellation = null) :
+            base(signature, registry, recordsAffected)
         {
             _enumerator = enumerator;
             _dataContext = dataContext;

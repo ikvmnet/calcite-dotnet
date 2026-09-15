@@ -7,6 +7,9 @@ using Apache.Calcite.Extensions.Interop;
 using org.apache.calcite.avatica.util;
 
 
+using Apache.Calcite.Data.Common;
+using Apache.Calcite.Extensions.Prepare;
+
 namespace Apache.Calcite.Data.Internal
 {
 
@@ -43,8 +46,11 @@ namespace Apache.Calcite.Data.Internal
         /// An array of converted values in positional order, or an empty array when <paramref name="parameters"/> is
         /// <see langword="null"/> or contains no elements.
         /// </returns>
-        public static IReadOnlyList<object?> Bind(IReadOnlyList<CalciteParameterValue> parameters)
+        public static IReadOnlyList<object?> Bind(IReadOnlyList<CalciteParameterValue> parameters, ClrTypeRegistry registry, IClrPrepare.Signature signature)
         {
+            ArgumentNullException.ThrowIfNull(registry);
+            ArgumentNullException.ThrowIfNull(signature);
+
             if (parameters is null || parameters.Count == 0)
                 return Array.Empty<object?>();
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
 
+using Apache.Calcite.Data.Common;
 using Apache.Calcite.Data.Internal;
 
 using java.util.function;
@@ -41,6 +42,7 @@ namespace Apache.Calcite.Data
 
         CalciteConnectionStringBuilder _options = new();
         CalciteDataSource? _dataSource;
+        readonly ClrTypeMapper _typeMapper = new();
         CalciteSession? _session;
         ConnectionState _state = ConnectionState.Closed;
         bool _disposed;
@@ -284,7 +286,7 @@ namespace Apache.Calcite.Data
                         _dataSource = dataSource;
                     }
 
-                    _session = new CalciteSession(_options, root, owned);
+                    _session = new CalciteSession(_options, root, owned, typeMapper: _typeMapper);
                 }
 
                 SetState(ConnectionState.Open);
@@ -505,6 +507,17 @@ namespace Apache.Calcite.Data
         /// </remarks>
         /// <exception cref="InvalidOperationException">Thrown when the connection is not open.</exception>
         public JavaTypeFactory TypeFactory => RequireSession().TypeFactory;
+
+        /// <summary>
+        /// Gets the chain of type resolvers this connection reads and writes values through.
+        /// </summary>
+        /// <remarks>
+        /// A resolver put in front of this chain decides which .NET type a column is seen as and how values
+        /// cross in both directions. The chain is read once, when the connection first opens, because what a
+        /// Calcite type is held in is the session type factory's answer and the mappings are bound to it —
+        /// so register before <see cref="Open"/> and not after.
+        /// </remarks>
+        public ClrTypeMapper TypeMapper => _typeMapper;
 
         /// <summary>
         /// Gets the resolved <see cref="CalciteConnectionConfig"/> for this connection.

@@ -6,7 +6,7 @@ namespace Apache.Calcite.Data.Common
     /// <summary>
     /// Thrown where no mapping answers a lookup, or where one answers with a value of the wrong class.
     /// </summary>
-    public class ClrTypeMappingException : Exception
+    public class ClrTypeMappingException : InvalidCastException
     {
 
         /// <summary>
