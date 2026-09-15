@@ -301,10 +301,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A <c>uniqueidentifier</c> is a <c>UUID</c>, and a row holds one as the <c>java.util.UUID</c>
-        /// Calcite's runtime holds a UUID in. The class is the assertion rather than the text: a string of
-        /// the same characters stringifies identically and is a different value to everything that
-        /// compares, joins or groups.
+        /// A <c>uniqueidentifier</c> is a <c>UUID</c>, and a row holds one as the
+        /// <c>org.apache.calcite.util.UuidValue</c> Calcite's runtime holds a UUID in. The class is the
+        /// assertion rather than the text: a string of the same characters stringifies identically — so
+        /// does the bare <c>java.util.UUID</c> the wrapper holds — and is a different value to everything
+        /// that compares, joins or groups.
         /// </summary>
         [TestMethod]
         public void AUniqueIdentifierComesBackAsAUuid()
@@ -315,7 +316,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             Assert.IsTrue(results.next(), "expected one row");
             var value = results.getObject(1);
 
-            Assert.IsInstanceOfType<java.util.UUID>(value);
+            Assert.IsInstanceOfType<org.apache.calcite.util.UuidValue>(value);
             Assert.AreEqual("3f2504e0-4f89-11d3-9a0c-0305e82c3301", value.ToString());
         }
 
