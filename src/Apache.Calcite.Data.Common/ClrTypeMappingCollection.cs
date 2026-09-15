@@ -9,15 +9,6 @@ namespace Apache.Calcite.Data.Common
 {
 
     /// <summary>
-    /// Builds a mapping once the lookup has settled which Calcite type and which CLR type are in play.
-    /// </summary>
-    /// <param name="context"></param>
-    /// <param name="relType"></param>
-    /// <param name="clrType"></param>
-    /// <returns></returns>
-    public delegate ClrTypeMapping ClrTypeMappingFactory(ClrTypeContext context, RelDataType relType, Type clrType);
-
-    /// <summary>
     /// A table of mappings, and the rule by which a lookup picks one. Serves as a resolver on its own.
     /// </summary>
     /// <remarks>

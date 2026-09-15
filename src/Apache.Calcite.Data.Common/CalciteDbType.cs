@@ -276,11 +276,6 @@ namespace Apache.Calcite.Data.Common
         Other = 47,
 
         /// <summary>
-        /// The mask separating the base type from the collection flags above it.
-        /// </summary>
-        BaseTypeMask = 0x0FFFFFFF,
-
-        /// <summary>
         /// An <c>ARRAY</c> of the base type it is combined with, as
         /// <c>CalciteDbType.Array | CalciteDbType.Integer</c>.
         /// </summary>

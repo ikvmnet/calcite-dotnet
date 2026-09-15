@@ -21,6 +21,38 @@ namespace Apache.Calcite.Data.Common
     {
 
         /// <summary>
+        /// Separates the base type from the collection flags above it.
+        /// </summary>
+        /// <remarks>
+        /// Private, and not a member of <see cref="CalciteDbType"/>: every member of that list names a type,
+        /// and a mask does not. Putting one there would offer a caller something to bitwise-and with in
+        /// place of asking <see cref="BaseType"/>, and would turn up in its values and in its
+        /// <see cref="object.ToString"/>.
+        /// </remarks>
+        const CalciteDbType BaseMask = (CalciteDbType)0x0FFFFFFF;
+
+        /// <summary>
+        /// Returns the element half of a name, which is the whole of it where it is not a collection.
+        /// </summary>
+        /// <param name="type">The name.</param>
+        /// <returns>The base type, or <see cref="CalciteDbType.Unknown"/> where there is none — which is
+        /// what a collection that nests answers, one bit having nowhere to put a second level.</returns>
+        public static CalciteDbType BaseType(CalciteDbType type)
+        {
+            return type & BaseMask;
+        }
+
+        /// <summary>
+        /// Returns whether a name is a collection of something.
+        /// </summary>
+        /// <param name="type">The name.</param>
+        /// <returns><see langword="true"/> for an <c>ARRAY</c>, a <c>MULTISET</c> or a <c>MAP</c>.</returns>
+        public static bool IsCollection(CalciteDbType type)
+        {
+            return (type & ~BaseMask) != 0;
+        }
+
+        /// <summary>
         /// Returns the <see cref="CalciteDbType"/> naming a Calcite type.
         /// </summary>
         /// <param name="relType">The type, or <see langword="null"/>.</param>
@@ -65,7 +97,7 @@ namespace Apache.Calcite.Data.Common
         {
             var of = Of(element);
 
-            return (of & ~CalciteDbType.BaseTypeMask) != 0 ? CalciteDbType.Unknown : of;
+            return IsCollection(of) ? CalciteDbType.Unknown : of;
         }
 
         /// <summary>
@@ -147,10 +179,10 @@ namespace Apache.Calcite.Data.Common
         /// </remarks>
         public static System.Data.DbType ToDbType(CalciteDbType type)
         {
-            if ((type & ~CalciteDbType.BaseTypeMask) != 0)
+            if (IsCollection(type))
                 return System.Data.DbType.Object;
 
-            return (type & CalciteDbType.BaseTypeMask) switch
+            return BaseType(type) switch
             {
                 CalciteDbType.Boolean => System.Data.DbType.Boolean,
                 CalciteDbType.TinyInt => System.Data.DbType.SByte,
@@ -251,7 +283,7 @@ namespace Apache.Calcite.Data.Common
         /// <returns>The type name, or <see langword="null"/> where there is none.</returns>
         public static SqlTypeName? BaseTypeName(CalciteDbType type)
         {
-            return (type & CalciteDbType.BaseTypeMask) switch
+            return BaseType(type) switch
             {
                 CalciteDbType.Boolean => SqlTypeName.BOOLEAN,
                 CalciteDbType.TinyInt => SqlTypeName.TINYINT,

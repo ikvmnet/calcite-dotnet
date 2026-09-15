@@ -94,7 +94,7 @@ namespace Apache.Calcite.Data.Tests
             using var r = Row(c, "SELECT ARRAY[ARRAY[1, 2]]");
 
             Assert.Equal(CalciteDbType.Array, r.GetCalciteDbType(0));
-            Assert.Equal(CalciteDbType.Unknown, r.GetCalciteDbType(0) & CalciteDbType.BaseTypeMask);
+            Assert.Equal(CalciteDbType.Unknown, CalciteDbTypes.BaseType(r.GetCalciteDbType(0)));
 
             var type = r.GetRelDataType(0);
             Assert.Equal(SqlTypeName.ARRAY, type.getSqlTypeName());

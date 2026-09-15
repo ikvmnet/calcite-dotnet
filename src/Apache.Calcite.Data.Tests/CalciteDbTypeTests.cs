@@ -269,7 +269,7 @@ namespace Apache.Calcite.Data.Tests
             var type = f.createArrayType(f.createArrayType(f.createSqlType(SqlTypeName.INTEGER), -1), -1);
 
             Assert.Equal(CalciteDbType.Array, CalciteDbTypes.Of(type));
-            Assert.Equal(CalciteDbType.Unknown, CalciteDbTypes.Of(type) & CalciteDbType.BaseTypeMask);
+            Assert.Equal(CalciteDbType.Unknown, CalciteDbTypes.BaseType(CalciteDbTypes.Of(type)));
             Assert.Equal(SqlTypeName.ARRAY, CalciteDbTypes.ToSqlTypeName(CalciteDbTypes.Of(type)));
         }
 
@@ -331,18 +331,35 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The flags do not collide with the base, which is what makes the mask work at all.
+        /// The flags do not collide with the base, which is what makes reading the two halves apart work at
+        /// all.
         /// </summary>
         [Fact]
         public void The_collection_flags_should_not_overlap_the_base()
         {
             foreach (var value in Enum.GetValues<CalciteDbType>())
             {
-                if (value is CalciteDbType.Array or CalciteDbType.Multiset or CalciteDbType.Map or CalciteDbType.BaseTypeMask)
+                if (value is CalciteDbType.Array or CalciteDbType.Multiset or CalciteDbType.Map)
+                {
+                    Assert.True(CalciteDbTypes.IsCollection(value));
                     continue;
+                }
 
-                Assert.Equal(value, value & CalciteDbType.BaseTypeMask);
+                Assert.False(CalciteDbTypes.IsCollection(value));
+                Assert.Equal(value, CalciteDbTypes.BaseType(value));
             }
+        }
+
+        /// <summary>
+        /// Every member of the list is a type. A mask is not one, and lives where the bit arithmetic does.
+        /// </summary>
+        [Fact]
+        public void Every_member_of_the_list_should_be_a_type()
+        {
+            foreach (var value in Enum.GetValues<CalciteDbType>())
+                Assert.True(
+                    value is CalciteDbType.Unknown || CalciteDbTypes.ToSqlTypeName(value) is not null,
+                    $"{value} names no Calcite type.");
         }
 
     }
