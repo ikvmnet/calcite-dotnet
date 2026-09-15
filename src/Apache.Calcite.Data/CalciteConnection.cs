@@ -42,7 +42,7 @@ namespace Apache.Calcite.Data
 
         CalciteConnectionStringBuilder _options = new();
         CalciteDataSource? _dataSource;
-        readonly ClrTypeMapper _typeMapper = new();
+        ClrTypeMapper? _typeMapper;
         CalciteSession? _session;
         ConnectionState _state = ConnectionState.Closed;
         bool _disposed;
@@ -286,7 +286,7 @@ namespace Apache.Calcite.Data
                         _dataSource = dataSource;
                     }
 
-                    _session = new CalciteSession(_options, root, owned, typeMapper: _typeMapper);
+                    _session = new CalciteSession(_options, root, owned, typeMapper: SessionTypeMapper);
                 }
 
                 SetState(ConnectionState.Open);
@@ -516,8 +516,34 @@ namespace Apache.Calcite.Data
         /// cross in both directions. The chain is read once, when the connection first opens, because what a
         /// Calcite type is held in is the session type factory's answer and the mappings are bound to it —
         /// so register before <see cref="Open"/> and not after.
+        ///
+        /// <para>A connection drawn on a <see cref="CalciteDataSource"/> starts with a copy of that source's
+        /// chain, which is where a mapping belongs that is a property of the data rather than of one
+        /// caller's use of it. Adding one here adds it for this connection only.</para>
         /// </remarks>
-        public ClrTypeMapper TypeMapper => _typeMapper;
+        public ClrTypeMapper TypeMapper => _typeMapper ??= new ClrTypeMapper(Inherited);
+
+        /// <summary>
+        /// Gets the chain this connection starts from, which is the data source's where it has one.
+        /// </summary>
+        static ClrTypeMapper Default { get; } = new();
+
+        /// <summary>
+        /// Gets the chain this connection would use if it never adds one of its own.
+        /// </summary>
+        ClrTypeMapper Inherited => _dataSource?.TypeMapper ?? Default;
+
+        /// <summary>
+        /// Gets the chain the session is bound to, without making a copy the caller never asked for.
+        /// </summary>
+        /// <remarks>
+        /// <b>Copied only where the caller reached for it.</b> Copying on every connection would take a lock
+        /// and allocate a list per connection to protect against a change that almost never comes; a
+        /// connection that never touches <see cref="TypeMapper"/> shares the data source's chain, and one
+        /// that does gets its own at that moment. Either way the session reads it once, at open, so a
+        /// connection cannot be holding a chain the session is not using.
+        /// </remarks>
+        ClrTypeMapper SessionTypeMapper => _typeMapper ?? Inherited;
 
         /// <summary>
         /// Gets the resolved <see cref="CalciteConnectionConfig"/> for this connection.

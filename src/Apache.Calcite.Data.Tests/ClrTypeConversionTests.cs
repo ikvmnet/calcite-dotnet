@@ -315,14 +315,16 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// <b>A type the table does not claim has no mapping.</b> <c>OTHER</c> is Calcite's answer for a
-        /// class it has no SQL name for, and it used to be read by guessing at the value's runtime class
-        /// because the <c>ANY</c> entry claimed every unclaimed type. It says so instead.
+        /// <b>A type the table does not claim has no mapping.</b> The <c>ANY</c> entry used to claim every
+        /// type nobody else had, so anything unmapped was read by guessing at the value's runtime class. It
+        /// says so instead. <c>CURSOR</c> stands in for the case here because it is reachable and named;
+        /// the one that matters in practice is a <c>RelDataType</c> a schema supplied that names no
+        /// <c>SqlTypeName</c> at all.
         /// </summary>
         [Fact]
         public void An_unclaimed_type_should_have_no_mapping()
         {
-            var type = Type(SqlTypeName.OTHER);
+            var type = Type(SqlTypeName.CURSOR);
 
             Assert.Null(Registry.GetMapping(null, type));
             Assert.Throws<ClrTypeMappingException>(() => Registry.RequireMapping(null, type));
@@ -336,7 +338,7 @@ namespace Apache.Calcite.Data.Tests
         public void A_caller_should_be_able_to_claim_an_unclaimed_type()
         {
             var registry = new ClrTypeMapper().Prepend(new OtherResolver()).Bind(Factory);
-            var type = Type(SqlTypeName.OTHER);
+            var type = Type(SqlTypeName.CURSOR);
 
             Assert.Equal(typeof(string), registry.GetClrType(type));
             Assert.Equal("1", registry.FromCalcite(null, type, java.lang.Integer.valueOf(1)));
@@ -347,7 +349,7 @@ namespace Apache.Calcite.Data.Tests
 
             public ClrTypeMapping? GetMapping(Type? clrType, RelDataType? relType, ClrTypeContext context)
             {
-                if (relType is not null && relType.getSqlTypeName() == SqlTypeName.OTHER && (clrType is null || clrType == typeof(string)))
+                if (relType is not null && relType.getSqlTypeName() == SqlTypeName.CURSOR && (clrType is null || clrType == typeof(string)))
                     return new DelegateClrTypeMapping(context, relType, typeof(string), v => v, v => v.ToString()!);
 
                 return null;

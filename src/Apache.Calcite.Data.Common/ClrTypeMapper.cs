@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Threading;
 
 using org.apache.calcite.adapter.java;
 
@@ -18,7 +20,18 @@ namespace Apache.Calcite.Data.Common
     public sealed class ClrTypeMapper
     {
 
-        readonly List<IClrTypeResolver> _resolvers = [];
+        /// <summary>
+        /// The chain, replaced whole rather than mutated.
+        /// </summary>
+        /// <remarks>
+        /// <b>Immutable so that reading it costs nothing.</b> Every connection reads this chain when it
+        /// opens and almost none of them change it, so the cost that matters is the read and the copy, not
+        /// the change. A list behind a lock made both allocate — the copy constructor took the lock and
+        /// copied the elements, and <see cref="Resolvers"/> allocated an array per call — where replacing
+        /// an immutable one makes a read a field load and a copy a reference assignment. A change allocates
+        /// instead, which is the right way round for something configured once and read per connection.
+        /// </remarks>
+        ImmutableArray<IClrTypeResolver> _resolvers;
 
         /// <summary>
         /// Initializes a new instance carrying the built-in mappings.
@@ -31,13 +44,16 @@ namespace Apache.Calcite.Data.Common
         /// <summary>
         /// Initializes a new instance carrying the same resolvers as another.
         /// </summary>
-        /// <param name="other"></param>
+        /// <param name="other">The mapper to copy the chain of.</param>
+        /// <remarks>
+        /// One reference, because the chain is immutable: what this copies is which chain, and a change to
+        /// either mapper afterwards replaces its own reference and leaves the other's alone.
+        /// </remarks>
         public ClrTypeMapper(ClrTypeMapper other)
         {
             ArgumentNullException.ThrowIfNull(other);
 
-            lock (other._resolvers)
-                _resolvers.AddRange(other._resolvers);
+            _resolvers = other._resolvers;
         }
 
         /// <summary>
@@ -55,12 +71,7 @@ namespace Apache.Calcite.Data.Common
         {
             ArgumentNullException.ThrowIfNull(resolver);
 
-            lock (_resolvers)
-            {
-                Remove(resolver.GetType());
-                _resolvers.Insert(0, resolver);
-            }
-
+            Replace(resolver, static (chain, r) => chain.Insert(0, r));
             return this;
         }
 
@@ -73,28 +84,38 @@ namespace Apache.Calcite.Data.Common
         {
             ArgumentNullException.ThrowIfNull(resolver);
 
-            lock (_resolvers)
-            {
-                Remove(resolver.GetType());
-                _resolvers.Add(resolver);
-            }
-
+            Replace(resolver, static (chain, r) => chain.Add(r));
             return this;
         }
 
         /// <summary>
-        /// Removes the resolver of a given implementation type, if present.
+        /// Replaces the chain with one that has the resolver put where <paramref name="place"/> puts it.
         /// </summary>
-        /// <param name="type"></param>
-        void Remove(Type type)
+        /// <param name="resolver">The resolver to add.</param>
+        /// <param name="place">Where in the chain it goes.</param>
+        /// <remarks>
+        /// A resolver of a type already present is moved rather than duplicated, so registering twice is the
+        /// same as registering once. The compare-and-swap is what makes two callers configuring one mapper
+        /// safe without a lock on the read path, which is the path that matters.
+        /// </remarks>
+        void Replace(IClrTypeResolver resolver, Func<ImmutableArray<IClrTypeResolver>, IClrTypeResolver, ImmutableArray<IClrTypeResolver>> place)
         {
-            for (var i = 0; i < _resolvers.Count; i++)
+            while (true)
             {
-                if (_resolvers[i].GetType() == type)
+                var current = _resolvers;
+
+                var without = current;
+                for (var i = 0; i < current.Length; i++)
                 {
-                    _resolvers.RemoveAt(i);
-                    return;
+                    if (current[i].GetType() == resolver.GetType())
+                    {
+                        without = current.RemoveAt(i);
+                        break;
+                    }
                 }
+
+                if (ImmutableInterlocked.InterlockedCompareExchange(ref _resolvers, place(without, resolver), current) == current)
+                    return;
             }
         }
 
@@ -103,20 +124,13 @@ namespace Apache.Calcite.Data.Common
         /// </summary>
         public void Reset()
         {
-            lock (_resolvers)
-            {
-                _resolvers.Clear();
-                _resolvers.Add(DefaultClrTypeResolver.Instance);
-            }
+            _resolvers = [DefaultClrTypeResolver.Instance];
         }
 
         /// <summary>
         /// Gets the resolvers in the order they will be asked.
         /// </summary>
-        public IReadOnlyList<IClrTypeResolver> Resolvers
-        {
-            get { lock (_resolvers) return _resolvers.ToArray(); }
-        }
+        public IReadOnlyList<IClrTypeResolver> Resolvers => _resolvers;
 
         /// <summary>
         /// Binds these resolvers to a type factory.

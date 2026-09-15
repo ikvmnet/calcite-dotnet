@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 
 using Apache.Calcite.Data.Internal;
 
+using Apache.Calcite.Data.Common;
+
 namespace Apache.Calcite.Data
 {
 
@@ -61,6 +63,7 @@ namespace Apache.Calcite.Data
         readonly bool _pooling;
         readonly TimeSpan _idleLifetime;
         readonly TimeSpan _pruningInterval;
+        readonly ClrTypeMapper _typeMapper;
         readonly long _created = Environment.TickCount64;
         readonly object _sync = new();
         CalciteDataSourceRoot? _root;
@@ -99,7 +102,7 @@ namespace Apache.Calcite.Data
         /// <param name="pooled">Whether the root is shared, or <see langword="null"/> to read the
         /// <c>Pooling</c> key.</param>
         /// <exception cref="ArgumentException">The pooling settings are not valid.</exception>
-        internal CalciteDataSource(CalciteConnectionStringBuilder options, IReadOnlyList<Action<org.apache.calcite.schema.SchemaPlus>> configure, bool? pooled = null)
+        internal CalciteDataSource(CalciteConnectionStringBuilder options, IReadOnlyList<Action<org.apache.calcite.schema.SchemaPlus>> configure, bool? pooled = null, ClrTypeMapper? typeMapper = null)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _configure = configure ?? throw new ArgumentNullException(nameof(configure));
@@ -114,7 +117,18 @@ namespace Apache.Calcite.Data
 
             _idleLifetime = TimeSpan.FromSeconds(idleLifetime);
             _pruningInterval = TimeSpan.FromSeconds(pruningInterval);
+            _typeMapper = typeMapper ?? new ClrTypeMapper();
         }
+
+        /// <summary>
+        /// Gets the chain of type resolvers every connection from this data source starts with.
+        /// </summary>
+        /// <remarks>
+        /// A connection takes a copy when it is created, so a resolver one connection adds does not change
+        /// what the next one sees. Registering here rather than on a connection is what makes a mapping a
+        /// property of the data rather than of one caller's use of it.
+        /// </remarks>
+        public ClrTypeMapper TypeMapper => _typeMapper;
 
         /// <inheritdoc />
         public override string ConnectionString => _options.ConnectionString;

@@ -106,9 +106,18 @@ namespace Apache.Calcite.Data.Internal
         /// Returns <c>true</c> if the value is DBNull.
         /// </summary>
         /// <returns></returns>
+        /// <remarks>
+        /// <b>Two spellings, because a variant's null is an object.</b> Everywhere else Calcite holds a SQL
+        /// null as a Java null, and there is no API of Calcite's that says otherwise — <c>SqlFunctions</c>
+        /// has no null predicate, and <c>NullSentinel</c> is a placeholder the metadata cache and the
+        /// profiler use and never reaches a row. A <c>VARIANT</c> is the exception: a <c>VariantSqlNull</c>
+        /// is a SQL null that remembers the type it was null of, and a <c>VariantNull</c> is the variant
+        /// type's own null, the one a JSON <c>null</c> parses to. An ADO.NET caller has one null and all
+        /// three are it.
+        /// </remarks>
         public bool IsDbNull()
         {
-            return _value is null || CalciteVariants.IsNull(_value);
+            return _value is null || VariantClrTypeMapping.IsNull(_value);
         }
 
         /// <summary>

@@ -58,7 +58,55 @@ namespace Apache.Calcite.Data.Common
         /// </remarks>
         public override object? ToCalcite(object value)
         {
-            return CalciteValues.ToShape(value);
+            return Write(value);
+        }
+
+        /// <summary>
+        /// Writes a value by its runtime type, descending into anything that holds other values.
+        /// </summary>
+        /// <param name="value">The .NET value.</param>
+        /// <returns>The value as Calcite's runtime holds it.</returns>
+        /// <remarks>
+        /// The mirror of <see cref="Read"/>, and necessary for the same reason: a dictionary or a sequence
+        /// handed over as it stood would be a .NET object loose in a plan whose row types are Java classes,
+        /// and the first thing to compare it against something would fail. A <see cref="string"/> is
+        /// answered by the scalar case before the sequence one, being a sequence of characters that is not
+        /// a collection.
+        /// </remarks>
+        object? Write(object? value)
+        {
+            switch (value)
+            {
+                case null:
+                    return null;
+
+                case string:
+                    return CalciteValues.ToShape(value);
+
+                case IDictionary dictionary:
+                    {
+                        // a LinkedHashMap because Calcite's own SqlFunctions.map builds one: the entries of
+                        // a map come out in the order they went in, and a HashMap would reorder a value on
+                        // its way through a parameter
+                        var map = new java.util.LinkedHashMap();
+                        for (var i = dictionary.GetEnumerator(); i.MoveNext();)
+                            map.put(Write(i.Key), Write(i.Value));
+
+                        return map;
+                    }
+
+                case IEnumerable sequence:
+                    {
+                        var list = new java.util.ArrayList();
+                        foreach (var item in sequence)
+                            list.add(Write(item));
+
+                        return list;
+                    }
+
+                default:
+                    return CalciteValues.ToShape(value);
+            }
         }
 
         /// <inheritdoc />

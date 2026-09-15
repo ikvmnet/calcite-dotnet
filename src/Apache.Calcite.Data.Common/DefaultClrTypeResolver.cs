@@ -19,10 +19,10 @@ namespace Apache.Calcite.Data.Common
     /// claim has no mapping, and the lookup answers none rather than reading the value on the strength of
     /// its runtime class; the caller's own operation then says that nothing maps it. <c>ANY</c> is the one
     /// type whose mapping <em>is</em> a runtime-class reading, because that is what <c>ANY</c> means, and it
-    /// is an entry for <c>ANY</c> rather than a rule about everything else. <c>OTHER</c>, and a
-    /// <c>RelDataType</c> a schema supplied that names no <c>SqlTypeName</c> at all, reach the refusal — a
-    /// caller that wants one read registers a resolver for it, which is what the chain is for, or reads the
-    /// value as Calcite holds it through <c>GetCalciteValue</c>.
+    /// is an entry for <c>ANY</c> rather than a rule about everything else, and <c>OTHER</c> has one of its
+    /// own for the same reason. A <c>RelDataType</c> a schema supplied that names no <c>SqlTypeName</c> at
+    /// all reaches the refusal — a caller that wants one read registers a resolver for it, which is what the
+    /// chain is for, or reads the value as Calcite holds it through <c>GetCalciteValue</c>.
     /// </para>
     /// <para>
     /// Every entry is reachable and every one is a fact about Calcite rather than a preference. <c>FLOAT</c>
@@ -179,6 +179,18 @@ namespace Apache.Calcite.Data.Common
             m.Add(
                 typeof(object),
                 SqlTypeName.ANY,
+                static (context, relType, _) => new AnyClrTypeMapping(context, relType),
+                ClrTypeMatch.RelDefault,
+                clrTypePredicate: static t => t is null || t == typeof(object));
+
+            // OTHER, which is what Calcite answers for a Java class it has no SQL name for, and so says as
+            // little about the value as ANY does. A schema that types a column or a function argument with
+            // createJavaType reaches it: measured, JavaType(java.lang.Object) names OTHER, while
+            // JavaType(java.lang.Integer) names INTEGER and JavaType(java.util.Map) names MAP, so only the
+            // classes with no name of their own arrive here. Read the same way, for the same reason.
+            m.Add(
+                typeof(object),
+                SqlTypeName.OTHER,
                 static (context, relType, _) => new AnyClrTypeMapping(context, relType),
                 ClrTypeMatch.RelDefault,
                 clrTypePredicate: static t => t is null || t == typeof(object));

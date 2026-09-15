@@ -297,6 +297,8 @@ namespace Apache.Calcite.Extensions.Prepare
                 com.google.common.collect.ImmutableList.of(),
                 com.google.common.collect.ImmutableMap.of(),
                 x,
+                // no placeholders, so no types were inferred for any
+                null,
                 columns,
                 cursorFactory,
                 context.getRootSchema(),
@@ -357,6 +359,8 @@ namespace Apache.Calcite.Extensions.Prepare
                         sql,
                         com.google.common.collect.ImmutableList.of(),
                         com.google.common.collect.ImmutableMap.of(),
+                        null,
+                        // no placeholders, so no types were inferred for any
                         null,
                         com.google.common.collect.ImmutableList.of(),
                         Meta.CursorFactory.OBJECT,
@@ -427,6 +431,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 parameters,
                 preparingStmt.InternalParameters,
                 jdbcType,
+                preparedResult.ParameterRowType,
                 columns,
                 cursorFactory,
                 context.getRootSchema(),

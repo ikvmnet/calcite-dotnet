@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 
 using org.apache.calcite.rel.type;
@@ -104,6 +105,19 @@ namespace Apache.Calcite.Data.Common
         readonly Dictionary<string, List<int>> _byTypeName = [];
 
         /// <summary>
+        /// <see cref="_byTypeName"/> frozen, built on the first lookup and dropped by the next
+        /// <see cref="Add"/>.
+        /// </summary>
+        /// <remarks>
+        /// <b>Built once and read per cache miss, which is what a frozen dictionary is for.</b> The
+        /// built-in table is filled in a static constructor and never touched again, so every lookup after
+        /// that reads a dictionary nobody is writing; freezing it trades a one-off build for a faster read
+        /// of exactly that shape. A caller adding an entry afterwards drops it rather than rebuilding
+        /// eagerly, so configuring a table stays cheap and the cost lands on the first lookup after.
+        /// </remarks>
+        FrozenDictionary<string, List<int>>? _frozen;
+
+        /// <summary>
         /// Entry positions for the entries whose Calcite type is decided by a predicate.
         /// </summary>
         readonly List<int> _predicated = [];
@@ -119,8 +133,10 @@ namespace Apache.Calcite.Data.Common
         /// </summary>
         IEnumerable<int> Candidates(RelDataType relType)
         {
+            var index = _frozen ??= _byTypeName.ToFrozenDictionary();
+
             var name = relType.getSqlTypeName();
-            var named = name is not null && _byTypeName.TryGetValue(name.name(), out var list) ? list : null;
+            var named = name is not null && index.TryGetValue(name.name(), out var list) ? list : null;
 
             if (named is null)
                 return _predicated;
@@ -230,6 +246,9 @@ namespace Apache.Calcite.Data.Common
 
             if (match.HasFlag(ClrTypeMatch.ClrDefault))
                 _clrDefaults.Add(position);
+
+            // the frozen copy is of a table that has just changed
+            _frozen = null;
         }
 
         /// <inheritdoc />
