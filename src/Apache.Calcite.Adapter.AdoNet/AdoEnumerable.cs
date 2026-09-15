@@ -287,10 +287,12 @@ namespace Apache.Calcite.Adapter.AdoNet
                 // not allow an exponent. Measured: every such value was a FormatException
                 java.math.BigDecimal m => JavaDecimals.ToDecimal(m),
                 org.apache.calcite.avatica.util.ByteString bs => bs.getBytes(),
-                // Calcite holds a UUID as a java.util.UUID, which SqlClient refuses outright: "No mapping
-                // exists from object type java.util.UUID to a known managed provider native type". A Guid
-                // is what a provider binds against a uniqueidentifier, and the transfer is the sixteen
-                // bytes rather than the text
+                // Calcite holds a UUID as an org.apache.calcite.util.UuidValue, which SqlClient refuses
+                // outright: "No mapping exists from object type ... to a known managed provider native
+                // type". A Guid is what a provider binds against a uniqueidentifier, and the transfer is
+                // the sixteen bytes rather than the text. The bare UUID is the same refusal, and reaches
+                // here from anything that unwrapped one
+                org.apache.calcite.util.UuidValue uv => JavaUuids.ToGuid(uv),
                 java.util.UUID u => JavaUuids.ToGuid(u),
                 // the unsigned types travel as joou values, and no provider knows those either. Each is
                 // unwrapped to the narrowest CLR type every provider binds: SqlClient takes a byte but none

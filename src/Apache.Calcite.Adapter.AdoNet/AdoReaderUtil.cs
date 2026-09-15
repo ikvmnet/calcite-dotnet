@@ -471,7 +471,7 @@ namespace Apache.Calcite.Adapter.AdoNet
             if (reader.IsDBNull(index))
                 return null;
 
-            return JavaUuids.ToUuid(reader.GetGuid(index));
+            return JavaUuids.ToUuidValue(reader.GetGuid(index));
         }
 
         /// <summary>

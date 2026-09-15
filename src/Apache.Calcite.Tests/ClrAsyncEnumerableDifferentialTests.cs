@@ -479,7 +479,7 @@ namespace Apache.Calcite.Tests
 
         [TestMethod]
         public Task ShouldAgreeOnRefusingAUuidCastOfAnAnyColumn() =>
-            SameFailure("SELECT ID, CAST(G AS UUID) FROM CASTS ORDER BY ID", "to type 'java.util.UUID'");
+            SameFailure("SELECT ID, CAST(G AS UUID) FROM CASTS ORDER BY ID", "to type 'org.apache.calcite.util.UuidValue'");
 
         [TestMethod]
         public Task ShouldAgreeOnCastingAnAnyColumnThroughVarcharToUuid() => Same("SELECT ID, CAST(CAST(G AS VARCHAR) AS UUID) FROM CASTS ORDER BY ID");

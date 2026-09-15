@@ -390,6 +390,7 @@ namespace Apache.Calcite.Data.Internal
         {
             return _value switch
             {
+                org.apache.calcite.util.UuidValue uv => JavaUuids.ToGuid(uv),
                 java.util.UUID u => JavaUuids.ToGuid(u),
                 _ when Untyped() is Guid clr => clr,
                 _ => throw Cannot("Guid"),

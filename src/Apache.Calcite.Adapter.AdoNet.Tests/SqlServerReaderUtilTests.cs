@@ -131,15 +131,16 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
         /// <summary>
         /// It is a <c>UUID</c>, and the value is the sixteen bytes rather than the text:
-        /// <c>java.util.UUID</c> is the class Calcite's runtime holds them in.
+        /// <c>org.apache.calcite.util.UuidValue</c> is the class Calcite's runtime holds them in, since
+        /// CALCITE-7716 wrapped <c>java.util.UUID</c> to order a UUID unsigned as SQL does.
         /// </summary>
         [TestMethod]
-        public void AUniqueIdentifierIsReadAsAJavaUuid()
+        public void AUniqueIdentifierIsReadAsAUuidValue()
         {
             using var reader = Row("CAST('3f2504e0-4f89-11d3-9a0c-0305e82c3301' AS UNIQUEIDENTIFIER)");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.UUID);
 
-            Assert.IsInstanceOfType<java.util.UUID>(value);
+            Assert.IsInstanceOfType<org.apache.calcite.util.UuidValue>(value);
             Assert.AreEqual("3f2504e0-4f89-11d3-9a0c-0305e82c3301", value!.ToString());
         }
 

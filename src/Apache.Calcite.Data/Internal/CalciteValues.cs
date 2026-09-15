@@ -221,6 +221,8 @@ namespace Apache.Calcite.Data.Internal
                 java.lang.Character c => c.charValue(),
                 java.math.BigDecimal bd => JavaDecimals.ToDecimal(bd),
                 java.math.BigInteger bi => new System.Numerics.BigInteger(bi.toByteArray(), isUnsigned: false, isBigEndian: true),
+                org.apache.calcite.util.UuidValue uv => JavaUuids.ToGuid(uv),
+                // and a bare UUID, which is what uuid() unwraps to and what a JDBC value carries
                 java.util.UUID u => JavaUuids.ToGuid(u),
                 org.apache.calcite.avatica.util.ByteString bs => bs.getBytes(),
                 // joou carries the unsigned integers, which Calcite reads an unsigned column as
@@ -577,7 +579,7 @@ namespace Apache.Calcite.Data.Internal
                 case char c:
                     return c.ToString();
                 case Guid g:
-                    return JavaUuids.ToUuid(g);
+                    return JavaUuids.ToUuidValue(g);
                 case byte[] bytes:
                     return new org.apache.calcite.avatica.util.ByteString(bytes);
                 case DateTime dt:

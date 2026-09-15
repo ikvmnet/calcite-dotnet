@@ -83,7 +83,7 @@ namespace Apache.Calcite.Data.Internal
                 DbType.Double => java.lang.Double.valueOf((double)value),
                 DbType.Decimal or DbType.Currency or DbType.VarNumeric => JavaDecimals.ToBigDecimal((decimal)value),
                 DbType.String or DbType.AnsiString or DbType.StringFixedLength or DbType.AnsiStringFixedLength => ConvertString(value),
-                DbType.Guid => JavaUuids.ToUuid((Guid)value),
+                DbType.Guid => JavaUuids.ToUuidValue((Guid)value),
                 DbType.Date => ConvertDate(value),
                 DbType.DateTime or DbType.DateTime2 => ConvertTimestamp(value),
                 DbType.DateTimeOffset => ConvertTimestamp(value is DateTimeOffset dto ? dto.UtcDateTime : (DateTime)value),

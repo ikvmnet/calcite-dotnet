@@ -1336,13 +1336,16 @@ namespace Apache.Calcite.Tests
         /// ANY, so the cast ends at <c>EnumUtils.convert(operand, typeFactory.getJavaClass(targetType))</c>
         /// — a conversion between two <em>classes</em>, with no idea a SQL cast was asked for. What that
         /// gives depends on which class the target has, and <b>1.43 gave UUID one</b>:
-        /// <c>JavaTypeFactoryImpl.getJavaClass</c> gained <c>case UUID: return UUID.class</c>, where 1.42
-        /// had no UUID case at all.
+        /// <c>JavaTypeFactoryImpl.getJavaClass</c> gained a <c>case UUID</c>, where 1.42 had none at all.
+        /// The class it answers is <c>UuidValue</c> rather than <c>UUID</c>: CALCITE-7716 made
+        /// <c>org.apache.calcite.util.UuidValue</c> the runtime representation of a UUID, because
+        /// <c>UUID.compareTo</c> orders its two halves as signed longs and SQL orders a UUID as an
+        /// unsigned 128-bit value.
         ///
         /// <para>So the same statement changed meaning between the two. Under 1.42 the target class was
         /// <c>Object</c>, the conversion was the identity, and the string arrived at the projection wearing
         /// a type it did not have — this test was <c>Same</c>, and named for it. Under 1.43 the conversion
-        /// is <c>Object</c> to <c>UUID</c> over a value that is a string, and it throws.</para>
+        /// is <c>Object</c> to <c>UuidValue</c> over a value that is a string, and it throws.</para>
         ///
         /// <para>Both conventions throw and throw alike, which is what <c>SameFailure</c> requires, so this
         /// is Calcite's behaviour reproduced rather than ours. A parse would need a UUID source branch in
@@ -1350,7 +1353,7 @@ namespace Apache.Calcite.Tests
         /// </remarks>
         [TestMethod]
         public void ShouldAgreeOnRefusingAUuidCastOfAnAnyColumn() =>
-            SameFailure("SELECT \"ID\", CAST(\"G\" AS UUID) FROM \"CASTS\" ORDER BY \"ID\"", "to type 'java.util.UUID'");
+            SameFailure("SELECT \"ID\", CAST(\"G\" AS UUID) FROM \"CASTS\" ORDER BY \"ID\"", "to type 'org.apache.calcite.util.UuidValue'");
 
         /// <summary>
         /// And that the second cast is what converts, VARCHAR being a source branch every target has.
