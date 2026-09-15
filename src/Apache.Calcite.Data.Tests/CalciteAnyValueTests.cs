@@ -10,6 +10,8 @@ using org.apache.calcite.schema;
 using org.apache.calcite.schema.impl;
 using org.apache.calcite.sql.type;
 
+using Apache.Calcite.Data.Common;
+
 using Xunit;
 
 namespace Apache.Calcite.Data.Tests
@@ -312,13 +314,18 @@ namespace Apache.Calcite.Data.Tests
         /// Calcite validates and runs a map literal with a null key, and no dictionary the framework
         /// ships accepts one, so the entries come out as pairs rather than being dropped.
         /// </summary>
+        /// <remarks>
+        /// The pair types are the column's, not the values'. A map's key and value types are declared, so
+        /// they say what the pairs hold whether or not this row's keys happened to be null, which is what
+        /// makes the answer the same for every row of the result.
+        /// </remarks>
         [Fact]
         public void A_map_holding_a_null_key_should_read_as_pairs()
         {
             using var c = Open();
             using var r = Row(c, "SELECT MAP[CAST(NULL AS VARCHAR), 1]");
 
-            var pairs = Assert.IsType<KeyValuePair<object, object>[]>(r.GetValue(0));
+            var pairs = Assert.IsType<KeyValuePair<string, int>[]>(r.GetValue(0));
             Assert.Single(pairs);
             Assert.Null(pairs[0].Key);
             Assert.Equal(1, pairs[0].Value);
@@ -506,8 +513,12 @@ namespace Apache.Calcite.Data.Tests
         /// <summary>
         /// A <c>ROW</c> payload answers <c>item</c> only for its field names, and a variant does not
         /// carry them; a <c>MULTISET</c> payload answers <c>item</c> with null for every index. Neither
-        /// has a public route to its contents in Calcite 1.42, so both are refused rather than guessed
+        /// has a public route to its contents in Calcite 1.43, so both are refused rather than guessed
         /// at — handing back the <c>VariantValue</c> would put a Java object in a caller's hands.
+        ///
+        /// <para>A <c>ClrTypeMappingException</c> rather than a bare <see cref="InvalidCastException"/>,
+        /// which it derives from: a caller catching the general one still catches this, and the specific
+        /// one says the refusal came from the type mappings rather than from an accessor.</para>
         /// </summary>
         [Fact]
         public void Variant_holding_a_row_should_be_refused()
@@ -515,7 +526,7 @@ namespace Apache.Calcite.Data.Tests
             using var c = Open();
             using var r = Row(c, "SELECT CAST(ROW(1, 'x') AS VARIANT)");
 
-            Assert.Throws<InvalidCastException>(() => r.GetValue(0));
+            Assert.Throws<ClrTypeMappingException>(() => r.GetValue(0));
         }
 
         [Fact]
@@ -524,7 +535,20 @@ namespace Apache.Calcite.Data.Tests
             using var c = Open();
             using var r = Row(c, "SELECT CAST(MULTISET[1, 2] AS VARIANT)");
 
-            Assert.Throws<InvalidCastException>(() => r.GetValue(0));
+            Assert.Throws<ClrTypeMappingException>(() => r.GetValue(0));
+        }
+
+        /// <summary>
+        /// And the general exception still catches it, which is what keeps the older contract.
+        /// </summary>
+        [Fact]
+        public void A_refused_variant_should_still_be_an_invalid_cast()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST(MULTISET[1, 2] AS VARIANT)");
+
+            Assert.Throws<ClrTypeMappingException>(() => r.GetValue(0));
+            Assert.IsAssignableFrom<InvalidCastException>(Record.Exception(() => r.GetValue(0)));
         }
 
         // ------------------------------------------------------------------------------------
