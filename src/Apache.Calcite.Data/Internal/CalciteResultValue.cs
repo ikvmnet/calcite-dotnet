@@ -55,6 +55,17 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
+        /// Gets the value exactly as Calcite's runtime produced it, with nothing converted.
+        /// </summary>
+        /// <remarks>
+        /// The one thing on this type that is not a conversion, and the only way past the rule that no Java
+        /// object reaches a caller. It exists so a caller that knows Calcite can have what Calcite has —
+        /// a <c>UuidValue</c>, a JTS <c>Geometry</c>, a <c>VariantValue</c>, a <c>java.util.List</c> — rather
+        /// than the .NET reading of it.
+        /// </remarks>
+        public object? CalciteValue => _value;
+
+        /// <summary>
         /// Gets whether the column's type says nothing about what the value is, which is the case in which
         /// the accessors read the value's own type instead.
         /// </summary>

@@ -419,6 +419,164 @@ namespace Apache.Calcite.Data.Common
         #endregion
 
         /// <summary>
+        /// Converts well-known text to the geometry Calcite holds a <c>GEOMETRY</c> in.
+        /// </summary>
+        /// <param name="value">Well-known text, as <c>POINT (1.5 2.5)</c>.</param>
+        /// <returns>The geometry.</returns>
+        /// <remarks>
+        /// <b>Text is what a <c>GEOMETRY</c> is, to a caller of this surface.</b> Calcite holds one in a JTS
+        /// <c>Geometry</c>, which is a Java object and so cannot be handed out, and there is no .NET
+        /// geometry this package could hand out instead — <c>Apache.Calcite.Geography</c> is optional and
+        /// references nothing here. Calcite's own JDBC settles it the same way: <c>avaticaType</c> maps
+        /// <c>GEOMETRY</c> onto <c>Types.VARCHAR</c> and falls through to the character case.
+        ///
+        /// <para>Well-known text rather than the extended form, and through <c>ST_AsWKT</c> rather than
+        /// <c>toString</c>, because the named function is the one that promises the format. Measured: both
+        /// answer <c>POINT (1.5 2.5)</c> for the same point, so the choice costs nothing today and is the
+        /// one that stays right if JTS changes its mind about <c>toString</c>.</para>
+        /// </remarks>
+        public static object ToGeometry(object value)
+        {
+            var text = value as string ?? Convert.ToString(value, CultureInfo.InvariantCulture)
+                ?? throw new ClrTypeMappingException("A GEOMETRY is written from well-known text, and this value has none.");
+
+            return org.apache.calcite.runtime.SpatialTypeFunctions.ST_GeomFromWKT(text)
+                ?? throw new ClrTypeMappingException($"'{text}' is not well-known text.");
+        }
+
+        /// <summary>
+        /// Converts the geometry Calcite holds a <c>GEOMETRY</c> in to well-known text.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns>The well-known text.</returns>
+        /// <inheritdoc cref="ToGeometry" path="/remarks" />
+        public static object FromGeometry(object value)
+        {
+            if (value is not org.locationtech.jts.geom.Geometry geometry)
+                throw new ClrTypeMappingException($"A GEOMETRY is held in a JTS Geometry, and a {value.GetType()} is not one.");
+
+            return org.apache.calcite.runtime.SpatialTypeFunctions.ST_AsWKT(geometry)
+                ?? throw new ClrTypeMappingException("A GEOMETRY answered no well-known text.");
+        }
+
+        /// <summary>
+        /// Converts a <see cref="char"/> to the one-character string Calcite holds a <c>CHAR(1)</c> in.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns>The string.</returns>
+        /// <remarks>
+        /// Calcite's runtime has no character type of its own: a <c>CHAR</c> of any length is a
+        /// <see cref="string"/>, so one character is a string of one. Without this a bare
+        /// <see cref="char"/> parameter reaches the catch-all and a CLR <see cref="char"/> is left loose in
+        /// a plan, which is the one thing this whole boundary exists to prevent.
+        /// </remarks>
+        public static object ToCharacter(object value) => value is char c ? c.ToString() : ToChar(value);
+
+        /// <summary>
+        /// Converts what Calcite holds a <c>CHAR</c> in to a <see cref="char"/>.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns>The first character.</returns>
+        /// <exception cref="ClrTypeMappingException">Where the value holds no character.</exception>
+        public static object FromCharacter(object value)
+        {
+            var text = (string)FromChar(value);
+
+            return text.Length > 0 ? text[0] : throw new ClrTypeMappingException("An empty character value cannot be read as a char.");
+        }
+
+        /// <summary>
+        /// Converts to the <c>java.lang.Integer</c> count of months a year-month interval is held in.
+        /// </summary>
+        /// <param name="value">A count of months.</param>
+        /// <returns>The count, boxed the Java way.</returns>
+        /// <remarks>
+        /// <b>Months, whichever year-month interval it is.</b> Calcite stores <c>INTERVAL YEAR</c>,
+        /// <c>INTERVAL YEAR TO MONTH</c> and <c>INTERVAL MONTH</c> alike as a count of months, so an
+        /// <c>INTERVAL YEAR</c> of 2 is 24 and not 2. .NET has no interval type that counts months —
+        /// <see cref="TimeSpan"/> is a fixed number of ticks and a month is not one — so the count is what
+        /// a caller is handed, and the unit is stated here because nothing about an <see cref="int"/>
+        /// states it.
+        /// </remarks>
+        public static object ToIntervalMonths(object value) => java.lang.Integer.valueOf(As<int>(value));
+
+        /// <summary>
+        /// Converts the count of months a year-month interval is held in to an <see cref="int"/>.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns>The count of months.</returns>
+        /// <inheritdoc cref="ToIntervalMonths" path="/remarks" />
+        public static object FromIntervalMonths(object value) => ((java.lang.Number)value).intValue();
+
+        /// <summary>
+        /// Converts to the <c>java.lang.Long</c> count of milliseconds a day-time interval is held in.
+        /// </summary>
+        /// <param name="value">A <see cref="TimeSpan"/>.</param>
+        /// <returns>The count, boxed the Java way.</returns>
+        /// <remarks>
+        /// A day-time interval is a fixed length of time and so is a <see cref="TimeSpan"/>, so the two
+        /// correspond exactly, unlike the year-month family above. Calcite counts in milliseconds and a
+        /// <see cref="TimeSpan"/> in ticks, so the conversion loses anything finer than a millisecond,
+        /// which is Calcite's precision and not a choice made here.
+        /// </remarks>
+        public static object ToIntervalTime(object value)
+        {
+            var span = value switch
+            {
+                TimeSpan t => t,
+                TimeOnly t => t.ToTimeSpan(),
+                string s => TimeSpan.Parse(s, CultureInfo.InvariantCulture),
+                _ => TimeSpan.FromMilliseconds(As<double>(value)),
+            };
+
+            return java.lang.Long.valueOf((long)span.TotalMilliseconds);
+        }
+
+        /// <summary>
+        /// Converts the count of milliseconds a day-time interval is held in to a <see cref="TimeSpan"/>.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns>The length of time.</returns>
+        /// <inheritdoc cref="ToIntervalTime" path="/remarks" />
+        public static object FromIntervalTime(object value) => TimeSpan.FromMilliseconds(((java.lang.Number)value).longValue());
+
+        /// <summary>
+        /// Converts a <see cref="System.Numerics.BigInteger"/> to the <c>java.math.BigDecimal</c> Calcite
+        /// holds a <c>DECIMAL</c> in.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns>The value, held the way a <c>DECIMAL</c> is.</returns>
+        /// <remarks>
+        /// <c>DECIMAL</c> rather than a type of its own, because Calcite has no unbounded integer type and
+        /// a decimal of scale zero is what an integer of any width is. The conversion is exact in both
+        /// directions for a whole number, which every <see cref="System.Numerics.BigInteger"/> is.
+        /// </remarks>
+        public static object ToBigInteger(object value)
+        {
+            var big = value is System.Numerics.BigInteger b ? b : new System.Numerics.BigInteger(As<long>(value));
+
+            return new java.math.BigDecimal(new java.math.BigInteger(big.ToByteArray(isUnsigned: false, isBigEndian: true)));
+        }
+
+        /// <summary>
+        /// Converts what Calcite holds a <c>DECIMAL</c> in to a
+        /// <see cref="System.Numerics.BigInteger"/>.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns>The whole-number value.</returns>
+        /// <remarks>
+        /// Any fractional part is discarded, which is what asking for a
+        /// <see cref="System.Numerics.BigInteger"/> means: a caller naming an integer type over a
+        /// <c>DECIMAL</c> column has said it wants the integer.
+        /// </remarks>
+        public static object FromBigInteger(object value)
+        {
+            var big = ((java.math.BigDecimal)value).toBigInteger();
+
+            return new System.Numerics.BigInteger(big.toByteArray(), isUnsigned: false, isBigEndian: true);
+        }
+
+        /// <summary>
         /// Converts a <see cref="Guid"/> to the <c>UuidValue</c> Calcite 1.43 holds a <c>UUID</c> in.
         /// </summary>
         public static object ToUuid(object value) => JavaUuids.ToUuidValue(As<Guid>(value));

@@ -232,6 +232,140 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
+        // The types ADO.NET's list has no name for, which are most of what Calcite has beyond the shared
+        // ones and were all falling to the catch-all.
+        // ------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// A year-month interval is a count of months whichever of the three it is, so an
+        /// <c>INTERVAL YEAR</c> of two years is twenty-four. .NET has no interval that counts months, a
+        /// <see cref="TimeSpan"/> being a fixed number of ticks, so the count is the value.
+        /// </summary>
+        [Theory]
+        [InlineData(nameof(SqlTypeName.INTERVAL_YEAR))]
+        [InlineData(nameof(SqlTypeName.INTERVAL_YEAR_MONTH))]
+        [InlineData(nameof(SqlTypeName.INTERVAL_MONTH))]
+        public void A_year_month_interval_should_read_back_as_a_count_of_months(string sqlTypeName)
+        {
+            var type = Type(SqlTypeName.valueOf(sqlTypeName));
+
+            Assert.Equal(typeof(int), Registry.GetClrType(type));
+            Assert.Equal(24, RoundTrip(type, 24));
+            Assert.Equal(java.lang.Integer.valueOf(24), Registry.ToCalcite(null, type, 24));
+        }
+
+        /// <summary>
+        /// A day-time interval is a fixed length of time and so is a <see cref="TimeSpan"/>, so the two
+        /// correspond exactly.
+        /// </summary>
+        [Theory]
+        [InlineData(nameof(SqlTypeName.INTERVAL_DAY))]
+        [InlineData(nameof(SqlTypeName.INTERVAL_DAY_SECOND))]
+        [InlineData(nameof(SqlTypeName.INTERVAL_HOUR))]
+        [InlineData(nameof(SqlTypeName.INTERVAL_MINUTE))]
+        [InlineData(nameof(SqlTypeName.INTERVAL_SECOND))]
+        public void A_day_time_interval_should_read_back_as_a_time_span(string sqlTypeName)
+        {
+            var type = Type(SqlTypeName.valueOf(sqlTypeName));
+            var value = TimeSpan.FromSeconds(90);
+
+            Assert.Equal(typeof(TimeSpan), Registry.GetClrType(type));
+            Assert.Equal(value, RoundTrip(type, value));
+            Assert.Equal(java.lang.Long.valueOf(90000), Registry.ToCalcite(null, type, value));
+        }
+
+        /// <summary>
+        /// A <c>GEOMETRY</c> is well-known text here, which is how Calcite's own JDBC presents one: there is
+        /// no .NET geometry this package can hand out and the JTS one is a Java object.
+        /// </summary>
+        [Fact]
+        public void A_geometry_should_read_back_as_well_known_text()
+        {
+            var type = Type(SqlTypeName.GEOMETRY);
+
+            Assert.Equal(typeof(string), Registry.GetClrType(type));
+            Assert.Equal("POINT (1.5 2.5)", RoundTrip(type, "POINT (1.5 2.5)"));
+        }
+
+        [Fact]
+        public void A_geometry_should_be_held_as_a_jts_geometry()
+        {
+            var held = Registry.ToCalcite(null, Type(SqlTypeName.GEOMETRY), "POINT (1.5 2.5)");
+
+            Assert.IsAssignableFrom<org.locationtech.jts.geom.Geometry>(held);
+        }
+
+        /// <summary>
+        /// A <c>CHAR</c> is a string in Calcite's runtime, so a bare <see cref="char"/> is a string of one.
+        /// Without this a CLR <see cref="char"/> reached a plan unconverted.
+        /// </summary>
+        [Fact]
+        public void A_bare_char_should_be_written_as_a_one_character_string()
+        {
+            var mapping = Registry.RequireMapping(typeof(char), null);
+
+            Assert.Equal(SqlTypeName.CHAR, mapping.RelType.getSqlTypeName());
+            Assert.Equal("x", Registry.ToCalcite(typeof(char), null, 'x'));
+        }
+
+        /// <summary>
+        /// Calcite has no unbounded integer type, and a <c>DECIMAL</c> is what an integer of any width is.
+        /// </summary>
+        [Fact]
+        public void A_bare_big_integer_should_be_written_as_a_decimal()
+        {
+            var value = System.Numerics.BigInteger.Parse("123456789012345678901234567890");
+            var mapping = Registry.RequireMapping(typeof(System.Numerics.BigInteger), null);
+
+            Assert.Equal(SqlTypeName.DECIMAL, mapping.RelType.getSqlTypeName());
+            Assert.Equal(value, RoundTrip(mapping.RelType, value, typeof(System.Numerics.BigInteger)));
+        }
+
+        /// <summary>
+        /// A bare collection names no Calcite type and the one it wants is built from its element's, which
+        /// is why this recurses the same way reading does.
+        /// </summary>
+        [Fact]
+        public void A_bare_array_should_be_written_as_an_array_of_its_element()
+        {
+            var mapping = Registry.RequireMapping(typeof(int[]), null);
+
+            Assert.Equal(SqlTypeName.ARRAY, mapping.RelType.getSqlTypeName());
+            Assert.Equal(SqlTypeName.INTEGER, mapping.RelType.getComponentType().getSqlTypeName());
+        }
+
+        [Fact]
+        public void A_bare_nested_array_should_be_written_at_every_level()
+        {
+            var mapping = Registry.RequireMapping(typeof(int[][]), null);
+            var type = mapping.RelType;
+
+            Assert.Equal(SqlTypeName.ARRAY, type.getSqlTypeName());
+            Assert.Equal(SqlTypeName.ARRAY, type.getComponentType().getSqlTypeName());
+            Assert.Equal(SqlTypeName.INTEGER, type.getComponentType().getComponentType().getSqlTypeName());
+        }
+
+        [Fact]
+        public void A_bare_dictionary_should_be_written_as_a_map()
+        {
+            var mapping = Registry.RequireMapping(typeof(System.Collections.Generic.Dictionary<string, int>), null);
+
+            Assert.Equal(SqlTypeName.MAP, mapping.RelType.getSqlTypeName());
+            Assert.Equal(SqlTypeName.VARCHAR, mapping.RelType.getKeyType().getSqlTypeName());
+            Assert.Equal(SqlTypeName.INTEGER, mapping.RelType.getValueType().getSqlTypeName());
+        }
+
+        /// <summary>
+        /// A <see cref="T:byte[]"/> is an array in .NET and a <c>VARBINARY</c> in SQL, so it is deliberately
+        /// not treated as a collection of bytes.
+        /// </summary>
+        [Fact]
+        public void A_bare_byte_array_should_stay_a_binary()
+        {
+            Assert.Equal(SqlTypeName.VARBINARY, Registry.RequireMapping(typeof(byte[]), null).RelType.getSqlTypeName());
+        }
+
+        // ------------------------------------------------------------------------------------
         // Collections, which recurse through the same registry.
         // ------------------------------------------------------------------------------------
 

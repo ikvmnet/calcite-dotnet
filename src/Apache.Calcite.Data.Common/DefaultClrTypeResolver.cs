@@ -75,10 +75,37 @@ namespace Apache.Calcite.Data.Common
             m.Add(typeof(DateTimeOffset), SqlTypeName.TIME_TZ, CalciteValues.ToTimeTz, CalciteValues.FromTimeTz, ClrTypeMatch.RelDefault);
             m.Add(typeof(DateTimeOffset), SqlTypeName.TIME_WITH_LOCAL_TIME_ZONE, CalciteValues.ToTimeTz, CalciteValues.FromTimeTz, ClrTypeMatch.RelDefault);
 
+            // a GEOMETRY is well-known text here, as it is over Calcite's own JDBC: there is no .NET geometry
+            // this package can hand out, and the JTS one is a Java object. RelDefault only, a bare string
+            // being a VARCHAR.
+            m.Add(typeof(string), SqlTypeName.GEOMETRY, CalciteValues.ToGeometry, CalciteValues.FromGeometry, ClrTypeMatch.RelDefault);
+
+            // the intervals. A year-month one is a count of months whichever of the three it is, and .NET
+            // has no interval that counts months, so the count is the value; a day-time one is a fixed
+            // length of time and a TimeSpan is exactly that. Both are RelDefault only: an int is written as
+            // an INTEGER and a TimeSpan as a TIME, which the entries above already say.
+            foreach (var months in new[] { SqlTypeName.INTERVAL_YEAR, SqlTypeName.INTERVAL_YEAR_MONTH, SqlTypeName.INTERVAL_MONTH })
+                m.Add(typeof(int), months, CalciteValues.ToIntervalMonths, CalciteValues.FromIntervalMonths, ClrTypeMatch.RelDefault);
+
+            foreach (var time in new[]
+            {
+                SqlTypeName.INTERVAL_DAY, SqlTypeName.INTERVAL_DAY_HOUR, SqlTypeName.INTERVAL_DAY_MINUTE, SqlTypeName.INTERVAL_DAY_SECOND,
+                SqlTypeName.INTERVAL_HOUR, SqlTypeName.INTERVAL_HOUR_MINUTE, SqlTypeName.INTERVAL_HOUR_SECOND,
+                SqlTypeName.INTERVAL_MINUTE, SqlTypeName.INTERVAL_MINUTE_SECOND, SqlTypeName.INTERVAL_SECOND,
+            })
+                m.Add(typeof(TimeSpan), time, CalciteValues.ToIntervalTime, CalciteValues.FromIntervalTime, ClrTypeMatch.RelDefault);
+
             // what a CLR type is written as where the Calcite type it pairs with is spoken for above. A
             // Guid is a CHAR(36) on the way in and is never what a CHAR(36) column answers with, there
             // being nothing about such a column that says it holds one
             m.Add(typeof(Guid), SqlTypeName.CHAR, CalciteValues.ToGuid, CalciteValues.FromGuid, ClrTypeMatch.Named, precision: 36);
+            // a CHAR is a string in Calcite's runtime, so a char is a string of one. Written as a CHAR(1)
+            // and never what a CHAR(1) column answers with, a one-character column being a string like any
+            // other.
+            m.Add(typeof(char), SqlTypeName.CHAR, CalciteValues.ToCharacter, CalciteValues.FromCharacter, ClrTypeMatch.ClrDefault, precision: 1);
+            // Calcite has no unbounded integer type, and a DECIMAL of scale zero is what an integer of any
+            // width is
+            m.Add(typeof(System.Numerics.BigInteger), SqlTypeName.DECIMAL, CalciteValues.ToBigInteger, CalciteValues.FromBigInteger, ClrTypeMatch.ClrDefault);
             m.Add(typeof(DateOnly), SqlTypeName.DATE, CalciteValues.ToDate, CalciteValues.FromDateOnly, ClrTypeMatch.ClrDefault);
             m.Add(typeof(TimeOnly), SqlTypeName.TIME, CalciteValues.ToTime, CalciteValues.FromTimeOnly, ClrTypeMatch.ClrDefault);
 
@@ -155,7 +182,90 @@ namespace Apache.Calcite.Data.Common
         /// <inheritdoc />
         public ClrTypeMapping? GetMapping(Type? clrType, RelDataType? relType, ClrTypeContext context)
         {
+            // a bare collection names no Calcite type, and the one it wants is built from its element's
+            // rather than looked up: the table can only build a type from a SqlTypeName and a precision,
+            // which cannot say INTEGER ARRAY
+            if (relType is null && clrType is not null && Collection(clrType, context) is ClrTypeMapping collection)
+                return collection;
+
             return _mappings.GetMapping(clrType, relType, context);
+        }
+
+        /// <summary>
+        /// Returns the mapping a bare .NET collection is written through, or <see langword="null"/> where
+        /// the type is not one.
+        /// </summary>
+        /// <param name="clrType">The CLR type a value is being written as.</param>
+        /// <param name="context"></param>
+        /// <returns>The mapping, or <see langword="null"/>.</returns>
+        /// <remarks>
+        /// <b>The element decides, so this recurses too.</b> An <c>int[]</c> is an <c>INTEGER ARRAY</c>
+        /// because an <see cref="int"/> is an <c>INTEGER</c>, and an <c>int[][]</c> is an
+        /// <c>INTEGER ARRAY ARRAY</c> because an <c>int[]</c> is an <c>INTEGER ARRAY</c>. Asking the
+        /// registry for the element's mapping is what makes the second sentence follow from the first
+        /// without a second rule.
+        ///
+        /// <para><see cref="T:byte[]"/> is excluded deliberately: it is an array in .NET and a
+        /// <c>VARBINARY</c> in SQL, and the table above already pairs them. A <see cref="string"/> is not
+        /// excluded because it is not an array, though it does enumerate.</para>
+        /// </remarks>
+        static ClrTypeMapping? Collection(Type clrType, ClrTypeContext context)
+        {
+            var typeFactory = context.TypeFactory;
+
+            if (clrType.IsArray && clrType.GetArrayRank() == 1 && clrType != typeof(byte[]))
+            {
+                var element = clrType.GetElementType()!;
+                var mapping = context.Registry.GetMapping(Nullable.GetUnderlyingType(element) ?? element, null);
+                if (mapping is null)
+                    return null;
+
+                // nullable where the .NET element type admits a null, which is what Nullable<T> says and
+                // what a reference type says by being one
+                var nullable = Nullable.GetUnderlyingType(element) is not null || element.IsValueType == false;
+
+                return new CollectionClrTypeMapping(context,
+                    typeFactory.createArrayType(typeFactory.createTypeWithNullability(mapping.RelType, nullable), -1));
+            }
+
+            if (Dictionary(clrType) is not (Type key, Type value))
+                return null;
+
+            var keyMapping = context.Registry.GetMapping(Nullable.GetUnderlyingType(key) ?? key, null);
+            var valueMapping = context.Registry.GetMapping(Nullable.GetUnderlyingType(value) ?? value, null);
+            if (keyMapping is null || valueMapping is null)
+                return null;
+
+            // a dictionary's keys are never null, so the map's key type is not nullable and the mapping
+            // answers a dictionary rather than pairs, which is the shape that went in
+            return new MapClrTypeMapping(context,
+                typeFactory.createMapType(
+                    typeFactory.createTypeWithNullability(keyMapping.RelType, false),
+                    typeFactory.createTypeWithNullability(valueMapping.RelType, Nullable.GetUnderlyingType(value) is not null || value.IsValueType == false)));
+        }
+
+        /// <summary>
+        /// Returns the key and value types of a .NET dictionary, or <see langword="null"/> where the type
+        /// is not one.
+        /// </summary>
+        /// <param name="clrType"></param>
+        /// <returns>The key and value types, or <see langword="null"/>.</returns>
+        static (Type Key, Type Value)? Dictionary(Type clrType)
+        {
+            foreach (var i in clrType.IsInterface ? [clrType, .. clrType.GetInterfaces()] : clrType.GetInterfaces())
+            {
+                if (i.IsGenericType == false)
+                    continue;
+
+                var definition = i.GetGenericTypeDefinition();
+                if (definition == typeof(System.Collections.Generic.IDictionary<,>) || definition == typeof(System.Collections.Generic.IReadOnlyDictionary<,>))
+                {
+                    var arguments = i.GetGenericArguments();
+                    return (arguments[0], arguments[1]);
+                }
+            }
+
+            return null;
         }
 
         /// <inheritdoc />

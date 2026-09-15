@@ -303,6 +303,29 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
+        /// Returns a column's value exactly as Calcite's runtime produced it, with nothing converted.
+        /// </summary>
+        /// <param name="ordinal">The zero-based column ordinal.</param>
+        /// <returns>The value as Calcite holds it, or <see langword="null"/> where the value is null.</returns>
+        /// <remarks>
+        /// <b>The one way past the rule that no Java object reaches a caller</b>, and named so that reaching
+        /// it is a decision rather than an accident. An <c>INTEGER</c> comes back as a
+        /// <c>java.lang.Integer</c> and not an <see cref="int"/>, a <c>DATE</c> as the
+        /// <c>java.lang.Integer</c> count of days and not a <see cref="DateTime"/>, an <c>ARRAY</c> as a
+        /// <c>java.util.List</c>, a <c>UUID</c> as a <c>UuidValue</c>, a <c>GEOMETRY</c> as a JTS
+        /// <c>Geometry</c>, a <c>VARIANT</c> as a <c>VariantValue</c>.
+        ///
+        /// <para>Null rather than <see cref="DBNull"/>, because this answers what Calcite has and Calcite
+        /// has a null. Every other accessor converts; this one is the escape hatch for a caller that knows
+        /// Calcite and wants what Calcite has, and for a type this provider has no reading of.</para>
+        /// </remarks>
+        public object? GetCalciteValue(int ordinal)
+        {
+            ThrowIfNoRow();
+            return ActiveResult.Current.GetValue(ordinal).CalciteValue;
+        }
+
+        /// <summary>
         /// Returns the Calcite type of a column, stated exactly.
         /// </summary>
         /// <param name="ordinal">The zero-based column ordinal.</param>
