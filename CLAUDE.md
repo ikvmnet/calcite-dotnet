@@ -34,13 +34,17 @@ driver this one is modelled on*, has the reading. Not to be confused with
   found in the convention was found by it, three of them in nodes already believed done. Add a query
   there rather than writing an assertion by hand: the expected answer is whatever Calcite says. It lives
   in `Apache.Calcite.Tests`, with the rest of the convention and prepare tests.
-- **`dotnet test --filter` is silently ignored here** — the project runs on Microsoft.Testing.Platform, and
-  `dotnet test` does not forward the flag to the test app. It runs the whole suite and reports success, so a
-  run that looks like one test is 619. Run the built executable instead, which honours it and is faster than
-  the `dotnet test` host by about a third:
+- **`dotnet test` does not run the Microsoft.Testing.Platform suites at all** — from the .NET 10 SDK it
+  fails them outright: *"Testing with VSTest target is no longer supported by Microsoft.Testing.Platform on
+  .NET 10 SDK and later."* That is `Apache.Calcite.Tests`, `Apache.Calcite.Adapter.AdoNet.Tests` and
+  `Apache.Calcite.Geography.Tests`, all three on `MSTest.Sdk`. Run the built executable, which honours
+  `--filter`:
   `src\Apache.Calcite.Tests\bin\Debug\net8.0\Apache.Calcite.Tests.exe --filter FullyQualifiedName~Name`.
-  The whole suite is about 133 seconds that way against about 215 through `dotnet test`; a single test is
-  seconds. `--blame-hang --blame-hang-timeout 90s` names the test that hangs.
+  The whole suite is about three minutes that way; a single test is seconds.
+  `--blame-hang --blame-hang-timeout 90s` names the test that hangs.
+  **`Apache.Calcite.Data.Tests` is the exception**: xunit over VSTest, where `dotnet test --filter` works
+  and reports the filtered count. A note here used to say the flag was *silently* ignored and the run
+  reported success — that was an older SDK, and it errors now.
 - **Everything references 1.43.0-SNAPSHOT, and `D:\calcite` is that same branch.** The snapshot comes from
   `https://repository.apache.org/content/repositories/snapshots/`, named once in `Directory.Build.props`
   rather than per project. **1.43 is unreleased**: it was targeted for the end of August 2026 and slipped,
@@ -113,12 +117,14 @@ driver this one is modelled on*, has the reading. Not to be confused with
   source; `calcite.core.dll` is what runs. `RelOptUtil.registerDefaultRules` registers
   `EnumerableRules.ENUMERABLE_RULES` in the assembly — measured by counting the planner's rules across the
   call — and the tag's text of that method gives no sign of it until its last third.
-- `global.json` has `rollForward: latestMajor`, so builds pick the **.NET 11 preview SDK**, not 10.0.302.
-  That SDK's `dotnet sln add` rewrote every project with x64/x86 configurations while the solution was a
-  `.sln`. It does **not** under the `.slnx` — measured, by round-tripping a project through
-  `dotnet sln remove` and `add` and hashing every csproj either side. It does still misreport: re-adding a
-  project failed naming a *different* project as the conflict, so read the solution after rather than the
-  command's output.
+- `global.json` pins the **.NET 10 SDK** — `version: 10.0.100`, `rollForward: latestMinor`, so the newest
+  installed 10.x is taken and 11 is never reached. The workflow installs 9.0.x and 10.0.x and nothing else,
+  so the `latestMajor` this used to carry meant that a machine with the .NET 11 preview installed built on
+  a different SDK from CI, and said nothing. `dotnet sln add` misreports under either: re-adding a project
+  failed naming a *different* project as the conflict, so read the solution after rather than the
+  command's output. Under a `.sln` the preview SDK went further and rewrote every project with x64/x86
+  configurations; under the `.slnx` it does not — measured, by round-tripping a project through
+  `dotnet sln remove` and `add` and hashing every csproj either side.
 
 ## Apache.Calcite.Extensions: the rules that hold
 
