@@ -30,9 +30,15 @@ namespace Apache.Calcite.Data.Common
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <param name="resolvers"></param>
-        internal ClrTypeRegistry(JavaTypeFactory typeFactory, IReadOnlyList<IClrTypeResolver> resolvers)
+        /// <param name="typeFactory">The factory this registry answers against.</param>
+        /// <param name="resolvers">The chain, in the order it is asked.</param>
+        /// <remarks>
+        /// Public, because a chain is fixed somewhere before this is built — a data source settles one when
+        /// it is built and holds it fixed thereafter — and whatever fixed it should be able to bind it
+        /// without going back through a <see cref="ClrTypeMapper"/>, which is the thing for assembling a
+        /// chain rather than for holding one.
+        /// </remarks>
+        public ClrTypeRegistry(JavaTypeFactory typeFactory, IReadOnlyList<IClrTypeResolver> resolvers)
         {
             _typeFactory = typeFactory ?? throw new ArgumentNullException(nameof(typeFactory));
             _resolvers = [.. resolvers ?? throw new ArgumentNullException(nameof(resolvers))];

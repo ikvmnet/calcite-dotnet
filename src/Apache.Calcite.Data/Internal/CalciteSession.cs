@@ -109,7 +109,7 @@ namespace Apache.Calcite.Data.Internal
         /// has no node for is still planned and run — implemented in <c>EnumerableConvention</c>, with a
         /// converter carrying its rows.</para>
         /// </remarks>
-        public CalciteSession(CalciteConnectionStringBuilder options, CalciteDataSourceRoot root, bool ownsRoot, JavaTypeFactory? typeFactory = null, Func<ClrPrepareImpl>? prepareFactory = null, ClrTypeMapper? typeMapper = null)
+        public CalciteSession(CalciteConnectionStringBuilder options, CalciteDataSourceRoot root, bool ownsRoot, JavaTypeFactory? typeFactory = null, Func<ClrPrepareImpl>? prepareFactory = null, System.Collections.Immutable.ImmutableArray<IClrTypeResolver> typeResolvers = default)
         {
             ArgumentNullException.ThrowIfNull(options);
             ArgumentNullException.ThrowIfNull(root);
@@ -142,7 +142,7 @@ namespace Apache.Calcite.Data.Internal
                 // the chain is read once and bound here, because what a Calcite type is held in is this
                 // factory's answer and two sessions need not agree. A caller registering a resolver after
                 // the connection opens is registering it for the next session and not this one.
-                _registry = (typeMapper ?? new ClrTypeMapper()).Bind(_typeFactory);
+                _registry = new ClrTypeRegistry(_typeFactory, typeResolvers.IsDefaultOrEmpty ? new ClrTypeMapper().Resolvers : typeResolvers);
 
                 _synchronous = options.Synchronous ?? false;
                 var defaultSchema = root.DefaultSchemaName ?? options.Schema;

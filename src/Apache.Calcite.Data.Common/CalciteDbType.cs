@@ -17,11 +17,11 @@ namespace Apache.Calcite.Data.Common
     /// </para>
     /// <para>
     /// <b>A collection is a flag over its element.</b> <c>CalciteDbType.Array | CalciteDbType.Integer</c> is
-    /// an <c>INTEGER ARRAY</c>, which is Npgsql's shape and is convenient for the case that is almost all of
-    /// them. It is deliberately not the whole story: Calcite nests without limit, and one bit cannot spell
-    /// <c>INTEGER ARRAY ARRAY</c>. A type that nests answers <see cref="Array"/> or <see cref="Multiset"/>
-    /// over <see cref="Unknown"/>, and the element's own type is read from the mapping, which recurses where
-    /// this cannot.
+    /// an <c>INTEGER ARRAY</c>, which is convenient for the case that is almost all of them and is how a
+    /// provider-specific type list usually spells one. It is deliberately not the whole story: Calcite nests
+    /// without limit, and one bit cannot spell <c>INTEGER ARRAY ARRAY</c>. A type that nests answers
+    /// <see cref="Array"/> or <see cref="Multiset"/> over <see cref="Unknown"/>, and the element's own type
+    /// is read from the mapping, which recurses where this cannot.
     /// </para>
     /// <para>
     /// <b>Only what a caller can meet.</b> This names the types that reach a result column or a parameter,

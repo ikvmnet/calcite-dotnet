@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 
 using Apache.Calcite.Data.Internal;
 
+using System.Collections.Immutable;
+
 using Apache.Calcite.Data.Common;
 
 namespace Apache.Calcite.Data
@@ -63,7 +65,7 @@ namespace Apache.Calcite.Data
         readonly bool _pooling;
         readonly TimeSpan _idleLifetime;
         readonly TimeSpan _pruningInterval;
-        readonly ClrTypeMapper _typeMapper;
+        readonly ImmutableArray<IClrTypeResolver> _typeResolvers;
         readonly long _created = Environment.TickCount64;
         readonly object _sync = new();
         CalciteDataSourceRoot? _root;
@@ -117,18 +119,28 @@ namespace Apache.Calcite.Data
 
             _idleLifetime = TimeSpan.FromSeconds(idleLifetime);
             _pruningInterval = TimeSpan.FromSeconds(pruningInterval);
-            _typeMapper = typeMapper ?? new ClrTypeMapper();
+            // settled here and fixed thereafter: a data source is shared, and a chain that could be changed
+            // under one connection after another had already bound it would mean two connections on one
+            // source reading the same column differently
+            _typeResolvers = (typeMapper ?? new ClrTypeMapper()).Resolvers;
         }
 
         /// <summary>
-        /// Gets the chain of type resolvers every connection from this data source starts with.
+        /// Gets the chain of type resolvers every connection from this data source starts with, in the
+        /// order it is asked.
         /// </summary>
         /// <remarks>
-        /// A connection takes a copy when it is created, so a resolver one connection adds does not change
-        /// what the next one sees. Registering here rather than on a connection is what makes a mapping a
-        /// property of the data rather than of one caller's use of it.
+        /// <b>Settled when the data source is built, and fixed thereafter.</b> Configuring it is
+        /// <see cref="CalciteDataSourceBuilder.TypeMapper"/>'s job, which is where a chain is assembled;
+        /// this is the chain itself, and it is immutable because a data source is shared. One connection
+        /// changing it under another that had already bound it would mean two connections on one source
+        /// reading the same column differently.
+        ///
+        /// <para>Registering here rather than on a connection is what makes a mapping a property of the
+        /// data rather than of one caller's use of it. A connection goes on from this chain and adds to a
+        /// copy.</para>
         /// </remarks>
-        public ClrTypeMapper TypeMapper => _typeMapper;
+        public ImmutableArray<IClrTypeResolver> TypeResolvers => _typeResolvers;
 
         /// <inheritdoc />
         public override string ConnectionString => _options.ConnectionString;

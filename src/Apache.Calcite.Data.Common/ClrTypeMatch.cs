@@ -17,9 +17,10 @@ namespace Apache.Calcite.Data.Common
     /// <see cref="DateTime"/> is written as, that being <c>TIMESTAMP</c>.
     /// </para>
     /// <para>
-    /// Npgsql spends a three-valued <c>MatchRequirement</c> on the same question and needs a fourth rule —
-    /// a fallback pass — to make a CLR type on its own resolve. Two flags say it directly, because here the
-    /// two defaults genuinely are separate facts rather than one relaxation of a strict rule.
+    /// Two flags rather than a scale of strictness, because the two defaults genuinely are separate facts
+    /// rather than one relaxation of a single rule: a type can be what a Calcite type reads back as without
+    /// being what that CLR type is written as, and the other way round. Ranking them on one axis needs a
+    /// second rule to recover the case the ranking lost.
     /// </para>
     /// </remarks>
     [Flags]

@@ -119,21 +119,20 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And one registered after the connection opens does not, which is the same fact stated so that it
-        /// cannot quietly stop being true.
+        /// And registering one after the connection opens is refused, rather than accepted and ignored.
         /// </summary>
+        /// <remarks>
+        /// The session reads the chain once, at open, so a resolver added afterwards would never run. Saying
+        /// nothing about that is the worse of the two answers: a caller would have registered a conversion,
+        /// seen values come back unconverted, and had nothing to go on.
+        /// </remarks>
         [Fact]
-        public void A_caller_mapping_registered_after_opening_should_not_reach_a_parameter()
+        public void A_caller_mapping_registered_after_opening_should_be_refused()
         {
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
             c.Open();
-            c.TypeMapper.Prepend(new ShoutingResolver());
 
-            using var cmd = c.CreateCommand();
-            cmd.CommandText = "SELECT CAST(? AS VARCHAR)";
-            cmd.Parameters.Add(new CalciteParameter("p", "x"));
-
-            Assert.Equal("x", cmd.ExecuteScalar());
+            Assert.Throws<InvalidOperationException>(() => c.TypeMapper);
         }
 
         /// <summary>

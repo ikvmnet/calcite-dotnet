@@ -9,11 +9,13 @@ namespace Apache.Calcite.Data.Common
 {
 
     /// <summary>
-    /// The chain of resolvers a connection or a data source will answer type questions with, and where a
-    /// caller adds its own.
+    /// Assembles the chain of resolvers that answers type questions, and is where a caller adds its own.
     /// </summary>
     /// <remarks>
-    /// Configuration only: it holds no type factory and answers no lookups. A session binds it to the type
+    /// <b>A builder, and not where a chain lives.</b> It holds no type factory and answers no lookups. A
+    /// chain is settled somewhere — a data source settles one when it is built and holds it fixed
+    /// thereafter, a connection before it opens — and what holds it afterwards holds
+    /// <see cref="Resolvers"/>, which is immutable, rather than this. A session binds that to the type
     /// factory it created and gets a <see cref="ClrTypeRegistry"/>, because what a Calcite type is held in
     /// is the type factory's answer and two sessions need not agree.
     /// </remarks>
@@ -54,6 +56,21 @@ namespace Apache.Calcite.Data.Common
             ArgumentNullException.ThrowIfNull(other);
 
             _resolvers = other._resolvers;
+        }
+
+        /// <summary>
+        /// Initializes a new instance carrying a chain already settled.
+        /// </summary>
+        /// <param name="resolvers">The chain, in the order it is to be asked.</param>
+        /// <remarks>
+        /// What a connection uses to go on from the chain its data source fixed: the data source holds the
+        /// chain and not a mapper, so adding to it starts here.
+        /// </remarks>
+        public ClrTypeMapper(IEnumerable<IClrTypeResolver> resolvers)
+        {
+            ArgumentNullException.ThrowIfNull(resolvers);
+
+            _resolvers = [.. resolvers];
         }
 
         /// <summary>
@@ -130,7 +147,11 @@ namespace Apache.Calcite.Data.Common
         /// <summary>
         /// Gets the resolvers in the order they will be asked.
         /// </summary>
-        public IReadOnlyList<IClrTypeResolver> Resolvers => _resolvers;
+        /// <remarks>
+        /// Immutable, so this is what a data source or a connection keeps once its chain is settled: holding
+        /// it is holding a chain nothing can change, and binding it needs no copy.
+        /// </remarks>
+        public ImmutableArray<IClrTypeResolver> Resolvers => _resolvers;
 
         /// <summary>
         /// Binds these resolvers to a type factory.
