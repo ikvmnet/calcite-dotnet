@@ -283,6 +283,79 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
+        // What the table does not claim, which is refused rather than guessed at.
+        // ------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// <c>ANY</c> says nothing about what it holds, so its mapping is a reading of the value's own
+        /// class. That is an entry for <c>ANY</c> and not a rule about every type nobody claimed.
+        /// </summary>
+        [Fact]
+        public void An_any_column_should_be_read_by_the_value_s_own_class()
+        {
+            var type = Type(SqlTypeName.ANY);
+
+            Assert.NotNull(Registry.GetMapping(null, type));
+            Assert.Equal(typeof(object), Registry.GetClrType(type));
+            Assert.Equal(5, Registry.FromCalcite(null, type, java.lang.Integer.valueOf(5)));
+            Assert.Equal("x", Registry.FromCalcite(null, type, "x"));
+        }
+
+        /// <summary>
+        /// And it descends, because what an <c>ANY</c> holds has no declared type either.
+        /// </summary>
+        [Fact]
+        public void An_any_column_holding_a_collection_should_still_be_read()
+        {
+            var list = new java.util.ArrayList();
+            list.add(java.lang.Integer.valueOf(1));
+            list.add(java.lang.Integer.valueOf(2));
+
+            Assert.Equal(new[] { 1, 2 }, Registry.FromCalcite(null, Type(SqlTypeName.ANY), list));
+        }
+
+        /// <summary>
+        /// <b>A type the table does not claim has no mapping.</b> <c>OTHER</c> is Calcite's answer for a
+        /// class it has no SQL name for, and it used to be read by guessing at the value's runtime class
+        /// because the <c>ANY</c> entry claimed every unclaimed type. It says so instead.
+        /// </summary>
+        [Fact]
+        public void An_unclaimed_type_should_have_no_mapping()
+        {
+            var type = Type(SqlTypeName.OTHER);
+
+            Assert.Null(Registry.GetMapping(null, type));
+            Assert.Throws<ClrTypeMappingException>(() => Registry.RequireMapping(null, type));
+            Assert.Throws<ClrTypeMappingException>(() => Registry.FromCalcite(null, type, java.lang.Integer.valueOf(1)));
+        }
+
+        /// <summary>
+        /// And a caller that wants one read says so, which is what the chain is for.
+        /// </summary>
+        [Fact]
+        public void A_caller_should_be_able_to_claim_an_unclaimed_type()
+        {
+            var registry = new ClrTypeMapper().Prepend(new OtherResolver()).Bind(Factory);
+            var type = Type(SqlTypeName.OTHER);
+
+            Assert.Equal(typeof(string), registry.GetClrType(type));
+            Assert.Equal("1", registry.FromCalcite(null, type, java.lang.Integer.valueOf(1)));
+        }
+
+        sealed class OtherResolver : IClrTypeResolver
+        {
+
+            public ClrTypeMapping? GetMapping(Type? clrType, RelDataType? relType, ClrTypeContext context)
+            {
+                if (relType is not null && relType.getSqlTypeName() == SqlTypeName.OTHER && (clrType is null || clrType == typeof(string)))
+                    return new DelegateClrTypeMapping(context, relType, typeof(string), v => v, v => v.ToString()!);
+
+                return null;
+            }
+
+        }
+
+        // ------------------------------------------------------------------------------------
         // The types ADO.NET's list has no name for, which are most of what Calcite has beyond the shared
         // ones and were all falling to the catch-all.
         // ------------------------------------------------------------------------------------

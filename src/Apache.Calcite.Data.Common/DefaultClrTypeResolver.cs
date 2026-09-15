@@ -12,10 +12,17 @@ namespace Apache.Calcite.Data.Common
     /// <remarks>
     /// <para>
     /// The order of the table is its priority, so the first entry written for a Calcite type is what that
-    /// type reads back as and the first written for a CLR type is what that type is written as. The two
-    /// catch-alls at the end are what a type nobody has claimed falls to: they dispatch on the runtime
-    /// class of the value rather than on either type, which is what the ADO.NET surface did for a column
-    /// whose SQL type it had no case for.
+    /// type reads back as and the first written for a CLR type is what that type is written as.
+    /// </para>
+    /// <para>
+    /// <b>Every entry names the type it is for, and there is no catch-all.</b> A type this table does not
+    /// claim has no mapping, and the lookup answers none rather than reading the value on the strength of
+    /// its runtime class; the caller's own operation then says that nothing maps it. <c>ANY</c> is the one
+    /// type whose mapping <em>is</em> a runtime-class reading, because that is what <c>ANY</c> means, and it
+    /// is an entry for <c>ANY</c> rather than a rule about everything else. <c>OTHER</c>, and a
+    /// <c>RelDataType</c> a schema supplied that names no <c>SqlTypeName</c> at all, reach the refusal — a
+    /// caller that wants one read registers a resolver for it, which is what the chain is for, or reads the
+    /// value as Calcite holds it through <c>GetCalciteValue</c>.
     /// </para>
     /// <para>
     /// Every entry is reachable and every one is a fact about Calcite rather than a preference. <c>FLOAT</c>
@@ -165,24 +172,16 @@ namespace Apache.Calcite.Data.Common
             // instances
             m.Add(typeof(object), SqlTypeName.NULL, static _ => null, static _ => null, ClrTypeMatch.RelDefault);
 
-            // a Calcite type nothing above claimed: read the value on the strength of its runtime class.
-            // OTHER and ANY arrive here, and so does a column a schema typed with createJavaType, whose
-            // value is already whatever class that schema chose and wants no conversion at all
+            // ANY, which says nothing about what it holds, so the value's own class decides. An entry like
+            // any other, matching ANY and only ANY: it claimed every unclaimed type until 2026-09-15, which
+            // meant OTHER and a type a schema invented were read by guessing at the runtime class instead
+            // of saying that nothing mapped them.
             m.Add(
                 typeof(object),
                 SqlTypeName.ANY,
                 static (context, relType, _) => new AnyClrTypeMapping(context, relType),
                 ClrTypeMatch.RelDefault,
-                clrTypePredicate: static t => t is null || t == typeof(object),
-                relTypePredicate: static _ => true);
-
-            // a CLR type nothing above claimed, which is what a caller binding a value of their own gets
-            m.Add(
-                typeof(object),
-                SqlTypeName.ANY,
-                static (context, relType, _) => new AnyClrTypeMapping(context, relType),
-                ClrTypeMatch.ClrDefault,
-                clrTypePredicate: static _ => true);
+                clrTypePredicate: static t => t is null || t == typeof(object));
         }
 
         /// <inheritdoc />
