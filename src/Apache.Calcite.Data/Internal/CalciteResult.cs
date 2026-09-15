@@ -4,6 +4,8 @@ using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Prepare;
 
+using Apache.Calcite.Data.Common;
+
 namespace Apache.Calcite.Data.Internal
 {
 
@@ -50,13 +52,15 @@ namespace Apache.Calcite.Data.Internal
         /// Initializes a new instance.
         /// </summary>
         /// <param name="signature"></param>
+        /// <param name="registry">The mappings the session reads values through.</param>
         /// <param name="recordsAffected"></param>
-        protected CalciteResult(IClrPrepare.Signature signature, long recordsAffected)
+        protected CalciteResult(IClrPrepare.Signature signature, ClrTypeRegistry registry, long recordsAffected)
         {
             ArgumentNullException.ThrowIfNull(signature);
+            ArgumentNullException.ThrowIfNull(registry);
 
             _signature = signature;
-            _columns = new CalciteResultColumns(signature);
+            _columns = new CalciteResultColumns(signature, registry);
             _recordsAffected = recordsAffected;
         }
 

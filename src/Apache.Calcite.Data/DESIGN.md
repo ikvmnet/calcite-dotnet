@@ -149,17 +149,17 @@ constructor minus the type factory, followed by the driver's `onConnectionInit` 
 order, so a model can overwrite `DUAL` and never the reverse; and the driver's `model()` is ported with
 it, so that without a `Model` a `SchemaFactory` or `SchemaType` key synthesises one, named by the
 `Schema` key, with every `schema.`-prefixed key as an operand. The steps a `CalciteDataSourceBuilder`
-registered run last. A data source builds its root once, under a lock, on the first connection to open —
-Npgsql's `Bootstrap` — and a build that throws leaves nothing behind, so the next connection tries again.
+registered run last. A data source builds its root once, under a lock, on the first connection to open,
+and a build that throws leaves nothing behind, so the next connection tries again.
 `Pooling=false` builds one per connection instead, and the connection disposes it. Disposing a root
 disposes every schema on it that implements `IDisposable`, sub-schemas first, which is the release
 Calcite's schema SPI has no hook for.
 
-**`CalciteDataSources`** (`Internal/`) is Npgsql's `PoolManager`: a process-wide dictionary of data
-sources keyed by `CalciteConnectionStringBuilder.DataSourceKey`, which is the connection string with
+**`CalciteDataSources`** (`Internal/`) is the process-wide dictionary of data
+sources, keyed by `CalciteConnectionStringBuilder.DataSourceKey`, which is the connection string with
 its keys lower-cased and sorted and `Synchronous` left out — that key chooses the convention a
-connection plans into and nothing that is built, as Npgsql leaves `TargetSessionAttributes` out of its
-key. A bare `new CalciteConnection(cs)` resolves its data source here on `Open`; an empty connection
+connection plans into and nothing that is built, and a key has to separate only what would otherwise
+be shared wrongly. A bare `new CalciteConnection(cs)` resolves its data source here on `Open`; an empty connection
 string gets a private one, there being nothing to key on. A data source the application built is never
 here.
 
@@ -170,9 +170,10 @@ connection pool. A root counts the sessions on it, and each entry has a timer th
 session on its root — removed here, and its root retired. `ClearPool` and `ClearAllPools` do the same on
 demand, and entries left at process exit are released then. Retiring a root disposes its `IDisposable`
 schemas at once where no session holds it and otherwise when the last session is disposed, so a connection
-still open keeps working, the way a pooled connector Npgsql has cleared is closed when it is returned
+still open keeps working, the way a pooled connection a caller has cleared is closed when it is returned
 rather than while it is busy. A connection that finds its entry pruned between lookup and use looks it up
-again. Both keywords are spelled as Npgsql spells them and validated as Npgsql validates them.
+again. Both keywords are spelled and validated the way the established .NET providers spell and validate
+them.
 
 **`CalciteSession`** is the connection-lived half: created on the first `CalciteConnection.Open()` over
 the root the data source handed it, and kept alive across `Close`/`Open` cycles. Construction is the

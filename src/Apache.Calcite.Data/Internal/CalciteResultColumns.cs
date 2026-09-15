@@ -5,6 +5,7 @@ using org.apache.calcite.jdbc;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
 
+using Apache.Calcite.Data.Common;
 using Apache.Calcite.Extensions.Prepare;
 
 namespace Apache.Calcite.Data.Internal
@@ -106,15 +107,23 @@ namespace Apache.Calcite.Data.Internal
         }
 
         readonly IClrPrepare.Signature _signature;
+        readonly ClrTypeRegistry _registry;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
         /// <param name="signature"></param>
-        public CalciteResultColumns(IClrPrepare.Signature signature)
+        /// <param name="registry">The mappings values are read through.</param>
+        public CalciteResultColumns(IClrPrepare.Signature signature, ClrTypeRegistry registry)
         {
             _signature = signature ?? throw new ArgumentNullException(nameof(signature));
+            _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         }
+
+        /// <summary>
+        /// Gets the mappings values of these columns are read through.
+        /// </summary>
+        public ClrTypeRegistry Registry => _registry;
 
         /// <summary>
         /// Gets the count of columns in the result set.

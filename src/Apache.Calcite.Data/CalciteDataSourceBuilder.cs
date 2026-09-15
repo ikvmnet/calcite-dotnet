@@ -3,6 +3,8 @@ using System.Collections.Generic;
 
 using org.apache.calcite.schema;
 
+using Apache.Calcite.Data.Common;
+
 namespace Apache.Calcite.Data
 {
 
@@ -34,6 +36,35 @@ namespace Apache.Calcite.Data
     {
 
         readonly List<Action<SchemaPlus>> _configure = [];
+        readonly ClrTypeMapper _typeMapper = new();
+
+        /// <summary>
+        /// Gets the chain of type resolvers every connection from this data source starts with.
+        /// </summary>
+        /// <remarks>
+        /// This is where a mapping belongs that is a property of the data — a domain type a schema uses, a
+        /// .NET type a caller wants a column seen as — because that is the same for every connection drawn
+        /// on the source. A connection takes a copy of this chain when it is created, so one connection
+        /// adding a resolver of its own does not change what the next one sees.
+        /// </remarks>
+        public ClrTypeMapper TypeMapper => _typeMapper;
+
+        /// <summary>
+        /// Puts a resolver in front of every other, so that it answers first.
+        /// </summary>
+        /// <param name="resolver">The resolver.</param>
+        /// <returns>This builder.</returns>
+        /// <remarks>
+        /// <see cref="TypeMapper"/> written as one call, so that building a data source reads as one
+        /// expression the way the rest of this builder does.
+        /// </remarks>
+        public CalciteDataSourceBuilder AddTypeResolver(IClrTypeResolver resolver)
+        {
+            ArgumentNullException.ThrowIfNull(resolver);
+
+            _typeMapper.Prepend(resolver);
+            return this;
+        }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="CalciteDataSourceBuilder"/> class.
@@ -98,7 +129,7 @@ namespace Apache.Calcite.Data
         /// <returns>A data source that is the caller's to dispose.</returns>
         public CalciteDataSource Build()
         {
-            return new CalciteDataSource(new CalciteConnectionStringBuilder(ConnectionString), _configure.ToArray());
+            return new CalciteDataSource(new CalciteConnectionStringBuilder(ConnectionString), _configure.ToArray(), typeMapper: _typeMapper);
         }
 
     }

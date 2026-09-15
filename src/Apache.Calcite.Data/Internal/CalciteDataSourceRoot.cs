@@ -270,7 +270,7 @@ namespace Apache.Calcite.Data.Internal
         /// This is what a data source does to a root it drops — on <see cref="CalciteDataSource.Clear"/>,
         /// on its own disposal, and when the provider evicts or prunes it — and what a session does to a
         /// root built for it alone. A connection still open keeps working: the root goes when the last
-        /// session on it is disposed, the way a pooled connector Npgsql has cleared is closed when it is
+        /// session on it is disposed, the way a pooled connection a caller has cleared is closed when it is
         /// returned rather than while it is busy.
         /// </remarks>
         public void Retire()

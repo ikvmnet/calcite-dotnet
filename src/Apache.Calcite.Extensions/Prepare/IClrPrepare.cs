@@ -98,6 +98,8 @@ namespace Apache.Calcite.Extensions.Prepare
             /// <param name="internalParameters">Values the query reads through the <see cref="DataContext"/>
             /// rather than from the plan. This must be the map the plan was built against.</param>
             /// <param name="rowType">The result's row type, or <see langword="null"/> for DDL.</param>
+            /// <param name="parameterRowType">One field per dynamic parameter, holding the type the
+            /// validator inferred for its placeholder.</param>
             /// <param name="columns">One <see cref="ColumnMetaData"/> per result column.</param>
             /// <param name="cursorFactory">How a row is read back.</param>
             /// <param name="rootSchema">The schema the statement was planned against.</param>
@@ -111,6 +113,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 java.util.List parameters,
                 java.util.Map internalParameters,
                 RelDataType? rowType,
+                RelDataType? parameterRowType,
                 java.util.List columns,
                 Meta.CursorFactory cursorFactory,
                 CalciteSchema? rootSchema,
@@ -121,6 +124,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 base(columns, sql, parameters, internalParameters, cursorFactory, statementType)
             {
                 RowType = rowType;
+                ParameterRowType = parameterRowType;
                 RootSchema = rootSchema;
                 Collations = collations ?? throw new ArgumentNullException(nameof(collations));
                 this.maxRowCount = maxRowCount;
@@ -146,6 +150,20 @@ namespace Apache.Calcite.Extensions.Prepare
             /// Gets the result's row type, or <see langword="null"/> for DDL.
             /// </summary>
             public RelDataType? RowType { get; }
+
+            /// <summary>
+            /// Gets one field per dynamic parameter, holding the type the validator inferred for its
+            /// placeholder.
+            /// </summary>
+            /// <remarks>
+            /// <b>What a placeholder is, is the validator's answer and not the caller's.</b> Calcite refuses
+            /// a placeholder it cannot infer a type for, so by the time there is a plan there is a type, and
+            /// the plan reads the value as that type whatever a caller said it was binding. The
+            /// <see cref="AvaticaParameter"/> list beside this describes the same placeholders for a
+            /// consumer, but flatly — it carries a type name and a precision, not the type — so a value
+            /// cannot be converted from it.
+            /// </remarks>
+            public RelDataType? ParameterRowType { get; }
 
             /// <summary>
             /// Gets one <see cref="ColumnMetaData"/> per result column.

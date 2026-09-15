@@ -302,6 +302,68 @@ namespace Apache.Calcite.Data
             return ActiveResult.Columns.GetClrType(ordinal);
         }
 
+        /// <summary>
+        /// Returns a column's value exactly as Calcite's runtime produced it, with nothing converted.
+        /// </summary>
+        /// <param name="ordinal">The zero-based column ordinal.</param>
+        /// <returns>The value as Calcite holds it, or <see langword="null"/> where the value is null.</returns>
+        /// <remarks>
+        /// <b>The one way past the rule that no Java object reaches a caller</b>, and named so that reaching
+        /// it is a decision rather than an accident. An <c>INTEGER</c> comes back as a
+        /// <c>java.lang.Integer</c> and not an <see cref="int"/>, a <c>DATE</c> as the
+        /// <c>java.lang.Integer</c> count of days and not a <see cref="DateTime"/>, an <c>ARRAY</c> as a
+        /// <c>java.util.List</c>, a <c>UUID</c> as a <c>UuidValue</c>, a <c>GEOMETRY</c> as a JTS
+        /// <c>Geometry</c>, a <c>VARIANT</c> as a <c>VariantValue</c>.
+        ///
+        /// <para>Null rather than <see cref="DBNull"/>, because this answers what Calcite has and Calcite
+        /// has a null. Every other accessor converts; this one is the escape hatch for a caller that knows
+        /// Calcite and wants what Calcite has, and for a type this provider has no reading of.</para>
+        /// </remarks>
+        public object? GetCalciteValue(int ordinal)
+        {
+            ThrowIfNoRow();
+            return ActiveResult.Current.GetValue(ordinal).CalciteValue;
+        }
+
+        /// <summary>
+        /// Returns the Calcite type of a column, stated exactly.
+        /// </summary>
+        /// <param name="ordinal">The zero-based column ordinal.</param>
+        /// <returns>The type.</returns>
+        /// <remarks>
+        /// <see cref="GetFieldType"/> answers one .NET type and <see cref="GetDataTypeName"/> one string,
+        /// and Calcite's types nest without limit, so neither can describe an <c>INTEGER ARRAY ARRAY</c>, a
+        /// <c>MAP</c>'s key type, or a <c>ROW</c>'s fields. This is the type itself, and the component, key,
+        /// value and field types hang off it. A caller doing real introspection — a schema browser, an
+        /// object-relational mapping layer building a model — wants this one.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">Where the statement has no row type, which is DDL.</exception>
+        public org.apache.calcite.rel.type.RelDataType GetRelDataType(int ordinal)
+        {
+            ThrowIfClosed();
+            return ActiveResult.Columns.GetRelType(ordinal);
+        }
+
+        /// <summary>
+        /// Returns the Calcite type of a column as the nearest <see cref="Common.CalciteDbType"/> naming
+        /// it.
+        /// </summary>
+        /// <param name="ordinal">The zero-based column ordinal.</param>
+        /// <returns>The name, or <see cref="Common.CalciteDbType.Unknown"/> where that fixed list has none.</returns>
+        /// <remarks>
+        /// Best effort, and the shorthand rather than the truth: a collection contributes a flag and its
+        /// element the base, so an <c>INTEGER ARRAY</c> is <c>Array | Integer</c> and an
+        /// <c>INTEGER ARRAY ARRAY</c> is <c>Array</c> over <see cref="Common.CalciteDbType.Unknown"/>, one
+        /// bit having nowhere to put the second level. <see cref="GetRelDataType"/> is what does not
+        /// approximate.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">Where the statement has no row type, which is DDL.</exception>
+        public Common.CalciteDbType GetCalciteDbType(int ordinal)
+        {
+            ThrowIfClosed();
+            return Common.CalciteDbTypes.Of(ActiveResult.Columns.GetRelType(ordinal));
+        }
+
         /// <inheritdoc />
         public override bool GetBoolean(int ordinal)
         {

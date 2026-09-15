@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
 
+using System.Collections.Immutable;
+
+using Apache.Calcite.Data.Common;
 using Apache.Calcite.Data.Internal;
 
 using java.util.function;
@@ -41,6 +44,7 @@ namespace Apache.Calcite.Data
 
         CalciteConnectionStringBuilder _options = new();
         CalciteDataSource? _dataSource;
+        ClrTypeMapper? _typeMapper;
         CalciteSession? _session;
         ConnectionState _state = ConnectionState.Closed;
         bool _disposed;
@@ -284,7 +288,7 @@ namespace Apache.Calcite.Data
                         _dataSource = dataSource;
                     }
 
-                    _session = new CalciteSession(_options, root, owned);
+                    _session = new CalciteSession(_options, root, owned, typeResolvers: SessionResolvers);
                 }
 
                 SetState(ConnectionState.Open);
@@ -505,6 +509,60 @@ namespace Apache.Calcite.Data
         /// </remarks>
         /// <exception cref="InvalidOperationException">Thrown when the connection is not open.</exception>
         public JavaTypeFactory TypeFactory => RequireSession().TypeFactory;
+
+        /// <summary>
+        /// Gets the chain of type resolvers this connection reads and writes values through.
+        /// </summary>
+        /// <remarks>
+        /// A resolver put in front of this chain decides which .NET type a column is seen as and how values
+        /// cross in both directions. The chain is read once, when the connection first opens, because what a
+        /// Calcite type is held in is the session type factory's answer and the mappings are bound to it, so
+        /// this refuses after <see cref="Open"/> rather than handing back a chain nothing will read.
+        ///
+        /// <para>A connection drawn on a <see cref="CalciteDataSource"/> starts with a copy of that source's
+        /// chain, which is where a mapping belongs that is a property of the data rather than of one
+        /// caller's use of it. Adding one here adds it for this connection only.</para>
+        /// </remarks>
+        public ClrTypeMapper TypeMapper
+        {
+            get
+            {
+                ThrowIfDisposed();
+
+                // handing the chain out after the session has read it would let a caller register a resolver
+                // that never runs, and say nothing. The connection string's setter refuses for the same
+                // reason and in the same words.
+                if (_session is not null)
+                    throw new InvalidOperationException(
+                        "The type mappings cannot be changed after the connection has been opened. " +
+                        "The session reads the chain once, when it opens, because what a Calcite type is held in " +
+                        "is its type factory's answer and the mappings are bound to it. " +
+                        "Register the resolver before Open, or on the CalciteDataSource every connection is drawn on.");
+
+                return _typeMapper ??= new ClrTypeMapper(Inherited);
+            }
+        }
+
+        /// <summary>
+        /// The chain a connection with no data source starts from, which is the built-in one.
+        /// </summary>
+        static readonly ImmutableArray<IClrTypeResolver> DefaultResolvers = new ClrTypeMapper().Resolvers;
+
+        /// <summary>
+        /// Gets the chain this connection would use if it never adds one of its own.
+        /// </summary>
+        ImmutableArray<IClrTypeResolver> Inherited => _dataSource?.TypeResolvers ?? DefaultResolvers;
+
+        /// <summary>
+        /// Gets the chain the session is bound to, without assembling one the caller never asked for.
+        /// </summary>
+        /// <remarks>
+        /// <b>A mapper only where the caller reached for one.</b> A connection that never touches
+        /// <see cref="TypeMapper"/> binds its data source's chain as it stands, which is immutable and so
+        /// costs nothing to share; one that does gets a mapper of its own at that moment and the session
+        /// binds that instead.
+        /// </remarks>
+        ImmutableArray<IClrTypeResolver> SessionResolvers => _typeMapper?.Resolvers ?? Inherited;
 
         /// <summary>
         /// Gets the resolved <see cref="CalciteConnectionConfig"/> for this connection.
