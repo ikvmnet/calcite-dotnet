@@ -302,6 +302,45 @@ namespace Apache.Calcite.Data
             return ActiveResult.Columns.GetClrType(ordinal);
         }
 
+        /// <summary>
+        /// Returns the Calcite type of a column, stated exactly.
+        /// </summary>
+        /// <param name="ordinal">The zero-based column ordinal.</param>
+        /// <returns>The type.</returns>
+        /// <remarks>
+        /// <see cref="GetFieldType"/> answers one .NET type and <see cref="GetDataTypeName"/> one string,
+        /// and Calcite's types nest without limit, so neither can describe an <c>INTEGER ARRAY ARRAY</c>, a
+        /// <c>MAP</c>'s key type, or a <c>ROW</c>'s fields. This is the type itself, and the component, key,
+        /// value and field types hang off it. A caller doing real introspection — a schema browser, an
+        /// object-relational mapping layer building a model — wants this one.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">Where the statement has no row type, which is DDL.</exception>
+        public org.apache.calcite.rel.type.RelDataType GetRelDataType(int ordinal)
+        {
+            ThrowIfClosed();
+            return ActiveResult.Columns.GetRelType(ordinal);
+        }
+
+        /// <summary>
+        /// Returns the Calcite type of a column as the nearest <see cref="Common.CalciteDbType"/> naming
+        /// it.
+        /// </summary>
+        /// <param name="ordinal">The zero-based column ordinal.</param>
+        /// <returns>The name, or <see cref="Common.CalciteDbType.Unknown"/> where that fixed list has none.</returns>
+        /// <remarks>
+        /// Best effort, and the shorthand rather than the truth: a collection contributes a flag and its
+        /// element the base, so an <c>INTEGER ARRAY</c> is <c>Array | Integer</c> and an
+        /// <c>INTEGER ARRAY ARRAY</c> is <c>Array</c> over <see cref="Common.CalciteDbType.Unknown"/>, one
+        /// bit having nowhere to put the second level. <see cref="GetRelDataType"/> is what does not
+        /// approximate.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">Where the statement has no row type, which is DDL.</exception>
+        public Common.CalciteDbType GetCalciteDbType(int ordinal)
+        {
+            ThrowIfClosed();
+            return Common.CalciteDbTypes.Of(ActiveResult.Columns.GetRelType(ordinal));
+        }
+
         /// <inheritdoc />
         public override bool GetBoolean(int ordinal)
         {

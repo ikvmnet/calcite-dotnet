@@ -1,0 +1,572 @@
+using System;
+using System.Collections.Generic;
+
+using Apache.Calcite.Data.Common;
+
+using org.apache.calcite.rel.type;
+using org.apache.calcite.sql.type;
+
+using Xunit;
+
+namespace Apache.Calcite.Data.Tests
+{
+
+    /// <summary>
+    /// Covers every conversion the built-in chain performs without anyone registering anything, in both
+    /// directions, and the collections that recurse through it.
+    /// </summary>
+    /// <remarks>
+    /// A round trip is the assertion worth making. It fails if either half is wrong and, unlike checking a
+    /// converted value against a literal, it cannot be satisfied by two mistakes that cancel. The
+    /// representation is checked separately where the storage form is the interesting fact — a <c>DATE</c>
+    /// is a count of days in an <c>Integer</c>, and nothing about a <see cref="DateTime"/> says so.
+    /// </remarks>
+    public class ClrTypeConversionTests
+    {
+
+        static readonly org.apache.calcite.adapter.java.JavaTypeFactory Factory = new org.apache.calcite.jdbc.JavaTypeFactoryImpl();
+
+        static readonly ClrTypeRegistry Registry = new ClrTypeMapper().Bind(Factory);
+
+        static RelDataType Type(SqlTypeName name, bool nullable = true)
+        {
+            return Factory.createTypeWithNullability(Factory.createSqlType(name), nullable);
+        }
+
+        static RelDataType ArrayOf(RelDataType element)
+        {
+            return Factory.createArrayType(element, -1);
+        }
+
+        /// <summary>
+        /// Writes a value and reads it back, answering what came back.
+        /// </summary>
+        static object? RoundTrip(RelDataType type, object value, Type? clrType = null)
+        {
+            var held = Registry.ToCalcite(clrType, type, value);
+            Assert.NotNull(held);
+
+            return Registry.FromCalcite(clrType, type, held);
+        }
+
+        // ------------------------------------------------------------------------------------
+        // The scalars, each the default in both directions.
+        // ------------------------------------------------------------------------------------
+
+        public static TheoryData<string, object> Scalars => new()
+        {
+            { nameof(SqlTypeName.BOOLEAN), true },
+            { nameof(SqlTypeName.TINYINT), (sbyte)-8 },
+            { nameof(SqlTypeName.SMALLINT), (short)-16 },
+            { nameof(SqlTypeName.INTEGER), -32 },
+            { nameof(SqlTypeName.BIGINT), -64L },
+            { nameof(SqlTypeName.UTINYINT), (byte)8 },
+            { nameof(SqlTypeName.USMALLINT), (ushort)16 },
+            { nameof(SqlTypeName.UINTEGER), 32u },
+            { nameof(SqlTypeName.UBIGINT), 64ul },
+            { nameof(SqlTypeName.REAL), 1.5f },
+            { nameof(SqlTypeName.DOUBLE), 2.5d },
+            { nameof(SqlTypeName.DECIMAL), 12.34m },
+            { nameof(SqlTypeName.VARCHAR), "hello" },
+            { nameof(SqlTypeName.VARBINARY), new byte[] { 1, 2, 3 } },
+            { nameof(SqlTypeName.TIMESTAMP), new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Utc) },
+            { nameof(SqlTypeName.TIME), TimeSpan.FromMilliseconds(3661000) },
+        };
+
+        [Theory]
+        [MemberData(nameof(Scalars))]
+        public void Every_default_scalar_should_round_trip(string sqlTypeName, object value)
+        {
+            Assert.Equal(value, RoundTrip(Type(SqlTypeName.valueOf(sqlTypeName)), value));
+        }
+
+        [Theory]
+        [MemberData(nameof(Scalars))]
+        public void Every_default_scalar_should_name_the_clr_type_it_reads_back_as(string sqlTypeName, object value)
+        {
+            Assert.Equal(value.GetType(), Registry.GetClrType(Type(SqlTypeName.valueOf(sqlTypeName))));
+        }
+
+        /// <summary>
+        /// The types whose .NET value is not what the pairing above would suggest, because the CLR type they
+        /// pair with is already spoken for.
+        /// </summary>
+        [Fact]
+        public void A_char_should_read_back_as_a_string()
+        {
+            Assert.Equal(typeof(string), Registry.GetClrType(Type(SqlTypeName.CHAR)));
+            Assert.Equal("x", RoundTrip(Type(SqlTypeName.CHAR), "x"));
+        }
+
+        [Fact]
+        public void A_float_should_read_back_as_a_double()
+        {
+            Assert.Equal(typeof(double), Registry.GetClrType(Type(SqlTypeName.FLOAT)));
+            Assert.Equal(2.5d, RoundTrip(Type(SqlTypeName.FLOAT), 2.5d));
+        }
+
+        [Fact]
+        public void A_binary_should_read_back_as_bytes()
+        {
+            Assert.Equal(typeof(byte[]), Registry.GetClrType(Type(SqlTypeName.BINARY)));
+            Assert.Equal(new byte[] { 9 }, RoundTrip(Type(SqlTypeName.BINARY), new byte[] { 9 }));
+        }
+
+        [Fact]
+        public void A_date_should_read_back_as_a_date_time()
+        {
+            Assert.Equal(typeof(DateTime), Registry.GetClrType(Type(SqlTypeName.DATE)));
+            Assert.Equal(new DateTime(2020, 1, 2), RoundTrip(Type(SqlTypeName.DATE), new DateTime(2020, 1, 2)));
+        }
+
+        /// <summary>
+        /// The storage form, which is the fact the .NET value cannot carry: a <c>DATE</c> is a count of days
+        /// and a <c>TIMESTAMP</c> a count of milliseconds, both integers.
+        /// </summary>
+        [Fact]
+        public void A_date_should_be_held_as_a_count_of_days()
+        {
+            var held = Registry.ToCalcite(null, Type(SqlTypeName.DATE), new DateTime(1970, 1, 11));
+
+            Assert.Equal(java.lang.Integer.valueOf(10), held);
+        }
+
+        [Fact]
+        public void A_timestamp_should_be_held_as_a_count_of_milliseconds()
+        {
+            var held = Registry.ToCalcite(null, Type(SqlTypeName.TIMESTAMP), new DateTime(1970, 1, 1, 0, 0, 1, DateTimeKind.Utc));
+
+            Assert.Equal(java.lang.Long.valueOf(1000), held);
+        }
+
+        /// <summary>
+        /// The zoned temporal types, which all read back as an offset.
+        /// </summary>
+        [Theory]
+        [InlineData(nameof(SqlTypeName.TIMESTAMP_TZ))]
+        [InlineData(nameof(SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE))]
+        public void A_zoned_timestamp_should_round_trip_as_an_offset(string sqlTypeName)
+        {
+            var value = new DateTimeOffset(2020, 1, 2, 3, 4, 5, TimeSpan.Zero);
+            var type = Type(SqlTypeName.valueOf(sqlTypeName));
+
+            Assert.Equal(typeof(DateTimeOffset), Registry.GetClrType(type));
+            Assert.Equal(value, RoundTrip(type, value));
+        }
+
+        /// <summary>
+        /// A <c>NULL</c> column is null whatever a provider handed over, which is the whole of that type.
+        /// </summary>
+        [Fact]
+        public void A_null_type_should_read_as_null()
+        {
+            Assert.Null(Registry.FromCalcite(null, Type(SqlTypeName.NULL), java.lang.Integer.valueOf(1)));
+        }
+
+        // ------------------------------------------------------------------------------------
+        // What a bare CLR value is written as, which is the other direction of the same table.
+        // ------------------------------------------------------------------------------------
+
+        [Theory]
+        [InlineData(nameof(SqlTypeName.BOOLEAN), true)]
+        [InlineData(nameof(SqlTypeName.INTEGER), 1)]
+        [InlineData(nameof(SqlTypeName.BIGINT), 1L)]
+        [InlineData(nameof(SqlTypeName.DOUBLE), 1.0d)]
+        [InlineData(nameof(SqlTypeName.REAL), 1.0f)]
+        [InlineData(nameof(SqlTypeName.VARCHAR), "x")]
+        public void A_bare_value_should_be_written_as_the_type_it_pairs_with(string sqlTypeName, object value)
+        {
+            var mapping = Registry.RequireMapping(value.GetType(), null);
+
+            Assert.Equal(SqlTypeName.valueOf(sqlTypeName), mapping.RelType.getSqlTypeName());
+        }
+
+        /// <summary>
+        /// A bare <see cref="DateTime"/> is a <c>TIMESTAMP</c> and never a <c>DATE</c>, and a
+        /// <see cref="DateOnly"/> is the reverse. The two directions are separate facts, which is what the
+        /// match flags are for.
+        /// </summary>
+        [Fact]
+        public void A_bare_date_time_should_be_written_as_a_timestamp()
+        {
+            Assert.Equal(SqlTypeName.TIMESTAMP, Registry.RequireMapping(typeof(DateTime), null).RelType.getSqlTypeName());
+        }
+
+        [Fact]
+        public void A_bare_date_only_should_be_written_as_a_date()
+        {
+            Assert.Equal(SqlTypeName.DATE, Registry.RequireMapping(typeof(DateOnly), null).RelType.getSqlTypeName());
+        }
+
+        /// <summary>
+        /// And a <c>DATE</c> column is never read back as a <see cref="DateOnly"/> unless asked, which is
+        /// the same fact from the other side.
+        /// </summary>
+        [Fact]
+        public void A_date_should_read_back_as_a_date_only_only_when_asked()
+        {
+            Assert.NotEqual(typeof(DateOnly), Registry.GetClrType(Type(SqlTypeName.DATE)));
+            Assert.Equal(new DateOnly(2020, 1, 2), RoundTrip(Type(SqlTypeName.DATE), new DateOnly(2020, 1, 2), typeof(DateOnly)));
+        }
+
+        /// <summary>
+        /// A conversion nobody defaults to is still legal when both types are named. This is the
+        /// "can a caller read a <c>TIMESTAMP</c> as a <see cref="DateOnly"/>" question, answered yes.
+        /// </summary>
+        [Fact]
+        public void A_named_conversion_should_be_legal_without_being_a_default()
+        {
+            Assert.NotNull(Registry.GetMapping(typeof(DateOnly), Type(SqlTypeName.TIMESTAMP)));
+            Assert.NotEqual(typeof(DateOnly), Registry.GetClrType(Type(SqlTypeName.TIMESTAMP)));
+        }
+
+        /// <summary>
+        /// And a pair nothing in the table carries is refused rather than guessed at. This is the
+        /// "can a caller read a <c>BIGINT</c> as an <see cref="int"/>" question, answered no.
+        /// </summary>
+        [Fact]
+        public void A_pair_the_table_does_not_carry_should_be_refused()
+        {
+            Assert.Null(Registry.GetMapping(typeof(int), Type(SqlTypeName.BIGINT)));
+            Assert.Throws<ClrTypeMappingException>(() => Registry.RequireMapping(typeof(int), Type(SqlTypeName.BIGINT)));
+        }
+
+        // ------------------------------------------------------------------------------------
+        // Collections, which recurse through the same registry.
+        // ------------------------------------------------------------------------------------
+
+        [Fact]
+        public void An_array_should_read_back_as_an_array_of_its_element()
+        {
+            var type = ArrayOf(Type(SqlTypeName.INTEGER, nullable: false));
+
+            Assert.Equal(typeof(int[]), Registry.GetClrType(type));
+            Assert.Equal(new[] { 1, 2, 3 }, RoundTrip(type, new[] { 1, 2, 3 }));
+        }
+
+        [Fact]
+        public void A_multiset_should_read_back_the_same_way_an_array_does()
+        {
+            var type = Factory.createMultisetType(Type(SqlTypeName.INTEGER, nullable: false), -1);
+
+            Assert.Equal(typeof(int[]), Registry.GetClrType(type));
+            Assert.Equal(new[] { 1, 2 }, RoundTrip(type, new[] { 1, 2 }));
+        }
+
+        /// <summary>
+        /// The element's nullability is the array's element type, an array having no other way to hold a
+        /// null.
+        /// </summary>
+        [Fact]
+        public void An_array_of_a_nullable_element_should_be_an_array_of_nullable()
+        {
+            var type = ArrayOf(Type(SqlTypeName.INTEGER, nullable: true));
+
+            Assert.Equal(typeof(int?[]), Registry.GetClrType(type));
+            Assert.Equal(new int?[] { 1, null, 3 }, RoundTrip(type, new int?[] { 1, null, 3 }));
+        }
+
+        /// <summary>
+        /// An empty collection and one holding nothing but nulls still know what they are, because the type
+        /// says so and nothing is measured from the values.
+        /// </summary>
+        [Fact]
+        public void An_empty_array_should_keep_its_element_type()
+        {
+            var type = ArrayOf(Type(SqlTypeName.INTEGER, nullable: false));
+
+            Assert.Equal(Array.Empty<int>(), RoundTrip(type, Array.Empty<int>()));
+        }
+
+        [Fact]
+        public void An_array_of_nothing_but_nulls_should_keep_its_element_type()
+        {
+            var type = ArrayOf(Type(SqlTypeName.INTEGER, nullable: true));
+
+            Assert.Equal(new int?[] { null, null }, RoundTrip(type, new int?[] { null, null }));
+        }
+
+        /// <summary>
+        /// The recursion, which is the whole point: an array of arrays is the element's mapping wrapped
+        /// twice, and no entry anywhere names <c>int[][]</c>.
+        /// </summary>
+        [Fact]
+        public void A_nested_array_should_read_back_as_a_nested_array()
+        {
+            var type = ArrayOf(ArrayOf(Type(SqlTypeName.INTEGER, nullable: false)));
+
+            Assert.Equal(typeof(int[][]), Registry.GetClrType(type));
+
+            var value = new[] { new[] { 1, 2 }, new[] { 3 } };
+            var back = Assert.IsType<int[][]>(RoundTrip(type, value));
+
+            Assert.Equal(new[] { 1, 2 }, back[0]);
+            Assert.Equal(new[] { 3 }, back[1]);
+        }
+
+        [Fact]
+        public void A_thrice_nested_array_should_read_back_at_three_levels()
+        {
+            var type = ArrayOf(ArrayOf(ArrayOf(Type(SqlTypeName.INTEGER, nullable: false))));
+
+            Assert.Equal(typeof(int[][][]), Registry.GetClrType(type));
+
+            var value = new[] { new[] { new[] { 7 } } };
+            var back = Assert.IsType<int[][][]>(RoundTrip(type, value));
+
+            Assert.Equal(7, back[0][0][0]);
+        }
+
+        [Fact]
+        public void An_array_of_strings_should_read_back_as_strings()
+        {
+            var type = ArrayOf(Type(SqlTypeName.VARCHAR, nullable: false));
+
+            Assert.Equal(typeof(string[]), Registry.GetClrType(type));
+            Assert.Equal(new[] { "a", "b" }, RoundTrip(type, new[] { "a", "b" }));
+        }
+
+        /// <summary>
+        /// A <c>DATE</c> inside an array is still a count of days, and only the element type says so.
+        /// </summary>
+        [Fact]
+        public void An_array_of_dates_should_read_back_as_dates()
+        {
+            var type = ArrayOf(Type(SqlTypeName.DATE, nullable: false));
+
+            Assert.Equal(typeof(DateTime[]), Registry.GetClrType(type));
+            Assert.Equal(new[] { new DateTime(2020, 1, 2) }, RoundTrip(type, new[] { new DateTime(2020, 1, 2) }));
+        }
+
+        // ------------------------------------------------------------------------------------
+        // Maps and rows.
+        // ------------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_map_should_read_back_as_a_dictionary()
+        {
+            var type = Factory.createMapType(Type(SqlTypeName.VARCHAR, nullable: false), Type(SqlTypeName.INTEGER, nullable: false));
+
+            Assert.Equal(typeof(Dictionary<string, int>), Registry.GetClrType(type));
+
+            var back = Assert.IsType<Dictionary<string, int>>(RoundTrip(type, new Dictionary<string, int> { ["a"] = 1 }));
+            Assert.Equal(1, back["a"]);
+        }
+
+        /// <summary>
+        /// A map whose key type admits a null cannot be a dictionary at all, so the declared type decides
+        /// the shape and it decides it the same way for every row.
+        /// </summary>
+        [Fact]
+        public void A_map_with_a_nullable_key_should_read_back_as_pairs()
+        {
+            var type = Factory.createMapType(Type(SqlTypeName.VARCHAR, nullable: true), Type(SqlTypeName.INTEGER, nullable: false));
+
+            Assert.Equal(typeof(KeyValuePair<string, int>[]), Registry.GetClrType(type));
+        }
+
+        [Fact]
+        public void A_map_of_arrays_should_recurse_through_its_value()
+        {
+            var type = Factory.createMapType(Type(SqlTypeName.VARCHAR, nullable: false), ArrayOf(Type(SqlTypeName.INTEGER, nullable: false)));
+
+            Assert.Equal(typeof(Dictionary<string, int[]>), Registry.GetClrType(type));
+
+            var back = Assert.IsType<Dictionary<string, int[]>>(RoundTrip(type, new Dictionary<string, int[]> { ["a"] = [1, 2] }));
+            Assert.Equal(new[] { 1, 2 }, back["a"]);
+        }
+
+        [Fact]
+        public void A_row_should_read_back_as_an_object_array()
+        {
+            var type = Factory.builder()
+                .add("A", Type(SqlTypeName.INTEGER, nullable: false))
+                .add("B", Type(SqlTypeName.VARCHAR, nullable: false))
+                .build();
+
+            Assert.Equal(typeof(object[]), Registry.GetClrType(type));
+            Assert.Equal(new object[] { 1, "x" }, RoundTrip(type, new object[] { 1, "x" }));
+        }
+
+        [Fact]
+        public void An_array_of_rows_should_recurse_through_its_element()
+        {
+            var row = Factory.builder().add("A", Type(SqlTypeName.INTEGER, nullable: false)).build();
+            var type = ArrayOf(row);
+
+            Assert.Equal(typeof(object[][]), Registry.GetClrType(type));
+
+            var back = Assert.IsType<object[][]>(RoundTrip(type, new[] { new object[] { 5 } }));
+            Assert.Equal(5, back[0][0]);
+        }
+
+        /// <summary>
+        /// <c>RepresentationType</c> is not <c>ClrType</c>. One is the class the value is actually held in
+        /// between the plan and here, which for nearly every Calcite type is a Java class reached through
+        /// IKVM; the other is the .NET type a caller is handed. They coincide only where Calcite's runtime
+        /// already holds a .NET type, which is why both exist and why the registry checks one against the
+        /// other.
+        /// </summary>
+        [Fact]
+        public void The_representation_should_not_be_the_clr_type()
+        {
+            var mapping = Registry.RequireMapping(null, Type(SqlTypeName.INTEGER));
+
+            Assert.Equal(typeof(int), mapping.ClrType);
+            Assert.Equal(typeof(java.lang.Integer), mapping.RepresentationType);
+            Assert.NotEqual(mapping.ClrType, mapping.RepresentationType);
+        }
+
+        /// <summary>
+        /// And the representation is what the value actually is on the way in, which is the thing the
+        /// check on a mapping's first conversion enforces.
+        /// </summary>
+        [Fact]
+        public void A_written_value_should_be_of_the_representation_type()
+        {
+            var mapping = Registry.RequireMapping(null, Type(SqlTypeName.INTEGER));
+            var held = Registry.ToCalcite(null, Type(SqlTypeName.INTEGER), 5);
+
+            Assert.NotNull(held);
+            Assert.IsType<java.lang.Integer>(held);
+            Assert.True(mapping.RepresentationType.IsInstanceOfType(held));
+        }
+
+        /// <summary>
+        /// A mapping that answers with the wrong class fails at the boundary rather than inside a plan
+        /// several frames away, which is what that check is for.
+        /// </summary>
+        [Fact]
+        public void A_mapping_that_answers_with_the_wrong_class_should_be_refused()
+        {
+            var registry = new ClrTypeMapper().Prepend(new WrongRepresentationResolver()).Bind(Factory);
+
+            Assert.Throws<ClrTypeMappingException>(() => registry.ToCalcite(null, Type(SqlTypeName.INTEGER), 5));
+        }
+
+        sealed class WrongRepresentationResolver : IClrTypeResolver
+        {
+
+            public ClrTypeMapping? GetMapping(Type? clrType, RelDataType? relType, ClrTypeContext context)
+            {
+                if (relType is not null && relType.getSqlTypeName() == SqlTypeName.INTEGER && (clrType is null || clrType == typeof(int)))
+                    // a CLR int where an INTEGER is held in a java.lang.Integer
+                    return new DelegateClrTypeMapping(context, relType, typeof(int), v => v, v => v);
+
+                return null;
+            }
+
+        }
+
+        // ------------------------------------------------------------------------------------
+        // What a mapping says about itself, which is where both fixed lists are inferred from.
+        // ------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Every mapping infers both names, and from different halves of itself: the ADO.NET one from the
+        /// .NET type it presents, the Calcite one from the Calcite type it is for. Neither is stated by the
+        /// table, so a mapping a caller registers gets both without doing anything.
+        /// </summary>
+        [Theory]
+        [InlineData(nameof(SqlTypeName.INTEGER), System.Data.DbType.Int32, CalciteDbType.Integer)]
+        [InlineData(nameof(SqlTypeName.BIGINT), System.Data.DbType.Int64, CalciteDbType.BigInt)]
+        [InlineData(nameof(SqlTypeName.UINTEGER), System.Data.DbType.UInt32, CalciteDbType.UInteger)]
+        [InlineData(nameof(SqlTypeName.VARCHAR), System.Data.DbType.String, CalciteDbType.VarChar)]
+        [InlineData(nameof(SqlTypeName.UUID), System.Data.DbType.Guid, CalciteDbType.Uuid)]
+        public void A_mapping_should_infer_both_names(string sqlTypeName, System.Data.DbType dbType, CalciteDbType calciteDbType)
+        {
+            var mapping = Registry.RequireMapping(null, Type(SqlTypeName.valueOf(sqlTypeName)));
+
+            Assert.Equal(dbType, mapping.DbType);
+            Assert.Equal(calciteDbType, mapping.CalciteDbType);
+        }
+
+        /// <summary>
+        /// The two names are inferred from different halves, which shows where one is exact and the other
+        /// approximates. A <c>DATE</c> and a <c>TIMESTAMP</c> are one <see cref="System.Data.DbType"/>
+        /// because both are read back as a <see cref="DateTime"/>, and two Calcite names because they are
+        /// two types.
+        /// </summary>
+        [Fact]
+        public void Two_calcite_types_read_as_one_clr_type_should_share_a_db_type_and_not_a_calcite_one()
+        {
+            var date = Registry.RequireMapping(null, Type(SqlTypeName.DATE));
+            var timestamp = Registry.RequireMapping(null, Type(SqlTypeName.TIMESTAMP));
+
+            Assert.Equal(date.ClrType, timestamp.ClrType);
+            Assert.Equal(date.DbType, timestamp.DbType);
+            Assert.NotEqual(date.CalciteDbType, timestamp.CalciteDbType);
+        }
+
+        /// <summary>
+        /// A collection infers both too, and the ADO.NET list has nothing for one.
+        /// </summary>
+        [Fact]
+        public void A_collection_mapping_should_infer_both_names()
+        {
+            var mapping = Registry.RequireMapping(null, ArrayOf(Type(SqlTypeName.INTEGER, nullable: false)));
+
+            Assert.Equal(System.Data.DbType.Object, mapping.DbType);
+            Assert.Equal(CalciteDbType.Array | CalciteDbType.Integer, mapping.CalciteDbType);
+        }
+
+        /// <summary>
+        /// A mapping a caller registered for a type of its own infers both without stating either, which is
+        /// the point of deriving rather than declaring them.
+        /// </summary>
+        [Fact]
+        public void A_caller_mapping_should_infer_both_names()
+        {
+            var registry = new ClrTypeMapper().Prepend(new UpperCaseResolver()).Bind(Factory);
+            var mapping = registry.RequireMapping(null, Type(SqlTypeName.VARCHAR));
+
+            Assert.Equal(System.Data.DbType.String, mapping.DbType);
+            Assert.Equal(CalciteDbType.VarChar, mapping.CalciteDbType);
+        }
+
+        /// <summary>
+        /// A collection's mapping holds its element's, which is what makes the tree walkable by a caller
+        /// doing introspection rather than conversion.
+        /// </summary>
+        [Fact]
+        public void A_collection_mapping_should_expose_the_mapping_it_wraps()
+        {
+            var type = ArrayOf(ArrayOf(Type(SqlTypeName.INTEGER, nullable: false)));
+            var outer = Assert.IsType<CollectionClrTypeMapping>(Registry.RequireMapping(null, type));
+            var inner = Assert.IsType<CollectionClrTypeMapping>(outer.ElementMapping);
+
+            Assert.Equal(typeof(int), inner.ElementMapping.ClrType);
+            Assert.Equal(SqlTypeName.INTEGER, inner.ElementMapping.RelType.getSqlTypeName());
+        }
+
+        /// <summary>
+        /// A caller's own resolver reaches inside a collection without the collection knowing, because the
+        /// element is resolved through the registry rather than by a table here.
+        /// </summary>
+        [Fact]
+        public void A_caller_mapping_should_be_reached_through_a_collection()
+        {
+            var registry = new ClrTypeMapper().Prepend(new UpperCaseResolver()).Bind(Factory);
+            var type = ArrayOf(Type(SqlTypeName.VARCHAR, nullable: false));
+
+            var held = registry.ToCalcite(null, type, new[] { "a", "b" });
+
+            Assert.Equal(new[] { "A", "B" }, registry.FromCalcite(null, type, held));
+        }
+
+        sealed class UpperCaseResolver : IClrTypeResolver
+        {
+
+            public ClrTypeMapping? GetMapping(Type? clrType, RelDataType? relType, ClrTypeContext context)
+            {
+                if (relType is not null && relType.getSqlTypeName() == SqlTypeName.VARCHAR && (clrType is null || clrType == typeof(string)))
+                    return new DelegateClrTypeMapping(context, relType, typeof(string), v => (string)v, v => ((string)v).ToUpperInvariant());
+
+                return null;
+            }
+
+        }
+
+    }
+
+}
