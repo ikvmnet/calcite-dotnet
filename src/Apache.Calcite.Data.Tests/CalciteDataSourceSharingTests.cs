@@ -174,7 +174,8 @@ namespace Apache.Calcite.Data.Tests
 
         /// <summary>
         /// <c>Synchronous</c> chooses the convention a connection plans into and nothing that is built, so
-        /// it is not part of the key — as Npgsql leaves <c>TargetSessionAttributes</c> out of its.
+        /// it is not part of the key. What a key has to separate is what would otherwise be shared
+        /// wrongly, and two connections differing only in this share a root correctly.
         /// </summary>
         [Fact]
         public void Synchronous_should_not_make_a_second_root()
