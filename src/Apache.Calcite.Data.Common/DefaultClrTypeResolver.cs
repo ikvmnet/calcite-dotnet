@@ -62,8 +62,10 @@ namespace Apache.Calcite.Data.Common
             m.Add(typeof(TimeSpan), SqlTypeName.TIME, CalciteValues.ToTime, CalciteValues.FromTime);
             m.Add(typeof(DateTimeOffset), SqlTypeName.TIMESTAMP_TZ, CalciteValues.ToTimestampTz, CalciteValues.FromTimestampTz);
             // Calcite has had a UUID type since 1.43 and holds one in a UuidValue, so a Guid pairs with it
-            // in both directions. Before that there was no such type and a Guid had to be written as text,
-            // which is what the CHAR(36) entry below still accepts by name.
+            // and pairs with nothing else. There is deliberately no entry carrying a Guid to or from a
+            // character type: reading text as a Guid is a conversion and a typed getter is a cast, and
+            // before 1.43 the pairing existed only because there was no UUID to pair with. The ADO adapter
+            // typed a provider uniqueidentifier as CHAR(36) for the same reason and stopped.
             m.Add(typeof(Guid), SqlTypeName.UUID, CalciteValues.ToUuid, CalciteValues.FromUuid);
 
             // what a Calcite type reads back as where the CLR type it pairs with is spoken for above
@@ -95,10 +97,7 @@ namespace Apache.Calcite.Data.Common
             })
                 m.Add(typeof(TimeSpan), time, CalciteValues.ToIntervalTime, CalciteValues.FromIntervalTime, ClrTypeMatch.RelDefault);
 
-            // what a CLR type is written as where the Calcite type it pairs with is spoken for above. A
-            // Guid is a CHAR(36) on the way in and is never what a CHAR(36) column answers with, there
-            // being nothing about such a column that says it holds one
-            m.Add(typeof(Guid), SqlTypeName.CHAR, CalciteValues.ToGuid, CalciteValues.FromGuid, ClrTypeMatch.Named, precision: 36);
+            // what a CLR type is written as where the Calcite type it pairs with is spoken for above.
             // a CHAR is a string in Calcite's runtime, so a char is a string of one. Written as a CHAR(1)
             // and never what a CHAR(1) column answers with, a one-character column being a string like any
             // other.
@@ -114,7 +113,6 @@ namespace Apache.Calcite.Data.Common
             m.Add(typeof(TimeOnly), SqlTypeName.TIMESTAMP, CalciteValues.ToTimestamp, v => TimeOnly.FromDateTime((DateTime)CalciteValues.FromTimestamp(v)), ClrTypeMatch.Named);
             m.Add(typeof(DateTime), SqlTypeName.TIMESTAMP_TZ, CalciteValues.ToTimestampTz, v => ((DateTimeOffset)CalciteValues.FromTimestampTz(v)).UtcDateTime, ClrTypeMatch.Named);
             m.Add(typeof(DateTimeOffset), SqlTypeName.TIMESTAMP, CalciteValues.ToTimestamp, v => new DateTimeOffset((DateTime)CalciteValues.FromTimestamp(v), TimeSpan.Zero), ClrTypeMatch.Named);
-            m.Add(typeof(Guid), SqlTypeName.VARCHAR, CalciteValues.ToGuid, CalciteValues.FromGuid, ClrTypeMatch.Named);
 
             // the collections, which map by mapping what they hold and wrapping the result. Each asks the
             // registry for its element's, key's, value's or field's mapping, so one entry per kind covers

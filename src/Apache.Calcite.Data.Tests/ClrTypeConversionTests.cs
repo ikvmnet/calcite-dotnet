@@ -221,6 +221,57 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
+        /// <b>Text is never read as a <see cref="Guid"/>, and a <see cref="Guid"/> is never written as
+        /// text.</b> Parsing text into a <see cref="Guid"/> is a conversion and a typed getter is a cast,
+        /// so a <c>CHAR</c> or <c>VARCHAR</c> column holding something that looks like one is still a
+        /// string. The pairing existed only because Calcite had no <c>UUID</c> type before 1.43; the ADO
+        /// adapter typed a provider <c>uniqueidentifier</c> as <c>CHAR(36)</c> for the same reason and
+        /// stopped.
+        /// </summary>
+        [Theory]
+        [InlineData(nameof(SqlTypeName.CHAR))]
+        [InlineData(nameof(SqlTypeName.VARCHAR))]
+        public void A_character_column_should_never_be_read_as_a_guid(string sqlTypeName)
+        {
+            var type = Type(SqlTypeName.valueOf(sqlTypeName));
+
+            Assert.Null(Registry.GetMapping(typeof(Guid), type));
+            Assert.Throws<ClrTypeMappingException>(() => Registry.RequireMapping(typeof(Guid), type));
+        }
+
+        [Theory]
+        [InlineData(nameof(SqlTypeName.CHAR))]
+        [InlineData(nameof(SqlTypeName.VARCHAR))]
+        public void A_guid_should_never_be_written_as_text(string sqlTypeName)
+        {
+            Assert.Null(Registry.GetMapping(typeof(Guid), Type(SqlTypeName.valueOf(sqlTypeName))));
+        }
+
+        /// <summary>
+        /// A <c>UUID</c> is the one thing a <see cref="Guid"/> pairs with, in both directions.
+        /// </summary>
+        [Fact]
+        public void A_guid_should_pair_with_uuid_and_nothing_else()
+        {
+            var value = Guid.NewGuid();
+
+            Assert.Equal(SqlTypeName.UUID, Registry.RequireMapping(typeof(Guid), null).RelType.getSqlTypeName());
+            Assert.Equal(typeof(Guid), Registry.GetClrType(Type(SqlTypeName.UUID)));
+            Assert.Equal(value, RoundTrip(Type(SqlTypeName.UUID), value));
+        }
+
+        /// <summary>
+        /// And a character column still reads as a string, so refusing the Guid costs nothing else.
+        /// </summary>
+        [Fact]
+        public void A_character_column_holding_guid_text_should_read_as_a_string()
+        {
+            var text = Guid.NewGuid().ToString();
+
+            Assert.Equal(text, RoundTrip(Type(SqlTypeName.VARCHAR), text));
+        }
+
+        /// <summary>
         /// And a pair nothing in the table carries is refused rather than guessed at. This is the
         /// "can a caller read a <c>BIGINT</c> as an <see cref="int"/>" question, answered no.
         /// </summary>

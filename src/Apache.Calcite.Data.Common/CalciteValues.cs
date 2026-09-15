@@ -148,11 +148,6 @@ namespace Apache.Calcite.Data.Common
         public static object ToChar(object value) => value as string ?? Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
 
         /// <summary>
-        /// Converts a <see cref="Guid"/> to the string a <c>CHAR(36)</c> holds it as.
-        /// </summary>
-        public static object ToGuid(object value) => (value is Guid guid ? guid : Guid.Parse(Convert.ToString(value, CultureInfo.InvariantCulture) ?? "")).ToString();
-
-        /// <summary>
         /// Converts to the <c>java.lang.Integer</c> count of days a <c>DATE</c> is held in.
         /// </summary>
         /// <remarks>
@@ -325,11 +320,6 @@ namespace Apache.Calcite.Data.Common
         /// Reads the <see cref="string"/> a <c>CHAR</c> or <c>VARCHAR</c> is held in.
         /// </summary>
         public static object FromChar(object value) => value as string ?? value.ToString() ?? string.Empty;
-
-        /// <summary>
-        /// Reads a <c>CHAR(36)</c> as the <see cref="Guid"/> it spells.
-        /// </summary>
-        public static object FromGuid(object value) => Guid.Parse((string)FromChar(value));
 
         /// <summary>
         /// Reads the count of days a <c>DATE</c> is held in.
@@ -620,7 +610,7 @@ namespace Apache.Calcite.Data.Common
                 double v => ToDouble(v),
                 decimal v => ToDecimal(v),
                 string v => v,
-                Guid v => ToGuid(v),
+                Guid v => ToUuid(v),
                 DateTime v => ToTimestamp(v),
                 DateTimeOffset v => ToTimestampTz(v),
                 DateOnly v => ToDate(v),
@@ -655,6 +645,8 @@ namespace Apache.Calcite.Data.Common
                 java.sql.Date v => UnixEpoch.AddMilliseconds(v.getTime()),
                 java.sql.Time v => TimeSpan.FromMilliseconds(v.getTime()),
                 ByteString v => v.getBytes(),
+                org.apache.calcite.util.UuidValue v => JavaUuids.ToGuid(v),
+                java.util.UUID v => JavaUuids.ToGuid(v),
                 org.joou.UByte v => unchecked((byte)v.byteValue()),
                 org.joou.UShort v => unchecked((ushort)v.shortValue()),
                 org.joou.UInteger v => unchecked((uint)v.intValue()),
