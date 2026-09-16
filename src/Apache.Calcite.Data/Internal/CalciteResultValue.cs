@@ -447,6 +447,103 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
+        /// Implements the GetArray operation for a caller that names the element type.
+        /// </summary>
+        /// <typeparam name="T">The element type.</typeparam>
+        /// <returns>The column's value as an array of <typeparamref name="T"/>.</returns>
+        /// <exception cref="InvalidCastException">Where the column is not a collection, or nothing carries
+        /// its elements to <typeparamref name="T"/>.</exception>
+        /// <remarks>
+        /// <para>
+        /// The same conversion as <see cref="GetArray"/>, with the element type named instead of taken from
+        /// the column. Naming it <em>selects a mapping</em> rather than casting the result: a <c>DATE</c>
+        /// reads back as a <see cref="DateTime"/> by default and as a <see cref="DateOnly"/> when asked,
+        /// because the chain carries both, and asking is the only way to reach the second.
+        /// </para>
+        /// <para>
+        /// Which is why this walks the collection rather than converting it and casting. The conversion
+        /// answers the column's own reading, and a cast can only narrow what that produced — it cannot
+        /// reach a conversion that was never run.
+        /// </para>
+        /// <para>
+        /// The array is exactly <c>T[]</c>, so a null element in a column whose elements may be null is
+        /// refused where <typeparamref name="T"/> is a value type. <c>GetArray&lt;int?&gt;</c> is how a
+        /// caller says it expects one.
+        /// </para>
+        /// </remarks>
+        public T[] GetArray<T>()
+        {
+            if (_value is null)
+                throw Cannot(typeof(T).Name + "[]");
+
+            // a column that says nothing has no element type to select a mapping with, so the value's own
+            // class decides and what it produced is narrowed one element at a time
+            if (_sqlType?.name() is not (nameof(SqlTypeName.ARRAY) or nameof(SqlTypeName.MULTISET)))
+                return Untyped() is Array untyped ? Narrow<T>(untyped) : throw Cannot(typeof(T).Name + "[]");
+
+            if (_value is not java.util.Collection source)
+                throw Cannot(typeof(T).Name + "[]");
+
+            var component = _type.getComponentType() ?? throw Cannot(typeof(T).Name + "[]");
+
+            // object names the array's element type and no preference about which reading fills it, which is
+            // what a null clrType means to the chain and what GetFieldValue<object> means here
+            var named = typeof(T) == typeof(object) ? null : Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
+            var element = _registry.GetMapping(named, component) ?? throw Cannot(typeof(T).Name + "[]");
+
+            var array = new T[source.size()];
+
+            var i = 0;
+            for (var e = source.iterator(); e.hasNext(); i++)
+            {
+                var item = CollectionClrTypeMapping.Unwrap(e.next(), element);
+                if (item is null)
+                {
+                    if (default(T) is not null)
+                        throw Cannot(typeof(T).Name + "[]");
+
+                    continue;
+                }
+
+                array[i] = element.FromCalcite(item) is T converted ? converted : throw Cannot(typeof(T).Name + "[]");
+            }
+
+            return array;
+        }
+
+        /// <summary>
+        /// Returns an array read by a value's own class as an array of a named element type.
+        /// </summary>
+        /// <typeparam name="T">The element type.</typeparam>
+        /// <param name="source">The array the conversion produced.</param>
+        /// <returns>The array.</returns>
+        /// <exception cref="InvalidCastException">Where an element is not <typeparamref name="T"/>.</exception>
+        /// <remarks>
+        /// One element at a time rather than a cast of the whole, because an array of a value type is not an
+        /// array of <see cref="object"/> — <c>int[] is object[]</c> is false — so casting would refuse the
+        /// ordinary ask for a column whose elements are numbers.
+        /// </remarks>
+        T[] Narrow<T>(Array source)
+        {
+            var array = new T[source.Length];
+            for (var i = 0; i < array.Length; i++)
+            {
+                var item = source.GetValue(i);
+                if (item is null)
+                {
+                    if (default(T) is not null)
+                        throw Cannot(typeof(T).Name + "[]");
+
+                    continue;
+                }
+
+                array[i] = item is T converted ? converted : throw Cannot(typeof(T).Name + "[]");
+            }
+
+            return array;
+        }
+
+        /// <summary>
         /// Implements the GetGuid operation. Calcite's runtime representation of <c>UUID</c> is a
         /// <see cref="java.util.UUID"/>, and that is the only thing this reads: a character column
         /// holding text in canonical GUID form is a character column, and parsing it here would be

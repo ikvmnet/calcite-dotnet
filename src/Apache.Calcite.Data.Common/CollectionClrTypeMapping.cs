@@ -117,7 +117,7 @@ namespace Apache.Calcite.Data.Common
             var i = 0;
             for (var e = source.iterator(); e.hasNext(); i++)
             {
-                var item = Unwrap(e.next());
+                var item = Unwrap(e.next(), _element);
                 array.SetValue(item is null ? null : _element.FromCalcite(item), i);
             }
 
@@ -143,10 +143,17 @@ namespace Apache.Calcite.Data.Common
         /// left alone.</para>
         /// </remarks>
         /// <param name="value">The element as the collection held it.</param>
+        /// <param name="element">The mapping one element is carried across by.</param>
         /// <returns>The element, unwrapped where it was wrapped.</returns>
-        object? Unwrap(object? value)
+        /// <remarks>
+        /// Public and static because a caller naming its own element type walks a collection itself and
+        /// needs the same rule; two copies of it would be two answers to when a value is a wrapper.
+        /// </remarks>
+        public static object? Unwrap(object? value, ClrTypeMapping element)
         {
-            if (_element.RepresentationType == typeof(object[]) || _element.RepresentationType == typeof(object))
+            ArgumentNullException.ThrowIfNull(element);
+
+            if (element.RepresentationType == typeof(object[]) || element.RepresentationType == typeof(object))
                 return value;
 
             // the exact type, because an array of a reference type matches object[] by covariance and is a
