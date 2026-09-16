@@ -382,6 +382,15 @@ measured over 100,000 rows of six columns, taking both answers once per column m
 arrays, `CalciteResult` holds it for the life of the result, and the struct copies handed to each row
 share them.
 
+**And the registry's own cache is keyed on the type instance, because a `RelDataType` is interned.**
+`RelDataTypeFactoryImpl` canonizes every type it builds through a cache keyed on the type's digest,
+and that cache is static rather than per factory — measured, two separately constructed
+`JavaTypeFactoryImpl`s answer the same instance for `INTEGER`, and a type taken off a plan's row type
+is the same instance a factory hands back for the same description. So the identity is the instance,
+and asking for the digest string builds it again and hashes it. Interning is what makes that fast and
+not what makes it correct: were two instances ever to describe one type, each would resolve its own
+entry and both would be right.
+
 `CalciteResultValue` is the final conversion, from what Calcite produced to what the caller asked
 for: `GetValue` for the reader's untyped path, `GetFieldValue<T>` for the generic one, and a typed
 getter per ADO.NET accessor.
