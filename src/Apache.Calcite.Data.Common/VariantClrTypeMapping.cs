@@ -135,6 +135,17 @@ namespace Apache.Calcite.Data.Common
 
                 case nameof(Name.MAP):
                     return Entries(value);
+
+                // an interval names itself by its scale rather than by a SqlTypeName, so neither name
+                // reaches the table below and neither has a SqlTypeName to resolve a mapping with.
+                // INTERVAL_LONG is the year-month family, held as a count of months; INTERVAL_SHORT the
+                // day-time one, held as a count of milliseconds. Each reads as the declared types of that
+                // family do, which is an int and a TimeSpan
+                case nameof(Name.INTERVAL_LONG):
+                    return Interval(value, Name.INTERVAL_LONG, CalciteValues.FromIntervalMonths);
+
+                case nameof(Name.INTERVAL_SHORT):
+                    return Interval(value, Name.INTERVAL_SHORT, CalciteValues.FromIntervalTime);
             }
 
             if (Scalar(name) is not Name scalar)
@@ -150,6 +161,18 @@ namespace Apache.Calcite.Data.Common
                 _context.TypeFactory.createSqlType(SqlTypeName.valueOf(name)), true);
 
             return _context.Registry.RequireMapping(null, relType).FromCalcite(payload);
+        }
+
+        /// <summary>
+        /// Returns an interval payload, cast to the scale it says it is and decoded by the count it holds.
+        /// </summary>
+        /// <param name="value">The variant.</param>
+        /// <param name="scale">The runtime type the variant named itself.</param>
+        /// <param name="decode">What carries the count to the .NET type that family reads as.</param>
+        /// <returns>The .NET value, or <see langword="null"/> where the cast answered nothing.</returns>
+        static object? Interval(VariantValue value, Name scale, Func<object, object> decode)
+        {
+            return value.cast(new BasicSqlTypeRtti(scale)) is { } payload ? decode(payload) : null;
         }
 
         /// <summary>

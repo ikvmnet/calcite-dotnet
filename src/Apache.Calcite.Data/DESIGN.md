@@ -449,22 +449,37 @@ is that escape hatch now, by name, and it is the only one.
 `JavaDecimals` carries `java.math.BigDecimal` to and from `decimal` and `JavaUuids` carries
 `java.util.UUID` to and from `Guid`.
 
-`CalciteVariants` reads a `VARIANT`, whose runtime form is a `VariantValue` and therefore also never
-leaves. Two public calls do the scalar case: `getTypeString()` names the payload's type and `cast()`
-against a `BasicSqlTypeRtti` of that same name hands the payload back, in Calcite's storage form, for
-`CalciteValues.FromScalar` to decode by that name. Naming its *own* type is the point — `cast` is
+`VariantClrTypeMapping` reads a `VARIANT`, whose runtime form is a `VariantValue` and therefore also
+never leaves. (`Internal.CalciteVariants` is an earlier copy of the same reading that nothing calls —
+it measured 0% because it is unreachable, not because it is untested — and it has since drifted from
+the live one. It should go, with the `VariantValue` arm of `Internal.CalciteValues.FromRuntime` that
+is its only reference.) Two public calls do the scalar case: `getTypeString()` names the payload's
+type and `cast()` against a `BasicSqlTypeRtti` of that same name hands the payload back, in Calcite's
+storage form, for the mapping the registry answers for that type name to decode. Naming its *own*
+type is the point — `cast` is
 Calcite's SQL cast and it converts, a `DOUBLE` of 1.5 casting to `BIGINT` as 1, so it is only ever
 called with the type the variant says it already is. An array is walked with `item(1)`, `item(2)`, …
 until null rather than cast, since a variant keeps only a `RuntimeSqlTypeName` and cannot name its
 element type. A map is met halfway: a cast to `MAP<VARCHAR, VARCHAR>` answers the keys and drops the
 values, and `item(key)` reads each value back.
 
-**A `MULTISET`, a `ROW`, and a map whose keys are not character values are refused.** A multiset
-answers null to every `item`; a row answers only to field names the variant does not carry; a
-non-character key comes back null from the cast that would enumerate it. Calcite 1.43 exposes no
-public route to any of their contents, so `GetValue` throws and names which it was, rather than
-handing back the `VariantValue` — that would put a Java object in a caller's hands — or inventing a
-text form for it. If upstream exposes a variant's full `RuntimeTypeInformation`, all three open up.
+**An interval names itself by its scale rather than by a `SqlTypeName`**, so `INTERVAL_LONG` — the
+year-month family, held as a count of months — and `INTERVAL_SHORT` — the day-time one, held as a
+count of milliseconds — reach no entry by name and are cast and decoded on their own. Each reads as
+the declared types of its family do, an `int` and a `TimeSpan`, because a variant is the declared type
+written down and not a different type.
+
+**A `MULTISET`, a `ROW`, and a map whose keys are not character values are refused.** Measured against
+1.43, casting each to its own runtime type and to `ARRAY` and reading `item(1)`: a multiset and a row
+answer null to all of it, and a non-character key comes back null from the cast that would enumerate
+it. So `GetValue` throws and names which it was, rather than handing back the `VariantValue` — that
+would put a Java object in a caller's hands — or inventing a text form for it. If upstream exposes a
+variant's full `RuntimeTypeInformation`, all three open up.
+
+**A variant's nulls are objects, so every accessor asks `IsDbNull` and not whether the value is a Java
+null.** `VariantNull` is the variant type's own null and `VariantSqlNull` the SQL null of a declared
+type; both arrive as instances. `GetFieldValue<T>` tested for a Java null and so threw on a value
+`IsDBNull` had already called null.
 
 `CalciteDataReader` holds an array of `CalciteResult`s and delegates every accessor to
 `ActiveResult.Current.GetValue(ordinal)`. `NextResult` disposes the result it leaves and advances.
