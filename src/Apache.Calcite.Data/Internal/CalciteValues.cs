@@ -413,11 +413,21 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="result">The shaped value.</param>
         /// <returns><see langword="true"/> where the value was shaped.</returns>
         /// <remarks>
-        /// <c>GetFieldValue{T}</c> is the caller. <see cref="ToClr"/> measures an element type from the
-        /// values in hand, so a caller wanting an <c>IDictionary&lt;string, object&gt;</c> where the
-        /// values happen to agree on <c>int</c> is asking for a shape the measurement did not produce.
-        /// The element types named here are used instead — and only where the values already have them,
-        /// which is <see cref="Coerce"/>'s rule.
+        /// <c>GetFieldValue{T}</c> is the caller, and only after its first attempt has failed — anything the
+        /// converted value already is comes back from that. So this is for a shape the conversion did not
+        /// produce, and there are two: an array of a different element type, and a dictionary of different
+        /// key and value types.
+        ///
+        /// <para><b>A collection answers an array and nothing else.</b> Building a
+        /// <see cref="List{T}"/> or a <see cref="HashSet{T}"/> here was offered and is not: a collection
+        /// materializes as an array, an array is already an <c>IList&lt;T&gt;</c>, an
+        /// <c>IReadOnlyList&lt;T&gt;</c>, an <c>ICollection&lt;T&gt;</c> and an
+        /// <c>IEnumerable&lt;T&gt;</c>, so every one of those is answered by the attempt before this one
+        /// without a second shape being built. What a concrete list would add is a copy the caller did not
+        /// ask for and a second answer to what a collection is.</para>
+        ///
+        /// <para>The element types named here are used instead of the measured ones — and only where the
+        /// values already have them, which is <see cref="Coerce"/>'s rule.</para>
         /// </remarks>
         public static bool TryConvertTo(object? value, RelDataType? type, Type target, out object? result)
         {
@@ -459,34 +469,6 @@ namespace Apache.Calcite.Data.Internal
 
                 result = dictionary;
                 return true;
-            }
-
-            if (arguments.Length == 1 && value is java.util.Collection source)
-            {
-                var element = arguments[0];
-                var items = Read(source, type?.getComponentType(), element);
-
-                if (definition == typeof(ISet<>) || definition == typeof(HashSet<>))
-                {
-                    var set = Activator.CreateInstance(typeof(HashSet<>).MakeGenericType(element))!;
-                    var add = set.GetType().GetMethod(nameof(HashSet<int>.Add))!;
-                    foreach (var item in items)
-                        add.Invoke(set, new object?[] { item });
-
-                    result = set;
-                    return true;
-                }
-
-                if (definition == typeof(IList<>) || definition == typeof(ICollection<>) || definition == typeof(IEnumerable<>) ||
-                    definition == typeof(IReadOnlyList<>) || definition == typeof(IReadOnlyCollection<>) || definition == typeof(List<>))
-                {
-                    var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(element), items.Count)!;
-                    foreach (var item in items)
-                        list.Add(item);
-
-                    result = list;
-                    return true;
-                }
             }
 
             return false;
