@@ -138,9 +138,17 @@ namespace Apache.Calcite.Data.Tests
             ("SELECT \"L\" FROM \"ANYT\"", typeof(object)),
         ];
 
+        /// <remarks>
+        /// <b>The session's time zone is pinned, because two of these types read by it.</b> A
+        /// <c>TIMESTAMP WITH LOCAL TIME ZONE</c> and a <c>TIME WITH LOCAL TIME ZONE</c> are stored as an
+        /// instant and rendered against the session zone, so the same statement answers 03:04:05 on a
+        /// machine set to UTC and 09:04:05 on one at UTC-5 — correct both times, and not something a
+        /// recording can hold unless the zone is stated. Nothing else in the suite reads either type, so
+        /// this was the first thing to notice that they depend on it.
+        /// </remarks>
         static CalciteConnection Open()
         {
-            return new CalciteDataSourceBuilder(TestModels.InlineEmptyModelConnectionString)
+            return new CalciteDataSourceBuilder(TestModels.InlineEmptyModelConnectionString + ";TimeZone=UTC")
                 .ConfigureRootSchema(root =>
                 {
                     root.add("JT", new JavaArrayTable());

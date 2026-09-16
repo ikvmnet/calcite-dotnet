@@ -515,7 +515,7 @@
    IsDBNull           false
    GetFieldType       DateTimeOffset
    GetDataTypeName    String TIMESTAMP_WITH_LOCAL_TIME_ZONE
-   GetValue           2020-01-02T09:04:05.0000000+00:00
+   GetValue           2020-01-02T03:04:05.0000000+00:00
    GetBoolean         refused
    GetString          refused
    GetChar            refused
@@ -532,19 +532,19 @@
    GetDecimal         refused
    GetGuid            refused
    GetDateTime        refused
-   GetDateTimeOffset  2020-01-02T09:04:05.0000000+00:00
+   GetDateTimeOffset  2020-01-02T03:04:05.0000000+00:00
    GetDateOnly        refused
    GetTimeOnly        refused
    GetTimeSpan        refused
    GetBytes           refused
    GetArray           refused
-   GetFieldValue<F>   2020-01-02T09:04:05.0000000+00:00
+   GetFieldValue<F>   2020-01-02T03:04:05.0000000+00:00
 
 == TIME_LTZ  SELECT CAST(TIME '03:04:05' AS TIME WITH LOCAL TIME ZONE)
    IsDBNull           false
    GetFieldType       DateTimeOffset
    GetDataTypeName    String TIME_WITH_LOCAL_TIME_ZONE
-   GetValue           0001-01-01T09:04:05.0000000+00:00
+   GetValue           0001-01-01T03:04:05.0000000+00:00
    GetBoolean         refused
    GetString          refused
    GetChar            refused
@@ -561,13 +561,13 @@
    GetDecimal         refused
    GetGuid            refused
    GetDateTime        refused
-   GetDateTimeOffset  0001-01-01T09:04:05.0000000+00:00
+   GetDateTimeOffset  0001-01-01T03:04:05.0000000+00:00
    GetDateOnly        refused
    GetTimeOnly        refused
    GetTimeSpan        refused
    GetBytes           refused
    GetArray           refused
-   GetFieldValue<F>   0001-01-01T09:04:05.0000000+00:00
+   GetFieldValue<F>   0001-01-01T03:04:05.0000000+00:00
 
 == INTERVAL_YM  SELECT INTERVAL '1-2' YEAR TO MONTH
    IsDBNull           false
@@ -1768,7 +1768,7 @@
    IsDBNull           false
    GetFieldType       DateTimeOffset[]
    GetDataTypeName    String TIMESTAMP_WITH_LOCAL_TIME_ZONE(0) ARRAY
-   GetValue           DateTimeOffset[] [2020-01-02T09:04:05.0000000+00:00]
+   GetValue           DateTimeOffset[] [2020-01-02T03:04:05.0000000+00:00]
    GetBoolean         refused
    GetString          refused
    GetChar            refused
@@ -1790,14 +1790,14 @@
    GetTimeOnly        refused
    GetTimeSpan        refused
    GetBytes           refused
-   GetArray           DateTimeOffset[] [2020-01-02T09:04:05.0000000+00:00]
-   GetFieldValue<F>   DateTimeOffset[] [2020-01-02T09:04:05.0000000+00:00]
+   GetArray           DateTimeOffset[] [2020-01-02T03:04:05.0000000+00:00]
+   GetFieldValue<F>   DateTimeOffset[] [2020-01-02T03:04:05.0000000+00:00]
 
 == TIMESTAMP_LTZ[] +null  SELECT ARRAY[CAST(TIMESTAMP '2020-01-02 03:04:05' AS TIMESTAMP WITH LOCAL TIME ZONE), NULL]
    IsDBNull           false
    GetFieldType       DateTimeOffset?[]
    GetDataTypeName    String TIMESTAMP_WITH_LOCAL_TIME_ZONE(0) ARRAY
-   GetValue           DateTimeOffset?[] [2020-01-02T09:04:05.0000000+00:00, null]
+   GetValue           DateTimeOffset?[] [2020-01-02T03:04:05.0000000+00:00, null]
    GetBoolean         refused
    GetString          refused
    GetChar            refused
@@ -1819,14 +1819,14 @@
    GetTimeOnly        refused
    GetTimeSpan        refused
    GetBytes           refused
-   GetArray           DateTimeOffset?[] [2020-01-02T09:04:05.0000000+00:00, null]
-   GetFieldValue<F>   DateTimeOffset?[] [2020-01-02T09:04:05.0000000+00:00, null]
+   GetArray           DateTimeOffset?[] [2020-01-02T03:04:05.0000000+00:00, null]
+   GetFieldValue<F>   DateTimeOffset?[] [2020-01-02T03:04:05.0000000+00:00, null]
 
 == TIME_LTZ[]  SELECT ARRAY[CAST(TIME '03:04:05' AS TIME WITH LOCAL TIME ZONE)]
    IsDBNull           false
    GetFieldType       DateTimeOffset[]
    GetDataTypeName    String TIME_WITH_LOCAL_TIME_ZONE(0) ARRAY
-   GetValue           DateTimeOffset[] [0001-01-01T09:04:05.0000000+00:00]
+   GetValue           DateTimeOffset[] [0001-01-01T03:04:05.0000000+00:00]
    GetBoolean         refused
    GetString          refused
    GetChar            refused
@@ -1848,14 +1848,14 @@
    GetTimeOnly        refused
    GetTimeSpan        refused
    GetBytes           refused
-   GetArray           DateTimeOffset[] [0001-01-01T09:04:05.0000000+00:00]
-   GetFieldValue<F>   DateTimeOffset[] [0001-01-01T09:04:05.0000000+00:00]
+   GetArray           DateTimeOffset[] [0001-01-01T03:04:05.0000000+00:00]
+   GetFieldValue<F>   DateTimeOffset[] [0001-01-01T03:04:05.0000000+00:00]
 
 == TIME_LTZ[] +null  SELECT ARRAY[CAST(TIME '03:04:05' AS TIME WITH LOCAL TIME ZONE), NULL]
    IsDBNull           false
    GetFieldType       DateTimeOffset?[]
    GetDataTypeName    String TIME_WITH_LOCAL_TIME_ZONE(0) ARRAY
-   GetValue           DateTimeOffset?[] [0001-01-01T09:04:05.0000000+00:00, null]
+   GetValue           DateTimeOffset?[] [0001-01-01T03:04:05.0000000+00:00, null]
    GetBoolean         refused
    GetString          refused
    GetChar            refused
@@ -1877,8 +1877,8 @@
    GetTimeOnly        refused
    GetTimeSpan        refused
    GetBytes           refused
-   GetArray           DateTimeOffset?[] [0001-01-01T09:04:05.0000000+00:00, null]
-   GetFieldValue<F>   DateTimeOffset?[] [0001-01-01T09:04:05.0000000+00:00, null]
+   GetArray           DateTimeOffset?[] [0001-01-01T03:04:05.0000000+00:00, null]
+   GetFieldValue<F>   DateTimeOffset?[] [0001-01-01T03:04:05.0000000+00:00, null]
 
 == INTERVAL_YM[]  SELECT ARRAY[INTERVAL '1-2' YEAR TO MONTH]
    IsDBNull           false
