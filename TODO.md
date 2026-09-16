@@ -420,6 +420,12 @@ Listed worst-first by uncovered lines. The `Apache.Calcite.Data` figures are `do
   `CalciteParameterCollection` 54.6% (39), `CalciteBatchCommandCollection` 22.8% (27). Mechanical,
   high line yield.
 
+- **`Internal.CalciteVariants` is dead and should be deleted**, with the `VariantValue` arm of
+  `Internal.CalciteValues.FromRuntime` that is its only reference. It is an earlier copy of what
+  `VariantClrTypeMapping` does; it measured 0% because nothing reaches it, and the two have already
+  drifted — the interval reading was added to the live one alone. Confirm the arm is unreachable
+  before removing it.
+
 Also at 0% and worth deciding about rather than covering: `AdoTableQueryable` (no provider ships, see
 §5), `AdoUpdateEnumerable` (orphaned, see §1), and the twelve `Ado*Factory` relational factories with
 `AdoRules.GetRules(convention, relBuilderFactory)`, which nothing calls.

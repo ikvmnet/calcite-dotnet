@@ -203,7 +203,10 @@ namespace Apache.Calcite.Data.Internal
         /// </remarks>
         public T GetFieldValue<T>()
         {
-            if (_value is null)
+            // IsDbNull and not a Java null, because a variant's nulls are objects: a VariantNull reaching
+            // here is a null the reader has already said IsDBNull to, and reading it as anything but one
+            // would make the two accessors disagree about the same value
+            if (IsDbNull())
             {
                 // For value types, DBNull is not assignable; for reference types, return null.
                 if (default(T) is null)
