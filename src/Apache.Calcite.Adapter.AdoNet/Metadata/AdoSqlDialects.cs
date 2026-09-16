@@ -146,94 +146,64 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// for a server to run, and the server is the authority on what it accepts.
         /// </para>
         /// <para>
-        /// The second is what an unbounded string casts to — see <see cref="Mssql.getCastSpec"/>. The
-        /// third and fourth are both in <see cref="Mssql.unparseCall"/>: T-SQL has no concatenation
-        /// operator, and the modulo Calcite already writes for it is grouped wrongly. All three are the
-        /// same kind of correction and made for the same reason.
+        /// The second is what an unbounded string casts to — see <see cref="Mssql.getCastSpec"/>. The third
+        /// is in <see cref="Mssql.unparseCall"/>: the modulo Calcite already writes for T-SQL is grouped
+        /// wrongly. Both are the same kind of correction and made for the same reason.
+        ///
+        /// <para>There was a fourth, in the same method. T-SQL has no concatenation operator and Calcite
+        /// wrote <c>||</c> anyway, so every statement that concatenated reached the server as
+        /// <c>[A] || [B]</c> and answered "Incorrect syntax near '|'". A 1.43 snapshot made that
+        /// substitution upstream and the override went with it.</para>
         /// </para>
         /// </remarks>
         sealed class Mssql(SqlDialect.Context context) : MssqlSqlDialect(context)
         {
 
             /// <inheritdoc />
-            public override bool supportsGroupByLiteral()
-            {
-                return false;
-            }
-
-            /// <inheritdoc />
             /// <remarks>
             /// <para>
-            /// T-SQL has no <c>||</c>. <c>SqlStdOperatorTable.CONCAT</c> unparses as one, and
-            /// <see cref="MssqlSqlDialect"/> intercepts <c>SUBSTRING</c>, <c>CEIL</c>, <c>FLOOR</c>,
-            /// <c>MOD</c> and <c>SAFE_CAST</c> without intercepting it — so every statement that
-            /// concatenates reaches the server as <c>[A] || [B]</c> and answers "Incorrect syntax near
-            /// '|'". It is not confined to a select list: the operator reaches a predicate, a sort key and
-            /// an aggregate argument the same way, and two literals are not folded away, so no spelling of
-            /// the expression avoids it.
+            /// <b>The modulo Calcite writes for T-SQL is grouped wrongly, and this is where that is put
+            /// right.</b> CALCITE-6726 put the substitution in <see cref="MssqlSqlDialect"/>'s own
+            /// <c>unparseCall</c>: <see cref="SqlSyntax"/>'s <c>BINARY</c> unparses the call under
+            /// <c>PERCENT_REMAINDER</c>. What that shape does not carry across is precedence. By the time a
+            /// dialect is asked, <c>SqlCall.unparse</c> has already decided the parentheses around the call
+            /// from the call's <em>own</em> operator, so the substitution writes the new operator inside the
+            /// old one's parenthesisation, and where the two differ the grouping is the server's to get
+            /// wrong. <see cref="UnparseAsBinary"/> is where that is put right.
             /// </para>
             /// <para>
-            /// <c>+</c> rather than <c>CONCAT</c>, and the difference is answers rather than taste. Both
-            /// concatenate, and only <c>+</c> means what the operator means: <c>||</c> yields null when
-            /// either operand is null, <c>+</c> does the same under the default
-            /// <c>CONCAT_NULL_YIELDS_NULL</c>, and T-SQL's <c>CONCAT</c> reads a null operand as the empty
-            /// string. Rendering the function would trade a loud failure for a row where there should have
-            /// been none. Calcite models that function correctly and separately, as
-            /// <c>SqlLibraryOperators.CONCAT_FUNCTION_WITH_NULL</c> under <c>fun=mssql</c>, which is why
-            /// enabling the library does not repair the operator either.
-            /// </para>
-            /// <para>
-            /// The swap is the shape CALCITE-6726 already put in this method for <c>MOD</c>:
-            /// <see cref="SqlSyntax"/>'s <c>BINARY</c> unparses the call under another operator. What that
-            /// shape does not carry across is precedence, and by the time a dialect is asked,
-            /// <c>SqlCall.unparse</c> has already decided the parentheses around the call from the call's
-            /// own operator. So the substitution alone writes the new operator inside the old one's
-            /// parenthesisation, and where the two differ the grouping is the server's to get wrong.
-            /// <see cref="UnparseAsBinary"/> is where that is put right, and both substitutions go through
-            /// it. For concatenation the gap is unreachable — <c>||</c> is 60 and <c>+</c> is 40, so
-            /// <c>(a || b) * n</c> would come out <c>a + b * n</c>, and a string is not a valid operand of
-            /// <c>*</c>.
-            /// </para>
-            /// <para>
-            /// <c>MOD</c> is the same correction, and there the gap is not unreachable: it is a function
-            /// and carries a function's precedence of 100, <c>PERCENT_REMAINDER</c> is 60, and the operands
-            /// are numeric, so every context is a valid one. Measured on <c>MssqlSqlDialect.DEFAULT</c>,
-            /// with the call as the right operand:
-            /// </para>
-            /// <para>
+            /// The gap is reachable here: <c>MOD</c> is a function and carries a function's precedence of
+            /// 100, <c>PERCENT_REMAINDER</c> is 60, and the operands are numeric, so every context is a
+            /// valid one. Measured on <c>MssqlSqlDialect.DEFAULT</c>, with the call as the right operand,
             /// <c>n / MOD(a, b)</c> is written <c>n / a % b</c>, <c>n * MOD(a, b)</c> is written
             /// <c>n * a % b</c>, and <c>MOD(n, MOD(a, b))</c> is written <c>n % a % b</c> — each grouped by
             /// the server from the left, so over 12, 7 and 4 they answer 1, 0 and 1 where the expressions
             /// mean 4, 36 and 0.
             /// </para>
             /// <para>
-            /// Nothing else changes. As the left operand the rendering was already right, left
-            /// associativity giving what the nesting meant, and so was <c>n - MOD(a, b)</c>, <c>%</c>
-            /// binding tighter than <c>-</c>. The one place a parenthesis appears that Calcite would not
-            /// have written is under a prefix operator, which hands its operand a left precedence of 80:
-            /// <c>-MOD(a, b)</c> becomes <c>-(a % b)</c> where Calcite writes <c>-a % b</c>. Calcite is not
-            /// wrong there — SQL Server's <c>%</c> takes the sign of its dividend, so the two agree,
-            /// measured — but the rule does not know that and does not need to.
+            /// Nothing else changes. As the left operand the rendering was already right, left associativity
+            /// giving what the nesting meant, and so was <c>n - MOD(a, b)</c>, <c>%</c> binding tighter than
+            /// <c>-</c>. The one place a parenthesis appears that Calcite would not have written is under a
+            /// prefix operator, which hands its operand a left precedence of 80: <c>-MOD(a, b)</c> becomes
+            /// <c>-(a % b)</c> where Calcite writes <c>-a % b</c>. Calcite is not wrong there — SQL Server's
+            /// <c>%</c> takes the sign of its dividend, so the two agree, measured — but the rule does not
+            /// know that and does not need to.
             /// </para>
             /// <para>
-            /// Calcite does not close either gap. That is a defect to raise upstream rather than one to
-            /// reproduce: a dialect exists to generate SQL a server will run, and a misgrouped expression
-            /// is not that.
+            /// Calcite does not close the gap. That is a defect to raise upstream rather than one to
+            /// reproduce: a dialect exists to generate SQL a server will run, and a misgrouped expression is
+            /// not that.
             /// </para>
             /// <para>
-            /// <c>SqlDialect.supportsFunction</c> is not the place for the concatenation half and could not
-            /// be: it lists <c>CONCAT</c> in <c>BUILT_IN_OPERATORS_LIST</c>, and nothing in Calcite core at
-            /// 1.42 calls the method at all, so refusing the operator there would gate nothing.
+            /// Concatenation was the other half of this method and is not any more. Calcite wrote <c>||</c>
+            /// for T-SQL, which the server refuses, so the adapter substituted the <c>+</c> and carried the
+            /// parenthesisation across the same way. A 1.43 snapshot made the substitution upstream. It does
+            /// not carry the grouping — <c>(a || b) * n</c> comes out <c>a + b * n</c> — and that is left
+            /// alone, because reaching it takes a string as an operand of <c>*</c>, which does not validate.
             /// </para>
             /// </remarks>
             public override void unparseCall(SqlWriter writer, SqlCall call, int leftPrec, int rightPrec)
             {
-                if (call.getOperator().equals(SqlStdOperatorTable.CONCAT))
-                {
-                    UnparseAsBinary(writer, SqlStdOperatorTable.PLUS, call, leftPrec, rightPrec);
-                    return;
-                }
-
                 // the interception is Calcite's own and the operator is the one it chooses; what is taken
                 // over is where the parentheses go, which is why this is a case here rather than a call to
                 // base with something rearranged
