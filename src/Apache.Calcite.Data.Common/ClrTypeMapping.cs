@@ -156,6 +156,34 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
+        /// Gets whether <see cref="RelType"/> says what a value of it is, rather than leaving that to the
+        /// value's own class.
+        /// </summary>
+        /// <remarks>
+        /// True for all but three, and they are one problem written three ways. An <c>ANY</c> is
+        /// <c>java.lang.Object</c> and carries nothing; an <c>OTHER</c> is a class Calcite has no SQL name
+        /// for, which is what typing a column with <c>createJavaType</c> produces; a <c>VARIANT</c> carries
+        /// its payload's type with the payload. Either way the column does not say and the value does, and
+        /// an accessor that wants to know has to ask the mapping rather than compare
+        /// <see cref="org.apache.calcite.sql.type.SqlTypeName"/>s of its own — a list kept somewhere else is
+        /// a list that falls behind this table, which is how <c>OTHER</c> came to be readable by
+        /// <c>GetValue</c> and by no typed getter.
+        /// </remarks>
+        public virtual bool DescribesValue => true;
+
+        /// <summary>
+        /// Returns whether the value Calcite produced is a SQL null.
+        /// </summary>
+        /// <param name="value">The value, never <see langword="null"/>.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Everywhere but one, Calcite holds a SQL null as a Java null and a value that arrived at all is
+        /// not null. The exception is <c>VARIANT</c>, whose nulls are objects, and asking the mapping is
+        /// what keeps that knowledge in the one class that has it.
+        /// </remarks>
+        public virtual bool IsNull(object value) => false;
+
+        /// <summary>
         /// Converts a CLR value to the representation Calcite holds it in.
         /// </summary>
         /// <param name="value">The value, never <see langword="null"/>.</param>
