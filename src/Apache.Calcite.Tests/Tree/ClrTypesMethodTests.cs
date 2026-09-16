@@ -152,9 +152,11 @@ namespace Apache.Calcite.Tests.Tree
 
             Assert.IsTrue(failures.Count == 0, $"{called} called, {invoked.Count} invoked, {failures.Count} failed:{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
 
-            // a census of Calcite's table, so it moves with the version: 594 under 1.42, 607 under 1.43.
-            // What matters is that the thirteen that arrived all resolve, which the failure list above says
-            called.Should().Be(607);
+            // a census of Calcite's table, so it moves with the version and with the snapshot: 594 under
+            // 1.42, 607 under the first 1.43 snapshots this was run against, 608 since IEJoin arrived
+            // (CALCITE-7755, in 20260916.115040). What matters is that each one that arrives resolves,
+            // which the failure list above says and this number only notices.
+            called.Should().Be(608);
             invoked.Should().BeEquivalentTo([
                 "STRING_TO_UPPER: public java.lang.String java.lang.String.toUpperCase()",
                 "OBJECT_TO_STRING: public java.lang.String java.lang.Object.toString()",
