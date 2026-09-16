@@ -90,9 +90,12 @@ namespace Apache.Calcite.Data.Internal
         /// </remarks>
         public Type GetClrType(int index)
         {
-            // object where nothing maps the type, which is what ADO.NET has for "not one of these" and what
-            // the Avatica switch this replaces fell back to
-            return _registry.GetMapping(null, GetRelType(index))?.ClrType ?? typeof(object);
+            // and it refuses rather than guessing. object is an answer three Calcite types genuinely give
+            // — ANY carries no type, OTHER is a class with no SQL name, a VARIANT is any type at all, and
+            // each of their mappings says object — so answering object for a type nothing maps says the
+            // same thing about a column the provider cannot read at all, and a caller reading GetFieldType
+            // to decide what to ask for would be told to ask for object and then refused
+            return _registry.RequireMapping(null, GetRelType(index)).ClrType;
         }
 
         /// <summary>

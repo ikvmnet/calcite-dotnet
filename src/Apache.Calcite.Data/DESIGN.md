@@ -360,8 +360,13 @@ binary column is the internal storage form (`int` days, `long` millis, `ByteStri
 `UUID` is `OBJECT` like every class it has no name of its own for, and on an array type it carries
 the *component's* rep and not the component's nullability — so an `INTEGER ARRAY` whose elements may
 be null reported `int[]` while the value came back `int?[]`, and `GetFieldValue<int[]>` then wrote the
-null in as `0`. A column nothing maps answers `object`, which is what ADO.NET has for "not one of
-these" and what the mapping for a type that says nothing states.
+null in as `0`.
+
+**A column nothing maps is refused rather than called `object`.** `object` is a real answer for three
+Calcite types — `ANY` carries no type, `OTHER` is a class with no SQL name, a `VARIANT` is any type at
+all — and each of their mappings states it. Answering `object` for a type nothing maps would say the
+same thing about a column the provider cannot read at all, and a caller reading `GetFieldType` to
+decide what to ask for would be told to ask for `object` and then refused.
 
 `CalciteResultRow` addresses a column within one row without copying it, dispatching on the cursor
 factory's style: `OBJECT` (a one-column result is the value, so only ordinal `0` is valid), `ARRAY`,
