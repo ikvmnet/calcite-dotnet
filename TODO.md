@@ -405,16 +405,20 @@ which is what a cache on the root means, the factory being per connection.
 
 ## Test suites not yet written
 
-Sized against measured coverage: `Apache.Calcite.Data` 69.9%, `Apache.Calcite.Adapter.AdoNet` ~60%.
-Listed worst-first by uncovered lines.
+Sized against measured coverage: `Apache.Calcite.Data` 78.0%, `Apache.Calcite.Adapter.AdoNet` ~60%.
+Listed worst-first by uncovered lines. The `Apache.Calcite.Data` figures are `dotnet test -f net8.0
+--collect:"XPlat Code Coverage"` over `Apache.Calcite.Data.Tests`.
 
-- **`CalciteResultValue`** — 56%, **282 uncovered**, the largest single gap anywhere. It is the whole
-  type-conversion surface, and the `DATE`-as-milliseconds bug lived in exactly this kind of code.
+- **`CalciteVariants`** — **0%, 65 uncovered**, the largest single gap in the reader now. Nothing
+  reaches a `VARIANT` at all, which is the one type whose nulls are objects and whose payload carries
+  its own type.
+- **`CalciteValues`** — 67.2%, **95 uncovered**. The write direction and the map shapes are the bulk of
+  it: `ToJava` has a case per CLR type and the tests exercise a handful.
 - **`AdoSchemaFactory` from a Calcite model** — 0%. The operand-driven path is the primary documented
   way anyone configures an adapter, and nothing proves it works.
-- **Connection strings, parameters, batches** — `CalciteConnectionStringBuilder` 35% (148 uncovered),
-  `CalciteParameterCollection` 55% (78), `CalciteBatchCommandCollection` 21% (62). Mechanical, high
-  line yield.
+- **Connection strings, parameters, batches** — `CalciteConnectionStringBuilder` 55% (67 uncovered),
+  `CalciteParameterCollection` 54.6% (39), `CalciteBatchCommandCollection` 22.8% (27). Mechanical,
+  high line yield.
 
 Also at 0% and worth deciding about rather than covering: `AdoTableQueryable` (no provider ships, see
 §5), `AdoUpdateEnumerable` (orphaned, see §1), and the twelve `Ado*Factory` relational factories with
