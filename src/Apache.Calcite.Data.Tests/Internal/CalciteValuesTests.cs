@@ -298,14 +298,14 @@ namespace Apache.Calcite.Data.Internal.Tests
             list.add(java.lang.Integer.valueOf(1));
             list.add(java.lang.Integer.valueOf(2));
 
-            Assert.True(CalciteValues.TryConvertTo(list, null, typeof(IList<object>), out var value));
-            Assert.Equal(new List<object> { 1, 2 }, Assert.IsType<List<object>>(value));
+            Assert.True(CalciteValues.TryConvertTo(list, null, typeof(object[]), out var value));
+            Assert.Equal(new object[] { 1, 2 }, Assert.IsType<object[]>(value));
         }
 
         /// <summary>
         /// Naming an element type says which of the types the values already have is wanted, not that
-        /// they should be converted into it: an <c>IList&lt;long&gt;</c> over a list of
-        /// <c>java.lang.Integer</c> is the same refusal <c>GetInt64</c> makes over an <c>INTEGER</c>.
+        /// they should be converted into it: a <c>long[]</c> over a list of <c>java.lang.Integer</c> is the
+        /// same refusal <c>GetInt64</c> makes over an <c>INTEGER</c>.
         /// </summary>
         [Fact]
         public void TryConvertTo_should_refuse_an_element_type_the_values_do_not_have()
@@ -313,7 +313,23 @@ namespace Apache.Calcite.Data.Internal.Tests
             var list = new java.util.ArrayList();
             list.add(java.lang.Integer.valueOf(1));
 
-            Assert.Throws<InvalidCastException>(() => CalciteValues.TryConvertTo(list, null, typeof(IList<long>), out _));
+            Assert.Throws<InvalidCastException>(() => CalciteValues.TryConvertTo(list, null, typeof(long[]), out _));
+        }
+
+        /// <summary>
+        /// A collection answers an array and nothing else. Building a concrete list or set here would be a
+        /// copy the caller did not ask for and a second answer to what a collection is.
+        /// </summary>
+        [Theory]
+        [InlineData(typeof(List<int>))]
+        [InlineData(typeof(HashSet<int>))]
+        [InlineData(typeof(ISet<int>))]
+        public void TryConvertTo_should_not_build_a_list_shape(Type target)
+        {
+            var list = new java.util.ArrayList();
+            list.add(java.lang.Integer.valueOf(1));
+
+            Assert.False(CalciteValues.TryConvertTo(list, null, target, out _));
         }
 
         [Fact]

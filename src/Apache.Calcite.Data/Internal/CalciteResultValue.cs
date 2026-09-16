@@ -409,6 +409,44 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
+        /// Implements the GetArray operation.
+        /// </summary>
+        /// <returns>The column's value as an array.</returns>
+        /// <exception cref="InvalidCastException">Where the column is not a collection.</exception>
+        /// <remarks>
+        /// <para>
+        /// A collection is a core Calcite type and ADO.NET has no accessor for one, so this is the
+        /// provider's. <c>ARRAY</c> and <c>MULTISET</c> both read as an array, differing in whether the
+        /// order of the elements means anything rather than in what holds them, so both answer here; a
+        /// <c>MAP</c> does not, being pairs.
+        /// </para>
+        /// <para>
+        /// Strict like every other typed getter: a column that is not a collection is refused rather than
+        /// wrapped in an array of one. The exception is a column whose type says nothing — an <c>ANY</c> or
+        /// a <c>VARIANT</c> — where the value's own class decides here as it does everywhere else, so a
+        /// list in an <c>ANY</c> column reads through this.
+        /// </para>
+        /// <para>
+        /// The array is of whatever the element type reads back as, so an <c>INTEGER ARRAY</c> is an
+        /// <c>int[]</c> and an <c>INTEGER ARRAY ARRAY</c> an <c>int[][]</c>, and an element that may be null
+        /// makes it an <c>int?[]</c>, an array having no other way to carry one.
+        /// </para>
+        /// </remarks>
+        public Array GetArray()
+        {
+            if (_value is null)
+                throw Cannot("Array");
+
+            return _sqlType?.name() switch
+            {
+                nameof(SqlTypeName.ARRAY) or nameof(SqlTypeName.MULTISET) =>
+                    _registry.FromCalcite(null, _type, _value) as Array ?? throw Cannot("Array"),
+                _ when Untyped() is Array clr => clr,
+                _ => throw Cannot("Array"),
+            };
+        }
+
+        /// <summary>
         /// Implements the GetGuid operation. Calcite's runtime representation of <c>UUID</c> is a
         /// <see cref="java.util.UUID"/>, and that is the only thing this reads: a character column
         /// holding text in canonical GUID form is a character column, and parsing it here would be
