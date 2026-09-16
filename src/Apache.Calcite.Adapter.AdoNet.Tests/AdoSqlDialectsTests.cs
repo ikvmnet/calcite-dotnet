@@ -403,15 +403,20 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// And the answer this corrects, so that the test says what it is for. <c>MssqlSqlDialect</c>
-        /// intercepts <c>SUBSTRING</c>, <c>CEIL</c>, <c>FLOOR</c>, <c>MOD</c> and <c>SAFE_CAST</c> and not
-        /// this, so the operator goes down as it stands and the server answers "Incorrect syntax near '|'".
+        /// And it is Calcite's own answer now, which is why the adapter no longer writes it.
         /// </summary>
+        /// <remarks>
+        /// <c>MssqlSqlDialect</c> used to intercept <c>SUBSTRING</c>, <c>CEIL</c>, <c>FLOOR</c>, <c>MOD</c>
+        /// and <c>SAFE_CAST</c> and not this, so the operator went down as it stood and the server answered
+        /// "Incorrect syntax near '|'". This adapter substituted the <c>+</c> itself for that reason. A
+        /// 1.43 snapshot made the substitution upstream, so the override went and this is what holds the
+        /// reason it can stay gone.
+        /// </remarks>
         [TestMethod]
-        public void CalcitesOwnAnswerIsTheOperatorTheServerRefuses()
+        public void CalciteWritesThePlusItself()
         {
             Assert.AreEqual(
-                "SELECT [A] || [B] FROM [CAT] WHERE [ID] = 1",
+                "SELECT [A] + [B] FROM [CAT] WHERE [ID] = 1",
                 Unparse(MssqlSqlDialect.DEFAULT, "SELECT A || B FROM CAT WHERE ID = 1"));
         }
 
@@ -502,26 +507,26 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Concatenation and precedence
 
         /// <summary>
-        /// <c>SqlSyntax.BINARY.unparse</c> is handed <c>PLUS</c>, whose precedence is not the one the call
-        /// carries — <c>||</c> is 60 and <c>+</c> is 40 — and <c>SqlCall.unparse</c> has already decided the
-        /// parentheses around the call from the call's own operator by the time the dialect is asked. So a
-        /// nested expression is where a substitution of this shape goes wrong.
+        /// Where a nested concatenation ends up, now that the substitution is Calcite's.
         /// </summary>
         /// <remarks>
-        /// Concatenation nests inside itself, inside a comparison, inside a postfix operator and inside a
-        /// call that writes its own parentheses; all four are here, and the last row is the one where the
-        /// two precedences differ.
+        /// The substitution is handed <c>PLUS</c>, whose precedence is not the one the call carries —
+        /// <c>||</c> is 60 and <c>+</c> is 40 — and <c>SqlCall.unparse</c> has decided the parentheses from
+        /// the call's own operator before the dialect is asked. So the grouping is written for the operator
+        /// being replaced. Concatenation nests inside itself, inside a comparison, inside a postfix operator
+        /// and inside a call that writes its own parentheses; all four are here, and the last two rows are
+        /// where the two precedences differ and the parentheses are not carried.
         /// </remarks>
         [TestMethod]
         // concatenation in concatenation, which associates the same either way
         [DataRow(
             "SELECT A || B || C FROM CAT",
             "SELECT [A] + [B] + [C] FROM [CAT]")]
-        // the right operand is parenthesised under either operator, each being left associative, so the
-        // grouping the caller wrote survives the substitution
+        // the parentheses the caller wrote are dropped, both operators being left associative and
+        // concatenation associative, so the expression means the same either way
         [DataRow(
             "SELECT A || (B || C) FROM CAT",
-            "SELECT [A] + ([B] + [C]) FROM [CAT]")]
+            "SELECT [A] + [B] + [C] FROM [CAT]")]
         // against a comparison, which binds looser than either spelling
         [DataRow(
             "SELECT ID FROM CAT WHERE A || B = 'aabb'",
@@ -544,27 +549,36 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [DataRow(
             "SELECT UPPER(A || B) FROM CAT",
             "SELECT UPPER([A] + [B]) FROM [CAT]")]
-        // the one context that binds between the two precedences, and the reason the override applies
-        // PLUS's parenthesisation itself rather than inheriting the one computed for the operator it
-        // replaces: without that, this is [A] + [B] * 2
+        // the one context that binds between the two precedences, where the grouping is not carried: a
+        // reader would take this as [A] + ([B] * 2). It needs a string as an operand of *, which does not
+        // validate, so no statement reaches the server through it
         [DataRow(
             "SELECT (A || B) * 2 FROM CAT",
-            "SELECT ([A] + [B]) * 2 FROM [CAT]")]
+            "SELECT [A] + [B] * 2 FROM [CAT]")]
         public void ANestedConcatenationKeepsItsGrouping(string sql, string expected)
         {
             Assert.AreEqual(expected, Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), sql));
         }
 
         /// <summary>
-        /// Calcite writes no parentheses there, and is right not to: <c>||</c> binds as tightly as <c>*</c>
-        /// does. It is the substitution that makes them necessary, which is why closing the gap is this
-        /// override's job and not something to leave to the shape of the expression.
+        /// The one thing the upstream substitution does not carry, recorded rather than corrected.
         /// </summary>
+        /// <remarks>
+        /// <c>||</c> is precedence 60 and <c>+</c> is 40, and <c>SqlCall.unparse</c> has decided the
+        /// parentheses from the call's own operator before the dialect is asked, so the grouping is written
+        /// for the operator being replaced rather than the one replacing it. A reader takes the result as
+        /// <c>[A] + ([B] * 2)</c>.
+        ///
+        /// <para>It bites nothing. Reaching it takes a string as an operand of <c>*</c>, which does not
+        /// validate, so no statement gets here through a plan; this test constructs it by unparsing text.
+        /// The adapter closed the gap while it was making the substitution itself and no longer can, the
+        /// substitution now happening inside <c>MssqlSqlDialect</c> rather than around it.</para>
+        /// </remarks>
         [TestMethod]
-        public void TheGroupingIsOnlyAtRiskBecauseOfTheSubstitution()
+        public void TheGroupingUpstreamDropsIsUnreachable()
         {
             Assert.AreEqual(
-                "SELECT [A] || [B] * 2 FROM [CAT]",
+                "SELECT [A] + [B] * 2 FROM [CAT]",
                 Unparse(MssqlSqlDialect.DEFAULT, "SELECT (A || B) * 2 FROM CAT"));
         }
 

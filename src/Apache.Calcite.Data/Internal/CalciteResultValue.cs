@@ -126,12 +126,27 @@ namespace Apache.Calcite.Data.Internal
         /// <typeparam name="T"></typeparam>
         /// <returns></returns>
         /// <remarks>
-        /// The .NET value is tried first, so <c>GetFieldValue&lt;object&gt;()</c> answers what
-        /// <see cref="GetValue"/> answers rather than the Java object behind it, and
-        /// <c>GetFieldValue&lt;IDictionary&gt;()</c> or <c>GetFieldValue&lt;int[]&gt;()</c> answers a
-        /// <c>MAP</c> or an <c>ARRAY</c> without the caller naming element types. A caller that does name
-        /// them gets the conversion built to them instead. The Java object itself is last and reached
-        /// only by naming its class, which is the escape hatch for a value nothing corresponds to.
+        /// <para>
+        /// <b>This is <see cref="GetValue"/> and the two things a type argument can say that it cannot.</b>
+        /// The column's own reading is tried first, so <c>GetFieldValue&lt;object&gt;()</c> answers what
+        /// <see cref="GetValue"/> answers and <c>GetFieldValue&lt;int[]&gt;()</c> answers an
+        /// <c>INTEGER ARRAY</c> without anything further.
+        /// </para>
+        /// <para>
+        /// What a type argument adds is a choice. A Calcite type may have more than one reading — a
+        /// <c>DATE</c> is a <see cref="DateTime"/> by default and a <see cref="DateOnly"/> when asked — and
+        /// naming one selects the mapping that carries it, which is the only way to reach a reading that is
+        /// nobody's default. Naming element types is the same choice one level down, and reaches a shape the
+        /// conversion did not produce: an <c>object[]</c> where the column reads back as an <c>int[]</c>.
+        /// </para>
+        /// <para>
+        /// <b>And nothing else.</b> There were twenty branches below this calling the typed getters, and a
+        /// last arm that handed back the Java object when a caller named its class. The first became dead
+        /// when this went through the type mappings — measured, across every pair they could answer, the two
+        /// arms above them answer all of it — and the second was a second way out of the rule that no Java
+        /// object reaches a caller, reached without naming a method that admits it.
+        /// <c>CalciteDataReader.GetCalciteValue</c> is that, by name.
+        /// </para>
         /// </remarks>
         public T GetFieldValue<T>()
         {
@@ -155,55 +170,10 @@ namespace Apache.Calcite.Data.Internal
             if (_registry.GetMapping(Nullable.GetUnderlyingType(target) ?? target, _type) is { } named && named.FromCalcite(_value) is T asked)
                 return asked;
 
-            // Handle common ADO.NET types
-            if (target == typeof(string))
-                return (T)(object)GetString();
-            if (target == typeof(char))
-                return (T)(object)GetChar();
-            if (target == typeof(byte[]))
-                return (T)(object)(GetValue() as byte[] ?? throw Cannot("Byte[]"));
-            if (target == typeof(DateTime))
-                return (T)(object)GetDateTime();
-            if (target == typeof(DateTimeOffset))
-                return (T)(object)GetDateTimeOffset();
-            if (target == typeof(TimeSpan))
-                return (T)(object)GetTimeSpan();
-            if (target == typeof(DateOnly))
-                return (T)(object)GetDateOnly();
-            if (target == typeof(TimeOnly))
-                return (T)(object)GetTimeOnly();
-            if (target == typeof(decimal))
-                return (T)(object)GetDecimal();
-            if (target == typeof(double))
-                return (T)(object)GetDouble();
-            if (target == typeof(float))
-                return (T)(object)GetFloat();
-            if (target == typeof(Guid))
-                return (T)(object)GetGuid();
-            if (target == typeof(short))
-                return (T)(object)GetInt16();
-            if (target == typeof(int))
-                return (T)(object)GetInt32();
-            if (target == typeof(long))
-                return (T)(object)GetInt64();
-            if (target == typeof(sbyte))
-                return (T)(object)GetSByte();
-            if (target == typeof(byte))
-                return (T)(object)GetByte();
-            if (target == typeof(ushort))
-                return (T)(object)GetUInt16();
-            if (target == typeof(uint))
-                return (T)(object)GetUInt32();
-            if (target == typeof(ulong))
-                return (T)(object)GetUInt64();
-
-            // a collection whose element types the caller named rather than the ones the values measured
+            // a collection or a map whose element types the caller named rather than the ones the values
+            // measured, which is the one shape the conversion above cannot have produced
             if (CalciteValues.TryConvertTo(_value, _type, target, out var shaped) && shaped is T reshaped)
                 return reshaped;
-
-            // last, the object Calcite produced, for a caller that asked for it by its own class
-            if (target.IsInstanceOfType(_value))
-                return (T)_value;
 
             throw Cannot(typeof(T).Name);
         }
