@@ -256,8 +256,8 @@ namespace Apache.Calcite.Data.Common
                 foreach (var position in _clrDefaults)
                 {
                     var entry = _entries[position];
-                    if (entry.AcceptsClrType(clrType))
-                        return entry.Factory(context, entry.CreateRelType(context), clrType!);
+                    if (entry.AcceptsClrType(clrType) && entry.Factory(context, entry.CreateRelType(context), clrType!) is { } mapping)
+                        return mapping;
                 }
 
                 return null;
@@ -270,15 +270,17 @@ namespace Apache.Calcite.Data.Common
                 // both named: the entry answers whenever it accepts both, whatever its defaults are
                 if (clrType is not null)
                 {
-                    if (entry.AcceptsClrType(clrType) && entry.AcceptsRelType(relType))
-                        return entry.Factory(context, relType, clrType);
+                    // a factory that declines leaves the lookup to the entries after it, which is how an
+                    // entry written for a shape refuses one instance of that shape
+                    if (entry.AcceptsClrType(clrType) && entry.AcceptsRelType(relType) && entry.Factory(context, relType, clrType) is { } named)
+                        return named;
 
                     continue;
                 }
 
                 // only the Calcite type: the entry answers if it is what that type reads back as
-                if (entry.Match.HasFlag(ClrTypeMatch.RelDefault) && entry.AcceptsRelType(relType))
-                    return entry.Factory(context, relType, entry.ClrType);
+                if (entry.Match.HasFlag(ClrTypeMatch.RelDefault) && entry.AcceptsRelType(relType) && entry.Factory(context, relType, entry.ClrType) is { } fallback)
+                    return fallback;
             }
 
             return null;

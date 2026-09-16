@@ -86,9 +86,12 @@ namespace Apache.Calcite.Data.Internal
         /// </summary>
         /// <param name="target"></param>
         /// <returns></returns>
-        InvalidCastException Cannot(string target)
+        /// <param name="inner">The refusal the mapping layer made, where it is what decided this.</param>
+        InvalidCastException Cannot(string target, Exception? inner = null)
         {
-            return new InvalidCastException($"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to '{target}'");
+            var message = $"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_sqlType}) to '{target}'";
+
+            return inner is null ? new InvalidCastException(message) : new InvalidCastException(message, inner);
         }
 
         /// <summary>
@@ -161,19 +164,28 @@ namespace Apache.Calcite.Data.Internal
 
             var target = typeof(T);
 
-            // the value as an ADO.NET caller reads it, which is what nearly every ask is for
-            if (_registry.FromCalcite(null, _type, _value) is T converted)
-                return converted;
+            try
+            {
+                // the value as an ADO.NET caller reads it, which is what nearly every ask is for
+                if (_registry.FromCalcite(null, _type, _value) is T converted)
+                    return converted;
 
-            // a conversion the chain carries only when both types are named, which is where a caller says
-            // it wants one of the readings that is nobody's default
-            if (_registry.GetMapping(Nullable.GetUnderlyingType(target) ?? target, _type) is { } named && named.FromCalcite(_value) is T asked)
-                return asked;
+                // a conversion the chain carries only when both types are named, which is where a caller says
+                // it wants one of the readings that is nobody's default
+                if (_registry.GetMapping(Nullable.GetUnderlyingType(target) ?? target, _type) is { } named && named.FromCalcite(_value) is T asked)
+                    return asked;
 
-            // a collection or a map whose element types the caller named rather than the ones the values
-            // measured, which is the one shape the conversion above cannot have produced
-            if (CalciteValues.TryConvertTo(_value, _type, target, out var shaped) && shaped is T reshaped)
-                return reshaped;
+                // a collection or a map whose element types the caller named rather than the ones the values
+                // measured, which is the one shape the conversion above cannot have produced
+                if (CalciteValues.TryConvertTo(_value, _type, target, out var shaped) && shaped is T reshaped)
+                    return reshaped;
+            }
+            catch (ClrTypeMappingException e)
+            {
+                // a mapping that refuses is this accessor refusing, and a typed getter's refusal names the
+                // value, the SQL type and the target. The mapping's own account of it is the inner one
+                throw Cannot(typeof(T).Name, e);
+            }
 
             throw Cannot(typeof(T).Name);
         }
@@ -443,74 +455,12 @@ namespace Apache.Calcite.Data.Internal
         /// </remarks>
         public T[] GetArray<T>()
         {
+            // the one thing this does not share with GetFieldValue: a collection accessor refuses a null
+            // column the way every other typed getter does, where GetFieldValue answers default(T)
             if (_value is null)
                 throw Cannot(typeof(T).Name + "[]");
 
-            // a column that says nothing has no element type to select a mapping with, so the value's own
-            // class decides and what it produced is narrowed one element at a time
-            if (_sqlType?.name() is not (nameof(SqlTypeName.ARRAY) or nameof(SqlTypeName.MULTISET)))
-                return Untyped() is Array untyped ? Narrow<T>(untyped) : throw Cannot(typeof(T).Name + "[]");
-
-            if (_value is not java.util.Collection source)
-                throw Cannot(typeof(T).Name + "[]");
-
-            var component = _type.getComponentType() ?? throw Cannot(typeof(T).Name + "[]");
-
-            // object names the array's element type and no preference about which reading fills it, which is
-            // what a null clrType means to the chain and what GetFieldValue<object> means here
-            var named = typeof(T) == typeof(object) ? null : Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
-            var element = _registry.GetMapping(named, component) ?? throw Cannot(typeof(T).Name + "[]");
-
-            var array = new T[source.size()];
-
-            var i = 0;
-            for (var e = source.iterator(); e.hasNext(); i++)
-            {
-                var item = CollectionClrTypeMapping.Unwrap(e.next(), element);
-                if (item is null)
-                {
-                    if (default(T) is not null)
-                        throw Cannot(typeof(T).Name + "[]");
-
-                    continue;
-                }
-
-                array[i] = element.FromCalcite(item) is T converted ? converted : throw Cannot(typeof(T).Name + "[]");
-            }
-
-            return array;
-        }
-
-        /// <summary>
-        /// Returns an array read by a value's own class as an array of a named element type.
-        /// </summary>
-        /// <typeparam name="T">The element type.</typeparam>
-        /// <param name="source">The array the conversion produced.</param>
-        /// <returns>The array.</returns>
-        /// <exception cref="InvalidCastException">Where an element is not <typeparamref name="T"/>.</exception>
-        /// <remarks>
-        /// One element at a time rather than a cast of the whole, because an array of a value type is not an
-        /// array of <see cref="object"/> — <c>int[] is object[]</c> is false — so casting would refuse the
-        /// ordinary ask for a column whose elements are numbers.
-        /// </remarks>
-        T[] Narrow<T>(Array source)
-        {
-            var array = new T[source.Length];
-            for (var i = 0; i < array.Length; i++)
-            {
-                var item = source.GetValue(i);
-                if (item is null)
-                {
-                    if (default(T) is not null)
-                        throw Cannot(typeof(T).Name + "[]");
-
-                    continue;
-                }
-
-                array[i] = item is T converted ? converted : throw Cannot(typeof(T).Name + "[]");
-            }
-
-            return array;
+            return GetFieldValue<T[]>();
         }
 
         /// <summary>
