@@ -1,0 +1,2365 @@
+# Every reader accessor against every Calcite type. Recorded, not hand-written:
+# see CalciteReaderMatrixTests. A diff here is a change to what a column may be read as.
+
+################ as a column
+
+== BOOLEAN  SELECT TRUE
+   IsDBNull           false
+   GetFieldType       Boolean
+   GetDataTypeName    String BOOLEAN
+   GetValue           true
+   GetBoolean         true
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   true
+
+== TINYINT  SELECT CAST(1 AS TINYINT)
+   IsDBNull           false
+   GetFieldType       SByte
+   GetDataTypeName    String TINYINT
+   GetValue           SByte 1
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           SByte 1
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   SByte 1
+
+== SMALLINT  SELECT CAST(1 AS SMALLINT)
+   IsDBNull           false
+   GetFieldType       Int16
+   GetDataTypeName    String SMALLINT
+   GetValue           Int16 1
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           Int16 1
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   Int16 1
+
+== INTEGER  SELECT 1
+   IsDBNull           false
+   GetFieldType       Int32
+   GetDataTypeName    String INTEGER
+   GetValue           Int32 1
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           Int32 1
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   Int32 1
+
+== BIGINT  SELECT CAST(1 AS BIGINT)
+   IsDBNull           false
+   GetFieldType       Int64
+   GetDataTypeName    String BIGINT
+   GetValue           Int64 1
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           Int64 1
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   Int64 1
+
+== UTINYINT  SELECT CAST(1 AS UTINYINT)
+   <statement>        !! SqlValidatorException
+
+== USMALLINT  SELECT CAST(1 AS USMALLINT)
+   <statement>        !! SqlValidatorException
+
+== UINTEGER  SELECT CAST(1 AS UINTEGER)
+   <statement>        !! SqlValidatorException
+
+== UBIGINT  SELECT CAST(1 AS UBIGINT)
+   <statement>        !! SqlValidatorException
+
+== DECIMAL  SELECT CAST(1.5 AS DECIMAL(5,2))
+   IsDBNull           false
+   GetFieldType       Decimal
+   GetDataTypeName    String DECIMAL
+   GetValue           Decimal 1.50
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         Decimal 1.50
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   Decimal 1.50
+
+== REAL  SELECT CAST(1.5 AS REAL)
+   IsDBNull           false
+   GetFieldType       Single
+   GetDataTypeName    String REAL
+   GetValue           Single 1.5
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           Single 1.5
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   Single 1.5
+
+== FLOAT  SELECT CAST(1.5 AS FLOAT)
+   IsDBNull           false
+   GetFieldType       Double
+   GetDataTypeName    String FLOAT
+   GetValue           Double 1.5
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          Double 1.5
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   Double 1.5
+
+== DOUBLE  SELECT CAST(1.5 AS DOUBLE)
+   IsDBNull           false
+   GetFieldType       Double
+   GetDataTypeName    String DOUBLE
+   GetValue           Double 1.5
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          Double 1.5
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   Double 1.5
+
+== CHAR  SELECT CAST('a' AS CHAR(1))
+   IsDBNull           false
+   GetFieldType       String
+   GetDataTypeName    String CHAR
+   GetValue           String a
+   GetBoolean         refused
+   GetString          String a
+   GetChar            Char a
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   String a
+
+== CHAR(2)  SELECT CAST('ab' AS CHAR(2))
+   IsDBNull           false
+   GetFieldType       String
+   GetDataTypeName    String CHAR
+   GetValue           String ab
+   GetBoolean         refused
+   GetString          String ab
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   String ab
+
+== VARCHAR  SELECT 'ab'
+   IsDBNull           false
+   GetFieldType       String
+   GetDataTypeName    String CHAR
+   GetValue           String ab
+   GetBoolean         refused
+   GetString          String ab
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   String ab
+
+== BINARY  SELECT CAST(x'0102' AS BINARY(2))
+   IsDBNull           false
+   GetFieldType       Byte[]
+   GetDataTypeName    String BINARY
+   GetValue           Byte[] [Byte 1, Byte 2]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           Int64 2
+   GetArray           refused
+   GetFieldValue<F>   Byte[] [Byte 1, Byte 2]
+
+== VARBINARY  SELECT x'0102'
+   IsDBNull           false
+   GetFieldType       Byte[]
+   GetDataTypeName    String BINARY
+   GetValue           Byte[] [Byte 1, Byte 2]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           Int64 2
+   GetArray           refused
+   GetFieldValue<F>   Byte[] [Byte 1, Byte 2]
+
+== DATE  SELECT DATE '2020-01-02'
+   IsDBNull           false
+   GetFieldType       DateTime
+   GetDataTypeName    String DATE
+   GetValue           2020-01-02T00:00:00.0000000Z
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        2020-01-02T00:00:00.0000000Z
+   GetDateTimeOffset  refused
+   GetDateOnly        DateOnly 01/02/2020
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   2020-01-02T00:00:00.0000000Z
+
+== TIME  SELECT TIME '03:04:05'
+   IsDBNull           false
+   GetFieldType       TimeSpan
+   GetDataTypeName    String TIME
+   GetValue           TimeSpan 03:04:05
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        TimeOnly 03:04
+   GetTimeSpan        TimeSpan 03:04:05
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   TimeSpan 03:04:05
+
+== TIMESTAMP  SELECT TIMESTAMP '2020-01-02 03:04:05'
+   IsDBNull           false
+   GetFieldType       DateTime
+   GetDataTypeName    String TIMESTAMP
+   GetValue           2020-01-02T03:04:05.0000000Z
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        2020-01-02T03:04:05.0000000Z
+   GetDateTimeOffset  2020-01-02T03:04:05.0000000+00:00
+   GetDateOnly        DateOnly 01/02/2020
+   GetTimeOnly        TimeOnly 03:04
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   2020-01-02T03:04:05.0000000Z
+
+== TIMESTAMP_TZ  SELECT CAST(TIMESTAMP '2020-01-02 03:04:05' AS TIMESTAMP WITH TIME ZONE)
+   <statement>        !! CalciteException
+
+== TIMESTAMP_LTZ  SELECT CAST(TIMESTAMP '2020-01-02 03:04:05' AS TIMESTAMP WITH LOCAL TIME ZONE)
+   IsDBNull           false
+   GetFieldType       DateTimeOffset
+   GetDataTypeName    String TIMESTAMP_WITH_LOCAL_TIME_ZONE
+   GetValue           2020-01-02T09:04:05.0000000+00:00
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  2020-01-02T09:04:05.0000000+00:00
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   2020-01-02T09:04:05.0000000+00:00
+
+== TIME_LTZ  SELECT CAST(TIME '03:04:05' AS TIME WITH LOCAL TIME ZONE)
+   IsDBNull           false
+   GetFieldType       DateTimeOffset
+   GetDataTypeName    String TIME_WITH_LOCAL_TIME_ZONE
+   GetValue           0001-01-01T09:04:05.0000000+00:00
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  0001-01-01T09:04:05.0000000+00:00
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   0001-01-01T09:04:05.0000000+00:00
+
+== INTERVAL_YM  SELECT INTERVAL '1-2' YEAR TO MONTH
+   IsDBNull           false
+   GetFieldType       Int32
+   GetDataTypeName    String INTERVAL_YEAR_TO_MONTH
+   GetValue           Int32 14
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           Int32 14
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   Int32 14
+
+== INTERVAL_DT  SELECT INTERVAL '1 2:3:4' DAY TO SECOND
+   IsDBNull           false
+   GetFieldType       TimeSpan
+   GetDataTypeName    String INTERVAL_DAY_TO_SECOND
+   GetValue           TimeSpan 1.02:03:04
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        TimeSpan 1.02:03:04
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   TimeSpan 1.02:03:04
+
+== UUID  SELECT CAST('123e4567-e89b-12d3-a456-426614174000' AS UUID)
+   IsDBNull           false
+   GetFieldType       Guid
+   GetDataTypeName    String UUID
+   GetValue           Guid 123e4567-e89b-12d3-a456-426614174000
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            Guid 123e4567-e89b-12d3-a456-426614174000
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   Guid 123e4567-e89b-12d3-a456-426614174000
+
+== GEOMETRY  SELECT ST_GeomFromText('POINT(1 2)')
+   <statement>        !! SqlValidatorException
+
+== ROW  SELECT ROW(1, 'a')
+   IsDBNull           false
+   GetFieldType       Object[]
+   GetDataTypeName    String STRUCT
+   GetValue           Object[] [Int32 1, String a]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   Object[] [Int32 1, String a]
+
+== MAP  SELECT MAP['a', 1]
+   IsDBNull           false
+   GetFieldType       Dictionary`2
+   GetDataTypeName    String (CHAR(1), INTEGER) MAP
+   GetValue           Dictionary`2 System.Collections.Generic.Dictionary`2[System.String,System.Int32]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           refused
+   GetFieldValue<F>   Dictionary`2 System.Collections.Generic.Dictionary`2[System.String,System.Int32]
+
+== NULL  SELECT NULL
+   IsDBNull           true
+   GetFieldType       Object
+   GetDataTypeName    String NULL
+   GetValue           DBNull
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           Int64 0
+   GetArray           refused
+   GetFieldValue<F>   null
+
+################ as an array element, and with a null beside it
+
+== BOOLEAN[]  SELECT ARRAY[TRUE]
+   IsDBNull           false
+   GetFieldType       Boolean[]
+   GetDataTypeName    String BOOLEAN ARRAY
+   GetValue           Boolean[] [true]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Boolean[] [true]
+   GetFieldValue<F>   Boolean[] [true]
+
+== BOOLEAN[] +null  SELECT ARRAY[TRUE, NULL]
+   IsDBNull           false
+   GetFieldType       Boolean?[]
+   GetDataTypeName    String BOOLEAN ARRAY
+   GetValue           Boolean?[] [true, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Boolean?[] [true, null]
+   GetFieldValue<F>   Boolean?[] [true, null]
+
+== TINYINT[]  SELECT ARRAY[CAST(1 AS TINYINT)]
+   IsDBNull           false
+   GetFieldType       SByte[]
+   GetDataTypeName    String TINYINT ARRAY
+   GetValue           SByte[] [SByte 1]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           Int64 1
+   GetArray           SByte[] [SByte 1]
+   GetFieldValue<F>   SByte[] [SByte 1]
+
+== TINYINT[] +null  SELECT ARRAY[CAST(1 AS TINYINT), NULL]
+   IsDBNull           false
+   GetFieldType       SByte?[]
+   GetDataTypeName    String TINYINT ARRAY
+   GetValue           SByte?[] [SByte 1, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           SByte?[] [SByte 1, null]
+   GetFieldValue<F>   SByte?[] [SByte 1, null]
+
+== SMALLINT[]  SELECT ARRAY[CAST(1 AS SMALLINT)]
+   IsDBNull           false
+   GetFieldType       Int16[]
+   GetDataTypeName    String SMALLINT ARRAY
+   GetValue           Int16[] [Int16 1]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Int16[] [Int16 1]
+   GetFieldValue<F>   Int16[] [Int16 1]
+
+== SMALLINT[] +null  SELECT ARRAY[CAST(1 AS SMALLINT), NULL]
+   IsDBNull           false
+   GetFieldType       Int16?[]
+   GetDataTypeName    String SMALLINT ARRAY
+   GetValue           Int16?[] [Int16 1, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Int16?[] [Int16 1, null]
+   GetFieldValue<F>   Int16?[] [Int16 1, null]
+
+== INTEGER[]  SELECT ARRAY[1]
+   IsDBNull           false
+   GetFieldType       Int32[]
+   GetDataTypeName    String INTEGER ARRAY
+   GetValue           Int32[] [Int32 1]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Int32[] [Int32 1]
+   GetFieldValue<F>   Int32[] [Int32 1]
+
+== INTEGER[] +null  SELECT ARRAY[1, NULL]
+   IsDBNull           false
+   GetFieldType       Int32?[]
+   GetDataTypeName    String INTEGER ARRAY
+   GetValue           Int32?[] [Int32 1, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Int32?[] [Int32 1, null]
+   GetFieldValue<F>   Int32?[] [Int32 1, null]
+
+== BIGINT[]  SELECT ARRAY[CAST(1 AS BIGINT)]
+   IsDBNull           false
+   GetFieldType       Int64[]
+   GetDataTypeName    String BIGINT ARRAY
+   GetValue           Int64[] [Int64 1]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Int64[] [Int64 1]
+   GetFieldValue<F>   Int64[] [Int64 1]
+
+== BIGINT[] +null  SELECT ARRAY[CAST(1 AS BIGINT), NULL]
+   IsDBNull           false
+   GetFieldType       Int64?[]
+   GetDataTypeName    String BIGINT ARRAY
+   GetValue           Int64?[] [Int64 1, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Int64?[] [Int64 1, null]
+   GetFieldValue<F>   Int64?[] [Int64 1, null]
+
+== UTINYINT[]  SELECT ARRAY[CAST(1 AS UTINYINT)]
+   <statement>        !! SqlValidatorException
+
+== UTINYINT[] +null  SELECT ARRAY[CAST(1 AS UTINYINT), NULL]
+   <statement>        !! SqlValidatorException
+
+== USMALLINT[]  SELECT ARRAY[CAST(1 AS USMALLINT)]
+   <statement>        !! SqlValidatorException
+
+== USMALLINT[] +null  SELECT ARRAY[CAST(1 AS USMALLINT), NULL]
+   <statement>        !! SqlValidatorException
+
+== UINTEGER[]  SELECT ARRAY[CAST(1 AS UINTEGER)]
+   <statement>        !! SqlValidatorException
+
+== UINTEGER[] +null  SELECT ARRAY[CAST(1 AS UINTEGER), NULL]
+   <statement>        !! SqlValidatorException
+
+== UBIGINT[]  SELECT ARRAY[CAST(1 AS UBIGINT)]
+   <statement>        !! SqlValidatorException
+
+== UBIGINT[] +null  SELECT ARRAY[CAST(1 AS UBIGINT), NULL]
+   <statement>        !! SqlValidatorException
+
+== DECIMAL[]  SELECT ARRAY[CAST(1.5 AS DECIMAL(5,2))]
+   IsDBNull           false
+   GetFieldType       Decimal[]
+   GetDataTypeName    String DECIMAL(5, 2) ARRAY
+   GetValue           Decimal[] [Decimal 1.50]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Decimal[] [Decimal 1.50]
+   GetFieldValue<F>   Decimal[] [Decimal 1.50]
+
+== DECIMAL[] +null  SELECT ARRAY[CAST(1.5 AS DECIMAL(5,2)), NULL]
+   IsDBNull           false
+   GetFieldType       Decimal?[]
+   GetDataTypeName    String DECIMAL(5, 2) ARRAY
+   GetValue           Decimal?[] [Decimal 1.50, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Decimal?[] [Decimal 1.50, null]
+   GetFieldValue<F>   Decimal?[] [Decimal 1.50, null]
+
+== REAL[]  SELECT ARRAY[CAST(1.5 AS REAL)]
+   IsDBNull           false
+   GetFieldType       Single[]
+   GetDataTypeName    String REAL ARRAY
+   GetValue           Single[] [Single 1.5]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Single[] [Single 1.5]
+   GetFieldValue<F>   Single[] [Single 1.5]
+
+== REAL[] +null  SELECT ARRAY[CAST(1.5 AS REAL), NULL]
+   IsDBNull           false
+   GetFieldType       Single?[]
+   GetDataTypeName    String REAL ARRAY
+   GetValue           Single?[] [Single 1.5, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Single?[] [Single 1.5, null]
+   GetFieldValue<F>   Single?[] [Single 1.5, null]
+
+== FLOAT[]  SELECT ARRAY[CAST(1.5 AS FLOAT)]
+   IsDBNull           false
+   GetFieldType       Double[]
+   GetDataTypeName    String FLOAT ARRAY
+   GetValue           Double[] [Double 1.5]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Double[] [Double 1.5]
+   GetFieldValue<F>   Double[] [Double 1.5]
+
+== FLOAT[] +null  SELECT ARRAY[CAST(1.5 AS FLOAT), NULL]
+   IsDBNull           false
+   GetFieldType       Double?[]
+   GetDataTypeName    String FLOAT ARRAY
+   GetValue           Double?[] [Double 1.5, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Double?[] [Double 1.5, null]
+   GetFieldValue<F>   Double?[] [Double 1.5, null]
+
+== DOUBLE[]  SELECT ARRAY[CAST(1.5 AS DOUBLE)]
+   IsDBNull           false
+   GetFieldType       Double[]
+   GetDataTypeName    String DOUBLE ARRAY
+   GetValue           Double[] [Double 1.5]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Double[] [Double 1.5]
+   GetFieldValue<F>   Double[] [Double 1.5]
+
+== DOUBLE[] +null  SELECT ARRAY[CAST(1.5 AS DOUBLE), NULL]
+   IsDBNull           false
+   GetFieldType       Double?[]
+   GetDataTypeName    String DOUBLE ARRAY
+   GetValue           Double?[] [Double 1.5, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Double?[] [Double 1.5, null]
+   GetFieldValue<F>   Double?[] [Double 1.5, null]
+
+== CHAR[]  SELECT ARRAY[CAST('a' AS CHAR(1))]
+   IsDBNull           false
+   GetFieldType       String[]
+   GetDataTypeName    String CHAR(1) ARRAY
+   GetValue           String[] [String a]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           String[] [String a]
+   GetFieldValue<F>   String[] [String a]
+
+== CHAR[] +null  SELECT ARRAY[CAST('a' AS CHAR(1)), NULL]
+   IsDBNull           false
+   GetFieldType       String[]
+   GetDataTypeName    String CHAR(1) ARRAY
+   GetValue           String[] [String a, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           String[] [String a, null]
+   GetFieldValue<F>   String[] [String a, null]
+
+== CHAR(2)[]  SELECT ARRAY[CAST('ab' AS CHAR(2))]
+   IsDBNull           false
+   GetFieldType       String[]
+   GetDataTypeName    String CHAR(2) ARRAY
+   GetValue           String[] [String ab]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           String[] [String ab]
+   GetFieldValue<F>   String[] [String ab]
+
+== CHAR(2)[] +null  SELECT ARRAY[CAST('ab' AS CHAR(2)), NULL]
+   IsDBNull           false
+   GetFieldType       String[]
+   GetDataTypeName    String CHAR(2) ARRAY
+   GetValue           String[] [String ab, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           String[] [String ab, null]
+   GetFieldValue<F>   String[] [String ab, null]
+
+== VARCHAR[]  SELECT ARRAY['ab']
+   IsDBNull           false
+   GetFieldType       String[]
+   GetDataTypeName    String CHAR(2) ARRAY
+   GetValue           String[] [String ab]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           String[] [String ab]
+   GetFieldValue<F>   String[] [String ab]
+
+== VARCHAR[] +null  SELECT ARRAY['ab', NULL]
+   IsDBNull           false
+   GetFieldType       String[]
+   GetDataTypeName    String CHAR(2) ARRAY
+   GetValue           String[] [String ab, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           String[] [String ab, null]
+   GetFieldValue<F>   String[] [String ab, null]
+
+== BINARY[]  SELECT ARRAY[CAST(x'0102' AS BINARY(2))]
+   IsDBNull           false
+   GetFieldType       Byte[][]
+   GetDataTypeName    String BINARY(2) ARRAY
+   GetValue           Byte[][] [Byte[] [Byte 1, Byte 2]]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Byte[][] [Byte[] [Byte 1, Byte 2]]
+   GetFieldValue<F>   Byte[][] [Byte[] [Byte 1, Byte 2]]
+
+== BINARY[] +null  SELECT ARRAY[CAST(x'0102' AS BINARY(2)), NULL]
+   IsDBNull           false
+   GetFieldType       Byte[][]
+   GetDataTypeName    String BINARY(2) ARRAY
+   GetValue           Byte[][] [Byte[] [Byte 1, Byte 2], null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Byte[][] [Byte[] [Byte 1, Byte 2], null]
+   GetFieldValue<F>   Byte[][] [Byte[] [Byte 1, Byte 2], null]
+
+== VARBINARY[]  SELECT ARRAY[x'0102']
+   IsDBNull           false
+   GetFieldType       Byte[][]
+   GetDataTypeName    String BINARY(2) ARRAY
+   GetValue           Byte[][] [Byte[] [Byte 1, Byte 2]]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Byte[][] [Byte[] [Byte 1, Byte 2]]
+   GetFieldValue<F>   Byte[][] [Byte[] [Byte 1, Byte 2]]
+
+== VARBINARY[] +null  SELECT ARRAY[x'0102', NULL]
+   IsDBNull           false
+   GetFieldType       Byte[][]
+   GetDataTypeName    String BINARY(2) ARRAY
+   GetValue           Byte[][] [Byte[] [Byte 1, Byte 2], null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Byte[][] [Byte[] [Byte 1, Byte 2], null]
+   GetFieldValue<F>   Byte[][] [Byte[] [Byte 1, Byte 2], null]
+
+== DATE[]  SELECT ARRAY[DATE '2020-01-02']
+   IsDBNull           false
+   GetFieldType       DateTime[]
+   GetDataTypeName    String DATE ARRAY
+   GetValue           DateTime[] [2020-01-02T00:00:00.0000000Z]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           DateTime[] [2020-01-02T00:00:00.0000000Z]
+   GetFieldValue<F>   DateTime[] [2020-01-02T00:00:00.0000000Z]
+
+== DATE[] +null  SELECT ARRAY[DATE '2020-01-02', NULL]
+   IsDBNull           false
+   GetFieldType       DateTime?[]
+   GetDataTypeName    String DATE ARRAY
+   GetValue           DateTime?[] [2020-01-02T00:00:00.0000000Z, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           DateTime?[] [2020-01-02T00:00:00.0000000Z, null]
+   GetFieldValue<F>   DateTime?[] [2020-01-02T00:00:00.0000000Z, null]
+
+== TIME[]  SELECT ARRAY[TIME '03:04:05']
+   IsDBNull           false
+   GetFieldType       TimeSpan[]
+   GetDataTypeName    String TIME(0) ARRAY
+   GetValue           TimeSpan[] [TimeSpan 03:04:05]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           TimeSpan[] [TimeSpan 03:04:05]
+   GetFieldValue<F>   TimeSpan[] [TimeSpan 03:04:05]
+
+== TIME[] +null  SELECT ARRAY[TIME '03:04:05', NULL]
+   IsDBNull           false
+   GetFieldType       TimeSpan?[]
+   GetDataTypeName    String TIME(0) ARRAY
+   GetValue           TimeSpan?[] [TimeSpan 03:04:05, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           TimeSpan?[] [TimeSpan 03:04:05, null]
+   GetFieldValue<F>   TimeSpan?[] [TimeSpan 03:04:05, null]
+
+== TIMESTAMP[]  SELECT ARRAY[TIMESTAMP '2020-01-02 03:04:05']
+   IsDBNull           false
+   GetFieldType       DateTime[]
+   GetDataTypeName    String TIMESTAMP(0) ARRAY
+   GetValue           DateTime[] [2020-01-02T03:04:05.0000000Z]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           DateTime[] [2020-01-02T03:04:05.0000000Z]
+   GetFieldValue<F>   DateTime[] [2020-01-02T03:04:05.0000000Z]
+
+== TIMESTAMP[] +null  SELECT ARRAY[TIMESTAMP '2020-01-02 03:04:05', NULL]
+   IsDBNull           false
+   GetFieldType       DateTime?[]
+   GetDataTypeName    String TIMESTAMP(0) ARRAY
+   GetValue           DateTime?[] [2020-01-02T03:04:05.0000000Z, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           DateTime?[] [2020-01-02T03:04:05.0000000Z, null]
+   GetFieldValue<F>   DateTime?[] [2020-01-02T03:04:05.0000000Z, null]
+
+== TIMESTAMP_TZ[]  SELECT ARRAY[CAST(TIMESTAMP '2020-01-02 03:04:05' AS TIMESTAMP WITH TIME ZONE)]
+   <statement>        !! CalciteException
+
+== TIMESTAMP_TZ[] +null  SELECT ARRAY[CAST(TIMESTAMP '2020-01-02 03:04:05' AS TIMESTAMP WITH TIME ZONE), NULL]
+   <statement>        !! CalciteException
+
+== TIMESTAMP_LTZ[]  SELECT ARRAY[CAST(TIMESTAMP '2020-01-02 03:04:05' AS TIMESTAMP WITH LOCAL TIME ZONE)]
+   IsDBNull           false
+   GetFieldType       DateTimeOffset[]
+   GetDataTypeName    String TIMESTAMP_WITH_LOCAL_TIME_ZONE(0) ARRAY
+   GetValue           DateTimeOffset[] [2020-01-02T09:04:05.0000000+00:00]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           DateTimeOffset[] [2020-01-02T09:04:05.0000000+00:00]
+   GetFieldValue<F>   DateTimeOffset[] [2020-01-02T09:04:05.0000000+00:00]
+
+== TIMESTAMP_LTZ[] +null  SELECT ARRAY[CAST(TIMESTAMP '2020-01-02 03:04:05' AS TIMESTAMP WITH LOCAL TIME ZONE), NULL]
+   IsDBNull           false
+   GetFieldType       DateTimeOffset?[]
+   GetDataTypeName    String TIMESTAMP_WITH_LOCAL_TIME_ZONE(0) ARRAY
+   GetValue           DateTimeOffset?[] [2020-01-02T09:04:05.0000000+00:00, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           DateTimeOffset?[] [2020-01-02T09:04:05.0000000+00:00, null]
+   GetFieldValue<F>   DateTimeOffset?[] [2020-01-02T09:04:05.0000000+00:00, null]
+
+== TIME_LTZ[]  SELECT ARRAY[CAST(TIME '03:04:05' AS TIME WITH LOCAL TIME ZONE)]
+   IsDBNull           false
+   GetFieldType       DateTimeOffset[]
+   GetDataTypeName    String TIME_WITH_LOCAL_TIME_ZONE(0) ARRAY
+   GetValue           DateTimeOffset[] [0001-01-01T09:04:05.0000000+00:00]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           DateTimeOffset[] [0001-01-01T09:04:05.0000000+00:00]
+   GetFieldValue<F>   DateTimeOffset[] [0001-01-01T09:04:05.0000000+00:00]
+
+== TIME_LTZ[] +null  SELECT ARRAY[CAST(TIME '03:04:05' AS TIME WITH LOCAL TIME ZONE), NULL]
+   IsDBNull           false
+   GetFieldType       DateTimeOffset?[]
+   GetDataTypeName    String TIME_WITH_LOCAL_TIME_ZONE(0) ARRAY
+   GetValue           DateTimeOffset?[] [0001-01-01T09:04:05.0000000+00:00, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           DateTimeOffset?[] [0001-01-01T09:04:05.0000000+00:00, null]
+   GetFieldValue<F>   DateTimeOffset?[] [0001-01-01T09:04:05.0000000+00:00, null]
+
+== INTERVAL_YM[]  SELECT ARRAY[INTERVAL '1-2' YEAR TO MONTH]
+   IsDBNull           false
+   GetFieldType       Int32[]
+   GetDataTypeName    String INTERVAL YEAR TO MONTH ARRAY
+   GetValue           Int32[] [Int32 14]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Int32[] [Int32 14]
+   GetFieldValue<F>   Int32[] [Int32 14]
+
+== INTERVAL_YM[] +null  SELECT ARRAY[INTERVAL '1-2' YEAR TO MONTH, NULL]
+   <statement>        !! InvocationTargetException
+
+== INTERVAL_DT[]  SELECT ARRAY[INTERVAL '1 2:3:4' DAY TO SECOND]
+   IsDBNull           false
+   GetFieldType       TimeSpan[]
+   GetDataTypeName    String INTERVAL DAY TO SECOND ARRAY
+   GetValue           TimeSpan[] [TimeSpan 1.02:03:04]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           TimeSpan[] [TimeSpan 1.02:03:04]
+   GetFieldValue<F>   TimeSpan[] [TimeSpan 1.02:03:04]
+
+== INTERVAL_DT[] +null  SELECT ARRAY[INTERVAL '1 2:3:4' DAY TO SECOND, NULL]
+   <statement>        !! InvocationTargetException
+
+== UUID[]  SELECT ARRAY[CAST('123e4567-e89b-12d3-a456-426614174000' AS UUID)]
+   IsDBNull           false
+   GetFieldType       Guid[]
+   GetDataTypeName    String UUID ARRAY
+   GetValue           Guid[] [Guid 123e4567-e89b-12d3-a456-426614174000]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Guid[] [Guid 123e4567-e89b-12d3-a456-426614174000]
+   GetFieldValue<F>   Guid[] [Guid 123e4567-e89b-12d3-a456-426614174000]
+
+== UUID[] +null  SELECT ARRAY[CAST('123e4567-e89b-12d3-a456-426614174000' AS UUID), NULL]
+   IsDBNull           false
+   GetFieldType       Guid?[]
+   GetDataTypeName    String UUID ARRAY
+   GetValue           Guid?[] [Guid 123e4567-e89b-12d3-a456-426614174000, null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Guid?[] [Guid 123e4567-e89b-12d3-a456-426614174000, null]
+   GetFieldValue<F>   Guid?[] [Guid 123e4567-e89b-12d3-a456-426614174000, null]
+
+== GEOMETRY[]  SELECT ARRAY[ST_GeomFromText('POINT(1 2)')]
+   <statement>        !! SqlValidatorException
+
+== GEOMETRY[] +null  SELECT ARRAY[ST_GeomFromText('POINT(1 2)'), NULL]
+   <statement>        !! SqlValidatorException
+
+== ROW[]  SELECT ARRAY[ROW(1, 'a')]
+   IsDBNull           false
+   GetFieldType       Object[][]
+   GetDataTypeName    String RecordType(INTEGER EXPR$0, CHAR(1) EXPR$1) ARRAY
+   GetValue           Object[][] [Object[] [Int32 1, String a]]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Object[][] [Object[] [Int32 1, String a]]
+   GetFieldValue<F>   Object[][] [Object[] [Int32 1, String a]]
+
+== ROW[] +null  SELECT ARRAY[ROW(1, 'a'), NULL]
+   IsDBNull           false
+   GetFieldType       Object[][]
+   GetDataTypeName    String RecordType(INTEGER EXPR$0, CHAR(1) EXPR$1) ARRAY
+   GetValue           Object[][] [Object[] [Int32 1, String a], null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Object[][] [Object[] [Int32 1, String a], null]
+   GetFieldValue<F>   Object[][] [Object[] [Int32 1, String a], null]
+
+== MAP[]  SELECT ARRAY[MAP['a', 1]]
+   IsDBNull           false
+   GetFieldType       Dictionary`2[]
+   GetDataTypeName    String (CHAR(1), INTEGER) MAP ARRAY
+   GetValue           Dictionary`2[] [Dictionary`2 System.Collections.Generic.Dictionary`2[System.String,System.Int32]]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Dictionary`2[] [Dictionary`2 System.Collections.Generic.Dictionary`2[System.String,System.Int32]]
+   GetFieldValue<F>   Dictionary`2[] [Dictionary`2 System.Collections.Generic.Dictionary`2[System.String,System.Int32]]
+
+== MAP[] +null  SELECT ARRAY[MAP['a', 1], NULL]
+   IsDBNull           false
+   GetFieldType       Dictionary`2[]
+   GetDataTypeName    String (CHAR(1), INTEGER) MAP ARRAY
+   GetValue           Dictionary`2[] [Dictionary`2 System.Collections.Generic.Dictionary`2[System.String,System.Int32], null]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Dictionary`2[] [Dictionary`2 System.Collections.Generic.Dictionary`2[System.String,System.Int32], null]
+   GetFieldValue<F>   Dictionary`2[] [Dictionary`2 System.Collections.Generic.Dictionary`2[System.String,System.Int32], null]
+
+################ collections that are not a plain array of a scalar
+
+== ARRAY ARRAY  SELECT ARRAY[ARRAY[1, 2]]
+   IsDBNull           false
+   GetFieldType       Int32[][]
+   GetDataTypeName    String INTEGER ARRAY ARRAY
+   GetValue           Int32[][] [Int32[] [Int32 1, Int32 2]]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Int32[][] [Int32[] [Int32 1, Int32 2]]
+   GetFieldValue<F>   Int32[][] [Int32[] [Int32 1, Int32 2]]
+
+== MULTISET MULTISET  SELECT MULTISET[MULTISET[1, 2]]
+   IsDBNull           false
+   GetFieldType       Int32[][]
+   GetDataTypeName    String INTEGER MULTISET MULTISET
+   GetValue           Int32[][] [Int32[] [Int32 1, Int32 2]]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Int32[][] [Int32[] [Int32 1, Int32 2]]
+   GetFieldValue<F>   Int32[][] [Int32[] [Int32 1, Int32 2]]
+
+== null ARRAY  SELECT CAST(NULL AS INTEGER ARRAY)
+   IsDBNull           true
+   GetFieldType       Int32?[]
+   GetDataTypeName    String INTEGER ARRAY
+   GetValue           DBNull
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           Int64 0
+   GetArray           refused
+   GetFieldValue<F>   null
+
+== ANY holding a list  SELECT "L" FROM "ANYT"
+   IsDBNull           false
+   GetFieldType       Object
+   GetDataTypeName    String ANY
+   GetValue           Int32[] [Int32 1, Int32 2]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           Int32[] [Int32 1, Int32 2]
+   GetFieldValue<F>   Int32[] [Int32 1, Int32 2]
+
+== JavaType(String[])  SELECT "S" FROM "JT"
+   IsDBNull           false
+   GetFieldType       Object
+   GetDataTypeName    String OTHER
+   GetValue           String[] [String a, String b]
+   GetBoolean         refused
+   GetString          refused
+   GetChar            refused
+   GetByte            refused
+   GetSByte           refused
+   GetInt16           refused
+   GetUInt16          refused
+   GetInt32           refused
+   GetUInt32          refused
+   GetInt64           refused
+   GetUInt64          refused
+   GetFloat           refused
+   GetDouble          refused
+   GetDecimal         refused
+   GetGuid            refused
+   GetDateTime        refused
+   GetDateTimeOffset  refused
+   GetDateOnly        refused
+   GetTimeOnly        refused
+   GetTimeSpan        refused
+   GetBytes           refused
+   GetArray           String[] [String a, String b]
+   GetFieldValue<F>   String[] [String a, String b]
+
+################ naming an element type, which GetArray<E> and GetFieldValue<E[]> must answer alike
+
+== <DateTime>  SELECT ARRAY[DATE '2020-01-02']
+   GetArray<E>        DateTime[] [2020-01-02T00:00:00.0000000Z]
+   GetFieldValue<E[]> DateTime[] [2020-01-02T00:00:00.0000000Z]
+   agree              yes
+
+== <DateOnly>  SELECT ARRAY[DATE '2020-01-02']
+   GetArray<E>        DateOnly[] [DateOnly 01/02/2020]
+   GetFieldValue<E[]> DateOnly[] [DateOnly 01/02/2020]
+   agree              yes
+
+== <DateOnly>  SELECT ARRAY[TIMESTAMP '2020-01-02 03:04:05']
+   GetArray<E>        DateOnly[] [DateOnly 01/02/2020]
+   GetFieldValue<E[]> DateOnly[] [DateOnly 01/02/2020]
+   agree              yes
+
+== <TimeOnly>  SELECT ARRAY[TIMESTAMP '2020-01-02 03:04:05']
+   GetArray<E>        TimeOnly[] [TimeOnly 03:04]
+   GetFieldValue<E[]> TimeOnly[] [TimeOnly 03:04]
+   agree              yes
+
+== <TimeOnly>  SELECT ARRAY[TIME '03:04:05']
+   GetArray<E>        TimeOnly[] [TimeOnly 03:04]
+   GetFieldValue<E[]> TimeOnly[] [TimeOnly 03:04]
+   agree              yes
+
+== <Int32>  SELECT ARRAY[1, 2]
+   GetArray<E>        Int32[] [Int32 1, Int32 2]
+   GetFieldValue<E[]> Int32[] [Int32 1, Int32 2]
+   agree              yes
+
+== <Int32?>  SELECT ARRAY[1, 2]
+   GetArray<E>        Int32?[] [Int32 1, Int32 2]
+   GetFieldValue<E[]> Int32?[] [Int32 1, Int32 2]
+   agree              yes
+
+== <Int64>  SELECT ARRAY[1, 2]
+   GetArray<E>        refused
+   GetFieldValue<E[]> refused
+   agree              yes
+
+== <Object>  SELECT ARRAY[1, 2]
+   GetArray<E>        Object[] [Int32 1, Int32 2]
+   GetFieldValue<E[]> Object[] [Int32 1, Int32 2]
+   agree              yes
+
+== <Int32>  SELECT ARRAY[1, NULL]
+   GetArray<E>        refused
+   GetFieldValue<E[]> refused
+   agree              yes
+
+== <Int32?>  SELECT ARRAY[1, NULL]
+   GetArray<E>        Int32?[] [Int32 1, null]
+   GetFieldValue<E[]> Int32?[] [Int32 1, null]
+   agree              yes
+
+== <Object>  SELECT ARRAY[1, NULL]
+   GetArray<E>        Object[] [Int32 1, null]
+   GetFieldValue<E[]> Object[] [Int32 1, null]
+   agree              yes
+
+== <String>  SELECT ARRAY['ab']
+   GetArray<E>        String[] [String ab]
+   GetFieldValue<E[]> String[] [String ab]
+   agree              yes
+
+== <Byte[]>  SELECT ARRAY[x'0102']
+   GetArray<E>        Byte[][] [Byte[] [Byte 1, Byte 2]]
+   GetFieldValue<E[]> Byte[][] [Byte[] [Byte 1, Byte 2]]
+   agree              yes
+
+== <Int32[]>  SELECT ARRAY[ARRAY[1, 2]]
+   GetArray<E>        Int32[][] [Int32[] [Int32 1, Int32 2]]
+   GetFieldValue<E[]> Int32[][] [Int32[] [Int32 1, Int32 2]]
+   agree              yes
+
+== <DateOnly>  SELECT MULTISET[DATE '2020-01-02']
+   GetArray<E>        DateOnly[] [DateOnly 01/02/2020]
+   GetFieldValue<E[]> DateOnly[] [DateOnly 01/02/2020]
+   agree              yes
+
+== <Int32>  SELECT "L" FROM "ANYT"
+   GetArray<E>        Int32[] [Int32 1, Int32 2]
+   GetFieldValue<E[]> Int32[] [Int32 1, Int32 2]
+   agree              yes
+
+== <Object>  SELECT "L" FROM "ANYT"
+   GetArray<E>        Object[] [Int32 1, Int32 2]
+   GetFieldValue<E[]> Object[] [Int32 1, Int32 2]
+   agree              yes
+

@@ -348,17 +348,20 @@ enumerator (DDL, or a non-query) reads as an empty result. `Dispose` completes t
 disposal — blocking for it on the asynchronous result, under the same suppression — and holds
 nothing else.
 
-`CalciteResultColumns` reads the signature's Avatica `ColumnMetaData` list — name, nullability,
-provider type name — and maps each to a CLR type. The SQL type name takes precedence over the
-runtime representation for date, time and binary columns, because Calcite's `rep` there is the
-internal storage form (`int` days, `long` millis, `ByteString`) rather than what an ADO.NET consumer
-expects, and for `UUID`, whose rep is `OBJECT` like every class Avatica has no name of its own for,
-so the rep cannot say what it is at all. Unsigned SQL types map to the unsigned CLR types. The JDBC ordinal takes precedence over
-both for a collection: Avatica puts the *component's* rep on an array type, so an `INTEGER ARRAY`
-reports `PRIMITIVE_INT` and would otherwise be read as an `int`; the answers are `int[]` and, for a
-struct, `object[]`. `GetRelType` reads the signature's `RelDataType` instead, and throws where there
-is none — the whole type rather than its `SqlTypeName`, because reading a value needs the component,
-key, value and field types that Avatica's metadata does not carry.
+`CalciteResultColumns` reads the signature's Avatica `ColumnMetaData` list for the naming questions —
+the label, nullability, the provider type name. `GetRelType` reads the signature's `RelDataType`
+instead, and throws where there is none: the whole type rather than its `SqlTypeName`, because
+reading a value needs the component, key, value and field types that Avatica's metadata does not
+carry.
+
+**`GetClrType` asks the registry what that `RelDataType` maps to**, so `GetFieldType` and every value
+accessor answer from one place. Avatica's type cannot do this job: its `rep` for a date, time or
+binary column is the internal storage form (`int` days, `long` millis, `ByteString`), its `rep` for
+`UUID` is `OBJECT` like every class it has no name of its own for, and on an array type it carries
+the *component's* rep and not the component's nullability — so an `INTEGER ARRAY` whose elements may
+be null reported `int[]` while the value came back `int?[]`, and `GetFieldValue<int[]>` then wrote the
+null in as `0`. A column nothing maps answers `object`, which is what ADO.NET has for "not one of
+these" and what the mapping for a type that says nothing states.
 
 `CalciteResultRow` addresses a column within one row without copying it, dispatching on the cursor
 factory's style: `OBJECT` (a one-column result is the value, so only ordinal `0` is valid), `ARRAY`,
@@ -366,28 +369,47 @@ or `LIST`. Any other style throws `NotSupportedException`.
 
 `CalciteResultValue` is the final conversion, from what Calcite produced to what the caller asked
 for: `GetValue` for the reader's untyped path, `GetFieldValue<T>` for the generic one, and a typed
-getter per ADO.NET accessor. Each typed getter is strict — it accepts the representations Calcite
-actually produces for that SQL type and throws `InvalidCastException` otherwise, naming the runtime
-type, the value and the SQL type. Strict means the type and not a family of them: `GetGuid` reads a
-`java.util.UUID` and not text in canonical GUID form, and `GetByte` and the `GetUIntNN` getters read
-the `org.joou` type Calcite produces for that unsigned SQL type and not any number that would fit.
-`CAST(x AS UUID)` is how a caller says a string means one.
+getter per ADO.NET accessor.
 
-`SqlTypeName.ANY` and `SqlTypeName.VARIANT` are the two types it cannot read, and the place where
-**the value's own class stands in for the declared type**. They are one problem written two ways: an
-`ANY` is `java.lang.Object` and carries no type at all, a `VARIANT` carries its payload's type along
-with the payload. An `ANY` is `java.lang.Object`: the value is whatever a table, a
-user-defined function or a schema put there, and nothing in the column says which of the things a
-`java.lang.Integer` could mean it is.
+**Every one of them is one lookup in the mapping table, and nothing here knows a Java class or a
+`SqlTypeName`.** A typed getter answers where an entry pairs the column's `RelDataType` with the type
+that getter returns, and refuses otherwise with an `InvalidCastException` naming the runtime type,
+the value and the SQL type. That is the same rule `GetFieldValue<T>` follows and the same rule that
+decides what may be *written*, so what a column can be read as is one table rather than a table and a
+switch beside it that drifts. Strict means the pair and not a family: `GetGuid` reads a `UUID` column
+and not text in canonical GUID form, `GetByte` and the `GetUIntNN` getters read the unsigned SQL type
+and not any number that would fit, and `CAST(x AS UUID)` is how a caller says a string means one.
 
-Standing in for it is all it does — `ANY` does not make an accessor lenient. A `java.lang.Integer` in
-an `ANY` column is an `INTEGER`: it reads through `GetInt32`, and `GetInt64` refuses it exactly as it
-refuses an `INTEGER` column. What the `ANY` arms add is the case the SQL type used to be the only
-route to: a `java.sql.Timestamp` or a `java.time.LocalDate` says what it is by being what it is, and
-there was no column type to say it, `ANY` being neither `TIMESTAMP` nor `DATE`. Each such arm takes
-exactly the type its accessor returns, so a date reads through `GetDateOnly` and not through
+**The class a value arrives in is never what is asked about.** Calcite stores a `DATE` as a count of
+days in a `java.lang.Integer` and a `TIMESTAMP` as a count of milliseconds in a `java.lang.Long`, so
+a getter that matched the class would let `GetInt32` answer `18263` for `DATE '2020-01-02'` out of a
+column this reader's own `GetFieldType` calls a `DateTime`. The table pairs a `DATE` with `DateTime`
+and `DateOnly` and with nothing else. Keeping those apart is what `ClrTypeMapping.RepresentationType`
+is for, beside `ClrType`.
+
+`ANY`, `OTHER` and `VARIANT` are the types that cannot say, and the place where **the value's own
+class stands in for the declared type**. One problem written three ways: an `ANY` is
+`java.lang.Object` and carries no type at all; an `OTHER` is a class Calcite has no SQL name for,
+which is what typing a column with `createJavaType` produces; a `VARIANT` carries its payload's type
+along with the payload. Which three is `ClrTypeMapping.DescribesValue`, asked of the mapping — a list
+kept anywhere else is one that falls behind the table.
+
+Standing in for it is all it does — it does not make an accessor lenient. A `java.lang.Integer` in an
+`ANY` column is an `INTEGER`: it reads through `GetInt32`, and `GetInt64` refuses it exactly as it
+refuses an `INTEGER` column. What it adds is the case no column type could state: a
+`java.sql.Timestamp` or a `java.time.LocalDate` says what it is by being what it is, and `ANY` is
+neither `TIMESTAMP` nor `DATE`. A date therefore reads through `GetDateOnly` and not through
 `GetDateTime` with a zero time bolted on. A column whose type does say what it holds is untouched by
 any of it: `GetGuid` over a `VARCHAR` is still a refusal.
+
+Whether a value is null is the mapping's answer too — `ClrTypeMapping.IsNull` — because a `VARIANT`
+is the one type whose nulls are objects rather than a Java null, and that belongs to the one class
+that knows it.
+
+`CalciteReaderMatrixTests` records every accessor against every Calcite type, as a column and as an
+array element, and compares the grid to `ReaderMatrix.txt`. The interesting facts about a typed getter
+are its refusals and there are far more of those than answers, so the recording is the assertion and a
+change to what any accessor accepts is a diff to justify.
 
 `CalciteValues` holds the conversion itself, in both directions and recursively, and is what keeps a
 Java object from reaching a caller. Calcite's runtime holds an `ARRAY` or a `MULTISET` as a
@@ -404,9 +426,15 @@ column's own reading is answered first, so `GetFieldValue<object>` is `GetValue`
 adds is a choice: a Calcite type may have more than one reading — a `DATE` is a `DateTime` by default
 and a `DateOnly` when asked — and naming one selects the mapping that carries it, which is the only
 way to reach a reading that is nobody's default. Naming element types is that same choice one level
-down, and reaches a shape the conversion did not produce: an `object[]` where the column reads back as
-an `int[]`. It is a selection and not a conversion, so `long[]` over an `INTEGER ARRAY` is the refusal
-`GetInt64` makes over an `INTEGER`.
+down: naming `DateOnly[]` over a `DATE ARRAY` puts `DateOnly` into the *element* lookup, so the
+elements cross by the mapping written for that pair rather than being narrowed from the `DateTime[]`
+the column reads back as — which a cast could never reach. It is a selection and not a conversion, so
+`long[]` over an `INTEGER ARRAY` is the refusal `GetInt64` makes over an `INTEGER`.
+
+`GetArray<T>` is `GetFieldValue<T[]>` with the null-column refusal a collection accessor makes, so the
+two are one implementation and cannot disagree. An element that is null is refused where `T` has no
+room for one: `Array.SetValue` writes `default(T)` into an array of a value type rather than refusing,
+which would make a null element and a zero the same array afterwards.
 
 There is nothing below those. Twenty branches calling the typed getters sat there and became dead when
 this went through the type mappings — measured, across every pair they could answer, the arms above

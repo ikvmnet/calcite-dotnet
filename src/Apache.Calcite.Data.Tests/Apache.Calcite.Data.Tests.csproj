@@ -37,6 +37,12 @@
     </ItemGroup>
 
     <ItemGroup>
+        <!-- The recorded answer of every reader accessor against every Calcite type. Embedded rather than
+             copied, so the test reads the one that was built with it. -->
+        <EmbeddedResource Include="ReaderMatrix.txt" />
+    </ItemGroup>
+
+    <ItemGroup>
         <ProjectReference Include="..\Apache.Calcite.Data\Apache.Calcite.Data.csproj" />
         <ProjectReference Include="..\Apache.Calcite.Extensions\Apache.Calcite.Extensions.csproj" />
     </ItemGroup>
