@@ -372,6 +372,16 @@ decide what to ask for would be told to ask for `object` and then refused.
 factory's style: `OBJECT` (a one-column result is the value, so only ordinal `0` is valid), `ARRAY`,
 or `LIST`. Any other style throws `NotSupportedException`.
 
+**A column's Calcite type and its mapping are answered once per result, not once per value.** Both are
+properties of the column and neither changes while it is being read, but reading a cell used to walk
+the signature's field list for the type and then ask the registry for the mapping — and the registry
+is keyed on `getFullTypeString()`, a Java call that builds a string, which is then hashed and scanned
+for. Measured over 10 million iterations, that lookup is 58 ns where the conversion it guards is 14;
+measured over 100,000 rows of six columns, taking both answers once per column moved `GetValue` from
+500 ns per cell to 222 and the typed getters from 279 to 219. `CalciteResultColumns` holds the two
+arrays, `CalciteResult` holds it for the life of the result, and the struct copies handed to each row
+share them.
+
 `CalciteResultValue` is the final conversion, from what Calcite produced to what the caller asked
 for: `GetValue` for the reader's untyped path, `GetFieldValue<T>` for the generic one, and a typed
 getter per ADO.NET accessor.

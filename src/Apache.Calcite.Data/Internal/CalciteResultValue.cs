@@ -44,6 +44,7 @@ namespace Apache.Calcite.Data.Internal
 
         readonly RelDataType _type;
         readonly ClrTypeRegistry _registry;
+        readonly ClrTypeMapping? _mapping;
         readonly object? _value;
 
         /// <summary>
@@ -51,12 +52,32 @@ namespace Apache.Calcite.Data.Internal
         /// </summary>
         /// <param name="type"></param>
         /// <param name="registry">The mappings the value is read through.</param>
+        /// <param name="mapping">The mapping the column reads back through, or <see langword="null"/> where
+        /// the chain has none for its type.</param>
         /// <param name="value"></param>
-        public CalciteResultValue(RelDataType type, ClrTypeRegistry registry, object? value)
+        /// <remarks>
+        /// The mapping is handed in rather than looked up, because it is a property of the column and not
+        /// of the value: resolving it here asked the registry once per cell, and the registry's key is
+        /// <c>getFullTypeString()</c>.
+        /// </remarks>
+        public CalciteResultValue(RelDataType type, ClrTypeRegistry registry, ClrTypeMapping? mapping, object? value)
         {
             _type = type ?? throw new ArgumentNullException(nameof(type));
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
+            _mapping = mapping;
             _value = value;
+        }
+
+        /// <summary>
+        /// Initializes a new instance, resolving the column's mapping.
+        /// </summary>
+        /// <param name="type"></param>
+        /// <param name="registry">The mappings the value is read through.</param>
+        /// <param name="value"></param>
+        public CalciteResultValue(RelDataType type, ClrTypeRegistry registry, object? value) :
+            this(type, registry, (registry ?? throw new ArgumentNullException(nameof(registry))).GetMapping(null, type ?? throw new ArgumentNullException(nameof(type))), value)
+        {
+
         }
 
         /// <summary>
@@ -69,11 +90,6 @@ namespace Apache.Calcite.Data.Internal
         /// than the .NET reading of it.
         /// </remarks>
         public object? CalciteValue => _value;
-
-        /// <summary>
-        /// Gets the mapping the column reads back through, or <see langword="null"/> where nothing maps it.
-        /// </summary>
-        ClrTypeMapping? Mapping => _registry.GetMapping(null, _type);
 
         /// <summary>
         /// Returns the exception an accessor throws where the value is not the thing asked for.
@@ -102,7 +118,28 @@ namespace Apache.Calcite.Data.Internal
         /// </remarks>
         object? Untyped()
         {
-            return _value is not null && Mapping is { DescribesValue: false } mapping ? mapping.FromCalcite(_value) : null;
+            return _value is not null && _mapping is { DescribesValue: false } mapping ? mapping.FromCalcite(_value) : null;
+        }
+
+        /// <summary>
+        /// Returns the value as the column reads it back, through the mapping the result resolved once.
+        /// </summary>
+        /// <returns>The .NET value, or <see langword="null"/> where the value is null.</returns>
+        /// <exception cref="ClrTypeMappingException">Where nothing maps the column's type.</exception>
+        /// <remarks>
+        /// What <c>ClrTypeRegistry.FromCalcite</c> does, with the lookup already made: it is the column's
+        /// mapping and not the value's, so asking per value asked the same question of the same type for
+        /// every row.
+        /// </remarks>
+        object? Read()
+        {
+            if (_value is null || _value is DBNull)
+                return null;
+
+            if (_mapping is null)
+                throw new ClrTypeMappingException($"No mapping presents {_type} as a CLR type.");
+
+            return _mapping.FromCalcite(_value);
         }
 
         /// <summary>
@@ -170,7 +207,7 @@ namespace Apache.Calcite.Data.Internal
         /// </remarks>
         public bool IsDbNull()
         {
-            return _value is null || (Mapping is { } mapping && mapping.IsNull(_value));
+            return _value is null || (_mapping is { } mapping && mapping.IsNull(_value));
         }
 
         /// <summary>
@@ -220,7 +257,7 @@ namespace Apache.Calcite.Data.Internal
             try
             {
                 // the value as an ADO.NET caller reads it, which is what nearly every ask is for
-                if (_registry.FromCalcite(null, _type, _value) is T converted)
+                if (Read() is T converted)
                     return converted;
 
                 // a conversion the chain carries only when both types are named, which is where a caller says
@@ -250,7 +287,7 @@ namespace Apache.Calcite.Data.Internal
         public object GetValue()
         {
             // a variant holding a null converts to one, so the coalesce is reachable and not a formality
-            return _value is null ? DBNull.Value : _registry.FromCalcite(null, _type, _value) ?? DBNull.Value;
+            return _value is null ? DBNull.Value : Read() ?? DBNull.Value;
         }
 
         /// <summary>
@@ -396,7 +433,7 @@ namespace Apache.Calcite.Data.Internal
             // to know that byte[] is the exception
             try
             {
-                if (Mapping is CollectionClrTypeMapping collection)
+                if (_mapping is CollectionClrTypeMapping collection)
                     return collection.FromCalcite(_value) as Array ?? throw Cannot("Array");
             }
             catch (ClrTypeMappingException e)
