@@ -333,15 +333,17 @@ namespace Apache.Calcite.Data
         /// <exception cref="InvalidCastException">Where the column is not a collection, or its elements are
         /// not <typeparamref name="T"/>.</exception>
         /// <remarks>
-        /// Naming the element type says which of the readings that type already has is wanted, and does not
-        /// convert into it: <c>GetArray&lt;long&gt;</c> over an <c>INTEGER ARRAY</c> is the refusal
+        /// Naming the element type selects the mapping the elements cross by, so a <c>DATE ARRAY</c> read
+        /// as <see cref="DateOnly"/> runs the conversion written for that pair rather than casting the
+        /// <see cref="DateTime"/> the column reads back as by default. What is not on the chain is still
+        /// refused: <c>GetArray&lt;long&gt;</c> over an <c>INTEGER ARRAY</c> is the refusal
         /// <c>GetInt64</c> makes over an <c>INTEGER</c>, and for the same reason. <c>T</c> of
         /// <see cref="object"/> is what a caller reaches for where the elements are not all one thing.
         /// </remarks>
         public T[] GetArray<T>(int ordinal)
         {
             ThrowIfNoRow();
-            return ActiveResult.Current.GetValue(ordinal).GetFieldValue<T[]>();
+            return ActiveResult.Current.GetValue(ordinal).GetArray<T>();
         }
 
         /// <summary>

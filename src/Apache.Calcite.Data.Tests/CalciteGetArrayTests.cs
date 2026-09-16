@@ -180,8 +180,50 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Naming an element type says which of the readings the values already have is wanted, and does not
-        /// convert into it.
+        /// <b>Naming the element type selects a mapping, and is not a cast of what the column reads back
+        /// as.</b> A <c>DATE</c> is a <see cref="DateTime"/> by default and a <see cref="DateOnly"/> when
+        /// asked, because the chain carries both; casting the default reading could never reach the second.
+        /// </summary>
+        [Fact]
+        public void Naming_an_element_type_the_chain_carries_should_run_that_conversion()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT ARRAY[DATE '2020-01-02']");
+
+            Assert.Equal(new[] { new DateTime(2020, 1, 2) }, Assert.IsType<DateTime[]>(r.GetArray(0)));
+            Assert.Equal(new[] { new DateOnly(2020, 1, 2) }, r.GetArray<DateOnly>(0));
+        }
+
+        /// <summary>
+        /// And a conversion the chain carries only when both types are named, which is nobody's default,
+        /// is reached the same way.
+        /// </summary>
+        [Fact]
+        public void Naming_an_element_type_that_is_nobody_s_default_should_still_be_reached()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT ARRAY[TIMESTAMP '2020-01-02 03:04:05']");
+
+            Assert.Equal(new[] { new DateOnly(2020, 1, 2) }, r.GetArray<DateOnly>(0));
+        }
+
+        /// <summary>
+        /// An element that may be null is refused where the named type cannot hold one, and answered where
+        /// it can.
+        /// </summary>
+        [Fact]
+        public void Naming_a_value_type_over_nullable_elements_should_be_refused()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT ARRAY[1, CAST(NULL AS INTEGER)]");
+
+            Assert.Throws<InvalidCastException>(() => r.GetArray<int>(0));
+            Assert.Equal(new int?[] { 1, null }, r.GetArray<int?>(0));
+        }
+
+        /// <summary>
+        /// Naming an element type the chain does not carry to the column's is refused rather than converted
+        /// into.
         /// </summary>
         [Fact]
         public void Naming_a_wider_element_type_should_be_refused()
