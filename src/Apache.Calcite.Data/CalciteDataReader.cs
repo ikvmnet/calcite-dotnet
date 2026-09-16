@@ -303,6 +303,50 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
+        /// Returns the value of a collection column as an array.
+        /// </summary>
+        /// <param name="ordinal">The zero-based column ordinal.</param>
+        /// <returns>The value as an array.</returns>
+        /// <exception cref="InvalidCastException">Where the column is not a collection.</exception>
+        /// <remarks>
+        /// A collection is a core Calcite type and ADO.NET has no accessor for one, so this is the
+        /// provider's, as <c>getArray</c> is JDBC's. <c>ARRAY</c> and <c>MULTISET</c> both answer here,
+        /// differing in whether the order of the elements means anything rather than in what holds them.
+        ///
+        /// <para>The array is of whatever the element type reads back as: an <c>INTEGER ARRAY</c> is an
+        /// <c>int[]</c>, an <c>INTEGER ARRAY ARRAY</c> an <c>int[][]</c>, and an element that may be null
+        /// makes it an <c>int?[]</c>. <see cref="GetArray{T}"/> names the element type instead of reading
+        /// it off the result.</para>
+        /// </remarks>
+        public Array GetArray(int ordinal)
+        {
+            ThrowIfNoRow();
+            return ActiveResult.Current.GetValue(ordinal).GetArray();
+        }
+
+        /// <summary>
+        /// Returns the value of a collection column as an array of a named element type.
+        /// </summary>
+        /// <typeparam name="T">The element type.</typeparam>
+        /// <param name="ordinal">The zero-based column ordinal.</param>
+        /// <returns>The value as an array.</returns>
+        /// <exception cref="InvalidCastException">Where the column is not a collection, or its elements are
+        /// not <typeparamref name="T"/>.</exception>
+        /// <remarks>
+        /// Naming the element type selects the mapping the elements cross by, so a <c>DATE ARRAY</c> read
+        /// as <see cref="DateOnly"/> runs the conversion written for that pair rather than casting the
+        /// <see cref="DateTime"/> the column reads back as by default. What is not on the chain is still
+        /// refused: <c>GetArray&lt;long&gt;</c> over an <c>INTEGER ARRAY</c> is the refusal
+        /// <c>GetInt64</c> makes over an <c>INTEGER</c>, and for the same reason. <c>T</c> of
+        /// <see cref="object"/> is what a caller reaches for where the elements are not all one thing.
+        /// </remarks>
+        public T[] GetArray<T>(int ordinal)
+        {
+            ThrowIfNoRow();
+            return ActiveResult.Current.GetValue(ordinal).GetArray<T>();
+        }
+
+        /// <summary>
         /// Returns a column's value exactly as Calcite's runtime produced it, with nothing converted.
         /// </summary>
         /// <param name="ordinal">The zero-based column ordinal.</param>
