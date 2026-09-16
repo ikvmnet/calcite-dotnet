@@ -46,7 +46,7 @@ namespace Apache.Calcite.Data.Internal
                 if (ordinal != 0)
                     throw new IndexOutOfRangeException();
 
-                return new CalciteResultValue(_columns.GetRelType(ordinal), _columns.Registry, _row);
+                return Value(ordinal, _row);
             }
 
             if (style == Meta.Style.ARRAY)
@@ -54,7 +54,7 @@ namespace Apache.Calcite.Data.Internal
                 if (_row is null)
                     throw new NullReferenceException();
 
-                return new CalciteResultValue(_columns.GetRelType(ordinal), _columns.Registry, ((object[])_row)[ordinal]);
+                return Value(ordinal, ((object[])_row)[ordinal]);
             }
 
             if (style == Meta.Style.LIST)
@@ -62,10 +62,18 @@ namespace Apache.Calcite.Data.Internal
                 if (_row is null)
                     throw new NullReferenceException();
 
-                return new CalciteResultValue(_columns.GetRelType(ordinal), _columns.Registry, ((java.util.List)_row).get(ordinal));
+                return Value(ordinal, ((java.util.List)_row).get(ordinal));
             }
 
             throw new NotSupportedException($"Cursor style '{style}' is not yet supported.");
+        }
+
+        /// <summary>
+        /// Builds the value with the column's type and mapping, which the result answered once and holds.
+        /// </summary>
+        CalciteResultValue Value(int ordinal, object? value)
+        {
+            return new CalciteResultValue(_columns.GetRelType(ordinal), _columns.Registry, _columns.GetMapping(ordinal), value);
         }
 
     }
