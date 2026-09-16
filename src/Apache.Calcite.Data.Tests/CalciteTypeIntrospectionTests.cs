@@ -150,6 +150,63 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
+        // There is one way to reach the Java object, and it is named.
+        // ------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// <c>GetFieldValue</c> answers the column's reading, a reading the chain carries under another
+        /// name, or a shape of one. Naming the class Calcite holds the value in is none of those, and used
+        /// to be answered by a last arm that handed the Java object over — a second way out of the rule that
+        /// no Java object reaches a caller, and one a caller could take without meaning to.
+        /// </summary>
+        [Theory]
+        [InlineData("SELECT 1")]
+        [InlineData("SELECT ARRAY[1, 2]")]
+        [InlineData("SELECT CAST('x' AS VARCHAR)")]
+        public void Naming_the_java_class_should_be_refused(string sql)
+        {
+            using var c = Open();
+            using var r = Row(c, sql);
+
+            Assert.Throws<InvalidCastException>(() => r.GetFieldValue<java.lang.Object>(0));
+        }
+
+        [Fact]
+        public void Naming_the_java_class_of_a_collection_should_be_refused()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT ARRAY[1, 2]");
+
+            Assert.Throws<InvalidCastException>(() => r.GetFieldValue<java.util.List>(0));
+        }
+
+        /// <summary>
+        /// And the one way that is left says what it is in its name.
+        /// </summary>
+        [Fact]
+        public void The_calcite_value_should_be_the_only_way_to_the_java_object()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT 1");
+
+            Assert.Equal(java.lang.Integer.valueOf(1), r.GetCalciteValue(0));
+            Assert.Equal(1, r.GetFieldValue<int>(0));
+        }
+
+        /// <summary>
+        /// A collection likewise: the list is reachable, and only by asking for it.
+        /// </summary>
+        [Fact]
+        public void The_calcite_value_of_a_collection_should_be_the_list()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT ARRAY[1, 2]");
+
+            Assert.IsAssignableFrom<java.util.List>(r.GetCalciteValue(0));
+            Assert.Equal(new[] { 1, 2 }, r.GetFieldValue<int[]>(0));
+        }
+
+        // ------------------------------------------------------------------------------------
         // The registry, used the way something outside this assembly would use it.
         // ------------------------------------------------------------------------------------
 
