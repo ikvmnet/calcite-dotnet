@@ -398,11 +398,21 @@ converted elements share — `int[]`, or `int?[]` where one is null, or `object[
 what it stays however alike its fields are. The `RelDataType` descends with it, because a `DATE`
 inside an array is a count of days and only the component type says so. A map holding a null key
 becomes `KeyValuePair<,>[]`: Calcite reaches one and no dictionary the framework ships accepts it.
-`GetFieldValue<T>` answers the converted value first, so `GetFieldValue<object>` is `GetValue`; where
-the caller names element types — `IDictionary<string, object>`, `IList<int>`, `int[]` — the
-collection is built to them, and only where the values already have them: `IList<long>` over an
-`INTEGER ARRAY` is the refusal `GetInt64` makes over an `INTEGER`. Naming the Java class is the last
-arm, and the escape hatch for a value nothing corresponds to.
+**`GetFieldValue<T>` is `GetValue` and the two things a type argument can say that it cannot.** The
+column's own reading is answered first, so `GetFieldValue<object>` is `GetValue` and
+`GetFieldValue<int[]>` answers an `INTEGER ARRAY` without anything further. What the type argument
+adds is a choice: a Calcite type may have more than one reading — a `DATE` is a `DateTime` by default
+and a `DateOnly` when asked — and naming one selects the mapping that carries it, which is the only
+way to reach a reading that is nobody's default. Naming element types is that same choice one level
+down, and reaches a shape the conversion did not produce: an `object[]` where the column reads back as
+an `int[]`. It is a selection and not a conversion, so `long[]` over an `INTEGER ARRAY` is the refusal
+`GetInt64` makes over an `INTEGER`.
+
+There is nothing below those. Twenty branches calling the typed getters sat there and became dead when
+this went through the type mappings — measured, across every pair they could answer, the arms above
+answer all of it — and a last arm handed back the Java object when a caller named its class, which was
+a second way out of the rule that no Java object reaches a caller. `CalciteDataReader.GetCalciteValue`
+is that escape hatch now, by name, and it is the only one.
 `JavaDecimals` carries `java.math.BigDecimal` to and from `decimal` and `JavaUuids` carries
 `java.util.UUID` to and from `Guid`.
 
