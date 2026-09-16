@@ -466,13 +466,17 @@ namespace Apache.Calcite.Data.Common
         /// Converts what Calcite holds a <c>CHAR</c> in to a <see cref="char"/>.
         /// </summary>
         /// <param name="value"></param>
-        /// <returns>The first character.</returns>
-        /// <exception cref="ClrTypeMappingException">Where the value holds no character.</exception>
+        /// <returns>The character.</returns>
+        /// <exception cref="ClrTypeMappingException">Where the value is not exactly one character.</exception>
+        /// <remarks>
+        /// Exactly one, not the first of several: reading <c>'abcde'</c> as <c>'a'</c> is a conversion, and
+        /// a typed getter is a cast. A longer character value is a string and reads as one.
+        /// </remarks>
         public static object FromCharacter(object value)
         {
             var text = (string)FromChar(value);
 
-            return text.Length > 0 ? text[0] : throw new ClrTypeMappingException("An empty character value cannot be read as a char.");
+            return text.Length == 1 ? text[0] : throw new ClrTypeMappingException($"A character value of length {text.Length} cannot be read as a char.");
         }
 
         /// <summary>

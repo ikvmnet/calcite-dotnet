@@ -128,7 +128,7 @@ namespace Apache.Calcite.Data.Common
             m.Add(
                 typeof(System.Array),
                 SqlTypeName.ARRAY,
-                static (context, relType, _) => new CollectionClrTypeMapping(context, relType),
+                static (context, relType, clrType) => CollectionClrTypeMapping.Create(context, relType, clrType),
                 ClrTypeMatch.RelDefault,
                 clrTypePredicate: static t => t is null || t.IsArray,
                 relTypePredicate: static t => t.getSqlTypeName() == SqlTypeName.ARRAY);
@@ -136,7 +136,7 @@ namespace Apache.Calcite.Data.Common
             m.Add(
                 typeof(System.Array),
                 SqlTypeName.MULTISET,
-                static (context, relType, _) => new CollectionClrTypeMapping(context, relType),
+                static (context, relType, clrType) => CollectionClrTypeMapping.Create(context, relType, clrType),
                 ClrTypeMatch.RelDefault,
                 clrTypePredicate: static t => t is null || t.IsArray,
                 relTypePredicate: static t => t.getSqlTypeName() == SqlTypeName.MULTISET);
@@ -241,8 +241,9 @@ namespace Apache.Calcite.Data.Common
                 // what a reference type says by being one
                 var nullable = Nullable.GetUnderlyingType(element) is not null || element.IsValueType == false;
 
-                return new CollectionClrTypeMapping(context,
-                    typeFactory.createArrayType(typeFactory.createTypeWithNullability(mapping.RelType, nullable), -1));
+                return CollectionClrTypeMapping.Create(context,
+                    typeFactory.createArrayType(typeFactory.createTypeWithNullability(mapping.RelType, nullable), -1),
+                    clrType);
             }
 
             if (Dictionary(clrType) is not (Type key, Type value))

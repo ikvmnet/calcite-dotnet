@@ -77,20 +77,23 @@ namespace Apache.Calcite.Data.Common
             _context = context;
         }
 
-        /// <summary>
-        /// Returns whether a value is one of the two nulls a variant can be.
-        /// </summary>
-        /// <param name="value"></param>
-        /// <returns><see langword="true"/> where the value is a variant null.</returns>
+        /// <inheritdoc />
         /// <remarks>
         /// <c>VariantSqlNull</c> is a SQL null that remembers the type it was null of and
         /// <c>VariantNull</c> is the variant type's own null, the one a JSON <c>null</c> parses to. An
         /// ADO.NET caller has one null and both are it.
         /// </remarks>
-        public static bool IsNull(object? value)
+        public override bool IsNull(object value)
         {
             return value is VariantNull or VariantSqlNull;
         }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// A variant carries its payload's type with the payload, so the column says nothing and the value
+        /// says everything.
+        /// </remarks>
+        public override bool DescribesValue => false;
 
         /// <inheritdoc />
         /// <remarks>

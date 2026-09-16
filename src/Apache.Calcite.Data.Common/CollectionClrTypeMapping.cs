@@ -43,6 +43,50 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
+        /// Returns the mapping for a collection read as <paramref name="clrType"/>, or
+        /// <see langword="null"/> where nothing carries the elements to what that names.
+        /// </summary>
+        /// <param name="context"></param>
+        /// <param name="relType">The <c>ARRAY</c> or <c>MULTISET</c> type.</param>
+        /// <param name="clrType">The array type a caller named, or <see langword="null"/> for whichever
+        /// the collection reads back as.</param>
+        /// <returns>The mapping, or <see langword="null"/>.</returns>
+        /// <remarks>
+        /// <b>Naming the element type selects the mapping the elements cross by; it is not a cast of what
+        /// the collection read back as.</b> A <c>DATE</c> is a <see cref="DateTime"/> by default and a
+        /// <see cref="DateOnly"/> when asked, because the chain carries both, and asking is the only way to
+        /// reach the second — narrowing the default reading could never get there. So the element type the
+        /// caller spelled goes into the element lookup rather than being applied to its result, which is
+        /// what makes <c>GetFieldValue&lt;DateOnly[]&gt;</c> the same ask as <c>GetArray&lt;DateOnly&gt;</c>.
+        ///
+        /// <para>Two spellings mean "no preference": no CLR type at all, and an element of
+        /// <see cref="object"/>. Both are a null to the registry, which is what <c>GetFieldValue{object}</c>
+        /// means everywhere else — the array is of <see cref="object"/> and the elements are whatever the
+        /// column reads back as, boxed into it.</para>
+        ///
+        /// <para><see cref="Nullable{T}"/> on the element is a statement about the array and not about which
+        /// mapping carries a value, so it is stripped for the lookup and kept for the array.</para>
+        /// </remarks>
+        public static CollectionClrTypeMapping? Create(ClrTypeContext context, RelDataType relType, Type? clrType)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+            ArgumentNullException.ThrowIfNull(relType);
+
+            if (relType.getComponentType() is not RelDataType component)
+                return null;
+
+            // System.Array is the table entry's own CLR type and names no element; anything that is not a
+            // one-dimensional array names none either
+            var named = clrType is { IsArray: true } && clrType.GetArrayRank() == 1 ? clrType.GetElementType() : null;
+            var wanted = named is null || named == typeof(object) ? null : Nullable.GetUnderlyingType(named) ?? named;
+
+            if (context.Registry.GetMapping(wanted, component) is not ClrTypeMapping element)
+                return null;
+
+            return new CollectionClrTypeMapping(context, relType, element, named ?? ElementClrType(element));
+        }
+
+        /// <summary>
         /// Returns the .NET type an element materializes as, which carries the element's nullability
         /// because an array has no other way to hold a null.
         /// </summary>
@@ -82,10 +126,24 @@ namespace Apache.Calcite.Data.Common
         /// resolving it in both places would build it twice.
         /// </remarks>
         CollectionClrTypeMapping(ClrTypeContext context, RelDataType relType, ClrTypeMapping element) :
-            base(context, relType, ElementClrType(element).MakeArrayType())
+            this(context, relType, element, ElementClrType(element))
+        {
+
+        }
+
+        /// <summary>
+        /// Initializes a new instance from an element mapping and the .NET type the elements are held as,
+        /// which is the caller's spelling where it named one.
+        /// </summary>
+        /// <param name="context"></param>
+        /// <param name="relType">The <c>ARRAY</c> or <c>MULTISET</c> type.</param>
+        /// <param name="element">The mapping one element is carried across by.</param>
+        /// <param name="elementClrType">The .NET type an element materializes as.</param>
+        CollectionClrTypeMapping(ClrTypeContext context, RelDataType relType, ClrTypeMapping element, Type elementClrType) :
+            base(context, relType, elementClrType.MakeArrayType())
         {
             _element = element;
-            _elementClrType = ElementClrType(element);
+            _elementClrType = elementClrType;
         }
 
         /// <summary>
@@ -118,7 +176,19 @@ namespace Apache.Calcite.Data.Common
             for (var e = source.iterator(); e.hasNext(); i++)
             {
                 var item = Unwrap(e.next(), _element);
-                array.SetValue(item is null ? null : _element.FromCalcite(item), i);
+                if (item is null)
+                {
+                    // Array.SetValue writes default(T) for a null into an array of a value type rather than
+                    // refusing it, so a null element and a zero would be the same array afterwards. The
+                    // element type follows the column's nullability unless a caller named one, and a caller
+                    // that named a type with no room for a null is told so
+                    if (_elementClrType.IsValueType && Nullable.GetUnderlyingType(_elementClrType) is null)
+                        throw new ClrTypeMappingException($"An element of {RelType} is null and a {_elementClrType} does not hold one.");
+
+                    continue;
+                }
+
+                array.SetValue(_element.FromCalcite(item), i);
             }
 
             return array;

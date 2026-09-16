@@ -53,6 +53,14 @@ namespace Apache.Calcite.Data.Common
 
         /// <inheritdoc />
         /// <remarks>
+        /// This is the mapping for the types that say nothing — <c>ANY</c>, and <c>OTHER</c>, which is what
+        /// Calcite names a class it has no SQL name for — so the value's own class stands in for the
+        /// column's type, here and in every accessor that asks.
+        /// </remarks>
+        public override bool DescribesValue => false;
+
+        /// <inheritdoc />
+        /// <remarks>
         /// The value's own class decides here too: there is no declared type to write it as, so what goes
         /// in is whatever Calcite holds a value of that .NET type as.
         /// </remarks>

@@ -441,7 +441,14 @@ namespace Apache.Calcite.Data.Internal
                 var items = Read(array, type?.getComponentType(), element);
                 var packed = Array.CreateInstance(element, items.Count);
                 for (var i = 0; i < items.Count; i++)
+                {
+                    // Array.SetValue writes default(T) for a null into an array of a value type rather than
+                    // refusing it, so a null element and a zero would be the same array afterwards
+                    if (items[i] is null && element.IsValueType && Nullable.GetUnderlyingType(element) is null)
+                        throw new InvalidCastException($"An element is null and a '{element.Name}' does not hold one.");
+
                     packed.SetValue(items[i], i);
+                }
 
                 result = packed;
                 return true;
