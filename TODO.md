@@ -463,6 +463,49 @@ Also at 0% and worth deciding about rather than covering: `AdoTableQueryable` (n
   given to the type 'varchar' exceeds the maximum allowed for any data type (8000)". The clamp is not one
   number: `nvarchar` stops at 4000, and nothing in the dialect distinguishes the two today.
 
+## `Apache.Calcite.FullText`: the capabilities left out of the first vocabulary
+
+The nine operators cover everything Cosmos DB offers, which is the bar #157 set, and the survey behind them
+turned up four capabilities that several stores have and this package does not. None is a gap in what was
+promised; each is a decision not taken.
+
+**A `FREETEXT` mode — exact words against meaning.** SQL Server splits `CONTAINS` from `FREETEXT`, and MySQL
+`IN BOOLEAN MODE` from `IN NATURAL LANGUAGE MODE`; both distinguish matching the words written from matching
+what they mean, stemming and thesaurus applied. PostgreSQL, Cosmos and SQLite FTS5 stem unconditionally and
+have no such switch, so a second name would be a real distinction in two stores and a synonym in three. The
+question is whether a synonym is harmless — it returns the same rows in those three — or whether a name that
+only sometimes means something is worse than none.
+
+**Proximity.** SQL Server's `NEAR((a, b), n)`, FTS5's `NEAR(a b, N)`, PostgreSQL's `<N>`, Elasticsearch's
+`slop`, Atlas's `near`. Every one of them exists and they do not agree on what the number counts: tokens
+between the terms in some, positions in others, and SQL Server's excludes the search terms themselves. A
+shared `CLR_FT_NEAR(a, b, n)` whose `n` means something different per adapter would answer differently per
+store without failing, which is the failure this package exists to prevent. Worth doing only with a
+definition stated in the package and adapters held to it — which may mean the count is in tokens and a store
+that cannot honour that declines.
+
+**Highlighting and snippets.** `ts_headline`, FTS5's `highlight()` and `snippet()`, and the Elasticsearch and
+Atlas highlighters. These are a different shape from the rest — they return marked-up text rather than
+answering about a row — and Cosmos and SQL Server have nothing at all. Worth adding when two stores agree on
+a shape; the FTS5 and PostgreSQL signatures are not close.
+
+**Vector search.** `CLR_FT_RRF` takes any numeric score, so an adapter's own vector-distance operator already
+fuses with a full text one and hybrid search is expressible. But Cosmos's `VectorDistance(v1, v2,
+[bruteForce], [options])` has no shared spelling, and nor do pgvector's `<->`, `<#>` and `<=>`, Atlas's
+`knnBeta`, or Elasticsearch's `knn`. A `CLR_VEC_*` vocabulary is the obvious sibling package and is a
+separate piece of work — the types are the hard part there, a vector being an array of floats in some stores
+and an opaque type in others.
+
+## `Apache.Calcite.Geography`: a schema declaration cannot take an array or a geography
+
+The same two limits `Apache.Calcite.FullText` measured apply there and are unmeasured for spatial.
+`SqlUtil.lookupSubjectRoutines` runs a type-precedence pass whenever two candidates survive, and that pass
+throws rather than declining for an argument whose precedence list cannot compare the parameter type —
+`ArraySqlType` for an array, and the same shape of failure that `No assign rules for OTHER defined` was.
+Geography's README says to register one route or the other because a name found twice resolves to whichever
+is reached first; the stronger reason is that with both, some argument types stop working. Worth reproducing
+against `CLR_ST_GEOG_*` and saying so in that README.
+
 ## Translate a CLR expression tree into a linq4j one
 
 `ClrEnumerableToEnumerableConverter` is the only place a plan of these conventions has to call back out of

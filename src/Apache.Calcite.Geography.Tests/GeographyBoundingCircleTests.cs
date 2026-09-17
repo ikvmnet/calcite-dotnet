@@ -144,7 +144,7 @@ namespace Apache.Calcite.Geography.Tests
         public void ShouldRunAsAnOperator()
         {
             var area = GeographyExecutionTests.Run(
-                "SELECT ST_GEOG_AREA(ST_GEOG_BOUNDINGCIRCLE(ST_GEOG_GEOMFROMTEXT('MULTIPOINT((0 0), (1 0))')))")[0][0];
+                "SELECT CLR_ST_GEOG_AREA(CLR_ST_GEOG_BOUNDINGCIRCLE(CLR_ST_GEOG_GEOMFROMTEXT('MULTIPOINT((0 0), (1 0))')))")[0][0];
 
             (area is java.lang.Number n ? n.doubleValue() : double.NaN).Should().BeGreaterThan(0);
         }

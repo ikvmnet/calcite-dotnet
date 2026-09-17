@@ -182,11 +182,11 @@ namespace Apache.Calcite.Geography.Tests
         public void ShouldRunEachAsAnOperator()
         {
             var offset = GeographyExecutionTests.Run(
-                "SELECT ST_GEOG_LENGTH(ST_GEOG_OFFSETCURVE(ST_GEOG_GEOMFROMTEXT('LINESTRING(-1 0, 1 0)'), 10000.0))")[0][0];
+                "SELECT CLR_ST_GEOG_LENGTH(CLR_ST_GEOG_OFFSETCURVE(CLR_ST_GEOG_GEOMFROMTEXT('LINESTRING(-1 0, 1 0)'), 10000.0))")[0][0];
             (offset is java.lang.Number a ? a.doubleValue() : double.NaN).Should().BeGreaterThan(0);
 
             var ellipse = GeographyExecutionTests.Run(
-                "SELECT ST_GEOG_AREA(ST_GEOG_MAKEELLIPSE(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 20000.0, 10000.0))")[0][0];
+                "SELECT CLR_ST_GEOG_AREA(CLR_ST_GEOG_MAKEELLIPSE(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 20000.0, 10000.0))")[0][0];
             (ellipse is java.lang.Number b ? b.doubleValue() : double.NaN).Should().BeGreaterThan(0);
         }
 

@@ -14,7 +14,7 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// Putting points on a geodesic: <c>ST_GEOG_DENSIFY</c> along one, <c>ST_GEOG_PROJECTPOINT</c> onto one.
+    /// Putting points on a geodesic: <c>CLR_ST_GEOG_DENSIFY</c> along one, <c>CLR_ST_GEOG_PROJECTPOINT</c> onto one.
     /// </summary>
     /// <remarks>
     /// Densifying is usually done to hand a planar consumer something that follows the true path — a map, an
@@ -144,10 +144,10 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldRunEachAsAnOperator()
         {
-            GeographyExecutionTests.Run("SELECT ST_GEOG_NUMPOINTS(ST_GEOG_DENSIFY(ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 10 0)'), 100000.0))")[0][0]
+            GeographyExecutionTests.Run("SELECT CLR_ST_GEOG_NUMPOINTS(CLR_ST_GEOG_DENSIFY(CLR_ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 10 0)'), 100000.0))")[0][0]
                 .Should().BeAssignableTo<java.lang.Number>().Which.intValue().Should().BeGreaterThan(2);
 
-            GeographyExecutionTests.Run("SELECT ST_GEOG_ASTEXT(ST_GEOG_PROJECTPOINT(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), ST_GEOG_GEOMFROMTEXT('LINESTRING(1 -1, 1 1)')))")[0][0]
+            GeographyExecutionTests.Run("SELECT CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_PROJECTPOINT(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), CLR_ST_GEOG_GEOMFROMTEXT('LINESTRING(1 -1, 1 1)')))")[0][0]
                 .Should().Be("POINT (1 0)");
         }
 

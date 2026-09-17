@@ -191,15 +191,15 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldRunEachAsAnOperator()
         {
-            const string a = "ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))')";
-            const string b = "ST_GEOG_GEOMFROMTEXT('POLYGON((1 1, 3 1, 3 3, 1 3, 1 1))')";
+            const string a = "CLR_ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))')";
+            const string b = "CLR_ST_GEOG_GEOMFROMTEXT('POLYGON((1 1, 3 1, 3 3, 1 3, 1 1))')";
 
             foreach (var sql in new[]
             {
-                $"ST_GEOG_AREA(ST_GEOG_INTERSECTION({a}, {b}))",
-                $"ST_GEOG_AREA(ST_GEOG_DIFFERENCE({a}, {b}))",
-                $"ST_GEOG_AREA(ST_GEOG_SYMDIFFERENCE({a}, {b}))",
-                $"ST_GEOG_AREA(ST_GEOG_UNARYUNION({a}))",
+                $"CLR_ST_GEOG_AREA(CLR_ST_GEOG_INTERSECTION({a}, {b}))",
+                $"CLR_ST_GEOG_AREA(CLR_ST_GEOG_DIFFERENCE({a}, {b}))",
+                $"CLR_ST_GEOG_AREA(CLR_ST_GEOG_SYMDIFFERENCE({a}, {b}))",
+                $"CLR_ST_GEOG_AREA(CLR_ST_GEOG_UNARYUNION({a}))",
             })
             {
                 var answer = GeographyExecutionTests.Run("SELECT " + sql)[0][0];

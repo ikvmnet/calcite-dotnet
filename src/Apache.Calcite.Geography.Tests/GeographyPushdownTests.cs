@@ -17,11 +17,11 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// What an adapter has to match on to push an <c>ST_GEOG_</c> operator down to a store that can do the
+    /// What an adapter has to match on to push a <c>CLR_ST_GEOG_</c> operator down to a store that can do the
     /// geodesy itself.
     /// </summary>
     /// <remarks>
-    /// Pushing down is the point of the package: a geodesic store answers <c>ST_GEOG_DWITHIN</c> in its own
+    /// Pushing down is the point of the package: a geodesic store answers <c>CLR_ST_GEOG_DWITHIN</c> in its own
     /// SQL, and the S2 evaluator here is what answers when nothing better can. No adapter exists yet, so
     /// these pin the two facts one would be written against rather than any adapter's behaviour.
     /// </remarks>
@@ -78,9 +78,9 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldLeaveTheCallInThePlanForAnAdapterToFind()
         {
-            var calls = Calls(Plan("SELECT ID FROM GEO WHERE ST_GEOG_DWITHIN(GEOG, ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 200000.0)"));
+            var calls = Calls(Plan("SELECT ID FROM GEO WHERE CLR_ST_GEOG_DWITHIN(GEOG, CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 200000.0)"));
 
-            var dwithin = calls.Find(c => c.getOperator().getName() == "ST_GEOG_DWITHIN");
+            var dwithin = calls.Find(c => c.getOperator().getName() == "CLR_ST_GEOG_DWITHIN");
 
             dwithin.Should().NotBeNull();
             dwithin!.getOperands().size().Should().Be(3);
@@ -105,12 +105,12 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldNotGiveThePlanTheOperatorTablesOwnInstance()
         {
-            var call = Calls(Plan("SELECT ST_GEOG_DISTANCE(GEOG, GEOG) FROM GEO"))
-                .Find(c => c.getOperator().getName() == "ST_GEOG_DISTANCE");
+            var call = Calls(Plan("SELECT CLR_ST_GEOG_DISTANCE(GEOG, GEOG) FROM GEO"))
+                .Find(c => c.getOperator().getName() == "CLR_ST_GEOG_DISTANCE");
 
             call.Should().NotBeNull();
 
-            var declared = GeographyOperatorTable.StGeogDistance;
+            var declared = GeographyOperatorTable.ClrStGeogDistance;
 
             call!.getOperator().Should().NotBeSameAs(declared);
             call.getOperator().Equals(declared).Should().BeTrue();

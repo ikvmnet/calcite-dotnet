@@ -15,7 +15,7 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// Every <c>ST_GEOG_*</c> operation against the <c>ST_*</c> it mirrors, over shapes small enough and near
+    /// Every <c>CLR_ST_GEOG_*</c> operation against the <c>ST_*</c> it mirrors, over shapes small enough and near
     /// enough the equator that the sphere and the plane have to agree.
     /// </summary>
     /// <remarks>

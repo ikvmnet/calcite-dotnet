@@ -11,7 +11,7 @@ instead of Janino, and the prepare pipeline that gets a statement to one.
 | `Apache.Calcite.Adapter.AdoNet` | pushes a plan down to an ADO.NET provider |
 | `Apache.Calcite.Data` | the `DbConnection` / `DbCommand` surface |
 | `Apache.Calcite.Extensions` | `ClrEnumerableConvention`, the prepare pipeline, and the IKVM interop helpers |
-| `Apache.Calcite.Geography` | optional; a `GEOGRAPHY` type distinct from Calcite's `GEOMETRY`, the `ST_GEOG_*` operator table, and a geodesic evaluator over Google's S2. Nothing else references it, and it references nothing else here |
+| `Apache.Calcite.Geography` | optional; the `CLR_ST_GEOG_*` operator table and a geodesic evaluator over Google's S2. There is no `GEOGRAPHY` type — a geography is Calcite's `GEOMETRY` and the operator's name is what says to read it geodesically, which is what lets these be declared on a schema. Nothing else references it, and it references nothing else here |
 
 `TODO.md` has the outstanding work, sized and reasoned: the ADO.NET adapter's gaps and what more it
 could push, a plan cache, the test suites not yet written, and the decisions not yet taken. It holds

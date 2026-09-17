@@ -11,25 +11,25 @@ namespace Apache.Calcite.Geography.Sql.Type
 {
 
     /// <summary>
-    /// Checks that each operand of an <c>ST_GEOG_*</c> call is what that position takes.
+    /// Checks that each operand of a <c>CLR_ST_GEOG_*</c> call is what that position takes.
     /// </summary>
     /// <remarks>
-    /// This is why the declarations are operators rather than schema functions. A function declared through a
-    /// schema carries its parameter types, and routine resolution runs an assignability check keyed on the
-    /// parameter's <c>SqlTypeName</c>: <c>SqlUtil.filterRoutinesByParameterTypeAndName</c> reaches
+    /// This is why a geography could not be its own type. A function declared through a schema carries its
+    /// parameter types, and routine resolution runs an assignability check keyed on the parameter's
+    /// <c>SqlTypeName</c>: <c>SqlUtil.filterRoutinesByParameterTypeAndName</c> reaches
     /// <c>SqlTypeMappingRule.canApplyFrom</c>, which throws <c>AssertionError: No assign rules for OTHER
     /// defined</c> because no rule is keyed on <c>OTHER</c> and none can be supplied — the path consults the
-    /// immutable assignment rule, so <c>SqlTypeCoercionRule.THREAD_PROVIDERS</c> does not reach it. Operand
-    /// checking is our code and consults no rules at all.
+    /// immutable assignment rule, so <c>SqlTypeCoercionRule.THREAD_PROVIDERS</c> does not reach it. Typing
+    /// the operators over <c>GEOMETRY</c> is what removed that, and operand checking is our code besides,
+    /// consulting no rules at all.
     ///
-    /// <para>That same filter is what <see cref="isFixedParameters"/> has to answer <c>false</c> for. It
-    /// runs the check only on a checker that says its parameters are fixed, and skips one that does not; a
-    /// <c>true</c> here would walk back into the assertion by way of our own declared parameter types.
+    /// <para>That filter runs only on a checker whose parameters are fixed, and skips one whose are not, so
+    /// <see cref="isFixedParameters"/> decides whether it is reached at all; see there.
     /// <c>SqlOperandMetadata</c> is implemented because <c>SqlUserDefinedFunction.getOperandTypeChecker</c>
-    /// narrows its return type to it, not because the parameters are meant to be fixed.</para>
+    /// narrows its return type to it, and because those filters cast to it unguarded.</para>
     ///
     /// <para>The checker is also the whole of the error a caller sees. One that accepted anything would let
-    /// <c>ST_GEOG_DISTANCE('a', 'b')</c> validate and fail somewhere further down, or not at all.</para>
+    /// <c>CLR_ST_GEOG_DISTANCE('a', 'b')</c> validate and fail somewhere further down, or not at all.</para>
     /// </remarks>
     public sealed class GeographyOperandTypeChecker : SqlOperandMetadata
     {
@@ -101,17 +101,21 @@ namespace Apache.Calcite.Geography.Sql.Type
         }
 
         /// <summary>
-        /// Returns whether the list of parameters is fixed-length, which for this checker is always
-        /// <c>false</c>.
+        /// Returns <c>true</c>: every one of these takes exactly the operands it declares.
         /// </summary>
-        /// <returns></returns>
         /// <remarks>
-        /// Answering <c>true</c> puts the declared parameter types back in front of
-        /// <c>SqlUtil.filterRoutinesByParameterTypeAndName</c>, and a geography parameter there is the
-        /// <c>No assign rules for OTHER defined</c> assertion. Nothing else is lost by saying no: the flag
-        /// otherwise only tells the validator it may supply <c>DEFAULT</c> for a missing argument, and none
-        /// of these has an optional one.
+        /// <para>The flag is a promise that this object is a <c>SqlOperandMetadata</c>, which it is:
+        /// <c>SqlUtil.filterRoutinesByParameterTypeAndName</c> and <c>bestMatch</c> both cast to that type
+        /// without a guard whenever a checker answers <c>true</c>, and both then read
+        /// <see cref="paramTypes"/>. Answering <c>false</c> would be safe and would cost the type coercion
+        /// those filters apply.</para>
+        ///
+        /// <para>It had to be <c>false</c> while a geography was its own type: the parameter types reach
+        /// <c>SqlTypeMappingRule.canApplyFrom</c>, which has no rule keyed on <c>OTHER</c> and asserts rather
+        /// than rejecting. Typing the operators over <c>GEOMETRY</c> is what removed that, and is what lets
+        /// these be declared on a schema at all.</para>
         /// </remarks>
+        /// <returns><c>true</c>.</returns>
         public bool isFixedParameters()
         {
             return true;

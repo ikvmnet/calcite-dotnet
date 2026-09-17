@@ -2,7 +2,7 @@ namespace Apache.Calcite.Geography.Sql.Type
 {
 
     /// <summary>
-    /// What an <c>ST_GEOG_*</c> operator will take in a given position.
+    /// What a <c>CLR_ST_GEOG_*</c> operator will take in a given position.
     /// </summary>
     /// <remarks>
     /// Not a <c>SqlTypeFamily</c>, and it cannot be one: a geography answers <c>OTHER</c>, which is the

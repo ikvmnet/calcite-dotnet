@@ -87,7 +87,7 @@ namespace Apache.Calcite.Geography.Tests
 
         /// <summary>
         /// A coordinate of the geography, not a point on it — which is what makes this a different function
-        /// from <c>ST_GEOG_CLOSESTPOINT</c>.
+        /// from <c>CLR_ST_GEOG_CLOSESTPOINT</c>.
         /// </summary>
         [TestMethod]
         public void ShouldAnswerACoordinateRatherThanAPointOnAnEdge()
@@ -115,7 +115,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The longest line joins the pair <c>ST_GEOG_MAXDISTANCE</c> measures.
+        /// The longest line joins the pair <c>CLR_ST_GEOG_MAXDISTANCE</c> measures.
         /// </summary>
         [TestMethod]
         public void ShouldJoinThePairMaxDistanceMeasures()
@@ -167,10 +167,10 @@ namespace Apache.Calcite.Geography.Tests
         {
             var cases = new (string Sql, string Expected)[]
             {
-                ("ST_GEOG_ASTEXT(ST_GEOG_CLOSESTCOORDINATE(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), ST_GEOG_GEOMFROMTEXT('MULTIPOINT((1 0), (0 1))')))", "POINT (0 1)"),
-                ("ST_GEOG_ASTEXT(ST_GEOG_FURTHESTCOORDINATE(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), ST_GEOG_GEOMFROMTEXT('MULTIPOINT((1 0), (0 1))')))", "POINT (1 0)"),
-                ("ST_GEOG_ASTEXT(ST_GEOG_CLOSESTPOINT(ST_GEOG_GEOMFROMTEXT('LINESTRING(1 -1, 1 1)'), ST_GEOG_GEOMFROMTEXT('POINT(0 0)')))", "POINT (1 0)"),
-                ("ST_GEOG_ASTEXT(ST_GEOG_LONGESTLINE(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), ST_GEOG_GEOMFROMTEXT('MULTIPOINT((2 0), (3 0))')))", "LINESTRING (0 0, 3 0)"),
+                ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_CLOSESTCOORDINATE(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), CLR_ST_GEOG_GEOMFROMTEXT('MULTIPOINT((1 0), (0 1))')))", "POINT (0 1)"),
+                ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_FURTHESTCOORDINATE(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), CLR_ST_GEOG_GEOMFROMTEXT('MULTIPOINT((1 0), (0 1))')))", "POINT (1 0)"),
+                ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_CLOSESTPOINT(CLR_ST_GEOG_GEOMFROMTEXT('LINESTRING(1 -1, 1 1)'), CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)')))", "POINT (1 0)"),
+                ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_LONGESTLINE(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), CLR_ST_GEOG_GEOMFROMTEXT('MULTIPOINT((2 0), (3 0))')))", "LINESTRING (0 0, 3 0)"),
             };
 
             var failures = new System.Collections.Generic.List<string>();

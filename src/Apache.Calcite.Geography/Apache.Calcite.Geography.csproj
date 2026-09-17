@@ -4,7 +4,7 @@
         <TargetFramework>net8.0</TargetFramework>
         <LangVersion>Preview</LangVersion>
         <Nullable>enable</Nullable>
-        <Description>A GEOGRAPHY type and an ST_GEOG_* operator table for Apache Calcite. Calcite's spatial library is planar JTS answering in the units of an unprojected coordinate system; a store that speaks WGS84 is geodesic and answers in metres. This package gives the second reading a type of its own, so the two cannot be confused, and evaluates the operations backends push over Google's S2.</Description>
+        <Description>A CLR_ST_GEOG_* operator table for Apache Calcite. Calcite's spatial library is planar JTS answering in the units of an unprojected coordinate system; a store that speaks WGS84 is geodesic and answers in metres. This package gives the second reading a set of operators of its own, so which reading is meant is written down, and evaluates the operations backends push over Google's S2.</Description>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageIcon>icon.png</PackageIcon>
         <PackageTags>apache;calcite;sql;spatial;geography;geodesic;wgs84;s2;ikvm</PackageTags>

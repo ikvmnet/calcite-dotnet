@@ -8,7 +8,7 @@ namespace Apache.Calcite.Geography.Sql.Type
 {
 
     /// <summary>
-    /// The return type strategies the <c>ST_GEOG_*</c> operators use, for the two types Calcite has no
+    /// The return type strategies the <c>CLR_ST_GEOG_*</c> operators use, for the two types Calcite has no
     /// strategy of its own for.
     /// </summary>
     /// <remarks>
@@ -41,7 +41,7 @@ namespace Apache.Calcite.Geography.Sql.Type
         /// A function declared through a schema is typed by <c>createJavaType</c> over the return type of the
         /// method behind it, so <c>ST_ASTEXT</c> is <c>JavaType(String)</c> and not <c>VARCHAR(2000)</c>.
         /// Naming the class rather than picking a <c>SqlTypeName</c> and a precision is what keeps an
-        /// <c>ST_GEOG_</c> operator typed exactly as the <c>ST_</c> one it mirrors.
+        /// <c>CLR_ST_GEOG_</c> operator typed exactly as the <c>ST_</c> one it mirrors.
         /// </remarks>
         public static SqlReturnTypeInference Of(java.lang.Class clazz)
         {

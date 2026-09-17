@@ -69,7 +69,7 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldRunAConstructorAndAMeasurement()
         {
-            var rows = Run("SELECT ST_GEOG_DISTANCE(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), ST_GEOG_GEOMFROMTEXT('POINT(1 0)'))");
+            var rows = Run("SELECT CLR_ST_GEOG_DISTANCE(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), CLR_ST_GEOG_GEOMFROMTEXT('POINT(1 0)'))");
 
             rows.Should().HaveCount(1);
             ((java.lang.Number)rows[0][0]!).doubleValue().Should().BeApproximately(111319.49079327357, 0.001);
@@ -78,7 +78,7 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldReadAGeographyColumn()
         {
-            var rows = Run("SELECT ID, ST_GEOG_ASTEXT(GEOG) FROM GEO ORDER BY ID");
+            var rows = Run("SELECT ID, CLR_ST_GEOG_ASTEXT(GEOG) FROM GEO ORDER BY ID");
 
             rows.Should().HaveCount(2);
             rows[0][1].Should().Be("POINT (0.5 0)");
@@ -87,7 +87,7 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldRunAnAccessorOverAColumn()
         {
-            var rows = Run("SELECT ID, ST_GEOG_X(GEOG) FROM GEO ORDER BY ID");
+            var rows = Run("SELECT ID, CLR_ST_GEOG_X(GEOG) FROM GEO ORDER BY ID");
 
             rows.Should().HaveCount(2);
             ((java.lang.Number)rows[0][1]!).doubleValue().Should().Be(0.5);
@@ -96,7 +96,7 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldRunAPredicateOverAColumn()
         {
-            var rows = Run("SELECT ID FROM GEO WHERE ST_GEOG_DWITHIN(GEOG, ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 200000.0)");
+            var rows = Run("SELECT ID FROM GEO WHERE CLR_ST_GEOG_DWITHIN(GEOG, CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 200000.0)");
 
             rows.Should().HaveCount(1);
             ((java.lang.Number)rows[0][0]!).intValue().Should().Be(1);

@@ -90,7 +90,7 @@ namespace Apache.Calcite.Geography.Tests
         /// An accessor takes either column, there being one type.
         /// </summary>
         /// <remarks>
-        /// It used to refuse a geometry, on the grounds that <c>ST_GEOG_ASTEXT</c> over one would be a second
+        /// It used to refuse a geometry, on the grounds that <c>CLR_ST_GEOG_ASTEXT</c> over one would be a second
         /// way to spell <c>ST_ASTEXT</c> and every such way is a place the two readings can be confused. That
         /// refusal is gone with the type it rested on, and this is here to say so out loud.
         /// </remarks>
@@ -99,10 +99,10 @@ namespace Apache.Calcite.Geography.Tests
         {
             foreach (var sql in new[]
             {
-                "SELECT ST_GEOG_X(GEOM) FROM GEO",
-                "SELECT ST_GEOG_ASTEXT(GEOM) FROM GEO",
-                "SELECT ST_GEOG_NUMPOINTS(GEOM) FROM GEO",
-                "SELECT ST_GEOG_POINTN(GEOM, 1) FROM GEO",
+                "SELECT CLR_ST_GEOG_X(GEOM) FROM GEO",
+                "SELECT CLR_ST_GEOG_ASTEXT(GEOM) FROM GEO",
+                "SELECT CLR_ST_GEOG_NUMPOINTS(GEOM) FROM GEO",
+                "SELECT CLR_ST_GEOG_POINTN(GEOM, 1) FROM GEO",
             })
                 GeographyFixture.Validate(sql);
         }
@@ -110,13 +110,13 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldTypeTheAccessorsOverAGeographyColumn()
         {
-            Column("SELECT ST_GEOG_X(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
-            Column("SELECT ST_GEOG_NUMPOINTS(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.INTEGER);
-            Column("SELECT ST_GEOG_ISEMPTY(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.BOOLEAN);
-            Column("SELECT ST_GEOG_ASTEXT(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.VARCHAR);
-            Column("SELECT ST_GEOG_ASWKB(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.VARBINARY);
-            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_BOUNDARY(GEOG) FROM GEO")).Should().BeTrue();
-            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_GEOMFROMWKB(ST_GEOG_ASWKB(GEOG)) FROM GEO")).Should().BeTrue();
+            Column("SELECT CLR_ST_GEOG_X(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
+            Column("SELECT CLR_ST_GEOG_NUMPOINTS(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.INTEGER);
+            Column("SELECT CLR_ST_GEOG_ISEMPTY(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.BOOLEAN);
+            Column("SELECT CLR_ST_GEOG_ASTEXT(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.VARCHAR);
+            Column("SELECT CLR_ST_GEOG_ASWKB(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.VARBINARY);
+            GeographyTypes.IsGeometry(Column("SELECT CLR_ST_GEOG_BOUNDARY(GEOG) FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeometry(Column("SELECT CLR_ST_GEOG_GEOMFROMWKB(CLR_ST_GEOG_ASWKB(GEOG)) FROM GEO")).Should().BeTrue();
         }
 
         [TestMethod]
@@ -143,7 +143,7 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldAcceptStGeogDistanceOverAGeographyColumn()
         {
-            Column("SELECT ST_GEOG_DISTANCE(GEOG, GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
+            Column("SELECT CLR_ST_GEOG_DISTANCE(GEOG, GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
         }
 
         /// <summary>
@@ -153,7 +153,7 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldAcceptStGeogDistanceOverAGeometryColumn()
         {
-            Column("SELECT ST_GEOG_DISTANCE(GEOM, GEOM) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
+            Column("SELECT CLR_ST_GEOG_DISTANCE(GEOM, GEOM) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
         }
 
         /// <summary>
@@ -163,28 +163,28 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldRejectStGeogDistanceOverCharacterArguments()
         {
-            var message = Refuse("SELECT ST_GEOG_DISTANCE('a', 'b') FROM GEO");
+            var message = Refuse("SELECT CLR_ST_GEOG_DISTANCE('a', 'b') FROM GEO");
 
-            message.Should().Contain("ST_GEOG_DISTANCE");
+            message.Should().Contain("CLR_ST_GEOG_DISTANCE");
             message.Should().Contain("GEOMETRY");
         }
 
         [TestMethod]
         public void ShouldRejectStGeogDWithinWithoutADistance()
         {
-            Refuse("SELECT ST_GEOG_DWITHIN(GEOG, GEOG) FROM GEO").Should().Contain("ST_GEOG_DWITHIN");
+            Refuse("SELECT CLR_ST_GEOG_DWITHIN(GEOG, GEOG) FROM GEO").Should().Contain("CLR_ST_GEOG_DWITHIN");
         }
 
         [TestMethod]
         public void ShouldTypeTheWktConstructorAsGeography()
         {
-            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_GEOMFROMTEXT('POINT(0 0)') FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeometry(Column("SELECT CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)') FROM GEO")).Should().BeTrue();
         }
 
         [TestMethod]
         public void ShouldTypeTheGeoJsonConstructorAsGeography()
         {
-            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_GEOMFROMGEOJSON('{\"type\":\"Point\",\"coordinates\":[0,0]}') FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeometry(Column("SELECT CLR_ST_GEOG_GEOMFROMGEOJSON('{\"type\":\"Point\",\"coordinates\":[0,0]}') FROM GEO")).Should().BeTrue();
         }
 
         /// <summary>
@@ -194,14 +194,14 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldTypeTheWktConstructorWithAnSridAsGeography()
         {
-            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_GEOMFROMTEXT('POINT(0 0)', 4326) FROM GEO")).Should().BeTrue();
-            GeographyTypes.IsGeometry(Column("SELECT ST_GEOG_GEOMFROMWKT('POINT(0 0)', 4326) FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeometry(Column("SELECT CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)', 4326) FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeometry(Column("SELECT CLR_ST_GEOG_GEOMFROMWKT('POINT(0 0)', 4326) FROM GEO")).Should().BeTrue();
         }
 
         [TestMethod]
         public void ShouldRejectAWktConstructorWithATooLongArgumentList()
         {
-            Refuse("SELECT ST_GEOG_GEOMFROMTEXT('POINT(0 0)', 4326, 1) FROM GEO").Should().Contain("ST_GEOG_GEOMFROMTEXT");
+            Refuse("SELECT CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)', 4326, 1) FROM GEO").Should().Contain("CLR_ST_GEOG_GEOMFROMTEXT");
         }
 
         /// <summary>
@@ -210,7 +210,7 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldAcceptAConstructedGeography()
         {
-            GeographyFixture.Validate("SELECT ST_GEOG_DISTANCE(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), GEOG) FROM GEO");
+            GeographyFixture.Validate("SELECT CLR_ST_GEOG_DISTANCE(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), GEOG) FROM GEO");
         }
 
         /// <summary>
@@ -220,13 +220,13 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldCarryAGeographyIntoCalcitesStDistanceThroughAsGeom()
         {
-            Column("SELECT ST_DISTANCE(ST_GEOG_ASGEOM(GEOG), GEOM) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
+            Column("SELECT ST_DISTANCE(CLR_ST_GEOG_ASGEOM(GEOG), GEOM) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
         }
 
         [TestMethod]
         public void ShouldTypeTheOtherCrossingAsGeography()
         {
-            GeographyTypes.IsGeometry(Column("SELECT ST_GEOM_ASGEOG(GEOM) FROM GEO")).Should().BeTrue();
+            GeographyTypes.IsGeometry(Column("SELECT CLR_ST_GEOM_ASGEOG(GEOM) FROM GEO")).Should().BeTrue();
         }
 
         /// <summary>
@@ -239,8 +239,8 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldAcceptEitherCrossingOverEitherColumn()
         {
-            GeographyFixture.Validate("SELECT ST_GEOM_ASGEOG(GEOG) FROM GEO");
-            GeographyFixture.Validate("SELECT ST_GEOG_ASGEOM(GEOM) FROM GEO");
+            GeographyFixture.Validate("SELECT CLR_ST_GEOM_ASGEOG(GEOG) FROM GEO");
+            GeographyFixture.Validate("SELECT CLR_ST_GEOG_ASGEOM(GEOM) FROM GEO");
         }
 
         [TestMethod]
@@ -248,10 +248,10 @@ namespace Apache.Calcite.Geography.Tests
         {
             foreach (var sql in new[]
             {
-                "SELECT ST_GEOG_INTERSECTS(GEOG, GEOG) FROM GEO",
-                "SELECT ST_GEOG_WITHIN(GEOG, GEOG) FROM GEO",
-                "SELECT ST_GEOG_DWITHIN(GEOG, GEOG, 100.0) FROM GEO",
-                "SELECT ST_GEOG_ISVALID(GEOG) FROM GEO",
+                "SELECT CLR_ST_GEOG_INTERSECTS(GEOG, GEOG) FROM GEO",
+                "SELECT CLR_ST_GEOG_WITHIN(GEOG, GEOG) FROM GEO",
+                "SELECT CLR_ST_GEOG_DWITHIN(GEOG, GEOG, 100.0) FROM GEO",
+                "SELECT CLR_ST_GEOG_ISVALID(GEOG) FROM GEO",
             })
                 Column(sql).getSqlTypeName().Should().BeSameAs(SqlTypeName.BOOLEAN, sql);
         }
@@ -262,7 +262,7 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldAcceptAPredicateInAWhereClause()
         {
-            Column("SELECT ID FROM GEO WHERE ST_GEOG_DWITHIN(GEOG, ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 1000.0)")
+            Column("SELECT ID FROM GEO WHERE CLR_ST_GEOG_DWITHIN(GEOG, CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 1000.0)")
                 .getSqlTypeName().Should().BeSameAs(SqlTypeName.INTEGER);
         }
 

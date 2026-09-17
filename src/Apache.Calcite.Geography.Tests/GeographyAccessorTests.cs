@@ -24,7 +24,7 @@ namespace Apache.Calcite.Geography.Tests
     /// declarations written to one pattern is forty chances to point a name at the wrong body. Comparing
     /// every one against Calcite over shapes of every kind is what catches that.
     ///
-    /// <para>The bounding-box accessors are the exception worth stating. <c>ST_GEOG_XMIN</c> and its four
+    /// <para>The bounding-box accessors are the exception worth stating. <c>CLR_ST_GEOG_XMIN</c> and its four
     /// relatives are computed structurally and are wrong in the usual way for anything crossing the
     /// antimeridian, where the least longitude of a shape spanning the seam is not the westmost point of it.
     /// That is inherited rather than introduced, and it is a documentation problem rather than a second
@@ -62,41 +62,41 @@ namespace Apache.Calcite.Geography.Tests
         /// </summary>
         static readonly (string Name, Func<Geometry, object?> Ours, Func<Geometry, object?> Theirs)[] unary =
         [
-            ("ST_GEOG_X", g => GeographyFunctions.X(g), g => SpatialTypeFunctions.ST_X(g)),
-            ("ST_GEOG_Y", g => GeographyFunctions.Y(g), g => SpatialTypeFunctions.ST_Y(g)),
-            ("ST_GEOG_Z", g => GeographyFunctions.Z(g), g => SpatialTypeFunctions.ST_Z(g)),
-            ("ST_GEOG_XMIN", g => GeographyFunctions.XMin(g), g => SpatialTypeFunctions.ST_XMin(g)),
-            ("ST_GEOG_XMAX", g => GeographyFunctions.XMax(g), g => SpatialTypeFunctions.ST_XMax(g)),
-            ("ST_GEOG_YMIN", g => GeographyFunctions.YMin(g), g => SpatialTypeFunctions.ST_YMin(g)),
-            ("ST_GEOG_YMAX", g => GeographyFunctions.YMax(g), g => SpatialTypeFunctions.ST_YMax(g)),
-            ("ST_GEOG_ZMIN", g => GeographyFunctions.ZMin(g), g => SpatialTypeFunctions.ST_ZMin(g)),
-            ("ST_GEOG_ZMAX", g => GeographyFunctions.ZMax(g), g => SpatialTypeFunctions.ST_ZMax(g)),
-            ("ST_GEOG_COORDDIM", g => GeographyFunctions.CoordDim(g), g => SpatialTypeFunctions.ST_CoordDim(g)),
-            ("ST_GEOG_DIMENSION", g => GeographyFunctions.Dimension(g), g => SpatialTypeFunctions.ST_Dimension(g)),
-            ("ST_GEOG_GEOMETRYTYPE", g => GeographyFunctions.GeometryType(g), g => SpatialTypeFunctions.ST_GeometryType(g)),
-            ("ST_GEOG_GEOMETRYTYPECODE", g => GeographyFunctions.GeometryTypeCode(g), g => SpatialTypeFunctions.ST_GeometryTypeCode(g)),
-            ("ST_GEOG_NPOINTS", g => GeographyFunctions.NPoints(g), g => SpatialTypeFunctions.ST_NPoints(g)),
-            ("ST_GEOG_NUMPOINTS", g => GeographyFunctions.NumPoints(g), g => SpatialTypeFunctions.ST_NumPoints(g)),
-            ("ST_GEOG_NUMGEOMETRIES", g => GeographyFunctions.NumGeometries(g), g => SpatialTypeFunctions.ST_NumGeometries(g)),
-            ("ST_GEOG_NUMINTERIORRING", g => GeographyFunctions.NumInteriorRing(g), g => SpatialTypeFunctions.ST_NumInteriorRing(g)),
-            ("ST_GEOG_NUMINTERIORRINGS", g => GeographyFunctions.NumInteriorRings(g), g => SpatialTypeFunctions.ST_NumInteriorRings(g)),
-            ("ST_GEOG_STARTPOINT", g => GeographyFunctions.StartPoint(g), g => SpatialTypeFunctions.ST_StartPoint(g)),
-            ("ST_GEOG_ENDPOINT", g => GeographyFunctions.EndPoint(g), g => SpatialTypeFunctions.ST_EndPoint(g)),
-            ("ST_GEOG_EXTERIORRING", g => GeographyFunctions.ExteriorRing(g), g => SpatialTypeFunctions.ST_ExteriorRing(g)),
-            ("ST_GEOG_BOUNDARY", g => GeographyFunctions.Boundary(g), g => SpatialTypeFunctions.ST_Boundary(g)),
-            ("ST_GEOG_HOLES", g => GeographyFunctions.Holes(g), g => SpatialTypeFunctions.ST_Holes(g)),
-            ("ST_GEOG_ISEMPTY", g => GeographyFunctions.IsEmpty(g), g => SpatialTypeFunctions.ST_IsEmpty(g)),
-            ("ST_GEOG_IS3D", g => GeographyFunctions.Is3D(g), g => SpatialTypeFunctions.ST_Is3D(g)),
-            ("ST_GEOG_ISCLOSED", g => GeographyFunctions.IsClosed(g), g => SpatialTypeFunctions.ST_IsClosed(g)),
-            ("ST_GEOG_SRID", g => GeographyFunctions.Srid(g), g => SpatialTypeFunctions.ST_SRID(g)),
-            ("ST_GEOG_ASTEXT", g => GeographyFunctions.AsText(g), g => SpatialTypeFunctions.ST_AsText(g)),
-            ("ST_GEOG_ASWKT", g => GeographyFunctions.AsWkt(g), g => SpatialTypeFunctions.ST_AsWKT(g)),
-            ("ST_GEOG_ASEWKT", g => GeographyFunctions.AsEwkt(g), g => SpatialTypeFunctions.ST_AsEWKT(g)),
-            ("ST_GEOG_ASGEOJSON", g => GeographyFunctions.AsGeoJson(g), g => SpatialTypeFunctions.ST_AsGeoJSON(g)),
-            ("ST_GEOG_ASGML", g => GeographyFunctions.AsGml(g), g => SpatialTypeFunctions.ST_AsGML(g)),
-            ("ST_GEOG_ASBINARY", g => GeographyFunctions.AsBinary(g), g => SpatialTypeFunctions.ST_AsBinary(g)),
-            ("ST_GEOG_ASWKB", g => GeographyFunctions.AsWkb(g), g => SpatialTypeFunctions.ST_AsWKB(g)),
-            ("ST_GEOG_ASEWKB", g => GeographyFunctions.AsEwkb(g), g => SpatialTypeFunctions.ST_AsEWKB(g)),
+            ("CLR_ST_GEOG_X", g => GeographyFunctions.X(g), g => SpatialTypeFunctions.ST_X(g)),
+            ("CLR_ST_GEOG_Y", g => GeographyFunctions.Y(g), g => SpatialTypeFunctions.ST_Y(g)),
+            ("CLR_ST_GEOG_Z", g => GeographyFunctions.Z(g), g => SpatialTypeFunctions.ST_Z(g)),
+            ("CLR_ST_GEOG_XMIN", g => GeographyFunctions.XMin(g), g => SpatialTypeFunctions.ST_XMin(g)),
+            ("CLR_ST_GEOG_XMAX", g => GeographyFunctions.XMax(g), g => SpatialTypeFunctions.ST_XMax(g)),
+            ("CLR_ST_GEOG_YMIN", g => GeographyFunctions.YMin(g), g => SpatialTypeFunctions.ST_YMin(g)),
+            ("CLR_ST_GEOG_YMAX", g => GeographyFunctions.YMax(g), g => SpatialTypeFunctions.ST_YMax(g)),
+            ("CLR_ST_GEOG_ZMIN", g => GeographyFunctions.ZMin(g), g => SpatialTypeFunctions.ST_ZMin(g)),
+            ("CLR_ST_GEOG_ZMAX", g => GeographyFunctions.ZMax(g), g => SpatialTypeFunctions.ST_ZMax(g)),
+            ("CLR_ST_GEOG_COORDDIM", g => GeographyFunctions.CoordDim(g), g => SpatialTypeFunctions.ST_CoordDim(g)),
+            ("CLR_ST_GEOG_DIMENSION", g => GeographyFunctions.Dimension(g), g => SpatialTypeFunctions.ST_Dimension(g)),
+            ("CLR_ST_GEOG_GEOMETRYTYPE", g => GeographyFunctions.GeometryType(g), g => SpatialTypeFunctions.ST_GeometryType(g)),
+            ("CLR_ST_GEOG_GEOMETRYTYPECODE", g => GeographyFunctions.GeometryTypeCode(g), g => SpatialTypeFunctions.ST_GeometryTypeCode(g)),
+            ("CLR_ST_GEOG_NPOINTS", g => GeographyFunctions.NPoints(g), g => SpatialTypeFunctions.ST_NPoints(g)),
+            ("CLR_ST_GEOG_NUMPOINTS", g => GeographyFunctions.NumPoints(g), g => SpatialTypeFunctions.ST_NumPoints(g)),
+            ("CLR_ST_GEOG_NUMGEOMETRIES", g => GeographyFunctions.NumGeometries(g), g => SpatialTypeFunctions.ST_NumGeometries(g)),
+            ("CLR_ST_GEOG_NUMINTERIORRING", g => GeographyFunctions.NumInteriorRing(g), g => SpatialTypeFunctions.ST_NumInteriorRing(g)),
+            ("CLR_ST_GEOG_NUMINTERIORRINGS", g => GeographyFunctions.NumInteriorRings(g), g => SpatialTypeFunctions.ST_NumInteriorRings(g)),
+            ("CLR_ST_GEOG_STARTPOINT", g => GeographyFunctions.StartPoint(g), g => SpatialTypeFunctions.ST_StartPoint(g)),
+            ("CLR_ST_GEOG_ENDPOINT", g => GeographyFunctions.EndPoint(g), g => SpatialTypeFunctions.ST_EndPoint(g)),
+            ("CLR_ST_GEOG_EXTERIORRING", g => GeographyFunctions.ExteriorRing(g), g => SpatialTypeFunctions.ST_ExteriorRing(g)),
+            ("CLR_ST_GEOG_BOUNDARY", g => GeographyFunctions.Boundary(g), g => SpatialTypeFunctions.ST_Boundary(g)),
+            ("CLR_ST_GEOG_HOLES", g => GeographyFunctions.Holes(g), g => SpatialTypeFunctions.ST_Holes(g)),
+            ("CLR_ST_GEOG_ISEMPTY", g => GeographyFunctions.IsEmpty(g), g => SpatialTypeFunctions.ST_IsEmpty(g)),
+            ("CLR_ST_GEOG_IS3D", g => GeographyFunctions.Is3D(g), g => SpatialTypeFunctions.ST_Is3D(g)),
+            ("CLR_ST_GEOG_ISCLOSED", g => GeographyFunctions.IsClosed(g), g => SpatialTypeFunctions.ST_IsClosed(g)),
+            ("CLR_ST_GEOG_SRID", g => GeographyFunctions.Srid(g), g => SpatialTypeFunctions.ST_SRID(g)),
+            ("CLR_ST_GEOG_ASTEXT", g => GeographyFunctions.AsText(g), g => SpatialTypeFunctions.ST_AsText(g)),
+            ("CLR_ST_GEOG_ASWKT", g => GeographyFunctions.AsWkt(g), g => SpatialTypeFunctions.ST_AsWKT(g)),
+            ("CLR_ST_GEOG_ASEWKT", g => GeographyFunctions.AsEwkt(g), g => SpatialTypeFunctions.ST_AsEWKT(g)),
+            ("CLR_ST_GEOG_ASGEOJSON", g => GeographyFunctions.AsGeoJson(g), g => SpatialTypeFunctions.ST_AsGeoJSON(g)),
+            ("CLR_ST_GEOG_ASGML", g => GeographyFunctions.AsGml(g), g => SpatialTypeFunctions.ST_AsGML(g)),
+            ("CLR_ST_GEOG_ASBINARY", g => GeographyFunctions.AsBinary(g), g => SpatialTypeFunctions.ST_AsBinary(g)),
+            ("CLR_ST_GEOG_ASWKB", g => GeographyFunctions.AsWkb(g), g => SpatialTypeFunctions.ST_AsWKB(g)),
+            ("CLR_ST_GEOG_ASEWKB", g => GeographyFunctions.AsEwkb(g), g => SpatialTypeFunctions.ST_AsEWKB(g)),
         ];
 
         /// <summary>
@@ -170,7 +170,7 @@ namespace Apache.Calcite.Geography.Tests
         /// </summary>
         /// <remarks>
         /// The comparison above is between two C# methods and says nothing about which of them a name is
-        /// wired to. This runs the operator, so a declaration pointing <c>ST_GEOG_XMIN</c> at
+        /// wired to. This runs the operator, so a declaration pointing <c>CLR_ST_GEOG_XMIN</c> at
         /// <c>XMax</c> — or typed as though it returned something else — is caught here and only here.
         /// Everything goes in one statement per shape rather than one per operator, which is thirty-five
         /// declarations checked in three round trips.
@@ -202,7 +202,7 @@ namespace Apache.Calcite.Geography.Tests
 
                     wanted.Add(answer);
                     names.Add(name);
-                    expressions.Add($"{name}(ST_GEOG_GEOMFROMTEXT('{shape}'))");
+                    expressions.Add($"{name}(CLR_ST_GEOG_GEOMFROMTEXT('{shape}'))");
                 }
 
                 var row = GeographyExecutionTests.Run("SELECT " + string.Join(", ", expressions))[0];
@@ -225,18 +225,18 @@ namespace Apache.Calcite.Geography.Tests
                 {
                     var index = java.lang.Integer.valueOf(n);
 
-                    Compare(differences, $"ST_GEOG_POINTN({shape}, {n})",
+                    Compare(differences, $"CLR_ST_GEOG_POINTN({shape}, {n})",
                         () => GeographyFunctions.PointN(geography, index), () => SpatialTypeFunctions.ST_PointN(geography, n));
 
-                    Compare(differences, $"ST_GEOG_GEOMETRYN({shape}, {n})",
+                    Compare(differences, $"CLR_ST_GEOG_GEOMETRYN({shape}, {n})",
                         () => GeographyFunctions.GeometryN(geography, index), () => SpatialTypeFunctions.ST_GeometryN(geography, n));
 
-                    Compare(differences, $"ST_GEOG_INTERIORRING({shape}, {n})",
+                    Compare(differences, $"CLR_ST_GEOG_INTERIORRING({shape}, {n})",
                         () => GeographyFunctions.InteriorRing(geography, index), () => SpatialTypeFunctions.ST_InteriorRing(geography, n));
                 }
 
                 foreach (var other in shapes)
-                    Compare(differences, $"ST_GEOG_ORDERINGEQUALS({shape}, {other})",
+                    Compare(differences, $"CLR_ST_GEOG_ORDERINGEQUALS({shape}, {other})",
                         () => GeographyFunctions.OrderingEquals(geography, Wkt(other)),
                         () => SpatialTypeFunctions.ST_OrderingEquals(geography, Wkt(other)));
             }

@@ -12,7 +12,7 @@ namespace Apache.Calcite.Geography.Runtime
 {
 
     /// <summary>
-    /// The bodies behind the <c>ST_GEOG_*</c> operators.
+    /// The bodies behind the <c>CLR_ST_GEOG_*</c> operators.
     /// </summary>
     /// <remarks>
     /// Bound by reflection, the way <c>SpatialTypeFunctions</c> is: <c>GeographyOperatorTable</c> resolves
@@ -36,13 +36,13 @@ namespace Apache.Calcite.Geography.Runtime
         /// </summary>
         /// <remarks>
         /// There is no second one to reproject into, which is why <c>ST_SETSRID</c> and <c>ST_TRANSFORM</c>
-        /// have no <c>ST_GEOG_</c> counterpart. Calcite's own constructors leave a geometry on
+        /// have no <c>CLR_ST_GEOG_</c> counterpart. Calcite's own constructors leave a geometry on
         /// <c>NO_SRID</c>, which is zero.
         /// </remarks>
         public const int Wgs84 = 4326;
 
         /// <summary>
-        /// <c>ST_GEOG_GEOMFROMGEOJSON</c>. Reads a geography from GeoJSON.
+        /// <c>CLR_ST_GEOG_GEOMFROMGEOJSON</c>. Reads a geography from GeoJSON.
         /// </summary>
         /// <param name="geoJson"></param>
         /// <returns></returns>
@@ -55,7 +55,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_GEOMFROMTEXT</c> and <c>ST_GEOG_GEOMFROMWKT</c>. Reads a geography from WKT.
+        /// <c>CLR_ST_GEOG_GEOMFROMTEXT</c> and <c>CLR_ST_GEOG_GEOMFROMWKT</c>. Reads a geography from WKT.
         /// </summary>
         /// <param name="wkt"></param>
         /// <returns></returns>
@@ -68,7 +68,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_GEOMFROMTEXT</c> and <c>ST_GEOG_GEOMFROMWKT</c>, with the SRID Calcite lets a caller
+        /// <c>CLR_ST_GEOG_GEOMFROMTEXT</c> and <c>CLR_ST_GEOG_GEOMFROMWKT</c>, with the SRID Calcite lets a caller
         /// name. Reads a geography from WKT.
         /// </summary>
         /// <param name="wkt"></param>
@@ -92,7 +92,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ASGEOM</c>. Reads a geography as a geometry.
+        /// <c>CLR_ST_GEOG_ASGEOM</c>. Reads a geography as a geometry.
         /// </summary>
         /// <param name="geography"></param>
         /// <returns></returns>
@@ -108,7 +108,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOM_ASGEOG</c>. Reads a geometry as a geography.
+        /// <c>CLR_ST_GEOM_ASGEOG</c>. Reads a geometry as a geography.
         /// </summary>
         /// <param name="geometry"></param>
         /// <returns></returns>
@@ -123,7 +123,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_DISTANCE</c>. The distance between two geographies, in metres.
+        /// <c>CLR_ST_GEOG_DISTANCE</c>. The distance between two geographies, in metres.
         /// </summary>
         /// <param name="a"></param>
         /// <param name="b"></param>
@@ -137,7 +137,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_DWITHIN</c>. Whether two geographies are within the given distance in metres.
+        /// <c>CLR_ST_GEOG_DWITHIN</c>. Whether two geographies are within the given distance in metres.
         /// </summary>
         /// <param name="a"></param>
         /// <param name="b"></param>
@@ -162,7 +162,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_WITHIN</c>. Whether the first geography lies within the second.
+        /// <c>CLR_ST_GEOG_WITHIN</c>. Whether the first geography lies within the second.
         /// </summary>
         /// <param name="a"></param>
         /// <param name="b"></param>
@@ -176,7 +176,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_INTERSECTS</c>. Whether two geographies have any point in common.
+        /// <c>CLR_ST_GEOG_INTERSECTS</c>. Whether two geographies have any point in common.
         /// </summary>
         /// <param name="a"></param>
         /// <param name="b"></param>
@@ -190,7 +190,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_CONTAINS</c>. Returns whether the first geography contains the second.
+        /// <c>CLR_ST_GEOG_CONTAINS</c>. Returns whether the first geography contains the second.
         /// </summary>
         /// <param name="a"></param>
         /// <param name="b"></param>
@@ -205,7 +205,7 @@ namespace Apache.Calcite.Geography.Runtime
 
 
         /// <summary>
-        /// <c>ST_GEOG_COVERS</c>. Returns whether no point of the second geography is outside the first.
+        /// <c>CLR_ST_GEOG_COVERS</c>. Returns whether no point of the second geography is outside the first.
         /// </summary>
         /// <param name="a"></param>
         /// <param name="b"></param>
@@ -218,7 +218,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_COVEREDBY</c>. Returns whether no point of the first geography is outside the second.
+        /// <c>CLR_ST_GEOG_COVEREDBY</c>. Returns whether no point of the first geography is outside the second.
         /// </summary>
         /// <param name="a"></param>
         /// <param name="b"></param>
@@ -233,7 +233,7 @@ namespace Apache.Calcite.Geography.Runtime
 
 
         /// <summary>
-        /// <c>ST_GEOG_DISJOINT</c>. Returns whether two geographies have no point in common.
+        /// <c>CLR_ST_GEOG_DISJOINT</c>. Returns whether two geographies have no point in common.
         /// </summary>
         /// <param name="a"></param>
         /// <param name="b"></param>
@@ -246,7 +246,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_EQUALS</c>. Returns whether two geographies are the same set of places.
+        /// <c>CLR_ST_GEOG_EQUALS</c>. Returns whether two geographies are the same set of places.
         /// </summary>
         /// <param name="a"></param>
         /// <param name="b"></param>
@@ -263,7 +263,7 @@ namespace Apache.Calcite.Geography.Runtime
 
 
         /// <summary>
-        /// <c>ST_GEOG_ENVELOPESINTERSECT</c>. Returns whether the bounding boxes of two geographies meet.
+        /// <c>CLR_ST_GEOG_ENVELOPESINTERSECT</c>. Returns whether the bounding boxes of two geographies meet.
         /// </summary>
         /// <param name="a"></param>
         /// <param name="b"></param>
@@ -276,7 +276,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_AREA</c>. Returns the area of the geography in square metres.
+        /// <c>CLR_ST_GEOG_AREA</c>. Returns the area of the geography in square metres.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -286,7 +286,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_LENGTH</c>. Returns the length of the geography in metres.
+        /// <c>CLR_ST_GEOG_LENGTH</c>. Returns the length of the geography in metres.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -296,7 +296,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_PERIMETER</c>. Returns the perimeter of the areal part of the geography in metres.
+        /// <c>CLR_ST_GEOG_PERIMETER</c>. Returns the perimeter of the areal part of the geography in metres.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -306,7 +306,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAXDISTANCE</c>. Returns the greatest distance between a coordinate of one geography and a coordinate of the other, in metres.
+        /// <c>CLR_ST_GEOG_MAXDISTANCE</c>. Returns the greatest distance between a coordinate of one geography and a coordinate of the other, in metres.
         /// </summary>
         /// <param name="a"></param>
         /// <param name="b"></param>
@@ -319,7 +319,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ISVALID</c>. Whether the geography is valid on the sphere.
+        /// <c>CLR_ST_GEOG_ISVALID</c>. Whether the geography is valid on the sphere.
         /// </summary>
         /// <param name="geography"></param>
         /// <returns></returns>
@@ -332,7 +332,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_X</c>. Returns the longitude of a point.
+        /// <c>CLR_ST_GEOG_X</c>. Returns the longitude of a point.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -342,7 +342,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_Y</c>. Returns the latitude of a point.
+        /// <c>CLR_ST_GEOG_Y</c>. Returns the latitude of a point.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -352,7 +352,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_Z</c>. Returns the third ordinate of a point.
+        /// <c>CLR_ST_GEOG_Z</c>. Returns the third ordinate of a point.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -362,7 +362,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_XMIN</c>. Returns the least longitude.
+        /// <c>CLR_ST_GEOG_XMIN</c>. Returns the least longitude.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -372,7 +372,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_XMAX</c>. Returns the greatest longitude.
+        /// <c>CLR_ST_GEOG_XMAX</c>. Returns the greatest longitude.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -382,7 +382,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_YMIN</c>. Returns the least latitude.
+        /// <c>CLR_ST_GEOG_YMIN</c>. Returns the least latitude.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -392,7 +392,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_YMAX</c>. Returns the greatest latitude.
+        /// <c>CLR_ST_GEOG_YMAX</c>. Returns the greatest latitude.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -402,7 +402,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ZMIN</c>. Returns the least third ordinate.
+        /// <c>CLR_ST_GEOG_ZMIN</c>. Returns the least third ordinate.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -412,7 +412,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ZMAX</c>. Returns the greatest third ordinate.
+        /// <c>CLR_ST_GEOG_ZMAX</c>. Returns the greatest third ordinate.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -422,7 +422,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_COORDDIM</c>. Returns how many ordinates a coordinate carries.
+        /// <c>CLR_ST_GEOG_COORDDIM</c>. Returns how many ordinates a coordinate carries.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -432,7 +432,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_DIMENSION</c>. Returns the dimension: 0, 1 or 2.
+        /// <c>CLR_ST_GEOG_DIMENSION</c>. Returns the dimension: 0, 1 or 2.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -442,7 +442,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_GEOMETRYTYPE</c>. Returns the name of the kind of shape.
+        /// <c>CLR_ST_GEOG_GEOMETRYTYPE</c>. Returns the name of the kind of shape.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -452,7 +452,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_GEOMETRYTYPECODE</c>. Returns the number of the kind of shape.
+        /// <c>CLR_ST_GEOG_GEOMETRYTYPECODE</c>. Returns the number of the kind of shape.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -462,7 +462,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_NPOINTS</c>. Returns how many coordinates the shape names.
+        /// <c>CLR_ST_GEOG_NPOINTS</c>. Returns how many coordinates the shape names.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -472,7 +472,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_NUMPOINTS</c>. Returns how many coordinates a line names.
+        /// <c>CLR_ST_GEOG_NUMPOINTS</c>. Returns how many coordinates a line names.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -482,7 +482,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_NUMGEOMETRIES</c>. Returns how many parts the shape has.
+        /// <c>CLR_ST_GEOG_NUMGEOMETRIES</c>. Returns how many parts the shape has.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -492,7 +492,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_NUMINTERIORRING</c>. Returns how many holes a polygon has.
+        /// <c>CLR_ST_GEOG_NUMINTERIORRING</c>. Returns how many holes a polygon has.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -502,7 +502,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_NUMINTERIORRINGS</c>. Returns how many holes a polygon has, under Calcite's other spelling.
+        /// <c>CLR_ST_GEOG_NUMINTERIORRINGS</c>. Returns how many holes a polygon has, under Calcite's other spelling.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -512,7 +512,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_STARTPOINT</c>. Returns the first coordinate of a line.
+        /// <c>CLR_ST_GEOG_STARTPOINT</c>. Returns the first coordinate of a line.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -522,7 +522,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ENDPOINT</c>. Returns the last coordinate of a line.
+        /// <c>CLR_ST_GEOG_ENDPOINT</c>. Returns the last coordinate of a line.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -532,7 +532,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_EXTERIORRING</c>. Returns the shell of a polygon.
+        /// <c>CLR_ST_GEOG_EXTERIORRING</c>. Returns the shell of a polygon.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -542,7 +542,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_BOUNDARY</c>. Returns the boundary of the shape.
+        /// <c>CLR_ST_GEOG_BOUNDARY</c>. Returns the boundary of the shape.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -552,7 +552,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_HOLES</c>. Returns the holes of a polygon.
+        /// <c>CLR_ST_GEOG_HOLES</c>. Returns the holes of a polygon.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -562,7 +562,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ISEMPTY</c>. Returns whether the shape names nothing.
+        /// <c>CLR_ST_GEOG_ISEMPTY</c>. Returns whether the shape names nothing.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -572,7 +572,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_IS3D</c>. Returns whether the coordinates carry a third ordinate.
+        /// <c>CLR_ST_GEOG_IS3D</c>. Returns whether the coordinates carry a third ordinate.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -582,7 +582,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ISCLOSED</c>. Returns whether a line ends where it began.
+        /// <c>CLR_ST_GEOG_ISCLOSED</c>. Returns whether a line ends where it began.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -592,7 +592,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_SRID</c>. Returns the reference system the coordinates are stamped with.
+        /// <c>CLR_ST_GEOG_SRID</c>. Returns the reference system the coordinates are stamped with.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -602,7 +602,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ASTEXT</c>. Writes the geography as WKT.
+        /// <c>CLR_ST_GEOG_ASTEXT</c>. Writes the geography as WKT.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -612,7 +612,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ASWKT</c>. Writes the geography as WKT, under Calcite's other spelling.
+        /// <c>CLR_ST_GEOG_ASWKT</c>. Writes the geography as WKT, under Calcite's other spelling.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -622,7 +622,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ASEWKT</c>. Writes the geography as EWKT, which carries the SRID.
+        /// <c>CLR_ST_GEOG_ASEWKT</c>. Writes the geography as EWKT, which carries the SRID.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -632,7 +632,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ASGEOJSON</c>. Writes the geography as GeoJSON.
+        /// <c>CLR_ST_GEOG_ASGEOJSON</c>. Writes the geography as GeoJSON.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -642,7 +642,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ASGML</c>. Writes the geography as GML.
+        /// <c>CLR_ST_GEOG_ASGML</c>. Writes the geography as GML.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -652,7 +652,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ASBINARY</c>. Writes the geography as WKB.
+        /// <c>CLR_ST_GEOG_ASBINARY</c>. Writes the geography as WKB.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -662,7 +662,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ASWKB</c>. Writes the geography as WKB, under Calcite's other spelling.
+        /// <c>CLR_ST_GEOG_ASWKB</c>. Writes the geography as WKB, under Calcite's other spelling.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -672,7 +672,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ASEWKB</c>. Writes the geography as EWKB.
+        /// <c>CLR_ST_GEOG_ASEWKB</c>. Writes the geography as EWKB.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -682,7 +682,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_POINTN</c>. Returns the <c>n</c>th coordinate of a line, counting from one.
+        /// <c>CLR_ST_GEOG_POINTN</c>. Returns the <c>n</c>th coordinate of a line, counting from one.
         /// </summary>
         /// <param name="g"></param>
         /// <param name="n"></param>
@@ -693,7 +693,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_GEOMETRYN</c>. Returns the <c>n</c>th part of the geography, counting from one.
+        /// <c>CLR_ST_GEOG_GEOMETRYN</c>. Returns the <c>n</c>th part of the geography, counting from one.
         /// </summary>
         /// <param name="g"></param>
         /// <param name="n"></param>
@@ -704,7 +704,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_INTERIORRING</c>. Returns the <c>n</c>th hole of a polygon, counting from one.
+        /// <c>CLR_ST_GEOG_INTERIORRING</c>. Returns the <c>n</c>th hole of a polygon, counting from one.
         /// </summary>
         /// <param name="g"></param>
         /// <param name="n"></param>
@@ -715,7 +715,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ORDERINGEQUALS</c>. Whether two geographies name the same coordinates in the same
+        /// <c>CLR_ST_GEOG_ORDERINGEQUALS</c>. Whether two geographies name the same coordinates in the same
         /// order.
         /// </summary>
         /// <param name="a"></param>
@@ -731,7 +731,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_GEOMFROMEWKT</c>. Reads a geography from EWKT.
+        /// <c>CLR_ST_GEOG_GEOMFROMEWKT</c>. Reads a geography from EWKT.
         /// </summary>
         /// <param name="ewkt"></param>
         /// <returns></returns>
@@ -746,7 +746,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_GEOMFROMWKB</c>. Reads a geography from WKB.
+        /// <c>CLR_ST_GEOG_GEOMFROMWKB</c>. Reads a geography from WKB.
         /// </summary>
         /// <param name="wkb"></param>
         /// <returns></returns>
@@ -756,7 +756,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_GEOMFROMWKB</c>, with the SRID Calcite lets a caller name.
+        /// <c>CLR_ST_GEOG_GEOMFROMWKB</c>, with the SRID Calcite lets a caller name.
         /// </summary>
         /// <param name="wkb"></param>
         /// <param name="srid"></param>
@@ -771,7 +771,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_GEOMFROMEWKB</c>. Reads a geography from EWKB.
+        /// <c>CLR_ST_GEOG_GEOMFROMEWKB</c>. Reads a geography from EWKB.
         /// </summary>
         /// <param name="ewkb"></param>
         /// <returns></returns>
@@ -781,7 +781,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_GEOMFROMGML</c>. Reads a geography from GML.
+        /// <c>CLR_ST_GEOG_GEOMFROMGML</c>. Reads a geography from GML.
         /// </summary>
         /// <param name="gml"></param>
         /// <returns></returns>
@@ -791,7 +791,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_GEOMFROMGML</c>, with the SRID Calcite lets a caller name.
+        /// <c>CLR_ST_GEOG_GEOMFROMGML</c>, with the SRID Calcite lets a caller name.
         /// </summary>
         /// <param name="gml"></param>
         /// <param name="srid"></param>
@@ -806,7 +806,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_FLIPCOORDINATES</c>. Returns the geography with longitude and latitude swapped.
+        /// <c>CLR_ST_GEOG_FLIPCOORDINATES</c>. Returns the geography with longitude and latitude swapped.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -816,7 +816,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_FORCE2D</c>. Returns the geography with any third ordinate dropped.
+        /// <c>CLR_ST_GEOG_FORCE2D</c>. Returns the geography with any third ordinate dropped.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -826,7 +826,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_FORCE3D</c>. Returns the geography with a third ordinate on every coordinate.
+        /// <c>CLR_ST_GEOG_FORCE3D</c>. Returns the geography with a third ordinate on every coordinate.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -836,7 +836,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_NORMALIZE</c>. Returns the geography in its canonical form.
+        /// <c>CLR_ST_GEOG_NORMALIZE</c>. Returns the geography in its canonical form.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -846,7 +846,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_REMOVEHOLES</c>. Returns the geography with the holes taken out of its polygons.
+        /// <c>CLR_ST_GEOG_REMOVEHOLES</c>. Returns the geography with the holes taken out of its polygons.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -856,7 +856,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_REMOVEREPEATEDPOINTS</c>. Returns the geography with repeated coordinates dropped.
+        /// <c>CLR_ST_GEOG_REMOVEREPEATEDPOINTS</c>. Returns the geography with repeated coordinates dropped.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -866,7 +866,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_REVERSE</c>. Returns the geography with its coordinates in the opposite order.
+        /// <c>CLR_ST_GEOG_REVERSE</c>. Returns the geography with its coordinates in the opposite order.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -876,7 +876,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_TOMULTILINE</c>. Returns the lines of the geography as a multi-line.
+        /// <c>CLR_ST_GEOG_TOMULTILINE</c>. Returns the lines of the geography as a multi-line.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -886,7 +886,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_TOMULTIPOINT</c>. Returns the coordinates of the geography as a multi-point.
+        /// <c>CLR_ST_GEOG_TOMULTIPOINT</c>. Returns the coordinates of the geography as a multi-point.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -896,7 +896,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_TOMULTISEGMENTS</c>. Returns the edges of the geography as a multi-line.
+        /// <c>CLR_ST_GEOG_TOMULTISEGMENTS</c>. Returns the edges of the geography as a multi-line.
         /// </summary>
         /// <param name="g"></param>
         /// <returns></returns>
@@ -906,7 +906,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ADDPOINT</c>. Returns the line with the coordinate added at its end.
+        /// <c>CLR_ST_GEOG_ADDPOINT</c>. Returns the line with the coordinate added at its end.
         /// </summary>
         /// <param name="line"></param>
         /// <param name="point"></param>
@@ -917,7 +917,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ADDPOINT</c>. Returns the line with the coordinate added at the given index.
+        /// <c>CLR_ST_GEOG_ADDPOINT</c>. Returns the line with the coordinate added at the given index.
         /// </summary>
         /// <param name="line"></param>
         /// <param name="point"></param>
@@ -931,7 +931,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_REMOVEPOINT</c>. Returns the line with the coordinate at the given index taken out.
+        /// <c>CLR_ST_GEOG_REMOVEPOINT</c>. Returns the line with the coordinate at the given index taken out.
         /// </summary>
         /// <param name="line"></param>
         /// <param name="index"></param>
@@ -942,7 +942,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ADDZ</c>. Returns the geography with the given amount added to every third ordinate.
+        /// <c>CLR_ST_GEOG_ADDZ</c>. Returns the geography with the given amount added to every third ordinate.
         /// </summary>
         /// <param name="g"></param>
         /// <param name="z"></param>
@@ -953,7 +953,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_REMOVEREPEATEDPOINTS</c>. Returns the geography with coordinates closer together than
+        /// <c>CLR_ST_GEOG_REMOVEREPEATEDPOINTS</c>. Returns the geography with coordinates closer together than
         /// the given tolerance dropped.
         /// </summary>
         /// <param name="g"></param>
@@ -1002,7 +1002,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_POINT</c> and <c>ST_GEOG_MAKEPOINT</c>. Returns the place at the given longitude and
+        /// <c>CLR_ST_GEOG_POINT</c> and <c>CLR_ST_GEOG_MAKEPOINT</c>. Returns the place at the given longitude and
         /// latitude.
         /// </summary>
         /// <param name="x">The longitude.</param>
@@ -1014,7 +1014,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_POINT</c> and <c>ST_GEOG_MAKEPOINT</c>, with a third ordinate.
+        /// <c>CLR_ST_GEOG_POINT</c> and <c>CLR_ST_GEOG_MAKEPOINT</c>, with a third ordinate.
         /// </summary>
         /// <param name="x">The longitude.</param>
         /// <param name="y">The latitude.</param>
@@ -1028,7 +1028,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKELINE</c>. Returns the line through 2 places.
+        /// <c>CLR_ST_GEOG_MAKELINE</c>. Returns the line through 2 places.
         /// </summary>
         /// <returns></returns>
         public static Geometry? MakeLine(Geometry? g1, Geometry? g2)
@@ -1037,7 +1037,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKELINE</c>. Returns the line through 3 places.
+        /// <c>CLR_ST_GEOG_MAKELINE</c>. Returns the line through 3 places.
         /// </summary>
         /// <returns></returns>
         public static Geometry? MakeLine(Geometry? g1, Geometry? g2, Geometry? g3)
@@ -1046,7 +1046,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKELINE</c>. Returns the line through 4 places.
+        /// <c>CLR_ST_GEOG_MAKELINE</c>. Returns the line through 4 places.
         /// </summary>
         /// <returns></returns>
         public static Geometry? MakeLine(Geometry? g1, Geometry? g2, Geometry? g3, Geometry? g4)
@@ -1055,7 +1055,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKELINE</c>. Returns the line through 5 places.
+        /// <c>CLR_ST_GEOG_MAKELINE</c>. Returns the line through 5 places.
         /// </summary>
         /// <returns></returns>
         public static Geometry? MakeLine(Geometry? g1, Geometry? g2, Geometry? g3, Geometry? g4, Geometry? g5)
@@ -1064,7 +1064,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKELINE</c>. Returns the line through 6 places.
+        /// <c>CLR_ST_GEOG_MAKELINE</c>. Returns the line through 6 places.
         /// </summary>
         /// <returns></returns>
         public static Geometry? MakeLine(Geometry? g1, Geometry? g2, Geometry? g3, Geometry? g4, Geometry? g5, Geometry? g6)
@@ -1073,7 +1073,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and no holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and no holes.
         /// </summary>
         /// <returns></returns>
         public static Geometry? MakePolygon(Geometry? shell)
@@ -1082,7 +1082,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and one hole.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and one hole.
         /// </summary>
         /// <returns></returns>
         public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0)
@@ -1091,7 +1091,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 2 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 2 holes.
         /// </summary>
         /// <returns></returns>
         public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1)
@@ -1100,7 +1100,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 3 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 3 holes.
         /// </summary>
         /// <returns></returns>
         public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1, Geometry? hole2)
@@ -1109,7 +1109,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 4 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 4 holes.
         /// </summary>
         /// <returns></returns>
         public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1, Geometry? hole2, Geometry? hole3)
@@ -1118,7 +1118,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 5 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 5 holes.
         /// </summary>
         /// <returns></returns>
         public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1, Geometry? hole2, Geometry? hole3, Geometry? hole4)
@@ -1127,7 +1127,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 6 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 6 holes.
         /// </summary>
         /// <returns></returns>
         public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1, Geometry? hole2, Geometry? hole3, Geometry? hole4, Geometry? hole5)
@@ -1136,7 +1136,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 7 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 7 holes.
         /// </summary>
         /// <returns></returns>
         public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1, Geometry? hole2, Geometry? hole3, Geometry? hole4, Geometry? hole5, Geometry? hole6)
@@ -1145,7 +1145,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 8 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 8 holes.
         /// </summary>
         /// <returns></returns>
         public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1, Geometry? hole2, Geometry? hole3, Geometry? hole4, Geometry? hole5, Geometry? hole6, Geometry? hole7)
@@ -1154,7 +1154,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 9 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 9 holes.
         /// </summary>
         /// <returns></returns>
         public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1, Geometry? hole2, Geometry? hole3, Geometry? hole4, Geometry? hole5, Geometry? hole6, Geometry? hole7, Geometry? hole8)
@@ -1163,7 +1163,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 10 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON</c>. Returns the polygon with the given shell and 10 holes.
         /// </summary>
         /// <returns></returns>
         public static Geometry? MakePolygon(Geometry? shell, Geometry? hole0, Geometry? hole1, Geometry? hole2, Geometry? hole3, Geometry? hole4, Geometry? hole5, Geometry? hole6, Geometry? hole7, Geometry? hole8, Geometry? hole9)
@@ -1172,7 +1172,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_LINEFROMTEXT</c>. Returns a line read from WKT, or null if the text does not name one.
+        /// <c>CLR_ST_GEOG_LINEFROMTEXT</c>. Returns a line read from WKT, or null if the text does not name one.
         /// </summary>
         /// <param name="wkt"></param>
         /// <returns></returns>
@@ -1182,7 +1182,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_LINEFROMTEXT</c>, with the SRID Calcite lets a caller name.
+        /// <c>CLR_ST_GEOG_LINEFROMTEXT</c>, with the SRID Calcite lets a caller name.
         /// </summary>
         /// <param name="wkt"></param>
         /// <param name="srid"></param>
@@ -1197,7 +1197,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_LINEFROMWKB</c>. Returns a line read from WKB, or null if the text does not name one.
+        /// <c>CLR_ST_GEOG_LINEFROMWKB</c>. Returns a line read from WKB, or null if the text does not name one.
         /// </summary>
         /// <param name="wkb"></param>
         /// <returns></returns>
@@ -1207,7 +1207,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_LINEFROMWKB</c>, with the SRID Calcite lets a caller name.
+        /// <c>CLR_ST_GEOG_LINEFROMWKB</c>, with the SRID Calcite lets a caller name.
         /// </summary>
         /// <param name="wkb"></param>
         /// <param name="srid"></param>
@@ -1222,7 +1222,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MLINEFROMTEXT</c>. Returns a multi-line read from WKT, or null if the text does not name one.
+        /// <c>CLR_ST_GEOG_MLINEFROMTEXT</c>. Returns a multi-line read from WKT, or null if the text does not name one.
         /// </summary>
         /// <param name="wkt"></param>
         /// <returns></returns>
@@ -1232,7 +1232,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MLINEFROMTEXT</c>, with the SRID Calcite lets a caller name.
+        /// <c>CLR_ST_GEOG_MLINEFROMTEXT</c>, with the SRID Calcite lets a caller name.
         /// </summary>
         /// <param name="wkt"></param>
         /// <param name="srid"></param>
@@ -1247,7 +1247,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MPOINTFROMTEXT</c>. Returns a multi-point read from WKT, or null if the text does not name one.
+        /// <c>CLR_ST_GEOG_MPOINTFROMTEXT</c>. Returns a multi-point read from WKT, or null if the text does not name one.
         /// </summary>
         /// <param name="wkt"></param>
         /// <returns></returns>
@@ -1257,7 +1257,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MPOINTFROMTEXT</c>, with the SRID Calcite lets a caller name.
+        /// <c>CLR_ST_GEOG_MPOINTFROMTEXT</c>, with the SRID Calcite lets a caller name.
         /// </summary>
         /// <param name="wkt"></param>
         /// <param name="srid"></param>
@@ -1272,7 +1272,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MPOLYFROMTEXT</c>. Returns a multi-polygon read from WKT, or null if the text does not name one.
+        /// <c>CLR_ST_GEOG_MPOLYFROMTEXT</c>. Returns a multi-polygon read from WKT, or null if the text does not name one.
         /// </summary>
         /// <param name="wkt"></param>
         /// <returns></returns>
@@ -1282,7 +1282,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MPOLYFROMTEXT</c>, with the SRID Calcite lets a caller name.
+        /// <c>CLR_ST_GEOG_MPOLYFROMTEXT</c>, with the SRID Calcite lets a caller name.
         /// </summary>
         /// <param name="wkt"></param>
         /// <param name="srid"></param>
@@ -1297,7 +1297,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_POINTFROMTEXT</c>. Returns a point read from WKT, or null if the text does not name one.
+        /// <c>CLR_ST_GEOG_POINTFROMTEXT</c>. Returns a point read from WKT, or null if the text does not name one.
         /// </summary>
         /// <param name="wkt"></param>
         /// <returns></returns>
@@ -1307,7 +1307,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_POINTFROMTEXT</c>, with the SRID Calcite lets a caller name.
+        /// <c>CLR_ST_GEOG_POINTFROMTEXT</c>, with the SRID Calcite lets a caller name.
         /// </summary>
         /// <param name="wkt"></param>
         /// <param name="srid"></param>
@@ -1322,7 +1322,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_POINTFROMWKB</c>. Returns a point read from WKB, or null if the text does not name one.
+        /// <c>CLR_ST_GEOG_POINTFROMWKB</c>. Returns a point read from WKB, or null if the text does not name one.
         /// </summary>
         /// <param name="wkb"></param>
         /// <returns></returns>
@@ -1332,7 +1332,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_POINTFROMWKB</c>, with the SRID Calcite lets a caller name.
+        /// <c>CLR_ST_GEOG_POINTFROMWKB</c>, with the SRID Calcite lets a caller name.
         /// </summary>
         /// <param name="wkb"></param>
         /// <param name="srid"></param>
@@ -1347,7 +1347,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_POLYFROMTEXT</c>. Returns a polygon read from WKT, or null if the text does not name one.
+        /// <c>CLR_ST_GEOG_POLYFROMTEXT</c>. Returns a polygon read from WKT, or null if the text does not name one.
         /// </summary>
         /// <param name="wkt"></param>
         /// <returns></returns>
@@ -1357,7 +1357,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_POLYFROMTEXT</c>, with the SRID Calcite lets a caller name.
+        /// <c>CLR_ST_GEOG_POLYFROMTEXT</c>, with the SRID Calcite lets a caller name.
         /// </summary>
         /// <param name="wkt"></param>
         /// <param name="srid"></param>
@@ -1372,7 +1372,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_POLYFROMWKB</c>. Returns a polygon read from WKB, or null if the text does not name one.
+        /// <c>CLR_ST_GEOG_POLYFROMWKB</c>. Returns a polygon read from WKB, or null if the text does not name one.
         /// </summary>
         /// <param name="wkb"></param>
         /// <returns></returns>
@@ -1382,7 +1382,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_POLYFROMWKB</c>, with the SRID Calcite lets a caller name.
+        /// <c>CLR_ST_GEOG_POLYFROMWKB</c>, with the SRID Calcite lets a caller name.
         /// </summary>
         /// <param name="wkb"></param>
         /// <param name="srid"></param>
@@ -1407,7 +1407,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_OFFSETCURVE</c>. Returns the line drawn a distance in metres to one side of this one.
+        /// <c>CLR_ST_GEOG_OFFSETCURVE</c>. Returns the line drawn a distance in metres to one side of this one.
         /// </summary>
         /// <param name="line"></param>
         /// <param name="distance">Metres to the left of the direction of travel, negative for the right.</param>
@@ -1462,7 +1462,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MAKEELLIPSE</c>. Returns an ellipse of the given width and height in metres about a
+        /// <c>CLR_ST_GEOG_MAKEELLIPSE</c>. Returns an ellipse of the given width and height in metres about a
         /// point.
         /// </summary>
         /// <param name="point"></param>
@@ -1512,7 +1512,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_LOCATEALONG</c>. Returns a point on every segment of the geography, a fraction of the
+        /// <c>CLR_ST_GEOG_LOCATEALONG</c>. Returns a point on every segment of the geography, a fraction of the
         /// way along it and offset sideways by a distance in metres.
         /// </summary>
         /// <param name="geog"></param>
@@ -1547,7 +1547,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_MINIMUMDIAMETER</c>. Returns the shortest line across the geography's width.
+        /// <c>CLR_ST_GEOG_MINIMUMDIAMETER</c>. Returns the shortest line across the geography's width.
         /// </summary>
         /// <param name="geog"></param>
         /// <returns></returns>
@@ -1653,7 +1653,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_BOUNDINGCIRCLE</c>. Returns the smallest circle containing the geography.
+        /// <c>CLR_ST_GEOG_BOUNDINGCIRCLE</c>. Returns the smallest circle containing the geography.
         /// </summary>
         /// <param name="geog"></param>
         /// <returns></returns>
@@ -1741,7 +1741,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ISSIMPLE</c>. Returns whether the geography touches itself nowhere it should not.
+        /// <c>CLR_ST_GEOG_ISSIMPLE</c>. Returns whether the geography touches itself nowhere it should not.
         /// </summary>
         /// <param name="geog"></param>
         /// <returns></returns>
@@ -1757,7 +1757,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ISRING</c>. Returns whether the geography is a line that is closed and simple.
+        /// <c>CLR_ST_GEOG_ISRING</c>. Returns whether the geography is a line that is closed and simple.
         /// </summary>
         /// <param name="geog"></param>
         /// <returns></returns>
@@ -1768,7 +1768,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_BUFFER</c>. Returns the region within the given distance in metres of the geography.
+        /// <c>CLR_ST_GEOG_BUFFER</c>. Returns the region within the given distance in metres of the geography.
         /// </summary>
         /// <param name="geog"></param>
         /// <param name="distance"></param>
@@ -1891,7 +1891,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_CENTROID</c>. Returns the centre of the geography.
+        /// <c>CLR_ST_GEOG_CENTROID</c>. Returns the centre of the geography.
         /// </summary>
         /// <param name="geog"></param>
         /// <returns></returns>
@@ -1915,7 +1915,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_CONVEXHULL</c>. Returns the smallest convex geography containing this one.
+        /// <c>CLR_ST_GEOG_CONVEXHULL</c>. Returns the smallest convex geography containing this one.
         /// </summary>
         /// <param name="geog"></param>
         /// <returns></returns>
@@ -1949,7 +1949,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_SIMPLIFY</c>. Returns the geography with vertices removed that move its boundary by no
+        /// <c>CLR_ST_GEOG_SIMPLIFY</c>. Returns the geography with vertices removed that move its boundary by no
         /// more than the given distance in metres.
         /// </summary>
         /// <param name="geog"></param>
@@ -1960,7 +1960,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// geodesics. Areas only, as the overlay operations are, and for the same reason: S2 simplifies a
         /// polygon and answering a line by falling back to the plane would put two models in one expression.
         ///
-        /// <para>There is no <c>ST_GEOG_SIMPLIFYPRESERVETOPOLOGY</c>. Calcite has both because JTS has both,
+        /// <para>There is no <c>CLR_ST_GEOG_SIMPLIFYPRESERVETOPOLOGY</c>. Calcite has both because JTS has both,
         /// the second promising the result is still valid and still disjoint from what it was disjoint from.
         /// S2's simplification makes no such promise, and a function that claimed it without keeping it would
         /// be worse than one that is missing.</para>
@@ -1981,7 +1981,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_INTERSECTION</c>. Returns the area common to two geographies.
+        /// <c>CLR_ST_GEOG_INTERSECTION</c>. Returns the area common to two geographies.
         /// </summary>
         /// <param name="geog1"></param>
         /// <param name="geog2"></param>
@@ -1993,7 +1993,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_DIFFERENCE</c>. Returns the part of the first geography that is not in the second.
+        /// <c>CLR_ST_GEOG_DIFFERENCE</c>. Returns the part of the first geography that is not in the second.
         /// </summary>
         /// <param name="geog1"></param>
         /// <param name="geog2"></param>
@@ -2005,7 +2005,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_SYMDIFFERENCE</c>. Returns the parts of two geographies that are in one and not the
+        /// <c>CLR_ST_GEOG_SYMDIFFERENCE</c>. Returns the parts of two geographies that are in one and not the
         /// other.
         /// </summary>
         /// <param name="geog1"></param>
@@ -2031,7 +2031,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_UNARYUNION</c>. Returns the geography with its overlapping parts merged.
+        /// <c>CLR_ST_GEOG_UNARYUNION</c>. Returns the geography with its overlapping parts merged.
         /// </summary>
         /// <param name="geog"></param>
         /// <returns></returns>
@@ -2150,7 +2150,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_DENSIFY</c>. Returns the geography with vertices inserted so that no edge is longer
+        /// <c>CLR_ST_GEOG_DENSIFY</c>. Returns the geography with vertices inserted so that no edge is longer
         /// than the given distance in metres.
         /// </summary>
         /// <param name="geog"></param>
@@ -2175,7 +2175,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_PROJECTPOINT</c>. Returns the point of the line nearest the given point.
+        /// <c>CLR_ST_GEOG_PROJECTPOINT</c>. Returns the point of the line nearest the given point.
         /// </summary>
         /// <param name="point"></param>
         /// <param name="line"></param>
@@ -2234,7 +2234,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_ENVELOPE</c>. Returns the smallest latitude-longitude rectangle containing the
+        /// <c>CLR_ST_GEOG_ENVELOPE</c>. Returns the smallest latitude-longitude rectangle containing the
         /// geography.
         /// </summary>
         /// <param name="geog"></param>
@@ -2256,7 +2256,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_EXTENT</c>. Returns the smallest latitude-longitude rectangle containing the geography.
+        /// <c>CLR_ST_GEOG_EXTENT</c>. Returns the smallest latitude-longitude rectangle containing the geography.
         /// </summary>
         /// <param name="geog"></param>
         /// <returns></returns>
@@ -2271,7 +2271,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_EXPAND</c>. Returns the geography's rectangle grown by a distance in metres.
+        /// <c>CLR_ST_GEOG_EXPAND</c>. Returns the geography's rectangle grown by a distance in metres.
         /// </summary>
         /// <param name="geog"></param>
         /// <param name="distance"></param>
@@ -2353,7 +2353,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_CLOSESTCOORDINATE</c>. Returns the coordinate or coordinates of the geography nearest
+        /// <c>CLR_ST_GEOG_CLOSESTCOORDINATE</c>. Returns the coordinate or coordinates of the geography nearest
         /// the given point.
         /// </summary>
         /// <param name="point"></param>
@@ -2375,7 +2375,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_FURTHESTCOORDINATE</c>. Returns the coordinate or coordinates of the geography furthest
+        /// <c>CLR_ST_GEOG_FURTHESTCOORDINATE</c>. Returns the coordinate or coordinates of the geography furthest
         /// from the given point.
         /// </summary>
         /// <param name="point"></param>
@@ -2388,7 +2388,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_CLOSESTPOINT</c>. Returns the point of the first geography nearest the second.
+        /// <c>CLR_ST_GEOG_CLOSESTPOINT</c>. Returns the point of the first geography nearest the second.
         /// </summary>
         /// <param name="geog1"></param>
         /// <param name="geog2"></param>
@@ -2410,7 +2410,7 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// <c>ST_GEOG_LONGESTLINE</c>. Returns the line between the two coordinates, one from each geography,
+        /// <c>CLR_ST_GEOG_LONGESTLINE</c>. Returns the line between the two coordinates, one from each geography,
         /// that are furthest apart.
         /// </summary>
         /// <param name="geog1"></param>
@@ -2418,7 +2418,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <returns></returns>
         /// <remarks>
         /// Between coordinates and not between shapes, which is what Calcite measures, and the same pair
-        /// <c>ST_GEOG_MAXDISTANCE</c> measures the length of.
+        /// <c>CLR_ST_GEOG_MAXDISTANCE</c> measures the length of.
         /// </remarks>
         public static Geometry? LongestLine(Geometry? geog1, Geometry? geog2)
         {
