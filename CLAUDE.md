@@ -75,6 +75,24 @@ driver this one is modelled on*, has the reading. Not to be confused with
   | 1.42 | `EnumerableCombine`, `EnumerableConditionalCorrelate` and their rules, `EnumUtils.markJoinSelector` and the mark-join paths, `PhysType.generateNullAwareAccessor`, `JoinInfo.nullExclusionFlags` |
   | 1.43 | `org.apache.calcite.rel.core.Asof`, `FetchOffsetRoundingPolicy`, `RexImplementorTable(s)`, `EnumerableTableModify`'s five private helpers (CALCITE-7510), `TopDownGeneralDecorrelator`, and `case UUID` in `JavaTypeFactoryImpl.getJavaClass` |
 
+  **Maven mediates by nearest and Gradle by highest, and Calcite is built with Gradle.** So an artifact
+  the closure reaches more than one way can resolve here at a version Calcite never runs. It has bitten
+  twice. `commons-lang3` arrives three ways at the same depth, uzaygezen-core 0.2 asking for 3.1,
+  commons-text 1.11.0 for 3.13.0 and aggdesigner-algorithm 6.1 for 3.18.0, so Maven broke the tie on
+  declaration order and took 3.1, from 2011; `StringEscapeUtils` then died in its own class initializer
+  on `Range.of`, and `CONTAINS_SUBSTR` with it. And the json-path jackson edge declared in `Dependencies`
+  on the calcite-core reference resolves at the **root** of the graph, ahead of calcite-core's own, so it
+  sets jackson for the whole closure rather than for json-path: written at 2.18.6 when that was Calcite's,
+  it held the closure there after CALCITE-7738 moved Calcite to 2.22.2 three weeks later, and said nothing.
+  Both are pinned directly now, in every project that names calcite-core and at one version across all of
+  them: the stub is baked in when IKVM compiles the jar, so two projects on different versions emit
+  different assemblies.
+  **The next one is found in the resolved graph, not in the poms.** Every project caches it as
+  `obj\Debug\<tfm>\<Project>.maven.cache`, a JSON tree carrying `conflict.winner` on every loser: walk it
+  and compare what Maven picked against the highest version present. `slf4j-api` is the one disagreement
+  left, 1.7.25 against 2.0.17, and is not a defect — json-path names only `debug`, `trace`, `error`,
+  `isDebugEnabled` and `getLogger(Class)`, every one of them 1.x.
+
   **What 1.43 cost to move to, measured, was one node.** `EnumerableUncollect` was reworked:
   `BuiltInMethod.FLAT_PRODUCT` became `FLAT_ZIP` and took a fourth `isOuter` argument, `FLAT_LIST` gained a
   `FLAT_LIST_OUTER` variant, and a struct element kept whole became a new `FlatProductInputType.STRUCT`.
