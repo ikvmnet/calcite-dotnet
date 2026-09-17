@@ -136,7 +136,7 @@ namespace Apache.Calcite.Tests
         /// </summary>
         /// <remarks>
         /// What an implementer writing ordinary C# would produce, and what
-        /// <see cref="ShouldFailOverATableWhoseValuesAreNotTheTypeFactory's"/> exists to pin.
+        /// <see cref="ShouldFailOverATableWhoseValuesAreNotTheTypeFactorys"/> exists to pin.
         /// </remarks>
         sealed class ClrBoxedRowsTable : AbstractTable, IClrScannableTable
         {
