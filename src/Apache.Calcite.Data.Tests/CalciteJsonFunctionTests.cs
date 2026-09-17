@@ -48,6 +48,29 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal("{\"b\":1}", v);
         }
 
+        /// <summary>
+        /// A <c>RETURNING</c> clause naming an array type, which is the only spelling that reads a JSON
+        /// array as a collection rather than as its text.
+        /// </summary>
+        /// <remarks>
+        /// <c>JSON_VALUE</c> takes the same clause and answers null for an array, because its runtime is
+        /// scalar-only and the default <c>NULL ON ERROR</c> swallows the refusal. That is Calcite's, not
+        /// ours — both conventions agree on it, and so does Calcite's own JDBC driver on a JVM.
+        /// </remarks>
+        [Fact]
+        public void JsonQuery_should_return_an_array()
+        {
+            using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT JSON_QUERY('{\"c\":[\"a\",\"b\",\"c\"]}', '$.c' RETURNING VARCHAR ARRAY) AS A";
+
+            using var r = (CalciteDataReader)cmd.ExecuteReader();
+            Assert.True(r.Read());
+            Assert.Equal(typeof(string[]), r.GetFieldType(0));
+            Assert.Equal(new[] { "a", "b", "c" }, Assert.IsType<string[]>(r.GetArray(0)));
+        }
+
     }
 
 }
