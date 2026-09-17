@@ -2629,6 +2629,22 @@ namespace Apache.Calcite.Tests
         public void ShouldAgreeOnALimitSortOverSeveralKeysRunningBothWays() =>
             SameLimitSort("SELECT \"ID\", \"REGION\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"REGION\" DESC, \"AMOUNT\" NULLS LAST, \"ID\" OFFSET 1 ROWS FETCH NEXT 4 ROWS ONLY");
 
+        /// <remarks>
+        /// Both sides answer null. The validator types the column <c>VARCHAR ARRAY</c>, and then
+        /// <c>convertJsonReturningFunction</c> removes the <c>RETURNING</c> operands, so what runs is the
+        /// scalar <c>JsonFunctions.jsonValue</c>; it refuses the array and the default <c>NULL ON ERROR</c>
+        /// turns the refusal into a null. Nothing of that is this convention's, and the query is here so
+        /// that a divergence would show if it ever became so. <c>JSON_QUERY</c> is the function that reads
+        /// an array, and does.
+        /// </remarks>
+        [TestMethod]
+        public void ShouldAgreeOnJsonValueReturningAnArray() =>
+            Same("SELECT JSON_VALUE('{\"c\":[\"a\",\"b\",\"c\"]}', '$.c' RETURNING VARCHAR ARRAY) AS \"A\"");
+
+        [TestMethod]
+        public void ShouldAgreeOnJsonQueryReturningAnArray() =>
+            Same("SELECT JSON_QUERY('{\"c\":[\"a\",\"b\",\"c\"]}', '$.c' RETURNING VARCHAR ARRAY) AS \"A\"");
+
     }
 
 }
