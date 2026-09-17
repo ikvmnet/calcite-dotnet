@@ -69,6 +69,28 @@ driver this one is modelled on*, has the reading. Not to be confused with
   method. **Read it.** The fix is to delete the stale `.maven.cache` and rebuild; check afterwards that
   every `-SNAPSHOT.jar` copy is the same timestamped build.
 
+  **And the project rewriting it is usually in another repository.** `~/.m2` is shared, and
+  `D:\calcite-efcore`, `D:\calcite-cosmos` and every `.claude/worktrees` copy of them resolve calcite too,
+  each pinned by its own `.maven.cache` to whatever build it last saw. **A cache hit still materialises its
+  artifact**, so deleting the older timestamped jars does not help: the other repository re-downloads the
+  exact build its cache names and stamps it back onto the stand-in. Measured 2026-09-17 —
+  `calcite-core-1.43.0-20260916.044432-244.jar` deleted, and back twenty minutes later out of a concurrent
+  `Apache.Calcite.Cosmos.Adapter.Tests` build, with `calcite-core-1.43.0-SNAPSHOT.jar` pointing at it again
+  while every project here had resolved 248. **It bites whenever an IKVM compile runs**, which is whenever
+  that assembly is missing from `%TEMP%\ikvm\cache\1` — a deleted `.maven.cache`, a newly resolved version,
+  a cleared cache. The compile reads the stand-in, so it takes whatever build was in the file at that
+  instant, and **the two modules are compiled at different instants**: measured the same day, a
+  `calcite.core.dll` from 248 beside a `calcite.linq4j.dll` from 253, which put `BuiltInMethod`'s class
+  initializer on an `EnumerableDefaults.ieJoin` that was not there and failed **611 of 887 tests, 339 of 506
+  and 47 of 200, with the build green**. Earlier the same morning the same race stopped compilation on
+  `org.apache.calcite.util.UuidValue` not existing.
+  **Check the pair, never one of them.** The jars: sha1 each `-SNAPSHOT.jar` against the timestamped jars
+  beside it. The assemblies: probe for a member the build you expect is the first to carry — `deepEquals0`
+  or `UuidValue` in `calcite.core.dll`, `ieJoin` in `calcite.linq4j.dll` — in **every** `bin` directory,
+  because IKVM stamps both `1.43.0.0` and nothing in either names the snapshot. To redo it properly:
+  restore the stand-ins, delete the `calcite.*` entries from the IKVM cache and the projects' `obj/*/ikvm`,
+  and build with nothing else on the machine touching `~/.m2`.
+
   | arrived in | |
   |---|---|
   | 1.41 | `rel.core.AsofJoin`, `EnumerableAsofJoin`, `ENUMERABLE_ASOFJOIN_RULE` |
