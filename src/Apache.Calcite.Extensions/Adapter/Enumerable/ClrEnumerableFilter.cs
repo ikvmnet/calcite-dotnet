@@ -82,7 +82,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </remarks>
         public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
         {
-            throw new java.lang.UnsupportedOperationException();
+            throw new java.lang.UnsupportedOperationException(
+                "ClrEnumerableFilter cannot implement itself, exactly as EnumerableFilter cannot: a calc " +
+                "carries the filter and the projection in one pass and is always better. Reaching here means " +
+                "ClrEnumerableRules.CalcRules() was not run as a hep pass after the planner. It cannot be run " +
+                "on the planner instead: VolcanoPlanner.addRule does not register a TransformationRule's " +
+                "operand against a PhysicalNode, and every node of this convention is one.");
         }
 
     }
