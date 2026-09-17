@@ -137,7 +137,7 @@ namespace Apache.Calcite.Geography.Tests
             // the longitude comes back a few bits shy of one, a coordinate having gone out and back as a
             // unit vector, so this asks the operator for the number rather than for its spelling
             var longitude = GeographyExecutionTests.Run(
-                "SELECT ST_GEOG_X(ST_GEOG_CENTROID(ST_GEOG_GEOMFROMTEXT('MULTIPOINT((0 0), (2 0))')))")[0][0];
+                "SELECT CLR_ST_GEOG_X(CLR_ST_GEOG_CENTROID(CLR_ST_GEOG_GEOMFROMTEXT('MULTIPOINT((0 0), (2 0))')))")[0][0];
 
             (longitude is java.lang.Number n ? n.doubleValue() : double.NaN).Should().BeApproximately(1, 1e-12);
         }

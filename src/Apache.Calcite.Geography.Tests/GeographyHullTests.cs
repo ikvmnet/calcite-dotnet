@@ -152,8 +152,8 @@ namespace Apache.Calcite.Geography.Tests
         {
             foreach (var sql in new[]
             {
-                "ST_GEOG_AREA(ST_GEOG_CONVEXHULL(ST_GEOG_GEOMFROMTEXT('MULTIPOINT((0 0), (2 0), (1 2))')))",
-                "ST_GEOG_AREA(ST_GEOG_SIMPLIFY(ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'), 1.0))",
+                "CLR_ST_GEOG_AREA(CLR_ST_GEOG_CONVEXHULL(CLR_ST_GEOG_GEOMFROMTEXT('MULTIPOINT((0 0), (2 0), (1 2))')))",
+                "CLR_ST_GEOG_AREA(CLR_ST_GEOG_SIMPLIFY(CLR_ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'), 1.0))",
             })
             {
                 var answer = GeographyExecutionTests.Run("SELECT " + sql)[0][0];

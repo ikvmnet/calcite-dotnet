@@ -166,12 +166,12 @@ namespace Apache.Calcite.Geography.Tests
         public void ShouldRunEachAsAnOperator()
         {
             var along = GeographyExecutionTests.Run(
-                // through the centroid, a multi-point of one being its own centre, because ST_GEOG_Y wants a point
-                "SELECT ST_GEOG_Y(ST_GEOG_CENTROID(ST_GEOG_LOCATEALONG(ST_GEOG_GEOMFROMTEXT('LINESTRING(0 60, 60 60)'), 0.5, 0.0)))")[0][0];
+                // through the centroid, a multi-point of one being its own centre, because CLR_ST_GEOG_Y wants a point
+                "SELECT CLR_ST_GEOG_Y(CLR_ST_GEOG_CENTROID(CLR_ST_GEOG_LOCATEALONG(CLR_ST_GEOG_GEOMFROMTEXT('LINESTRING(0 60, 60 60)'), 0.5, 0.0)))")[0][0];
             (along is java.lang.Number a ? a.doubleValue() : double.NaN).Should().BeApproximately(63.435, 0.01);
 
             var width = GeographyExecutionTests.Run(
-                "SELECT ST_GEOG_LENGTH(ST_GEOG_MINIMUMDIAMETER(ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))')))")[0][0];
+                "SELECT CLR_ST_GEOG_LENGTH(CLR_ST_GEOG_MINIMUMDIAMETER(CLR_ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))')))")[0][0];
             (width is java.lang.Number w ? w.doubleValue() : double.NaN).Should().BeGreaterThan(0);
         }
 

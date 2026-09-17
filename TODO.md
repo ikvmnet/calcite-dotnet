@@ -496,17 +496,6 @@ fuses with a full text one and hybrid search is expressible. But Cosmos's `Vecto
 separate piece of work — the types are the hard part there, a vector being an array of floats in some stores
 and an opaque type in others.
 
-## `Apache.Calcite.Geography`: adopt the `CLR_` namespace
-
-Its operators are `ST_GEOG_*`, which predates the decision that everything this repository adds carries a
-`CLR_` prefix. `CLR_ST_GEOG_*` would make the collision argument structural there too — the current names are
-one Calcite release away from colliding, since Calcite's spatial surface is already 144 names and growing
-from PostGIS and H2GIS, and `ST_GEOG_` is a plausible thing for it to add.
-
-**It is free today and will not stay free.** `Apache.Calcite.Geography` is not published to NuGet — checked,
-`BlobNotFound` — so no consumer has written a query against the current names. `Apache.Calcite.Extensions`
-and `Apache.Calcite.Data` are published, so this window is specific to that package.
-
 ## `Apache.Calcite.Geography`: a schema declaration cannot take an array or a geography
 
 The same two limits `Apache.Calcite.FullText` measured apply there and are unmeasured for spatial.
@@ -515,7 +504,7 @@ throws rather than declining for an argument whose precedence list cannot compar
 `ArraySqlType` for an array, and the same shape of failure that `No assign rules for OTHER defined` was.
 Geography's README says to register one route or the other because a name found twice resolves to whichever
 is reached first; the stronger reason is that with both, some argument types stop working. Worth reproducing
-against `ST_GEOG_*` and saying so in that README.
+against `CLR_ST_GEOG_*` and saying so in that README.
 
 ## Translate a CLR expression tree into a linq4j one
 

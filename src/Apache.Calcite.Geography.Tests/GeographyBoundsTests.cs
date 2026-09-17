@@ -148,11 +148,11 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldRunEachAsAnOperator()
         {
-            (GeographyExecutionTests.Run("SELECT ST_GEOG_X(ST_GEOG_ENVELOPE(ST_GEOG_GEOMFROMTEXT('POINT(1 2)')))")[0][0] is java.lang.Number x ? x.doubleValue() : double.NaN).Should().BeApproximately(1, 1e-12);
+            (GeographyExecutionTests.Run("SELECT CLR_ST_GEOG_X(CLR_ST_GEOG_ENVELOPE(CLR_ST_GEOG_GEOMFROMTEXT('POINT(1 2)')))")[0][0] is java.lang.Number x ? x.doubleValue() : double.NaN).Should().BeApproximately(1, 1e-12);
 
-            (GeographyExecutionTests.Run("SELECT ST_GEOG_Y(ST_GEOG_EXTENT(ST_GEOG_GEOMFROMTEXT('POINT(1 2)')))")[0][0] is java.lang.Number y ? y.doubleValue() : double.NaN).Should().BeApproximately(2, 1e-12);
+            (GeographyExecutionTests.Run("SELECT CLR_ST_GEOG_Y(CLR_ST_GEOG_EXTENT(CLR_ST_GEOG_GEOMFROMTEXT('POINT(1 2)')))")[0][0] is java.lang.Number y ? y.doubleValue() : double.NaN).Should().BeApproximately(2, 1e-12);
 
-            (GeographyExecutionTests.Run("SELECT ST_GEOG_ISVALID(ST_GEOG_EXPAND(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 1000.0))")[0][0]
+            (GeographyExecutionTests.Run("SELECT CLR_ST_GEOG_ISVALID(CLR_ST_GEOG_EXPAND(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 1000.0))")[0][0]
                 is java.lang.Boolean valid && valid.booleanValue()).Should().BeTrue();
         }
 

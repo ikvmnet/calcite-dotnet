@@ -10,7 +10,7 @@ namespace Apache.Calcite.Geography.Schema
 {
 
     /// <summary>
-    /// Puts the <c>ST_GEOG_*</c> operators into a schema, which is how a caller who is not driving Calcite's
+    /// Puts the <c>CLR_ST_GEOG_*</c> operators into a schema, which is how a caller who is not driving Calcite's
     /// planner gets them.
     /// </summary>
     /// <remarks>
@@ -36,7 +36,7 @@ namespace Apache.Calcite.Geography.Schema
     {
 
         /// <summary>
-        /// Registers every <c>ST_GEOG_*</c> operator on the given schema.
+        /// Registers every <c>CLR_ST_GEOG_*</c> operator on the given schema.
         /// </summary>
         /// <param name="schema"></param>
         /// <returns>The schema, for chaining.</returns>

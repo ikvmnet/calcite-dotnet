@@ -24,7 +24,7 @@ namespace Apache.Calcite.Geography.Tests
     /// the arithmetic.
     ///
     /// <para>One divergence, and it is deliberate. Every one of these hands back a geography built from a
-    /// geography, and it is stamped WGS84 on the way out — <c>ST_GEOG_FORCE2D</c> answers something with an
+    /// geography, and it is stamped WGS84 on the way out — <c>CLR_ST_GEOG_FORCE2D</c> answers something with an
     /// SRID of 4326 where <c>ST_FORCE2D</c> answers something with an SRID of zero, because the transformers
     /// underneath build through a geometry factory that does not carry one across. Calcite has nothing to
     /// keep there and this package does: every geography it produces says what it is. The comparison below
@@ -56,16 +56,16 @@ namespace Apache.Calcite.Geography.Tests
 
         static readonly (string Name, Func<Geometry, object?> Ours, Func<Geometry, object?> Theirs)[] unary =
         [
-            ("ST_GEOG_FLIPCOORDINATES", g => GeographyFunctions.FlipCoordinates(g), g => SpatialTypeFunctions.ST_FlipCoordinates(g)),
-            ("ST_GEOG_FORCE2D", g => GeographyFunctions.Force2D(g), g => SpatialTypeFunctions.ST_Force2D(g)),
-            ("ST_GEOG_FORCE3D", g => GeographyFunctions.Force3D(g), g => SpatialTypeFunctions.ST_Force3D(g)),
-            ("ST_GEOG_NORMALIZE", g => GeographyFunctions.Normalize(g), g => SpatialTypeFunctions.ST_Normalize(g)),
-            ("ST_GEOG_REMOVEHOLES", g => GeographyFunctions.RemoveHoles(g), g => SpatialTypeFunctions.ST_RemoveHoles(g)),
-            ("ST_GEOG_REMOVEREPEATEDPOINTS", g => GeographyFunctions.RemoveRepeatedPoints(g), g => SpatialTypeFunctions.ST_RemoveRepeatedPoints(g)),
-            ("ST_GEOG_REVERSE", g => GeographyFunctions.Reverse(g), g => SpatialTypeFunctions.ST_Reverse(g)),
-            ("ST_GEOG_TOMULTILINE", g => GeographyFunctions.ToMultiLine(g), g => SpatialTypeFunctions.ST_ToMultiLine(g)),
-            ("ST_GEOG_TOMULTIPOINT", g => GeographyFunctions.ToMultiPoint(g), g => SpatialTypeFunctions.ST_ToMultiPoint(g)),
-            ("ST_GEOG_TOMULTISEGMENTS", g => GeographyFunctions.ToMultiSegments(g), g => SpatialTypeFunctions.ST_ToMultiSegments(g)),
+            ("CLR_ST_GEOG_FLIPCOORDINATES", g => GeographyFunctions.FlipCoordinates(g), g => SpatialTypeFunctions.ST_FlipCoordinates(g)),
+            ("CLR_ST_GEOG_FORCE2D", g => GeographyFunctions.Force2D(g), g => SpatialTypeFunctions.ST_Force2D(g)),
+            ("CLR_ST_GEOG_FORCE3D", g => GeographyFunctions.Force3D(g), g => SpatialTypeFunctions.ST_Force3D(g)),
+            ("CLR_ST_GEOG_NORMALIZE", g => GeographyFunctions.Normalize(g), g => SpatialTypeFunctions.ST_Normalize(g)),
+            ("CLR_ST_GEOG_REMOVEHOLES", g => GeographyFunctions.RemoveHoles(g), g => SpatialTypeFunctions.ST_RemoveHoles(g)),
+            ("CLR_ST_GEOG_REMOVEREPEATEDPOINTS", g => GeographyFunctions.RemoveRepeatedPoints(g), g => SpatialTypeFunctions.ST_RemoveRepeatedPoints(g)),
+            ("CLR_ST_GEOG_REVERSE", g => GeographyFunctions.Reverse(g), g => SpatialTypeFunctions.ST_Reverse(g)),
+            ("CLR_ST_GEOG_TOMULTILINE", g => GeographyFunctions.ToMultiLine(g), g => SpatialTypeFunctions.ST_ToMultiLine(g)),
+            ("CLR_ST_GEOG_TOMULTIPOINT", g => GeographyFunctions.ToMultiPoint(g), g => SpatialTypeFunctions.ST_ToMultiPoint(g)),
+            ("CLR_ST_GEOG_TOMULTISEGMENTS", g => GeographyFunctions.ToMultiSegments(g), g => SpatialTypeFunctions.ST_ToMultiSegments(g)),
         ];
 
         [TestMethod]
@@ -100,25 +100,25 @@ namespace Apache.Calcite.Geography.Tests
             {
                 var g = Wkt(shape);
 
-                Compare(differences, $"ST_GEOG_ADDPOINT({shape}, POINT(9 9))",
+                Compare(differences, $"CLR_ST_GEOG_ADDPOINT({shape}, POINT(9 9))",
                     () => GeographyFunctions.AddPoint(g, point), () => SpatialTypeFunctions.ST_AddPoint(g, point));
 
                 for (var n = 0; n <= 2; n++)
                 {
                     var index = java.lang.Integer.valueOf(n);
 
-                    Compare(differences, $"ST_GEOG_ADDPOINT({shape}, POINT(9 9), {n})",
+                    Compare(differences, $"CLR_ST_GEOG_ADDPOINT({shape}, POINT(9 9), {n})",
                         () => GeographyFunctions.AddPoint(g, point, index), () => SpatialTypeFunctions.ST_AddPoint(g, point, n));
 
-                    Compare(differences, $"ST_GEOG_REMOVEPOINT({shape}, {n})",
+                    Compare(differences, $"CLR_ST_GEOG_REMOVEPOINT({shape}, {n})",
                         () => GeographyFunctions.RemovePoint(g, index), () => SpatialTypeFunctions.ST_RemovePoint(g, n));
                 }
 
-                Compare(differences, $"ST_GEOG_ADDZ({shape}, 5)",
+                Compare(differences, $"CLR_ST_GEOG_ADDZ({shape}, 5)",
                     () => GeographyFunctions.AddZ(g, java.lang.Double.valueOf(5)),
                     () => SpatialTypeFunctions.ST_AddZ(g, java.math.BigDecimal.valueOf(5.0)));
 
-                Compare(differences, $"ST_GEOG_REMOVEREPEATEDPOINTS({shape}, 0.5)",
+                Compare(differences, $"CLR_ST_GEOG_REMOVEREPEATEDPOINTS({shape}, 0.5)",
                     () => GeographyFunctions.RemoveRepeatedPoints(g, java.lang.Double.valueOf(0.5)),
                     () => SpatialTypeFunctions.ST_RemoveRepeatedPoints(g, java.math.BigDecimal.valueOf(0.5)));
             }
@@ -134,10 +134,10 @@ namespace Apache.Calcite.Geography.Tests
             var two = java.lang.Double.valueOf(2);
             var three = java.lang.Double.valueOf(3);
 
-            Compare(differences, "ST_GEOG_POINT(1, 2)",
+            Compare(differences, "CLR_ST_GEOG_POINT(1, 2)",
                 () => GeographyFunctions.Point(one, two), () => SpatialTypeFunctions.ST_Point(Dec(1), Dec(2)));
 
-            Compare(differences, "ST_GEOG_POINT(1, 2, 3)",
+            Compare(differences, "CLR_ST_GEOG_POINT(1, 2, 3)",
                 () => GeographyFunctions.Point(one, two, three),
                 () => SpatialTypeFunctions.ST_Point(Dec(1), Dec(2), Dec(3)));
 
@@ -145,19 +145,19 @@ namespace Apache.Calcite.Geography.Tests
             var b = Wkt("POINT(1 1)");
             var c = Wkt("POINT(2 0)");
 
-            Compare(differences, "ST_GEOG_MAKELINE(a, b)",
+            Compare(differences, "CLR_ST_GEOG_MAKELINE(a, b)",
                 () => GeographyFunctions.MakeLine(a, b), () => SpatialTypeFunctions.ST_MakeLine(a, b));
 
-            Compare(differences, "ST_GEOG_MAKELINE(a, b, c)",
+            Compare(differences, "CLR_ST_GEOG_MAKELINE(a, b, c)",
                 () => GeographyFunctions.MakeLine(a, b, c), () => SpatialTypeFunctions.ST_MakeLine(a, b, c));
 
             var shell = Wkt("LINESTRING(0 0, 6 0, 6 6, 0 6, 0 0)");
             var hole = Wkt("LINESTRING(2 2, 4 2, 4 4, 2 4, 2 2)");
 
-            Compare(differences, "ST_GEOG_MAKEPOLYGON(shell)",
+            Compare(differences, "CLR_ST_GEOG_MAKEPOLYGON(shell)",
                 () => GeographyFunctions.MakePolygon(shell), () => SpatialTypeFunctions.ST_MakePolygon(shell));
 
-            Compare(differences, "ST_GEOG_MAKEPOLYGON(shell, hole)",
+            Compare(differences, "CLR_ST_GEOG_MAKEPOLYGON(shell, hole)",
                 () => GeographyFunctions.MakePolygon(shell, hole), () => SpatialTypeFunctions.ST_MakePolygon(shell, hole));
 
             differences.Should().BeEmpty(string.Join("\n", differences));
@@ -182,26 +182,26 @@ namespace Apache.Calcite.Geography.Tests
                 "MULTIPOLYGON(((0 0, 1 0, 1 1, 0 1, 0 0)))",
             })
             {
-                Compare(differences, $"ST_GEOG_POINTFROMTEXT({wkt})",
+                Compare(differences, $"CLR_ST_GEOG_POINTFROMTEXT({wkt})",
                     () => GeographyFunctions.PointFromText(wkt), () => SpatialTypeFunctions.ST_PointFromText(wkt));
-                Compare(differences, $"ST_GEOG_LINEFROMTEXT({wkt})",
+                Compare(differences, $"CLR_ST_GEOG_LINEFROMTEXT({wkt})",
                     () => GeographyFunctions.LineFromText(wkt), () => SpatialTypeFunctions.ST_LineFromText(wkt));
-                Compare(differences, $"ST_GEOG_POLYFROMTEXT({wkt})",
+                Compare(differences, $"CLR_ST_GEOG_POLYFROMTEXT({wkt})",
                     () => GeographyFunctions.PolyFromText(wkt), () => SpatialTypeFunctions.ST_PolyFromText(wkt));
-                Compare(differences, $"ST_GEOG_MPOINTFROMTEXT({wkt})",
+                Compare(differences, $"CLR_ST_GEOG_MPOINTFROMTEXT({wkt})",
                     () => GeographyFunctions.MPointFromText(wkt), () => SpatialTypeFunctions.ST_MPointFromText(wkt));
-                Compare(differences, $"ST_GEOG_MLINEFROMTEXT({wkt})",
+                Compare(differences, $"CLR_ST_GEOG_MLINEFROMTEXT({wkt})",
                     () => GeographyFunctions.MLineFromText(wkt), () => SpatialTypeFunctions.ST_MLineFromText(wkt));
-                Compare(differences, $"ST_GEOG_MPOLYFROMTEXT({wkt})",
+                Compare(differences, $"CLR_ST_GEOG_MPOLYFROMTEXT({wkt})",
                     () => GeographyFunctions.MPolyFromText(wkt), () => SpatialTypeFunctions.ST_MPolyFromText(wkt));
 
                 var wkb = GeographyFunctions.AsWkb(Wkt(wkt));
 
-                Compare(differences, $"ST_GEOG_POINTFROMWKB({wkt})",
+                Compare(differences, $"CLR_ST_GEOG_POINTFROMWKB({wkt})",
                     () => GeographyFunctions.PointFromWkb(wkb), () => SpatialTypeFunctions.ST_PointFromWKB(wkb));
-                Compare(differences, $"ST_GEOG_LINEFROMWKB({wkt})",
+                Compare(differences, $"CLR_ST_GEOG_LINEFROMWKB({wkt})",
                     () => GeographyFunctions.LineFromWkb(wkb), () => SpatialTypeFunctions.ST_LineFromWKB(wkb));
-                Compare(differences, $"ST_GEOG_POLYFROMWKB({wkt})",
+                Compare(differences, $"CLR_ST_GEOG_POLYFROMWKB({wkt})",
                     () => GeographyFunctions.PolyFromWkb(wkb), () => SpatialTypeFunctions.ST_PolyFromWKB(wkb));
             }
 
@@ -216,8 +216,8 @@ namespace Apache.Calcite.Geography.Tests
         /// The binding is by signature, so a declaration naming a method that does not exist with those
         /// parameters fails when the table is built rather than when a query reaches it — but ten of these
         /// take one geography and answer one geography, and nothing but running them tells
-        /// <c>ST_GEOG_FORCE2D</c> wired to <c>Force3D</c> from <c>ST_GEOG_FORCE2D</c> wired to
-        /// <c>Force2D</c>. Every result is wrapped in <c>ST_GEOG_ASTEXT</c>, since a geography is not
+        /// <c>CLR_ST_GEOG_FORCE2D</c> wired to <c>Force3D</c> from <c>CLR_ST_GEOG_FORCE2D</c> wired to
+        /// <c>Force2D</c>. Every result is wrapped in <c>CLR_ST_GEOG_ASTEXT</c>, since a geography is not
         /// something a result set carries.
         /// </remarks>
         [TestMethod]
@@ -225,7 +225,7 @@ namespace Apache.Calcite.Geography.Tests
         {
             const string shape = "POLYGON((0 0, 6 0, 6 6, 0 6, 0 0), (2 2, 4 2, 4 4, 2 4, 2 2))";
             var geography = Wkt(shape);
-            var subject = $"ST_GEOG_GEOMFROMTEXT('{shape}')";
+            var subject = $"CLR_ST_GEOG_GEOMFROMTEXT('{shape}')";
 
             var wanted = new List<string>();
             var names = new List<string>();
@@ -233,7 +233,7 @@ namespace Apache.Calcite.Geography.Tests
 
             foreach (var (name, ours, _) in unary)
             {
-                // through ST_GEOG_ASTEXT on both sides, because that is what the statement asks for and it is
+                // through CLR_ST_GEOG_ASTEXT on both sides, because that is what the statement asks for and it is
                 // not the same rendering as Geometry.toText: the writer ST_ASTEXT builds is told how many
                 // ordinates the shape has, and the default one always writes two
                 var answer = GeographyAccessorTests.Answer(() => GeographyFunctions.AsText(ours(geography) as Geometry));
@@ -242,35 +242,35 @@ namespace Apache.Calcite.Geography.Tests
 
                 wanted.Add(answer);
                 names.Add(name);
-                expressions.Add($"ST_GEOG_ASTEXT({name}({subject}))");
+                expressions.Add($"CLR_ST_GEOG_ASTEXT({name}({subject}))");
             }
 
             var extra = new (string Sql, Func<object?> Ours)[]
             {
                 // ST_AddPoint takes a line and throws over anything else, so this one gets a line
-                ("ST_GEOG_ASTEXT(ST_GEOG_ADDPOINT(ST_GEOG_LINEFROMTEXT('LINESTRING(0 0, 1 1, 2 0)'), ST_GEOG_POINT(9, 9)))",
+                ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_ADDPOINT(CLR_ST_GEOG_LINEFROMTEXT('LINESTRING(0 0, 1 1, 2 0)'), CLR_ST_GEOG_POINT(9, 9)))",
                     () => GeographyFunctions.AddPoint(Wkt("LINESTRING(0 0, 1 1, 2 0)"), Wkt("POINT(9 9)"))),
-                ("ST_GEOG_ASTEXT(ST_GEOG_REMOVEPOINT(ST_GEOG_LINEFROMTEXT('LINESTRING(0 0, 1 1, 2 0)'), 1))",
+                ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_REMOVEPOINT(CLR_ST_GEOG_LINEFROMTEXT('LINESTRING(0 0, 1 1, 2 0)'), 1))",
                     () => GeographyFunctions.RemovePoint(Wkt("LINESTRING(0 0, 1 1, 2 0)"), java.lang.Integer.valueOf(1))),
                 // over a point, because ST_AddZ throws over a polygon; see
                 // ShouldInheritTheDefectInAddZOverAPolygon
-                ("ST_GEOG_ASTEXT(ST_GEOG_ADDZ(ST_GEOG_POINT(1, 2), 5))",
+                ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_ADDZ(CLR_ST_GEOG_POINT(1, 2), 5))",
                     () => GeographyFunctions.AddZ(Wkt("POINT(1 2)"), java.lang.Double.valueOf(5))),
-                ($"ST_GEOG_ASTEXT(ST_GEOG_REMOVEREPEATEDPOINTS({subject}, 0.5))",
+                ($"CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_REMOVEREPEATEDPOINTS({subject}, 0.5))",
                     () => GeographyFunctions.RemoveRepeatedPoints(geography, java.lang.Double.valueOf(0.5))),
-                ("ST_GEOG_ASTEXT(ST_GEOG_POINT(1, 2))",
+                ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_POINT(1, 2))",
                     () => GeographyFunctions.Point(java.lang.Double.valueOf(1), java.lang.Double.valueOf(2))),
-                ("ST_GEOG_ASTEXT(ST_GEOG_MAKEPOINT(1, 2))",
+                ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_MAKEPOINT(1, 2))",
                     () => GeographyFunctions.Point(java.lang.Double.valueOf(1), java.lang.Double.valueOf(2))),
-                ("ST_GEOG_ASTEXT(ST_GEOG_MAKELINE(ST_GEOG_POINT(0, 0), ST_GEOG_POINT(1, 1), ST_GEOG_POINT(2, 0)))",
+                ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_MAKELINE(CLR_ST_GEOG_POINT(0, 0), CLR_ST_GEOG_POINT(1, 1), CLR_ST_GEOG_POINT(2, 0)))",
                     () => GeographyFunctions.MakeLine(Wkt("POINT(0 0)"), Wkt("POINT(1 1)"), Wkt("POINT(2 0)"))),
-                ("ST_GEOG_ASTEXT(ST_GEOG_MAKEPOLYGON(ST_GEOG_LINEFROMTEXT('LINESTRING(0 0, 6 0, 6 6, 0 6, 0 0)')))",
+                ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_MAKEPOLYGON(CLR_ST_GEOG_LINEFROMTEXT('LINESTRING(0 0, 6 0, 6 6, 0 6, 0 0)')))",
                     () => GeographyFunctions.MakePolygon(Wkt("LINESTRING(0 0, 6 0, 6 6, 0 6, 0 0)"))),
-                ("ST_GEOG_ASTEXT(ST_GEOG_POINTFROMTEXT('POINT(1 2)'))",
+                ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_POINTFROMTEXT('POINT(1 2)'))",
                     () => GeographyFunctions.PointFromText("POINT(1 2)")),
-                ("ST_GEOG_ASTEXT(ST_GEOG_POLYFROMTEXT('POLYGON((0 0, 4 0, 4 4, 0 4, 0 0))'))",
+                ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_POLYFROMTEXT('POLYGON((0 0, 4 0, 4 4, 0 4, 0 0))'))",
                     () => GeographyFunctions.PolyFromText("POLYGON((0 0, 4 0, 4 4, 0 4, 0 0))")),
-                ("ST_GEOG_ASTEXT(ST_GEOG_MLINEFROMTEXT('MULTILINESTRING((0 0, 1 1))'))",
+                ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_MLINEFROMTEXT('MULTILINESTRING((0 0, 1 1))'))",
                     () => GeographyFunctions.MLineFromText("MULTILINESTRING((0 0, 1 1))")),
             };
 
@@ -340,7 +340,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// <c>ST_ADDZ</c> throws over a polygon, and so does <c>ST_GEOG_ADDZ</c>.
+        /// <c>ST_ADDZ</c> throws over a polygon, and so does <c>CLR_ST_GEOG_ADDZ</c>.
         /// </summary>
         /// <remarks>
         /// A defect of Calcite's rather than one introduced here: the transformer it builds through hands a

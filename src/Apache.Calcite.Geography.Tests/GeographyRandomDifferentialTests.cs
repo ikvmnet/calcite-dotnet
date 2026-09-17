@@ -30,7 +30,7 @@ namespace Apache.Calcite.Geography.Tests
     /// thing that happened once.</para>
     ///
     /// <para>This is what stands in for the exact boolean operations. <c>S2BooleanOperation</c> would settle
-    /// <c>ST_GEOG_WITHIN</c> by construction, and it is not reachable: the version of S2 published to Maven
+    /// <c>CLR_ST_GEOG_WITHIN</c> by construction, and it is not reachable: the version of S2 published to Maven
     /// Central is the 2021 one, which does not have it, and the current source is compiled to Java 11, which
     /// IKVM does not read. Porting it is a port of four thousand lines and the <c>S2Builder</c>,
     /// <c>S2BuilderGraph</c>, <c>S2CrossingEdgesQuery</c> and <c>primitives</c> machinery underneath it. So

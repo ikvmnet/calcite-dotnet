@@ -773,7 +773,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// </summary>
         /// <remarks>
         /// Topological equality and not equality of the coordinates: a line named forwards and the same line
-        /// named backwards are equal, and <c>ST_GEOG_ORDERINGEQUALS</c> is the one that says otherwise. Each
+        /// named backwards are equal, and <c>CLR_ST_GEOG_ORDERINGEQUALS</c> is the one that says otherwise. Each
         /// covering the other is the whole of it.
         /// </remarks>
         public static bool Equals(S2Geographies a, S2Geographies b)
@@ -856,7 +856,7 @@ namespace Apache.Calcite.Geography.Runtime
             }
         }
 
-        // ST_GEOG_CROSSES, ST_GEOG_TOUCHES, ST_GEOG_OVERLAPS and ST_GEOG_CONTAINSPROPERLY are not here, and
+        // CLR_ST_GEOG_CROSSES, CLR_ST_GEOG_TOUCHES, CLR_ST_GEOG_OVERLAPS and CLR_ST_GEOG_CONTAINSPROPERLY are not here, and
         // the reason is one place rather than four. All four turn on whether the interiors of two geographies
         // meet, and where a line comes back and touches itself that question has no answer this file can
         // give: the place is the end of the whole line and the middle of one of its own edges at once, so it
@@ -1100,7 +1100,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <returns></returns>
         /// <remarks>
         /// An <c>S2LatLngRect</c> knows the longitude interval may wrap, which is the whole reason
-        /// <c>ST_GEOG_ENVELOPE</c> is not <c>ST_ENVELOPE</c>: taking a minimum and a maximum of longitudes
+        /// <c>CLR_ST_GEOG_ENVELOPE</c> is not <c>ST_ENVELOPE</c>: taking a minimum and a maximum of longitudes
         /// answers most of the globe for a shape that straddles the antimeridian.
         /// </remarks>
         public S2LatLngRect Bound()

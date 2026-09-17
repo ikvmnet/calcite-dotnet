@@ -11,7 +11,7 @@ namespace Apache.Calcite.Geography.Sql.Type
 {
 
     /// <summary>
-    /// Checks that each operand of an <c>ST_GEOG_*</c> call is what that position takes.
+    /// Checks that each operand of a <c>CLR_ST_GEOG_*</c> call is what that position takes.
     /// </summary>
     /// <remarks>
     /// This is why a geography could not be its own type. A function declared through a schema carries its
@@ -29,7 +29,7 @@ namespace Apache.Calcite.Geography.Sql.Type
     /// narrows its return type to it, and because those filters cast to it unguarded.</para>
     ///
     /// <para>The checker is also the whole of the error a caller sees. One that accepted anything would let
-    /// <c>ST_GEOG_DISTANCE('a', 'b')</c> validate and fail somewhere further down, or not at all.</para>
+    /// <c>CLR_ST_GEOG_DISTANCE('a', 'b')</c> validate and fail somewhere further down, or not at all.</para>
     /// </remarks>
     public sealed class GeographyOperandTypeChecker : SqlOperandMetadata
     {

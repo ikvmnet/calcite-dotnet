@@ -14,7 +14,7 @@ namespace Apache.Calcite.Geography.Rel.Type
     /// <remarks>
     /// There is no <c>GEOGRAPHY</c> type. A geography and a geometry are the same type, carried by the same
     /// class, and what says a value is to be read geodesically is the name of the operator applied to it —
-    /// <c>ST_GEOG_DISTANCE</c> rather than <c>ST_DISTANCE</c>. That is the whole marking.
+    /// <c>CLR_ST_GEOG_DISTANCE</c> rather than <c>ST_DISTANCE</c>. That is the whole marking.
     ///
     /// <para>It is not the design anyone would choose first, and it is the only one Calcite permits.
     /// <c>SqlTypeName</c> is a closed enum, so a type of this package's own has to impersonate one of
@@ -25,7 +25,7 @@ namespace Apache.Calcite.Geography.Rel.Type
     /// functions with it, and bringing them is the point, the type gives way to the registration.</para>
     ///
     /// <para>What that costs is a mixed expression nothing refuses:
-    /// <c>ST_GEOG_DISTANCE(ST_BUFFER(g, 0.1), h)</c> buffers in degrees and then measures in metres, and
+    /// <c>CLR_ST_GEOG_DISTANCE(ST_BUFFER(g, 0.1), h)</c> buffers in degrees and then measures in metres, and
     /// both halves run. There is no run-time guard underneath either — see
     /// <c>SridPropagationTests</c>: Calcite's own spatial functions drop the SRID off a geometry they
     /// derive, so a stamp cannot be relied on to say what a value means.</para>
@@ -51,7 +51,7 @@ namespace Apache.Calcite.Geography.Rel.Type
         }
 
         /// <summary>
-        /// Returns whether the given type is a geometry — which is to say, whether an <c>ST_GEOG_</c>
+        /// Returns whether the given type is a geometry — which is to say, whether a <c>CLR_ST_GEOG_</c>
         /// operator can be applied to it.
         /// </summary>
         /// <param name="type"></param>

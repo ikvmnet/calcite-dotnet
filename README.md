@@ -40,7 +40,7 @@ dotnet add package Apache.Calcite.Extensions
 
 ### [`Apache.Calcite.Geography`](https://www.nuget.org/packages/Apache.Calcite.Geography) · `src/Apache.Calcite.Geography`
 
-A `GEOGRAPHY` type and a set of `ST_GEOG_*` operators that read coordinates as WGS84 and answer in metres.
+A set of `CLR_ST_GEOG_*` operators that read coordinates as WGS84 and answer in metres.
 
 Calcite has `GEOMETRY` and no `GEOGRAPHY`: its spatial library is planar JTS answering in the units of an unprojected coordinate system, while the stores that speak WGS84 — PostGIS `geography`, BigQuery, Snowflake, Elasticsearch, MongoDB — are geodesic. The two disagree about what identically-named functions mean, and the disagreement is not a scale factor. The type keeps them apart: Calcite's own `ST_*` refuse a geography at validation, and the crossing between the two readings has to be written down.
 

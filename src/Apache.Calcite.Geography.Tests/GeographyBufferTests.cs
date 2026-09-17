@@ -176,7 +176,7 @@ namespace Apache.Calcite.Geography.Tests
         public void ShouldRunAsAnOperator()
         {
             var answer = GeographyExecutionTests.Run(
-                "SELECT ST_GEOG_AREA(ST_GEOG_BUFFER(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 10000.0))")[0][0];
+                "SELECT CLR_ST_GEOG_AREA(CLR_ST_GEOG_BUFFER(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 10000.0))")[0][0];
 
             (answer is java.lang.Number n ? n.doubleValue() : double.NaN)
                 .Should().BeApproximately(Math.PI * 1e8, Math.PI * 1e8 * 0.02);

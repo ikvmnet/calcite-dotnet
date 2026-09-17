@@ -20,7 +20,7 @@ namespace Apache.Calcite.Geography.Tests
     /// <para>This is here because the SRID is the only marking available to a design that types its
     /// operators over <c>GEOMETRY</c> rather than over a class of its own, and the measurement says it is
     /// not a marking that can be relied upon. A geometry Calcite's own <c>ST_*</c> derived from a stamped one
-    /// mostly comes back on zero. Which means an <c>ST_GEOG_</c> operator cannot refuse a geometry on the
+    /// mostly comes back on zero. Which means a <c>CLR_ST_GEOG_</c> operator cannot refuse a geometry on the
     /// grounds that it is not stamped 4326: the value may be perfectly geodesic and merely have been through
     /// <c>ST_BUFFER</c> on the way.</para>
     ///

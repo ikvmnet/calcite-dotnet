@@ -86,7 +86,7 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldRunAConstructorAndAMeasurement()
         {
-            var rows = Run("SELECT ST_GEOG_DISTANCE(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), ST_GEOG_GEOMFROMTEXT('POINT(1 0)'))");
+            var rows = Run("SELECT CLR_ST_GEOG_DISTANCE(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), CLR_ST_GEOG_GEOMFROMTEXT('POINT(1 0)'))");
 
             rows.Count.Should().Be(1);
             ((java.lang.Number)rows[0][0]!).doubleValue().Should().BeApproximately(111319.49079327357, 0.001);
@@ -103,7 +103,7 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldRunAPredicateOverAGeographyColumn()
         {
-            var rows = Run("SELECT ID FROM GEO WHERE ST_GEOG_DWITHIN(GEOG, ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 200000.0)");
+            var rows = Run("SELECT ID FROM GEO WHERE CLR_ST_GEOG_DWITHIN(GEOG, CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 200000.0)");
 
             rows.Count.Should().Be(1);
             ((java.lang.Number)rows[0][0]!).intValue().Should().Be(1);
@@ -116,7 +116,7 @@ namespace Apache.Calcite.Geography.Tests
         [TestMethod]
         public void ShouldRunTheCrossingIntoCalcitesOwnFunction()
         {
-            var rows = Run("SELECT ST_DISTANCE(ST_GEOG_ASGEOM(GEOG), ST_GEOG_ASGEOM(GEOG)) FROM GEO WHERE ID = 1");
+            var rows = Run("SELECT ST_DISTANCE(CLR_ST_GEOG_ASGEOM(GEOG), CLR_ST_GEOG_ASGEOM(GEOG)) FROM GEO WHERE ID = 1");
 
             rows.Count.Should().Be(1);
             ((java.lang.Number)rows[0][0]!).doubleValue().Should().Be(0);
@@ -138,30 +138,30 @@ namespace Apache.Calcite.Geography.Tests
         {
             var cases = new (string Sql, object Expected)[]
             {
-                ("ST_GEOG_ISVALID(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'))", true),
-                ("ST_GEOG_ISVALID(ST_GEOG_GEOMFROMWKT('POINT(0 0)'))", true),
-                ("ST_GEOG_ISVALID(ST_GEOG_GEOMFROMTEXT('POINT(0 0)', 4326))", true),
-                ("ST_GEOG_ISVALID(ST_GEOG_GEOMFROMWKT('POINT(0 0)', 4326))", true),
-                ("ST_GEOG_ISVALID(ST_GEOG_GEOMFROMGEOJSON('{\"type\":\"Point\",\"coordinates\":[0,0]}'))", true),
-                ("ST_GEOG_ISVALID(ST_GEOM_ASGEOG(ST_GEOMFROMTEXT('POINT(0 0)')))", true),
-                ("ST_ASTEXT(ST_GEOG_ASGEOM(ST_GEOG_GEOMFROMTEXT('POINT(0 0)')))", "POINT (0 0)"),
-                ("ST_GEOG_DISTANCE(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), ST_GEOG_GEOMFROMTEXT('POINT(0 0)'))", 0.0),
-                ("ST_GEOG_DWITHIN(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), ST_GEOG_GEOMFROMTEXT('POINT(1 0)'), 200000.0)", true),
-                ("ST_GEOG_WITHIN(ST_GEOG_GEOMFROMTEXT('POINT(1 1)'), ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
-                ("ST_GEOG_INTERSECTS(ST_GEOG_GEOMFROMTEXT('POINT(1 1)'), ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
-                ("ST_GEOG_ISVALID(ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
+                ("CLR_ST_GEOG_ISVALID(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'))", true),
+                ("CLR_ST_GEOG_ISVALID(CLR_ST_GEOG_GEOMFROMWKT('POINT(0 0)'))", true),
+                ("CLR_ST_GEOG_ISVALID(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)', 4326))", true),
+                ("CLR_ST_GEOG_ISVALID(CLR_ST_GEOG_GEOMFROMWKT('POINT(0 0)', 4326))", true),
+                ("CLR_ST_GEOG_ISVALID(CLR_ST_GEOG_GEOMFROMGEOJSON('{\"type\":\"Point\",\"coordinates\":[0,0]}'))", true),
+                ("CLR_ST_GEOG_ISVALID(CLR_ST_GEOM_ASGEOG(ST_GEOMFROMTEXT('POINT(0 0)')))", true),
+                ("ST_ASTEXT(CLR_ST_GEOG_ASGEOM(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)')))", "POINT (0 0)"),
+                ("CLR_ST_GEOG_DISTANCE(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'))", 0.0),
+                ("CLR_ST_GEOG_DWITHIN(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), CLR_ST_GEOG_GEOMFROMTEXT('POINT(1 0)'), 200000.0)", true),
+                ("CLR_ST_GEOG_WITHIN(CLR_ST_GEOG_GEOMFROMTEXT('POINT(1 1)'), CLR_ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
+                ("CLR_ST_GEOG_INTERSECTS(CLR_ST_GEOG_GEOMFROMTEXT('POINT(1 1)'), CLR_ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
+                ("CLR_ST_GEOG_ISVALID(CLR_ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
 
                 // the relations and the measurements
-                ("ST_GEOG_CONTAINS(ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'), ST_GEOG_GEOMFROMTEXT('POINT(1 1)'))", true),
-                ("ST_GEOG_COVERS(ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'), ST_GEOG_GEOMFROMTEXT('POINT(0 0)'))", true),
-                ("ST_GEOG_COVEREDBY(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
-                ("ST_GEOG_DISJOINT(ST_GEOG_GEOMFROMTEXT('POINT(9 9)'), ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
-                ("ST_GEOG_EQUALS(ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 1 1)'), ST_GEOG_GEOMFROMTEXT('LINESTRING(1 1, 0 0)'))", true),
-                ("ST_GEOG_ENVELOPESINTERSECT(ST_GEOG_GEOMFROMTEXT('POINT(1 1)'), ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
-                ("ST_GEOG_LENGTH(ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 1 0)'))", 111319.49079327357),
-                ("ST_GEOG_PERIMETER(ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 1 0)'))", 0.0),
-                ("ST_GEOG_AREA(ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 1 0)'))", 0.0),
-                ("ST_GEOG_MAXDISTANCE(ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), ST_GEOG_GEOMFROMTEXT('POINT(1 0)'))", 111319.49079327357),
+                ("CLR_ST_GEOG_CONTAINS(CLR_ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'), CLR_ST_GEOG_GEOMFROMTEXT('POINT(1 1)'))", true),
+                ("CLR_ST_GEOG_COVERS(CLR_ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'), CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'))", true),
+                ("CLR_ST_GEOG_COVEREDBY(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), CLR_ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
+                ("CLR_ST_GEOG_DISJOINT(CLR_ST_GEOG_GEOMFROMTEXT('POINT(9 9)'), CLR_ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
+                ("CLR_ST_GEOG_EQUALS(CLR_ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 1 1)'), CLR_ST_GEOG_GEOMFROMTEXT('LINESTRING(1 1, 0 0)'))", true),
+                ("CLR_ST_GEOG_ENVELOPESINTERSECT(CLR_ST_GEOG_GEOMFROMTEXT('POINT(1 1)'), CLR_ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'))", true),
+                ("CLR_ST_GEOG_LENGTH(CLR_ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 1 0)'))", 111319.49079327357),
+                ("CLR_ST_GEOG_PERIMETER(CLR_ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 1 0)'))", 0.0),
+                ("CLR_ST_GEOG_AREA(CLR_ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 1 0)'))", 0.0),
+                ("CLR_ST_GEOG_MAXDISTANCE(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), CLR_ST_GEOG_GEOMFROMTEXT('POINT(1 0)'))", 111319.49079327357),
             };
 
             var failures = new List<string>();

@@ -143,7 +143,7 @@ namespace Apache.Calcite.Geography.Runtime
         /// <remarks>
         /// The true geodesic, so the ring of points this traces at a fixed distance is the set of places
         /// actually that far away — which is what makes a buffer built from it agree with
-        /// <c>ST_GEOG_DWITHIN</c>. A circle of constant angular radius on a sphere would not: the two differ
+        /// <c>CLR_ST_GEOG_DWITHIN</c>. A circle of constant angular radius on a sphere would not: the two differ
         /// by the same half percent every other measurement here differs by.
         /// </remarks>
         public static org.locationtech.jts.geom.Coordinate Offset(

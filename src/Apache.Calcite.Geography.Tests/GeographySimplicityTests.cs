@@ -18,7 +18,7 @@ namespace Apache.Calcite.Geography.Tests
     /// geodesics.
     /// </summary>
     /// <remarks>
-    /// This joins <c>ST_GEOG_ISVALID</c>, which was here from the first increment. The rule is JTS's: a point
+    /// This joins <c>CLR_ST_GEOG_ISVALID</c>, which was here from the first increment. The rule is JTS's: a point
     /// is simple, a set of points is simple when none repeats, a line is simple when no two of its edges meet
     /// except where they are joined, an area is simple because its self-intersections are a question of
     /// validity instead, and a collection is simple when its parts are.
@@ -141,11 +141,11 @@ namespace Apache.Calcite.Geography.Tests
         public void ShouldRunEachAsAnOperator()
         {
             var simple = GeographyExecutionTests.Run(
-                "SELECT ST_GEOG_ISSIMPLE(ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 1 0, 1 1)'))")[0][0];
+                "SELECT CLR_ST_GEOG_ISSIMPLE(CLR_ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 1 0, 1 1)'))")[0][0];
             (simple is java.lang.Boolean a && a.booleanValue()).Should().BeTrue();
 
             var ring = GeographyExecutionTests.Run(
-                "SELECT ST_GEOG_ISRING(ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 1 0, 1 1, 0 1, 0 0)'))")[0][0];
+                "SELECT CLR_ST_GEOG_ISRING(CLR_ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 1 0, 1 1, 0 1, 0 0)'))")[0][0];
             (ring is java.lang.Boolean b && b.booleanValue()).Should().BeTrue();
         }
 
