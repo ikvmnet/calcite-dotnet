@@ -443,13 +443,17 @@ Also at 0% and worth deciding about rather than covering: `AdoTableQueryable` (n
   that proves least: an ODBC driver over Oracle or DB2 reports its catalog differently in ways only that
   driver will show. The type-code tables are from ODBC's `sql.h` and OLE DB's `oledb.h` rather than from
   one driver, but only SQL Server's codes have been seen.
-- **Upstream, and worth reporting**: `MssqlSqlDialect` does not override `supportsGroupByLiteral`, and SQL
-  Server cannot group by a constant in either form — `GROUP BY (1 = 1)` is "Incorrect syntax near '='" and
-  `GROUP BY 1` is "Each GROUP BY expression must contain at least one column that is not an outer
-  reference". It costs every correlated sub-query, because `EXISTS` becomes an aggregate over a constant
-  true and `SqlImplementor.visitRoot` only runs `AggregateProjectConstantToDummyJoinRule` when the dialect
-  has asked for it. Postgres, Redshift and Informix each override it. `AdoSqlDialects.Mssql` says it here;
-  the fix belongs in Calcite.
+- **A fractional row count is pushed as written to every dialect but SQL Server** — *small*. CALCITE-7624
+  let a `FETCH` or an `OFFSET` carry a `BigDecimal`, and a count with a fractional part means the rows up
+  to its ceiling: `EnumerableDefaults.take` and `skip` each count while the zero-based index is below the
+  bound, and `RexUtil.makeOffsetFetchSum` states it as rounding "to whole row counts". `AdoSqlDialects.Mssql`
+  writes that whole number; nothing else does. Measured against the SQLite fixture:
+  `FETCH FIRST 2.9 ROWS ONLY` goes down as `LIMIT 2.9` and answers "SQLite Error 20: 'datatype mismatch'",
+  and `OFFSET 1.5 ROWS` the same. A parameter is not affected there — `LIMIT $P0` with a decimal bound
+  answers correctly, which is why issue 164 was SQL Server's alone. The fix is one more `SqlDialect`
+  subclass per product, overriding `unparseOffsetFetch`; the literal arm alone is needed, and the `CAST`
+  the SQL Server dialect wraps a parameter in must **not** be copied to a `LIMIT` dialect, since
+  `SqlDialect.unparseLimit` refuses a fetch that is neither a literal nor a dynamic parameter.
 - **Upstream, and worth reporting**: `SqlDialect.getCastSpec` writes an unbounded `VARCHAR` as the bare
   keyword, and a bare `varchar` in T-SQL is not unbounded — it is one character in a declaration and thirty
   in a `CAST`. So `CAST(<uniqueidentifier> AS VARCHAR)` is "Insufficient result space to convert
