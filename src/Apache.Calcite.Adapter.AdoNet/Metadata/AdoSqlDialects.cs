@@ -127,33 +127,30 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         }
 
         /// <summary>
-        /// <see cref="MssqlSqlDialect"/>, and the four things it does not say about SQL Server.
+        /// <see cref="MssqlSqlDialect"/>, and the three things it does not say about SQL Server.
         /// </summary>
         /// <param name="context"></param>
         /// <remarks>
         /// <para>
-        /// SQL Server cannot group by a constant, and <see cref="MssqlSqlDialect"/> does not declare it:
-        /// <c>SqlDialect.supportsGroupByLiteral</c> defaults to true and Postgres, Redshift and Informix
-        /// each override it while SQL Server does not. Measured — <c>GROUP BY (1 = 1)</c> is "Incorrect
-        /// syntax near '='" and <c>GROUP BY 1</c> is "Each GROUP BY expression must contain at least one
-        /// column that is not an outer reference".
+        /// Each is a correction to Calcite rather than a reproduction of it, which the adapter is entitled
+        /// to make: a dialect generates SQL for a server to run, and the server is the authority on what it
+        /// accepts.
         /// </para>
         /// <para>
-        /// It costs every correlated sub-query. <c>EXISTS</c> becomes an aggregate over a constant true, and
-        /// <c>SqlImplementor.visitRoot</c> only runs <c>AggregateProjectConstantToDummyJoinRule</c> — which
-        /// exists for exactly this — when the dialect has said it is needed. Saying so is a correction to
-        /// Calcite rather than a reproduction of it, which the adapter is entitled to make: it generates SQL
-        /// for a server to run, and the server is the authority on what it accepts.
-        /// </para>
-        /// <para>
-        /// The second is what an unbounded string casts to — see <see cref="Mssql.getCastSpec"/>. The third
+        /// The first is what an unbounded string casts to — see <see cref="Mssql.getCastSpec"/>. The second
         /// is in <see cref="Mssql.unparseCall"/>: the modulo Calcite already writes for T-SQL is grouped
-        /// wrongly. Both are the same kind of correction and made for the same reason.
-        ///
-        /// <para>There was a fourth, in the same method. T-SQL has no concatenation operator and Calcite
-        /// wrote <c>||</c> anyway, so every statement that concatenated reached the server as
-        /// <c>[A] || [B]</c> and answered "Incorrect syntax near '|'". A 1.43 snapshot made that
-        /// substitution upstream and the override went with it.</para>
+        /// wrongly. The third is the row count of a <c>TOP</c>, an <c>OFFSET</c> or a <c>FETCH</c>, which
+        /// SQL Server takes only as an integer — see <see cref="Mssql.unparseTopN"/>.
+        /// </para>
+        /// <para>
+        /// Two others were here and are not. T-SQL has no concatenation operator and Calcite wrote
+        /// <c>||</c> anyway, so every statement that concatenated reached the server as <c>[A] || [B]</c>
+        /// and answered "Incorrect syntax near '|'"; and SQL Server cannot group by a constant, which cost
+        /// every correlated sub-query, <c>EXISTS</c> becoming an aggregate over a constant true that
+        /// <c>SqlImplementor.visitRoot</c> only rewrites when the dialect has said
+        /// <c>supportsGroupByLiteral</c> is false. <see cref="MssqlSqlDialect"/> says both itself now, and
+        /// each override went when it did. <c>AdoSqlDialectsTests</c> still reads the answers off the
+        /// dialect, which is what says they are still there.
         /// </para>
         /// </remarks>
         sealed class Mssql(SqlDialect.Context context) : MssqlSqlDialect(context)
@@ -244,6 +241,120 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
                 {
                     SqlSyntax.BINARY.unparse(writer, op, call, leftPrec, rightPrec);
                 }
+            }
+
+            /// <inheritdoc />
+            /// <remarks>
+            /// <b>SQL Server takes a row count only as an integer</b>, and since CALCITE-7624 a row count is
+            /// neither. <see cref="AsRowCount"/> is where that is put right, for the <c>TOP</c> this writes
+            /// and for the <c>OFFSET</c> and <c>FETCH</c> of <see cref="unparseOffsetFetch"/> alike.
+            /// </remarks>
+            public override void unparseTopN(SqlWriter writer, SqlNode offset, SqlNode fetch)
+            {
+                // the offset is read for its nullness alone here, so it goes down untouched: MssqlSqlDialect
+                // writes TOP where there is no offset, and under version 11 writes it anyway and discards
+                // the offset, which is the whole reason this dialect is built from a version
+                base.unparseTopN(writer, offset, AsRowCount(fetch, Fetch));
+            }
+
+            /// <inheritdoc cref="unparseTopN"/>
+            public override void unparseOffsetFetch(SqlWriter writer, SqlNode offset, SqlNode fetch)
+            {
+                base.unparseOffsetFetch(writer, AsRowCount(offset, Offset), AsRowCount(fetch, Fetch));
+            }
+
+            /// <summary>
+            /// Names the two clauses in a refusal, as <c>EnumUtils.numberToBigDecimal</c> names them in the
+            /// one the operator in process raises over the same value.
+            /// </summary>
+            const string Fetch = "FETCH";
+
+            /// <inheritdoc cref="Fetch"/>
+            const string Offset = "OFFSET";
+
+            /// <summary>
+            /// <c>INT</c>, named as SQL Server names it.
+            /// </summary>
+            static readonly SqlDataTypeSpec Integer = new(
+                new SqlAlienSystemTypeNameSpec("INT", SqlTypeName.INTEGER, SqlParserPos.ZERO),
+                SqlParserPos.ZERO);
+
+            /// <summary>
+            /// Returns the row count to write for a <c>TOP</c>, an <c>OFFSET</c> or a <c>FETCH</c>.
+            /// </summary>
+            /// <param name="node">The count Calcite produced, or <see langword="null"/> where there is none.</param>
+            /// <param name="kind"><see cref="Fetch"/> or <see cref="Offset"/>, for the refusal.</param>
+            /// <returns></returns>
+            /// <exception cref="AdoCalciteException">Where a literal count has no <c>int</c>.</exception>
+            /// <remarks>
+            /// <para>
+            /// CALCITE-7624 widened both counts to a <c>BigDecimal</c>: a literal may have a fractional part,
+            /// and <c>SqlValidatorImpl.handleOffsetFetch</c> types a placeholder in either slot
+            /// <c>DECIMAL</c>, so what a driver binds for one is a decimal too. SQL Server refuses both —
+            /// "The number of rows provided for a TOP or FETCH clauses row count parameter must be an
+            /// integer" — and measured, it takes a <c>tinyint</c>, a <c>smallint</c>, an <c>int</c> and a
+            /// <c>bigint</c> there and refuses a <c>decimal</c> and a string.
+            /// </para>
+            /// <para>
+            /// A literal is therefore written as the whole number of rows it stands for, which is its
+            /// ceiling: that is how many rows <c>EnumerableDefaults.take</c> and <c>skip</c> return for the
+            /// same <c>BigDecimal</c>, each counting while the zero-based index is below it, and
+            /// <c>RexUtil.makeOffsetFetchSum</c> says the same — "Enumerable execution rounds OFFSET and
+            /// FETCH independently to whole row counts".
+            /// </para>
+            /// <para>
+            /// Anything else is a value this has never seen, a parameter above all, so the server is asked
+            /// to take the same two steps on it. Measured, and each of the three refusals the value can earn
+            /// is the one the operator in process raises over it: 2.9 fetches three rows, 3000000000 is
+            /// "Arithmetic overflow error converting expression to data type int", and a negative is "A TOP
+            /// N or FETCH rowcount value may not be negative". <c>CEILING</c> rather than <c>CEIL</c>
+            /// because T-SQL has only the one spelling, which <see cref="MssqlSqlDialect"/>'s own
+            /// <c>unparseCall</c> already knows.
+            /// </para>
+            /// <para>
+            /// The one thing this cannot see is a <c>FetchOffsetRoundingPolicy</c> a caller put on the
+            /// planner's context: a dialect is handed a node and a writer, and the policy is nowhere in
+            /// either. So a caller who rounds fractional counts its own way gets its rounding in process and
+            /// the ceiling here. Nothing rounds a count that is already whole, which is every count a caller
+            /// that is not asking for this writes.
+            /// </para>
+            /// </remarks>
+            static SqlNode? AsRowCount(SqlNode? node, string kind)
+            {
+                if (node is null)
+                    return null;
+
+                if (node is SqlNumericLiteral literal && literal.bigDecimalValue() is java.math.BigDecimal value)
+                    return WholeRows(value, kind, literal.getParserPosition());
+
+                return SqlStdOperatorTable.CAST.createCall(
+                    SqlParserPos.ZERO,
+                    SqlStdOperatorTable.CEIL.createCall(SqlParserPos.ZERO, node),
+                    Integer);
+            }
+
+            /// <summary>
+            /// Returns the literal to write for a count known here.
+            /// </summary>
+            /// <param name="value"></param>
+            /// <param name="kind"></param>
+            /// <param name="pos"></param>
+            /// <returns></returns>
+            /// <exception cref="AdoCalciteException"></exception>
+            static SqlNode WholeRows(java.math.BigDecimal value, string kind, SqlParserPos pos)
+            {
+                var rows = value.setScale(0, java.math.RoundingMode.CEILING);
+
+                try
+                {
+                    rows.intValueExact();
+                }
+                catch (java.lang.ArithmeticException e)
+                {
+                    throw new AdoCalciteException($"A {kind} row count reaches SQL Server as an int, and {value} has none.", e);
+                }
+
+                return SqlLiteral.createExactNumeric(rows.toString(), pos);
             }
 
             /// <inheritdoc />
