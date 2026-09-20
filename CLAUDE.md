@@ -39,13 +39,18 @@ driver this one is modelled on*, has the reading. Not to be confused with
   not run the MSTest ones at all under the .NET 10 SDK, and that whole exception is gone. A v3 project is an
   **executable** — the package writes the entry point and the assembly runs itself on
   Microsoft.Testing.Platform — and it also carries `xunit.runner.visualstudio` and `Microsoft.NET.Test.Sdk`,
-  so both ways of running it work:
+  so every way of running it works:
   - the built executable, which is what to reach for locally:
     `src\Apache.Calcite.Tests\bin\Debug\net8.0\Apache.Calcite.Tests.exe`, and `-filter` takes a query in
     `/assembly/namespace/class/method` form, wildcards included — `-filter "/*/*/ClrEnumerableSortTests/*"`.
-    `--help` prints the whole filter language.
-  - `dotnet test <dll> --filter FullyQualifiedName~Name`, which is vstest.console and is what CI runs.
+    `--help` prints the whole filter language. `-result-trx <path>` writes the report, relative to where
+    the runner was invoked; the tests run in the assembly's directory, which it changes to first.
+  - `dotnet test <dll> --filter FullyQualifiedName~Name`, which is vstest.console.
     `--blame-hang --blame-hang-timeout 90s` names the test that hangs.
+  - **`dotnet exec <dll>`, which is what CI runs**, and takes the same arguments the executable does. The
+    other two launch the app host, and a build emits one, for its own RID. CI builds once on linux-x64 and
+    runs that artifact on five platforms, so under `dotnet test` every job but that one failed before a
+    test ran — `Exec format error`, or `Could not find app host executable` on Windows, where it is `.exe`.
 
   `Apache.Calcite.Tests` is about nine minutes end to end; a single test is seconds.
 - **The four converted suites run one test at a time, and say so.** MSTest did that by default and xunit does

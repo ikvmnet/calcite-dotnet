@@ -112,6 +112,11 @@ jobs:
     - build
     runs-on: ${{ fromJSON('{"win-x86":["windows-2022"],"win-x64":["windows-2022"],"linux-x64":["ubuntu-24.04"],"linux-arm64":["ubuntu-24.04-arm"],"osx-x64":["macos-15-intel"],"osx-arm64":["macos-15"]}')[matrix.sys] }}
     steps:
+    # net8.0 is in the matrix and rolls forward no further than 8.x.
+    - name: Setup .NET 8.0
+      uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: 8.0.x
     - name: Setup .NET 9.0
       uses: actions/setup-dotnet@v6
       with:
@@ -136,6 +141,8 @@ jobs:
         name: tests
     - name: Restore Tests
       run: tar xzvf tests.tar.gz
+    # `dotnet test` would launch the app host, and the artifact carries the build's, linux-x64. The muxer
+    # runs the assembly on any of them. A filter after `?` is xunit's query filter language.
     - name: Execute Tests
       timeout-minutes: 480
       shell: pwsh
@@ -157,27 +164,25 @@ jobs:
         # scan and process test assemblies
         $tests = $(gi .\tests\$tst\$tfm\*.Tests.dll)
         if ($tests) {
-            $argl = @(
-                "-f", $tfm,
-                "-v:diag",
-                "--results-directory", "TestResults",
-                "--logger:console;verbosity=diag",
-                "--logger:trx"
-            )
-            
-            $runsettings = $(gi .\tests\$tst\$tfm\*.runsettings)
-            if ($runsettings) {
-                $argl += "--settings:$runsettings"
-            }
-
             if ($qry -ne "" -and $qry -ne $null) {
-                $argl += @("--filter", $qry)
                 Add-Content $env:GITHUB_ENV "`nRET=TestResults--$tst-$qry--$tfm--$sys"
             } else {
                 Add-Content $env:GITHUB_ENV "`nRET=TestResults--$tst--$tfm--$sys"
             }
-            
-            dotnet test @argl $tests[0].FullName
+
+            # the archive step runs on failure too, and a run that cannot start writes no report
+            New-Item -ItemType Directory -Force TestResults | Out-Null
+
+            $argl = @(
+                "-reporter", "verbose",
+                "-result-trx", "TestResults/$tst--$tfm--$sys.trx"
+            )
+
+            if ($qry -ne "" -and $qry -ne $null) {
+                $argl += @("-filter", $qry)
+            }
+
+            dotnet exec $tests[0].FullName @argl
         }
     - name: Archive Test Results
       if: always() && startsWith(env.RET, 'TestResults--')

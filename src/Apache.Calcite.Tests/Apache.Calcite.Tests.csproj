@@ -15,9 +15,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <!-- CI runs `dotnet test <dll>`, which is vstest.console, so the VSTest bridge has to be in the
-             output beside the platform the assembly runs itself on. xunit.runner.visualstudio carries the
-             adapter and Microsoft.NET.Test.Sdk the testhost. -->
+        <!-- the VSTest bridge, for `dotnet test` and the IDE: xunit.runner.visualstudio is the adapter
+             and Microsoft.NET.Test.Sdk the testhost. CI runs the assembly itself and uses neither. -->
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
         <PackageReference Include="xunit.v3" Version="4.0.1" />
         <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
