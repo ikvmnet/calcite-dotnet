@@ -136,6 +136,31 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
+        /// And the refusal says the value was null, rather than rendering a class and a value it has not
+        /// got.
+        /// </summary>
+        /// <remarks>
+        /// The message every other refusal uses quotes the value's class and the value itself. A null has
+        /// neither, so that message reads as two empty quotes and never mentions the one thing that
+        /// happened. Both spellings of the accessor go through the same guard.
+        /// </remarks>
+        [Fact]
+        public void A_null_collection_should_be_refused_by_name()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT CAST(NULL AS INTEGER ARRAY)");
+
+            foreach (var read in new Func<object>[] { () => r.GetArray(0), () => r.GetArray<int>(0) })
+            {
+                var e = Assert.Throws<InvalidCastException>(() => read());
+
+                Assert.Contains("null value", e.Message);
+                Assert.Contains("IsDBNull", e.Message);
+                Assert.DoesNotContain("of type ''", e.Message);
+            }
+        }
+
+        /// <summary>
         /// A column whose type says nothing leaves the value's own class to decide, here as everywhere else,
         /// so a list in an <c>ANY</c> column reads through this.
         /// </summary>

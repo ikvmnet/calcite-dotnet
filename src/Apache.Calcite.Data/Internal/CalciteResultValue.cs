@@ -97,9 +97,19 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="target"></param>
         /// <param name="inner">The refusal the mapping layer made, where it is what decided this.</param>
         /// <returns></returns>
+        /// <remarks>
+        /// <b>A null gets its own sentence.</b> The other one renders the value's class and the value, and a
+        /// null has neither, so it reads as two empty quotes and says nothing about the one fact there is.
+        /// The refusal itself is not in question: every typed getter here refuses a null, whether or not
+        /// its type could hold one, and <c>A_null_collection_should_be_refused</c> has held that for the two
+        /// spellings of <c>GetArray</c> since they were written. What the caller is missing is the name of
+        /// the accessor that answers instead.
+        /// </remarks>
         InvalidCastException Cannot(string target, Exception? inner = null)
         {
-            var message = $"Cannot convert value of type '{_value?.GetType().Name}' with value '{_value}' (SQL type: {_type}) to '{target}'";
+            var message = _value is null or DBNull
+                ? $"Cannot read a null value (SQL type: {_type}) as '{target}'. IsDBNull answers true for it."
+                : $"Cannot convert value of type '{_value.GetType().Name}' with value '{_value}' (SQL type: {_type}) to '{target}'";
 
             return inner is null ? new InvalidCastException(message) : new InvalidCastException(message, inner);
         }
@@ -276,6 +286,13 @@ namespace Apache.Calcite.Data.Internal
                 // value, the SQL type and the target. The mapping's own account of it is the inner one
                 throw Cannot(typeof(T).Name, e);
             }
+
+            // a caller naming the class the value arrives in has asked for the Java object, which is the one
+            // thing this cannot answer; the accessor that does has a name and the refusal gives it
+            if (_value is T && target != typeof(object))
+                throw new InvalidCastException(
+                    $"Cannot convert value of type '{_value.GetType().Name}' with value '{_value}' (SQL type: {_type}) to '{target.Name}'. " +
+                    $"It is one already: CalciteDataReader.GetCalciteValue hands out the value Calcite holds, and a typed getter answers .NET readings only.");
 
             throw Cannot(typeof(T).Name);
         }
