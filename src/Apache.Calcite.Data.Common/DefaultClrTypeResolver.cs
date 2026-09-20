@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;

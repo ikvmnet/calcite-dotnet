@@ -1,4 +1,4 @@
-﻿using com.google.common.collect;
+using com.google.common.collect;
 
 using java.util;
 

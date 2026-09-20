@@ -1,4 +1,4 @@
-﻿using System.Data.Common;
+using System.Data.Common;
 
 using Apache.Calcite.Adapter.AdoNet.Extensions;
 using Apache.Calcite.Adapter.AdoNet.Utils;

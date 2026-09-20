@@ -7,7 +7,7 @@ using FluentAssertions;
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-namespace Apache.Calcite.Tests.Interop
+namespace Apache.Calcite.Extensions.Interop.Tests
 {
 
     [TestClass]

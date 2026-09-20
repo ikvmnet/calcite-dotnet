@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Apache.Calcite.Extensions.Adapter.Enumerable.Tests;
 using Apache.Calcite.Extensions.Schema;
 
 using org.apache.calcite;
@@ -84,7 +85,7 @@ namespace Apache.Calcite.Tests
         /// <remarks>
         /// A provider type the ADO.NET adapter has no <c>SqlTypeName</c> for arrives as ANY, so an
         /// aggregate over one of these has to accumulate a value whose type is only known at run time. The
-        /// same rows as <c>ClrEnumerableDifferentialTests.AnysTable</c>, which is what makes the
+        /// same rows as <c>ClrEnumerableConventionDifferentialTests.AnysTable</c>, which is what makes the
         /// synchronous convention an oracle for this one.
         /// </remarks>
         public static readonly object?[][] Anys =
@@ -100,7 +101,7 @@ namespace Apache.Calcite.Tests
         /// The values a document store puts behind a path that holds a JSON array.
         /// </summary>
         /// <remarks>
-        /// The same rows as <c>ClrEnumerableDifferentialTests.DocsTable</c>, which is what makes the
+        /// The same rows as <c>ClrEnumerableConventionDifferentialTests.DocsTable</c>, which is what makes the
         /// synchronous convention an oracle for this one — and it is the only oracle there is, because
         /// Calcite cannot implement an UNNEST over a column of type ANY at all.
         /// </remarks>
@@ -116,7 +117,7 @@ namespace Apache.Calcite.Tests
         /// written the way JSON writes it.
         /// </summary>
         /// <remarks>
-        /// The same rows as <c>ClrEnumerableDifferentialTests.CastsTable</c>, whose remarks say what a cast
+        /// The same rows as <c>ClrEnumerableConventionDifferentialTests.CastsTable</c>, whose remarks say what a cast
         /// out of ANY actually does. This convention reaches the same generator, and the point of running
         /// the queries here is that it keeps reaching it: the failure that raised the question was in
         /// <c>ClrEnumerableDefaults.CalcRowsAsync</c>.

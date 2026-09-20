@@ -1,9 +1,10 @@
+using Apache.Calcite.Extensions;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
+
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.tools;
-using Apache.Calcite.Extensions;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Tests
 {

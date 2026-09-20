@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 
 using Apache.Calcite.Extensions;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
@@ -13,7 +14,6 @@ using org.apache.calcite.schema;
 using org.apache.calcite.schema.impl;
 using org.apache.calcite.sql.type;
 using org.apache.calcite.tools;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 namespace Apache.Calcite.Tests
 {
