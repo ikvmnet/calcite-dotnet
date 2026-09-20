@@ -4,7 +4,7 @@
         <TargetFramework>net8.0</TargetFramework>
         <LangVersion>Preview</LangVersion>
         <Nullable>enable</Nullable>
-        <Description>An FT_* full text operator table for Apache Calcite. Calcite has no full text operator and every store that offers full text spells its own differently, so an adapter that wants any of them invents names and the resolution plumbing to go with them. This package declares the names, arities and types once, and offers them both ways a query can reach a name — chained onto a host's operator table, and declared on a schema so a plain connection finds them. It evaluates nothing: a full text answer is the store's analyzer, and approximating one would answer differently from the store.</Description>
+        <Description>A CLR_FT_* full text operator table for Apache Calcite. Calcite has no full text operator and every store that offers full text spells its own differently, so an adapter that wants any of them invents names and the resolution plumbing to go with them. This package declares the names, arities and types once — predicates, a relevance score, rank fusion, and term constructors for phrase, prefix and fuzzy matching — and offers them both ways a query can reach a name: chained onto a host's operator table, and declared on a schema so a plain connection finds them. It evaluates nothing: a full text answer is the store's analyzer, and approximating one would answer differently from the store.</Description>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageIcon>icon.png</PackageIcon>
         <PackageTags>apache;calcite;sql;full-text;search;fulltext;ikvm</PackageTags>
