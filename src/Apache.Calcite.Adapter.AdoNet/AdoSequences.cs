@@ -70,7 +70,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         ///
         /// <para><b>The statement is sent at <c>GetAsyncEnumerator</c>, and sent synchronously.</b> That is
         /// where this convention puts acquisition — linq4j acquires inside <c>enumerator()</c>, and
-        /// <c>AcquisitionTimingTests</c> holds that the whole cascade runs there — and
+        /// <c>ClrEnumerableDefaultsAcquisitionTests</c> holds that the whole cascade runs there — and
         /// <c>GetAsyncEnumerator</c> cannot await, so acquisition-time work is synchronous work, exactly as
         /// it is for a table whose <c>ScanAsync</c> opens something before returning its sequence.
         /// <c>CalciteSession</c> calls <c>GetAsyncEnumerator</c> inside <c>ExecuteReaderAsync</c>, so a
@@ -83,7 +83,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// loop is where a query spends its time. Making the connect asynchronous as well would mean
         /// awaiting it somewhere, and the only place earlier than the first row is
         /// <c>ExecuteReaderAsync</c> itself — which <c>ShouldReadNothingUntilTheFirstRead</c> and
-        /// <c>AcquisitionTimingTests</c> deliberately hold to reading nothing.</para>
+        /// <c>ClrEnumerableDefaultsAcquisitionTests</c> deliberately hold to reading nothing.</para>
         /// </remarks>
         public static IAsyncEnumerable<TRow> ReadAsync<TRow>(AdoDataSource dataSource, string sql, Func<DbDataReader, TRow> rowBuilder, DbCommandEnricher? enricher, CancellationToken cancellationToken = default)
         {

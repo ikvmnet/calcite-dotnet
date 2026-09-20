@@ -6,7 +6,7 @@ using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -19,7 +19,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// seam to set and no other engine to choose, since <c>CalciteSession</c> prepares through
     /// <c>ClrPrepareImpl</c> and nothing else.
     /// </remarks>
-    [TestClass]
     public class ClrEnumerableConventionAdoNetTests
     {
 
@@ -34,7 +33,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             return c;
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunAValuesQuery()
         {
             using var c = Open();
@@ -49,7 +48,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Should().Equal(["1|a", "2|b"]);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunAnAggregate()
         {
             using var c = Open();
@@ -64,7 +63,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Should().Equal(["a|2", "b|1"]);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunAJoin()
         {
             using var c = Open();

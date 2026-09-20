@@ -4,22 +4,21 @@ using Apache.Calcite.Extensions.Interop;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Interop.Tests
 {
 
-    [TestClass]
     public class JavaUuidsTests
     {
 
-        [TestMethod]
-        [DataRow("00000000-0000-0000-0000-000000000000")]
-        [DataRow("ffffffff-ffff-ffff-ffff-ffffffffffff")]
-        [DataRow("cccccccc-0000-0000-0000-000000000001")]
-        [DataRow("12345678-1234-4321-7777-987654321000")]
-        [DataRow("00000000-0000-0000-ffff-ffffffffffff")] // least-significant half only
-        [DataRow("ffffffff-ffff-ffff-0000-000000000000")] // most-significant half only
+        [Theory]
+        [InlineData("00000000-0000-0000-0000-000000000000")]
+        [InlineData("ffffffff-ffff-ffff-ffff-ffffffffffff")]
+        [InlineData("cccccccc-0000-0000-0000-000000000001")]
+        [InlineData("12345678-1234-4321-7777-987654321000")]
+        [InlineData("00000000-0000-0000-ffff-ffffffffffff")] // least-significant half only
+        [InlineData("ffffffff-ffff-ffff-0000-000000000000")] // most-significant half only
         public void GuidShouldRoundTripThroughUuid(string literal)
         {
             var value = Guid.Parse(literal);
@@ -30,11 +29,11 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             back.Should().Be(value);
         }
 
-        [TestMethod]
-        [DataRow("00000000-0000-0000-0000-000000000000")]
-        [DataRow("ffffffff-ffff-ffff-ffff-ffffffffffff")]
-        [DataRow("cccccccc-0000-0000-0000-000000000001")]
-        [DataRow("12345678-1234-4321-7777-987654321000")]
+        [Theory]
+        [InlineData("00000000-0000-0000-0000-000000000000")]
+        [InlineData("ffffffff-ffff-ffff-ffff-ffffffffffff")]
+        [InlineData("cccccccc-0000-0000-0000-000000000001")]
+        [InlineData("12345678-1234-4321-7777-987654321000")]
         public void BothFormsShouldWriteTheSameCanonicalText(string literal)
         {
             var value = Guid.Parse(literal);
@@ -45,11 +44,11 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             JavaUuids.ToUuid(value).toString().Should().Be(literal);
         }
 
-        [TestMethod]
-        [DataRow("00000000-0000-0000-0000-000000000000")]
-        [DataRow("ffffffff-ffff-ffff-ffff-ffffffffffff")]
-        [DataRow("cccccccc-0000-0000-0000-000000000001")]
-        [DataRow("12345678-1234-4321-7777-987654321000")]
+        [Theory]
+        [InlineData("00000000-0000-0000-0000-000000000000")]
+        [InlineData("ffffffff-ffff-ffff-ffff-ffffffffffff")]
+        [InlineData("cccccccc-0000-0000-0000-000000000001")]
+        [InlineData("12345678-1234-4321-7777-987654321000")]
         public void UuidShouldRoundTripThroughGuid(string literal)
         {
             var value = java.util.UUID.fromString(literal);
@@ -68,13 +67,13 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         /// what a generated plan casts a bound value to. It carries the same two halves as the bare
         /// <c>UUID</c>, and this says the transfer does not disagree with the one that goes through it.
         /// </remarks>
-        [TestMethod]
-        [DataRow("00000000-0000-0000-0000-000000000000")]
-        [DataRow("ffffffff-ffff-ffff-ffff-ffffffffffff")]
-        [DataRow("cccccccc-0000-0000-0000-000000000001")]
-        [DataRow("12345678-1234-4321-7777-987654321000")]
-        [DataRow("00000000-0000-0000-ffff-ffffffffffff")] // least-significant half only
-        [DataRow("ffffffff-ffff-ffff-0000-000000000000")] // most-significant half only
+        [Theory]
+        [InlineData("00000000-0000-0000-0000-000000000000")]
+        [InlineData("ffffffff-ffff-ffff-ffff-ffffffffffff")]
+        [InlineData("cccccccc-0000-0000-0000-000000000001")]
+        [InlineData("12345678-1234-4321-7777-987654321000")]
+        [InlineData("00000000-0000-0000-ffff-ffffffffffff")] // least-significant half only
+        [InlineData("ffffffff-ffff-ffff-0000-000000000000")] // most-significant half only
         public void GuidShouldRoundTripThroughUuidValue(string literal)
         {
             var value = Guid.Parse(literal);
@@ -94,7 +93,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         /// This is the fact the three producers rest on, and it is read from the type factory rather than
         /// transcribed: a value handed over as a <c>java.util.UUID</c> fails the cast a plan generates.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void TheJavaClassOfAUuidShouldBeTheWrapper()
         {
             var typeFactory = new org.apache.calcite.jdbc.JavaTypeFactoryImpl();

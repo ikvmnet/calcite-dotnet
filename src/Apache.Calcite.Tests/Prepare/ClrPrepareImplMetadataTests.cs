@@ -4,10 +4,12 @@ using System.Text;
 
 using Apache.Calcite.Extensions.Prepare;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using FluentAssertions;
 
 using org.apache.calcite.avatica;
 using org.apache.calcite.jdbc;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Prepare.Tests
 {
@@ -24,7 +26,6 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
     /// <para>Calcite's own pipeline is the oracle, reached directly rather than through a connection: both
     /// produce a list of <c>ColumnMetaData</c>, so the comparison is field for field.</para>
     /// </remarks>
-    [TestClass]
     public class ClrPrepareImplMetadataTests
     {
 
@@ -112,23 +113,23 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
             });
         }
 
-        [TestMethod]
-        [DataRow("SELECT * FROM SALES")]
-        [DataRow("SELECT ID, REGION FROM SALES")]
-        [DataRow("SELECT AMOUNT FROM SALES")]
-        [DataRow("SELECT COUNT(*) FROM SALES")]
-        [DataRow("SELECT REGION, COUNT(*) FROM SALES GROUP BY REGION")]
-        [DataRow("SELECT SUM(AMOUNT), AVG(AMOUNT) FROM SALES")]
-        [DataRow("SELECT ID + 1 FROM SALES")]
-        [DataRow("SELECT CAST(AMOUNT AS BIGINT), CAST(ID AS VARCHAR(4)) FROM SALES")]
-        [DataRow("SELECT CAST(ID AS DECIMAL(9, 2)) FROM SALES")]
-        [DataRow("SELECT NULL FROM SALES")]
-        [DataRow("SELECT N FROM NUMS")]
-        [DataRow("SELECT ID, ROW_NUMBER() OVER (ORDER BY ID) FROM SALES")]
-        [DataRow("SELECT * FROM (VALUES (1, 'a')) AS t(x, y)")]
-        [DataRow("SELECT `name`, `salary` FROM HR.`emps`")]
-        [DataRow("SELECT CURRENT_TIMESTAMP FROM SALES")]
-        [DataRow("SELECT CAST(NULL AS BOOLEAN) FROM SALES")]
+        [Theory]
+        [InlineData("SELECT * FROM SALES")]
+        [InlineData("SELECT ID, REGION FROM SALES")]
+        [InlineData("SELECT AMOUNT FROM SALES")]
+        [InlineData("SELECT COUNT(*) FROM SALES")]
+        [InlineData("SELECT REGION, COUNT(*) FROM SALES GROUP BY REGION")]
+        [InlineData("SELECT SUM(AMOUNT), AVG(AMOUNT) FROM SALES")]
+        [InlineData("SELECT ID + 1 FROM SALES")]
+        [InlineData("SELECT CAST(AMOUNT AS BIGINT), CAST(ID AS VARCHAR(4)) FROM SALES")]
+        [InlineData("SELECT CAST(ID AS DECIMAL(9, 2)) FROM SALES")]
+        [InlineData("SELECT NULL FROM SALES")]
+        [InlineData("SELECT N FROM NUMS")]
+        [InlineData("SELECT ID, ROW_NUMBER() OVER (ORDER BY ID) FROM SALES")]
+        [InlineData("SELECT * FROM (VALUES (1, 'a')) AS t(x, y)")]
+        [InlineData("SELECT `name`, `salary` FROM HR.`emps`")]
+        [InlineData("SELECT CURRENT_TIMESTAMP FROM SALES")]
+        [InlineData("SELECT CAST(NULL AS BOOLEAN) FROM SALES")]
         public void Columns_should_match_calcite(string sql)
         {
             List<string> calcite;
@@ -139,13 +140,13 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
             }
             catch (Exception e)
             {
-                Assert.Inconclusive($"Calcite cannot prepare this, so it is no oracle for it: {e.Message.Split('\n')[0]}");
+                Assert.Skip($"Calcite cannot prepare this, so it is no oracle for it: {e.Message.Split('\n')[0]}");
                 return;
             }
 
             var clr = Clr(sql);
 
-            CollectionAssert.AreEqual(calcite, clr,
+            clr.Should().Equal(calcite,
                 $"{sql}{Environment.NewLine}calcite: {string.Join(Environment.NewLine + "         ", calcite)}{Environment.NewLine}clr:     {string.Join(Environment.NewLine + "         ", clr)}");
         }
 
@@ -155,12 +156,12 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// than a one-element array and that is the shape that has broken before.
         /// </summary>
         /// <param name="sql"></param>
-        [TestMethod]
-        [DataRow("SELECT * FROM SALES")]
-        [DataRow("SELECT ID FROM SALES")]
-        [DataRow("SELECT COUNT(*) FROM SALES")]
-        [DataRow("SELECT N FROM NUMS")]
-        [DataRow("SELECT `name` FROM HR.`emps`")]
+        [Theory]
+        [InlineData("SELECT * FROM SALES")]
+        [InlineData("SELECT ID FROM SALES")]
+        [InlineData("SELECT COUNT(*) FROM SALES")]
+        [InlineData("SELECT N FROM NUMS")]
+        [InlineData("SELECT `name` FROM HR.`emps`")]
         public void Cursor_factory_should_match_calcite(string sql)
         {
             var clr = ClrPrepareFixture.WithContext(sql, (context, _) =>
@@ -172,7 +173,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
                 return prepare.prepareSql(context, CalcitePrepare.Query.of(sql), (java.lang.Class)typeof(object[]), -1).cursorFactory.style.name();
             });
 
-            Assert.AreEqual(calcite, clr, sql);
+            clr.Should().Be(calcite, sql);
         }
 
         /// <summary>
@@ -180,17 +181,17 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// <see cref="IClrPrepare.Signature.Bind"/> here. Nothing else exercises it, because every caller in this
         /// project passes -1.
         /// </summary>
-        [TestMethod]
-        [DataRow(-1L, 6)]
-        [DataRow(0L, 0)]
-        [DataRow(1L, 1)]
-        [DataRow(4L, 4)]
-        [DataRow(100L, 6)]
+        [Theory]
+        [InlineData(-1L, 6)]
+        [InlineData(0L, 0)]
+        [InlineData(1L, 1)]
+        [InlineData(4L, 4)]
+        [InlineData(100L, 6)]
         public void Max_row_count_should_limit_the_result(long maxRowCount, int expected)
         {
             var rows = ClrPrepareImplDifferentialTests.RunClr("SELECT ID FROM SALES ORDER BY ID", maxRowCount);
 
-            Assert.AreEqual(expected, rows.Count, $"maxRowCount={maxRowCount}");
+            rows.Count.Should().Be(expected, $"maxRowCount={maxRowCount}");
         }
 
     }

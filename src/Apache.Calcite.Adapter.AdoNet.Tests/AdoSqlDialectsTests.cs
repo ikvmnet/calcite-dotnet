@@ -1,8 +1,8 @@
-using Apache.Calcite.Adapter.AdoNet.Metadata;
-
 using System.Text.RegularExpressions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Apache.Calcite.Adapter.AdoNet.Metadata;
+
+using FluentAssertions;
 
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql;
@@ -11,6 +11,9 @@ using org.apache.calcite.sql.fun;
 using org.apache.calcite.sql.parser;
 using org.apache.calcite.sql.pretty;
 using org.apache.calcite.sql.type;
+
+using Xunit;
+using Xunit.Sdk;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -23,7 +26,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// No database, so this runs everywhere, which matters: the ODBC and OLE DB suites that reach the same
     /// code end to end need a Windows machine with LocalDB and skip on the rest of the matrix.
     /// </remarks>
-    [TestClass]
     public class AdoSqlDialectsTests
     {
 
@@ -134,48 +136,48 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// SQL Server is absent because its dialect is not Calcite's own instance — see
         /// <see cref="TheCorrectedDialectIsStillTheSqlServerOne"/>.
         /// </remarks>
-        [TestMethod]
-        [DataRow("PostgreSQL", "PostgresqlSqlDialect")]
-        [DataRow("Oracle", "OracleSqlDialect")]
-        [DataRow("MySQL", "MysqlSqlDialect")]
-        [DataRow("Apache Derby", "DerbySqlDialect")]
-        [DataRow("ACCESS", "AccessSqlDialect")]
+        [Theory]
+        [InlineData("PostgreSQL", "PostgresqlSqlDialect")]
+        [InlineData("Oracle", "OracleSqlDialect")]
+        [InlineData("MySQL", "MysqlSqlDialect")]
+        [InlineData("Apache Derby", "DerbySqlDialect")]
+        [InlineData("ACCESS", "AccessSqlDialect")]
         // the DB2 driver reports its platform, and Calcite matches the prefix rather than the word
-        [DataRow("DB2/LINUXX8664", "Db2SqlDialect")]
-        [DataRow("Teradata Database", "TeradataSqlDialect")]
-        [DataRow("SQLite", "SqliteSqlDialect")]
+        [InlineData("DB2/LINUXX8664", "Db2SqlDialect")]
+        [InlineData("Teradata Database", "TeradataSqlDialect")]
+        [InlineData("SQLite", "SqliteSqlDialect")]
         public void AProductNameSelectsItsDialect(string productName, string expected)
         {
-            Assert.AreEqual(expected, AdoSqlDialects.For(productName, "1.0").GetType().Name);
+            Assert.Equal(expected, AdoSqlDialects.For(productName, "1.0").GetType().Name);
         }
 
         /// <summary>
         /// Calcite matches the name case-insensitively and after trimming, so this does too.
         /// </summary>
-        [TestMethod]
-        [DataRow("microsoft sql server")]
-        [DataRow("  Microsoft SQL Server  ")]
-        [DataRow("Microsoft SQL Server Enterprise Edition")]
+        [Theory]
+        [InlineData("microsoft sql server")]
+        [InlineData("  Microsoft SQL Server  ")]
+        [InlineData("Microsoft SQL Server Enterprise Edition")]
         public void TheProductNameIsMatchedLoosely(string productName)
         {
-            Assert.IsInstanceOfType<MssqlSqlDialect>(AdoSqlDialects.For(productName, "15.0"));
+            Assert.IsAssignableFrom<MssqlSqlDialect>(AdoSqlDialects.For(productName, "15.0"));
         }
 
         /// <summary>
         /// A driver that will not say what is behind it still has to get a dialect, and the generic one is
         /// what Calcite's own factory ends at.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AnUnknownProductGetsTheGenericDialect()
         {
-            Assert.AreEqual("AnsiSqlDialect", AdoSqlDialects.For(null, null).GetType().Name);
-            Assert.AreEqual("AnsiSqlDialect", AdoSqlDialects.For("Some Database Nobody Has Heard Of", "1.2.3").GetType().Name);
+            Assert.Equal("AnsiSqlDialect", AdoSqlDialects.For(null, null).GetType().Name);
+            Assert.Equal("AnsiSqlDialect", AdoSqlDialects.For("Some Database Nobody Has Heard Of", "1.2.3").GetType().Name);
         }
 
-        [TestMethod]
+        [Fact]
         public void AnUnknownProductIsTheUnknownProduct()
         {
-            Assert.AreEqual(
+            Assert.Equal(
                 SqlDialect.DatabaseProduct.UNKNOWN,
                 AdoSqlDialects.ProductFor("Some Database Nobody Has Heard Of"));
         }
@@ -184,16 +186,16 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
         #region Version
 
-        [TestMethod]
-        [DataRow("15.00.4382", 15, 0)]
-        [DataRow("10.50.1600.1", 10, 50)]
-        [DataRow("9", 9, 0)]
-        [DataRow("", 0, 0)]
-        [DataRow(null, 0, 0)]
+        [Theory]
+        [InlineData("15.00.4382", 15, 0)]
+        [InlineData("10.50.1600.1", 10, 50)]
+        [InlineData("9", 9, 0)]
+        [InlineData("", 0, 0)]
+        [InlineData(null, 0, 0)]
         public void AVersionIsSplitIntoItsComponents(string? version, int major, int minor)
         {
-            Assert.AreEqual(major, AdoSqlDialects.MajorVersion(version));
-            Assert.AreEqual(minor, AdoSqlDialects.MinorVersion(version));
+            Assert.Equal(major, AdoSqlDialects.MajorVersion(version));
+            Assert.Equal(minor, AdoSqlDialects.MinorVersion(version));
         }
 
         /// <summary>
@@ -201,29 +203,29 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// version 11 and <em>discards the offset</em> — a paged query then returns the first page for every
         /// page — so a dialect built without a version is not merely conservative, it is wrong.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void SqlServerPastTwentyTwelveGetsOffsetFetch()
         {
-            StringAssert.Contains(OffsetFetch(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382")), "OFFSET");
+            Assert.Contains("OFFSET", OffsetFetch(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382")));
         }
 
         /// <summary>
         /// And below it, Calcite's own answer, reproduced rather than corrected.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void SqlServerBeforeTwentyTwelveDoesNot()
         {
-            Assert.AreEqual("", OffsetFetch(AdoSqlDialects.For("Microsoft SQL Server", "10.50.1600")).Trim());
+            Assert.Equal("", OffsetFetch(AdoSqlDialects.For("Microsoft SQL Server", "10.50.1600")).Trim());
         }
 
         /// <summary>
         /// A version that could not be read is the same case as no version at all, and lands on the
         /// conservative side rather than throwing.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AnUnreadableVersionIsNotAnError()
         {
-            Assert.IsInstanceOfType<MssqlSqlDialect>(AdoSqlDialects.For("Microsoft SQL Server", "not a version"));
+            Assert.IsAssignableFrom<MssqlSqlDialect>(AdoSqlDialects.For("Microsoft SQL Server", "not a version"));
         }
 
         #endregion
@@ -237,29 +239,29 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// '='", measured. <c>SqlImplementor.visitRoot</c> only runs the rule that rewrites it away when
         /// the dialect has asked for it.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void SqlServerSaysItCannotGroupByAConstant()
         {
-            Assert.IsFalse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382").supportsGroupByLiteral());
+            Assert.False(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382").supportsGroupByLiteral());
         }
 
         /// <summary>
         /// And it is still the SQL Server dialect, rather than a generic one that happens to say the same.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void TheCorrectedDialectIsStillTheSqlServerOne()
         {
-            Assert.IsInstanceOfType<MssqlSqlDialect>(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"));
+            Assert.IsAssignableFrom<MssqlSqlDialect>(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"));
         }
 
         /// <summary>
         /// The correction is to SQL Server alone: a dialect Calcite already had right is left as it is.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AnotherProductKeepsCalcitesOwnAnswer()
         {
-            Assert.IsFalse(AdoSqlDialects.For("PostgreSQL", "16.0").supportsGroupByLiteral(), "Postgres says so itself");
-            Assert.IsTrue(AdoSqlDialects.For("MySQL", "8.0").supportsGroupByLiteral(), "MySQL can");
+            Assert.False(AdoSqlDialects.For("PostgreSQL", "16.0").supportsGroupByLiteral(), "Postgres says so itself");
+            Assert.True(AdoSqlDialects.For("MySQL", "8.0").supportsGroupByLiteral(), "MySQL can");
         }
 
         #endregion
@@ -272,45 +274,45 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// "Insufficient result space to convert uniqueidentifier value to char" and the same cast over a
         /// long string returns its first thirty characters with no error at all.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AnUnboundedVarcharBecomesVarcharMax()
         {
-            Assert.AreEqual("VARCHAR(MAX)", CastSpec(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), Types.createSqlType(SqlTypeName.VARCHAR)));
+            Assert.Equal("VARCHAR(MAX)", CastSpec(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), Types.createSqlType(SqlTypeName.VARCHAR)));
         }
 
         /// <summary>
         /// And the answer this corrects, so that the test says what it is for: Calcite writes the keyword
         /// alone, which is a different type on the server.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void CalcitesOwnAnswerIsTheBareKeyword()
         {
-            Assert.AreEqual("VARCHAR", CastSpec(MssqlSqlDialect.DEFAULT, Types.createSqlType(SqlTypeName.VARCHAR)));
+            Assert.Equal("VARCHAR", CastSpec(MssqlSqlDialect.DEFAULT, Types.createSqlType(SqlTypeName.VARCHAR)));
         }
 
         /// <summary>
         /// The correction is to the unbounded case alone: a stated length is what the caller asked for and
         /// is written as it stands.
         /// </summary>
-        [TestMethod]
-        [DataRow(nameof(SqlTypeName.VARCHAR), 36, "VARCHAR(36)")]
-        [DataRow(nameof(SqlTypeName.CHAR), 36, "CHAR(36)")]
-        [DataRow(nameof(SqlTypeName.VARBINARY), 16, "VARBINARY(16)")]
-        [DataRow(nameof(SqlTypeName.BINARY), 4, "BINARY(4)")]
+        [Theory]
+        [InlineData(nameof(SqlTypeName.VARCHAR), 36, "VARCHAR(36)")]
+        [InlineData(nameof(SqlTypeName.CHAR), 36, "CHAR(36)")]
+        [InlineData(nameof(SqlTypeName.VARBINARY), 16, "VARBINARY(16)")]
+        [InlineData(nameof(SqlTypeName.BINARY), 4, "BINARY(4)")]
         public void AStatedLengthIsLeftAlone(string typeName, int precision, string expected)
         {
             var type = Types.createSqlType(SqlTypeName.valueOf(typeName), precision);
-            Assert.AreEqual(expected, CastSpec(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), type));
+            Assert.Equal(expected, CastSpec(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), type));
         }
 
         /// <summary>
         /// <c>varbinary</c> carries the same rule over bytes, and <c>VARBINARY</c>'s default precision is
         /// unspecified for the same reason <c>VARCHAR</c>'s is.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AnUnboundedVarbinaryBecomesVarbinaryMax()
         {
-            Assert.AreEqual("VARBINARY(MAX)", CastSpec(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), Types.createSqlType(SqlTypeName.VARBINARY)));
+            Assert.Equal("VARBINARY(MAX)", CastSpec(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), Types.createSqlType(SqlTypeName.VARBINARY)));
         }
 
         /// <summary>
@@ -319,33 +321,33 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// thirty. There is no <c>char(max)</c> in T-SQL, and a fixed length with no length has nothing to
         /// pad to.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AnUnboundedCharBecomesVarcharMax()
         {
             var type = MssqlTypes.createSqlType(SqlTypeName.CHAR);
-            Assert.AreEqual("CHAR", CastSpec(MssqlSqlDialect.DEFAULT, type), "the answer being corrected");
-            Assert.AreEqual("VARCHAR(MAX)", CastSpec(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), type));
+            CastSpec(MssqlSqlDialect.DEFAULT, type).Should().Be("CHAR", "the answer being corrected");
+            Assert.Equal("VARCHAR(MAX)", CastSpec(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), type));
         }
 
         /// <summary>
         /// Under the default type system a <c>CHAR</c> has a precision of one, so nothing changes for it.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ACharOfTheDefaultTypeSystemKeepsItsOne()
         {
-            Assert.AreEqual("CHAR(1)", CastSpec(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), Types.createSqlType(SqlTypeName.CHAR)));
+            Assert.Equal("CHAR(1)", CastSpec(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), Types.createSqlType(SqlTypeName.CHAR)));
         }
 
         /// <summary>
         /// Nothing else is touched.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AnotherTypeKeepsCalcitesAnswer()
         {
             var dialect = AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382");
 
-            Assert.AreEqual("INTEGER", CastSpec(dialect, Types.createSqlType(SqlTypeName.INTEGER)));
-            Assert.AreEqual("DECIMAL(12, 3)", CastSpec(dialect, Types.createSqlType(SqlTypeName.DECIMAL, 12, 3)));
+            Assert.Equal("INTEGER", CastSpec(dialect, Types.createSqlType(SqlTypeName.INTEGER)));
+            Assert.Equal("DECIMAL(12, 3)", CastSpec(dialect, Types.createSqlType(SqlTypeName.DECIMAL, 12, 3)));
         }
 
         /// <summary>
@@ -354,28 +356,28 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// what Calcite means. The claim is that no length was written, rather than that the whole spec is
         /// the keyword: SQLite says it supports a character set, so Calcite names one after it.
         /// </summary>
-        [TestMethod]
-        [DataRow("SQLite")]
-        [DataRow("PostgreSQL")]
+        [Theory]
+        [InlineData("SQLite")]
+        [InlineData("PostgreSQL")]
         public void AnotherProductKeepsTheBareKeyword(string productName)
         {
             var spec = CastSpec(AdoSqlDialects.For(productName, "1.0"), Types.createSqlType(SqlTypeName.VARCHAR));
 
-            StringAssert.StartsWith(spec, "VARCHAR");
-            Assert.IsFalse(spec.Contains('('), $"a length was written where the bare keyword is right: {spec}");
+            Assert.StartsWith("VARCHAR", spec);
+            Assert.False(spec.Contains('('), $"a length was written where the bare keyword is right: {spec}");
         }
 
         /// <summary>
         /// A driver that only says what is behind it reaches the same corrected dialect, which is what
         /// carries the fix to ODBC and OLE DB over SQL Server.
         /// </summary>
-        [TestMethod]
-        [DataRow("Microsoft SQL Server")]
-        [DataRow("microsoft sql server")]
-        [DataRow("Microsoft SQL Server Enterprise Edition")]
+        [Theory]
+        [InlineData("Microsoft SQL Server")]
+        [InlineData("microsoft sql server")]
+        [InlineData("Microsoft SQL Server Enterprise Edition")]
         public void AnyNameThatSelectsSqlServerGetsTheCorrection(string productName)
         {
-            Assert.AreEqual("VARCHAR(MAX)", CastSpec(AdoSqlDialects.For(productName, "10.50.1600"), Types.createSqlType(SqlTypeName.VARCHAR)));
+            Assert.Equal("VARCHAR(MAX)", CastSpec(AdoSqlDialects.For(productName, "10.50.1600"), Types.createSqlType(SqlTypeName.VARCHAR)));
         }
 
         #endregion
@@ -387,19 +389,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// The four shapes are the ones measured in the report, and the fifth is two literals, which are
         /// not folded away — so there is no spelling of the expression that avoids the operator.
         /// </summary>
-        [TestMethod]
-        [DataRow("SELECT A || B FROM CAT WHERE ID = 1", "a projection")]
-        [DataRow("SELECT ID FROM CAT WHERE A || B = 'aabb'", "a predicate")]
-        [DataRow("SELECT ID FROM CAT ORDER BY A || B", "a sort key")]
-        [DataRow("SELECT MAX(A || B) FROM CAT", "an aggregate argument")]
-        [DataRow("SELECT A || B FROM CAT GROUP BY A || B", "a group key")]
-        [DataRow("SELECT 'x' || 'y' FROM CAT WHERE ID = 1", "two literals")]
+        [Theory]
+        [InlineData("SELECT A || B FROM CAT WHERE ID = 1", "a projection")]
+        [InlineData("SELECT ID FROM CAT WHERE A || B = 'aabb'", "a predicate")]
+        [InlineData("SELECT ID FROM CAT ORDER BY A || B", "a sort key")]
+        [InlineData("SELECT MAX(A || B) FROM CAT", "an aggregate argument")]
+        [InlineData("SELECT A || B FROM CAT GROUP BY A || B", "a group key")]
+        [InlineData("SELECT 'x' || 'y' FROM CAT WHERE ID = 1", "two literals")]
         public void ConcatenationIsWrittenAsPlus(string sql, string shape)
         {
             var written = Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), sql);
 
-            Assert.IsFalse(written.Contains("||"), $"{shape} still carries the operator the server refuses: {written}");
-            StringAssert.Contains(written, "+", $"{shape}: {written}");
+            Assert.False(written.Contains("||"), $"{shape} still carries the operator the server refuses: {written}");
+            written.Should().Contain("+", $"{shape}: {written}");
         }
 
         /// <summary>
@@ -412,10 +414,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// 1.43 snapshot made the substitution upstream, so the override went and this is what holds the
         /// reason it can stay gone.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void CalciteWritesThePlusItself()
         {
-            Assert.AreEqual(
+            Assert.Equal(
                 "SELECT [A] + [B] FROM [CAT] WHERE [ID] = 1",
                 Unparse(MssqlSqlDialect.DEFAULT, "SELECT A || B FROM CAT WHERE ID = 1"));
         }
@@ -424,22 +426,22 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// The whole statement, rather than the operator alone, for each shape — a substitution that writes
         /// the right operator into the wrong place is still wrong.
         /// </summary>
-        [TestMethod]
-        [DataRow(
+        [Theory]
+        [InlineData(
             "SELECT A || B FROM CAT WHERE ID = 1",
             "SELECT [A] + [B] FROM [CAT] WHERE [ID] = 1")]
-        [DataRow(
+        [InlineData(
             "SELECT ID FROM CAT WHERE A || B = 'aabb'",
             "SELECT [ID] FROM [CAT] WHERE [A] + [B] = 'aabb'")]
-        [DataRow(
+        [InlineData(
             "SELECT MAX(A || B) FROM CAT",
             "SELECT MAX([A] + [B]) FROM [CAT]")]
-        [DataRow(
+        [InlineData(
             "SELECT A || B FROM CAT GROUP BY A || B",
             "SELECT [A] + [B] FROM [CAT] GROUP BY [A] + [B]")]
         public void TheStatementIsWrittenWhole(string sql, string expected)
         {
-            Assert.AreEqual(expected, Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), sql));
+            Assert.Equal(expected, Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), sql));
         }
 
         /// <summary>
@@ -448,40 +450,40 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <c>CONCAT_NULL_YIELDS_NULL</c>, and T-SQL's <c>CONCAT</c> reads a null operand as the empty
         /// string. The function would turn a query that should return nothing into one that returns a row.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void TheFunctionIsNotWhatIsWritten()
         {
             var written = Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), "SELECT A || B FROM CAT");
 
-            Assert.IsFalse(written.Contains("CONCAT"), $"the function does not propagate null: {written}");
+            Assert.False(written.Contains("CONCAT"), $"the function does not propagate null: {written}");
         }
 
         /// <summary>
         /// The correction is SQL Server's alone: a product whose own operator is <c>||</c> keeps it.
         /// </summary>
-        [TestMethod]
-        [DataRow("PostgreSQL")]
-        [DataRow("SQLite")]
-        [DataRow("Oracle")]
+        [Theory]
+        [InlineData("PostgreSQL")]
+        [InlineData("SQLite")]
+        [InlineData("Oracle")]
         // the generic dialect an unknown product gets, which is where a driver that will not say what it
         // fronts ends up
-        [DataRow("Some Database Nobody Has Heard Of")]
+        [InlineData("Some Database Nobody Has Heard Of")]
         public void AnotherProductKeepsTheOperator(string productName)
         {
-            StringAssert.Contains(Unparse(AdoSqlDialects.For(productName, "1.0"), "SELECT A || B FROM CAT"), "||");
+            Assert.Contains("||", Unparse(AdoSqlDialects.For(productName, "1.0"), "SELECT A || B FROM CAT"));
         }
 
         /// <summary>
         /// ODBC and OLE DB reach SQL Server through this same dialect, and a name is all either can offer,
         /// so every name that selects SQL Server has to carry the correction with it.
         /// </summary>
-        [TestMethod]
-        [DataRow("Microsoft SQL Server")]
-        [DataRow("microsoft sql server")]
-        [DataRow("Microsoft SQL Server Enterprise Edition")]
+        [Theory]
+        [InlineData("Microsoft SQL Server")]
+        [InlineData("microsoft sql server")]
+        [InlineData("Microsoft SQL Server Enterprise Edition")]
         public void AnyNameThatSelectsSqlServerGetsTheOperator(string productName)
         {
-            Assert.AreEqual(
+            Assert.Equal(
                 "SELECT [A] + [B] FROM [CAT]",
                 Unparse(AdoSqlDialects.For(productName, "10.50.1600"), "SELECT A || B FROM CAT"));
         }
@@ -492,13 +494,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// on — CALCITE-6726 swapped an operator in the same way — and <c>CEIL</c> is a rewrite of a
         /// different shape.
         /// </summary>
-        [TestMethod]
-        [DataRow("SELECT CEIL(SALARY) FROM CAT", "CEILING")]
-        [DataRow("SELECT SUBSTRING(A FROM 1 FOR 2) FROM CAT", "SUBSTRING")]
-        [DataRow("SELECT CAST(A AS INTEGER) FROM CAT", "CAST")]
+        [Theory]
+        [InlineData("SELECT CEIL(SALARY) FROM CAT", "CEILING")]
+        [InlineData("SELECT SUBSTRING(A FROM 1 FOR 2) FROM CAT", "SUBSTRING")]
+        [InlineData("SELECT CAST(A AS INTEGER) FROM CAT", "CAST")]
         public void TheDialectsOwnInterceptionsStillHappen(string sql, string expected)
         {
-            StringAssert.Contains(Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), sql), expected);
+            Assert.Contains(expected, Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), sql));
         }
 
 
@@ -517,47 +519,47 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// and inside a call that writes its own parentheses; all four are here, and the last two rows are
         /// where the two precedences differ and the parentheses are not carried.
         /// </remarks>
-        [TestMethod]
+        [Theory]
         // concatenation in concatenation, which associates the same either way
-        [DataRow(
+        [InlineData(
             "SELECT A || B || C FROM CAT",
             "SELECT [A] + [B] + [C] FROM [CAT]")]
         // the parentheses the caller wrote are dropped, both operators being left associative and
         // concatenation associative, so the expression means the same either way
-        [DataRow(
+        [InlineData(
             "SELECT A || (B || C) FROM CAT",
             "SELECT [A] + [B] + [C] FROM [CAT]")]
         // against a comparison, which binds looser than either spelling
-        [DataRow(
+        [InlineData(
             "SELECT ID FROM CAT WHERE A || B = 'aabb'",
             "SELECT [ID] FROM [CAT] WHERE [A] + [B] = 'aabb'")]
-        [DataRow(
+        [InlineData(
             "SELECT ID FROM CAT WHERE A || B > 'aa' AND ID > 1",
             "SELECT [ID] FROM [CAT] WHERE [A] + [B] > 'aa' AND [ID] > 1")]
         // a postfix operator, which is what a sort key's null ordering is written with
-        [DataRow(
+        [InlineData(
             "SELECT ID FROM CAT WHERE A || B IS NULL",
             "SELECT [ID] FROM [CAT] WHERE [A] + [B] IS NULL")]
         // arithmetic reaches a string only through a cast, and a cast writes its own parentheses
-        [DataRow(
+        [InlineData(
             "SELECT A || CAST(ID + 1 AS VARCHAR(4)) FROM CAT",
             "SELECT [A] + CAST([ID] + 1 AS VARCHAR(4)) FROM [CAT]")]
-        [DataRow(
+        [InlineData(
             "SELECT CAST(A || B AS VARCHAR(4)) FROM CAT",
             "SELECT CAST([A] + [B] AS VARCHAR(4)) FROM [CAT]")]
         // and inside a function call, whose frame parenthesises whatever it holds
-        [DataRow(
+        [InlineData(
             "SELECT UPPER(A || B) FROM CAT",
             "SELECT UPPER([A] + [B]) FROM [CAT]")]
         // the one context that binds between the two precedences, where the grouping is not carried: a
         // reader would take this as [A] + ([B] * 2). It needs a string as an operand of *, which does not
         // validate, so no statement reaches the server through it
-        [DataRow(
+        [InlineData(
             "SELECT (A || B) * 2 FROM CAT",
             "SELECT [A] + [B] * 2 FROM [CAT]")]
         public void ANestedConcatenationKeepsItsGrouping(string sql, string expected)
         {
-            Assert.AreEqual(expected, Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), sql));
+            Assert.Equal(expected, Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), sql));
         }
 
         /// <summary>
@@ -574,10 +576,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// The adapter closed the gap while it was making the substitution itself and no longer can, the
         /// substitution now happening inside <c>MssqlSqlDialect</c> rather than around it.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void TheGroupingUpstreamDropsIsUnreachable()
         {
-            Assert.AreEqual(
+            Assert.Equal(
                 "SELECT [A] + [B] * 2 FROM [CAT]",
                 Unparse(MssqlSqlDialect.DEFAULT, "SELECT (A || B) * 2 FROM CAT"));
         }
@@ -596,10 +598,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <c>SqlKind.MOD</c>, which an unresolved call does not carry — so parse-then-unparse writes
         /// <c>MOD([A], [B])</c> and says nothing about the interception either way.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ModuloIsWrittenAsThePercentOperator()
         {
-            Assert.AreEqual("[A] % [B]", Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), Modulo()));
+            Assert.Equal("[A] % [B]", Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), Modulo()));
         }
 
         /// <summary>
@@ -608,15 +610,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// binds at 60, the substitution loses the grouping the call had, and the operands being numeric
         /// there is no shape of the expression a validated plan cannot reach.
         /// </summary>
-        [TestMethod]
-        [DataRow(nameof(SqlStdOperatorTable.DIVIDE), "[N] / ([A] % [B])")]
-        [DataRow(nameof(SqlStdOperatorTable.MULTIPLY), "[N] * ([A] % [B])")]
-        [DataRow(nameof(SqlStdOperatorTable.MOD), "[N] % ([A] % [B])")]
+        [Theory]
+        [InlineData(nameof(SqlStdOperatorTable.DIVIDE), "[N] / ([A] % [B])")]
+        [InlineData(nameof(SqlStdOperatorTable.MULTIPLY), "[N] * ([A] % [B])")]
+        [InlineData(nameof(SqlStdOperatorTable.MOD), "[N] % ([A] % [B])")]
         public void AModuloAsARightOperandKeepsItsGrouping(string operatorName, string expected)
         {
             var call = Call(OperatorNamed(operatorName), Column("N"), Modulo());
 
-            Assert.AreEqual(expected, Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), call));
+            Assert.Equal(expected, Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), call));
         }
 
         /// <summary>
@@ -624,15 +626,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// server from the left: over 12, 7 and 4 they answer 1, 0 and 1 where the expressions mean 4, 36
         /// and 0 — measured on the server, not derived from the precedence table.
         /// </summary>
-        [TestMethod]
-        [DataRow(nameof(SqlStdOperatorTable.DIVIDE), "[N] / [A] % [B]")]
-        [DataRow(nameof(SqlStdOperatorTable.MULTIPLY), "[N] * [A] % [B]")]
-        [DataRow(nameof(SqlStdOperatorTable.MOD), "[N] % [A] % [B]")]
+        [Theory]
+        [InlineData(nameof(SqlStdOperatorTable.DIVIDE), "[N] / [A] % [B]")]
+        [InlineData(nameof(SqlStdOperatorTable.MULTIPLY), "[N] * [A] % [B]")]
+        [InlineData(nameof(SqlStdOperatorTable.MOD), "[N] % [A] % [B]")]
         public void CalcitesOwnAnswerLosesTheGrouping(string operatorName, string expected)
         {
             var call = Call(OperatorNamed(operatorName), Column("N"), Modulo());
 
-            Assert.AreEqual(expected, Unparse(MssqlSqlDialect.DEFAULT, call));
+            Assert.Equal(expected, Unparse(MssqlSqlDialect.DEFAULT, call));
         }
 
         /// <summary>
@@ -641,32 +643,32 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <c>-</c>; and SQL Server's <c>%</c> takes the sign of its dividend, so <c>(-a) % b</c> and
         /// <c>-(a % b)</c> agree.
         /// </summary>
-        [TestMethod]
-        [DataRow(nameof(SqlStdOperatorTable.MULTIPLY), "[A] % [B] * [N]")]
-        [DataRow(nameof(SqlStdOperatorTable.DIVIDE), "[A] % [B] / [N]")]
-        [DataRow(nameof(SqlStdOperatorTable.MINUS), "[A] % [B] - [N]")]
-        [DataRow(nameof(SqlStdOperatorTable.EQUALS), "[A] % [B] = [N]")]
+        [Theory]
+        [InlineData(nameof(SqlStdOperatorTable.MULTIPLY), "[A] % [B] * [N]")]
+        [InlineData(nameof(SqlStdOperatorTable.DIVIDE), "[A] % [B] / [N]")]
+        [InlineData(nameof(SqlStdOperatorTable.MINUS), "[A] % [B] - [N]")]
+        [InlineData(nameof(SqlStdOperatorTable.EQUALS), "[A] % [B] = [N]")]
         public void AModuloAsALeftOperandIsUnchanged(string operatorName, string expected)
         {
             var call = Call(OperatorNamed(operatorName), Modulo(), Column("N"));
             var dialect = AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382");
 
-            Assert.AreEqual(expected, Unparse(dialect, call));
-            Assert.AreEqual(expected, Unparse(MssqlSqlDialect.DEFAULT, call), "Calcite already writes this one");
+            Assert.Equal(expected, Unparse(dialect, call));
+            Unparse(MssqlSqlDialect.DEFAULT, call).Should().Be(expected, "Calcite already writes this one");
         }
 
         /// <summary>
         /// The right-operand context that was already right, for the same reason: a looser operator needs
         /// no parentheses around a tighter one, and <c>%</c> binds tighter than <c>-</c>.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AModuloUnderALooserOperatorIsUnchanged()
         {
             var dialect = AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382");
             var minus = Call(SqlStdOperatorTable.MINUS, Column("N"), Modulo());
 
-            Assert.AreEqual("[N] - [A] % [B]", Unparse(dialect, minus));
-            Assert.AreEqual(Unparse(MssqlSqlDialect.DEFAULT, minus), Unparse(dialect, minus));
+            Assert.Equal("[N] - [A] % [B]", Unparse(dialect, minus));
+            Assert.Equal(Unparse(MssqlSqlDialect.DEFAULT, minus), Unparse(dialect, minus));
         }
 
         /// <summary>
@@ -680,24 +682,24 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// at -3 over 7 and 4. The rule the override applies does not know that and does not need to: it
         /// writes the grouping the call had, and a parenthesis that was not needed costs nothing.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void AModuloUnderAPrefixOperatorIsParenthesised()
         {
             var negated = Call(SqlStdOperatorTable.UNARY_MINUS, Modulo());
 
-            Assert.AreEqual("- ([A] % [B])", Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), negated));
-            Assert.AreEqual("- [A] % [B]", Unparse(MssqlSqlDialect.DEFAULT, negated), "the answer this does not need to correct");
+            Assert.Equal("- ([A] % [B])", Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), negated));
+            Unparse(MssqlSqlDialect.DEFAULT, negated).Should().Be("- [A] % [B]", "the answer this does not need to correct");
         }
 
         /// <summary>
         /// A postfix operator, which is what a sort key's null ordering is written with.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AModuloUnderAPostfixOperatorIsUnchanged()
         {
             var call = Call(SqlStdOperatorTable.IS_NULL, Modulo());
 
-            Assert.AreEqual("[A] % [B] IS NULL", Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), call));
+            Assert.Equal("[A] % [B] IS NULL", Unparse(AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382"), call));
         }
 
         /// <summary>
@@ -707,7 +709,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// precedences <c>SqlCall.unparse</c> has just applied it to, so it answers the same and no
         /// parenthesis is written twice.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ThePercentOperatorItselfIsUnchanged()
         {
             var dialect = AdoSqlDialects.For("Microsoft SQL Server", "15.00.4382");
@@ -721,7 +723,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
                 Call(SqlStdOperatorTable.UNARY_MINUS, percent),
             })
             {
-                Assert.AreEqual(Unparse(MssqlSqlDialect.DEFAULT, call), Unparse(dialect, call));
+                Assert.Equal(Unparse(MssqlSqlDialect.DEFAULT, call), Unparse(dialect, call));
             }
         }
 
@@ -729,14 +731,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// The correction is SQL Server's alone. Another product writes the function, and writes it whole,
         /// so there is no substitution to lose a grouping over.
         /// </summary>
-        [TestMethod]
-        [DataRow("PostgreSQL")]
-        [DataRow("Oracle")]
+        [Theory]
+        [InlineData("PostgreSQL")]
+        [InlineData("Oracle")]
         public void AnotherProductKeepsTheFunction(string productName)
         {
             var call = Call(SqlStdOperatorTable.DIVIDE, Column("N"), Modulo());
 
-            Assert.IsFalse(Unparse(AdoSqlDialects.For(productName, "1.0"), call).Contains('%'));
+            Assert.False(Unparse(AdoSqlDialects.For(productName, "1.0"), call).Contains('%'));
         }
 
         /// <summary>
@@ -753,7 +755,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
                 nameof(SqlStdOperatorTable.MINUS) => SqlStdOperatorTable.MINUS,
                 nameof(SqlStdOperatorTable.EQUALS) => SqlStdOperatorTable.EQUALS,
                 nameof(SqlStdOperatorTable.MOD) => SqlStdOperatorTable.MOD,
-                _ => throw new AssertFailedException($"no operator {name}"),
+                _ => throw new XunitException($"no operator {name}"),
             };
         }
 

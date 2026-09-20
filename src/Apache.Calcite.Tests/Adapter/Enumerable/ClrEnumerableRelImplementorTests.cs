@@ -10,13 +10,13 @@ using Apache.Calcite.Tests;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.schema;
 using org.apache.calcite.tools;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -36,7 +36,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// call carries the trailing token that <c>[EnumeratorCancellation]</c> reads. A crossing is allowed only
     /// where the schema forces one, and where it is forced it is required to be exactly one call.</para>
     /// </remarks>
-    [TestClass]
     public class ClrEnumerableRelImplementorTests
     {
 
@@ -201,7 +200,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// Implemented synchronously, every operator call is a synchronous one, and the lambda says so.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldBuildTheSynchronousOperatorsSynchronously()
         {
             foreach (var sql in Queries)
@@ -234,7 +233,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <para>The statement's own token reaches the same place from the other end: the awaiting root
         /// reads it off the <c>DataContext</c> and wraps the plan so that it is the enumerator's token.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldBuildTheAwaitingOperatorsAsynchronously()
         {
             foreach (var sql in Queries)
@@ -287,7 +286,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// The property the prepare pipeline rests on: a statement is planned once and read either way, so
         /// the two implementations must come off the same nodes without either disturbing them.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldImplementOnePlannedRootBothWays()
         {
             var rootSchema = Schema();
@@ -327,7 +326,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// member and that everything above the leaf belongs to that fork, which is what this now holds.
         /// <c>ShouldReadTheSameRowsThroughEitherHalfOfTheTableSpi</c> holds the part that moved.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldCallTheTableSpiMemberOfItsOwnFork()
         {
             var rootSchema = Frameworks.createRootSchema(true);
@@ -361,7 +360,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// looks the same as for a table that implements both: one call to the awaiting member, and the cost
         /// of the table having no awaiting rows to give is inside the table.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldCallTheAwaitingMemberOfAPulledOnlyTable()
         {
             var rootSchema = Frameworks.createRootSchema(true);
@@ -386,7 +385,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// only a pulled half is read through its defaulted awaiting one, and a table with only an awaiting
         /// half through the pulled one it wrote over it; both have to answer the rows the other does.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldReadTheSameRowsThroughEitherHalfOfTheTableSpi()
         {
             var context = new TestDataContext(Frameworks.createRootSchema(true), new java.util.HashMap());

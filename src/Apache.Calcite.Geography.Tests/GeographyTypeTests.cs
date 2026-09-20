@@ -2,11 +2,11 @@ using Apache.Calcite.Geography.Rel.Type;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.jdbc;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -25,11 +25,10 @@ namespace Apache.Calcite.Geography.Tests
     /// a schema is the only way an adapter can bring its functions with it. These tests pin what was given up,
     /// so that the giving up stays deliberate rather than becoming folklore.
     /// </remarks>
-    [TestClass]
     public class GeographyTypeTests
     {
 
-        [TestMethod]
+        [Fact]
         public void ShouldBeCalcitesGeometryType()
         {
             var type = GeographyTypes.Of(GeographyFixture.TypeFactory());
@@ -40,7 +39,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The runtime carrier is an ordinary JTS geometry, asked either way round.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldReportJtsGeometryAsItsJavaClass()
         {
             var typeFactory = new JavaTypeFactoryImpl();
@@ -57,7 +56,7 @@ namespace Apache.Calcite.Geography.Tests
         /// The cost of the design, stated as an assertion so that it cannot be mislaid. What says a value is
         /// to be read geodesically is the name of the operator applied to it, and nothing else.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldBeTheSameTypeAsCalcitesGeometry()
         {
             var typeFactory = GeographyFixture.TypeFactory();
@@ -70,7 +69,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The type is interned, so two asks give one instance.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldInternTheType()
         {
             var typeFactory = GeographyFixture.TypeFactory();
@@ -87,7 +86,7 @@ namespace Apache.Calcite.Geography.Tests
         /// constructing a plain one, so a subclass was dropped the first time a column was declared
         /// <c>NOT NULL</c>. Being Calcite's own type, there is nothing left to drop.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldSurviveAColumnDeclaredNotNull()
         {
             var typeFactory = GeographyFixture.TypeFactory();
@@ -107,7 +106,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <c>leastRestrictive</c> is what a <c>UNION</c> asks. It used to throw over one of each, reaching
         /// the assignment rules for <c>OTHER</c>; there being one type, there is nothing left to refuse.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldBringAnyTwoGeometriesTogether()
         {
             var typeFactory = GeographyFixture.TypeFactory();

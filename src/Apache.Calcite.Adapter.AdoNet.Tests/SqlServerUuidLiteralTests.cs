@@ -1,10 +1,12 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Collections.Generic;
+using System.Linq;
+
+using FluentAssertions;
 
 using org.apache.calcite.jdbc;
 using org.apache.calcite.runtime;
 
-using System.Collections.Generic;
-using System.Linq;
+using Xunit;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -26,7 +28,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// names it, reached from the one place the literal's own unparse would not ask the dialect for.
     /// </para>
     /// </remarks>
-    [TestClass]
     public class SqlServerUuidLiteralTests
     {
 
@@ -42,11 +43,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// </summary>
         const string KnownGuid = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
 
-        [TestInitialize]
-        public void Setup()
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        public SqlServerUuidLiteralTests()
         {
             if (SqlServerFixture.IsAvailable == false)
-                Assert.Inconclusive("No SQL Server LocalDB instance is reachable on this machine.");
+                Assert.Skip("No SQL Server LocalDB instance is reachable on this machine.");
         }
 
         /// <summary>
@@ -94,10 +97,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// The equality finds its row — the literal reached the server as something it could parse.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AGuidEqualityMatchesItsRow()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "1" },
                 Run($"SELECT ID FROM ADO.TYPES WHERE C_GUID = '{KnownGuid}'").Rows);
         }
@@ -106,10 +109,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// And a GUID that matches nothing is an empty answer rather than a failure — the point being that the
         /// statement ran at all, which before the rewrite it did not.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AGuidEqualityMatchingNothingIsEmpty()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 System.Array.Empty<string>(),
                 Run("SELECT ID FROM ADO.TYPES WHERE C_GUID = '00000000-0000-0000-0000-000000000000'").Rows);
         }
@@ -118,17 +121,17 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// The claim that the server answered: the GUID went down as a cast to the type SQL Server names, not
         /// as the <c>UUID '…'</c> typed literal it has no syntax for.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void TheGuidLiteralIsCastToUniqueidentifierOnTheServer()
         {
             var answer = Run($"SELECT ID FROM ADO.TYPES WHERE C_GUID = '{KnownGuid}'");
             var generated = string.Join("\n", answer.Statements);
 
-            Assert.AreNotEqual(0, answer.Statements.Count, "nothing was pushed down at all");
-            Assert.IsTrue(
+            answer.Statements.Count.Should().NotBe(0, "nothing was pushed down at all");
+            Assert.True(
                 answer.Statements.Any(s => s.ToUpperInvariant().Contains("UNIQUEIDENTIFIER")),
                 $"the GUID was not cast to uniqueidentifier: {generated}");
-            Assert.IsFalse(
+            Assert.False(
                 answer.Statements.Any(s => s.Contains("UUID '")),
                 $"a bare UUID typed literal reached the server: {generated}");
         }

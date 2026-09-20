@@ -5,9 +5,9 @@ using Apache.Calcite.Data;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.rel.type;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -24,7 +24,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// rows were <em>read</em> — and it is the gap between the two that the whole rewrite is about. A suite
     /// that only compared answers could never see it.
     /// </remarks>
-    [TestClass]
     public class ClrEnumerableDefaultsAcquisitionTests
     {
 
@@ -133,7 +132,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// A synchronous plan's Execute acquires the leaf without reading a row.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ExecuteShouldAcquireTheLeafWithoutReading()
         {
             var (c, table) = Open(SynchronousModel);
@@ -160,7 +159,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// A synchronous plan's sort drains its input at Execute, as linq4j's <c>orderBy</c> drains inside
         /// <c>enumerator()</c>.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ExecuteShouldRunASynchronousSort()
         {
             var (c, table) = Open(SynchronousModel);
@@ -192,7 +191,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <c>GetAsyncEnumerator</c>, which Execute reaches. This is the asynchronous half of the rewrite's
         /// point: failures and side effects of starting a plan land at Execute, from either entry point.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ExecuteAsyncShouldAcquireTheLeafWithoutReading()
         {
             var (c, table) = Open(Model);
@@ -223,7 +222,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <c>MoveNextAsync</c>. Acquisition is still eager: the leaf's <c>enumerator()</c> has run before
         /// the first read is asked for.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task AnAsynchronousSortShouldAcquireAtExecuteAndDrainAtTheFirstRead()
         {
             var (c, table) = Open(Model);

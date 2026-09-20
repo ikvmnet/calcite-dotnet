@@ -4,9 +4,9 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -23,7 +23,6 @@ namespace Apache.Calcite.Geography.Tests
     /// directions gives a point in the shape. That is the same failure the bounding rectangle has and the
     /// same fix.
     /// </remarks>
-    [TestClass]
     public class GeographyCentroidTests
     {
 
@@ -40,7 +39,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// An ordinary shape near the origin agrees with the planar answer.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeWithCalciteNearTheOrigin()
         {
             var square = Wkt("POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))");
@@ -60,7 +59,7 @@ namespace Apache.Calcite.Geography.Tests
         /// averages the longitudes — 179 and -179 and their like — and answers a point near longitude zero,
         /// half a world away. This answers a point in the square.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldNotPutTheCentreOnTheFarSideOfThePlanet()
         {
             var square = Wkt("POLYGON((179 0, -179 0, -179 2, 179 2, 179 0))");
@@ -76,7 +75,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// An area outranks a line and a line outranks a point, as JTS orders them.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldLetTheHighestDimensionDecide()
         {
             // the point is far away and contributes nothing, the square deciding alone
@@ -89,7 +88,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A line's centre is weighted by length, so a long edge counts for more than a short one.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldWeightALineByItsLength()
         {
             var centre = Centroid("LINESTRING(0 0, 10 0, 11 0)").getCoordinate();
@@ -101,7 +100,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A set of points is their mean direction.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAverageAPointSet()
         {
             var centre = Centroid("MULTIPOINT((0 0), (2 0))").getCoordinate();
@@ -117,7 +116,7 @@ namespace Apache.Calcite.Geography.Tests
         /// Two antipodal points sum to nothing, and every direction between them is as good as its opposite.
         /// An empty point says so, which is what JTS answers for a shape with no centroid too.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerNothingWhereThereIsNoCentre()
         {
             Centroid("MULTIPOINT((0 0), (180 0))").isEmpty().Should().BeTrue();
@@ -125,13 +124,13 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.Centroid(null).Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldStampTheCentreWithWgs84()
         {
             Centroid("POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))").getSRID().Should().Be(GeographyFunctions.Wgs84);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunAsAnOperator()
         {
             // the longitude comes back a few bits shy of one, a coordinate having gone out and back as a

@@ -9,14 +9,14 @@ using Apache.Calcite.Tests;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.schema;
 using org.apache.calcite.schema.impl;
 using org.apache.calcite.sql.type;
 using org.apache.calcite.tools;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -40,7 +40,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// There is one program now and it is the same one either way, so what these two hold apart is not the
     /// program but the pair of bodies each node answers with — the same planned root implemented twice.</para>
     /// </remarks>
-    [TestClass]
     public class ClrEnumerableRulesTests
     {
 
@@ -116,7 +115,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             return rows;
         }
 
-        [TestMethod]
+        [Fact]
         public async Task ShouldScanThroughTheShippedProgram()
         {
             var rows = await Run("SELECT ID, REGION FROM SALES ORDER BY ID");
@@ -126,7 +125,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         }
 
         /// <inheritdoc cref="ClrEnumerableConventionTests" />
-        [TestMethod]
+        [Fact]
         public async Task ShouldAverageThroughTheShippedProgram()
         {
             var rows = await Run("SELECT AVG(AMOUNT) FROM SALES");
@@ -135,7 +134,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows[0][0].Should().Be(java.lang.Integer.valueOf(17));
         }
 
-        [TestMethod]
+        [Fact]
         public async Task ShouldCountDistinctThroughTheShippedProgram()
         {
             var rows = await Run("SELECT COUNT(DISTINCT REGION) FROM SALES");
@@ -144,7 +143,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows[0][0].Should().Be(java.lang.Long.valueOf(2L));
         }
 
-        [TestMethod]
+        [Fact]
         public async Task ShouldWindowThroughTheShippedProgram()
         {
             var rows = await Run("SELECT ID, SUM(AMOUNT) OVER (PARTITION BY REGION ORDER BY ID) FROM SALES ORDER BY ID");
@@ -168,7 +167,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// traits the root is asked for carry no collation — so a plan driven from
         /// <c>getEmptyTraitSet()</c> returns the right rows in the wrong order and nothing else notices.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldSortThroughTheShippedProgram()
         {
             var rows = await Run("SELECT ID FROM SALES ORDER BY REGION, ID DESC");

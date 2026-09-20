@@ -10,8 +10,6 @@ using Apache.Calcite.Tests;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite;
 using org.apache.calcite.linq4j;
 using org.apache.calcite.plan;
@@ -20,6 +18,8 @@ using org.apache.calcite.schema;
 using org.apache.calcite.schema.impl;
 using org.apache.calcite.sql.type;
 using org.apache.calcite.tools;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -40,7 +40,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// guards is the day someone adds a node to those implementors that <c>LixToClrTranslator</c> happens to
     /// carry across as a constant.</para>
     /// </remarks>
-    [TestClass]
     public class ClrAnyAggImplementorsTests
     {
 
@@ -193,10 +192,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             "SELECT ID, MIN(V) OVER (PARTITION BY K), SUM(V) OVER (ORDER BY ID) FROM ANYS",
         ];
 
-        [TestMethod]
+        [Fact]
         public Task ShouldCompileASyncAnyAggregateToNoLinq4j() => ShouldCompileToNoLinq4j(false);
 
-        [TestMethod]
+        [Fact]
         public Task ShouldCompileAnAsyncAnyAggregateToNoLinq4j() => ShouldCompileToNoLinq4j(true);
 
         static async Task ShouldCompileToNoLinq4j(bool async)

@@ -4,9 +4,9 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -25,7 +25,6 @@ namespace Apache.Calcite.Geography.Tests
     /// <para>Calcite's buffers by degrees, which on the ground means a different distance at every latitude
     /// and in every direction. Ours buffers by metres.</para>
     /// </remarks>
-    [TestClass]
     public class GeographyBufferTests
     {
 
@@ -54,7 +53,7 @@ namespace Apache.Calcite.Geography.Tests
         /// would be a buffer measured in degrees. The outer probe is at 1.05 rather than 1.0 because the ring
         /// is a polygon inscribed in the circle and so falls a little inside it.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldContainWhatIsNearerAndNotWhatIsFurther()
         {
             var buffer = Buffer("POINT(0 0)", 100 * Kilometre);
@@ -79,7 +78,7 @@ namespace Apache.Calcite.Geography.Tests
         /// — by the factor a regular polygon of that many sides loses, which is about six parts in a
         /// thousand.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldCoverAboutTheAreaOfADisc()
         {
             var area = GeographyFunctions.Area(Buffer("POINT(0 0)", 100 * Kilometre))!.doubleValue();
@@ -97,7 +96,7 @@ namespace Apache.Calcite.Geography.Tests
         /// the further north it is drawn — at 60 degrees a degree of longitude is half what it is at the
         /// equator — so Calcite's answers shrink with latitude. These do not.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldCoverTheSameGroundAtEveryLatitude()
         {
             var equator = GeographyFunctions.Area(Buffer("POINT(0 0)", 50 * Kilometre))!.doubleValue();
@@ -115,7 +114,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A line's buffer is a corridor, and every part of the line is inside it.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldBufferEveryPartOfALine()
         {
             var buffer = Buffer("LINESTRING(0 0, 1 0)", 10 * Kilometre);
@@ -129,7 +128,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// An area's buffer contains the area itself, rather than only skinning its boundary.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldContainTheAreaItBuffers()
         {
             var square = Wkt("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))");
@@ -143,7 +142,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A larger distance is a larger buffer.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldGrowWithTheDistance()
         {
             var small = GeographyFunctions.Area(Buffer("POINT(0 0)", 10 * Kilometre))!.doubleValue();
@@ -155,7 +154,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Nothing to buffer, or nothing to buffer by, is nothing.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerEmptyForNothingToDo()
         {
             Buffer("POINT(0 0)", 0).isEmpty().Should().BeTrue();
@@ -166,13 +165,13 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.Buffer(Wkt("POINT(0 0)"), null).Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldStampTheBufferWithWgs84()
         {
             Buffer("POINT(0 0)", 1000).getSRID().Should().Be(GeographyFunctions.Wgs84);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunAsAnOperator()
         {
             var answer = GeographyExecutionTests.Run(

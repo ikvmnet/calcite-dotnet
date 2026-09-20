@@ -1,11 +1,11 @@
-using Microsoft.Data.SqlClient;
-
 using System;
 using System.Data.Common;
 using System.Data.Odbc;
 using System.Data.OleDb;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+
+using Microsoft.Data.SqlClient;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {

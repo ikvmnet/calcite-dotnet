@@ -1,7 +1,6 @@
 using System;
 
 using Apache.Calcite.Data;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using org.apache.calcite;
 using org.apache.calcite.linq4j;
@@ -9,6 +8,8 @@ using org.apache.calcite.rel.type;
 using org.apache.calcite.schema;
 using org.apache.calcite.schema.impl;
 using org.apache.calcite.sql.type;
+
+using Xunit;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -22,8 +23,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// parser. A macro is registered on a schema and from then on the name is a table — selectable,
     /// joinable, and able to span the adapter and anything else in the root schema.
     /// </remarks>
-    [TestClass]
-    public class AdoViewMacroTests
+    public class AdoViewMacroTests : IDisposable
     {
 
         static AdoViewMacroTests()
@@ -33,14 +33,16 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
         SqliteFixture _sqlite = null!;
 
-        [TestInitialize]
-        public void Setup()
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        public AdoViewMacroTests()
         {
             _sqlite = new SqliteFixture();
         }
 
-        [TestCleanup]
-        public void Cleanup()
+        /// <inheritdoc />
+        public void Dispose()
         {
             _sqlite?.Dispose();
         }
@@ -61,7 +63,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// A view over two tables of the adapter, joined and filtered, then queried as a table.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void View_over_the_adapter_should_behave_like_a_table()
         {
             using var connection = Open(root => root.add("STAFF", ViewTable.viewMacro(
@@ -80,13 +82,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
             using var r = cmd.ExecuteReader();
 
-            Assert.IsTrue(r.Read());
-            Assert.AreEqual("Alice", r.GetString(0));
-            Assert.AreEqual("Sales", r.GetString(1));
-            Assert.IsTrue(r.Read());
-            Assert.AreEqual("Bob", r.GetString(0));
-            Assert.AreEqual("Sales", r.GetString(1));
-            Assert.IsFalse(r.Read());
+            Assert.True(r.Read());
+            Assert.Equal("Alice", r.GetString(0));
+            Assert.Equal("Sales", r.GetString(1));
+            Assert.True(r.Read());
+            Assert.Equal("Bob", r.GetString(0));
+            Assert.Equal("Sales", r.GetString(1));
+            Assert.False(r.Read());
         }
 
         /// <summary>
@@ -98,7 +100,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// view is not a barrier — the planner sees the expanded subtree, pushes what it can into the
         /// adapter, and carries the rest across a converter.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void View_should_bridge_the_adapter_and_a_local_schema()
         {
             using var connection = Open(root =>
@@ -130,13 +132,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
             using var r = cmd.ExecuteReader();
 
-            Assert.IsTrue(r.Read());
-            Assert.AreEqual("Engineering", r.GetString(0));
-            Assert.AreEqual(1L, r.GetInt64(1));
-            Assert.IsTrue(r.Read());
-            Assert.AreEqual("Sales", r.GetString(0));
-            Assert.AreEqual(1L, r.GetInt64(1));
-            Assert.IsFalse(r.Read());
+            Assert.True(r.Read());
+            Assert.Equal("Engineering", r.GetString(0));
+            Assert.Equal(1L, r.GetInt64(1));
+            Assert.True(r.Read());
+            Assert.Equal("Sales", r.GetString(0));
+            Assert.Equal(1L, r.GetInt64(1));
+            Assert.False(r.Read());
         }
 
         /// <summary>

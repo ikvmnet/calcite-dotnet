@@ -6,11 +6,11 @@ using Apache.Calcite.FullText.Sql;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.type;
 using org.apache.calcite.sql.validate;
+
+using Xunit;
 
 namespace Apache.Calcite.FullText.Tests
 {
@@ -23,7 +23,6 @@ namespace Apache.Calcite.FullText.Tests
     /// a connection builds no validator for anyone to chain anything into — and the point of testing them
     /// side by side is that the plan must not depend on which one answered.
     /// </remarks>
-    [TestClass]
     public class FullTextResolutionTests
     {
 
@@ -35,7 +34,7 @@ namespace Apache.Calcite.FullText.Tests
         /// <summary>
         /// The whole point of the schema declarations: no operator table, and the name still resolves.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldResolveThroughTheSchemaAlone()
         {
             var call = FullTextFixture.Call(
@@ -49,7 +48,7 @@ namespace Apache.Calcite.FullText.Tests
         /// <summary>
         /// And the route a host takes: no declarations, and the name still resolves.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldResolveThroughTheChainedOperatorTableAlone()
         {
             var call = FullTextFixture.Call(
@@ -64,7 +63,7 @@ namespace Apache.Calcite.FullText.Tests
         /// Neither route is reachable with neither arrangement, which is what says the tests above are
         /// measuring something.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldNotResolveWithNeither()
         {
             var act = () => FullTextFixture.Plan("SELECT ID FROM DOCS WHERE CLR_FT_CONTAINS(BODY, 'steel')", declare: false);
@@ -81,7 +80,7 @@ namespace Apache.Calcite.FullText.Tests
         /// the catalog reader, so the operator answers and the declaration is never reached. Nothing insists
         /// on one answer, so nothing breaks.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldLetAHostDoBoth()
         {
             const string Sql = "SELECT ID FROM DOCS WHERE CLR_FT_CONTAINS_ANY(BODY, 'steel', 'frame')";
@@ -104,7 +103,7 @@ namespace Apache.Calcite.FullText.Tests
         /// whose families the operator's own checker looks for, so the checker Calcite derives from a
         /// declaration accepts what the operator accepts — rather than the two being kept in step by hand.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldPlanTheSameEitherWay()
         {
             foreach (var sql in new[]
@@ -134,7 +133,7 @@ namespace Apache.Calcite.FullText.Tests
         /// through a connection. <c>FullTextOperatorTable.Matches</c> is the check that works on both, and
         /// this is why it asks for a name.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldArriveAsCalcitesOwnOperatorThroughTheSchema()
         {
             var call = FullTextFixture.Call(
@@ -168,7 +167,7 @@ namespace Apache.Calcite.FullText.Tests
         /// are fixed. One declaration per arity, every parameter required, makes the second false. No store
         /// renders <c>DEFAULT</c>, so this is the difference between a statement and a refusal.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldNotPadAKeywordListWithDefaults()
         {
             for (var keywords = 1; keywords <= 4; keywords++)
@@ -186,7 +185,7 @@ namespace Apache.Calcite.FullText.Tests
         /// <summary>
         /// Which is a property of the declarations rather than an accident of these calls.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldDeclareEveryParameterRequired()
         {
             var entries = FullTextSchema.Functions().entries().iterator();
@@ -221,7 +220,7 @@ namespace Apache.Calcite.FullText.Tests
         /// theoretical, so it is measured on both sides — and the second half is the whole of what chaining
         /// the operator table still buys a host that has the declarations too.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldOfferAVariadicOperatorUpToTheLimitAndPastItByChaining()
         {
             var atLimit = $"SELECT ID FROM DOCS WHERE CLR_FT_CONTAINS_ALL(BODY, {Keywords(FullTextSchema.VariadicOperandLimit - 1)})";
@@ -245,7 +244,7 @@ namespace Apache.Calcite.FullText.Tests
         /// list: an operator added to <see cref="FullTextOperatorTable"/> and reachable through a planner a
         /// host built but not through a connection is the defect the declarations exist to close.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldDeclareEveryOperatorOnTheSchema()
         {
             var declared = FullTextSchema.Functions().keySet();
@@ -270,7 +269,7 @@ namespace Apache.Calcite.FullText.Tests
         /// predicates: a call can carry an exact keyword and a fuzzy one at once, which a
         /// <c>CLR_FT_CONTAINS_ALL_FUZZY</c> could not.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldTakeATermConstructorWhereAKeywordGoes()
         {
             foreach (var chain in new[] { false, true })
@@ -317,7 +316,7 @@ namespace Apache.Calcite.FullText.Tests
         /// belongs to the adapter. Which is no worse than where it sits today: Elasticsearch documents that
         /// it silently ignores fuzziness on a phrase query, and an adapter declining is better than that.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldValidateANestedTermConstructorOnBothRoutes()
         {
             foreach (var chain in new[] { false, true })
@@ -341,7 +340,7 @@ namespace Apache.Calcite.FullText.Tests
         /// Which is what covers Cosmos's <c>RRF(f1, f2, [0.9, 0.1])</c> without adopting a positional array:
         /// the weight travels with the score it belongs to and the two cannot come apart.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldWeightAScoreBeingFused()
         {
             foreach (var chain in new[] { false, true })
@@ -367,7 +366,7 @@ namespace Apache.Calcite.FullText.Tests
         /// &#8212; a shared vocabulary that took one store's names would make every other adapter map them
         /// anyway &#8212; so what is pinned is that nothing Cosmos does has become unsayable.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldExpressEveryCosmosFullTextConstruct()
         {
             foreach (var (cosmos, ours) in new[]
@@ -400,7 +399,7 @@ namespace Apache.Calcite.FullText.Tests
         /// been refused by asking <c>SqlTypeFamily.ANY</c> for its type names, since
         /// <c>SqlTypeName.ALL_TYPES</c> does not list it.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldSearchAColumnOfAnyType()
         {
             foreach (var column in new[] { "BODY", "DOC", "TAGS" })
@@ -442,7 +441,7 @@ namespace Apache.Calcite.FullText.Tests
         /// Calcite's to fix, and this is the test that will notice if it stops being true. The practical
         /// consequence is the README's: register one route or the other, not both.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldSearchAnArrayColumnThroughEitherRouteButNotBoth()
         {
             FullTextFixture.Call(
@@ -465,7 +464,7 @@ namespace Apache.Calcite.FullText.Tests
         /// <summary>
         /// And a row of them, which is how SQL Server and MySQL name a list of columns.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldSearchARowOfColumns()
         {
             var call = FullTextFixture.Call(
@@ -484,7 +483,7 @@ namespace Apache.Calcite.FullText.Tests
         /// declared family, which is why <c>CLR_FT_CONTAINS(BODY, DOC)</c> below is accepted while
         /// <c>CLR_FT_CONTAINS(BODY, 42)</c> is not.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldTreatAMistypedKeywordTheSameEitherWay()
         {
             static bool Accepts(string sql, bool chain)
@@ -518,7 +517,7 @@ namespace Apache.Calcite.FullText.Tests
         /// <summary>
         /// The arities, on both routes.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldHoldEachOperatorToItsArity()
         {
             foreach (var chain in new[] { false, true })
@@ -546,7 +545,7 @@ namespace Apache.Calcite.FullText.Tests
         /// while declaring it nullable at worst costs a rewrite. A store may have nothing to say about a row a
         /// plan keeps.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldTypeAPredicateBooleanAndAScoreDouble()
         {
             foreach (var chain in new[] { false, true })
@@ -570,7 +569,7 @@ namespace Apache.Calcite.FullText.Tests
         /// <summary>
         /// A score can be ordered by, which is the whole reason it is typed rather than opaque.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldOrderByAScore()
         {
             foreach (var chain in new[] { false, true })
@@ -586,7 +585,7 @@ namespace Apache.Calcite.FullText.Tests
         /// <summary>
         /// And fused with another, which is what hybrid search writes.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldFuseTwoScores()
         {
             var call = FullTextFixture.Call(
@@ -602,7 +601,7 @@ namespace Apache.Calcite.FullText.Tests
         /// <summary>
         /// <c>CLR_FT_RRF</c> fuses scores, so a keyword in that position is refused.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldTreatAMistypedScoreTheSameEitherWay()
         {
             static bool Accepts(string sql, bool chain)

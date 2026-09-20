@@ -5,10 +5,10 @@ using Apache.Calcite.FullText.Sql;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.fun;
+
+using Xunit;
 
 namespace Apache.Calcite.FullText.Tests
 {
@@ -19,7 +19,6 @@ namespace Apache.Calcite.FullText.Tests
     /// <remarks>
     /// This package exists so that each adapter does not have to remember to write this test.
     /// </remarks>
-    [TestClass]
     public class FullTextNameTests
     {
 
@@ -56,7 +55,7 @@ namespace Apache.Calcite.FullText.Tests
         /// <para>Measured against every library Calcite ships rather than the few chained elsewhere in this
         /// suite, and case-insensitively, because that is how a name matcher would find one.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldNotTakeANameCalciteAlreadyUses()
         {
             var calcite = CalciteNames();
@@ -84,7 +83,7 @@ namespace Apache.Calcite.FullText.Tests
         /// so: if Calcite ever drops the period predicate, the argument for the prefix changes and somebody
         /// should notice.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldFindTheUnprefixedNameAlreadyTaken()
         {
             CalciteNames().Should().Contain("CONTAINS", "the SQL:2011 period predicate is why CLR_FT_CONTAINS carries a prefix");
@@ -102,7 +101,7 @@ namespace Apache.Calcite.FullText.Tests
         /// with it. Checked against the spellings the stores use rather than against ours, since it is a
         /// claim about Calcite and not about this naming.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldFindNoFullTextOperatorInCalcite()
         {
             var calcite = CalciteNames();
@@ -128,7 +127,7 @@ namespace Apache.Calcite.FullText.Tests
         /// These are the package's whole public surface. A rename is a breaking change for every query written
         /// against it, so it should not be possible to make one by editing a declaration.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldCarryExactlyTheseNames()
         {
             var names = new List<string>();
@@ -152,7 +151,7 @@ namespace Apache.Calcite.FullText.Tests
         /// Anything not one of ours is not recognised, which is what stops a name test from being a rubber
         /// stamp.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldNotRecogniseSomethingElse()
         {
             FullTextOperatorTable.IsFullText(SqlStdOperatorTable.CONTAINS).Should().BeFalse();

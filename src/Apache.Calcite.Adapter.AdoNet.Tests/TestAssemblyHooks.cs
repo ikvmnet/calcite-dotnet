@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -6,8 +6,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// <summary>
     /// Holds what the suite as a whole owns.
     /// </summary>
-    [TestClass]
-    public static class TestAssemblyHooks
+    /// <remarks>
+    /// Registered as the assembly fixture in <c>AssemblyInfo.cs</c>, which is what gets it disposed after
+    /// the last test in the assembly rather than after each one.
+    /// </remarks>
+    public sealed class TestAssemblyHooks : IDisposable
     {
 
         /// <summary>
@@ -17,8 +20,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// Here rather than in a test cleanup because it is made once for all of them: dropping it per test
         /// means creating it per test, and that is ten minutes of LocalDB.
         /// </remarks>
-        [AssemblyCleanup]
-        public static void Cleanup()
+        public void Dispose()
         {
             SqlServerFixture.DisposeShared();
         }

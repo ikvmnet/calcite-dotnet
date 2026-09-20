@@ -10,16 +10,15 @@ using FluentAssertions;
 
 using java.lang;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.linq4j;
 using org.apache.calcite.runtime;
 using org.apache.calcite.util;
 
+using Xunit;
+
 namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
 {
 
-    [TestClass]
     public class ClrTypesMethodTests
     {
 
@@ -31,7 +30,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// <returns></returns>
         public static int Twice(int value) => value * 2;
 
-        [TestMethod]
+        [Fact]
         public void ShouldResolveInstanceMethodOnInterface()
         {
             // ExtendedEnumerable.where(Predicate1), which every filter in the port calls
@@ -43,7 +42,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
                 .Which.ParameterType.Should().Be(typeof(org.apache.calcite.linq4j.function.Predicate1));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldResolveStaticMethodAmongOverloads()
         {
             // Utilities.compare is overloaded for every primitive and for Comparable, so this fails if the
@@ -56,7 +55,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             m.GetParameters()[1].ParameterType.Should().Be(typeof(int));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldResolveBoxingMethod()
         {
             // the translator emits this in place of a convert from int to Integer, which is not a CLR conversion
@@ -77,7 +76,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// land, and neither was an answer from IKVM. They go to a delegate over the method handle instead,
         /// which is one.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldNotResolveWhatOnlyASearchWouldFind()
         {
             ClrTypes.TryResolve(((Class)typeof(java.lang.String)).getDeclaredMethod("toUpperCase", [])).Should().BeNull();
@@ -85,7 +84,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             ClrTypes.TryResolve(((Class)typeof(java.lang.Comparable)).getDeclaredMethod("compareTo", [typeof(object)])).Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldResolveClrMethodDeclaredToJava()
         {
             var m = ClrTypes.Resolve(((Class)typeof(ClrTypesMethodTests)).getDeclaredMethod(nameof(Twice), [typeof(int)]));
@@ -94,7 +93,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             m.Invoke(null, [21]).Should().Be(42);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldResolveClrMethodWithReferenceParameters()
         {
             var m = ClrTypes.Resolve(((Class)typeof(ClrTypesMethodTests)).getDeclaredMethod(nameof(Describe), [typeof(DbConnection), typeof(string)]));
@@ -124,7 +123,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// moving from the first route to the second is a call becoming an invoke, and that should not happen
         /// unnoticed.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldReachEveryBuiltInMethod()
         {
             var failures = new List<string>();
@@ -150,7 +149,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
                 }
             }
 
-            Assert.IsTrue(failures.Count == 0, $"{called} called, {invoked.Count} invoked, {failures.Count} failed:{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
+            Assert.True(failures.Count == 0, $"{called} called, {invoked.Count} invoked, {failures.Count} failed:{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
 
             // a census of Calcite's table, so it moves with the version and with the snapshot: 594 under
             // 1.42, 607 under the first 1.43 snapshots this was run against, 608 since IEJoin arrived

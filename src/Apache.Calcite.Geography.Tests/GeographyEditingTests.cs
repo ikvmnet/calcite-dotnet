@@ -5,9 +5,9 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -31,7 +31,6 @@ namespace Apache.Calcite.Geography.Tests
     /// is on the coordinates rather than the stamp, and
     /// <see cref="ShouldStampEveryEditedGeographyWithWgs84"/> holds the stamp.</para>
     /// </remarks>
-    [TestClass]
     public class GeographyEditingTests
     {
 
@@ -68,7 +67,7 @@ namespace Apache.Calcite.Geography.Tests
             ("CLR_ST_GEOG_TOMULTISEGMENTS", g => GeographyFunctions.ToMultiSegments(g), g => SpatialTypeFunctions.ST_ToMultiSegments(g)),
         ];
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeWithCalciteOnEveryEditingFunction()
         {
             var differences = new List<string>();
@@ -90,7 +89,7 @@ namespace Apache.Calcite.Geography.Tests
             differences.Should().BeEmpty(string.Join("\n", differences));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeWithCalciteOnTheEditingFunctionsThatTakeAnArgument()
         {
             var differences = new List<string>();
@@ -126,7 +125,7 @@ namespace Apache.Calcite.Geography.Tests
             differences.Should().BeEmpty(string.Join("\n", differences));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeWithCalciteOnTheConstructors()
         {
             var differences = new List<string>();
@@ -167,7 +166,7 @@ namespace Apache.Calcite.Geography.Tests
         /// A typed reader answers a shape of its own kind and null for anything else, which is Calcite's rule
         /// and the whole of what makes the nine of them worth having.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeWithCalciteOnTheTypedReaders()
         {
             var differences = new List<string>();
@@ -220,7 +219,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <c>Force2D</c>. Every result is wrapped in <c>CLR_ST_GEOG_ASTEXT</c>, since a geography is not
         /// something a result set carries.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldRunEveryEditingOperatorAsAnOperator()
         {
             const string shape = "POLYGON((0 0, 6 0, 6 6, 0 6, 0 0), (2 2, 4 2, 4 4, 2 4, 2 2))";
@@ -318,7 +317,7 @@ namespace Apache.Calcite.Geography.Tests
         /// keep, and it is a small lie here: a geography is WGS84 and every one this package hands out says
         /// so.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldStampEveryEditedGeographyWithWgs84()
         {
             var geography = Wkt("POLYGON((0 0, 6 0, 6 6, 0 6, 0 0), (2 2, 4 2, 4 4, 2 4, 2 2))");
@@ -350,7 +349,7 @@ namespace Apache.Calcite.Geography.Tests
         /// a way that has nothing to do with geodesy, would be a divergence this package has no business
         /// introducing.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldInheritTheDefectInAddZOverAPolygon()
         {
             var polygon = Wkt("POLYGON((0 0, 4 0, 4 4, 0 4, 0 0))");
@@ -363,7 +362,7 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.AddZ(Wkt("POINT(1 2)"), five).Should().NotBeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerNullForANullArgument()
         {
             var geography = Wkt("LINESTRING(0 0, 1 1)");

@@ -4,7 +4,7 @@ using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -17,7 +17,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// rules, so the modification is implemented in <c>EnumerableConvention</c> and a converter carries it.
     /// These tests are what says that fallback actually runs, rather than merely being reachable on paper.
     /// </remarks>
-    [TestClass]
     public class ClrEnumerableConventionDmlTests
     {
 
@@ -46,7 +45,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             return c;
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldCreateInsertAndSelect()
         {
             using var c = Open();
@@ -62,7 +61,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             cmd.ExecuteScalar().Should().Be("b");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAggregateOverAnInsertedTable()
         {
             using var c = Open();

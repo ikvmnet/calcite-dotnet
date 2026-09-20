@@ -5,7 +5,7 @@ using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -18,7 +18,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// <see cref="Expression"/> has no such rendering that is worth asserting against, so these compile it and
     /// read what it does — which is the thing the conversion exists for.
     /// </remarks>
-    [TestClass]
     public class ClrEnumUtilsTests
     {
 
@@ -31,7 +30,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <c>ClassCastException</c> — here, <c>InvalidCastException</c> — instead of saying which value was
         /// not a number.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldConvertAnObjectToANumber()
         {
             var x = Expression.Parameter(typeof(object), "x");
@@ -43,7 +42,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         }
 
         /// <inheritdoc cref="ShouldConvertAnObjectToANumber" />
-        [TestMethod]
+        [Fact]
         public void ShouldConvertAStringToANumber()
         {
             var s = Expression.Parameter(typeof(string), "s");
@@ -59,13 +58,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <remarks>
         /// The other half of CALCITE-6284: the failure names the value, where a cast named only the two types.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldNameTheValueThatIsNotANumber()
         {
             var x = Expression.Parameter(typeof(object), "x");
             var convert = Expression.Lambda<Func<object, java.lang.Number>>(ClrEnumUtils.Convert(x, typeof(java.lang.Number)), x).Compile();
 
-            var thrown = Assert.Throws<java.lang.NumberFormatException>(() => convert("abc"));
+            var thrown = Assert.ThrowsAny<java.lang.NumberFormatException>(() => convert("abc"));
             thrown.getMessage().Should().Contain("abc");
         }
 

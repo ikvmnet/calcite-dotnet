@@ -3,13 +3,13 @@ using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.rex;
 using org.apache.calcite.sql.type;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -23,7 +23,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// only calls it while it is exploring and a plan that came out right says nothing about whether the
     /// constants survived.
     /// </remarks>
-    [TestClass]
     public class ClrEnumerableWindowTests
     {
 
@@ -37,7 +36,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldKeepTheConstantsItIsGivenWhenCopied()
         {
             var typeFactory = new org.apache.calcite.sql.type.SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);

@@ -3,7 +3,7 @@ using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Interop.Tests
 {
@@ -22,14 +22,13 @@ namespace Apache.Calcite.Extensions.Interop.Tests
     /// <c>ClrEnumerableDefaults.Window</c> do, reproduces Calcite's order rather than merely happening to
     /// match it.</para>
     /// </remarks>
-    [TestClass]
     public class JavaHashingTests
     {
 
         /// <summary>
         /// A string hashes on the Java side to what the Java language specifies.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldHashAStringTheWayJavaSpecifies()
         {
             java.util.Objects.hashCode("EAST").Should().Be(2120701);
@@ -41,7 +40,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         /// A <c>java.util.HashMap</c> iterates in the same order in every process, because that order follows
         /// from the hash above and not from the CLR's.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldIterateAHashMapInTheSameOrderEveryRun()
         {
             var map = new java.util.HashMap();

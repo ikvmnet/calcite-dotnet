@@ -8,14 +8,13 @@ using IKVM.Runtime;
 
 using java.lang;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.util;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Interop.Tests
 {
 
-    [TestClass]
     public class JavaDelegatesTests
     {
 
@@ -24,7 +23,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             return ((Class)declaring).getMethod(name, parameters);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldCallInstanceMethod()
         {
             var m = Method(typeof(java.util.ArrayList), "size");
@@ -37,7 +36,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             d(list).Should().Be(2);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldCallInstanceMethodWithArgument()
         {
             var m = Method(typeof(StringBuilder), "append", (Class)typeof(java.lang.String));
@@ -48,7 +47,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             sb.toString().Should().Be("ab");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldCallStaticMethod()
         {
             var m = Method(typeof(Integer), "parseInt", (Class)typeof(java.lang.String));
@@ -57,7 +56,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             d("42").Should().Be(42);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldCallVoidMethod()
         {
             var m = Method(typeof(java.util.ArrayList), "clear");
@@ -70,7 +69,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             list.size().Should().Be(0);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldCallConstructor()
         {
             var c = ((Class)typeof(java.util.ArrayList)).getConstructor([]);
@@ -83,7 +82,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         /// The case a name search cannot answer and this exists for: java.lang.Object is remapped onto
         /// System.Object, and its Java methods have no CLR method of that name on that type at all.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldCallMethodOnRemappedType()
         {
             var m = Method(typeof(java.lang.Object), "hashCode");
@@ -97,7 +96,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         /// The other half of it: String is remapped onto System.String, and toUpperCase lands on
         /// java.lang.StringHelper taking the receiver first. The delegate hides that the receiver moved.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldCallMethodMovedToAHelperClass()
         {
             var m = Method(typeof(java.lang.String), "toUpperCase");
@@ -110,7 +109,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         /// A ghost interface declares nothing the CLR type system can see, and a cast to one throws. The
         /// handle does not cast.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldCallMethodOnGhostInterface()
         {
             var m = Method(typeof(java.lang.Comparable), "compareTo", (Class)typeof(java.lang.Object));
@@ -123,7 +122,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         /// A delegate typed in the runtime's own terms rather than in objects, which is what a translated
         /// tree wants: no value crosses a boxing boundary on the way in or out.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldCallThroughATypedDelegate()
         {
             var m = Method(typeof(Integer), "parseInt", (Class)typeof(java.lang.String));
@@ -136,7 +135,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         /// The canonical delegate is what IKVM hands back, so asking for it directly is the one signature
         /// that costs nothing at all — no second delegate wrapping the first.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldReturnTheCanonicalDelegateUnwrapped()
         {
             var m = Method(typeof(Integer), "parseInt", (Class)typeof(java.lang.String));
@@ -149,7 +148,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         /// <summary>
         /// A method of Calcite's own, reached the way the convention reaches one.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldCallACalciteBuiltInMethod()
         {
             var d = (Func<object, int, object>)JavaDelegates.FromMethod(typeof(Func<object, int, object>), BuiltInMethod.LIST_GET.method);
@@ -165,7 +164,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         /// A primitive crossing as an object is a java.lang.Integer rather than a boxed CLR int, and the
         /// adaptation the handle performs is Java's own. This is the boundary the whole port turns on.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldBoxAPrimitiveReturnTheJavaWay()
         {
             var m = Method(typeof(Integer), "parseInt", (Class)typeof(java.lang.String));
@@ -178,7 +177,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         /// Access is checked as Lookup.unreflect checks it, and marking the member accessible is the caller's
         /// to do. java.lang.Runtime's constructor is private.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldRefuseAnInaccessibleMemberUntilMarkedAccessible()
         {
             var c = ((Class)typeof(java.lang.Runtime)).getDeclaredConstructor([]);
@@ -192,7 +191,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             d().Should().BeOfType<java.lang.Runtime>();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRefuseATypeThatIsNotADelegate()
         {
             var m = Method(typeof(java.util.ArrayList), "size");
@@ -201,7 +200,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             act.Should().Throw<ArgumentException>();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRefuseAnIncompatibleSignature()
         {
             var m = Method(typeof(Integer), "parseInt", (Class)typeof(java.lang.String));
@@ -211,7 +210,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             act.Should().Throw<java.lang.invoke.WrongMethodTypeException>();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRefuseNullArguments()
         {
             var m = Method(typeof(java.util.ArrayList), "size");

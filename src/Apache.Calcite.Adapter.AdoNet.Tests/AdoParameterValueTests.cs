@@ -1,10 +1,11 @@
+using System;
+using System.Data.Common;
+
 using Microsoft.Data.Sqlite;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using org.apache.calcite.sql.type;
 
-using System;
-using System.Data.Common;
+using Xunit;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -27,7 +28,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// own array and never consults the context it wraps.
     /// </para>
     /// </remarks>
-    [TestClass]
     public class AdoParameterValueTests
     {
 
@@ -68,10 +68,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <c>byteValue()</c> answers the two's complement bits as an unsigned CLR <see cref="byte"/> and
         /// -56 would reach the provider as 200.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ANegativeTinyIntKeepsItsSign()
         {
-            Assert.AreEqual((short)-56, Bound(java.lang.Byte.valueOf(unchecked((byte)-56)), SqlTypeName.TINYINT));
+            Assert.Equal((short)-56, Bound(java.lang.Byte.valueOf(unchecked((byte)-56)), SqlTypeName.TINYINT));
         }
 
         /// <summary>
@@ -80,48 +80,48 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// invalid" — which is the same wall the unsigned types run into, and a <see cref="short"/> holds
         /// the whole of a signed byte's range exactly.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ATinyIntIsBoundAsAShort()
         {
-            Assert.IsInstanceOfType<short>(Bound(java.lang.Byte.valueOf((byte)7), SqlTypeName.TINYINT));
+            Assert.IsAssignableFrom<short>(Bound(java.lang.Byte.valueOf((byte)7), SqlTypeName.TINYINT));
         }
 
         /// <summary>
         /// The unsigned tinyint every real backend actually reports, which travels as a joou value and is
         /// the arm a signed one must not be confused with: 200 is 200 and not -56.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AUTinyIntStaysUnsigned()
         {
-            Assert.AreEqual((byte)200, Bound(org.joou.UByte.valueOf(200), SqlTypeName.UTINYINT));
+            Assert.Equal((byte)200, Bound(org.joou.UByte.valueOf(200), SqlTypeName.UTINYINT));
         }
 
-        [TestMethod]
+        [Fact]
         public void ANegativeSmallIntKeepsItsSign()
         {
-            Assert.AreEqual((short)-300, Bound(java.lang.Short.valueOf((short)-300), SqlTypeName.SMALLINT));
+            Assert.Equal((short)-300, Bound(java.lang.Short.valueOf((short)-300), SqlTypeName.SMALLINT));
         }
 
-        [TestMethod]
+        [Fact]
         public void ANegativeIntegerKeepsItsSign()
         {
-            Assert.AreEqual(-70000, Bound(java.lang.Integer.valueOf(-70000), SqlTypeName.INTEGER));
+            Assert.Equal(-70000, Bound(java.lang.Integer.valueOf(-70000), SqlTypeName.INTEGER));
         }
 
-        [TestMethod]
+        [Fact]
         public void ANegativeBigIntKeepsItsSign()
         {
-            Assert.AreEqual(-9000000000L, Bound(java.lang.Long.valueOf(-9000000000L), SqlTypeName.BIGINT));
+            Assert.Equal(-9000000000L, Bound(java.lang.Long.valueOf(-9000000000L), SqlTypeName.BIGINT));
         }
 
         /// <summary>
         /// A null is bound rather than skipped, which is what a driver matching parameters by position
         /// requires.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ANullIsBoundAsDbNull()
         {
-            Assert.AreEqual(DBNull.Value, Bound(null, SqlTypeName.TINYINT));
+            Assert.Equal(DBNull.Value, Bound(null, SqlTypeName.TINYINT));
         }
 
     }

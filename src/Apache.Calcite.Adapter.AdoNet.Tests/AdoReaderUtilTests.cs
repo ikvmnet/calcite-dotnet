@@ -1,11 +1,14 @@
-using Microsoft.Data.Sqlite;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
-using org.apache.calcite.sql.type;
-
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
+
+using FluentAssertions;
+
+using Microsoft.Data.Sqlite;
+
+using org.apache.calcite.sql.type;
+
+using Xunit;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -19,22 +22,23 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// convention is made of. Calcite's runtime reads those as boxed Java values, which is why the assertions
     /// are about <c>java.lang</c> types rather than .NET ones.
     /// </remarks>
-    [TestClass]
-    public class AdoReaderUtilTests
+    public class AdoReaderUtilTests : IDisposable
     {
 
         SqliteConnection _connection = null!;
         readonly List<DbCommand> _commands = [];
 
-        [TestInitialize]
-        public void Setup()
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        public AdoReaderUtilTests()
         {
             _connection = new SqliteConnection("Data Source=:memory:");
             _connection.Open();
         }
 
-        [TestCleanup]
-        public void Cleanup()
+        /// <inheritdoc />
+        public void Dispose()
         {
             foreach (var command in _commands)
                 command.Dispose();
@@ -59,80 +63,80 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             _commands.Add(command);
 
             var reader = command.ExecuteReader();
-            Assert.IsTrue(reader.Read(), "expected one row");
+            Assert.True(reader.Read(), "expected one row");
             return reader;
         }
 
         #region Integral types
 
-        [TestMethod]
+        [Fact]
         public void BooleanIsReadAsAJavaBoolean()
         {
             using var reader = Row("1");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.BOOLEAN);
 
-            Assert.IsInstanceOfType<java.lang.Boolean>(value);
-            Assert.IsTrue(((java.lang.Boolean)value!).booleanValue());
+            Assert.IsAssignableFrom<java.lang.Boolean>(value);
+            Assert.True(((java.lang.Boolean)value!).booleanValue());
         }
 
-        [TestMethod]
+        [Fact]
         public void FalseIsReadAsAJavaBoolean()
         {
             using var reader = Row("0");
-            Assert.IsFalse(((java.lang.Boolean)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.BOOLEAN)!).booleanValue());
+            Assert.False(((java.lang.Boolean)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.BOOLEAN)!).booleanValue());
         }
 
-        [TestMethod]
+        [Fact]
         public void TinyIntIsReadAsAJavaByte()
         {
             using var reader = Row("7");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.TINYINT);
 
-            Assert.IsInstanceOfType<java.lang.Byte>(value);
-            Assert.AreEqual((byte)7, ((java.lang.Byte)value!).byteValue());
+            Assert.IsAssignableFrom<java.lang.Byte>(value);
+            Assert.Equal((byte)7, ((java.lang.Byte)value!).byteValue());
         }
 
         /// <summary>
         /// Calcite's TINYINT is signed, and Java's <c>byte</c> is IKVM's unsigned one, so the sign has to
         /// travel in the bits rather than in the type.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ANegativeTinyIntKeepsItsSign()
         {
             using var reader = Row("-1");
             var value = (java.lang.Byte)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.TINYINT)!;
 
-            Assert.AreEqual("-1", value.ToString());
+            Assert.Equal("-1", value.ToString());
         }
 
-        [TestMethod]
+        [Fact]
         public void SmallIntIsReadAsAJavaShort()
         {
             using var reader = Row("-1234");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.SMALLINT);
 
-            Assert.IsInstanceOfType<java.lang.Short>(value);
-            Assert.AreEqual((short)-1234, ((java.lang.Short)value!).shortValue());
+            Assert.IsAssignableFrom<java.lang.Short>(value);
+            Assert.Equal((short)-1234, ((java.lang.Short)value!).shortValue());
         }
 
-        [TestMethod]
+        [Fact]
         public void IntegerIsReadAsAJavaInteger()
         {
             using var reader = Row("2147483647");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.INTEGER);
 
-            Assert.IsInstanceOfType<java.lang.Integer>(value);
-            Assert.AreEqual(int.MaxValue, ((java.lang.Integer)value!).intValue());
+            Assert.IsAssignableFrom<java.lang.Integer>(value);
+            Assert.Equal(int.MaxValue, ((java.lang.Integer)value!).intValue());
         }
 
-        [TestMethod]
+        [Fact]
         public void BigIntIsReadAsAJavaLong()
         {
             using var reader = Row("9223372036854775807");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.BIGINT);
 
-            Assert.IsInstanceOfType<java.lang.Long>(value);
-            Assert.AreEqual(long.MaxValue, ((java.lang.Long)value!).longValue());
+            Assert.IsAssignableFrom<java.lang.Long>(value);
+            Assert.Equal(long.MaxValue, ((java.lang.Long)value!).longValue());
         }
 
         #endregion
@@ -149,19 +153,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <param name="expression"></param>
         /// <param name="typeName"></param>
         /// <param name="expected"></param>
-        [TestMethod]
-        [DataRow("0", nameof(SqlTypeName.UTINYINT), "0")]
-        [DataRow("200", nameof(SqlTypeName.UTINYINT), "200")]
-        [DataRow("255", nameof(SqlTypeName.UTINYINT), "255")]
-        [DataRow("65535", nameof(SqlTypeName.USMALLINT), "65535")]
-        [DataRow("4294967295", nameof(SqlTypeName.UINTEGER), "4294967295")]
-        [DataRow("'18446744073709551615'", nameof(SqlTypeName.UBIGINT), "18446744073709551615")]
+        [Theory]
+        [InlineData("0", nameof(SqlTypeName.UTINYINT), "0")]
+        [InlineData("200", nameof(SqlTypeName.UTINYINT), "200")]
+        [InlineData("255", nameof(SqlTypeName.UTINYINT), "255")]
+        [InlineData("65535", nameof(SqlTypeName.USMALLINT), "65535")]
+        [InlineData("4294967295", nameof(SqlTypeName.UINTEGER), "4294967295")]
+        [InlineData("'18446744073709551615'", nameof(SqlTypeName.UBIGINT), "18446744073709551615")]
         public void AnUnsignedValueKeepsTheWholeOfItsRange(string expression, string typeName, string expected)
         {
             using var reader = Row(expression);
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.valueOf(typeName));
 
-            Assert.AreEqual(expected, value!.ToString());
+            Assert.Equal(expected, value!.ToString());
         }
 
         /// <summary>
@@ -169,51 +173,51 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// asking whether the value is a joou <c>UByte</c>, and a <see cref="java.lang.Short"/> holding the
         /// same number is not one.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AnUnsignedValueIsAJoouValue()
         {
             using var reader = Row("200");
 
-            Assert.IsInstanceOfType<org.joou.UByte>(AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.UTINYINT));
+            Assert.IsAssignableFrom<org.joou.UByte>(AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.UTINYINT));
         }
 
         /// <summary>
         /// The distinction the whole mapping turns on. 200 in a signed <c>TINYINT</c> is -56, which is why
         /// an unsigned tiny integer is a <c>UTINYINT</c> and not a <c>TINYINT</c>.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void TheSameByteSignedAndUnsignedAreDifferentNumbers()
         {
             using var signed = Row("-56");
             using var unsigned = Row("200");
 
-            Assert.AreEqual("-56", AdoReaderUtil.GetDbReaderValue(signed, 0, SqlTypeName.TINYINT)!.ToString());
-            Assert.AreEqual("200", AdoReaderUtil.GetDbReaderValue(unsigned, 0, SqlTypeName.UTINYINT)!.ToString());
+            Assert.Equal("-56", AdoReaderUtil.GetDbReaderValue(signed, 0, SqlTypeName.TINYINT)!.ToString());
+            Assert.Equal("200", AdoReaderUtil.GetDbReaderValue(unsigned, 0, SqlTypeName.UTINYINT)!.ToString());
         }
 
         /// <summary>
         /// An unsigned value is null-safe like every other, the joou types being references.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AnUnsignedNullIsNull()
         {
             using var reader = Row("CAST(NULL AS INTEGER)");
 
-            Assert.IsNull(AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.UTINYINT));
+            Assert.Null(AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.UTINYINT));
         }
 
         #endregion
 
         #region Approximate types
 
-        [TestMethod]
+        [Fact]
         public void DoubleIsReadAsAJavaDouble()
         {
             using var reader = Row("3.5");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.DOUBLE);
 
-            Assert.IsInstanceOfType<java.lang.Double>(value);
-            Assert.AreEqual(3.5d, ((java.lang.Double)value!).doubleValue());
+            Assert.IsAssignableFrom<java.lang.Double>(value);
+            Assert.Equal(3.5d, ((java.lang.Double)value!).doubleValue());
         }
 
         /// <summary>
@@ -221,63 +225,63 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <c>Double</c> for both, and marks the pairing "sic". Reading one as a four byte float silently
         /// loses precision.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void FloatSharesDoublesRepresentation()
         {
             using var reader = Row("3.5");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.FLOAT);
 
-            Assert.IsInstanceOfType<java.lang.Double>(value);
-            Assert.IsNotInstanceOfType<java.lang.Float>(value);
-            Assert.AreEqual(3.5d, ((java.lang.Double)value!).doubleValue());
+            Assert.IsAssignableFrom<java.lang.Double>(value);
+            Assert.IsNotAssignableFrom<java.lang.Float>(value);
+            Assert.Equal(3.5d, ((java.lang.Double)value!).doubleValue());
         }
 
         /// <summary>
         /// REAL is the four byte one.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void RealIsReadAsAJavaFloat()
         {
             using var reader = Row("3.5");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.REAL);
 
-            Assert.IsInstanceOfType<java.lang.Float>(value);
-            Assert.AreEqual(3.5f, ((java.lang.Float)value!).floatValue());
+            Assert.IsAssignableFrom<java.lang.Float>(value);
+            Assert.Equal(3.5f, ((java.lang.Float)value!).floatValue());
         }
 
         /// <summary>
         /// A decimal is exact, so it travels as a <see cref="java.math.BigDecimal"/> rather than through a
         /// double that could not represent it.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void DecimalIsReadAsABigDecimal()
         {
             using var reader = Row("'123.456'");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.DECIMAL);
 
-            Assert.IsInstanceOfType<java.math.BigDecimal>(value);
-            Assert.AreEqual("123.456", value!.ToString());
+            Assert.IsAssignableFrom<java.math.BigDecimal>(value);
+            Assert.Equal("123.456", value!.ToString());
         }
 
         #endregion
 
         #region Binary
 
-        [TestMethod]
+        [Fact]
         public void VarbinaryIsReadAsAByteString()
         {
             using var reader = Row("x'01FF80'");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.VARBINARY);
 
-            Assert.IsInstanceOfType<org.apache.calcite.avatica.util.ByteString>(value);
-            CollectionAssert.AreEqual(new byte[] { 0x01, 0xFF, 0x80 }, ((org.apache.calcite.avatica.util.ByteString)value!).getBytes());
+            Assert.IsAssignableFrom<org.apache.calcite.avatica.util.ByteString>(value);
+            Assert.Equal(new byte[] { 0x01, 0xFF, 0x80 }, ((org.apache.calcite.avatica.util.ByteString)value!).getBytes());
         }
 
-        [TestMethod]
+        [Fact]
         public void BinaryIsReadAsAByteString()
         {
             using var reader = Row("x'AB'");
-            Assert.IsInstanceOfType<org.apache.calcite.avatica.util.ByteString>(
+            Assert.IsAssignableFrom<org.apache.calcite.avatica.util.ByteString>(
                 AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.BINARY));
         }
 
@@ -285,25 +289,25 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
         #region Character types
 
-        [TestMethod]
+        [Fact]
         public void VarcharIsReadAsAString()
         {
             using var reader = Row("'hello'");
-            Assert.AreEqual("hello", AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.VARCHAR));
+            Assert.Equal("hello", AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.VARCHAR));
         }
 
-        [TestMethod]
+        [Fact]
         public void CharIsReadAsAString()
         {
             using var reader = Row("'abc'");
-            Assert.AreEqual("abc", AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.CHAR));
+            Assert.Equal("abc", AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.CHAR));
         }
 
-        [TestMethod]
+        [Fact]
         public void AnEmptyStringIsNotNull()
         {
             using var reader = Row("''");
-            Assert.AreEqual("", AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.VARCHAR));
+            Assert.Equal("", AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.VARCHAR));
         }
 
         #endregion
@@ -314,45 +318,45 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// A date is a count of whole days since 1 January 1970 in an <see cref="java.lang.Integer"/>, which
         /// is what <c>SqlFunctions.internalToDate</c> decodes with <c>LocalDate.ofEpochDay</c>.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void DateIsReadAsDaysSinceTheEpoch()
         {
             using var reader = Row("'2024-03-15'");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.DATE);
 
-            Assert.IsInstanceOfType<java.lang.Integer>(value);
-            Assert.AreEqual(
+            Assert.IsAssignableFrom<java.lang.Integer>(value);
+            Assert.Equal(
                 new DateOnly(2024, 3, 15).DayNumber - new DateOnly(1970, 1, 1).DayNumber,
                 ((java.lang.Integer)value!).intValue());
         }
 
-        [TestMethod]
+        [Fact]
         public void TheEpochItselfIsDayZero()
         {
             using var reader = Row("'1970-01-01'");
-            Assert.AreEqual(0, ((java.lang.Integer)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.DATE)!).intValue());
+            Assert.Equal(0, ((java.lang.Integer)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.DATE)!).intValue());
         }
 
-        [TestMethod]
+        [Fact]
         public void ADateBeforeTheEpochIsNegative()
         {
             using var reader = Row("'1969-12-31'");
-            Assert.AreEqual(-1, ((java.lang.Integer)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.DATE)!).intValue());
+            Assert.Equal(-1, ((java.lang.Integer)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.DATE)!).intValue());
         }
 
         /// <summary>
         /// A date is not a timestamp. They were once the same line, which meant a date arrived 86,400,000
         /// times too large and boxed as the wrong type.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ADateIsNotAMillisecondCount()
         {
             using var reader = Row("'2024-03-15'");
             var date = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.DATE);
 
-            Assert.IsInstanceOfType<java.lang.Integer>(date);
-            Assert.IsNotInstanceOfType<java.lang.Long>(date);
-            Assert.IsTrue(((java.lang.Integer)date!).intValue() < 100_000, "a day count, not milliseconds");
+            Assert.IsAssignableFrom<java.lang.Integer>(date);
+            Assert.IsNotAssignableFrom<java.lang.Long>(date);
+            Assert.True(((java.lang.Integer)date!).intValue() < 100_000, "a day count, not milliseconds");
         }
 
         /// <summary>
@@ -360,24 +364,24 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// unspecified would pick up the machine's offset on the way through
         /// <see cref="DateTimeOffset"/>, and midnight west of UTC would fall to the day before.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void MidnightDoesNotDependOnTheMachineTimeZone()
         {
             using var reader = Row("'2024-03-15 00:00:00'");
             var value = (java.lang.Integer)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.DATE)!;
 
-            Assert.AreEqual(
+            Assert.Equal(
                 new DateOnly(2024, 3, 15).DayNumber - new DateOnly(1970, 1, 1).DayNumber,
                 value.intValue());
         }
 
-        [TestMethod]
+        [Fact]
         public void TimestampIsReadAsAJavaLong()
         {
             using var reader = Row("'2024-03-15 12:30:45'");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.TIMESTAMP);
 
-            Assert.IsInstanceOfType<java.lang.Long>(value);
+            Assert.IsAssignableFrom<java.lang.Long>(value);
         }
 
         /// <summary>
@@ -385,7 +389,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// to arrive as a <see cref="java.lang.Long"/>, which <c>CalciteResultValue</c> has no case for, so
         /// every date column threw on its first row.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ADateSurvivesTheRoundTripToADotNetDate()
         {
             using var reader = Row("'2024-03-15'");
@@ -394,7 +398,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             // the decode CalciteResultValue performs for SqlTypeName.DATE
             var decoded = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddDays(value.intValue());
 
-            Assert.AreEqual(new DateTime(2024, 3, 15, 0, 0, 0, DateTimeKind.Utc), decoded);
+            Assert.Equal(new DateTime(2024, 3, 15, 0, 0, 0, DateTimeKind.Utc), decoded);
         }
 
         #endregion
@@ -404,21 +408,21 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// OTHER is the escape hatch, and hands back whatever the provider gave.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void OtherIsReadAsTheProviderValue()
         {
             using var reader = Row("'passthrough'");
-            Assert.AreEqual("passthrough", AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.OTHER));
+            Assert.Equal("passthrough", AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.OTHER));
         }
 
-        [TestMethod]
+        [Fact]
         public void NullTypeIsAlwaysNull()
         {
             using var reader = Row("1");
-            Assert.IsNull(AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.NULL));
+            Assert.Null(AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.NULL));
         }
 
-        [TestMethod]
+        [Fact]
         public void EveryTypeReadsADatabaseNullAsNull()
         {
             SqlTypeName[] types = [
@@ -431,7 +435,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             foreach (var type in types)
             {
                 using var reader = Row("NULL");
-                Assert.IsNull(AdoReaderUtil.GetDbReaderValue(reader, 0, type), $"{type.name()} should read NULL as null");
+                AdoReaderUtil.GetDbReaderValue(reader, 0, type).Should().BeNull($"{type.name()} should read NULL as null");
             }
         }
 
@@ -442,15 +446,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// A type with no mapping is refused by name rather than silently mis-read.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AnUnmappedTypeIsRefusedByName()
         {
             using var reader = Row("1");
 
-            var e = Assert.ThrowsExactly<AdoCalciteException>(
+            var e = Assert.Throws<AdoCalciteException>(
                 () => AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.GEOMETRY));
 
-            StringAssert.Contains(e.Message, nameof(SqlTypeName.GEOMETRY));
+            Assert.Contains(nameof(SqlTypeName.GEOMETRY), e.Message);
         }
 
         #endregion
@@ -461,7 +465,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// The <c>RelDataType</c> overload is the one a row builder reaches, and has to agree with the one
         /// generated code reaches.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void BothOverloadsAgree()
         {
             var factory = new org.apache.calcite.jdbc.JavaTypeFactoryImpl();
@@ -471,26 +475,26 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             var byType = AdoReaderUtil.GetDbReaderValue(reader, 0, type);
             var byName = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.INTEGER);
 
-            Assert.AreEqual(byName, byType);
-            Assert.AreEqual(42, ((java.lang.Integer)byType!).intValue());
+            Assert.Equal(byName, byType);
+            Assert.Equal(42, ((java.lang.Integer)byType!).intValue());
         }
 
         #endregion
 
         #region Accessors
 
-        [TestMethod]
+        [Fact]
         public void AccessorsReadNullIndependently()
         {
             using var reader = Row("NULL");
 
-            Assert.IsNull(AdoReaderUtil.GetBoolean(reader, 0));
-            Assert.IsNull(AdoReaderUtil.GetByte(reader, 0));
-            Assert.IsNull(AdoReaderUtil.GetShort(reader, 0));
-            Assert.IsNull(AdoReaderUtil.GetInt(reader, 0));
-            Assert.IsNull(AdoReaderUtil.GetLong(reader, 0));
-            Assert.IsNull(AdoReaderUtil.GetString(reader, 0));
-            Assert.IsNull(AdoReaderUtil.GetValue(reader, 0));
+            Assert.Null(AdoReaderUtil.GetBoolean(reader, 0));
+            Assert.Null(AdoReaderUtil.GetByte(reader, 0));
+            Assert.Null(AdoReaderUtil.GetShort(reader, 0));
+            Assert.Null(AdoReaderUtil.GetInt(reader, 0));
+            Assert.Null(AdoReaderUtil.GetLong(reader, 0));
+            Assert.Null(AdoReaderUtil.GetString(reader, 0));
+            Assert.Null(AdoReaderUtil.GetValue(reader, 0));
         }
 
         #endregion

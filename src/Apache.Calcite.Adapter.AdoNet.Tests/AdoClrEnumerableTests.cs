@@ -9,8 +9,11 @@ using System.Threading.Tasks;
 using Apache.Calcite.Adapter.AdoNet.Metadata;
 using Apache.Calcite.Data;
 
+using FluentAssertions;
+
 using Microsoft.Data.Sqlite;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+using Xunit;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -28,15 +31,16 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// Which of <c>AdoSequences.Read</c> and <c>ReadAsync</c> that converter builds a call to is the mode's
     /// doing and is settled when the plan is compiled, so it is not visible in the plan.
     /// </remarks>
-    [TestClass]
-    public class AdoClrEnumerableTests
+    public class AdoClrEnumerableTests : IDisposable
     {
 
         SqliteFixture _sqlite = null!;
         CalciteConnection _connection = null!;
 
-        [TestInitialize]
-        public void Setup()
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        public AdoClrEnumerableTests()
         {
             _sqlite = new SqliteFixture();
             _connection = OpenConnection();
@@ -75,8 +79,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
                 .OpenConnection();
         }
 
-        [TestCleanup]
-        public void Cleanup()
+        /// <inheritdoc />
+        public void Dispose()
         {
             _connection?.Dispose();
             _sqlite?.Dispose();
@@ -146,11 +150,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// a type name it does not recognise gives a cast numeric affinity, so the value coming back would
         /// be a number rather than anything a GUID could be read out of.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldReadAUuidCastThroughThisConvention()
         {
             if (SqlServerFixture.IsAvailable == false)
-                Assert.Inconclusive("No SQL Server LocalDB instance is reachable on this machine.");
+                Assert.Skip("No SQL Server LocalDB instance is reachable on this machine.");
 
             var server = SqlServerFixture.Shared;
 
@@ -168,9 +172,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             cmd.CommandText = "SELECT CAST(C_GUID AS UUID) FROM ADO.TYPES WHERE ID = 1";
 
             using var r = cmd.ExecuteReader();
-            Assert.IsTrue(r.Read(), "expected one row");
-            Assert.AreEqual(new System.Guid("3f2504e0-4f89-11d3-9a0c-0305e82c3301"), r.GetGuid(0));
-            Assert.IsFalse(r.Read(), "and only that one");
+            Assert.True(r.Read(), "expected one row");
+            Assert.Equal(new System.Guid("3f2504e0-4f89-11d3-9a0c-0305e82c3301"), r.GetGuid(0));
+            Assert.False(r.Read(), "and only that one");
         }
 
         /// <summary>
@@ -182,15 +186,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// notice. The mode is pinned because the default plans asynchronously and reaches a different
         /// converter — <see cref="ShouldCarryTheAdapterIntoTheAsyncConvention"/> holds that plan.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldConvertStraightIntoThisConvention()
         {
             using var c = OpenConnection(synchronous: true);
 
             var plan = Explain(c, "SELECT empno, name FROM ADO.emps WHERE deptno = 10");
 
-            StringAssert.Contains(plan, "AdoToClrEnumerableConverter");
-            Assert.IsFalse(plan.Contains("AdoToEnumerableConverter"), plan);
+            Assert.Contains("AdoToClrEnumerableConverter", plan);
+            Assert.False(plan.Contains("AdoToEnumerableConverter"), plan);
         }
 
         /// <summary>
@@ -211,46 +215,46 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// the implementor builds rather than in the plan. <c>ShouldReadTheAdapterAsynchronously</c> holds
         /// that end.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldCarryTheAdapterIntoThisConvention()
         {
             var plan = Explain(_connection, "SELECT empno, name FROM ADO.emps WHERE deptno = 10");
 
-            StringAssert.Contains(plan, "AdoToClrEnumerableConverter");
-            StringAssert.Contains(plan, "AdoProject");
-            Assert.IsFalse(plan.Contains("AdoToEnumerableConverter"), plan);
+            Assert.Contains("AdoToClrEnumerableConverter", plan);
+            Assert.Contains("AdoProject", plan);
+            Assert.False(plan.Contains("AdoToEnumerableConverter"), plan);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldScanAnAdoTable()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "1|Alice|10", "2|Bob|10", "3|Carol|20", "4|Dave|20", "5|Erin|null" },
-                Rows("SELECT empno, name, deptno FROM ADO.emps ORDER BY empno"));
+                Rows("SELECT empno, name, deptno FROM ADO.emps ORDER BY empno"), strict: true);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldFilterAnAdoTable()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "3|Carol|20", "4|Dave|20" },
-                Rows("SELECT empno, name, deptno FROM ADO.emps WHERE deptno = 20"));
+                Rows("SELECT empno, name, deptno FROM ADO.emps WHERE deptno = 20"), strict: true);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAggregateAnAdoTable()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "10|2", "20|2", "null|1" },
-                Rows("SELECT deptno, COUNT(*) FROM ADO.emps GROUP BY deptno ORDER BY deptno"));
+                Rows("SELECT deptno, COUNT(*) FROM ADO.emps GROUP BY deptno ORDER BY deptno"), strict: true);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldJoinAcrossTheConverter()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice|Sales", "Bob|Sales", "Carol|Engineering", "Dave|Engineering" },
-                Rows("SELECT e.name, d.dname FROM ADO.emps e JOIN ADO.depts d ON e.deptno = d.deptno ORDER BY e.name"));
+                Rows("SELECT e.name, d.dname FROM ADO.emps e JOIN ADO.depts d ON e.deptno = d.deptno ORDER BY e.name"), strict: true);
         }
 
         /// <summary>
@@ -260,16 +264,16 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// Metadata's own connections do not reach this source: those are opened against the
         /// <c>DbDataSource</c> the metadata was built from, so what is counted here is the plan's.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldReadTheAdapterThroughTheAsyncConverter()
         {
             var source = new CountingAdoDataSource(_sqlite.DataSource);
             using var connection = OpenConnection(source);
 
-            CollectionAssert.AreEquivalent(new[] { "1|Alice", "2|Bob" }, await RowsAsync(connection, "SELECT empno, name FROM ADO.emps WHERE deptno = 10"));
+            Assert.Equivalent(new[] { "1|Alice", "2|Bob" }, await RowsAsync(connection, "SELECT empno, name FROM ADO.emps WHERE deptno = 10"), strict: true);
 
-            Assert.AreEqual(1, source.Opened);
-            Assert.AreEqual(1, source.Closed);
+            Assert.Equal(1, source.Opened);
+            Assert.Equal(1, source.Closed);
         }
 
         /// <summary>
@@ -282,7 +286,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <c>forceDecorrelate=false</c> is what leaves a correlate in the plan at all — Calcite rewrites one
         /// into a join wherever it can, and by default always tries.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldEnrichACorrelatedSubQueryOnTheAsyncPath()
         {
             using var connection = OpenConnection(new CountingAdoDataSource(_sqlite.DataSource), decorrelate: false);
@@ -291,19 +295,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             // the correlate has to still be there, and the inner sub-plan has to still be the adapter's, or
             // the query below proves nothing about the enricher
             var plan = Explain(connection, Sql);
-            StringAssert.Contains(plan, "ClrEnumerableCorrelate");
-            StringAssert.Contains(plan, "AdoFilter(condition=[=($0, $cor0.DEPTNO)])");
-            StringAssert.Contains(plan, "AdoToClrEnumerableConverter");
+            Assert.Contains("ClrEnumerableCorrelate", plan);
+            Assert.Contains("AdoFilter(condition=[=($0, $cor0.DEPTNO)])", plan);
+            Assert.Contains("AdoToClrEnumerableConverter", plan);
 
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice|Sales", "Bob|Sales", "Carol|Engineering", "Dave|Engineering", "Erin|null" },
-                await RowsAsync(connection, Sql));
+                await RowsAsync(connection, Sql), strict: true);
         }
 
         /// <summary>
         /// <see cref="AdoSequences.ReadAsync{TRow}"/> on its own, without a plan around it.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public async Task ShouldReadRowsAsynchronously()
         {
             var source = new CountingAdoDataSource(_sqlite.DataSource);
@@ -312,9 +316,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             await foreach (var name in AdoSequences.ReadAsync(source, "SELECT NAME FROM EMPS WHERE DEPTNO = 10 ORDER BY EMPNO", r => r.GetString(0), null))
                 names.Add(name);
 
-            CollectionAssert.AreEqual(new[] { "Alice", "Bob" }, names);
-            Assert.AreEqual(1, source.Opened);
-            Assert.AreEqual(1, source.Closed);
+            Assert.Equal(new[] { "Alice", "Bob" }, names);
+            Assert.Equal(1, source.Opened);
+            Assert.Equal(1, source.Closed);
         }
 
         /// <summary>
@@ -329,37 +333,37 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <para>Composing the sequence opens nothing, because acquisition belongs to the enumerator and
         /// not to the call — one enumeration, one connection.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldSendTheStatementAtAcquisition()
         {
             var source = new CountingAdoDataSource(_sqlite.DataSource);
 
             var rows = AdoSequences.ReadAsync(source, "SELECT NAME FROM EMPS", r => r.GetString(0), null);
-            Assert.AreEqual(0, source.Opened, "composing the sequence opens nothing");
+            source.Opened.Should().Be(0, "composing the sequence opens nothing");
 
             var enumerator = rows.GetAsyncEnumerator();
 
             try
             {
-                Assert.AreEqual(1, source.Opened, "and obtaining its enumerator sends the statement");
+                source.Opened.Should().Be(1, "and obtaining its enumerator sends the statement");
             }
             finally
             {
                 await enumerator.DisposeAsync();
             }
 
-            Assert.AreEqual(1, source.Closed, "an enumerator abandoned without a row still closes it");
+            source.Closed.Should().Be(1, "an enumerator abandoned without a row still closes it");
         }
 
         /// <summary>
         /// A statement the provider rejects closes what was opened for it.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public async Task ShouldCloseTheConnectionWhenTheStatementFails()
         {
             var source = new CountingAdoDataSource(_sqlite.DataSource);
 
-            await Assert.ThrowsExactlyAsync<AdoCalciteException>(async () =>
+            await Assert.ThrowsAsync<AdoCalciteException>(async () =>
             {
                 await foreach (var _ in AdoSequences.ReadAsync(source, "SELECT NAME FROM NO_SUCH_TABLE", r => r.GetString(0), null))
                 {
@@ -367,7 +371,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
                 }
             });
 
-            Assert.AreEqual(1, source.Closed);
+            Assert.Equal(1, source.Closed);
         }
 
         /// <summary>
@@ -386,7 +390,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <see cref="AdoDataSource"/>, so arming the source after the connection is open fails the plan's
         /// own connection and nothing else.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldFailFromExecuteRatherThanFromTheFirstRead()
         {
             var source = new CountingAdoDataSource(_sqlite.DataSource) { Failing = true };
@@ -397,13 +401,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
             // the call itself, not the block: a reader handed back and failing on its first ReadAsync is
             // exactly what this is here to refuse
-            await Assert.ThrowsExactlyAsync<CalciteException>(async () => await cmd.ExecuteReaderAsync());
+            await Assert.ThrowsAsync<CalciteException>(async () => await cmd.ExecuteReaderAsync());
         }
 
         /// <summary>
         /// The synchronous route has always done this, and still does.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldFailFromExecuteInSynchronousMode()
         {
             var source = new CountingAdoDataSource(_sqlite.DataSource) { Failing = true };
@@ -412,19 +416,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             using var cmd = connection.CreateCommand();
             cmd.CommandText = "SELECT empno, name FROM ADO.emps";
 
-            Assert.ThrowsExactly<CalciteException>(() => cmd.ExecuteReader());
+            Assert.Throws<CalciteException>(() => cmd.ExecuteReader());
         }
 
         /// <summary>
         /// The two conventions answer the same rows for the same statements.
         /// </summary>
         /// <remarks>
-        /// <c>ClrEnumerableDifferentialTests</c> for the adapter, and the same argument: the expected answer
+        /// <c>ClrEnumerableConventionDifferentialTests</c> for the adapter, and the same argument: the expected answer
         /// is whatever the other convention says, so a divergence shows up as a disagreement rather than as
         /// an assertion somebody wrote by hand. The five cover a scan, a filter, an aggregate, a real column
         /// and a join, which is where the row builder and the pushed statement differ most.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldReadTheSameRowsInBothConventions()
         {
             using var synchronous = OpenConnection(synchronous: true);
@@ -438,7 +442,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
                 "SELECT e.name, d.dname FROM ADO.emps e JOIN ADO.depts d ON e.deptno = d.deptno ORDER BY e.name",
             })
             {
-                CollectionAssert.AreEqual(Rows(synchronous, sql), Rows(_connection, sql), sql);
+                Rows(_connection, sql).Should().Equal(Rows(synchronous, sql), sql);
             }
         }
 
@@ -458,7 +462,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// subtree of Calcite's convention, which reads <c>DataContext.Variable.CANCEL_FLAG</c> and no token
         /// at all — is <c>AdoCancellationTests</c> and <c>StatementCancellationTests</c>.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldObserveACancelledToken()
         {
             var source = new CountingAdoDataSource(_sqlite.DataSource);
@@ -466,13 +470,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             using var cancellation = new CancellationTokenSource();
             cancellation.Cancel();
 
-            await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
             {
                 await foreach (var _ in AdoSequences.ReadAsync(source, "SELECT NAME FROM EMPS", r => r.GetString(0), null).WithCancellation(cancellation.Token))
                     Assert.Fail("a row was read under a cancelled token");
             });
 
-            Assert.AreEqual(1, source.Closed, "and the connection the acquisition opened is closed");
+            source.Closed.Should().Be(1, "and the connection the acquisition opened is closed");
         }
 
         /// <summary>

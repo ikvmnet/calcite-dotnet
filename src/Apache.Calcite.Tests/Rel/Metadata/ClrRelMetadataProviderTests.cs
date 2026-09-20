@@ -6,7 +6,7 @@ using System.Reflection;
 using Apache.Calcite.Extensions.Prepare.Tests;
 using Apache.Calcite.Extensions.Rel.Metadata;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using FluentAssertions;
 
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -18,6 +18,8 @@ using org.apache.calcite.sql;
 using org.apache.calcite.sql.fun;
 using org.apache.calcite.sql.type;
 using org.apache.calcite.util;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
 {
@@ -32,7 +34,6 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
     /// worse plan returns the same rows; the whole of what a defect here looks like is a slower query, until
     /// it is a cost model that never converges. So the comparison is direct, method by method and rel by rel.
     /// </remarks>
-    [TestClass]
     public class ClrRelMetadataProviderTests
     {
 
@@ -179,7 +180,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         /// <summary>
         /// The two providers answer the same, for every method and every node of a plan.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void Should_answer_what_janino_answers()
         {
             var cluster = Cluster();
@@ -201,14 +202,14 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
                 }
             }
 
-            Assert.AreEqual(0, differences.Count, string.Join(Environment.NewLine, differences));
+            differences.Count.Should().Be(0, string.Join(Environment.NewLine, differences));
         }
 
         /// <summary>
         /// One query's answers are the same when every node is asked through one query, which is what a
         /// planner does and what the cache is for.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void Should_answer_what_janino_answers_through_one_query()
         {
             var cluster = Cluster();
@@ -229,7 +230,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
                         differences.Add($"{rel.getRelTypeName()}.{name}: janino={janino} clr={clr}");
                 }
 
-            Assert.AreEqual(0, differences.Count, string.Join(Environment.NewLine, differences));
+            differences.Count.Should().Be(0, string.Join(Environment.NewLine, differences));
         }
 
         /// <summary>
@@ -257,7 +258,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         /// What remains of the reason is the compile, which
         /// <see cref="Should_prepare_without_compiling_a_handler"/> holds.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void Should_take_a_handler_written_in_dotnet()
         {
             var handlerClass = (java.lang.Class)typeof(BuiltInMetadata.RowCount.Handler);
@@ -270,12 +271,12 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
             var values = LogicalValues.createEmpty(cluster, rowType);
 
             var mq = new RelMetadataQuery(ClrRelMetadataProvider.Of(chained));
-            Assert.AreEqual(7d, mq.getRowCount(values).doubleValue(), 0.0001);
+            mq.getRowCount(values).doubleValue().Should().BeApproximately(7d, 0.0001);
 
-            Assert.IsNotNull(JaninoRelMetadataProvider.of(chained).revise(handlerClass));
+            Assert.NotNull(JaninoRelMetadataProvider.of(chained).revise(handlerClass));
 
             var janino = new RelMetadataQuery(JaninoRelMetadataProvider.of(chained));
-            Assert.AreEqual(7d, janino.getRowCount(values).doubleValue(), 0.0001);
+            janino.getRowCount(values).doubleValue().Should().BeApproximately(7d, 0.0001);
         }
 
         /// <summary>
@@ -290,13 +291,13 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         /// <para>Measured before this provider: a statement of this shape generated nine of the twenty-seven
         /// handlers, and that was two to three seconds of a cold first prepare.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void Should_prepare_without_compiling_a_handler()
         {
             var field = typeof(JaninoRelMetadataProvider).GetField("HANDLERS", BindingFlags.NonPublic | BindingFlags.Static)
                 ?? typeof(JaninoRelMetadataProvider).GetField("__<>HANDLERS", BindingFlags.NonPublic | BindingFlags.Static);
 
-            Assert.IsNotNull(field, "JaninoRelMetadataProvider.HANDLERS could not be read, so nothing was measured.");
+            field.Should().NotBeNull("JaninoRelMetadataProvider.HANDLERS could not be read, so nothing was measured.");
 
             var cache = (com.google.common.cache.LoadingCache)field.GetValue(null)!;
 
@@ -306,7 +307,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
             ClrPrepareFixture.WithContext(sql, (context, _) =>
                 new Apache.Calcite.Extensions.Prepare.ClrPrepareImpl().PrepareSql(context, Apache.Calcite.Extensions.Prepare.IClrPrepare.Query.Of(sql), typeof(object[]), -1));
 
-            Assert.AreEqual(0L, cache.size(), "Janino generated a metadata handler while preparing.");
+            cache.size().Should().Be(0L, "Janino generated a metadata handler while preparing.");
         }
 
         /// <summary>
@@ -353,7 +354,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         /// and planning with that cluster. This is that recipe, and it is the whole of why the prepare is
         /// open.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void Should_take_a_provider_from_a_prepare_of_ones_own()
         {
             var source = ReflectiveRelMetadataProvider.reflectiveSource(
@@ -366,7 +367,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
             ClrPrepareFixture.WithContext(sql, (context, _) =>
                 new PrepareWithProvider(chained).PrepareSql(context, Apache.Calcite.Extensions.Prepare.IClrPrepare.Query.Of(sql), typeof(object[]), -1));
 
-            Assert.IsTrue(CountingRowCount.Asked > 0, "the provider the prepare installed was never asked.");
+            Assert.True(CountingRowCount.Asked > 0, "the provider the prepare installed was never asked.");
         }
 
         /// <summary>
@@ -389,15 +390,15 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         /// deferring, and the proxy was not free: a query builds one per handler interface, and the planner
         /// builds a query per rule transformation.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void Should_answer_with_the_handler_itself()
         {
             var handlerClass = (java.lang.Class)typeof(BuiltInMetadata.RowCount.Handler);
 
             var handler = ClrRelMetadataProvider.Default.handler(handlerClass);
 
-            StringAssert.StartsWith(handler.GetType().Name, "GeneratedMetadata_");
-            Assert.AreSame(handler, ClrRelMetadataProvider.Default.revise(handlerClass));
+            Assert.StartsWith("GeneratedMetadata_", handler.GetType().Name);
+            Assert.Same(handler, ClrRelMetadataProvider.Default.revise(handlerClass));
         }
 
         /// <summary>
@@ -432,7 +433,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         /// the interfaces — Measure, FunctionalDependency and InputFieldsUsed — are reached by no query in
         /// this suite, so this calls all of them by hand rather than waiting for one that does.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void Should_emit_every_handler_method_callably()
         {
             var cluster = Cluster();
@@ -459,7 +460,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
                 }
             }
 
-            Assert.AreEqual(0, differences.Count, string.Join(Environment.NewLine, differences));
+            differences.Count.Should().Be(0, string.Join(Environment.NewLine, differences));
         }
 
         /// <summary>
@@ -483,7 +484,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         /// the catch around the dispatch is what clears the row. Neither branch is reached by a query that
         /// answers, so nothing else here covers them.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void Should_report_a_cycle_and_clear_the_row()
         {
             var handlerClass = (java.lang.Class)typeof(BuiltInMetadata.RowCount.Handler);
@@ -496,15 +497,15 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
 
             var mq = new RelMetadataQuery(ClrRelMetadataProvider.Of(source));
 
-            Assert.Throws<CyclicMetadataException>(() => mq.getRowCount(values));
-            Assert.AreEqual(0, mq.map.row(values).size(), "the rel's row was left behind.");
+            Assert.ThrowsAny<CyclicMetadataException>(() => mq.getRowCount(values));
+            mq.map.row(values).size().Should().Be(0, "the rel's row was left behind.");
         }
 
         /// <summary>
         /// A handler interface no handler answers refuses the rel, as Calcite's generated chain does when it
         /// runs off the end.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void Should_refuse_a_rel_no_handler_declares()
         {
             var source = ReflectiveRelMetadataProvider.reflectiveSource(
@@ -517,11 +518,11 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
 
             var mq = new RelMetadataQuery(ClrRelMetadataProvider.Of(source));
 
-            Assert.AreEqual(7d, mq.getRowCount(values).doubleValue(), 0.0001);
+            mq.getRowCount(values).doubleValue().Should().BeApproximately(7d, 0.0001);
 
-            var refused = Assert.Throws<java.lang.IllegalArgumentException>(() => mq.getMaxRowCount(values));
-            StringAssert.Contains(refused.Message, "No handler for method");
-            StringAssert.Contains(refused.Message, "catch-all");
+            var refused = Assert.ThrowsAny<java.lang.IllegalArgumentException>(() => mq.getMaxRowCount(values));
+            Assert.Contains("No handler for method", refused.Message);
+            Assert.Contains("catch-all", refused.Message);
         }
 
     }

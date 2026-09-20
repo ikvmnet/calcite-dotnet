@@ -7,14 +7,14 @@ using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.metadata;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.schema;
 using org.apache.calcite.tools;
+
+using Xunit;
 
 using DataContext = org.apache.calcite.DataContext;
 
@@ -45,7 +45,6 @@ namespace Apache.Calcite.Geography.Tests
     /// nothing in this repository, deliberately. This test project references
     /// <c>Apache.Calcite.Extensions</c> so that the claim can be measured rather than argued.</para>
     /// </remarks>
-    [TestClass]
     public class GeographyConventionTests
     {
 
@@ -72,7 +71,7 @@ namespace Apache.Calcite.Geography.Tests
         /// </summary>
         const int ExpectedRows = 7;
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeWithCalciteInTheEnumerableConvention()
         {
             var differences = new List<string>();
@@ -94,7 +93,7 @@ namespace Apache.Calcite.Geography.Tests
             rows.Should().Be(ExpectedRows);
         }
 
-        [TestMethod]
+        [Fact]
         public async Task ShouldAgreeWithCalciteWhenTheSamePlanIsAwaited()
         {
             var differences = new List<string>();
@@ -122,7 +121,7 @@ namespace Apache.Calcite.Geography.Tests
         /// convention builds reads them as that class. Pinning it here says the type survived planning rather
         /// than only validation.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldCarryTheCarrierClassThroughAPlan()
         {
             var (physical, _, _) = PlanClr("SELECT GEOG FROM GEO WHERE ID = 1");

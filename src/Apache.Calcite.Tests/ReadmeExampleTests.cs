@@ -6,8 +6,6 @@ using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.schema;
@@ -15,13 +13,14 @@ using org.apache.calcite.schema.impl;
 using org.apache.calcite.sql.type;
 using org.apache.calcite.tools;
 
+using Xunit;
+
 namespace Apache.Calcite.Tests
 {
 
     /// <summary>
     /// Runs the example in the project README, so that it cannot go stale without a test going red.
     /// </summary>
-    [TestClass]
     public class ReadmeExampleTests
     {
 
@@ -73,7 +72,7 @@ namespace Apache.Calcite.Tests
 
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunTheExampleFromTheReadme()
         {
             var rootSchema = Frameworks.createRootSchema(true);

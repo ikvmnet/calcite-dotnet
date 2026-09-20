@@ -4,9 +4,9 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -26,7 +26,6 @@ namespace Apache.Calcite.Geography.Tests
     /// its northern edge further than its eastern one everywhere off the equator, so the planar function has
     /// no fixed meaning on the Earth; this grows by metres.</para>
     /// </remarks>
-    [TestClass]
     public class GeographyBoundsTests
     {
 
@@ -43,7 +42,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// An ordinary shape gets an ordinary box, and agrees with Calcite.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldBoundAnOrdinaryShapeAsCalciteDoes()
         {
             var shape = Wkt("POLYGON((0 0, 2 0, 2 1, 0 1, 0 0))");
@@ -63,7 +62,7 @@ namespace Apache.Calcite.Geography.Tests
         /// longitude, because -179 and 179 are its least and greatest coordinates; this answers the two
         /// degrees that are actually there, as the two halves either side of the line.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldNotSpanTheGlobeAcrossTheAntimeridian()
         {
             var shape = Wkt("LINESTRING(179 0, -179 0)");
@@ -82,7 +81,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A degenerate rectangle answers what JTS answers for one.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldDegenerateAsJtsDoes()
         {
             // approximately, because the rectangle is the sphere's: a coordinate reaches it as a unit
@@ -98,7 +97,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The extent is the same rectangle, as Calcite's two are the same call.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerTheSameForExtent()
         {
             var shape = Wkt("POLYGON((0 0, 2 0, 2 1, 0 1, 0 0))");
@@ -115,7 +114,7 @@ namespace Apache.Calcite.Geography.Tests
         /// latitude. A planar expansion grows both by the same number and is therefore short to the east and
         /// west by half.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldExpandInMetresRatherThanDegrees()
         {
             var expanded = GeographyFunctions.Expand(Wkt("POINT(0 60)"), java.lang.Double.valueOf(111319.49));
@@ -133,7 +132,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Nothing to expand is nothing.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerNullForANullArgument()
         {
             GeographyFunctions.Envelope(null).Should().BeNull();
@@ -145,7 +144,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// All three run as operators.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldRunEachAsAnOperator()
         {
             (GeographyExecutionTests.Run("SELECT CLR_ST_GEOG_X(CLR_ST_GEOG_ENVELOPE(CLR_ST_GEOG_GEOMFROMTEXT('POINT(1 2)')))")[0][0] is java.lang.Number x ? x.doubleValue() : double.NaN).Should().BeApproximately(1, 1e-12);

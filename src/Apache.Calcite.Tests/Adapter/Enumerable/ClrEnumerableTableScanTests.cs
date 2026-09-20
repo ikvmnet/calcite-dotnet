@@ -12,8 +12,6 @@ using Apache.Calcite.Tests;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
@@ -21,6 +19,8 @@ using org.apache.calcite.rel.type;
 using org.apache.calcite.schema;
 using org.apache.calcite.schema.impl;
 using org.apache.calcite.tools;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -38,7 +38,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// route, not the rows: a scannable table is called, a queryable one hands back an expression the scan
     /// composes, and neither goes through linq4j.</para>
     /// </remarks>
-    [TestClass]
     public class ClrEnumerableTableScanTests
     {
 
@@ -170,7 +169,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// converting every row on the way in — an adapter on a boundary that does not have one, paid for by
         /// every table that was already right.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldFailOverATableWhoseValuesAreNotTheTypeFactorys()
         {
             var scan = () => Run("SELECT \"K\" FROM \"T\"", new ClrBoxedRowsTable(), false);
@@ -273,7 +272,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// The rows Calcite's own SPI gives, which every other case is measured against.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldReadACalciteScannableTable()
         {
             var (_, rows) = Run(Sql, new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false), false);
@@ -281,7 +280,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Should().Equal(Expected);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldReadAClrScannableTable()
         {
             var (plan, rows) = Run(Sql, new ClrRowsTable(), false);
@@ -290,7 +289,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Should().Equal(Expected);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldReadAClrQueryableTable()
         {
             var (plan, rows) = Run(Sql, new ClrQueryableRowsTable(), false);
@@ -299,7 +298,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Should().Equal(Expected);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldReadAnAsyncScannableTable()
         {
             var (plan, rows) = Run(Sql, new AsyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false), true);
@@ -308,7 +307,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Should().Equal(Expected);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldReadAnAsyncQueryableTable()
         {
             var (plan, rows) = Run(Sql, new AsyncQueryableRowsTable(), true);
@@ -329,7 +328,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <para>The converter is still there, and still needed, for what this convention has no node for at
         /// all — a table function, a MATCH_RECOGNIZE, a recursive query's transient scan.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldReadACalciteTableWithoutAConverter()
         {
             var (plan, rows) = Run(Sql, new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false), true);
@@ -348,7 +347,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// of the same name and shape as <c>EnumerableTableScan.deduceElementType</c>: a scannable table
         /// yields arrays, a queryable one names its own type, and everything else is Calcite's answer.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldDeduceTheElementTypeCalciteWould()
         {
             var arrays = (java.lang.Class)typeof(object[]);

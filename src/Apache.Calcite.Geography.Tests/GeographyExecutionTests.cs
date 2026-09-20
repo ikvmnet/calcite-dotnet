@@ -5,8 +5,6 @@ using Apache.Calcite.Geography.Rel.Type;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.jdbc;
@@ -16,6 +14,8 @@ using org.apache.calcite.schema;
 using org.apache.calcite.schema.impl;
 using org.apache.calcite.sql.type;
 using org.apache.calcite.tools;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -32,7 +32,6 @@ namespace Apache.Calcite.Geography.Tests
     /// resolve the <c>cli.</c>-prefixed name IKVM gives a CLR class, which it could not do under IKVM 8.14.0
     /// or 8.15.0.
     /// </remarks>
-    [TestClass]
     public class GeographyExecutionTests
     {
 
@@ -83,7 +82,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A constructor and a measurement, with no table involved.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldRunAConstructorAndAMeasurement()
         {
             var rows = Run("SELECT CLR_ST_GEOG_DISTANCE(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), CLR_ST_GEOG_GEOMFROMTEXT('POINT(1 0)'))");
@@ -100,7 +99,7 @@ namespace Apache.Calcite.Geography.Tests
         /// a <c>BigDecimal</c>. Calcite's own <c>ST_DWITHIN</c> cannot be called that way at all — it takes a
         /// <c>double</c> and Janino refuses the call; see <c>GeographyFunctions.DWithin</c>.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldRunAPredicateOverAGeographyColumn()
         {
             var rows = Run("SELECT ID FROM GEO WHERE CLR_ST_GEOG_DWITHIN(GEOG, CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 200000.0)");
@@ -113,7 +112,7 @@ namespace Apache.Calcite.Geography.Tests
         /// The crossing, run rather than validated: the same object comes out the other side and Calcite's
         /// planar function measures it in degrees.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldRunTheCrossingIntoCalcitesOwnFunction()
         {
             var rows = Run("SELECT ST_DISTANCE(CLR_ST_GEOG_ASGEOM(GEOG), CLR_ST_GEOG_ASGEOM(GEOG)) FROM GEO WHERE ID = 1");
@@ -133,7 +132,7 @@ namespace Apache.Calcite.Geography.Tests
         /// here at least once, and the ones that answer a geography are wrapped in one that answers a value a
         /// result set can carry.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldRunEveryOperator()
         {
             var cases = new (string Sql, object Expected)[]

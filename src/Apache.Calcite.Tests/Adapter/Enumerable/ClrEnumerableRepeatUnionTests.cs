@@ -6,7 +6,7 @@ using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -22,7 +22,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// round count is pinned here instead, on both operators, by scripting the iterative part directly:
     /// what a caller can see is how many times that sequence is enumerated, and the two must agree.
     /// </remarks>
-    [TestClass]
     public class ClrEnumerableRepeatUnionTests
     {
 
@@ -64,7 +63,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// sentinel is set, so it stops. Two evaluations, not three. The defect below is not "an empty round
         /// is always retried" -- it is that the boundary is the one place the sentinel is never restored.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldNotRunAnExtraRoundWhereTheFirstRoundProducedRows()
         {
             var rounds = new Rounds();
@@ -77,7 +76,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// The asynchronous operator counts the same rounds as the synchronous one.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public async Task ShouldNotRunAnExtraRoundWhereTheFirstRoundProducedRowsAsync()
         {
             var rounds = new Rounds();
@@ -100,7 +99,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// 1 is empty with the sentinel back, and that ends it. Two evaluations to discover that a sequence
         /// which never yields anything never yields anything.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldEvaluateAnEmptyIterativePartTwiceWhereTheSeedEmittedARow()
         {
             var evaluations = 0;
@@ -123,7 +122,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// boundary rather than of the loop: with no seed row there is nothing to leave in <c>current</c>, and
         /// round 0 stops the sequence on its own. One evaluation rather than two.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldEvaluateAnEmptyIterativePartOnceWhereTheSeedWasEmpty()
         {
             var evaluations = 0;
@@ -141,7 +140,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// A limit of zero never opens the iterative part at all.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldNotOpenTheIterativePartWhereTheLimitIsZero()
         {
             var rounds = new Rounds();
@@ -163,7 +162,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// a test that drains it is measuring nothing. Taking one row and stopping leaves the seed suspended
         /// at its <c>yield</c>, and then disposal is what runs its <c>finally</c>.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldRunTheCleanUpBeforeDisposingTheEnumerators()
         {
             var order = new List<string>();

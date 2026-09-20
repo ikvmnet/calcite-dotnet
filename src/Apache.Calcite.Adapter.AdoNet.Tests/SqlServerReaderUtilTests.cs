@@ -1,11 +1,12 @@
-using Microsoft.Data.SqlClient;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
-using org.apache.calcite.sql.type;
-
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
+
+using Microsoft.Data.SqlClient;
+
+using org.apache.calcite.sql.type;
+
+using Xunit;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -20,18 +21,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// a <see cref="Guid"/>, a <c>datetimeoffset</c> as a <see cref="DateTimeOffset"/>, a <c>tinyint</c> as a
     /// <see cref="byte"/>. Those are the cases a typed accessor casts and fails on.
     /// </remarks>
-    [TestClass]
-    public class SqlServerReaderUtilTests
+    public class SqlServerReaderUtilTests : IDisposable
     {
 
         SqlConnection _connection = null!;
         readonly List<DbCommand> _commands = [];
 
-        [TestInitialize]
-        public void Setup()
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        public SqlServerReaderUtilTests()
         {
             if (SqlServerFixture.IsAvailable == false)
-                Assert.Inconclusive("No SQL Server LocalDB instance is reachable on this machine.");
+                Assert.Skip("No SQL Server LocalDB instance is reachable on this machine.");
 
             _connection = new SqlConnection(new SqlConnectionStringBuilder()
             {
@@ -44,8 +46,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             _connection.Open();
         }
 
-        [TestCleanup]
-        public void Cleanup()
+        /// <inheritdoc />
+        public void Dispose()
         {
             foreach (var command in _commands)
                 command.Dispose();
@@ -66,7 +68,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             _commands.Add(command);
 
             var reader = command.ExecuteReader();
-            Assert.IsTrue(reader.Read(), "expected one row");
+            Assert.True(reader.Read(), "expected one row");
             return reader;
         }
 
@@ -74,45 +76,45 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// The whole of the server's tiny integer range reaches a <c>SMALLINT</c>, which is why that is what
         /// it is mapped to: the top half of it does not fit a signed <c>TINYINT</c>.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ATinyIntWidensToAShort()
         {
             using var reader = Row("CAST(200 AS TINYINT)");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.SMALLINT);
 
-            Assert.IsInstanceOfType<java.lang.Short>(value);
-            Assert.AreEqual((short)200, ((java.lang.Short)value!).shortValue());
+            Assert.IsAssignableFrom<java.lang.Short>(value);
+            Assert.Equal((short)200, ((java.lang.Short)value!).shortValue());
         }
 
-        [TestMethod]
+        [Fact]
         public void ABitIsReadAsAJavaBoolean()
         {
             using var reader = Row("CAST(1 AS BIT)");
-            Assert.IsTrue(((java.lang.Boolean)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.BOOLEAN)!).booleanValue());
+            Assert.True(((java.lang.Boolean)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.BOOLEAN)!).booleanValue());
         }
 
-        [TestMethod]
+        [Fact]
         public void ARealIsReadAsAJavaFloat()
         {
             using var reader = Row("CAST(2.5 AS REAL)");
-            Assert.AreEqual(2.5f, ((java.lang.Float)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.REAL)!).floatValue());
+            Assert.Equal(2.5f, ((java.lang.Float)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.REAL)!).floatValue());
         }
 
-        [TestMethod]
+        [Fact]
         public void AFloatIsReadAsAJavaDouble()
         {
             using var reader = Row("CAST(1.5 AS FLOAT)");
-            Assert.AreEqual(1.5d, ((java.lang.Double)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.DOUBLE)!).doubleValue());
+            Assert.Equal(1.5d, ((java.lang.Double)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.DOUBLE)!).doubleValue());
         }
 
-        [TestMethod]
+        [Fact]
         public void AMoneyKeepsItsScale()
         {
             using var reader = Row("CAST(12.34 AS MONEY)");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.DECIMAL);
 
-            Assert.IsInstanceOfType<java.math.BigDecimal>(value);
-            Assert.AreEqual("12.3400", value!.ToString());
+            Assert.IsAssignableFrom<java.math.BigDecimal>(value);
+            Assert.Equal("12.3400", value!.ToString());
         }
 
         /// <summary>
@@ -120,12 +122,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// be the mapping answering for a type the column does not have, and the text it produced could
         /// not be told from a <c>CHAR(36)</c> that really is text.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AUniqueIdentifierIsNotReadAsAString()
         {
             using var reader = Row("CAST('3f2504e0-4f89-11d3-9a0c-0305e82c3301' AS UNIQUEIDENTIFIER)");
 
-            Assert.Throws<InvalidCastException>(
+            Assert.ThrowsAny<InvalidCastException>(
                 () => AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.CHAR));
         }
 
@@ -134,34 +136,34 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <c>org.apache.calcite.util.UuidValue</c> is the class Calcite's runtime holds them in, since
         /// CALCITE-7716 wrapped <c>java.util.UUID</c> to order a UUID unsigned as SQL does.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AUniqueIdentifierIsReadAsAUuidValue()
         {
             using var reader = Row("CAST('3f2504e0-4f89-11d3-9a0c-0305e82c3301' AS UNIQUEIDENTIFIER)");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.UUID);
 
-            Assert.IsInstanceOfType<org.apache.calcite.util.UuidValue>(value);
-            Assert.AreEqual("3f2504e0-4f89-11d3-9a0c-0305e82c3301", value!.ToString());
+            Assert.IsAssignableFrom<org.apache.calcite.util.UuidValue>(value);
+            Assert.Equal("3f2504e0-4f89-11d3-9a0c-0305e82c3301", value!.ToString());
         }
 
         /// <summary>
         /// A null <c>uniqueidentifier</c> is a null, the class being a reference.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ANullUniqueIdentifierIsNull()
         {
             using var reader = Row("CAST(NULL AS UNIQUEIDENTIFIER)");
-            Assert.IsNull(AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.UUID));
+            Assert.Null(AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.UUID));
         }
 
-        [TestMethod]
+        [Fact]
         public void AVarbinaryIsReadAsAByteString()
         {
             using var reader = Row("CAST(0x01FF80 AS VARBINARY(8))");
             var value = AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.VARBINARY);
 
-            Assert.IsInstanceOfType<org.apache.calcite.avatica.util.ByteString>(value);
-            CollectionAssert.AreEqual(new byte[] { 0x01, 0xFF, 0x80 }, ((org.apache.calcite.avatica.util.ByteString)value!).getBytes());
+            Assert.IsAssignableFrom<org.apache.calcite.avatica.util.ByteString>(value);
+            Assert.Equal(new byte[] { 0x01, 0xFF, 0x80 }, ((org.apache.calcite.avatica.util.ByteString)value!).getBytes());
         }
 
         #region Temporal
@@ -176,18 +178,18 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// </summary>
         const long ExpectedMillis = 1579083630000L;
 
-        [TestMethod]
+        [Fact]
         public void ADateIsReadAsDaysSinceTheEpoch()
         {
             using var reader = Row("CAST('2020-01-15' AS DATE)");
-            Assert.AreEqual(ExpectedDay, ((java.lang.Integer)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.DATE)!).intValue());
+            Assert.Equal(ExpectedDay, ((java.lang.Integer)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.DATE)!).intValue());
         }
 
-        [TestMethod]
+        [Fact]
         public void ATimeIsReadAsMillisecondsSinceMidnight()
         {
             using var reader = Row("CAST('01:02:03.500' AS TIME(3))");
-            Assert.AreEqual(3723500, ((java.lang.Integer)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.TIME)!).intValue());
+            Assert.Equal(3723500, ((java.lang.Integer)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.TIME)!).intValue());
         }
 
         /// <summary>
@@ -195,40 +197,40 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// time instead put every timestamp out by the machine's offset, and only a machine at UTC would
         /// have noticed.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ATimestampDoesNotDependOnTheMachineTimeZone()
         {
             using var reader = Row("CAST('2020-01-15T10:20:30' AS DATETIME)");
-            Assert.AreEqual(ExpectedMillis, ((java.lang.Long)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.TIMESTAMP)!).longValue());
+            Assert.Equal(ExpectedMillis, ((java.lang.Long)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.TIMESTAMP)!).longValue());
         }
 
-        [TestMethod]
+        [Fact]
         public void ADateTime2IsTheSameTimestamp()
         {
             using var reader = Row("CAST('2020-01-15T10:20:30' AS DATETIME2(3))");
-            Assert.AreEqual(ExpectedMillis, ((java.lang.Long)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.TIMESTAMP)!).longValue());
+            Assert.Equal(ExpectedMillis, ((java.lang.Long)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.TIMESTAMP)!).longValue());
         }
 
         /// <summary>
         /// A zoned timestamp is an instant, and the provider hands one over as a
         /// <see cref="DateTimeOffset"/> — <see cref="DbDataReader.GetDateTime"/> refuses it outright.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AZonedTimestampIsReadAsAnInstant()
         {
             using var reader = Row("CAST('2020-01-15T10:20:30+00:00' AS DATETIMEOFFSET(3))");
-            Assert.AreEqual(ExpectedMillis, ((java.lang.Long)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.TIMESTAMP_TZ)!).longValue());
+            Assert.Equal(ExpectedMillis, ((java.lang.Long)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.TIMESTAMP_TZ)!).longValue());
         }
 
         /// <summary>
         /// The offset is part of the value, not decoration: the same wall clock at a different offset is a
         /// different instant.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AZonedTimestampHonoursItsOffset()
         {
             using var reader = Row("CAST('2020-01-15T10:20:30-05:00' AS DATETIMEOFFSET(3))");
-            Assert.AreEqual(
+            Assert.Equal(
                 ExpectedMillis + 5 * 60 * 60 * 1000L,
                 ((java.lang.Long)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.TIMESTAMP_TZ)!).longValue());
         }

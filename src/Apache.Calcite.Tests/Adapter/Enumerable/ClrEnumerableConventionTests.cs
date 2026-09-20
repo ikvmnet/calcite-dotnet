@@ -10,8 +10,6 @@ using Apache.Calcite.Tests;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.linq4j;
@@ -23,13 +21,14 @@ using org.apache.calcite.schema.impl;
 using org.apache.calcite.sql.type;
 using org.apache.calcite.tools;
 
+using Xunit;
+
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
 
     /// <summary>
     /// Runs a query end to end in the <see cref="ClrEnumerableConvention"/> calling convention.
     /// </summary>
-    [TestClass]
     public class ClrEnumerableConventionTests
     {
 
@@ -188,7 +187,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// unreachable through the planner and reachable by building one by hand. Without the wrap this is an
         /// <c>UnsupportedOperationException</c> naming nothing.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldNameThePlanWhenANodeCannotImplementItself()
         {
             var (physical, _) = Plan("SELECT \"ID\", \"NAME\" FROM \"PEOPLE\"");
@@ -215,7 +214,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// and a caller builds one with <c>RelBuilder.combine</c>. So this is built rather than parsed —
         /// which is the only way to run the node at all, and is why it is run rather than assumed.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldCombineTwoQueries()
         {
             var rootSchema = Frameworks.createRootSchema(true);
@@ -272,7 +271,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows[2][1].Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldScanATable()
         {
             var rows = Run("SELECT \"ID\", \"NAME\" FROM \"PEOPLE\"");
@@ -281,7 +280,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Select(r => (string)r[1]).Should().BeEquivalentTo(["SMITH", "JONES", "BROWN"]);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldFilter()
         {
             var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"AGE\" > 25");
@@ -289,7 +288,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Select(r => (string)r[0]).Should().BeEquivalentTo(["SMITH", "JONES"]);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldProjectAnExpression()
         {
             var rows = Run("SELECT \"AGE\" + 1 FROM \"PEOPLE\" WHERE \"ID\" = 1");
@@ -298,7 +297,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows[0][0].Should().Be(java.lang.Integer.valueOf(31));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldSort()
         {
             var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" ORDER BY \"AGE\"");
@@ -306,7 +305,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Select(r => (string)r[0]).Should().Equal("BROWN", "SMITH", "JONES");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldSortDescending()
         {
             var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" ORDER BY \"AGE\" DESC");
@@ -314,7 +313,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Select(r => (string)r[0]).Should().Equal("JONES", "SMITH", "BROWN");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldLimit()
         {
             var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" ORDER BY \"ID\" FETCH NEXT 2 ROWS ONLY");
@@ -322,7 +321,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Select(r => (string)r[0]).Should().Equal("SMITH", "JONES");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldOffsetAndLimit()
         {
             var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" ORDER BY \"ID\" OFFSET 1 ROWS FETCH NEXT 1 ROWS ONLY");
@@ -330,7 +329,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Select(r => (string)r[0]).Should().Equal("JONES");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldComputeOverANullableColumn()
         {
             // a nullable column is a java.lang.Integer and the arithmetic is on an int, so this is the query
@@ -343,7 +342,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows[2][0].Should().Be(java.lang.Integer.valueOf(27));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldCountEveryRow()
         {
             var rows = Run("SELECT COUNT(*) FROM \"PEOPLE\"");
@@ -352,7 +351,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows[0][0].Should().Be(java.lang.Long.valueOf(3L));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAggregateWithoutAGroup()
         {
             var rows = Run("SELECT SUM(\"AGE\"), MIN(\"AGE\"), MAX(\"AGE\") FROM \"PEOPLE\"");
@@ -374,7 +373,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// decorrelated at all, so the correlate stays. This is that shape, and it asserts the node by name
         /// rather than only the rows, because the rows alone would not say which plan produced them.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldCorrelateThroughTheShippedProgram()
         {
             const string sql = "SELECT t.\"x\", u.\"y\" FROM (VALUES (1, ARRAY[10,20]), (2, ARRAY[30])) AS t(\"x\", \"xs\"), UNNEST(t.\"xs\") AS u(\"y\")";
@@ -396,7 +395,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// it out: without it this stays a correlate, which is a nested loop over the outer rows where
         /// Calcite would have given a join.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldDecorrelateASubQueryThroughTheShippedProgram()
         {
             const string sql = "SELECT \"ID\" FROM \"PEOPLE\" a WHERE \"AGE\" = (SELECT MAX(\"AGE\") FROM \"PEOPLE\" b WHERE b.\"BONUS\" IS NULL OR a.\"ID\" = b.\"ID\")";
@@ -418,7 +417,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <c>AGGREGATE_REDUCE_FUNCTIONS</c> is what turns it into a <c>$SUM0</c> over a <c>COUNT</c>, and it
         /// lives in <c>RelOptRules.BASE_RULES</c> rather than in any convention's set.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldAverageThroughTheShippedProgram()
         {
             var rows = Run("SELECT AVG(\"AGE\") FROM \"PEOPLE\"");
@@ -434,7 +433,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// Both conventions refuse a distinct call outright, as <c>EnumerableAggregate</c> does.
         /// <c>AGGREGATE_EXPAND_DISTINCT_AGGREGATES</c> is what takes the DISTINCT off first.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldCountDistinctThroughTheShippedProgram()
         {
             var rows = Run("SELECT COUNT(DISTINCT \"NAME\") FROM \"PEOPLE\"");
@@ -452,7 +451,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// no window function could be planned through the shipped program at all — while the whole
         /// <c>ClrEnumerableWindow</c> suite stayed green over a harness that registers it.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldWindowThroughTheShippedProgram()
         {
             var rows = Run("SELECT \"ID\", SUM(\"AGE\") OVER (ORDER BY \"ID\") FROM \"PEOPLE\" ORDER BY \"ID\"");
@@ -472,7 +471,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// takes Calcite's and a converter carries the rows across — which <c>Programs.ofRules</c> made
         /// impossible, Calcite's rules having been cleared away.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldFallBackToCalciteThroughTheShippedProgram()
         {
             var rows = Run("SELECT COUNT(*) FROM \"PEOPLE\" WHERE \"AGE\" > 25");
@@ -481,7 +480,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows[0][0].Should().Be(java.lang.Long.valueOf(2L));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldGroupBy()
         {
             var rows = Run("SELECT \"NAME\", COUNT(*) FROM \"PEOPLE\" GROUP BY \"NAME\" ORDER BY \"NAME\"");
@@ -491,7 +490,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Select(r => r[1]).Should().AllBeEquivalentTo(java.lang.Long.valueOf(1L));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldGroupByAndSum()
         {
             var rows = Run("SELECT \"AGE\" > 25, SUM(\"AGE\") FROM \"PEOPLE\" GROUP BY \"AGE\" > 25 ORDER BY 1");
@@ -501,7 +500,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows[1][1].Should().Be(java.lang.Integer.valueOf(70));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAggregateOverANullableColumn()
         {
             // SUM skips a null, so this is 12 rather than null
@@ -511,7 +510,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows[0][0].Should().Be(java.lang.Integer.valueOf(12));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldInnerJoin()
         {
             var rows = Run("SELECT a.\"NAME\", b.\"AGE\" FROM \"PEOPLE\" a JOIN \"PEOPLE\" b ON a.\"ID\" = b.\"ID\" WHERE a.\"ID\" = 1");
@@ -521,7 +520,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows[0][1].Should().Be(java.lang.Integer.valueOf(30));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldLeftJoinAndPadWithNulls()
         {
             var rows = Run("SELECT a.\"NAME\", b.\"NAME\" FROM \"PEOPLE\" a LEFT JOIN (SELECT * FROM \"PEOPLE\" WHERE \"ID\" = 1) b ON a.\"ID\" = b.\"ID\" ORDER BY a.\"ID\"");
@@ -532,7 +531,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows[2][1].Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldJoinOnMoreThanAnEquality()
         {
             var rows = Run("SELECT a.\"NAME\" FROM \"PEOPLE\" a JOIN \"PEOPLE\" b ON a.\"ID\" = b.\"ID\" AND a.\"AGE\" > 25");
@@ -540,7 +539,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Select(r => (string)r[0]).Should().BeEquivalentTo(["SMITH", "JONES"]);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldJoinOnAnInequalityAlone()
         {
             // no equality to build a lookup on, so the hash join rule refuses and the nested loop takes it
@@ -549,7 +548,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Should().HaveCount(3);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunACorrelatedSubQuery()
         {
             var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" a WHERE \"AGE\" = (SELECT MAX(\"AGE\") FROM \"PEOPLE\" b WHERE b.\"ID\" = a.\"ID\")");
@@ -557,7 +556,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Select(r => (string)r[0]).Should().BeEquivalentTo(["SMITH", "JONES", "BROWN"]);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldUnionAll()
         {
             var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1 UNION ALL SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1");
@@ -565,7 +564,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Select(r => (string)r[0]).Should().Equal("SMITH", "SMITH");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldUnionDistinct()
         {
             var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1 UNION SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1");
@@ -573,7 +572,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Select(r => (string)r[0]).Should().Equal("SMITH");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldIntersect()
         {
             var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"AGE\" > 25 INTERSECT SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1");
@@ -581,7 +580,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Select(r => (string)r[0]).Should().Equal("SMITH");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldExcept()
         {
             var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" EXCEPT SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"AGE\" > 25");
@@ -589,7 +588,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Select(r => (string)r[0]).Should().Equal("BROWN");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldUnionWholeRowsRatherThanCompareArraysByReference()
         {
             // a row of JavaRowFormat.ARRAY is an array, and two equal rows are two arrays. Without the comparer
@@ -599,7 +598,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Should().HaveCount(3);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldSortAndLimitTogether()
         {
             // a sort carrying a fetch is one node, so only as many rows as are wanted are kept
@@ -608,7 +607,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Select(r => (string)r[0]).Should().Equal("JONES", "SMITH");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldCollectASubQueryIntoAMultiset()
         {
             var rows = Run("SELECT MULTISET(SELECT \"NAME\" FROM \"PEOPLE\") FROM (VALUES (1))");
@@ -617,7 +616,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             ((java.util.List)rows[0][0]).size().Should().Be(3);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldUncollectAnArray()
         {
             var rows = Run("SELECT * FROM UNNEST(ARRAY['a', 'b', 'c'])");
@@ -626,7 +625,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Select(r => (string)r[0]).Should().Equal("a", "b", "c");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldReadValues()
         {
             var rows = Run("SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");

@@ -3,47 +3,46 @@ using Apache.Calcite.Extensions.Config;
 
 using java.util;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.avatica.util;
 using org.apache.calcite.config;
 using org.apache.calcite.sql.validate;
 
+using Xunit;
+
 namespace Apache.Calcite.Extensions.Config.Tests
 {
 
-    [TestClass]
     public class CalciteConnectionPropertiesTests
     {
 
-        [TestMethod]
+        [Fact]
         public void TestDefaults()
         {
             var p = new Properties();
             var c = new CalciteConnectionProperties(p);
-            Assert.AreEqual(false, c.ApproximateDecimal);
-            Assert.AreEqual(false, c.ApproximateDistinctCount);
-            Assert.AreEqual(false, c.ApproximateTopN);
-            Assert.AreEqual(false, c.AutoTemp);
-            Assert.AreEqual(false, c.CaseSensitive);
-            Assert.AreEqual(SqlConformanceEnum.DEFAULT, c.Conformance);
-            Assert.AreEqual(NullCollation.HIGH, c.DefaultNullCollation);
-            Assert.AreEqual("standard", c.Fun);
-            Assert.AreEqual(Lex.ORACLE, c.Lex);
-            Assert.AreEqual("", c.Locale);
-            Assert.AreEqual(null, c.QuotedCasing);
-            Assert.AreEqual(null, c.UnquotedCasing);
-            Assert.AreEqual(true, c.ForceDecorrelate);
-            Assert.AreEqual(false, c.TopDownGeneralDecorrelationEnabled);
+            Assert.False(c.ApproximateDecimal);
+            Assert.False(c.ApproximateDistinctCount);
+            Assert.False(c.ApproximateTopN);
+            Assert.False(c.AutoTemp);
+            Assert.False(c.CaseSensitive);
+            Assert.Equal(SqlConformanceEnum.DEFAULT, c.Conformance);
+            Assert.Equal(NullCollation.HIGH, c.DefaultNullCollation);
+            Assert.Equal("standard", c.Fun);
+            Assert.Equal(Lex.ORACLE, c.Lex);
+            Assert.Equal("", c.Locale);
+            Assert.Null(c.QuotedCasing);
+            Assert.Null(c.UnquotedCasing);
+            Assert.True(c.ForceDecorrelate);
+            Assert.False(c.TopDownGeneralDecorrelationEnabled);
         }
 
-        [TestMethod]
+        [Fact]
         public void CanSetApproximateDecimal()
         {
             var p = new Properties();
             var c = new CalciteConnectionProperties(p);
             c.ApproximateDecimal = true;
-            Assert.AreEqual(true, c.ApproximateDecimal);
+            Assert.True(c.ApproximateDecimal);
         }
 
         /// <summary>
@@ -54,51 +53,51 @@ namespace Apache.Calcite.Extensions.Config.Tests
         /// The name comes from <c>camelName()</c> rather than from a literal, because a transcribed one
         /// asserts the spelling in the tree that was read and the jar is what runs.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void CanSetTopDownGeneralDecorrelationEnabled()
         {
             var p = new Properties();
             var c = new CalciteConnectionProperties(p);
             c.TopDownGeneralDecorrelationEnabled = true;
-            Assert.AreEqual(true, c.TopDownGeneralDecorrelationEnabled);
-            Assert.AreEqual("true", p.getProperty(CalciteConnectionProperty.TOPDOWN_GENERAL_DECORRELATION_ENABLED.camelName()));
+            Assert.True(c.TopDownGeneralDecorrelationEnabled);
+            Assert.Equal("true", p.getProperty(CalciteConnectionProperty.TOPDOWN_GENERAL_DECORRELATION_ENABLED.camelName()));
         }
 
-        [TestMethod]
+        [Fact]
         public void CanSetConformance()
         {
             var p = new Properties();
             var c = new CalciteConnectionProperties(p);
             c.Conformance = SqlConformanceEnum.BIG_QUERY;
-            Assert.AreEqual(SqlConformanceEnum.BIG_QUERY, c.Conformance);
+            Assert.Equal(SqlConformanceEnum.BIG_QUERY, c.Conformance);
         }
 
-        [TestMethod]
+        [Fact]
         public void CanSetQuotedCasing()
         {
             var p = new Properties();
             var c = new CalciteConnectionProperties(p);
             c.QuotedCasing = Casing.TO_LOWER;
-            Assert.AreEqual(Casing.TO_LOWER, c.QuotedCasing);
+            Assert.Equal(Casing.TO_LOWER, c.QuotedCasing);
         }
 
-        [TestMethod]
+        [Fact]
         public void CanSetQuotedCasingToNull()
         {
             var p = new Properties();
             var c = new CalciteConnectionProperties(p);
             c.QuotedCasing = null;
-            Assert.AreEqual(null, c.QuotedCasing);
+            Assert.Null(c.QuotedCasing);
         }
 
-        [TestMethod]
+        [Fact]
         public void CanSetSchemaProperty()
         {
             var p = new Properties();
             var c = new CalciteConnectionProperties(p);
             c.SchemaProperties["host"] = "localhost";
-            Assert.AreEqual("localhost", c.SchemaProperties["host"]);
-            Assert.AreEqual("localhost", p.getProperty("schema.host"));
+            Assert.Equal("localhost", c.SchemaProperties["host"]);
+            Assert.Equal("localhost", p.getProperty("schema.host"));
         }
 
     }

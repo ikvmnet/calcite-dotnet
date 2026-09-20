@@ -4,9 +4,9 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -23,7 +23,6 @@ namespace Apache.Calcite.Geography.Tests
     /// happens to run, and a planar ellipse of equal width and height is a circle on the map and never on the
     /// ground.
     /// </remarks>
-    [TestClass]
     public class GeographyShapeTests
     {
 
@@ -47,7 +46,7 @@ namespace Apache.Calcite.Geography.Tests
         /// number of degrees end up different distances away; offset by the same number of metres they do
         /// not.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldOffsetTheSameDistanceWhicheverWayTheLineRuns()
         {
             foreach (var line in new[] { "LINESTRING(-1 0, 1 0)", "LINESTRING(0 -1, 0 1)" })
@@ -61,7 +60,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A positive distance goes left of the way the line is going, a negative one right.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldOffsetLeftForAPositiveDistance()
         {
             var line = Wkt("LINESTRING(-1 0, 1 0)");
@@ -76,7 +75,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The offset keeps the shape of the line: as many vertices, in the same order.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldKeepTheVerticesOfTheLine()
         {
             var line = Wkt("LINESTRING(0 0, 1 0, 2 1)");
@@ -89,7 +88,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Only a line is offset, as Calcite accepts only a line.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldDeclineToOffsetAnythingButALine()
         {
             GeographyFunctions.OffsetCurve(Wkt("POINT(0 0)"), java.lang.Double.valueOf(1000)).Should().BeNull();
@@ -99,7 +98,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// An ellipse is the width and height it says, in metres.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldMeasureTheEllipseInMetres()
         {
             var ellipse = GeographyFunctions.MakeEllipse(
@@ -123,7 +122,7 @@ namespace Apache.Calcite.Geography.Tests
         /// ellipse of equal width and height in degrees is therefore twice as wide as it is tall in metres;
         /// this one is round.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldBeRoundOnTheGroundRatherThanOnTheMap()
         {
             var centre = Wkt("POINT(0 60)");
@@ -148,7 +147,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Only a point has an ellipse about it, as Calcite decides too.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldDeclineToMakeAnEllipseAboutAnythingButAPoint()
         {
             SpatialTypeFunctions.ST_MakeEllipse(Wkt("LINESTRING(0 0, 1 1)"), java.math.BigDecimal.ONE, java.math.BigDecimal.ONE)
@@ -158,7 +157,7 @@ namespace Apache.Calcite.Geography.Tests
                 .Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerNothingForNothingToDraw()
         {
             GeographyFunctions.MakeEllipse(Wkt("POINT(0 0)"), java.lang.Double.valueOf(0), java.lang.Double.valueOf(1000))!
@@ -168,7 +167,7 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.MakeEllipse(Wkt("POINT(0 0)"), null, java.lang.Double.valueOf(1)).Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldStampBothWithWgs84()
         {
             GeographyFunctions.OffsetCurve(Wkt("LINESTRING(0 0, 1 0)"), java.lang.Double.valueOf(1000))!
@@ -178,7 +177,7 @@ namespace Apache.Calcite.Geography.Tests
                 .getSRID().Should().Be(GeographyFunctions.Wgs84);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunEachAsAnOperator()
         {
             var offset = GeographyExecutionTests.Run(
@@ -200,7 +199,7 @@ namespace Apache.Calcite.Geography.Tests
         /// offset of a square came back open with fourteen kilometres between its ends, which is the
         /// diagonal across the corner.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldOffsetAClosedLineToAClosedLine()
         {
             var ring = Wkt("LINESTRING(-1 -1, 1 -1, 1 1, -1 1, -1 -1)");
@@ -223,7 +222,7 @@ namespace Apache.Calcite.Geography.Tests
         /// function documents rather than a fault: a vertex is carried the full distance along the bisector,
         /// so a right-angled corner ends up the cosine of forty-five degrees of it from either edge.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldCarryTheSharedVertexAsAnInteriorOne()
         {
             var ring = Wkt("LINESTRING(-1 -1, 1 -1, 1 1, -1 1, -1 -1)");

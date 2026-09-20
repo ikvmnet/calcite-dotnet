@@ -1,21 +1,29 @@
-<Project Sdk="MSTest.Sdk/4.3.3">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
         <LangVersion>latest</LangVersion>
         <Nullable>enable</Nullable>
+        <!-- an xunit.v3 test project is a program: the package writes the entry point and the assembly runs
+             itself on Microsoft.Testing.Platform -->
+        <OutputType>Exe</OutputType>
+        <!-- xUnit1051 wants every call taking a CancellationToken to take the framework's, so that a hung
+             test can be cancelled. These suites pass the tokens they mean to, and several exist to assert
+             what happens to one, so adopting it is a change to make on its own terms. -->
+        <NoWarn>$(NoWarn);xUnit1051</NoWarn>
         <TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
     </PropertyGroup>
 
     <ItemGroup>
-        <!-- MSTest.Sdk 3.10.4 referenced Microsoft.NET.Test.Sdk from its runner profile
-             (Sdk/Runner/ClassicEngine.targets); 4.3.3 references it only under UseVSTest, so a build
-             under 4 puts no VSTest testhost in the output. CI runs `dotnet test <dll>`, which is
-             vstest.console, and every job aborted before a test ran, the testhost having failed to
-             resolve Newtonsoft.Json. MSTest.TestAdapter still carries the VSTest bridge and still sets
-             GenerateProgramFile=false under EnableMSTestRunner, so declaring the package restores what
-             3.10.4 arranged, entry point included, and leaves the MSTest runner as it is. -->
+        <!-- CI runs `dotnet test <dll>`, which is vstest.console, so the VSTest bridge has to be in the
+             output beside the platform the assembly runs itself on. xunit.runner.visualstudio carries the
+             adapter and Microsoft.NET.Test.Sdk the testhost. -->
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+        <PackageReference Include="xunit.v3" Version="4.0.1" />
+        <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
         <PackageReference Include="IKVM" Version="8.16.1" />
         <PackageReference Include="IKVM.Java.Extensions" Version="8.16.1" />
         <PackageReference Include="IKVM.Jdbc.Data" Version="1.0.13" />

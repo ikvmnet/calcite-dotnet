@@ -11,10 +11,10 @@ using FluentAssertions;
 
 using java.lang;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
 using org.apache.calcite.runtime.rtti;
+
+using Xunit;
 
 using JavaTypeFactoryImpl = org.apache.calcite.jdbc.JavaTypeFactoryImpl;
 using J = org.apache.calcite.linq4j.tree;
@@ -24,7 +24,6 @@ using SqlTypeName = org.apache.calcite.sql.type.SqlTypeName;
 namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
 {
 
-    [TestClass]
     public class LixToClrTranslatorTests
     {
 
@@ -54,7 +53,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             return Expression.Lambda<Func<T>>(translated).Compile()();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateConstant()
         {
             // linq4j holds the value of an int constant as an Integer, which the CLR will not accept for an int
@@ -64,13 +63,13 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             Run<double>(J.Expressions.constant(java.lang.Double.valueOf(1.5))).Should().Be(1.5);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateNullConstant()
         {
             Run<object>(J.Expressions.constant(null)).Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldPromoteNarrowOperandsToInt()
         {
             // Java promotes byte and short to int before it adds them, and the result is an int
@@ -81,7 +80,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             Run<int>(e).Should().Be(3);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldPromoteToTheWiderOperand()
         {
             var e = J.Expressions.add(
@@ -91,7 +90,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             Run<double>(e).Should().Be(1.5);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldBoxWhenConvertingToABoxClass()
         {
             // Expression.Convert cannot do this: java.lang.Integer is a class, not a boxed CLR int
@@ -100,7 +99,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             Run<Integer>(e).Should().Be(Integer.valueOf(7));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldUnboxWhenConvertingToAPrimitive()
         {
             var e = J.Expressions.convert_(
@@ -110,7 +109,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             Run<int>(e).Should().Be(7);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldUnboxThroughTheBoxClassRatherThanUnboxAny()
         {
             // the value at runtime is a java.lang.Integer instance; a straight Convert would emit unbox.any and
@@ -122,7 +121,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             Run<int>(e).Should().Be(3);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldSignExtendAByteBeingWidened()
         {
             // Java's byte is signed and the CLR byte it is stored in is not, so widening without going by way
@@ -134,7 +133,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             Run<int>(e).Should().Be(-1);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldSignExtendAByteBeingPromoted()
         {
             var e = J.Expressions.add(
@@ -144,7 +143,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             Run<int>(e).Should().Be(-1);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateEveryPrimitiveRoundTrip()
         {
             RoundTrip(java.lang.Boolean.TRUE, java.lang.Boolean.TYPE, (Class)typeof(java.lang.Boolean));
@@ -174,7 +173,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             JavaValues.Unwrap(value, ClrTypes.FromClass(primitive)).Should().Be(result);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateCallToStaticMethod()
         {
             var e = J.Expressions.call(
@@ -186,7 +185,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             Run<int>(e).Should().Be(-1);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateCallToMethodOfRemappedClass()
         {
             // String.toUpperCase is static on a helper and takes the receiver first, so what linq4j calls the
@@ -203,7 +202,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// nothing of that name and arity is on the type, on a helper, or on anything the search reaches —
         /// ClrTypes.TryResolve says so, and the call goes through a delegate over the method instead.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateCallToMethodWithNoClrMethod()
         {
             var method = ((Class)typeof(java.lang.String)).getDeclaredMethod("length", []);
@@ -216,7 +215,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// The same, for a method whose receiver is the one type the CLR does not keep Java's methods on, and
         /// which returns a primitive: the value comes back as an int rather than as a java.lang.Integer.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateCallToMethodOfObject()
         {
             var method = ((Class)typeof(java.lang.Object)).getDeclaredMethod("hashCode", []);
@@ -231,7 +230,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// <summary>
         /// One with an argument, so the delegate's parameters are being filled in the right order.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateCallToMethodWithNoClrMethodAndAnArgument()
         {
             var method = ((Class)typeof(java.lang.String)).getDeclaredMethod("charAt", [Integer.TYPE]);
@@ -240,7 +239,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             Run<char>(J.Expressions.call(J.Expressions.constant("abc"), method, J.Expressions.constant(Integer.valueOf(1)))).Should().Be('b');
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateTernary()
         {
             var e = J.Expressions.condition(
@@ -251,7 +250,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             Run<int>(e).Should().Be(1);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateArrayCreationAndAccess()
         {
             var builder = new J.BlockBuilder();
@@ -263,7 +262,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             RunBody<object[]>(builder.toBlock()).Should().BeEquivalentTo(["a", "b"]);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateBlockWithDeclarationsAndReturn()
         {
             var builder = new J.BlockBuilder();
@@ -274,7 +273,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             RunBody<int>(builder.toBlock()).Should().Be(42);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateEarlyReturn()
         {
             // the shape PhysType.generateComparator emits: compare, return if non-zero, fall through to zero
@@ -289,7 +288,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             RunBody<int>(builder.toBlock()).Should().Be(5);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateForLoop()
         {
             var sum = J.Expressions.parameter(Integer.TYPE, "sum");
@@ -311,7 +310,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             RunBody<int>(builder.toBlock()).Should().Be(10);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateLambda()
         {
             var v = J.Expressions.parameter(Integer.TYPE, "v");
@@ -326,7 +325,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             ((Func<int, int>)translated.Compile())(21).Should().Be(42);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateAnonymousClassAsLambda()
         {
             // what PhysType returns for a comparator, and what an expression tree cannot declare
@@ -360,7 +359,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             comparator.compare(5, 3).Should().Be(2);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldBindAnExternalParameter()
         {
             var row = J.Expressions.parameter((Class)typeof(object[]), "row");
@@ -386,7 +385,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// parameterised type is varargs — which is why no variant of a collection could be planned under
         /// either convention.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateVarArgsConstructorGivenOneArgument()
         {
             var factory = new JavaTypeFactoryImpl();
@@ -400,7 +399,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             rtti.getTypeArgument(0).getTypeName().Should().BeSameAs(RuntimeTypeInformation.RuntimeSqlTypeName.INTEGER);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateVarArgsConstructorGivenSeveralArguments()
         {
             var factory = new JavaTypeFactoryImpl();
@@ -419,7 +418,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// The elements are converted on the way into the array, which a row's RTTI is what needs: its
         /// arguments are <c>AbstractMap.SimpleEntry</c> where the array is of <c>Map.Entry</c>.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldConvertTheElementsOfAVarArgsArray()
         {
             var factory = new JavaTypeFactoryImpl();

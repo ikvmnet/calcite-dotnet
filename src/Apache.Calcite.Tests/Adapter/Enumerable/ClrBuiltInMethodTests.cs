@@ -9,7 +9,7 @@ using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -30,7 +30,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// So it is measured here, over a tree built the way a node builds one, rather than over a hand-written
     /// <c>await foreach</c> that would prove nothing about the plan.</para>
     /// </remarks>
-    [TestClass]
     public class ClrBuiltInMethodTests
     {
 
@@ -106,7 +105,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// The token given at enumeration reaches the leaf, through two composed operators, of a plan that
         /// passes <c>default</c> at every call.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public async Task ShouldCarryTheCallersTokenToTheLeaf()
         {
             var leaf = new Endless();
@@ -138,7 +137,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// A token already cancelled stops the plan before the leaf produces anything.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public async Task ShouldRefuseToStartOnACancelledToken()
         {
             var leaf = new Endless();

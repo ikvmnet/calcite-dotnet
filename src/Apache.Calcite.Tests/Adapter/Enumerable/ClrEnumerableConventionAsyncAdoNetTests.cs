@@ -9,7 +9,7 @@ using Apache.Calcite.Tests;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -29,7 +29,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// only the rows would be satisfied by a plan that never suspended, so each one reads the leaf's own
     /// counters.</para>
     /// </remarks>
-    [TestClass]
     public class ClrEnumerableConventionAsyncAdoNetTests
     {
 
@@ -60,7 +59,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// A query over an asynchronous table is read asynchronously, end to end.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public async Task ShouldReadAnAsyncTableAsynchronously()
         {
             var (c, table) = Open();
@@ -94,7 +93,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// blocks. Synchronous mode reaches the same table the long way round:
         /// <see cref="ShouldBridgeAnAsyncOnlyTableInSynchronousMode"/>.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldReadAnAsyncOnlyTableSynchronously()
         {
             var (c, table) = Open();
@@ -134,7 +133,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <para>A schema may hold both kinds of table; it is the individual query that is one or the
         /// other.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldBridgeAnAsyncOnlyTableInSynchronousMode()
         {
             var table = new AsyncRowsTable(AsyncTestRows.Sales, AsyncTestRows.SalesRowType, false);
@@ -175,7 +174,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// never true of an <c>EXPLAIN</c> and left a caller holding only <c>ExecuteReaderAsync</c> unable to
         /// explain anything at all.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldExplainAnAsyncPlanAsynchronously()
         {
             var (c, table) = Open();
@@ -206,7 +205,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// no longer tell a caller how the rows will be read</b>, which is a real loss of visibility and the
         /// honest consequence of the plan being the same object either way.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldExplainTheSamePlanInEitherMode()
         {
             const string Sql = "EXPLAIN PLAN FOR SELECT K FROM SYNCONLY WHERE V = 'A'";
@@ -262,7 +261,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <c>Meta.CursorFactory.deduce</c> makes a single column <c>OBJECT</c>, so the row <i>is</i> the
         /// text.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldExplainThroughExecuteScalar()
         {
             using (var c = Open(Model, root => root.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false))))
@@ -302,7 +301,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// pulled. It does not block either — reading it produces an <see cref="IAsyncEnumerable{T}"/> that
         /// always completes synchronously, which costs a state machine and no thread.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldPlanACalciteTableAsynchronously()
         {
             using var c = Open(Model, root => root.add("SYNCONLY", new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false)));
@@ -333,7 +332,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// table that only produces them asynchronously. Here the caller is choosing it in the open at the
         /// boundary.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldReadAnAsyncPlanSynchronouslyWhenAskedTo()
         {
             var (c, table) = Open();
@@ -365,7 +364,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <para>It matters because code written against <c>ReadAsync</c> is the normal case, and a
         /// connection in synchronous mode still has to be readable by it.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldReadASyncPlanAsynchronously()
         {
             // the synchronous plan, deliberately: the connection's mode is what asks for it
@@ -398,7 +397,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <para>The read runs on a dedicated background thread with a join timeout, so a regression fails
         /// rather than hanging the suite.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldReadSynchronouslyUnderASynchronizationContext()
         {
             var (c, _) = Open();
@@ -476,7 +475,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <c>GetAsyncEnumerator</c>, which Execute now reaches; the place for awaited work is the first
         /// <c>MoveNextAsync</c>, which an iterator gives for free.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldReadNothingUntilTheFirstRead()
         {
             var (c, table) = Open();
@@ -504,7 +503,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// abandoned — and nothing else in this suite would have noticed, because the rows were all correct
         /// by then.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldAwaitThePlansDisposal()
         {
             var (c, table) = Open();
@@ -533,7 +532,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// with one in it has already drained the table by the first row and there is nothing left to
         /// abandon — which is what this test asserted at first, and why it failed.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldAwaitThePlansDisposalWhenAbandoned()
         {
             var (c, table) = Open();
@@ -555,7 +554,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// Cancelling a read stops the table producing rows.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public async Task ShouldCancelAReadInProgress()
         {
             var rows = new object[10_000][];
@@ -592,7 +591,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// A grouped aggregate over an asynchronous table.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public async Task ShouldRunAnAggregateAsynchronously()
         {
             var (c, table) = Open();
@@ -615,7 +614,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// A one-column result is the value, read through the ADO.NET surface.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public async Task ShouldReadAOneColumnResult()
         {
             var (c, _) = Open();

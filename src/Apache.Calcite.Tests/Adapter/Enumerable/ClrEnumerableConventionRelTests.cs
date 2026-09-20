@@ -4,8 +4,6 @@ using System.Collections.Generic;
 using Apache.Calcite.Extensions;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel.core;
@@ -13,6 +11,8 @@ using org.apache.calcite.rel.rules;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.fun;
 using org.apache.calcite.sql.type;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -28,7 +28,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// a column with a collation of its own can only be given a type by hand. Calcite reaches all four
     /// through <c>CalciteAssert.withRel</c>, and every test here is one of its own ported.
     /// </remarks>
-    [TestClass]
     public class ClrEnumerableConventionRelTests
     {
 
@@ -39,7 +38,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         // A combine puts one query per column and one row per position, so a shorter query contributes null.
         // There is no SQL for it, which is why the only test this convention had was written by hand.
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnCombiningTwoQueries() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder =>
             {
@@ -49,7 +48,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
                 return builder.combine(2).build();
             });
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnCombiningQueriesOfDifferentLengths() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder =>
             {
@@ -59,7 +58,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
                 return builder.combine(2).build();
             });
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnCombiningQueriesOfSeveralColumns() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder =>
             {
@@ -69,7 +68,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
                 return builder.combine(2).build();
             });
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnCombiningQueriesOfDifferentColumnCounts() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder =>
             {
@@ -86,7 +85,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// CALCITE-3536: a COALESCE of a nullable field and a literal, whose null strategy the implementor
         /// gets to decide.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnCoalesce() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .scan("HR", "emps")
@@ -94,28 +93,28 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
                 .sort(0)
                 .build());
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnAPosixRegexThatMatches() => ShouldAgreeOnPosixRegex(SqlStdOperatorTable.POSIX_REGEX_CASE_SENSITIVE, "E..c");
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnAPosixRegexThatDoesNot() => ShouldAgreeOnPosixRegex(SqlStdOperatorTable.POSIX_REGEX_CASE_SENSITIVE, "e..c");
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnACaseInsensitivePosixRegexThatMatches() => ShouldAgreeOnPosixRegex(SqlStdOperatorTable.POSIX_REGEX_CASE_INSENSITIVE, "E..c");
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnACaseInsensitivePosixRegexOfTheOtherCase() => ShouldAgreeOnPosixRegex(SqlStdOperatorTable.POSIX_REGEX_CASE_INSENSITIVE, "e..c");
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnANegatedPosixRegex() => ShouldAgreeOnPosixRegex(SqlStdOperatorTable.NEGATED_POSIX_REGEX_CASE_SENSITIVE, "E..c");
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnANegatedPosixRegexOfTheOtherCase() => ShouldAgreeOnPosixRegex(SqlStdOperatorTable.NEGATED_POSIX_REGEX_CASE_SENSITIVE, "e..c");
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnANegatedCaseInsensitivePosixRegex() => ShouldAgreeOnPosixRegex(SqlStdOperatorTable.NEGATED_POSIX_REGEX_CASE_INSENSITIVE, "E..c");
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnANegatedCaseInsensitivePosixRegexOfTheOtherCase() => ShouldAgreeOnPosixRegex(SqlStdOperatorTable.NEGATED_POSIX_REGEX_CASE_INSENSITIVE, "e..c");
 
         /// <summary>
@@ -135,7 +134,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// CALCITE-6680: IS EMPTY over a nullable collection, which answers on the null rather than reading it.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnIsEmptyOverACollection() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .scan("CATCHALL", "everyTypes")
@@ -146,7 +145,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// CALCITE-7357: IS DISTINCT FROM as a projection rather than as a join key.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnIsDistinctFromAsAProjection() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .scan("HR", "emps")
@@ -175,7 +174,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// CALCITE-2605: a left outer join run as a correlate.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnALeftOuterJoinRunAsACorrelate() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .scan("HR", "emps").@as("e")
@@ -189,7 +188,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// CALCITE-2621: a semi join run as a correlate.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnASemiJoinRunAsACorrelate() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .scan("HR", "emps").@as("e")
@@ -203,7 +202,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// CALCITE-2920: an anti join run as a correlate.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnAnAntiJoinRunAsACorrelate() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .scan("HR", "depts").@as("d")
@@ -217,7 +216,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// An anti join on more than an equality, run as a correlate.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnANonEquiAntiJoinRunAsACorrelate() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .scan("HR", "emps").@as("e")
@@ -234,7 +233,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// CALCITE-2920: an anti join whose key is null on one side, which is NOT EXISTS and not NOT IN.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnAnAntiJoinOverANullKeyRunAsACorrelate() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .scan("HR", "emps").@as("empOther")
@@ -252,7 +251,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// A recursive query of two columns, only one of which advances.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnARecursiveQueryOverTwoColumns() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .values(["i", "j"], I(0), I(0))
@@ -269,7 +268,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// A recursive query whose step multiplies, so each iteration reads the row the last one wrote.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnARecursiveFactorial() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .values(["n", "fact"], I(0), I(1))
@@ -288,7 +287,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// One recursive query inside another, so two spools are live at once.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnNestedRecursion() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .values(["n"], I(1))
@@ -305,7 +304,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// CALCITE-4139: a recursive query whose seed holds a null, which the transient table has to store.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnARecursiveQueryOverANull() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .values(["i"], I(1), I(2), null, I(3))
@@ -336,7 +335,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// Deduplication stops it: the second 99 is one this sequence already returned, so that round adds
         /// nothing new, the sentinel survives it, and the query ends. Rows 1 and 99.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnARecursiveQueryWhoseStepAggregates() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .values(["i"], I(1))
@@ -355,7 +354,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <c>ClrEnumerableDefaults.LazyCollectionSpool</c> as a write. That method converted nothing for a
         /// while and no test had ever written to a spool.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnARecursiveQueryWhoseStepIsACorrelate() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder =>
             {
@@ -389,7 +388,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// CALCITE-2920: an anti join whose key is null on one side, run as a hash anti join rather than as a
         /// correlate.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnAnAntiJoinOverANullKey() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .scan("HR", "emps").@as("empOther")
@@ -405,7 +404,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// An anti join with a second condition that reads only the left input, which cannot be pushed down
         /// onto it.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnAnAntiJoinWhoseConditionReadsOnlyTheLeft() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .scan("HR", "emps")
@@ -420,7 +419,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// A recursive query whose step is two merge joins, so each round sorts what the last one spooled.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnARecursiveQueryWhoseStepIsAMergeJoin() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .scan("HIER", "emps")
@@ -448,32 +447,32 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         // and from two, with and without a depth limit, distinct and not. Calcite runs it as one parameterised
         // test and asserts the order, which is the algorithm's; so does this.
 
-        [TestMethod]
-        [DataRow(true, "1", true, -1)]
-        [DataRow(true, "2", true, -2)]
-        [DataRow(true, "3", true, -1)]
-        [DataRow(true, "4", true, -5)]
-        [DataRow(true, "5", true, -1)]
-        [DataRow(true, "3", true, 0)]
-        [DataRow(true, "3", true, 1)]
-        [DataRow(true, "3", true, 2)]
-        [DataRow(true, "3", true, 10)]
-        [DataRow(true, "1", false, -1)]
-        [DataRow(true, "2", false, -10)]
-        [DataRow(true, "3", false, -100)]
-        [DataRow(true, "4", false, -1)]
-        [DataRow(true, "1", false, 0)]
-        [DataRow(true, "1", false, 1)]
-        [DataRow(true, "1", false, 2)]
-        [DataRow(true, "1", false, 20)]
-        [DataRow(true, "3,5", true, -1)]
-        [DataRow(false, "3,5", true, -1)]
-        [DataRow(true, "3,5", true, 0)]
-        [DataRow(false, "3,5", true, 0)]
-        [DataRow(true, "3,5", true, 1)]
-        [DataRow(false, "3,5", true, 1)]
-        [DataRow(true, "1,3", false, -1)]
-        [DataRow(false, "1,3", false, -1)]
+        [Theory]
+        [InlineData(true, "1", true, -1)]
+        [InlineData(true, "2", true, -2)]
+        [InlineData(true, "3", true, -1)]
+        [InlineData(true, "4", true, -5)]
+        [InlineData(true, "5", true, -1)]
+        [InlineData(true, "3", true, 0)]
+        [InlineData(true, "3", true, 1)]
+        [InlineData(true, "3", true, 2)]
+        [InlineData(true, "3", true, 10)]
+        [InlineData(true, "1", false, -1)]
+        [InlineData(true, "2", false, -10)]
+        [InlineData(true, "3", false, -100)]
+        [InlineData(true, "4", false, -1)]
+        [InlineData(true, "1", false, 0)]
+        [InlineData(true, "1", false, 1)]
+        [InlineData(true, "1", false, 2)]
+        [InlineData(true, "1", false, 20)]
+        [InlineData(true, "3,5", true, -1)]
+        [InlineData(false, "3,5", true, -1)]
+        [InlineData(true, "3,5", true, 0)]
+        [InlineData(false, "3,5", true, 0)]
+        [InlineData(true, "3,5", true, 1)]
+        [InlineData(false, "3,5", true, 1)]
+        [InlineData(true, "1,3", false, -1)]
+        [InlineData(false, "1,3", false, -1)]
         public void ShouldAgreeOnWalkingAHierarchy(bool all, string startIds, bool ascendant, int maxDepth)
         {
             var fromField = ascendant ? "subordinateid" : "managerid";
@@ -532,14 +531,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         static org.apache.calcite.rel.type.RelDataType PlainRow(org.apache.calcite.tools.RelBuilder builder) =>
             builder.getTypeFactory().builder().add("name", builder.getTypeFactory().createSqlType(SqlTypeName.VARCHAR)).build();
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnSortingStringsByTheDefaultCollation() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .values(PlainRow(builder), "Legal", "presales", "hr", "Administration", "MARKETING")
                 .sort(builder.field(1, 0, "name"))
                 .build());
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnSortingStringsByTheirOwnCollation() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .values(CollatedRow(builder), "Legal", "presales", "hr", "Administration", "MARKETING")
@@ -549,14 +548,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// CALCITE-5967: an equality on a collated column needs a comparator of its own inside the operator.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnFilteringStringsByTheirOwnCollation() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .values(CollatedRow(builder), "Legal", "presales", "hr", "Administration", "MARKETING")
                 .filter(builder.equals(builder.field(1, 0, "name"), builder.literal("MARKETING")))
                 .build());
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnAMergeJoinOverACollatedString() =>
             ClrEnumerableConventionDifferentialTests.SameRel(builder => builder
                 .values(CollatedRow(builder), "Legal", "presales", "HR", "Administration", "Marketing").@as("v1")
@@ -569,7 +568,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// CALCITE-5003: a merge union of two inputs whose collations differ.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnAMergeUnionOverTwoCollations() =>
             ClrEnumerableConventionDifferentialTests.SameRel(b =>
             {
@@ -584,7 +583,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             },
             remove: [EnumerableRules.ENUMERABLE_UNION_RULE, ClrEnumerableRules.ClrEnumerableUnionRule]);
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnEveryCollatedComparison()
         {
             foreach (var (left, right, op, collation) in Comparisons())

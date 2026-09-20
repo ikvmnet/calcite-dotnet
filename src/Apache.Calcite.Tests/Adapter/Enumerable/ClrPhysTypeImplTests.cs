@@ -5,10 +5,10 @@ using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.jdbc;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -29,14 +29,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// evaluate the expressions rather than assert on their node type, because what was wrong was the
     /// resolution and only running it settles that.</para>
     /// </remarks>
-    [TestClass]
     public class ClrPhysTypeImplTests
     {
 
         /// <summary>
         /// The row a LIST format builds for a type with no fields.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldBuildAnEmptyComparableListRow()
         {
             var row = Evaluate(JavaRowFormat.LIST.Record(typeof(java.util.List), []));
@@ -49,7 +48,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// The row a CUSTOM format builds for a type with no fields, which is Calcite's unit value rather
         /// than an instance of the record class.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldBuildAUnitRow()
         {
             var row = Evaluate(JavaRowFormat.CUSTOM.Record(typeof(object), []));
@@ -61,7 +60,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// The selector a physical type of no fields generates, which is the path a plan actually reaches
         /// the constant through.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldGenerateASelectorForARowOfNoFields()
         {
             // two fields, so that the optimising overload leaves the format ARRAY rather than collapsing it

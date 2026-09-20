@@ -4,9 +4,9 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -27,7 +27,6 @@ namespace Apache.Calcite.Geography.Tests
     /// distance on a sphere and are not on an ellipsoid, and the old implementation answered
     /// <c>111195.101177</c> to both — which is <c>6371010 · π/180</c> exactly.</para>
     /// </remarks>
-    [TestClass]
     public class Wgs84MeasurementTests
     {
 
@@ -60,7 +59,7 @@ namespace Apache.Calcite.Geography.Tests
         /// The equatorial degree is the WGS84 semi-major axis times <c>π/180</c>, to every digit the service
         /// reported.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerTheEquatorialDegree()
         {
             Distance("POINT(0 0)", "POINT(1 0)").Should().BeApproximately(EastAtEquator, 1e-3);
@@ -72,7 +71,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The meridional degree is a different number, which on a sphere it could not be.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerADifferentMeridionalDegree()
         {
             var east = Distance("POINT(0 0)", "POINT(1 0)");
@@ -85,7 +84,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Neither is the sphere's answer, by the margin the issue measured.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldNoLongerAnswerTheSphere()
         {
             var east = Distance("POINT(0 0)", "POINT(1 0)");
@@ -98,7 +97,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A length is the same measurement, summed.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldMeasureALengthOnTheEllipsoid()
         {
             var length = GeographyFunctions.Length(Wkt("LINESTRING(0 0, 1 0, 1 1)"))!.doubleValue();
@@ -115,7 +114,7 @@ namespace Apache.Calcite.Geography.Tests
         /// Area diverges between the two models further than distance does. A one-degree square at the
         /// equator is about 12,308 km² on WGS84; the sphere makes it about 12,364 km².
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldMeasureAnAreaOnTheEllipsoid()
         {
             var area = GeographyFunctions.Area(Wkt("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"))!.doubleValue();
@@ -132,7 +131,7 @@ namespace Apache.Calcite.Geography.Tests
         /// this is the equatorial degree again — which says the pair S2 picked was carried through to the
         /// ellipsoidal measurement rather than being measured on the sphere.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldMeasureBetweenTheClosestPairOfTwoShapes()
         {
             Distance("POINT(0 0)", "LINESTRING(1 0, 1 1)").Should().BeApproximately(EastAtEquator, 1e-3);
@@ -141,7 +140,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Shapes that touch or contain one another are zero apart, as before.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldStillAnswerZeroWhereTheyMeet()
         {
             Distance("POINT(0.5 0.5)", "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))").Should().Be(0);

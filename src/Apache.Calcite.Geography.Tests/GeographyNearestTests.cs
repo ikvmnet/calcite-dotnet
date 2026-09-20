@@ -4,9 +4,9 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -27,7 +27,6 @@ namespace Apache.Calcite.Geography.Tests
     /// equidistant are 745 metres apart in fact — and the two disagree about which is nearer whenever the
     /// candidates lie in different directions.</para>
     /// </remarks>
-    [TestClass]
     public class GeographyNearestTests
     {
 
@@ -49,7 +48,7 @@ namespace Apache.Calcite.Geography.Tests
         /// answers both. On the Earth the northern one is 745 metres nearer, so there is nothing to tie and
         /// this answers it alone. Neither is a rounding difference; they are different answers.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldBreakATieThatOnlyExistsOnAPlane()
         {
             var origin = Wkt("POINT(0 0)");
@@ -65,7 +64,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// And the furthest of the same two is the other one.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldChooseTheFurthestOnTheEllipsoidToo()
         {
             var origin = Wkt("POINT(0 0)");
@@ -77,7 +76,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A genuine tie is still answered with every coordinate that ties, as Calcite does.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerARealTieWithEveryCoordinate()
         {
             var answer = GeographyFunctions.ClosestCoordinate(Wkt("POINT(0 0)"), Wkt("MULTIPOINT((1 0), (-1 0))"));
@@ -89,7 +88,7 @@ namespace Apache.Calcite.Geography.Tests
         /// A coordinate of the geography, not a point on it — which is what makes this a different function
         /// from <c>CLR_ST_GEOG_CLOSESTPOINT</c>.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerACoordinateRatherThanAPointOnAnEdge()
         {
             var line = Wkt("LINESTRING(1 -1, 1 1)");
@@ -102,7 +101,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The closest point may fall part way along an edge, and the edge is a geodesic.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerAPointOnAnEdge()
         {
             var answer = GeographyFunctions.ClosestPoint(Wkt("LINESTRING(-1 1, 1 1)"), Wkt("POINT(0 0)"));
@@ -117,7 +116,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The longest line joins the pair <c>CLR_ST_GEOG_MAXDISTANCE</c> measures.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldJoinThePairMaxDistanceMeasures()
         {
             var a = Wkt("MULTIPOINT((0 0), (0.5 0))");
@@ -135,7 +134,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Null in, null out, as everywhere else here.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerNullForANullArgument()
         {
             GeographyFunctions.ClosestCoordinate(null, Wkt("POINT(0 0)")).Should().BeNull();
@@ -147,7 +146,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Every one of the four stamped with WGS84, as every other constructor and editor is.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldStampEveryAnswerWithWgs84()
         {
             var a = Wkt("LINESTRING(0 0, 1 1)");
@@ -162,7 +161,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// All four run as operators, which is what says the declarations bind to these bodies.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldRunEachAsAnOperator()
         {
             var cases = new (string Sql, string Expected)[]

@@ -10,13 +10,13 @@ using FluentAssertions;
 
 using java.lang;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.jdbc;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
+
+using Xunit;
 
 using J = org.apache.calcite.linq4j.tree;
 
@@ -30,16 +30,17 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
     /// The port reuses every expression-producing member of <c>PhysType</c> rather than writing CLR versions
     /// of them, which is only worth anything if what they emit survives translation. These run the result.
     /// </remarks>
-    [TestClass]
     public class LixToClrTranslatorPhysTypeTests
     {
 
-        JavaTypeFactoryImpl typeFactory = null!;
-        RelDataType rowType = null!;
-        PhysType physType = null!;
+        readonly JavaTypeFactoryImpl typeFactory;
+        readonly RelDataType rowType;
+        readonly PhysType physType;
 
-        [TestInitialize]
-        public void Setup()
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        public LixToClrTranslatorPhysTypeTests()
         {
             typeFactory = new JavaTypeFactoryImpl();
             rowType = typeFactory.builder()
@@ -65,7 +66,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             return (x, y) => comparator.compare(x, y);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateFieldReference()
         {
             var row = J.Expressions.parameter(physType.getJavaRowType(), "row");
@@ -80,7 +81,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             read([Integer.valueOf(7), "SMITH"]).Should().Be("SMITH");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateRecord()
         {
             var translator = new LixToClrTranslator();
@@ -94,7 +95,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             build().Should().BeEquivalentTo(new object[] { Integer.valueOf(7), "SMITH" });
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateSelector()
         {
             var row = J.Expressions.parameter(physType.getJavaRowType(), "row");
@@ -106,7 +107,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             apply.DynamicInvoke([new object[] { Integer.valueOf(7), "SMITH" }]).Should().Be("SMITH");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateComparator()
         {
             // an anonymous java.util.Comparator, which an expression tree cannot declare, so it becomes the
@@ -119,7 +120,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             compare([Integer.valueOf(1), "a"], [Integer.valueOf(1), "z"]).Should().Be(0);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateDescendingComparator()
         {
             var collation = RelCollations.of(new RelFieldCollation(0, RelFieldCollation.Direction.DESCENDING));
@@ -128,7 +129,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             compare([Integer.valueOf(1), "a"], [Integer.valueOf(2), "b"]).Should().BePositive();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldSortWithATranslatedComparator()
         {
             var compare = Comparator(physType.generateComparator(RelCollations.of(0)));
@@ -145,7 +146,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             rows.ConvertAll(r => (string)r[1]).Should().Equal("a", "b", "c");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateAccessor()
         {
             var accessor = physType.generateAccessor(java.util.Arrays.asList([Integer.valueOf(0)]));
@@ -157,7 +158,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             key.Should().NotBeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateCollationKeyComparator()
         {
             // two collations, so the key is the whole row and the ordering lives entirely in the comparator
@@ -176,7 +177,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             compare([Integer.valueOf(1), "a"], [Integer.valueOf(1), "b"]).Should().BeNegative();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTranslateAnIdentitySelectorAsALinq4jFunction()
         {
             // PhysType does not always return a lambda. Where the projection is the identity it returns a call
@@ -204,7 +205,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// field type, not the box. A sequence carries the box, so the conversion has to end in one; this is
         /// the shape of it, and the only one no plan reaches.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldConvertAOneColumnRowFromAnArrayToAScalar()
         {
             var oneColumn = typeFactory.builder().add("intField", typeFactory.createSqlType(SqlTypeName.INTEGER)).build();

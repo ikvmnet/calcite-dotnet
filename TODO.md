@@ -266,8 +266,8 @@ Calcite's adapter does not have: a `DbBatch` for a multi-row modify, and a bulk-
 
 The row loop awaits; the statement does not. It is sent at `GetAsyncEnumerator`, synchronously, through
 `OpenConnection()` and `ExecuteReader()`. That is where this convention acquires — linq4j acquires inside
-`enumerator()`, `AcquisitionTimingTests` holds that the whole cascade runs there, and
-`ClrAsyncEnumerableAdoNetTests` states that acquisition-time work is synchronous work because
+`enumerator()`, `ClrEnumerableDefaultsAcquisitionTests` holds that the whole cascade runs there, and
+`ClrEnumerableConventionAsyncAdoNetTests` states that acquisition-time work is synchronous work because
 `GetAsyncEnumerator` cannot await.
 
 - **An asynchronous connect.** Getting `OpenConnectionAsync` and `ExecuteReaderAsync` as well means
@@ -398,7 +398,7 @@ which is what a cache on the root means, the factory being per connection.
 - The numbers are one machine, a Debug build, six-row tables and a warm process. The split is what
   matters and it is not close; the absolute figures are not a benchmark. A cold first statement costs far
   more than any row above and is not what a cache saves.
-- Re-bindability was measured over eight statement shapes. `ClrEnumerableDifferentialTests` has far more,
+- Re-bindability was measured over eight statement shapes. `ClrEnumerableConventionDifferentialTests` has far more,
   and the cache's own test should be that list bound twice, since a state a bind leaves behind would show
   as a differential failure on the second bind and nowhere else.
 - Nothing above measured a cache hit's cost — key canonicalisation and lookup — against the 15 ms floor.

@@ -9,13 +9,13 @@ using Apache.Calcite.Tests;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.schema;
 using org.apache.calcite.tools;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -41,7 +41,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// the implementor adds where a node hands up the sequence it can build. What is asserted is the same
     /// behaviour, which is the point of keeping them.</para>
     /// </remarks>
-    [TestClass]
     public class ClrEnumerableRelImplementorCrossingTests
     {
 
@@ -180,7 +179,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// when it is blocked on. A fixture that completed synchronously would exercise the fast path only
         /// and say nothing about the wait.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldReadAnAsynchronousLeafSynchronously()
         {
             var (rules, calcRules) = Both();
@@ -192,7 +191,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// A table whose rows are pulled is read by a plan implemented asynchronously.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public async Task ShouldReadASynchronousLeafAsynchronously()
         {
             var (rules, calcRules) = Both();
@@ -216,7 +215,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <para>The read runs on a dedicated background thread with a join timeout, so a regression fails
         /// rather than hanging the suite.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldReadAnAsynchronousLeafSynchronouslyUnderASynchronizationContext()
         {
             var (rules, calcRules) = Both();
@@ -270,7 +269,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// A join whose two sides produce different kinds of sequence runs, implemented either way.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public async Task ShouldJoinAcrossTheTwoKindsOfLeaf()
         {
             var (rules, calcRules) = Both();
@@ -294,7 +293,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// registered by hand, because with both conventions loaded the planner put everything on the root's
         /// side and the converter only ever saw a bare scan.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldCarryAGeneratedCalcOverTheCrossing()
         {
             var (rules, calcRules) = Both();
@@ -315,7 +314,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <c>finally</c>, so the flag is only set if the awaited part of the disposal ran to completion. A
         /// converter that called <c>DisposeAsync</c> and discarded the <c>ValueTask</c> would leave it false.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldDisposeTheAsynchronousLeafWhenTheReaderStops()
         {
             var (rules, calcRules) = Both();
