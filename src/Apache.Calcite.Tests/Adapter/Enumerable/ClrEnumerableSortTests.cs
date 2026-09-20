@@ -5,7 +5,7 @@ using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -41,7 +41,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// a sort over the table function. With it in place the planner hashes instead and the shape never
     /// arises — which is the whole reason Calcite has not noticed.</para>
     /// </remarks>
-    [TestClass]
     public class ClrEnumerableSortTests
     {
 
@@ -52,7 +51,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// Both conventions choose the same plan, so what follows is a difference in the nodes and not in the
         /// planning.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldPlanAMergeJoinOverSortedTableFunctionsInBothConventions()
         {
             foreach (var clr in new[] { true, false })
@@ -73,7 +72,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <b>When this test starts failing, Calcite has fixed <c>EnumerableSort</c></b>, and whatever it did
         /// is what this convention's sort should then say.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldShowThatCalciteCannotRunTheQuery()
         {
             var act = () => ClrEnumerableConventionDifferentialTests.RunFib(Sql, false, true);
@@ -85,7 +84,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// This convention cannot either, and refuses before it builds the plan rather than while running it.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldRefuseTheQueryNamingTheNodeAndBothTypes()
         {
             var act = () => ClrEnumerableConventionDifferentialTests.RunFib(Sql, true, true);

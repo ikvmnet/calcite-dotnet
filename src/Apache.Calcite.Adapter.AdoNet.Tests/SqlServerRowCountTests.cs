@@ -1,11 +1,11 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 using org.apache.calcite.jdbc;
 using org.apache.calcite.runtime;
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using Xunit;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -27,8 +27,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// defect — a projection the source could not evaluate left the limit in process and it worked.
     /// </para>
     /// </remarks>
-    [TestClass]
-    public class SqlServerRowCountTests
+    public class SqlServerRowCountTests : IDisposable
     {
 
         static SqlServerRowCountTests()
@@ -42,11 +41,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         GeneratedSql _generated = null!;
         Hook.Closeable _hook = null!;
 
-        [TestInitialize]
-        public void Setup()
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        public SqlServerRowCountTests()
         {
             if (SqlServerFixture.IsAvailable == false)
-                Assert.Inconclusive("No SQL Server LocalDB instance is reachable on this machine.");
+                Assert.Skip("No SQL Server LocalDB instance is reachable on this machine.");
 
             var properties = new java.util.Properties();
             properties.setProperty("lex", "JAVA");
@@ -61,8 +62,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             _hook = Hook.QUERY_PLAN.addThread(_generated);
         }
 
-        [TestCleanup]
-        public void Cleanup()
+        /// <inheritdoc />
+        public void Dispose()
         {
             _hook?.close();
             _connection?.close();
@@ -118,54 +119,54 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// The case from the report: a <c>FETCH</c> whose count is a parameter. The whole of the fix is that
         /// the marker no longer stands alone, so the count the server reads is not the decimal that was bound.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AParameterisedFetchAnswers()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "1", "2" },
                 Rows("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO FETCH FIRST ? ROWS ONLY", "2"));
 
-            StringAssert.Contains(Statement, "TOP (CAST(CEILING(@P0) AS INT))");
+            Assert.Contains("TOP (CAST(CEILING(@P0) AS INT))", Statement);
         }
 
         /// <summary>
         /// And an <c>OFFSET</c> whose count is a parameter, which failed the same way for the same reason.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AParameterisedOffsetAnswers()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "2", "3", "4" },
                 Rows("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO OFFSET ? ROWS", "1"));
 
-            StringAssert.Contains(Statement, "OFFSET CAST(CEILING(@P0) AS INT) ROWS");
+            Assert.Contains("OFFSET CAST(CEILING(@P0) AS INT) ROWS", Statement);
         }
 
         /// <summary>
         /// Both at once, which is what paging actually asks for, and what <c>$top</c> and <c>$skip</c> send.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AParameterisedOffsetAndFetchAnswer()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "2", "3" },
                 Rows("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO OFFSET ? ROWS FETCH NEXT ? ROWS ONLY", "1", "2"));
 
-            StringAssert.Contains(Statement, "OFFSET CAST(CEILING(@P0) AS INT) ROWS");
-            StringAssert.Contains(Statement, "FETCH NEXT (CAST(CEILING(@P1) AS INT)) ROWS ONLY");
+            Assert.Contains("OFFSET CAST(CEILING(@P0) AS INT) ROWS", Statement);
+            Assert.Contains("FETCH NEXT (CAST(CEILING(@P1) AS INT)) ROWS ONLY", Statement);
         }
 
         /// <summary>
         /// A count bound as an integer rather than as a decimal is the same statement and the same answer:
         /// what reads the count is the server, and the cast is a no-op over one that is already whole.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AnIntegerBoundFetchAnswers()
         {
             using var statement = _connection.prepareStatement("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO FETCH FIRST ? ROWS ONLY");
             statement.setInt(1, 2);
 
-            CollectionAssert.AreEqual(new[] { "1", "2" }, Read(statement.executeQuery()));
+            Assert.Equal(new[] { "1", "2" }, Read(statement.executeQuery()));
         }
 
         /// <summary>
@@ -177,39 +178,39 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <c>EnumerableDefaults.take</c> counts while the zero-based index is below the bound, which
         /// <c>RexUtil.makeOffsetFetchSum</c> states as rounding "to whole row counts".
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void AFractionalFetchIsWrittenAsWholeRows()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "1", "2", "3" },
                 Rows("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO FETCH FIRST 2.9 ROWS ONLY"));
 
-            StringAssert.Contains(Statement, "TOP (3)");
+            Assert.Contains("TOP (3)", Statement);
         }
 
         /// <inheritdoc cref="AFractionalFetchIsWrittenAsWholeRows"/>
-        [TestMethod]
+        [Fact]
         public void AFractionalOffsetIsWrittenAsWholeRows()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "3", "4" },
                 Rows("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO OFFSET 1.5 ROWS"));
 
-            StringAssert.Contains(Statement, "OFFSET 2 ROWS");
+            Assert.Contains("OFFSET 2 ROWS", Statement);
         }
 
         /// <summary>
         /// A whole count is written exactly as it was, which is what keeps <c>TOP (2)</c> a constant the
         /// server can plan a row goal against.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AWholeFetchIsWrittenUnchanged()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "1", "2" },
                 Rows("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO FETCH FIRST 2 ROWS ONLY"));
 
-            StringAssert.Contains(Statement, "TOP (2)");
+            Assert.Contains("TOP (2)", Statement);
         }
 
         /// <summary>
@@ -217,24 +218,24 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// a source the adapter has nothing to do with. The literal arm is rounded here and the parameter
         /// arm by the server, and this holds both to the same answer.
         /// </summary>
-        [DataTestMethod]
-        [DataRow("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO OFFSET 1.5 ROWS FETCH NEXT 2.9 ROWS ONLY")]
-        [DataRow("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO FETCH FIRST 2.9 ROWS ONLY")]
-        [DataRow("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO OFFSET 1.5 ROWS")]
+        [Theory]
+        [InlineData("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO OFFSET 1.5 ROWS FETCH NEXT 2.9 ROWS ONLY")]
+        [InlineData("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO FETCH FIRST 2.9 ROWS ONLY")]
+        [InlineData("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO OFFSET 1.5 ROWS")]
         public void AFractionalCountMeansTheSameRowsInProcess(string sql)
         {
             var inProcess = sql
                 .Replace("EMPNO FROM ADO.EMPS", "x FROM (VALUES (1), (2), (3), (4)) AS t(x)")
                 .Replace("ORDER BY EMPNO", "ORDER BY x");
 
-            CollectionAssert.AreEqual(Rows(inProcess), Rows(sql));
+            Assert.Equal(Rows(inProcess), Rows(sql));
         }
 
         /// <inheritdoc cref="AFractionalCountMeansTheSameRowsInProcess"/>
-        [TestMethod]
+        [Fact]
         public void AFractionalParameterisedCountMeansTheSameRowsInProcess()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 Rows("SELECT x FROM (VALUES (1), (2), (3), (4)) AS t(x) ORDER BY x OFFSET ? ROWS FETCH NEXT ? ROWS ONLY", "1.5", "2.9"),
                 Rows("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO OFFSET ? ROWS FETCH NEXT ? ROWS ONLY", "1.5", "2.9"));
         }
@@ -243,14 +244,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// A literal count with no <c>int</c> is refused where it is written, naming the clause and the
         /// count.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AFetchWiderThanAnIntIsRefused()
         {
-            var e = Assert.Throws<java.sql.SQLException>(
+            var e = Assert.ThrowsAny<java.sql.SQLException>(
                 () => Rows("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO FETCH FIRST 3000000000 ROWS ONLY"));
 
-            StringAssert.Contains(Message(e), "FETCH");
-            StringAssert.Contains(Message(e), "3000000000");
+            Assert.Contains("FETCH", Message(e));
+            Assert.Contains("3000000000", Message(e));
         }
 
         /// <summary>
@@ -262,30 +263,30 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// on the first read rather than on the command, which is past <c>AdoEnumerable.enumerator</c> and
         /// so past the one place a driver's exception is wrapped and given the statement that earned it.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void AParameterisedFetchWiderThanAnIntIsRefused()
         {
-            var e = Assert.Throws<Microsoft.Data.SqlClient.SqlException>(
+            var e = Assert.ThrowsAny<Microsoft.Data.SqlClient.SqlException>(
                 () => Rows("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO FETCH FIRST ? ROWS ONLY", "3000000000"));
 
-            StringAssert.Contains(Message(e), "Arithmetic overflow");
+            Assert.Contains("Arithmetic overflow", Message(e));
         }
 
         /// <summary>
         /// A negative count is refused too, and by both: <c>EnumUtils.numberToBigDecimal</c> reads it that
         /// way in process and SQL Server says the same of the count the cast handed it.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ANegativeParameterisedFetchIsRefusedEitherWay()
         {
-            var pushed = Assert.Throws<Microsoft.Data.SqlClient.SqlException>(
+            var pushed = Assert.ThrowsAny<Microsoft.Data.SqlClient.SqlException>(
                 () => Rows("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO FETCH FIRST ? ROWS ONLY", "-1"));
 
-            var inProcess = Assert.Throws<java.sql.SQLException>(
+            var inProcess = Assert.ThrowsAny<java.sql.SQLException>(
                 () => Rows("SELECT x FROM (VALUES (1), (2)) AS t(x) ORDER BY x FETCH FIRST ? ROWS ONLY", "-1"));
 
-            StringAssert.Contains(Message(pushed), "may not be negative");
-            StringAssert.Contains(Message(inProcess), "must not be negative");
+            Assert.Contains("may not be negative", Message(pushed));
+            Assert.Contains("must not be negative", Message(inProcess));
         }
 
         /// <summary>

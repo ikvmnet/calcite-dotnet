@@ -1,8 +1,9 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System;
+using System.Collections.Generic;
 
 using org.apache.calcite.jdbc;
 
-using System.Collections.Generic;
+using Xunit;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -17,8 +18,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// of these arrive at the adapter as ordinary joins; the answers have to be right either way, which is
     /// what these assert.
     /// </remarks>
-    [TestClass]
-    public class AdoCorrelationTests
+    public class AdoCorrelationTests : IDisposable
     {
 
         static AdoCorrelationTests()
@@ -31,8 +31,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         SqliteFixture _sqlite = null!;
         java.sql.Connection _connection = null!;
 
-        [TestInitialize]
-        public void Setup()
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        public AdoCorrelationTests()
         {
             _sqlite = new SqliteFixture();
 
@@ -47,8 +49,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             root.add("ADO", AdoSchema.Create(root, "ADO", _sqlite.DataSource, null, null));
         }
 
-        [TestCleanup]
-        public void Cleanup()
+        /// <inheritdoc />
+        public void Dispose()
         {
             _connection?.close();
             _sqlite?.Dispose();
@@ -81,71 +83,71 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
         #region EXISTS
 
-        [TestMethod]
+        [Fact]
         public void ExistsKeepsRowsWithAMatch()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice", "Bob", "Carol", "Dave" },
-                Rows("SELECT NAME FROM ADO.EMPS E WHERE EXISTS (SELECT 1 FROM ADO.DEPTS D WHERE D.DEPTNO = E.DEPTNO)"));
+                Rows("SELECT NAME FROM ADO.EMPS E WHERE EXISTS (SELECT 1 FROM ADO.DEPTS D WHERE D.DEPTNO = E.DEPTNO)"), strict: true);
         }
 
         /// <summary>
         /// Erin's department is null, so the inner comparison is unknown for every department and the row
         /// does not survive.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ExistsDropsARowWhoseKeyIsNull()
         {
-            CollectionAssert.DoesNotContain(
-                Rows("SELECT NAME FROM ADO.EMPS E WHERE EXISTS (SELECT 1 FROM ADO.DEPTS D WHERE D.DEPTNO = E.DEPTNO)"),
-                "Erin");
+            Assert.DoesNotContain(
+                "Erin",
+                Rows("SELECT NAME FROM ADO.EMPS E WHERE EXISTS (SELECT 1 FROM ADO.DEPTS D WHERE D.DEPTNO = E.DEPTNO)"));
         }
 
-        [TestMethod]
+        [Fact]
         public void NotExistsKeepsRowsWithoutAMatch()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Erin" },
-                Rows("SELECT NAME FROM ADO.EMPS E WHERE NOT EXISTS (SELECT 1 FROM ADO.DEPTS D WHERE D.DEPTNO = E.DEPTNO)"));
+                Rows("SELECT NAME FROM ADO.EMPS E WHERE NOT EXISTS (SELECT 1 FROM ADO.DEPTS D WHERE D.DEPTNO = E.DEPTNO)"), strict: true);
         }
 
         /// <summary>
         /// The correlation runs the other way here: a department is kept for what the employee table holds.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ExistsWorksFromTheOtherSide()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Sales", "Engineering" },
-                Rows("SELECT DNAME FROM ADO.DEPTS D WHERE EXISTS (SELECT 1 FROM ADO.EMPS E WHERE E.DEPTNO = D.DEPTNO)"));
+                Rows("SELECT DNAME FROM ADO.DEPTS D WHERE EXISTS (SELECT 1 FROM ADO.EMPS E WHERE E.DEPTNO = D.DEPTNO)"), strict: true);
         }
 
-        [TestMethod]
+        [Fact]
         public void NotExistsFindsTheEmptyDepartment()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Empty" },
-                Rows("SELECT DNAME FROM ADO.DEPTS D WHERE NOT EXISTS (SELECT 1 FROM ADO.EMPS E WHERE E.DEPTNO = D.DEPTNO)"));
+                Rows("SELECT DNAME FROM ADO.DEPTS D WHERE NOT EXISTS (SELECT 1 FROM ADO.EMPS E WHERE E.DEPTNO = D.DEPTNO)"), strict: true);
         }
 
         #endregion
 
         #region IN
 
-        [TestMethod]
+        [Fact]
         public void InAgainstASubQueryRestrictsTheRows()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice", "Bob", "Carol", "Dave" },
-                Rows("SELECT NAME FROM ADO.EMPS WHERE DEPTNO IN (SELECT DEPTNO FROM ADO.DEPTS)"));
+                Rows("SELECT NAME FROM ADO.EMPS WHERE DEPTNO IN (SELECT DEPTNO FROM ADO.DEPTS)"), strict: true);
         }
 
-        [TestMethod]
+        [Fact]
         public void InAgainstACorrelatedSubQueryRestrictsTheRows()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice", "Bob" },
-                Rows("SELECT NAME FROM ADO.EMPS E WHERE E.DEPTNO IN (SELECT D.DEPTNO FROM ADO.DEPTS D WHERE D.DNAME = 'Sales')"));
+                Rows("SELECT NAME FROM ADO.EMPS E WHERE E.DEPTNO IN (SELECT D.DEPTNO FROM ADO.DEPTS D WHERE D.DNAME = 'Sales')"), strict: true);
         }
 
         #endregion
@@ -155,20 +157,20 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// A scalar sub-query produces one value per outer row, and null where it matches nothing.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AScalarSubQueryYieldsAValuePerRow()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice|Sales", "Bob|Sales", "Carol|Engineering", "Dave|Engineering", "Erin|NULL" },
-                Rows("SELECT E.NAME, (SELECT D.DNAME FROM ADO.DEPTS D WHERE D.DEPTNO = E.DEPTNO) FROM ADO.EMPS E"));
+                Rows("SELECT E.NAME, (SELECT D.DNAME FROM ADO.DEPTS D WHERE D.DEPTNO = E.DEPTNO) FROM ADO.EMPS E"), strict: true);
         }
 
-        [TestMethod]
+        [Fact]
         public void AScalarSubQueryCanAggregate()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Sales|2", "Engineering|2", "Empty|0" },
-                Rows("SELECT D.DNAME, (SELECT COUNT(*) FROM ADO.EMPS E WHERE E.DEPTNO = D.DEPTNO) FROM ADO.DEPTS D"));
+                Rows("SELECT D.DNAME, (SELECT COUNT(*) FROM ADO.EMPS E WHERE E.DEPTNO = D.DEPTNO) FROM ADO.DEPTS D"), strict: true);
         }
 
         /// <summary>
@@ -181,15 +183,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// null, so the comparison is unknown. Erin's department is null, so the inner query matches nothing,
         /// the average of no rows is null, and that comparison is unknown too.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ACorrelatedComparisonFilters()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Bob" },
                 Rows("""
                     SELECT E.NAME FROM ADO.EMPS E
                     WHERE E.SALARY > (SELECT AVG(E2.SALARY) FROM ADO.EMPS E2 WHERE E2.DEPTNO = E.DEPTNO)
-                    """));
+                    """), strict: true);
         }
 
         #endregion
@@ -246,28 +248,28 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             return rows;
         }
 
-        [TestMethod]
+        [Fact]
         public void ExistsIsCorrectWithoutDecorrelation()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice", "Bob", "Carol", "Dave" },
-                CorrelatedRows("SELECT NAME FROM ADO.EMPS E WHERE EXISTS (SELECT 1 FROM ADO.DEPTS D WHERE D.DEPTNO = E.DEPTNO)"));
+                CorrelatedRows("SELECT NAME FROM ADO.EMPS E WHERE EXISTS (SELECT 1 FROM ADO.DEPTS D WHERE D.DEPTNO = E.DEPTNO)"), strict: true);
         }
 
-        [TestMethod]
+        [Fact]
         public void AScalarSubQueryIsCorrectWithoutDecorrelation()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice|Sales", "Bob|Sales", "Carol|Engineering", "Dave|Engineering", "Erin|NULL" },
-                CorrelatedRows("SELECT E.NAME, (SELECT D.DNAME FROM ADO.DEPTS D WHERE D.DEPTNO = E.DEPTNO) FROM ADO.EMPS E"));
+                CorrelatedRows("SELECT E.NAME, (SELECT D.DNAME FROM ADO.DEPTS D WHERE D.DEPTNO = E.DEPTNO) FROM ADO.EMPS E"), strict: true);
         }
 
-        [TestMethod]
+        [Fact]
         public void AnAggregatingSubQueryIsCorrectWithoutDecorrelation()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Sales|2", "Engineering|2", "Empty|0" },
-                CorrelatedRows("SELECT D.DNAME, (SELECT COUNT(*) FROM ADO.EMPS E WHERE E.DEPTNO = D.DEPTNO) FROM ADO.DEPTS D"));
+                CorrelatedRows("SELECT D.DNAME, (SELECT COUNT(*) FROM ADO.EMPS E WHERE E.DEPTNO = D.DEPTNO) FROM ADO.DEPTS D"), strict: true);
         }
 
         /// <summary>
@@ -280,34 +282,34 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// Everyone but the highest paid has someone above them; Dave's salary is null, so the comparison is
         /// unknown and he does not survive.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void CorrelatingOnARealIsCorrectWithoutDecorrelation()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice", "Bob", "Erin" },
-                CorrelatedRows("SELECT E.NAME FROM ADO.EMPS E WHERE EXISTS (SELECT 1 FROM ADO.EMPS E2 WHERE E2.SALARY > E.SALARY)"));
+                CorrelatedRows("SELECT E.NAME FROM ADO.EMPS E WHERE EXISTS (SELECT 1 FROM ADO.EMPS E2 WHERE E2.SALARY > E.SALARY)"), strict: true);
         }
 
         /// <summary>
         /// Correlating on a character column: everyone but the last name in order has one after them.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void CorrelatingOnAStringIsCorrectWithoutDecorrelation()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice", "Bob", "Carol", "Dave" },
-                CorrelatedRows("SELECT E.NAME FROM ADO.EMPS E WHERE EXISTS (SELECT 1 FROM ADO.EMPS E2 WHERE E2.NAME > E.NAME)"));
+                CorrelatedRows("SELECT E.NAME FROM ADO.EMPS E WHERE EXISTS (SELECT 1 FROM ADO.EMPS E2 WHERE E2.NAME > E.NAME)"), strict: true);
         }
 
         /// <summary>
         /// Correlating on a date, which Calcite carries as a day count rather than a timestamp.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void CorrelatingOnADateIsCorrectWithoutDecorrelation()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Carol", "Alice", "Bob" },
-                CorrelatedRows("SELECT E.NAME FROM ADO.EMPS E WHERE EXISTS (SELECT 1 FROM ADO.EMPS E2 WHERE E2.HIREDATE > E.HIREDATE)"));
+                CorrelatedRows("SELECT E.NAME FROM ADO.EMPS E WHERE EXISTS (SELECT 1 FROM ADO.EMPS E2 WHERE E2.HIREDATE > E.HIREDATE)"), strict: true);
         }
 
         /// <summary>
@@ -320,15 +322,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// two would compare a department against a salary and give a different answer rather than an error.
         /// Only Alice has someone in her own department earning more.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void TwoCorrelationVariablesAreBoundToTheRightParameters()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice" },
                 CorrelatedRows("""
                     SELECT E.NAME FROM ADO.EMPS E
                     WHERE EXISTS (SELECT 1 FROM ADO.EMPS E2 WHERE E2.DEPTNO = E.DEPTNO AND E2.SALARY > E.SALARY)
-                    """));
+                    """), strict: true);
         }
 
         /// <summary>
@@ -337,15 +339,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <remarks>
         /// Everyone with a later employee within two of them, which is everyone but the last.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void OneVariableReadTwiceFillsBothParameters()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice", "Bob", "Carol", "Dave" },
                 CorrelatedRows("""
                     SELECT E.NAME FROM ADO.EMPS E
                     WHERE EXISTS (SELECT 1 FROM ADO.EMPS E2 WHERE E2.EMPNO > E.EMPNO AND E2.EMPNO <= E.EMPNO + 2)
-                    """));
+                    """), strict: true);
         }
 
         /// <summary>
@@ -355,10 +357,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// Two contexts are live at once, each closed over a different outer row. A department survives when
         /// it has an employee who has a colleague, so the empty one does not.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void NestedCorrelationIsCorrectWithoutDecorrelation()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Sales", "Engineering" },
                 CorrelatedRows("""
                     SELECT D.DNAME FROM ADO.DEPTS D
@@ -366,7 +368,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
                         SELECT 1 FROM ADO.EMPS E
                         WHERE E.DEPTNO = D.DEPTNO
                           AND EXISTS (SELECT 1 FROM ADO.EMPS E2 WHERE E2.DEPTNO = E.DEPTNO AND E2.EMPNO <> E.EMPNO))
-                    """));
+                    """), strict: true);
         }
 
         /// <summary>
@@ -377,22 +379,22 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// the inner comparison is then unknown for every row, so her count is zero rather than the query
         /// failing on an unfilled parameter.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ANullCorrelationValueIsBound()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice|2", "Bob|2", "Carol|2", "Dave|2", "Erin|0" },
-                CorrelatedRows("SELECT E.NAME, (SELECT COUNT(*) FROM ADO.EMPS E2 WHERE E2.DEPTNO = E.DEPTNO) FROM ADO.EMPS E"));
+                CorrelatedRows("SELECT E.NAME, (SELECT COUNT(*) FROM ADO.EMPS E2 WHERE E2.DEPTNO = E.DEPTNO) FROM ADO.EMPS E"), strict: true);
         }
 
         /// <summary>
         /// A correlate under a sort: the inner query runs per row, and the ordering is applied to what
         /// survives.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ACorrelateSurvivesSorting()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "Alice", "Bob", "Carol", "Dave" },
                 CorrelatedRows("""
                     SELECT E.NAME FROM ADO.EMPS E
@@ -404,13 +406,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// An outer query matching nothing never runs the inner one.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AnEmptyOuterYieldsNothing()
         {
-            Assert.AreEqual(0, CorrelatedRows("""
+            Assert.Empty(CorrelatedRows("""
                 SELECT E.NAME FROM ADO.EMPS E
                 WHERE E.EMPNO = 999 AND EXISTS (SELECT 1 FROM ADO.DEPTS D WHERE D.DEPTNO = E.DEPTNO)
-                """).Count);
+                """));
         }
 
         #endregion
@@ -422,12 +424,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// to keep the correlated cases honest: if these were the only ones passing, the correlation would
         /// not be doing anything.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AnUncorrelatedSubQueryIsEvaluatedOnce()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Carol" },
-                Rows("SELECT NAME FROM ADO.EMPS WHERE SALARY = (SELECT MAX(SALARY) FROM ADO.EMPS)"));
+                Rows("SELECT NAME FROM ADO.EMPS WHERE SALARY = (SELECT MAX(SALARY) FROM ADO.EMPS)"), strict: true);
         }
 
         #endregion

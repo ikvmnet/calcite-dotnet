@@ -9,12 +9,12 @@ using Apache.Calcite.Tests;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.tools;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -37,7 +37,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// disagreement is a disagreement between the two operator sets rather than between two node
     /// hierarchies — which is what is left to get wrong.</para>
     /// </remarks>
-    [TestClass]
     public class ClrEnumerableConventionAsyncDifferentialTests
     {
 
@@ -386,40 +385,40 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             await Same(sql, sortedAggregate, batchNestedLoopJoin, limitSort, excludeHashJoin, excludeMergeJoin);
         }
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAScan() => Same("SELECT * FROM SALES");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAOneColumnScan() => Same("SELECT ID FROM SALES");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAFilter() => SameThrough("ClrEnumerableCalc", "SELECT * FROM SALES WHERE AMOUNT > 10");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAProjection() => Same("SELECT ID, REGION FROM SALES");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAnExpression() => Same("SELECT ID + 1, UPPER(REGION) FROM SALES");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnANullableColumn() => Same("SELECT AMOUNT FROM SALES");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnASort() => SameThrough("ClrEnumerableSort", "SELECT * FROM SALES ORDER BY AMOUNT");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnASortWithLimit() => Same("SELECT * FROM SALES ORDER BY ID OFFSET 1 ROWS FETCH NEXT 3 ROWS ONLY");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnValues() => SameThrough("ClrEnumerableValues", "SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAnAggregate() => SameThrough("ClrEnumerableAggregate", "SELECT REGION, SUM(AMOUNT) FROM SALES GROUP BY REGION");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnACountOverEverything() => Same("SELECT COUNT(*) FROM SALES");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAGrandTotal() => Same("SELECT SUM(AMOUNT), MIN(ID), MAX(ID) FROM SALES");
 
         // MIN, MAX, SUM and AVG over a column of type ANY, whose Java class is Object. Neither convention
@@ -428,88 +427,88 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         // convention gives what the synchronous one gives, mixed numeric types, strings and an empty group
         // included.
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAggregatingAnAnyColumn() => SameThrough("ClrEnumerableAggregate", "SELECT MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAGroupedAggregateOverAnAnyColumn() => SameThrough("ClrEnumerableAggregate", "SELECT K, MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS GROUP BY K ORDER BY K");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAggregatingAnAnyColumnOfStrings() => Same("SELECT MIN(S), MAX(S) FROM ANYS");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAggregatingAnEmptyAnyColumn() => Same("SELECT MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS WHERE K = 'NORTH'");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnWindowingAnAggregateOverAnAnyColumn() => SameThrough("ClrEnumerableWindow", "SELECT ID, MIN(V) OVER (PARTITION BY K), MAX(V) OVER (PARTITION BY K), SUM(V) OVER (PARTITION BY K) FROM ANYS ORDER BY ID");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnARunningTotalOverAnAnyColumn() => SameThrough("ClrEnumerableWindow", "SELECT ID, SUM(V) OVER (ORDER BY ID) FROM ANYS ORDER BY ID");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnTakingAnyValueOfAnAnyColumn() => SameThrough("ClrEnumerableAggregate", "SELECT ANY_VALUE(V), ANY_VALUE(S) FROM ANYS");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnDeviatingOverAnAnyColumn() => Same("SELECT VAR_POP(V), VAR_SAMP(V) FROM ANYS");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnFilteringAnAggregateOverAnAnyColumn() => Same("SELECT MIN(V) FILTER (WHERE ID > 1), SUM(V) FILTER (WHERE K = 'EAST') FROM ANYS");
 
         // and the same column read every way that already worked
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnScanningAnAnyColumn() => Same("SELECT K, V, S FROM ANYS");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnCountingAnAnyColumn() => Same("SELECT K, COUNT(V), COUNT(*) FROM ANYS GROUP BY K ORDER BY K");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAggregatingACastAnyColumn() => Same("SELECT MIN(CAST(V AS INTEGER)), MAX(CAST(V AS INTEGER)), SUM(CAST(V AS INTEGER)), AVG(CAST(V AS INTEGER)) FROM ANYS");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAGroupedAggregateOverACastAnyColumn() => Same("SELECT K, MIN(CAST(V AS INTEGER)), SUM(CAST(V AS INTEGER)) FROM ANYS GROUP BY K ORDER BY K");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnCastingAnAnyColumnToVarchar() => Same("SELECT ID, CAST(G AS VARCHAR) FROM CASTS ORDER BY ID");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnCastingAnAnyColumnToANumber() => Same("SELECT ID, CAST(N AS INTEGER), CAST(N AS DECIMAL(10, 2)) FROM CASTS ORDER BY ID");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnCastingAnAnyColumnOfMillisToATimestamp() => Same("SELECT ID, CAST(M AS TIMESTAMP) FROM CASTS ORDER BY ID");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnRefusingAUuidCastOfAnAnyColumn() =>
             SameFailure("SELECT ID, CAST(G AS UUID) FROM CASTS ORDER BY ID", "to type 'org.apache.calcite.util.UuidValue'");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnCastingAnAnyColumnThroughVarcharToUuid() => Same("SELECT ID, CAST(CAST(G AS VARCHAR) AS UUID) FROM CASTS ORDER BY ID");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnCastingAnAnyColumnThroughVarcharToATimestamp() => Same("SELECT ID, CAST(CAST(T AS VARCHAR) AS TIMESTAMP) FROM CASTS ORDER BY ID");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnDistinct() => Same("SELECT DISTINCT REGION FROM SALES");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAUnion() => Same("SELECT ID FROM SALES UNION SELECT K FROM SORTED");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAUnionAll() => Same("SELECT ID FROM SALES UNION ALL SELECT K FROM SORTED");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAnIntersect() => Same("SELECT ID FROM SALES INTERSECT SELECT K FROM SORTED");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAMinus() => Same("SELECT ID FROM SALES EXCEPT SELECT K FROM SORTED");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAJoin() => Same("SELECT s.ID, t.V FROM SALES s JOIN SORTED t ON s.ID = t.K");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnALeftJoin() => Same("SELECT s.ID, t.V FROM SALES s LEFT JOIN SORTED t ON s.ID = t.K");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnANestedLoopJoin() => Same("SELECT s.ID, t.V FROM SALES s JOIN SORTED t ON s.ID > t.K");
 
         // A right and a full join over twelve build-side keys with no ORDER BY. The rows that matched nothing
@@ -517,24 +516,24 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         // decides their order: the lookup is a table of 16 and the HashSet copied from its key set is a table
         // of 32.
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnARightJoinsOwnOrderOverTwelveKeys() =>
             SameThrough("ClrEnumerableHashJoin", "SELECT a.N, b.K FROM (SELECT * FROM WIDE WHERE N < 3) a RIGHT JOIN WIDE b ON a.K = b.K");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAFullJoinsOwnOrderOverTwelveKeys() =>
             SameThrough("ClrEnumerableHashJoin", "SELECT a.N, b.K FROM (SELECT * FROM WIDE WHERE N < 3) a FULL JOIN WIDE b ON a.K = b.K");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnASemiJoin() => Same("SELECT ID FROM SALES WHERE ID IN (SELECT K FROM SORTED)");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAWindow() => Same("SELECT ID, SUM(AMOUNT) OVER (PARTITION BY REGION ORDER BY ID) FROM SALES");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnARowNumber() => Same("SELECT ID, ROW_NUMBER() OVER (ORDER BY ID) FROM SALES");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnACorrelatedSubQuery() =>
             Same("SELECT ID, (SELECT COUNT(*) FROM SORTED t WHERE t.K = s.ID) FROM SALES s");
 
@@ -543,62 +542,62 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// where the hash join is not available to be cheaper — VolcanoCost compares the row count and
         /// nothing else, so the planner keeps whichever it saw first.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAMergeJoin() =>
             SameThrough("ClrEnumerableMergeJoin", "SELECT a.K, b.V FROM SORTED a JOIN SORTED b ON a.K = b.K", excludeHashJoin: true);
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAMergeJoinWithTies() =>
             Same("SELECT a.K, a.V, b.V FROM SORTED a JOIN SORTED b ON a.K = b.K ORDER BY a.K, a.V, b.V", excludeHashJoin: true);
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnALeftMergeJoin() =>
             Same("SELECT a.K, b.V FROM SORTED a LEFT JOIN SORTED b ON a.K = b.K", excludeHashJoin: true);
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAMergeUnion() =>
             Same("SELECT K FROM SORTED UNION SELECT K FROM SORTED ORDER BY 1");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnASortedAggregate() =>
             Same("SELECT K, COUNT(*) FROM SORTED GROUP BY K ORDER BY K", sortedAggregate: true);
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnABatchNestedLoopJoin() =>
             Same("SELECT s.ID, t.V FROM SALES s JOIN SORTED t ON s.ID > t.K", batchNestedLoopJoin: true);
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnALimitSort() =>
             Same("SELECT * FROM SALES ORDER BY AMOUNT FETCH NEXT 2 ROWS ONLY", limitSort: true);
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnGroupingSets() =>
             Same("SELECT REGION, SUM(AMOUNT) FROM SALES GROUP BY GROUPING SETS ((REGION), ()) ORDER BY 1");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnACube() =>
             Same("SELECT REGION, LABEL, COUNT(*) FROM SALES GROUP BY CUBE(REGION, LABEL) ORDER BY 1, 2");
 
         // Eight key fields, which is the arity that builds the key through FlatLists.copyOf over an array of
         // Comparable. See ClrEnumerableConventionDifferentialTests.ShouldAgreeOnARollupOverEveryColumn.
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnARollupOverEveryColumn() =>
             Same("SELECT ID, REGION, AMOUNT, LABEL, COUNT(*) FROM SALES GROUP BY ROLLUP(ID, REGION, AMOUNT, LABEL) ORDER BY 1, 2, 3, 4, 5");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAnAntiJoin() =>
             Same("SELECT ID FROM SALES WHERE ID NOT IN (SELECT K FROM SORTED WHERE K IS NOT NULL)");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAnExists() =>
             Same("SELECT ID FROM SALES s WHERE EXISTS (SELECT 1 FROM SORTED t WHERE t.K = s.ID)");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAMultiset() =>
             Same("SELECT REGION, COLLECT(AMOUNT) FROM SALES GROUP BY REGION ORDER BY 1");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAnUncollect() =>
             Same("SELECT * FROM UNNEST(ARRAY[1, 2, 3]) AS t(x)");
 
@@ -609,51 +608,51 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         // correlate over the uncollect in both, because decorrelation cannot take an UNNEST of a correlation
         // variable apart.
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnUncollectingAnAnyColumn() =>
             SameThrough("ClrEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.TAGS) AS t(X)");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnUncollectingAnAnyColumnOfMixedNumericTypes() =>
             SameThrough("ClrEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.NUMS) AS t(X)");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnOuterUncollectingAnAnyColumn() =>
             SameThrough("ClrEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d LEFT JOIN UNNEST(d.TAGS) AS t(X) ON TRUE");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnUncollectingAnAnyColumnWithOrdinality() =>
             SameThrough("ClrEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.TAGS) WITH ORDINALITY AS t(X)");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAggregatingOverAnUncollectedAnyColumn() =>
             SameThrough("ClrEnumerableUncollect", "SELECT d.ID, COUNT(*), MIN(t.X), MAX(t.X) FROM DOCS d, UNNEST(d.NUMS) AS t(X) GROUP BY d.ID ORDER BY 1");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnFilteringTheOuterRowOfAnUncollectedAnyColumn() =>
             SameThrough("ClrEnumerableUncollect", "SELECT t.X FROM DOCS d, UNNEST(d.TAGS) AS t(X) WHERE d.ID = 1");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnACaseAndCoalesce() =>
             Same("SELECT ID, CASE WHEN AMOUNT IS NULL THEN -1 ELSE AMOUNT END, COALESCE(AMOUNT, 0) FROM SALES");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAggregatesOverNulls() =>
             Same("SELECT REGION, COUNT(AMOUNT), COUNT(*), SUM(AMOUNT), AVG(AMOUNT), MIN(AMOUNT), MAX(AMOUNT) FROM SALES GROUP BY REGION ORDER BY 1");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAWindowWithFraming() =>
             Same("SELECT ID, SUM(AMOUNT) OVER (ORDER BY ID ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM SALES");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnRankAndLag() =>
             Same("SELECT ID, RANK() OVER (PARTITION BY REGION ORDER BY AMOUNT), LAG(AMOUNT) OVER (ORDER BY ID) FROM SALES");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAnEmptyResult() =>
             Same("SELECT * FROM SALES WHERE 1 = 0");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnASelfJoinProducingNoRows() =>
             Same("SELECT a.ID FROM SALES a JOIN SALES b ON a.ID = b.ID + 1000");
 
@@ -661,15 +660,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         // ASOF join. Its rule is in both conventions' default lists, so nothing has to be turned on; what it
         // needs is a match condition and a key, and SALES has both.
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAnAsofJoin() =>
             Same("SELECT a.ID, b.ID FROM SALES a ASOF JOIN SALES b MATCH_CONDITION b.ID <= a.ID ON a.REGION = b.REGION ORDER BY a.ID");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnALeftAsofJoin() =>
             Same("SELECT a.ID, b.ID FROM SALES a LEFT ASOF JOIN (SELECT * FROM SALES WHERE ID > 3) b MATCH_CONDITION b.ID <= a.ID ON a.REGION = b.REGION ORDER BY a.ID");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAnAsofJoinLookingForward() =>
             Same("SELECT a.ID, b.ID FROM SALES a ASOF JOIN SALES b MATCH_CONDITION b.ID > a.ID ON a.REGION = b.REGION ORDER BY a.ID");
 
@@ -677,25 +676,25 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// The order an ASOF join produces is the order of the map it indexes its left input by, so a query
         /// without an ORDER BY compares that order too.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAnAsofJoinsOwnOrder() =>
             Same("SELECT a.ID, b.ID FROM SALES a ASOF JOIN SALES b MATCH_CONDITION b.ID <= a.ID ON a.REGION = b.REGION");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnALeftAsofJoinWithANullKey() =>
             Same("SELECT a.ID, b.ID FROM SALES a LEFT ASOF JOIN SALES b MATCH_CONDITION b.ID <= a.ID ON a.AMOUNT = b.AMOUNT ORDER BY a.ID");
 
         // the mark join paths, which the ordinary sub-query pass never reaches.
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAMarkedExists() =>
             Same("SELECT ID FROM SALES WHERE EXISTS (SELECT 1 FROM SALES S2 WHERE S2.ID > 4) ORDER BY ID", markJoin: true);
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAMarkedIn() =>
             Same("SELECT ID FROM SALES WHERE AMOUNT IN (SELECT AMOUNT FROM SALES WHERE ID > 3) ORDER BY ID", markJoin: true);
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAMarkedCorrelatedExists() =>
             Same("SELECT ID FROM SALES S1 WHERE EXISTS (SELECT 1 FROM SALES S2 WHERE S2.REGION = S1.REGION AND S2.ID > 3) ORDER BY ID", markJoin: true);
 
@@ -707,11 +706,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         // scan is Calcite's, which is exactly what the synchronous side always did. SameThrough is what says
         // so; without it these would pass on the old shape too.
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnARecursiveQuery() =>
             SameThrough("ClrEnumerableRepeatUnion", "WITH RECURSIVE t(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 4) SELECT n FROM t ORDER BY 1");
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnARecursiveQueryOfSeveralColumns() =>
             SameThrough("ClrEnumerableTableSpool", "WITH RECURSIVE t(n, m) AS (VALUES (1, 10) UNION ALL SELECT n + 1, m + 10 FROM t WHERE n < 4) SELECT n, m FROM t ORDER BY 1");
 
@@ -734,7 +733,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// the round that wrote nothing, so the step oscillates, and deduplication is what ends it. Under
         /// UNION ALL this runs forever in every convention including Calcite's.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnARecursiveQueryWhoseStepAggregates() =>
             SameRel(builder => builder
                 .values(["i"], I(1))
@@ -753,7 +752,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <c>ShouldAgreeOnARecursiveQuery</c>. Here to show the two routes agree on it, so that a failure of
         /// the one above is read as being about the aggregate rather than about the harness.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnARecursiveQueryBuiltByHand() =>
             SameRel(builder => builder
                 .values(["i"], I(1))
@@ -771,14 +770,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// and reaches it through <c>ClrEnumerableCalc</c> rather than through a converter. Without this
         /// a failure anywhere above is ambiguous between the shape and the route.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public Task ShouldPlanAHandBuiltScanThroughThisConvention() =>
             SameRelThrough("ClrEnumerableCalc", builder => builder
                 .scan("SORTED")
                 .filter(builder.call(org.apache.calcite.sql.fun.SqlStdOperatorTable.GREATER_THAN, builder.field(0), builder.literal(I(1))))
                 .build());
 
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnATableFunction() =>
             Same("SELECT * FROM TABLE(NUMBERS(3))");
 
@@ -797,7 +796,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <c>Expression.Call</c> refused it. Nothing in the suite reached a window table function over an
         /// awaited input, so the whole suite stayed green over it.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAWindowTableFunction() =>
             Same("SELECT \"ID\", \"window_start\", \"window_end\" FROM TABLE(TUMBLE(TABLE \"EVENTS\", DESCRIPTOR(\"ROWTIME\"), INTERVAL '1' HOUR)) ORDER BY \"ID\"");
 
@@ -808,7 +807,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// The window's output crosses back to awaited and an aggregate of this convention reads it, so the
         /// crossing is exercised in both directions in one plan.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public Task ShouldAgreeOnAnAggregateOverAWindowTableFunction() =>
             Same("SELECT \"window_start\", COUNT(*) FROM TABLE(TUMBLE(TABLE \"EVENTS\", DESCRIPTOR(\"ROWTIME\"), INTERVAL '1' HOUR)) GROUP BY \"window_start\" ORDER BY 1");
 
@@ -832,7 +831,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <para>Nothing to fix on this side: the convention does what Calcite does, and the check that
         /// would catch it is a check on Calcite's own answer about its own rows.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldRefuseATableFunctionJoinedToATable()
         {
             var act = async () => await Run("SELECT s.ID FROM SALES s, TABLE(NUMBERS(6)) n WHERE s.ID = n.N ORDER BY 1", true);
@@ -859,7 +858,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// across, <b>blocking a thread per row</b>. That is the cost, it is paid only by a query of this
         /// shape, and the alternative it replaces is the query not running.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldRunAMatchRecognizeOverAnAsyncTable()
         {
             var rows = await Run("SELECT * FROM SALES MATCH_RECOGNIZE (ORDER BY ID MEASURES CLASSIFIER() AS cl PATTERN (a b) DEFINE a AS a.AMOUNT > 0, b AS b.AMOUNT > 0)", true);

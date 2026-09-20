@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 using Apache.Calcite.Extensions.Prepare;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using FluentAssertions;
 
 using org.apache.calcite.avatica;
 using org.apache.calcite.config;
@@ -11,6 +11,8 @@ using org.apache.calcite.jdbc;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.type;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Prepare.Tests
 {
@@ -25,7 +27,6 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
     /// caller and never touches a value. Where Calcite's own member is reachable it is the oracle; where it
     /// is not, the assertion states the behaviour its source specifies and names it.
     /// </remarks>
-    [TestClass]
     public class ClrPrepareImplTests
     {
 
@@ -54,37 +55,37 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// class at all, so preparing with <c>Object[]</c> — which every caller here does — does not make a
         /// one-column row an array. An <c>EXPLAIN</c> is one column, and so is DML's <c>ROWCOUNT</c>.
         /// </remarks>
-        [TestMethod]
-        [DataRow("SELECT ID FROM SALES", "OBJECT")]
-        [DataRow("SELECT ID, REGION FROM SALES", "ARRAY")]
-        [DataRow("EXPLAIN PLAN FOR SELECT ID FROM SALES", "OBJECT")]
+        [Theory]
+        [InlineData("SELECT ID FROM SALES", "OBJECT")]
+        [InlineData("SELECT ID, REGION FROM SALES", "ARRAY")]
+        [InlineData("EXPLAIN PLAN FOR SELECT ID FROM SALES", "OBJECT")]
         public void Cursor_style_should_follow_the_column_count(string sql, string expected)
         {
             var style = ClrPrepareFixture.WithContext(sql, (context, _) =>
                 new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of(sql), typeof(object[]), -1).CursorFactory.style.name());
 
-            Assert.AreEqual(expected, style, sql);
+            style.Should().Be(expected, sql);
         }
 
         /// <summary>
         /// <c>getTypeName</c> rewrites seven interval names and renders the collection types by
         /// <c>toString</c>. Everything else is the SQL type's own name.
         /// </summary>
-        [TestMethod]
-        [DataRow("SELECT INTERVAL '1' YEAR FROM SALES", "INTERVAL_YEAR")]
-        [DataRow("SELECT INTERVAL '1-2' YEAR TO MONTH FROM SALES", "INTERVAL_YEAR_TO_MONTH")]
-        [DataRow("SELECT INTERVAL '1 2' DAY TO HOUR FROM SALES", "INTERVAL_DAY_TO_HOUR")]
-        [DataRow("SELECT INTERVAL '1 2:3' DAY TO MINUTE FROM SALES", "INTERVAL_DAY_TO_MINUTE")]
-        [DataRow("SELECT INTERVAL '1 2:3:4' DAY TO SECOND FROM SALES", "INTERVAL_DAY_TO_SECOND")]
-        [DataRow("SELECT INTERVAL '2:3' HOUR TO MINUTE FROM SALES", "INTERVAL_HOUR_TO_MINUTE")]
-        [DataRow("SELECT INTERVAL '2:3:4' HOUR TO SECOND FROM SALES", "INTERVAL_HOUR_TO_SECOND")]
-        [DataRow("SELECT INTERVAL '3:4' MINUTE TO SECOND FROM SALES", "INTERVAL_MINUTE_TO_SECOND")]
-        [DataRow("SELECT ID FROM SALES", "INTEGER")]
-        [DataRow("SELECT REGION FROM SALES", "VARCHAR")]
-        [DataRow("SELECT CAST(ID AS DECIMAL(9, 2)) FROM SALES", "DECIMAL")]
+        [Theory]
+        [InlineData("SELECT INTERVAL '1' YEAR FROM SALES", "INTERVAL_YEAR")]
+        [InlineData("SELECT INTERVAL '1-2' YEAR TO MONTH FROM SALES", "INTERVAL_YEAR_TO_MONTH")]
+        [InlineData("SELECT INTERVAL '1 2' DAY TO HOUR FROM SALES", "INTERVAL_DAY_TO_HOUR")]
+        [InlineData("SELECT INTERVAL '1 2:3' DAY TO MINUTE FROM SALES", "INTERVAL_DAY_TO_MINUTE")]
+        [InlineData("SELECT INTERVAL '1 2:3:4' DAY TO SECOND FROM SALES", "INTERVAL_DAY_TO_SECOND")]
+        [InlineData("SELECT INTERVAL '2:3' HOUR TO MINUTE FROM SALES", "INTERVAL_HOUR_TO_MINUTE")]
+        [InlineData("SELECT INTERVAL '2:3:4' HOUR TO SECOND FROM SALES", "INTERVAL_HOUR_TO_SECOND")]
+        [InlineData("SELECT INTERVAL '3:4' MINUTE TO SECOND FROM SALES", "INTERVAL_MINUTE_TO_SECOND")]
+        [InlineData("SELECT ID FROM SALES", "INTEGER")]
+        [InlineData("SELECT REGION FROM SALES", "VARCHAR")]
+        [InlineData("SELECT CAST(ID AS DECIMAL(9, 2)) FROM SALES", "DECIMAL")]
         public void Type_name_should_be_what_calcite_reports(string sql, string expected)
         {
-            Assert.AreEqual(expected, Column(sql).type.name, sql);
+            Column(sql).type.name.Should().Be(expected, sql);
         }
 
         /// <summary>
@@ -95,16 +96,16 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// and <c>SCALE_NOT_SPECIFIED</c>, which are -1. Reporting the sentinel would put -1 into
         /// <c>ColumnMetaData</c> and out through the reader's schema table.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void Unspecified_precision_and_scale_should_be_zero()
         {
-            Assert.IsTrue(RelDataType.PRECISION_NOT_SPECIFIED < 0, "the sentinel this guards against is negative");
-            Assert.IsTrue(RelDataType.SCALE_NOT_SPECIFIED < 0, "the sentinel this guards against is negative");
+            Assert.True(RelDataType.PRECISION_NOT_SPECIFIED < 0, "the sentinel this guards against is negative");
+            Assert.True(RelDataType.SCALE_NOT_SPECIFIED < 0, "the sentinel this guards against is negative");
 
             var column = Column("SELECT ID FROM SALES");
 
-            Assert.IsTrue(column.precision >= 0, $"precision was {column.precision}");
-            Assert.IsTrue(column.scale >= 0, $"scale was {column.scale}");
+            Assert.True(column.precision >= 0, $"precision was {column.precision}");
+            Assert.True(column.scale >= 0, $"scale was {column.scale}");
         }
 
         /// <summary>
@@ -115,27 +116,27 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// <c>metaData</c> passes 0, 2 and 1 for the column, catalog and schema in that order. Getting the
         /// direction wrong reports the catalog as the column name, which no row comparison would show.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void Origins_should_be_read_from_the_end()
         {
             var column = Column("SELECT ID FROM SALES");
 
-            Assert.AreEqual("ID", column.columnName);
-            Assert.AreEqual("SALES", column.tableName);
-            Assert.AreEqual("ID", column.label);
+            Assert.Equal("ID", column.columnName);
+            Assert.Equal("SALES", column.tableName);
+            Assert.Equal("ID", column.label);
         }
 
         /// <summary>
         /// An expression has no origin, so its catalog, schema and table are null while its label stands.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void An_expression_should_have_no_origin()
         {
             var column = Column("SELECT ID + 1 FROM SALES");
 
-            Assert.IsNull(column.tableName);
-            Assert.IsNull(column.schemaName);
-            Assert.IsNull(column.catalogName);
+            Assert.Null(column.tableName);
+            Assert.Null(column.schemaName);
+            Assert.Null(column.catalogName);
         }
 
         /// <summary>
@@ -148,13 +149,13 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// used for an <c>AvaticaParameter</c> and nowhere else. Reading the wrong one for a column would
         /// report every column as an Object and nothing about the rows would change.
         /// </remarks>
-        [TestMethod]
-        [DataRow("SELECT ID FROM SALES", "java.lang.Integer")]
-        [DataRow("SELECT REGION FROM SALES", "java.lang.String")]
-        [DataRow("SELECT CAST(ID AS DECIMAL(9, 2)) FROM SALES", "java.math.BigDecimal")]
+        [Theory]
+        [InlineData("SELECT ID FROM SALES", "java.lang.Integer")]
+        [InlineData("SELECT REGION FROM SALES", "java.lang.String")]
+        [InlineData("SELECT CAST(ID AS DECIMAL(9, 2)) FROM SALES", "java.math.BigDecimal")]
         public void Column_class_name_should_follow_the_type(string sql, string expected)
         {
-            Assert.AreEqual(expected, Column(sql).columnClassName, sql);
+            Column(sql).columnClassName.Should().Be(expected, sql);
         }
 
         /// <summary>
@@ -164,15 +165,15 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// <c>getStatementType(SqlKind)</c>. EXPLAIN is not among them, which is why an EXPLAIN reports
         /// SELECT while taking the DML branch for its row type.
         /// </remarks>
-        [TestMethod]
-        [DataRow("SELECT ID FROM SALES", "SELECT")]
-        [DataRow("EXPLAIN PLAN FOR SELECT ID FROM SALES", "SELECT")]
+        [Theory]
+        [InlineData("SELECT ID FROM SALES", "SELECT")]
+        [InlineData("EXPLAIN PLAN FOR SELECT ID FROM SALES", "SELECT")]
         public void Statement_type_should_be_what_calcite_reports(string sql, string expected)
         {
             var actual = ClrPrepareFixture.WithContext(sql, (context, _) =>
                 new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of(sql), typeof(object[]), -1).StatementType.name());
 
-            Assert.AreEqual(expected, actual, sql);
+            actual.Should().Be(expected, sql);
         }
 
         /// <summary>
@@ -183,26 +184,26 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// leaves before flattening and renders <c>RelOptUtil.dumpType</c>, and the default depth renders
         /// the plan after optimization. A port that took only one exit would answer both the same.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void Explain_of_a_type_should_render_the_type()
         {
             var rows = ClrPrepareImplDifferentialTests.RunClr("EXPLAIN PLAN INCLUDING ALL ATTRIBUTES WITH TYPE FOR SELECT ID FROM SALES");
 
-            Assert.AreEqual(1, rows.Count);
-            StringAssert.Contains(rows[0], "INTEGER");
-            Assert.IsFalse(rows[0].Contains("ClrEnumerable"), $"a type, not a plan: {rows[0]}");
+            Assert.Single(rows);
+            Assert.Contains("INTEGER", rows[0]);
+            Assert.False(rows[0].Contains("ClrEnumerable"), $"a type, not a plan: {rows[0]}");
         }
 
         /// <summary>
         /// An EXPLAIN of the physical plan renders nodes of this convention.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void Explain_of_a_plan_should_render_the_plan()
         {
             var rows = ClrPrepareImplDifferentialTests.RunClr("EXPLAIN PLAN FOR SELECT ID FROM SALES");
 
-            Assert.AreEqual(1, rows.Count);
-            StringAssert.Contains(rows[0], "ClrEnumerable");
+            Assert.Single(rows);
+            Assert.Contains("ClrEnumerable", rows[0]);
         }
 
         /// <summary>
@@ -213,15 +214,15 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// implements <c>PreparedResult</c> directly rather than extending <c>PreparedResultImpl</c> — which
         /// is why Calcite's own driver reports no collations for one, and why ours does too.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void Explain_should_report_one_column_and_no_collations()
         {
             var signature = ClrPrepareFixture.WithContext("EXPLAIN PLAN FOR SELECT ID FROM SALES", (context, _) =>
                 new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of("EXPLAIN PLAN FOR SELECT ID FROM SALES"), typeof(object[]), -1));
 
-            Assert.AreEqual(1, signature.Columns.size());
-            Assert.AreEqual(0, signature.Collations.size());
-            Assert.AreEqual(0, signature.Parameters.size());
+            Assert.Equal(1, signature.Columns.size());
+            Assert.Equal(0, signature.Collations.size());
+            Assert.Equal(0, signature.Parameters.size());
         }
 
         /// <summary>
@@ -232,11 +233,11 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// means no limit, and 0 is a valid limit." Taking JDBC's reading would return every row where the
         /// caller asked for none.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void Zero_max_row_count_should_mean_zero_rows()
         {
-            Assert.AreEqual(0, ClrPrepareImplDifferentialTests.RunClr("SELECT ID FROM SALES", 0).Count);
-            Assert.AreEqual(6, ClrPrepareImplDifferentialTests.RunClr("SELECT ID FROM SALES", -1).Count);
+            Assert.Empty(ClrPrepareImplDifferentialTests.RunClr("SELECT ID FROM SALES", 0));
+            Assert.Equal(6, ClrPrepareImplDifferentialTests.RunClr("SELECT ID FROM SALES", -1).Count);
         }
 
         /// <summary>
@@ -246,10 +247,10 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// The cursor factory Calcite deduces decides this, and it is the shape that has broken twice. Read
         /// against Calcite's own deduction rather than asserted by hand.
         /// </remarks>
-        [TestMethod]
-        [DataRow("SELECT ID FROM SALES")]
-        [DataRow("SELECT * FROM SALES")]
-        [DataRow("SELECT COUNT(*) FROM SALES")]
+        [Theory]
+        [InlineData("SELECT ID FROM SALES")]
+        [InlineData("SELECT * FROM SALES")]
+        [InlineData("SELECT COUNT(*) FROM SALES")]
         public void Cursor_factory_should_agree_with_calcite(string sql)
         {
             var clr = ClrPrepareFixture.WithContext(sql, (context, _) =>
@@ -261,7 +262,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
                 return prepare.prepareSql(context, CalcitePrepare.Query.of(sql), (java.lang.Class)typeof(object[]), -1).cursorFactory.style.name();
             });
 
-            Assert.AreEqual(calcite, clr, sql);
+            clr.Should().Be(calcite, sql);
         }
 
         /// <summary>
@@ -272,17 +273,17 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// <c>preparedResult.getParameterRowType()</c>, with the same precision, scale, ordinal and type
         /// name helpers the columns use.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void Parameters_should_be_described_per_marker()
         {
             var signature = ClrPrepareFixture.WithContext("", (context, _) =>
                 new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of("SELECT ID FROM SALES WHERE ID > ? AND REGION = ?"), typeof(object[]), -1));
 
-            Assert.AreEqual(2, signature.Parameters.size());
+            Assert.Equal(2, signature.Parameters.size());
 
             var first = (AvaticaParameter)signature.Parameters.get(0);
-            Assert.AreEqual("java.lang.Object", first.className);
-            Assert.IsFalse(string.IsNullOrEmpty(first.typeName));
+            Assert.Equal("java.lang.Object", first.className);
+            Assert.False(string.IsNullOrEmpty(first.typeName));
         }
 
         /// <summary>
@@ -293,13 +294,13 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// driver hands that map to the <c>DataContext</c>. Ours is the map the plan was built against
         /// rather than the private one a subclass never writes to.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void Internal_parameters_should_carry_the_conformance()
         {
             var signature = ClrPrepareFixture.WithContext("", (context, _) =>
                 new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of("SELECT ID FROM SALES"), typeof(object[]), -1));
 
-            Assert.IsTrue(signature.InternalParameters.containsKey("_conformance"),
+            Assert.True(signature.InternalParameters.containsKey("_conformance"),
                 "the map the plan was built against reaches the caller");
         }
 
@@ -313,13 +314,13 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// <c>SqlUtil.deriveAliasFromOrdinal(0)</c>, and the row is a <c>java.lang.Integer</c> because a
         /// one-column result is the value.
         /// </remarks>
-        [TestMethod]
-        [DataRow("SELECT 1")]
-        [DataRow("select 1")]
-        [DataRow("SELECT 1 FROM DUAL")]
-        [DataRow("select 1 from dual")]
-        [DataRow("values 1")]
-        [DataRow("VALUES 1")]
+        [Theory]
+        [InlineData("SELECT 1")]
+        [InlineData("select 1")]
+        [InlineData("SELECT 1 FROM DUAL")]
+        [InlineData("select 1 from dual")]
+        [InlineData("values 1")]
+        [InlineData("VALUES 1")]
         public void A_simple_statement_should_skip_planning(string sql)
         {
             var (columns, rows) = ClrPrepareFixture.WithContext(sql, (context, _) =>
@@ -329,9 +330,9 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
                 return (signature.Columns, new List<object>(signature.Bind(context.getDataContext())));
             });
 
-            Assert.AreEqual(1, columns.size());
-            Assert.AreEqual("EXPR$0", ((ColumnMetaData)columns.get(0)).columnName);
-            CollectionAssert.AreEqual(new object[] { java.lang.Integer.valueOf(1) }, rows);
+            Assert.Equal(1, columns.size());
+            Assert.Equal("EXPR$0", ((ColumnMetaData)columns.get(0)).columnName);
+            Assert.Equal(new object[] { java.lang.Integer.valueOf(1) }, rows);
         }
 
         /// <summary>
@@ -342,7 +343,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// The fast path is a short cut and not a different answer, which is the only thing about it worth
         /// holding: <c>SELECT 1</c> is named and <c>SELECT  1</c>, two spaces, is not.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void A_statement_the_fast_path_misses_should_answer_the_same()
         {
             var rows = ClrPrepareFixture.WithContext("SELECT  1", (context, _) =>
@@ -352,7 +353,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
                 return new List<object>(signature.Bind(context.getDataContext()));
             });
 
-            CollectionAssert.AreEqual(new object[] { java.lang.Integer.valueOf(1) }, rows);
+            Assert.Equal(new object[] { java.lang.Integer.valueOf(1) }, rows);
         }
 
         /// <summary>
@@ -365,7 +366,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// six passes <c>Programs.standard</c> runs, and without it the planner cannot implement the call.
         /// The shape is <c>measure.iq</c>'s: <c>GROUP BY ()</c> is implicit under <c>AGGREGATE</c>.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void An_aggregate_over_a_measure_should_be_expanded()
         {
             const string sql = "SELECT AGGREGATE(m) AS a FROM (SELECT REGION, AVG(AMOUNT) AS MEASURE m FROM SALES)";
@@ -379,7 +380,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
             p => p.setProperty("fun", "calcite"));
 
             // 10, 20, 20, 30, null, 10 -- AVG over the five that are not null, in INTEGER arithmetic
-            CollectionAssert.AreEqual(new object[] { java.lang.Integer.valueOf(18) }, rows);
+            Assert.Equal(new object[] { java.lang.Integer.valueOf(18) }, rows);
         }
 
         /// <summary>
@@ -392,7 +393,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// <c>Programs.standard</c> runs and which dispatches to <c>TopDownGeneralDecorrelator</c>. Both
         /// halves have to be there or the query is planned with its correlation intact.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void A_correlated_sub_query_should_decorrelate_top_down()
         {
             const string sql = "SELECT ID FROM SALES s WHERE AMOUNT > (SELECT AVG(AMOUNT) FROM SALES t WHERE t.REGION = s.REGION)";
@@ -405,7 +406,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
             },
             p => p.setProperty(CalciteConnectionProperty.TOPDOWN_GENERAL_DECORRELATION_ENABLED.camelName(), "true"));
 
-            StringAssert.DoesNotMatch(plan, new System.Text.RegularExpressions.Regex("Correlate"), plan);
+            plan.Should().NotMatchRegex("Correlate", plan);
         }
 
     }

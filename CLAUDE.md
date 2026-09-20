@@ -29,22 +29,30 @@ driver this one is modelled on*, has the reading. Not to be confused with
 
 - Build the **solution**: `dotnet build Apache.Calcite.slnx`. A bare `dotnet build` fails — more than one
   project in the root.
-- **The check that matters is `ClrEnumerableDifferentialTests`.** It runs the same SQL through this
+- **The check that matters is `ClrEnumerableConventionDifferentialTests`.** It runs the same SQL through this
   convention and through `EnumerableConvention` and requires the same rows. Every defect worth having
   found in the convention was found by it, three of them in nodes already believed done. Add a query
   there rather than writing an assertion by hand: the expected answer is whatever Calcite says. It lives
   in `Apache.Calcite.Tests`, with the rest of the convention and prepare tests.
-- **`dotnet test` does not run the Microsoft.Testing.Platform suites at all** — from the .NET 10 SDK it
-  fails them outright: *"Testing with VSTest target is no longer supported by Microsoft.Testing.Platform on
-  .NET 10 SDK and later."* That is `Apache.Calcite.Tests`, `Apache.Calcite.Adapter.AdoNet.Tests` and
-  `Apache.Calcite.Geography.Tests`, all three on `MSTest.Sdk`. Run the built executable, which honours
-  `--filter`:
-  `src\Apache.Calcite.Tests\bin\Debug\net8.0\Apache.Calcite.Tests.exe --filter FullyQualifiedName~Name`.
-  The whole suite is about three minutes that way; a single test is seconds.
-  `--blame-hang --blame-hang-timeout 90s` names the test that hangs.
-  **`Apache.Calcite.Data.Tests` is the exception**: xunit over VSTest, where `dotnet test --filter` works
-  and reports the filtered count. A note here used to say the flag was *silently* ignored and the run
-  reported success — that was an older SDK, and it errors now.
+- **Every test project is `xunit.v3`**, and there is no second framework to remember. Four were on
+  `MSTest.Sdk` and `Apache.Calcite.Data.Tests` was on xunit 2; a note here used to say `dotnet test` could
+  not run the MSTest ones at all under the .NET 10 SDK, and that whole exception is gone. A v3 project is an
+  **executable** — the package writes the entry point and the assembly runs itself on
+  Microsoft.Testing.Platform — and it also carries `xunit.runner.visualstudio` and `Microsoft.NET.Test.Sdk`,
+  so both ways of running it work:
+  - the built executable, which is what to reach for locally:
+    `src\Apache.Calcite.Tests\bin\Debug\net8.0\Apache.Calcite.Tests.exe`, and `-filter` takes a query in
+    `/assembly/namespace/class/method` form, wildcards included — `-filter "/*/*/ClrEnumerableSortTests/*"`.
+    `--help` prints the whole filter language.
+  - `dotnet test <dll> --filter FullyQualifiedName~Name`, which is vstest.console and is what CI runs.
+    `--blame-hang --blame-hang-timeout 90s` names the test that hangs.
+
+  `Apache.Calcite.Tests` is about nine minutes end to end; a single test is seconds.
+- **The four converted suites run one test at a time, and say so.** MSTest did that by default and xunit does
+  not: it runs test collections against one another, and IKVM state is process wide — the boot class path,
+  the Calcite system properties a module initializer sets, and every class initializer they feed.
+  `AssemblyInfo.cs` in each carries `[assembly: Parallelization(Mode = ParallelMode.None)]` for that reason.
+  `Apache.Calcite.Data.Tests` has no such line, deliberately: it was parallel under xunit 2 and still is.
 - **Everything references 1.43.0-SNAPSHOT, and `D:\calcite` is that same branch.** The snapshot comes from
   `https://repository.apache.org/content/repositories/snapshots/`, named once in `Directory.Build.props`
   rather than per project. **1.43 is unreleased**: it was targeted for the end of August 2026 and slipped,
@@ -208,7 +216,7 @@ lookups). A C# iterator method defers everything to its first `MoveNext`, acquis
 re-expressing an operator as one silently moved that seam, across the whole of both operator sets, and no
 row-comparing test could see it. `ClrEnumerable` and `Acquiring` in `Runtime` put a factory where
 `enumerator()` is; the one sanctioned exception is a drain that must await, which acquires eagerly and
-drains in the first `MoveNextAsync`, stated at the site. Timing is held by `AcquisitionTimingTests`, which
+drains in the first `MoveNextAsync`, stated at the site. Timing is held by `ClrEnumerableDefaultsAcquisitionTests`, which
 reads a counting leaf's acquisitions and its rows as two numbers — and note the operators whose eagerness
 is *call*-time are linq4j's own call-time drains (`union`, `distinct`, `asofJoin`, `groupBy`, the window,
 `nestedLoopJoinAsList`): do not "fix" them toward the factory.
@@ -373,7 +381,7 @@ the rows will be read, and a plan cache would hold one entry for a statement rat
   — `PartitionIterator`, `IsMergeJoinSupported` and nine smaller helpers, one of which differed only in the
   indentation of a brace. Both sets are in `ClrEnumerableDefaults.cs`, the pulled ones and then the
   awaiting ones after a banner. Because the two sets no
-  longer differ by declaring type, everything that has to tell them apart reads the name, `ClrEnumerableModeTests`
+  longer differ by declaring type, everything that has to tell them apart reads the name, `ClrEnumerableRelImplementorTests`
   included, and `ShouldNameEveryAwaitingOperatorWithTheSuffixAndNoOtherOperator` is what keeps that exact: an
   operator reading an `IAsyncEnumerable` carries the suffix and one reading an `IEnumerable` does not. A
   missing suffix on a twin fails to compile; the cases that would not are what that test covers.
@@ -405,7 +413,7 @@ the rows will be read, and a plan cache would hold one entry for a statement rat
   a converter out of an adapter visits no child.
 - **The crossing is a node boundary, not a plan boundary.** A table that only awaits, read by a pulled
   plan, blocks at the scan, and everything above it is ordinary pulled code; the reverse likewise. That is
-  what `ClrEnumerableModeTests` reads out of the compiled tree: which operator set each call landed on, and
+  what `ClrEnumerableRelImplementorTests` reads out of the compiled tree: which operator set each call landed on, and
   that every awaiting call carries its token.
 - **The table SPI is one interface per table kind, with both halves on it**, matching the nodes: `Scan` is
   required and `ScanAsync` defaults to it, and the same for a queryable table's two expressions. There were
@@ -426,7 +434,7 @@ the rows will be read, and a plan cache would hold one entry for a statement rat
   `ShouldReadAnAsynchronousLeafSynchronouslyUnderASynchronizationContext` for thirty seconds. An
   awaiting-only table has to get that right, and the test tables here show the shape.
 - **What that cost is a test.** The read across used to be written into the plan by the scan, so
-  `ClrEnumerableModeTests` could count bridging calls in the compiled tree and require exactly one, at the
+  `ClrEnumerableRelImplementorTests` could count bridging calls in the compiled tree and require exactly one, at the
   leaf. The crossing is inside the table now, so the tree shows a plain call to `Scan` or `ScanAsync` and
   that count is gone. What replaced it: each fork is held to calling its own SPI member, and
   `ShouldReadTheSameRowsThroughEitherHalfOfTheTableSpi` reads a one-sided table both ways and requires the
@@ -528,7 +536,7 @@ loaded in the AppDomain, and setting `MavenClassLoader` empty turns it off.
   `ClrTypes.Resolve(target, PseudoField)` tries field then property for this reason, and
   `JavaRowFormatExtensions.StaticMember` does the same for the two constants a row of no fields is. Both of
   those were `GetField(...)!` and had been null since they were written; nothing had reached a zero-field row,
-  so the suite was green over an NRE waiting to happen. `ZeroFieldRowTests` holds it now.
+  so the suite was green over an NRE waiting to happen. `ClrPhysTypeImplTests` holds it now.
 - **Java enum ordinals are not stable across versions; names are.** Dispatch on `switch (x.name())` with
   `nameof(...)` labels. Never `ordinal()`, never IKVM's `__Enum` shadow.
 - **`(java.lang.Class)typeof(X)`, never `(java.lang.reflect.Type)typeof(X)`.**

@@ -5,9 +5,9 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -30,7 +30,6 @@ namespace Apache.Calcite.Geography.Tests
     /// That is inherited rather than introduced, and it is a documentation problem rather than a second
     /// implementation; nothing here is near the seam.</para>
     /// </remarks>
-    [TestClass]
     public class GeographyAccessorTests
     {
 
@@ -143,7 +142,7 @@ namespace Apache.Calcite.Geography.Tests
             }
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeWithCalciteOnEveryAccessor()
         {
             var differences = new List<string>();
@@ -179,7 +178,7 @@ namespace Apache.Calcite.Geography.Tests
         /// throw: an exception in one column ends the whole query, and what it would prove is already proven
         /// by the comparison above.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldRunEveryAccessorAsAnOperator()
         {
             foreach (var shape in new[]
@@ -212,7 +211,7 @@ namespace Apache.Calcite.Geography.Tests
             }
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeWithCalciteOnTheIndexedAccessors()
         {
             var differences = new List<string>();
@@ -262,7 +261,7 @@ namespace Apache.Calcite.Geography.Tests
         /// Calcite writes a form its own reader does not take, which is its defect and not one to reproduce
         /// by asserting it.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldReadBackEveryFormatItWrites()
         {
             foreach (var shape in new[] { "POINT(1 2)", "LINESTRING(0 0, 1 1, 2 0)", "POLYGON((0 0, 4 0, 4 4, 0 4, 0 0))" })
@@ -277,7 +276,7 @@ namespace Apache.Calcite.Geography.Tests
             }
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldStampEveryConstructorWithWgs84()
         {
             var geography = Wkt("POINT(1 2)");
@@ -293,7 +292,7 @@ namespace Apache.Calcite.Geography.Tests
         /// An SRID a geography cannot be in is refused however it arrives — as an argument, or written into
         /// the text or the bytes themselves.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldRefuseAnSridThatIsNotWgs84()
         {
             var wrong = java.lang.Integer.valueOf(3857);
@@ -306,7 +305,7 @@ namespace Apache.Calcite.Geography.Tests
             ((Action)(() => GeographyFunctions.FromEwkt("srid:3857;POINT(1 2)"))).Should().Throw<java.lang.IllegalArgumentException>();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerNullForANullArgument()
         {
             foreach (var (name, ours, _) in unary)

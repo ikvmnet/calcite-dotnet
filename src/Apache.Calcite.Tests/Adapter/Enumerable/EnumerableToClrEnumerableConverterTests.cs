@@ -10,8 +10,6 @@ using Apache.Calcite.Tests;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite;
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.linq4j;
@@ -23,6 +21,8 @@ using org.apache.calcite.schema.impl;
 using org.apache.calcite.sql.type;
 using org.apache.calcite.tools;
 
+using Xunit;
+
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
 
@@ -33,7 +33,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// A row crosses the boundary untouched, because both conventions ask the same <c>JavaTypeFactory</c> what
     /// a field is. These run a plan where the two are mixed, in each direction, to say so.
     /// </remarks>
-    [TestClass]
     public class EnumerableToClrEnumerableConverterTests
     {
 
@@ -139,7 +138,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             return rows;
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldEndInThisConvention()
         {
             var rows = Run("SELECT \"ID\", \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" > 1", ClrEnumerableConvention.Instance);
@@ -197,7 +196,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             return rows;
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldCarryACalcAcrossTheConverter()
         {
             var rows = RunAcrossConverter("SELECT \"ID\", \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" > 1");
@@ -205,7 +204,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rows.Select(r => (string)r[1]).Should().BeEquivalentTo(["JONES", "BROWN"]);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldEndInCalcitesConvention()
         {
             // the plan is asked to end in EnumerableConvention, so whatever of it lands in this one has to be
@@ -299,7 +298,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// else in the suite reaches it: every other mixed-convention plan here either pushes the whole
         /// projection or leaves the residual on Calcite's side.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldRewriteAResidualProjectOverAConverter()
         {
             var (plan, rows, error) = PlanResidualOverConverter(
@@ -327,7 +326,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// here and cannot help: none of its rules names a node of this convention.
         /// <c>EnumerableProject</c> refuses in exactly the same way for exactly the same reason.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldRefuseAResidualProjectWithoutTheCalcPass()
         {
             var (plan, rows, error) = PlanResidualOverConverter(

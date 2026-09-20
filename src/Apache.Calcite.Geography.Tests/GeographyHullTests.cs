@@ -4,9 +4,9 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -21,7 +21,6 @@ namespace Apache.Calcite.Geography.Tests
     /// large on the reasoning that each is a different algorithm geodesically, which is true — and
     /// <c>S2ConvexHullQuery</c> and <c>S2Polygon.initToSimplified</c> are those algorithms, already written.
     /// </remarks>
-    [TestClass]
     public class GeographyHullTests
     {
 
@@ -33,7 +32,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Four corners of a box hull to the box.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldHullPointsToTheirBox()
         {
             var hull = GeographyFunctions.ConvexHull(Wkt("MULTIPOINT((0 0), (2 0), (2 2), (0 2))"));
@@ -55,7 +54,7 @@ namespace Apache.Calcite.Geography.Tests
         /// parallel is therefore inside the hull on the Earth and outside the hull on a map, and the two
         /// answers are asserted side by side.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldHullFurtherNorthThanAPlanarHullDoes()
         {
             var corners = Wkt("MULTIPOINT((0 60), (60 60), (60 20), (0 20))");
@@ -73,7 +72,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The hull of a shape contains the shape.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldContainWhatItWasBuiltFrom()
         {
             var shape = Wkt("POLYGON((0 0, 4 0, 4 4, 0 4, 0 0), (1 1, 3 1, 3 3, 1 3, 1 1))");
@@ -87,7 +86,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Nothing to hull is an empty hull.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldHullNothingToNothing()
         {
             GeographyFunctions.ConvexHull(Wkt("POLYGON EMPTY"))!.isEmpty().Should().BeTrue();
@@ -97,7 +96,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Simplifying removes vertices and keeps the shape within the tolerance.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldRemoveVerticesWithinTheTolerance()
         {
             // a square with a great many near-collinear points along its southern edge
@@ -116,7 +115,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A tolerance of nothing removes nothing that matters.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldKeepTheShapeUnderATinyTolerance()
         {
             var square = Wkt("POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))");
@@ -129,7 +128,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Simplification is an areal operation, as the overlay set is.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldDeclineToSimplifyAnythingWithoutAnArea()
         {
             GeographyFunctions.Simplify(Wkt("LINESTRING(0 0, 1 1, 2 0)"), java.lang.Double.valueOf(1000.0)).Should().BeNull();
@@ -137,7 +136,7 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.Simplify(Wkt("POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))"), null).Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldStampBothWithWgs84()
         {
             GeographyFunctions.ConvexHull(Wkt("MULTIPOINT((0 0), (2 0), (1 2))"))!
@@ -147,7 +146,7 @@ namespace Apache.Calcite.Geography.Tests
                 .getSRID().Should().Be(GeographyFunctions.Wgs84);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunEachAsAnOperator()
         {
             foreach (var sql in new[]

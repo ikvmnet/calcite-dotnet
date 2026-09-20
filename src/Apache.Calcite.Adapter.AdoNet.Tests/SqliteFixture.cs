@@ -1,8 +1,8 @@
-using Microsoft.Data.Sqlite;
-
 using System;
 using System.Data.Common;
 using System.IO;
+
+using Microsoft.Data.Sqlite;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {

@@ -5,9 +5,9 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -29,7 +29,6 @@ namespace Apache.Calcite.Geography.Tests
     /// <para>The cases where the two genuinely disagree are the point of the package and are held separately,
     /// in <see cref="GeographyFunctionTests"/>. Nothing here is near one.</para>
     /// </remarks>
-    [TestClass]
     public class GeographyDifferentialTests
     {
 
@@ -168,13 +167,13 @@ namespace Apache.Calcite.Geography.Tests
             refused.Should().Be(refusals);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnWithin()
         {
             Differ(GeographyFunctions.Within, SpatialTypeFunctions.ST_Within, refusals: 6);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnIntersects()
         {
             Differ(GeographyFunctions.Intersects, SpatialTypeFunctions.ST_Intersects, refusals: 0);
@@ -195,7 +194,7 @@ namespace Apache.Calcite.Geography.Tests
         /// touches the boundary. That is the answer JTS would give if its relate handled mixed
         /// dimensions.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerWithinOverACollectionWhereCalciteRefuses()
         {
             var collection = Wkt("GEOMETRYCOLLECTION(POINT(0.001 0.001), LINESTRING(0.002 0, 0.004 0))");
@@ -213,43 +212,43 @@ namespace Apache.Calcite.Geography.Tests
             SpatialTypeFunctions.ST_Within(line, donut).Should().BeFalse();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnContains()
         {
             Differ(GeographyFunctions.Contains, SpatialTypeFunctions.ST_Contains, refusals: 6);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnCovers()
         {
             Differ(GeographyFunctions.Covers, SpatialTypeFunctions.ST_Covers, refusals: 6);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnCoveredBy()
         {
             Differ(GeographyFunctions.CoveredBy, SpatialTypeFunctions.ST_CoveredBy, refusals: 6);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnDisjoint()
         {
             Differ(GeographyFunctions.Disjoint, SpatialTypeFunctions.ST_Disjoint, refusals: 0);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnEquals()
         {
             Differ(GeographyFunctions.Equals, SpatialTypeFunctions.ST_Equals, refusals: 1);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnEnvelopesIntersect()
         {
             Differ(GeographyFunctions.EnvelopesIntersect, SpatialTypeFunctions.ST_EnvelopesIntersect, refusals: 0);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnIsValid()
         {
             var differences = new List<string>();
@@ -271,7 +270,7 @@ namespace Apache.Calcite.Geography.Tests
         /// The distance in metres against the distance in degrees, which at this scale on the equator is the
         /// same measurement in two units.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnDistance()
         {
             var differences = new List<string>();
@@ -298,7 +297,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <c>ST_DWithin</c> is <c>distance &lt;= d</c> and nothing else, so it is tested at a threshold that
         /// falls between the pairs rather than on one.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOnDWithin()
         {
             var differences = new List<string>();

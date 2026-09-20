@@ -5,10 +5,10 @@ using Apache.Calcite.FullText.Sql;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.jdbc;
 using org.apache.calcite.schema;
+
+using Xunit;
 
 namespace Apache.Calcite.FullText.Tests
 {
@@ -23,7 +23,6 @@ namespace Apache.Calcite.FullText.Tests
     /// <c>jdbc:calcite:</c>, the schema is registered the way an adapter would register one, and the SQL goes
     /// through <c>Statement.executeQuery</c> — the path a consumer who has never heard of this package takes.
     /// </remarks>
-    [TestClass]
     public class FullTextConnectionTests
     {
 
@@ -63,7 +62,7 @@ namespace Apache.Calcite.FullText.Tests
         /// <c>No match found for function signature</c>, which is what a connection said before the
         /// declarations existed.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldResolveTheNameThroughAPlainConnection()
         {
             var act = () => Run("SELECT ID FROM DOCS WHERE CLR_FT_CONTAINS(BODY, 'steel')");
@@ -76,7 +75,7 @@ namespace Apache.Calcite.FullText.Tests
         /// <summary>
         /// And without the declarations it does not, which is what says the test above measures something.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldNotResolveThroughAPlainConnectionWithoutThem()
         {
             var act = () => Run("SELECT ID FROM DOCS WHERE CLR_FT_CONTAINS(BODY, 'steel')", declare: false);
@@ -94,7 +93,7 @@ namespace Apache.Calcite.FullText.Tests
         /// a reason and reads as a defect in the adapter. Implementing it and throwing puts the same refusal
         /// at the same moment — Calcite asks for a body while generating code — with a sentence saying why.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldRefuseToEvaluateInWordsThatSayWhy()
         {
             foreach (var sql in new[]
@@ -119,7 +118,7 @@ namespace Apache.Calcite.FullText.Tests
         /// <summary>
         /// Every declaration refuses, and each refusal names its function.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldRefuseFromEveryDeclaration()
         {
             var entries = FullTextSchema.Functions().entries().iterator();
@@ -162,7 +161,7 @@ namespace Apache.Calcite.FullText.Tests
         /// Calcite's standard table does not carry it, so it resolves only where the libraries really were
         /// chained. Without it this would pass just as well against a library table that had failed to load.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldNotBeShadowedByTheFunLibraries()
         {
             Run("SELECT REVERSE(BODY) AS R FROM DOCS", url: "jdbc:calcite:fun=all");
@@ -187,7 +186,7 @@ namespace Apache.Calcite.FullText.Tests
         /// else — never a subschema. So an adapter whose tables live a level down declares at both levels, and
         /// this is the root half of that.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldReachTheNamesFromASubschema()
         {
             java.lang.Class.forName("org.apache.calcite.jdbc.Driver");
@@ -218,7 +217,7 @@ namespace Apache.Calcite.FullText.Tests
         /// <summary>
         /// The table itself reads, so a failure above is the full text call and not the fixture.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldReadTheTableWithNoFullTextCall()
         {
             using var connection = Connect();

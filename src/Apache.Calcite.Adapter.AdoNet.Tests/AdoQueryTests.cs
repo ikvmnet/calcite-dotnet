@@ -1,10 +1,12 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
-using org.apache.calcite.jdbc;
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
+
+using FluentAssertions;
+
+using org.apache.calcite.jdbc;
+
+using Xunit;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -18,8 +20,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// builder together, and the only place a mistake in any of them shows up as a wrong answer rather than
     /// a plan that merely looks reasonable.
     /// </remarks>
-    [TestClass]
-    public class AdoQueryTests
+    public class AdoQueryTests : IDisposable
     {
 
         static AdoQueryTests()
@@ -32,8 +33,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         SqliteFixture _sqlite = null!;
         java.sql.Connection _connection = null!;
 
-        [TestInitialize]
-        public void Setup()
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        public AdoQueryTests()
         {
             _sqlite = new SqliteFixture();
 
@@ -48,8 +51,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             root.add("ADO", AdoSchema.Create(root, "ADO", _sqlite.DataSource, null, null));
         }
 
-        [TestCleanup]
-        public void Cleanup()
+        /// <inheritdoc />
+        public void Dispose()
         {
             _connection?.close();
             _sqlite?.Dispose();
@@ -89,88 +92,88 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         string Scalar(string sql)
         {
             var rows = Rows(sql);
-            Assert.AreEqual(1, rows.Count, $"expected one row from: {sql}");
+            rows.Count.Should().Be(1, $"expected one row from: {sql}");
             return rows[0];
         }
 
         #region Scan and project
 
-        [TestMethod]
+        [Fact]
         public void EveryRowIsReturned()
         {
-            Assert.AreEqual(5, Rows("SELECT * FROM ADO.EMPS").Count);
+            Assert.Equal(5, Rows("SELECT * FROM ADO.EMPS").Count);
         }
 
-        [TestMethod]
+        [Fact]
         public void ColumnsAreProjected()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice", "Bob", "Carol", "Dave", "Erin" },
-                Rows("SELECT NAME FROM ADO.EMPS"));
+                Rows("SELECT NAME FROM ADO.EMPS"), strict: true);
         }
 
-        [TestMethod]
+        [Fact]
         public void AProjectionCanComputeAValue()
         {
-            Assert.AreEqual("2", Scalar("SELECT EMPNO + 1 FROM ADO.EMPS WHERE EMPNO = 1"));
+            Assert.Equal("2", Scalar("SELECT EMPNO + 1 FROM ADO.EMPS WHERE EMPNO = 1"));
         }
 
         #endregion
 
         #region Filter
 
-        [TestMethod]
+        [Fact]
         public void AFilterRestrictsTheRows()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice", "Bob" },
-                Rows("SELECT NAME FROM ADO.EMPS WHERE DEPTNO = 10"));
+                Rows("SELECT NAME FROM ADO.EMPS WHERE DEPTNO = 10"), strict: true);
         }
 
-        [TestMethod]
+        [Fact]
         public void AFilterCanCombineConditions()
         {
-            Assert.AreEqual("Bob", Scalar("SELECT NAME FROM ADO.EMPS WHERE DEPTNO = 10 AND EMPNO > 1"));
+            Assert.Equal("Bob", Scalar("SELECT NAME FROM ADO.EMPS WHERE DEPTNO = 10 AND EMPNO > 1"));
         }
 
-        [TestMethod]
+        [Fact]
         public void AFilterSeesNullAsUnknown()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Erin" },
-                Rows("SELECT NAME FROM ADO.EMPS WHERE DEPTNO IS NULL"));
+                Rows("SELECT NAME FROM ADO.EMPS WHERE DEPTNO IS NULL"), strict: true);
         }
 
-        [TestMethod]
+        [Fact]
         public void AFilterMatchingNothingReturnsNothing()
         {
-            Assert.AreEqual(0, Rows("SELECT NAME FROM ADO.EMPS WHERE DEPTNO = 999").Count);
+            Assert.Empty(Rows("SELECT NAME FROM ADO.EMPS WHERE DEPTNO = 999"));
         }
 
         #endregion
 
         #region Sort
 
-        [TestMethod]
+        [Fact]
         public void OrderByOrdersTheRows()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "Alice", "Bob", "Carol", "Dave", "Erin" },
                 Rows("SELECT NAME FROM ADO.EMPS ORDER BY NAME"));
         }
 
-        [TestMethod]
+        [Fact]
         public void OrderByDescendingReverses()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "Erin", "Dave", "Carol", "Bob", "Alice" },
                 Rows("SELECT NAME FROM ADO.EMPS ORDER BY NAME DESC"));
         }
 
-        [TestMethod]
+        [Fact]
         public void LimitTakesThePrefix()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "Alice", "Bob" },
                 Rows("SELECT NAME FROM ADO.EMPS ORDER BY NAME LIMIT 2"));
         }
@@ -179,117 +182,117 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
         #region Aggregate
 
-        [TestMethod]
+        [Fact]
         public void CountCountsTheRows()
         {
-            Assert.AreEqual("5", Scalar("SELECT COUNT(*) FROM ADO.EMPS"));
+            Assert.Equal("5", Scalar("SELECT COUNT(*) FROM ADO.EMPS"));
         }
 
-        [TestMethod]
+        [Fact]
         public void GroupByGroupsTheRows()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "10|2", "20|2", "NULL|1" },
-                Rows("SELECT DEPTNO, COUNT(*) FROM ADO.EMPS GROUP BY DEPTNO"));
+                Rows("SELECT DEPTNO, COUNT(*) FROM ADO.EMPS GROUP BY DEPTNO"), strict: true);
         }
 
         /// <summary>
         /// An aggregate skips nulls rather than counting them, which is the SQL rule and not the obvious
         /// one to get right by accident.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void CountOfAColumnSkipsNulls()
         {
-            Assert.AreEqual("4", Scalar("SELECT COUNT(SALARY) FROM ADO.EMPS"));
+            Assert.Equal("4", Scalar("SELECT COUNT(SALARY) FROM ADO.EMPS"));
         }
 
-        [TestMethod]
+        [Fact]
         public void MinAndMaxAgree()
         {
-            Assert.AreEqual("1|5", Scalar("SELECT MIN(EMPNO), MAX(EMPNO) FROM ADO.EMPS"));
+            Assert.Equal("1|5", Scalar("SELECT MIN(EMPNO), MAX(EMPNO) FROM ADO.EMPS"));
         }
 
         #endregion
 
         #region Join
 
-        [TestMethod]
+        [Fact]
         public void AnInnerJoinMatchesOnTheKey()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice|Sales", "Bob|Sales", "Carol|Engineering", "Dave|Engineering" },
-                Rows("SELECT E.NAME, D.DNAME FROM ADO.EMPS E JOIN ADO.DEPTS D ON E.DEPTNO = D.DEPTNO"));
+                Rows("SELECT E.NAME, D.DNAME FROM ADO.EMPS E JOIN ADO.DEPTS D ON E.DEPTNO = D.DEPTNO"), strict: true);
         }
 
         /// <summary>
         /// A null key joins to nothing: two unknowns are not equal in SQL, however tempting a hash lookup
         /// makes it.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ANullKeyJoinsToNothing()
         {
             var rows = Rows("SELECT E.NAME FROM ADO.EMPS E JOIN ADO.DEPTS D ON E.DEPTNO = D.DEPTNO");
-            CollectionAssert.DoesNotContain(rows, "Erin");
+            Assert.DoesNotContain("Erin", rows);
         }
 
-        [TestMethod]
+        [Fact]
         public void ALeftJoinKeepsUnmatchedRows()
         {
             var rows = Rows("SELECT E.NAME, D.DNAME FROM ADO.EMPS E LEFT JOIN ADO.DEPTS D ON E.DEPTNO = D.DEPTNO");
 
-            Assert.AreEqual(5, rows.Count);
-            CollectionAssert.Contains(rows, "Erin|NULL");
+            Assert.Equal(5, rows.Count);
+            Assert.Contains("Erin|NULL", rows);
         }
 
-        [TestMethod]
+        [Fact]
         public void ADepartmentWithNoEmployeesIsAbsentFromAnInnerJoin()
         {
             var rows = Rows("SELECT D.DNAME FROM ADO.EMPS E JOIN ADO.DEPTS D ON E.DEPTNO = D.DEPTNO");
-            CollectionAssert.DoesNotContain(rows, "Empty");
+            Assert.DoesNotContain("Empty", rows);
         }
 
         #endregion
 
         #region Set operations
 
-        [TestMethod]
+        [Fact]
         public void UnionAllConcatenates()
         {
-            Assert.AreEqual(8, Rows("SELECT DEPTNO FROM ADO.EMPS UNION ALL SELECT DEPTNO FROM ADO.DEPTS").Count);
+            Assert.Equal(8, Rows("SELECT DEPTNO FROM ADO.EMPS UNION ALL SELECT DEPTNO FROM ADO.DEPTS").Count);
         }
 
-        [TestMethod]
+        [Fact]
         public void UnionRemovesDuplicates()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "10", "20", "30", "NULL" },
-                Rows("SELECT DEPTNO FROM ADO.EMPS UNION SELECT DEPTNO FROM ADO.DEPTS"));
+                Rows("SELECT DEPTNO FROM ADO.EMPS UNION SELECT DEPTNO FROM ADO.DEPTS"), strict: true);
         }
 
-        [TestMethod]
+        [Fact]
         public void IntersectKeepsWhatIsInBoth()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "10", "20" },
-                Rows("SELECT DEPTNO FROM ADO.EMPS INTERSECT SELECT DEPTNO FROM ADO.DEPTS"));
+                Rows("SELECT DEPTNO FROM ADO.EMPS INTERSECT SELECT DEPTNO FROM ADO.DEPTS"), strict: true);
         }
 
-        [TestMethod]
+        [Fact]
         public void ExceptRemovesWhatIsInTheSecond()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "30" },
-                Rows("SELECT DEPTNO FROM ADO.DEPTS EXCEPT SELECT DEPTNO FROM ADO.EMPS"));
+                Rows("SELECT DEPTNO FROM ADO.DEPTS EXCEPT SELECT DEPTNO FROM ADO.EMPS"), strict: true);
         }
 
         #endregion
 
         #region Values and literals
 
-        [TestMethod]
+        [Fact]
         public void AQueryOverLiteralsNeedsNoTable()
         {
-            Assert.AreEqual("1|two", Scalar("SELECT * FROM (VALUES (1, 'two'))"));
+            Assert.Equal("1|two", Scalar("SELECT * FROM (VALUES (1, 'two'))"));
         }
 
         #endregion
@@ -300,16 +303,16 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// The end of the chain the DATE representation runs through: read from the provider as a day count,
         /// carried through the plan, and decoded back to a date.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ADateComesBackAsTheDateThatWasStored()
         {
-            Assert.AreEqual("2020-01-15", Scalar("SELECT HIREDATE FROM ADO.EMPS WHERE EMPNO = 1"));
+            Assert.Equal("2020-01-15", Scalar("SELECT HIREDATE FROM ADO.EMPS WHERE EMPNO = 1"));
         }
 
-        [TestMethod]
+        [Fact]
         public void DatesOrderChronologically()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "2019-11-01", "2020-01-15", "2021-06-30", "2022-03-15" },
                 Rows("SELECT HIREDATE FROM ADO.EMPS WHERE HIREDATE IS NOT NULL ORDER BY HIREDATE"));
         }

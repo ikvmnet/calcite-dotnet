@@ -5,9 +5,9 @@ using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.linq4j.function;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
 {
@@ -29,7 +29,6 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
     /// no compile-time symptom and does not appear until a plan that mixes this convention with Calcite's own
     /// reaches such an operator, so the table is checked here directly.</para>
     /// </remarks>
-    [TestClass]
     public class AnonymousClassesTests
     {
 
@@ -37,7 +36,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// Every functional interface a linq4j tree may declare a lambda against has to be one
         /// <see cref="AnonymousClasses"/> handles, or the conversion is emitted unwrapped.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldHandleLinq4jPredicates()
         {
             AnonymousClasses.Handles(typeof(Predicate1)).Should().BeTrue();
@@ -47,7 +46,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// <summary>
         /// A one-argument predicate answers what its delegate answers, through the interface.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldWrapPredicate1()
         {
             Expression<Func<string, bool>> lambda = s => s.Length > 2;
@@ -64,7 +63,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// A two-argument predicate is closed over both of the types it takes, neither of them its result:
         /// the pair the join in a mixed plan hands it is a row and a key, and they are not the same type.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldWrapPredicate2()
         {
             Expression<Func<object[], int, bool>> lambda = (row, key) => (int)row[0] == key;

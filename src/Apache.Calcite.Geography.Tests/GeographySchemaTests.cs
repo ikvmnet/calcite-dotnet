@@ -7,14 +7,14 @@ using Apache.Calcite.Geography.Schema;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.jdbc;
 using org.apache.calcite.linq4j;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.schema;
 using org.apache.calcite.schema.impl;
 using org.apache.calcite.sql.type;
+
+using Xunit;
 
 using DataContext = org.apache.calcite.DataContext;
 using Geometry = org.locationtech.jts.geom.Geometry;
@@ -33,7 +33,6 @@ namespace Apache.Calcite.Geography.Tests
     /// and the SQL goes through <c>Statement.executeQuery</c> — the path a consumer who has never heard of
     /// this package takes.
     /// </remarks>
-    [TestClass]
     public class GeographySchemaTests
     {
 
@@ -66,7 +65,7 @@ namespace Apache.Calcite.Geography.Tests
             return rows;
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunAConstructorAndAMeasurement()
         {
             var rows = Run("SELECT CLR_ST_GEOG_DISTANCE(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), CLR_ST_GEOG_GEOMFROMTEXT('POINT(1 0)'))");
@@ -75,7 +74,7 @@ namespace Apache.Calcite.Geography.Tests
             ((java.lang.Number)rows[0][0]!).doubleValue().Should().BeApproximately(111319.49079327357, 0.001);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldReadAGeographyColumn()
         {
             var rows = Run("SELECT ID, CLR_ST_GEOG_ASTEXT(GEOG) FROM GEO ORDER BY ID");
@@ -84,7 +83,7 @@ namespace Apache.Calcite.Geography.Tests
             rows[0][1].Should().Be("POINT (0.5 0)");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunAnAccessorOverAColumn()
         {
             var rows = Run("SELECT ID, CLR_ST_GEOG_X(GEOG) FROM GEO ORDER BY ID");
@@ -93,7 +92,7 @@ namespace Apache.Calcite.Geography.Tests
             ((java.lang.Number)rows[0][1]!).doubleValue().Should().Be(0.5);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunAPredicateOverAColumn()
         {
             var rows = Run("SELECT ID FROM GEO WHERE CLR_ST_GEOG_DWITHIN(GEOG, CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 200000.0)");
@@ -105,7 +104,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Calcite's own planar operators take the same column, which is the cost of there being one type.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldLetCalcitesOwnOperatorsTakeTheSameColumn()
         {
             var rows = Run("SELECT ST_DISTANCE(GEOG, ST_GEOMFROMTEXT('POINT(0 0)')) FROM GEO WHERE ID = 1");

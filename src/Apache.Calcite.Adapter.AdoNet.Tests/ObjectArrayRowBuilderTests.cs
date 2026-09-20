@@ -1,13 +1,16 @@
+using System;
+using System.Collections.Generic;
+using System.Data.Common;
+
+using FluentAssertions;
+
 using Microsoft.Data.Sqlite;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using org.apache.calcite.jdbc;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
 
-using System;
-using System.Collections.Generic;
-using System.Data.Common;
+using Xunit;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -19,24 +22,25 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// Calcite's enumerable convention reads a row as an <see cref="object"/> array with one element per
     /// field, in row type order, holding values in Calcite's own representation. This is what builds one.
     /// </remarks>
-    [TestClass]
-    public class ObjectArrayRowBuilderTests
+    public class ObjectArrayRowBuilderTests : IDisposable
     {
 
         SqliteConnection _connection = null!;
         readonly List<DbCommand> _commands = [];
         JavaTypeFactoryImpl _types = null!;
 
-        [TestInitialize]
-        public void Setup()
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        public ObjectArrayRowBuilderTests()
         {
             _types = new JavaTypeFactoryImpl();
             _connection = new SqliteConnection("Data Source=:memory:");
             _connection.Open();
         }
 
-        [TestCleanup]
-        public void Cleanup()
+        /// <inheritdoc />
+        public void Dispose()
         {
             foreach (var command in _commands)
                 command.Dispose();
@@ -57,7 +61,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             _commands.Add(command);
 
             var reader = command.ExecuteReader();
-            Assert.IsTrue(reader.Read(), "expected one row");
+            Assert.True(reader.Read(), "expected one row");
             return reader;
         }
 
@@ -75,7 +79,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             return builder.build().getFieldList();
         }
 
-        [TestMethod]
+        [Fact]
         public void ARowIsAnObjectArrayInFieldOrder()
         {
             using var reader = Query("SELECT 1 AS A, 'two' AS B, 3.5 AS C");
@@ -83,13 +87,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
             var row = (object?[])builder.apply();
 
-            Assert.AreEqual(3, row.Length);
-            Assert.AreEqual(1, ((java.lang.Integer)row[0]!).intValue());
-            Assert.AreEqual("two", row[1]);
-            Assert.AreEqual(3.5d, ((java.lang.Double)row[2]!).doubleValue());
+            Assert.Equal(3, row.Length);
+            Assert.Equal(1, ((java.lang.Integer)row[0]!).intValue());
+            Assert.Equal("two", row[1]);
+            Assert.Equal(3.5d, ((java.lang.Double)row[2]!).doubleValue());
         }
 
-        [TestMethod]
+        [Fact]
         public void ANullColumnIsANullElement()
         {
             using var reader = Query("SELECT 1 AS A, NULL AS B");
@@ -97,36 +101,36 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
             var row = (object?[])builder.apply();
 
-            Assert.AreEqual(1, ((java.lang.Integer)row[0]!).intValue());
-            Assert.IsNull(row[1]);
+            Assert.Equal(1, ((java.lang.Integer)row[0]!).intValue());
+            Assert.Null(row[1]);
         }
 
         /// <summary>
         /// The field list decides how a value is read, not the provider: a column the provider surfaces one
         /// way is brought to the type the plan was built against.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void TheFieldTypeDecidesHowAValueIsRead()
         {
             using var reader = Query("SELECT 42 AS A");
 
             var asInteger = (object?[])new Utils.ObjectArrayRowBuilder(reader, Fields(("A", SqlTypeName.INTEGER))).apply();
-            Assert.IsInstanceOfType<java.lang.Integer>(asInteger[0]);
+            Assert.IsAssignableFrom<java.lang.Integer>(asInteger[0]);
 
             var asBigint = (object?[])new Utils.ObjectArrayRowBuilder(reader, Fields(("A", SqlTypeName.BIGINT))).apply();
-            Assert.IsInstanceOfType<java.lang.Long>(asBigint[0]);
+            Assert.IsAssignableFrom<java.lang.Long>(asBigint[0]);
         }
 
-        [TestMethod]
+        [Fact]
         public void AnEmptyFieldListYieldsAnEmptyRow()
         {
             using var reader = Query("SELECT 1");
             var row = (object?[])new Utils.ObjectArrayRowBuilder(reader, _types.builder().build().getFieldList()).apply();
 
-            Assert.AreEqual(0, row.Length);
+            Assert.Empty(row);
         }
 
-        [TestMethod]
+        [Fact]
         public void ARowIsBuiltFreshEachTime()
         {
             using var reader = Query("SELECT 1 AS A");
@@ -135,35 +139,35 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             var first = builder.apply();
             var second = builder.apply();
 
-            Assert.AreNotSame(first, second, "a reused array would alias every row in the sequence");
+            second.Should().NotBeSameAs(first, "a reused array would alias every row in the sequence");
         }
 
-        [TestMethod]
+        [Fact]
         public void TheReaderIsRequired()
         {
-            Assert.ThrowsExactly<ArgumentNullException>(
+            Assert.Throws<ArgumentNullException>(
                 () => new Utils.ObjectArrayRowBuilder(null!, Fields(("A", SqlTypeName.INTEGER))));
         }
 
-        [TestMethod]
+        [Fact]
         public void TheFieldListIsRequired()
         {
             using var reader = Query("SELECT 1");
-            Assert.ThrowsExactly<ArgumentNullException>(() => new Utils.ObjectArrayRowBuilder(reader, null!));
+            Assert.Throws<ArgumentNullException>(() => new Utils.ObjectArrayRowBuilder(reader, null!));
         }
 
         /// <summary>
         /// The builder is a <c>Function0</c> because that is what Calcite's generated code calls; it has to
         /// remain reachable through that interface.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void TheBuilderIsCallableAsAFunction0()
         {
             using var reader = Query("SELECT 1 AS A");
             org.apache.calcite.linq4j.function.Function0 function =
                 new Utils.ObjectArrayRowBuilder(reader, Fields(("A", SqlTypeName.INTEGER)));
 
-            Assert.AreEqual(1, ((java.lang.Integer)((object?[])function.apply())[0]!).intValue());
+            Assert.Equal(1, ((java.lang.Integer)((object?[])function.apply())[0]!).intValue());
         }
 
     }

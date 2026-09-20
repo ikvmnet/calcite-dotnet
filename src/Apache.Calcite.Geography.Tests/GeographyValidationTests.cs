@@ -6,11 +6,11 @@ using Apache.Calcite.Geography.Sql;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.type;
+
+using Xunit;
 
 namespace Apache.Calcite.Geography.Tests
 {
@@ -24,7 +24,6 @@ namespace Apache.Calcite.Geography.Tests
     /// one — the harmless accessors included. Without that, a geodesic value would answer in degrees, in a
     /// different ordering, with no error anywhere.
     /// </remarks>
-    [TestClass]
     public class GeographyValidationTests
     {
 
@@ -68,7 +67,7 @@ namespace Apache.Calcite.Geography.Tests
         /// resolves nowhere and fails only as <c>No match found for function signature</c> in whichever query
         /// reaches for it first.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldRegisterEveryDeclaredOperator()
         {
             var declared = typeof(GeographyOperatorTable)
@@ -94,7 +93,7 @@ namespace Apache.Calcite.Geography.Tests
         /// way to spell <c>ST_ASTEXT</c> and every such way is a place the two readings can be confused. That
         /// refusal is gone with the type it rested on, and this is here to say so out loud.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldAcceptAnAccessorOverEitherColumn()
         {
             foreach (var sql in new[]
@@ -107,7 +106,7 @@ namespace Apache.Calcite.Geography.Tests
                 GeographyFixture.Validate(sql);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTypeTheAccessorsOverAGeographyColumn()
         {
             Column("SELECT CLR_ST_GEOG_X(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
@@ -119,7 +118,7 @@ namespace Apache.Calcite.Geography.Tests
             GeographyTypes.IsGeometry(Column("SELECT CLR_ST_GEOG_GEOMFROMWKB(CLR_ST_GEOG_ASWKB(GEOG)) FROM GEO")).Should().BeTrue();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAcceptCalcitesStDistanceOverAGeographyColumn()
         {
             Column("SELECT ST_DISTANCE(GEOG, GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
@@ -128,19 +127,19 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The same goes for the accessors: every one of Calcite's spatial functions takes the column.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAcceptCalcitesStSridOverAGeographyColumn()
         {
             Column("SELECT ST_SRID(GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.INTEGER);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAcceptCalcitesStDistanceOverAGeometryColumn()
         {
             Column("SELECT ST_DISTANCE(GEOM, GEOM) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAcceptStGeogDistanceOverAGeographyColumn()
         {
             Column("SELECT CLR_ST_GEOG_DISTANCE(GEOG, GEOG) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
@@ -150,7 +149,7 @@ namespace Apache.Calcite.Geography.Tests
         /// And it runs both ways: a geodesic operator takes a plane's coordinates too, and answers metres
         /// over them as though they were degrees. Nothing here can tell.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAcceptStGeogDistanceOverAGeometryColumn()
         {
             Column("SELECT CLR_ST_GEOG_DISTANCE(GEOM, GEOM) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
@@ -160,7 +159,7 @@ namespace Apache.Calcite.Geography.Tests
         /// The operand checker is what decides the error a caller sees, and a checker that took anything
         /// would let this validate.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldRejectStGeogDistanceOverCharacterArguments()
         {
             var message = Refuse("SELECT CLR_ST_GEOG_DISTANCE('a', 'b') FROM GEO");
@@ -169,19 +168,19 @@ namespace Apache.Calcite.Geography.Tests
             message.Should().Contain("GEOMETRY");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRejectStGeogDWithinWithoutADistance()
         {
             Refuse("SELECT CLR_ST_GEOG_DWITHIN(GEOG, GEOG) FROM GEO").Should().Contain("CLR_ST_GEOG_DWITHIN");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTypeTheWktConstructorAsGeography()
         {
             GeographyTypes.IsGeometry(Column("SELECT CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)') FROM GEO")).Should().BeTrue();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTypeTheGeoJsonConstructorAsGeography()
         {
             GeographyTypes.IsGeometry(Column("SELECT CLR_ST_GEOG_GEOMFROMGEOJSON('{\"type\":\"Point\",\"coordinates\":[0,0]}') FROM GEO")).Should().BeTrue();
@@ -191,14 +190,14 @@ namespace Apache.Calcite.Geography.Tests
         /// Calcite declares two arities for each WKT constructor, and so do we; the routine lookup picks
         /// between them by argument count.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldTypeTheWktConstructorWithAnSridAsGeography()
         {
             GeographyTypes.IsGeometry(Column("SELECT CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)', 4326) FROM GEO")).Should().BeTrue();
             GeographyTypes.IsGeometry(Column("SELECT CLR_ST_GEOG_GEOMFROMWKT('POINT(0 0)', 4326) FROM GEO")).Should().BeTrue();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRejectAWktConstructorWithATooLongArgumentList()
         {
             Refuse("SELECT CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)', 4326, 1) FROM GEO").Should().Contain("CLR_ST_GEOG_GEOMFROMTEXT");
@@ -207,7 +206,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A constructed geography goes into a geodesic operator without a column to hold it.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAcceptAConstructedGeography()
         {
             GeographyFixture.Validate("SELECT CLR_ST_GEOG_DISTANCE(CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), GEOG) FROM GEO");
@@ -217,13 +216,13 @@ namespace Apache.Calcite.Geography.Tests
         /// The crossing is deliberate and explicit: having said so, Calcite's planar functions will take the
         /// value.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldCarryAGeographyIntoCalcitesStDistanceThroughAsGeom()
         {
             Column("SELECT ST_DISTANCE(CLR_ST_GEOG_ASGEOM(GEOG), GEOM) FROM GEO").getSqlTypeName().Should().BeSameAs(SqlTypeName.DOUBLE);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTypeTheOtherCrossingAsGeography()
         {
             GeographyTypes.IsGeometry(Column("SELECT CLR_ST_GEOM_ASGEOG(GEOM) FROM GEO")).Should().BeTrue();
@@ -236,14 +235,14 @@ namespace Apache.Calcite.Geography.Tests
         /// They were re-typings when there were two types to cross between. With one they are documentation:
         /// a place in the SQL text where the author says which reading they mean.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldAcceptEitherCrossingOverEitherColumn()
         {
             GeographyFixture.Validate("SELECT CLR_ST_GEOM_ASGEOG(GEOG) FROM GEO");
             GeographyFixture.Validate("SELECT CLR_ST_GEOG_ASGEOM(GEOM) FROM GEO");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldTypeThePredicatesAsBoolean()
         {
             foreach (var sql in new[]
@@ -259,7 +258,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A geodesic predicate in a WHERE clause, which is where one is actually written.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAcceptAPredicateInAWhereClause()
         {
             Column("SELECT ID FROM GEO WHERE CLR_ST_GEOG_DWITHIN(GEOG, CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 1000.0)")

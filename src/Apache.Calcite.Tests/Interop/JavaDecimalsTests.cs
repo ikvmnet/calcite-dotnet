@@ -5,12 +5,11 @@ using Apache.Calcite.Extensions.Interop;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Interop.Tests
 {
 
-    [TestClass]
     public class JavaDecimalsTests
     {
 
@@ -19,23 +18,23 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             return decimal.Parse(literal, CultureInfo.InvariantCulture);
         }
 
-        [TestMethod]
-        [DataRow("0")]
-        [DataRow("1")]
-        [DataRow("-1")]
-        [DataRow("0.0")]
-        [DataRow("0.0000000000000000000000000001")] // smallest positive at scale 28
-        [DataRow("-0.0000000000000000000000000001")]
-        [DataRow("123.456")]
-        [DataRow("-123.456")]
-        [DataRow("79228162514264337593543950335")] // decimal.MaxValue
-        [DataRow("-79228162514264337593543950335")] // decimal.MinValue
-        [DataRow("7.9228162514264337593543950335")] // MaxValue with scale 28
-        [DataRow("-7.9228162514264337593543950335")]
-        [DataRow("12345678901234567890.123456789")] // scale 9, large mantissa
-        [DataRow("0.5")]
-        [DataRow("-0.5")]
-        [DataRow("100000000000000000000")] // 10^20, fits in 96 bits, scale 0
+        [Theory]
+        [InlineData("0")]
+        [InlineData("1")]
+        [InlineData("-1")]
+        [InlineData("0.0")]
+        [InlineData("0.0000000000000000000000000001")] // smallest positive at scale 28
+        [InlineData("-0.0000000000000000000000000001")]
+        [InlineData("123.456")]
+        [InlineData("-123.456")]
+        [InlineData("79228162514264337593543950335")] // decimal.MaxValue
+        [InlineData("-79228162514264337593543950335")] // decimal.MinValue
+        [InlineData("7.9228162514264337593543950335")] // MaxValue with scale 28
+        [InlineData("-7.9228162514264337593543950335")]
+        [InlineData("12345678901234567890.123456789")] // scale 9, large mantissa
+        [InlineData("0.5")]
+        [InlineData("-0.5")]
+        [InlineData("100000000000000000000")] // 10^20, fits in 96 bits, scale 0
         public void ShouldRoundTripADecimalThroughBigDecimal(string literal)
         {
             var value = Parse(literal);
@@ -46,14 +45,14 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             back.Should().Be(value);
         }
 
-        [TestMethod]
-        [DataRow("0", 0)]
-        [DataRow("1", 0)]
-        [DataRow("-1", 0)]
-        [DataRow("123.456", 3)]
-        [DataRow("-123.456", 3)]
-        [DataRow("0.0000000000000000000000000001", 28)]
-        [DataRow("79228162514264337593543950335", 0)]
+        [Theory]
+        [InlineData("0", 0)]
+        [InlineData("1", 0)]
+        [InlineData("-1", 0)]
+        [InlineData("123.456", 3)]
+        [InlineData("-123.456", 3)]
+        [InlineData("0.0000000000000000000000000001", 28)]
+        [InlineData("79228162514264337593543950335", 0)]
         public void ShouldPreserveScaleAndValue(string literal, int expectedScale)
         {
             var bd = JavaDecimals.ToBigDecimal(Parse(literal));
@@ -62,14 +61,14 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             bd.toPlainString().Should().Be(literal);
         }
 
-        [TestMethod]
-        [DataRow("0", 0)]
-        [DataRow("1", 0)]
-        [DataRow("-1", 0)]
-        [DataRow("123.456", 3)]
-        [DataRow("-0.001", 3)]
-        [DataRow("79228162514264337593543950335", 0)]
-        [DataRow("7.9228162514264337593543950335", 28)]
+        [Theory]
+        [InlineData("0", 0)]
+        [InlineData("1", 0)]
+        [InlineData("-1", 0)]
+        [InlineData("123.456", 3)]
+        [InlineData("-0.001", 3)]
+        [InlineData("79228162514264337593543950335", 0)]
+        [InlineData("7.9228162514264337593543950335", 28)]
         public void ShouldMatchTheBigDecimalValue(string literal, int scale)
         {
             var bd = new java.math.BigDecimal(literal);
@@ -82,10 +81,10 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         /// The values whose <c>toString()</c> is scientific notation, which is what the text route could not
         /// read: an adjusted exponent below -6, or a negative scale.
         /// </summary>
-        [TestMethod]
-        [DataRow("0.0000001", "1E-7")]
-        [DataRow("0.00000012345", "1.2345E-7")]
-        [DataRow("1E+10", "1E+10")]
+        [Theory]
+        [InlineData("0.0000001", "1E-7")]
+        [InlineData("0.00000012345", "1.2345E-7")]
+        [InlineData("1E+10", "1E+10")]
         public void ShouldReadAValueBigDecimalWritesWithAnExponent(string literal, string written)
         {
             var bd = new java.math.BigDecimal(literal);
@@ -94,7 +93,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             JavaDecimals.ToDecimal(bd).Should().Be(Parse(bd.toPlainString()));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldNormalizeANegativeScale()
         {
             // 12e2 => unscaled=12, scale=-2 => value 1200, normalized to scale 0.
@@ -103,7 +102,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             JavaDecimals.ToDecimal(bd).Should().Be(1200m);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRoundHalfEvenToEvenWhenScaleExceeds28()
         {
             // 29 fractional digits, drop trailing '5' => exactly half. Preceding '8' is even -> stay.
@@ -112,7 +111,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             JavaDecimals.ToDecimal(bd).Should().Be(0.1234567890123456789012345678m);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRoundHalfEvenUpWhenThePrecedingDigitIsOdd()
         {
             // 29 fractional digits, drop trailing '5' => exactly half. Preceding '7' is odd -> round up.
@@ -121,16 +120,16 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             JavaDecimals.ToDecimal(bd).Should().Be(0.1234567890123456789012345678m);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldThrowWhenTheMagnitudeExceedsDecimalRange()
         {
             // 2^96 exceeds the 96-bit decimal mantissa.
             var bd = new java.math.BigDecimal(java.math.BigInteger.valueOf(2L).pow(96), 0);
 
-            Assert.Throws<OverflowException>(() => JavaDecimals.ToDecimal(bd));
+            Assert.ThrowsAny<OverflowException>(() => JavaDecimals.ToDecimal(bd));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldHandleTheMaximum96BitMagnitude()
         {
             // 2^96 - 1 == decimal.MaxValue when the scale is 0.
@@ -139,7 +138,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             JavaDecimals.ToDecimal(new java.math.BigDecimal(unscaled, 0)).Should().Be(decimal.MaxValue);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldHandleTheNegativeMaximum96BitMagnitude()
         {
             var unscaled = java.math.BigInteger.valueOf(2L).pow(96).subtract(java.math.BigInteger.ONE).negate();
@@ -147,7 +146,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             JavaDecimals.ToDecimal(new java.math.BigDecimal(unscaled, 0)).Should().Be(decimal.MinValue);
         }
 
-        [TestMethod]
+        [Fact]
         public void ZeroShouldHaveSignumZero()
         {
             var bd = JavaDecimals.ToBigDecimal(0m);
@@ -156,7 +155,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             bd.scale().Should().Be(0);
         }
 
-        [TestMethod]
+        [Fact]
         public void AZeroCarryingAScaleShouldKeepIt()
         {
             // 0.00m is represented as mantissa 0, scale 2.
@@ -167,7 +166,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             JavaDecimals.ToDecimal(bd).Should().Be(0m);
         }
 
-        [TestMethod]
+        [Fact]
         public void AZeroWithALargeScaleShouldReadAsZero()
         {
             var bd = new java.math.BigDecimal(java.math.BigInteger.ZERO, 50);
@@ -175,10 +174,10 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             JavaDecimals.ToDecimal(bd).Should().Be(0m);
         }
 
-        [TestMethod]
-        [DataRow("1.23")]
-        [DataRow("-1.23")]
-        [DataRow("123456789012345678901234567.89")]
+        [Theory]
+        [InlineData("1.23")]
+        [InlineData("-1.23")]
+        [InlineData("123456789012345678901234567.89")]
         public void ARoundTripShouldPreserveTheStringRepresentation(string literal)
         {
             var value = Parse(literal);

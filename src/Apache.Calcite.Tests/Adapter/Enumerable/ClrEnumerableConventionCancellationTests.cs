@@ -8,12 +8,12 @@ using Apache.Calcite.Tests;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.tools;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 {
@@ -34,7 +34,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// had given up, and every differential test would still pass — they compare rows, and a plan that
     /// finishes has the right rows.</para>
     /// </remarks>
-    [TestClass]
     public class ClrEnumerableConventionCancellationTests
     {
 
@@ -145,7 +144,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// A streaming plan stops reading its leaf when the caller cancels.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public async Task ShouldCancelAStreamingPlan()
         {
             var (rows, leaf) = Plan("SELECT K, V FROM SORTED WHERE K >= 0", 10_000);
@@ -178,7 +177,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// sort that ignored the token would produce identical rows and simply take as long as the input is
         /// large — which here is 10,000 rows that each suspend.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldCancelWhileABlockingOperatorIsStillReading()
         {
             var (rows, leaf) = Plan("SELECT K, V FROM SORTED ORDER BY V, K", 10_000);
@@ -209,7 +208,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// The same, for an aggregate, which folds rather than buffers.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public async Task ShouldCancelWhileAnAggregateIsStillFolding()
         {
             var (rows, leaf) = Plan("SELECT COUNT(*) FROM SORTED", 10_000);
@@ -246,7 +245,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// about code that was just changed, so it is measured: a fold that blocked, or that drained its
         /// input before the token was consulted, would read all ten thousand rows and then succeed.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldCancelWhileAnAggregateOverAnAnyColumnIsStillFolding()
         {
             var (rows, leaf) = PlanAny("SELECT K, MIN(V), MAX(V), SUM(V), AVG(V), MIN(S) FROM ANYS GROUP BY K", 10_000);
@@ -282,7 +281,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// awaits <c>Task.Yield</c> per row, so a fold that drained it without ever suspending would have to
         /// have blocked on it — and the first <c>MoveNextAsync</c> would then complete already finished.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldFoldAnAnyColumnWithoutBlocking()
         {
             var (rows, leaf) = PlanAny("SELECT MIN(V), MAX(V), SUM(V) FROM ANYS", 5_000);
@@ -312,7 +311,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// that swallowed that would leave the leaf running, which is the classic leak in this kind of code
         /// and the one no differential test would ever show.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldStopTheLeafWhenThePlanIsAbandoned()
         {
             var (rows, leaf) = Plan("SELECT K, V FROM SORTED WHERE K >= 0", 10_000);
@@ -347,7 +346,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <para><c>GetAsyncEnumerator</c> is given nothing, so a plan that had gone on relying on the
         /// enumerator's token would read to the end and fail here.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldCancelFromTheDataContext()
         {
             using var cancellation = new CancellationTokenSource();
@@ -355,7 +354,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 
             var read = 0;
 
-            await Assert.ThrowsExactlyAsync<OperationCanceledException>(async () =>
+            await Assert.ThrowsAsync<OperationCanceledException>(async () =>
             {
                 await foreach (var _ in rows)
                     if (++read == 10)

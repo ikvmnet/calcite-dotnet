@@ -5,9 +5,9 @@ using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.jdbc;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
 {
@@ -15,7 +15,6 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
     /// <summary>
     /// The six members <c>EnumerableRelImplementor.classDecl</c> writes into a generated record class.
     /// </summary>
-    [TestClass]
     public class SyntheticRecordEmitterTests
     {
 
@@ -36,7 +35,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// <summary>
         /// A record of one field per type, with the two constructors and nothing that is not a field.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldEmitAFieldPerRecordField()
         {
             var type = Record((java.lang.Class)typeof(java.lang.String), java.lang.Integer.TYPE);
@@ -52,7 +51,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// <c>equals</c> compares every field, a primitive with <c>==</c> and a reference through Guava's
         /// <c>Objects.equal</c>, and <c>hashCode</c> accumulates <c>Utilities.hash</c> over them.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldEqualAndHashByEveryField()
         {
             var type = Record((java.lang.Class)typeof(java.lang.String), java.lang.Integer.TYPE);
@@ -72,7 +71,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// <summary>
         /// A null in a reference field is equal to another null and not to a value.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldEqualOnANullReferenceField()
         {
             var type = Record((java.lang.Class)typeof(java.lang.String), java.lang.Integer.TYPE);
@@ -89,7 +88,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// them: Calcite's body compares it through <c>Utilities.compare</c> and leaves a field out only
         /// where no overload takes it.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldCompareAReferenceField()
         {
             var type = Record((java.lang.Class)typeof(java.lang.String), java.lang.Integer.TYPE);
@@ -107,7 +106,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// orders a null after everything rather than throwing on it. Every reference field of a record built
         /// from a list of types is nullable, because <c>createSyntheticType</c> asks <c>!Primitive.is</c>.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldCompareANullReferenceFieldLast()
         {
             var type = Record((java.lang.Class)typeof(java.lang.String), java.lang.Integer.TYPE);
@@ -123,7 +122,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// <summary>
         /// A primitive field is not nullable and is compared with the overload that takes it.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldCompareAPrimitiveField()
         {
             var type = Record(java.lang.Integer.TYPE, java.lang.Integer.TYPE);
@@ -140,7 +139,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// A field of a type no overload of <c>compare</c> takes is left out rather than failing the
         /// comparison, because a record is not always used as a sorting key.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldSkipAFieldNothingCompares()
         {
             var type = Record((java.lang.Class)typeof(java.lang.Object), java.lang.Integer.TYPE);
@@ -155,7 +154,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// <summary>
         /// <c>toString</c> renders every field, and a null the way Java's string concatenation does.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldPrintEveryField()
         {
             var type = Record((java.lang.Class)typeof(java.lang.String), java.lang.Integer.TYPE);
@@ -174,7 +173,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// <c>RunAndCollect</c> collects an assembly rather than a type, so a type in a module shared with a
         /// live one is never released, and a strongly keyed map roots the record type itself.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldCollectWithTheTypeFactory()
         {
             var (type, factory) = Emitted();

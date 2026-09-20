@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Prepare;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using FluentAssertions;
 
 using org.apache.calcite.jdbc;
 using org.apache.calcite.plan;
@@ -12,6 +12,8 @@ using org.apache.calcite.rel;
 using org.apache.calcite.rex;
 using org.apache.calcite.sql.fun;
 using org.apache.calcite.tools;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Prepare.Tests
 {
@@ -26,7 +28,6 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
     /// <c>queryable</c> branch cannot be ported, since <c>LixToRelTranslator</c> is package-private and
     /// translates linq4j expression trees rather than <c>System.Linq.Expressions</c> ones.
     /// </remarks>
-    [TestClass]
     public class ClrPrepareImplRelTests
     {
 
@@ -66,15 +67,15 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
             });
         }
 
-        [TestMethod]
+        [Fact]
         public void Should_run_a_scan()
         {
             var rows = Run(b => b.scan("NUMS").build());
 
-            CollectionAssert.AreEquivalent(new[] { "3", "1", "2" }, rows);
+            rows.Should().BeEquivalentTo(new[] { "3", "1", "2" });
         }
 
-        [TestMethod]
+        [Fact]
         public void Should_run_a_filter_and_project()
         {
             var rows = Run(b => b
@@ -85,10 +86,10 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
                 .project(b.field("REGION"))
                 .build());
 
-            CollectionAssert.AreEquivalent(new[] { "WEST", "NORTH" }, rows);
+            rows.Should().BeEquivalentTo(new[] { "WEST", "NORTH" });
         }
 
-        [TestMethod]
+        [Fact]
         public void Should_run_an_aggregate()
         {
             var rows = Run(b => b
@@ -96,14 +97,14 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
                 .aggregate(b.groupKey(), b.count(false, "C"))
                 .build());
 
-            CollectionAssert.AreEqual(new[] { "6" }, rows);
+            Assert.Equal(new[] { "6" }, rows);
         }
 
         /// <summary>
         /// A sort's collation is the one thing <c>prepare_</c> reads off the node rather than defaulting,
         /// so it is worth a plan of its own.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void Should_keep_a_sort_collation()
         {
             var rows = Run(b => b
@@ -111,14 +112,14 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
                 .sort(b.field("N"))
                 .build());
 
-            CollectionAssert.AreEqual(new[] { "1", "2", "3" }, rows);
+            Assert.Equal(new[] { "1", "2", "3" }, rows);
         }
 
         /// <summary>
         /// A plan carries no statement kind and no dynamic parameters, and there is nothing to validate, so
         /// it reports none of the three. That is Calcite's shape, not a simplification.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void Should_describe_a_plan_with_no_parameters_and_no_origins()
         {
             ClrPrepareFixture.WithContext("", (context, rootSchema) =>
@@ -128,10 +129,10 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
 
                 var signature = new ClrPrepareImpl().PrepareSql(context, IClrPrepare.Query.Of(rel), typeof(object[]), -1);
 
-                Assert.AreEqual(0, signature.Parameters.size());
-                Assert.AreEqual(nameof(org.apache.calcite.avatica.Meta.StatementType.SELECT), signature.StatementType.name());
-                Assert.AreEqual(4, signature.Columns.size());
-                Assert.IsNotNull(signature.Bind(context.getDataContext()));
+                Assert.Equal(0, signature.Parameters.size());
+                Assert.Equal(nameof(org.apache.calcite.avatica.Meta.StatementType.SELECT), signature.StatementType.name());
+                Assert.Equal(4, signature.Columns.size());
+                Assert.NotNull(signature.Bind(context.getDataContext()));
 
                 return 0;
             });
@@ -146,7 +147,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// than parsed is asynchronous on request like any other. This test predates that and used to have to
         /// ask for a second convention up front, which <c>PrepareRel</c> could not do.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async System.Threading.Tasks.Task Should_run_a_built_plan_asynchronously()
         {
             var rows = await ClrPrepareFixture.WithContext("", (context, rootSchema) =>
@@ -159,7 +160,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
                 return Collect(signature.BindAsync(context.getDataContext()));
             });
 
-            CollectionAssert.AreEquivalent(new[] { "3", "1", "2" }, rows);
+            rows.Should().BeEquivalentTo(new[] { "3", "1", "2" });
 
             static async System.Threading.Tasks.Task<List<string>> Collect(IAsyncEnumerable<object> source)
             {
@@ -174,7 +175,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// <summary>
         /// The limit is applied by the signature, so it holds however the plan was arrived at.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void Should_apply_max_row_count()
         {
             var rows = ClrPrepareFixture.WithContext("", (context, rootSchema) =>
@@ -191,7 +192,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
                 return list;
             });
 
-            Assert.AreEqual(2, rows.Count);
+            Assert.Equal(2, rows.Count);
         }
 
     }

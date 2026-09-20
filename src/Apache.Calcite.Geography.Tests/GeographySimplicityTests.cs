@@ -4,9 +4,9 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -23,7 +23,6 @@ namespace Apache.Calcite.Geography.Tests
     /// except where they are joined, an area is simple because its self-intersections are a question of
     /// validity instead, and a collection is simple when its parts are.
     /// </remarks>
-    [TestClass]
     public class GeographySimplicityTests
     {
 
@@ -56,7 +55,7 @@ namespace Apache.Calcite.Geography.Tests
         /// difference in span rather than the difference in latitude that puts one edge over the other: two
         /// edges spanning the same longitude bow alike however far apart their parallels are.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldSeeACrossingThatOnlyExistsOnTheEarth()
         {
             const string wkt = "LINESTRING(0 60, 60 60, 30 62, 5 62)";
@@ -68,7 +67,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// An ordinary self-crossing line is not simple either way.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldSeeAnOrdinaryCrossing()
         {
             Simple("LINESTRING(0 0, 2 2, 0 2, 2 0)").Should().BeFalse();
@@ -78,7 +77,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A line that does not touch itself is simple, and so is one that closes.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAcceptALineAndARing()
         {
             Simple("LINESTRING(0 0, 1 0, 1 1)").Should().BeTrue();
@@ -88,7 +87,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A vertex reached twice is a touch, save for the one that closes a ring.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldRefuseARepeatedVertex()
         {
             Simple("LINESTRING(0 0, 1 0, 0 0, 1 1)").Should().BeFalse();
@@ -99,7 +98,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A point is simple, and so is an area whatever it does to itself.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldCallAPointAndAnAreaSimple()
         {
             Simple("POINT(1 2)").Should().BeTrue();
@@ -109,7 +108,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Only a closed, simple line is a ring.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAskBothQuestionsOfARing()
         {
             Ring("LINESTRING(0 0, 1 0, 1 1, 0 1, 0 0)").Should().BeTrue();
@@ -121,7 +120,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A ring whose edges cross on the Earth is not a ring here either.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldRefuseARingThatCrossesOnlyOnTheEarth()
         {
             const string wkt = "LINESTRING(0 60, 60 60, 30 62, 5 62, 0 60)";
@@ -130,14 +129,14 @@ namespace Apache.Calcite.Geography.Tests
             Ring(wkt).Should().BeFalse("the geodesic ones do");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerNullForANullArgument()
         {
             GeographyFunctions.IsSimple(null).Should().BeNull();
             GeographyFunctions.IsRing(null).Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunEachAsAnOperator()
         {
             var simple = GeographyExecutionTests.Run(

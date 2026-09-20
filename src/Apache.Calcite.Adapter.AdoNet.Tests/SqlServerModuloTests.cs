@@ -1,10 +1,12 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Collections.Generic;
+using System.Linq;
+
+using FluentAssertions;
 
 using org.apache.calcite.jdbc;
 using org.apache.calcite.runtime;
 
-using System.Collections.Generic;
-using System.Linq;
+using Xunit;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -33,7 +35,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// the drivers again rather than the rendering.
     /// </para>
     /// </remarks>
-    [TestClass]
     public class SqlServerModuloTests
     {
 
@@ -44,11 +45,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             java.lang.Class.forName("org.apache.calcite.jdbc.Driver");
         }
 
-        [TestInitialize]
-        public void Setup()
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        public SqlServerModuloTests()
         {
             if (SqlServerFixture.IsAvailable == false)
-                Assert.Inconclusive("No SQL Server LocalDB instance is reachable on this machine.");
+                Assert.Skip("No SQL Server LocalDB instance is reachable on this machine.");
         }
 
         /// <summary>
@@ -111,10 +114,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// Over 10, 20 and 30 the moduli are 3, 6 and 2, so the expression means 20, 10 and 30; grouped from
         /// the left it is <c>(60 / DEPTNO) % 7</c>, which is 6, 3 and 2.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AModuloUnderADivisionIsGrouped()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "20", "10", "30" },
                 OverDepartments("60 / MOD(DEPTNO, 7)").Rows);
         }
@@ -123,10 +126,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// The same under a multiplication: the expression means 18, 36 and 12, and grouped from the left
         /// <c>(6 * DEPTNO) % 7</c> is 4, 1 and 5.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AModuloUnderAMultiplicationIsGrouped()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "18", "36", "12" },
                 OverDepartments("6 * MOD(DEPTNO, 7)").Rows);
         }
@@ -135,10 +138,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// And under another modulo, which is the case that reads worst as SQL: the expression means 2, 2
         /// and 0, and <c>(20 % DEPTNO) % 7</c> is 0, 0 and 6.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AModuloUnderAModuloIsGrouped()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "2", "2", "0" },
                 OverDepartments("MOD(20, MOD(DEPTNO, 7))").Rows);
         }
@@ -151,10 +154,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// As a left operand the rendering already meant what the call meant, left associativity giving the
         /// nesting for nothing. Kept here so that the correction is known to be to the one case.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AModuloAsALeftOperandIsUnaffected()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "9", "18", "6" },
                 OverDepartments("MOD(DEPTNO, 7) * 3").Rows);
         }
@@ -162,10 +165,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// And under an operator that binds looser than <c>%</c> does.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AModuloUnderASubtractionIsUnaffected()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "97", "94", "98" },
                 OverDepartments("100 - MOD(DEPTNO, 7)").Rows);
         }
@@ -174,10 +177,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// The plain rendering, which is Calcite's and is kept: <c>%</c> is the operator T-SQL has, and
         /// <c>MOD</c> is not a function it knows.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void APlainModuloStillRuns()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "3", "6", "2" },
                 OverDepartments("MOD(DEPTNO, 7)").Rows);
         }
@@ -190,15 +193,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// The claim that the numbers above were answered by the server rather than by Calcite: the
         /// statement carries the operator, and carries it parenthesised.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void TheGroupingIsPushedDown()
         {
             var answer = OverDepartments("60 / MOD(DEPTNO, 7)");
             var generated = string.Join("\n", answer.Statements);
 
-            Assert.AreNotEqual(0, answer.Statements.Count, "nothing was pushed down at all");
-            Assert.IsTrue(answer.Statements.Any(s => s.Contains('%')), $"nothing computed a modulo on the server: {generated}");
-            Assert.IsTrue(answer.Statements.Any(s => s.Contains("([DEPTNO] % 7)")), $"the grouping did not go down: {generated}");
+            answer.Statements.Count.Should().NotBe(0, "nothing was pushed down at all");
+            Assert.True(answer.Statements.Any(s => s.Contains('%')), $"nothing computed a modulo on the server: {generated}");
+            Assert.True(answer.Statements.Any(s => s.Contains("([DEPTNO] % 7)")), $"the grouping did not go down: {generated}");
         }
 
         #endregion

@@ -16,7 +16,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// </summary>
     /// <remarks>
     /// Not a port. Calcite cannot aggregate over ANY either, and the two ways it fails are both measured in
-    /// <c>ClrEnumerableDifferentialTests</c>: <c>MinMaxImplementor</c> names <c>SqlFunctions.lesser</c> and
+    /// <c>ClrEnumerableConventionDifferentialTests</c>: <c>MinMaxImplementor</c> names <c>SqlFunctions.lesser</c> and
     /// asks <c>Types.lookupMethod</c> to resolve it against the accumulator's static type, which for ANY is
     /// <c>Object</c> and has no overload; <c>SumImplementor</c> writes a binary <c>+</c>, which Janino refuses
     /// over two <c>Object</c>s. Both fail before a row is read, so <c>EnumerableConvention</c> forms a plan for

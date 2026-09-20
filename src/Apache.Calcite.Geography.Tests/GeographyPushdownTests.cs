@@ -5,13 +5,13 @@ using Apache.Calcite.Geography.Sql;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.rel;
 using org.apache.calcite.rex;
 using org.apache.calcite.sql;
 using org.apache.calcite.sql.validate;
 using org.apache.calcite.tools;
+
+using Xunit;
 
 namespace Apache.Calcite.Geography.Tests
 {
@@ -25,7 +25,6 @@ namespace Apache.Calcite.Geography.Tests
     /// SQL, and the S2 evaluator here is what answers when nothing better can. No adapter exists yet, so
     /// these pin the two facts one would be written against rather than any adapter's behaviour.
     /// </remarks>
-    [TestClass]
     public class GeographyPushdownTests
     {
 
@@ -75,7 +74,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The call survives into the plan, named, with the arguments an adapter would render.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldLeaveTheCallInThePlanForAnAdapterToFind()
         {
             var calls = Calls(Plan("SELECT ID FROM GEO WHERE CLR_ST_GEOG_DWITHIN(GEOG, CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)'), 200000.0)"));
@@ -102,7 +101,7 @@ namespace Apache.Calcite.Geography.Tests
         /// any overload of the name, which is why the safe test is the name and, where an adapter cares which
         /// overload, the operand count.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldNotGiveThePlanTheOperatorTablesOwnInstance()
         {
             var call = Calls(Plan("SELECT CLR_ST_GEOG_DISTANCE(GEOG, GEOG) FROM GEO"))

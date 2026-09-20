@@ -9,18 +9,17 @@ using FluentAssertions;
 
 using java.lang;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.linq4j.tree;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
 {
 
-    [TestClass]
     public class ClrTypesTests
     {
 
-        [TestMethod]
+        [Fact]
         public void ShouldResolveEveryJavaPrimitive()
         {
             ClrTypes.FromClass(java.lang.Boolean.TYPE).Should().Be(typeof(bool));
@@ -35,7 +34,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             ClrTypes.FromClass(java.lang.Double.TYPE).Should().Be(typeof(double));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldResolveBoxClassesAsDistinctFromPrimitives()
         {
             // the whole port depends on these being different types: a nullable column holds an Integer, and
@@ -44,7 +43,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             ClrTypes.FromClass((Class)typeof(Integer)).Should().NotBe(typeof(int));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldResolveRemappedClasses()
         {
             ClrTypes.FromClass((Class)typeof(java.lang.String)).Should().Be(typeof(string));
@@ -55,14 +54,14 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             typeof(java.util.List).GetMethod("get", [typeof(int)])!.ReturnType.Should().Be(typeof(object));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldResolveArrays()
         {
             ClrTypes.FromClass((Class)typeof(object[])).Should().Be(typeof(object[]));
             ClrTypes.FromClass((Class)typeof(int[])).Should().Be(typeof(int[]));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldResolveParameterizedType()
         {
             var type = Types.of((Class)typeof(java.util.List), (Class)typeof(java.lang.String));
@@ -70,7 +69,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             ClrTypes.Resolve(type).Should().Be(typeof(java.util.List));
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRefuseWhatItCannotName()
         {
             var act = () => ClrTypes.Resolve(new UnknownType());

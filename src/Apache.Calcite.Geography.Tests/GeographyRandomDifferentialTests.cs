@@ -5,9 +5,9 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -37,7 +37,6 @@ namespace Apache.Calcite.Geography.Tests
     /// the relation here is this project's own, and what makes it trustworthy is the size of the oracle
     /// rather than the pedigree of the algorithm.</para>
     /// </remarks>
-    [TestClass]
     public class GeographyRandomDifferentialTests
     {
 
@@ -161,7 +160,7 @@ namespace Apache.Calcite.Geography.Tests
         /// producing polygons, or a Calcite that started refusing every pair, would otherwise leave this
         /// green by leaving it empty.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldAgreeOverGeneratedShapes()
         {
             var differences = new List<string>();

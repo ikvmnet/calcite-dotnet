@@ -7,9 +7,9 @@ using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.linq4j.function;
+
+using Xunit;
 
 using JoinType = org.apache.calcite.linq4j.JoinType;
 
@@ -24,7 +24,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// how many rows an operator draws, whether it opens its input at all, when it drains it, and what it does
     /// with a join type or a null the planner never produces. Each test is written against Calcite's body.
     /// </remarks>
-    [TestClass]
     public class ClrEnumerableDefaultsTests
     {
 
@@ -43,7 +42,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// the thing the two halves actually differ in. Operators that take no sequence at all are not
         /// covered and do not need to be.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldNameEveryAwaitingOperatorWithTheSuffixAndNoOtherOperator()
         {
             var wrong = new List<string>();
@@ -80,7 +79,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// before it can test it. LINQ's own <c>Take</c> stops on the count and draws exactly n, which is why
         /// delegating to it was a divergence.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldDrawOneRowMoreThanItTakes()
         {
             var drawn = 0;
@@ -105,7 +104,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// Opening is not free. It is what runs a lazy collection spool's write-back and a repeat union's
         /// clean-up, so returning an empty sequence without touching the input skips work Calcite does.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldOpenItsInputForAFetchOfNoRows()
         {
             var drawn = 0;
@@ -133,7 +132,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// a <c>subList</c> and threw on one, and now clamps. There is no list fast path here, so the
         /// counters are the whole of it — this is what says so.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldSkipNothingAndFetchNothingForANegativeCount()
         {
             static IEnumerable<int> Source() => [0, 1, 2, 3, 4];
@@ -146,7 +145,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         }
 
         /// <inheritdoc cref="ShouldSkipNothingAndFetchNothingForANegativeCount" />
-        [TestMethod]
+        [Fact]
         public async Task ShouldSkipNothingAndFetchNothingForANegativeCountAsync()
         {
             static async IAsyncEnumerable<int> Source()
@@ -177,7 +176,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// The asynchronous fetch draws the same rows as the synchronous one.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public async Task ShouldDrawOneRowMoreThanItTakesAsync()
         {
             var drawn = 0;
@@ -208,7 +207,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// while testing the first outer row, so an outer that has no rows never builds it. Building the
         /// lookup first reads a whole input for an answer that was already known.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldNotEnumerateTheInnerOfASemiJoinOverAnEmptyOuter()
         {
             var enumerations = 0;
@@ -226,7 +225,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// A semi join over a non-empty outer builds its lookup once and no more.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldEnumerateTheInnerOfASemiJoinOnce()
         {
             var enumerations = 0;
@@ -250,7 +249,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// an iterator would let a plan be assembled and only fail once rows were pulled; falling through and
         /// inner-joining, which is what happened here, would let it not fail at all.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldRefuseARightOrFullCorrelateWhereItIsBuilt()
         {
             foreach (var joinType in new[] { JoinType.RIGHT, JoinType.FULL })
@@ -268,7 +267,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <c>Linq4j.emptyEnumerable()</c>, which Calcite substitutes rather than dereferencing. A LEFT join
         /// therefore emits the outer row against null instead of throwing.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldReadANullCorrelatedSequenceAsEmpty()
         {
             ClrEnumerableDefaults.CorrelateJoin<int, string, string>(new[] { 1, 2 }, _ => null, (a, b) => $"{a}:{b ?? "null"}", JoinType.LEFT)
@@ -284,7 +283,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <c>groupBy_</c> drains the input into the map and only then returns a <c>LookupResultEnumerable</c>
         /// over a map that is already finished, so a second pass replays rather than folding again.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldFoldAGroupedAggregateWhereItIsCalled()
         {
             var drawn = 0;

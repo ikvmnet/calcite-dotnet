@@ -4,9 +4,9 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -21,7 +21,6 @@ namespace Apache.Calcite.Geography.Tests
     /// and not a straight line in degrees, so a point partway along it is somewhere else, sideways is a
     /// different direction, and the pair of parallel lines that hold a shape are great circles.
     /// </remarks>
-    [TestClass]
     public class GeographyAlongTests
     {
 
@@ -43,7 +42,7 @@ namespace Apache.Calcite.Geography.Tests
         /// the halfway point is three and a half degrees north of where Calcite puts it. The longitude agrees
         /// and the latitude does not, which is the bow and nothing else.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldPlaceTheMidpointOnTheGeodesic()
         {
             const string line = "LINESTRING(0 60, 60 60)";
@@ -61,7 +60,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The fraction runs from one end to the other.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldRunFromEndToEnd()
         {
             const string line = "LINESTRING(0 0, 10 0)";
@@ -74,7 +73,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The offset is metres, to the left of the way the line is going.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldOffsetInMetresToTheLeft()
         {
             const string line = "LINESTRING(0 0, 10 0)";
@@ -93,7 +92,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// One point for every segment, of every part, as Calcite answers.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerOnePointPerSegment()
         {
             Along("LINESTRING(0 0, 1 0, 2 0, 3 0)", 0.5, 0).getNumGeometries().Should().Be(3);
@@ -108,7 +107,7 @@ namespace Apache.Calcite.Geography.Tests
         /// measures the gap between two horizontal lines and gets the full two degrees; the geodesic one is
         /// narrower, because the southern edge bows up into the shape.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldMeasureWidthBetweenGreatCircles()
         {
             var sliver = Wkt("POLYGON((0 60, 60 60, 60 62, 0 62, 0 60))");
@@ -126,7 +125,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The diameter of a square is its side, near enough.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldMeasureASquareAcrossItsSide()
         {
             var square = Wkt("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))");
@@ -139,14 +138,14 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A shape with no width has no diameter to name.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerNothingForSomethingWithNoWidth()
         {
             GeographyFunctions.MinimumDiameter(Wkt("POINT(1 2)"))!.isEmpty().Should().BeTrue();
             GeographyFunctions.MinimumDiameter(Wkt("LINESTRING(0 0, 1 0)"))!.isEmpty().Should().BeTrue();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerNullForANullArgument()
         {
             GeographyFunctions.LocateAlong(null, java.lang.Double.valueOf(0.5), java.lang.Double.valueOf(0)).Should().BeNull();
@@ -154,7 +153,7 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.MinimumDiameter(null).Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldStampBothWithWgs84()
         {
             Along("LINESTRING(0 0, 1 0)", 0.5, 0).getSRID().Should().Be(GeographyFunctions.Wgs84);
@@ -162,7 +161,7 @@ namespace Apache.Calcite.Geography.Tests
                 .getSRID().Should().Be(GeographyFunctions.Wgs84);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunEachAsAnOperator()
         {
             var along = GeographyExecutionTests.Run(

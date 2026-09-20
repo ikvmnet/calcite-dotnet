@@ -4,7 +4,7 @@ using Apache.Calcite.Adapter.AdoNet.Metadata;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Xunit;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -27,22 +27,23 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// from, so a value can be handed to it directly.
     /// </para>
     /// </remarks>
-    [TestClass]
-    public class AdoParameterConversionTests
+    public class AdoParameterConversionTests : IDisposable
     {
 
         SqliteFixture _sqlite = null!;
         AdoDataSource _dataSource = null!;
 
-        [TestInitialize]
-        public void Setup()
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        public AdoParameterConversionTests()
         {
             _sqlite = new SqliteFixture();
             _dataSource = new DbDataSourceAdoDataSource(_sqlite.DataSource, new SqliteDatabaseMetadata(_sqlite.DataSource));
         }
 
-        [TestCleanup]
-        public void Cleanup()
+        /// <inheritdoc />
+        public void Dispose()
         {
             _sqlite?.Dispose();
         }
@@ -76,28 +77,28 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// value is that reinterpretation; it was read out of the type's text and parsed back before, which
         /// is the same instinct the <c>BigDecimal</c> branch was wrong for.
         /// </summary>
-        [TestMethod]
-        [DataRow("0")]
-        [DataRow("1")]
-        [DataRow("9223372036854775807")]  // long.MaxValue, the last value whose bits are not negative
-        [DataRow("9223372036854775808")]  // and the first that is
-        [DataRow("18446744073709551615")] // ulong.MaxValue
+        [Theory]
+        [InlineData("0")]
+        [InlineData("1")]
+        [InlineData("9223372036854775807")]  // long.MaxValue, the last value whose bits are not negative
+        [InlineData("9223372036854775808")]  // and the first that is
+        [InlineData("18446744073709551615")] // ulong.MaxValue
         public void AULongIsBoundAsItsUnsignedValue(string literal)
         {
             Bound(org.joou.ULong.valueOf(literal)).Should().Be(decimal.Parse(literal, System.Globalization.CultureInfo.InvariantCulture));
         }
 
-        [TestMethod]
-        [DataRow("0")]
-        [DataRow("65535")] // ushort.MaxValue, which is why the CLR type is an int
+        [Theory]
+        [InlineData("0")]
+        [InlineData("65535")] // ushort.MaxValue, which is why the CLR type is an int
         public void AUShortIsBoundAsAnInt(string literal)
         {
             Bound(org.joou.UShort.valueOf(literal)).Should().Be(int.Parse(literal));
         }
 
-        [TestMethod]
-        [DataRow("0")]
-        [DataRow("4294967295")] // uint.MaxValue, which is why the CLR type is a long
+        [Theory]
+        [InlineData("0")]
+        [InlineData("4294967295")] // uint.MaxValue, which is why the CLR type is a long
         public void AUIntegerIsBoundAsALong(string literal)
         {
             Bound(org.joou.UInteger.valueOf(literal)).Should().Be(long.Parse(literal));
@@ -107,9 +108,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// The branch a real backend does reach, here for the contrast: a <c>tinyint</c> is the one
         /// unsigned type SQL Server describes, and its range fits the CLR type exactly.
         /// </summary>
-        [TestMethod]
-        [DataRow("0")]
-        [DataRow("255")]
+        [Theory]
+        [InlineData("0")]
+        [InlineData("255")]
         public void AUByteIsBoundAsAByte(string literal)
         {
             Bound(org.joou.UByte.valueOf(literal)).Should().Be(byte.Parse(literal));

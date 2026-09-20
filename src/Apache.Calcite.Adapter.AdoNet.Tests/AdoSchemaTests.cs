@@ -1,12 +1,15 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+using FluentAssertions;
 
 using org.apache.calcite.jdbc;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using Xunit;
+using Xunit.Sdk;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -14,8 +17,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// <summary>
     /// Covers what the adapter discovers about a database, and the Calcite types it derives from it.
     /// </summary>
-    [TestClass]
-    public class AdoSchemaTests
+    public class AdoSchemaTests : IDisposable
     {
 
         SqliteFixture _sqlite = null!;
@@ -23,8 +25,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         AdoSchema _schema = null!;
         JavaTypeFactoryImpl _types = null!;
 
-        [TestInitialize]
-        public void Setup()
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        public AdoSchemaTests()
         {
             _sqlite = new SqliteFixture();
             _types = new JavaTypeFactoryImpl();
@@ -34,8 +38,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             _schema = AdoSchema.Create(_root, "ADO", _sqlite.DataSource, null, null);
         }
 
-        [TestCleanup]
-        public void Cleanup()
+        /// <inheritdoc />
+        public void Dispose()
         {
             _sqlite?.Dispose();
         }
@@ -64,7 +68,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         org.apache.calcite.schema.Table Table(string tableName)
         {
             return (org.apache.calcite.schema.Table?)_schema.tables().get(tableName)
-                ?? throw new AssertFailedException($"no table {tableName}; found {string.Join(", ", TableNames())}");
+                ?? throw new XunitException($"no table {tableName}; found {string.Join(", ", TableNames())}");
         }
 
         /// <summary>
@@ -96,85 +100,82 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
                 if (((RelDataTypeField)fields.get(i)).getName().Equals(columnName, StringComparison.OrdinalIgnoreCase))
                     return ((RelDataTypeField)fields.get(i)).getType();
 
-            throw new AssertFailedException($"no column {columnName} on {tableName}");
+            throw new XunitException($"no column {columnName} on {tableName}");
         }
 
         #region Discovery
 
-        [TestMethod]
+        [Fact]
         public void TheSchemaFindsTheTables()
         {
             var names = TableNames().ToList();
 
-            CollectionAssert.Contains(names, "EMPS");
-            CollectionAssert.Contains(names, "DEPTS");
+            Assert.Contains("EMPS", names);
+            Assert.Contains("DEPTS", names);
         }
 
-        [TestMethod]
+        [Fact]
         public void AMissingTableIsAbsentRatherThanEmpty()
         {
-            Assert.IsNull(_schema.tables().get("NO_SUCH_TABLE"));
+            Assert.Null(_schema.tables().get("NO_SUCH_TABLE"));
         }
 
-        [TestMethod]
+        [Fact]
         public void ATableIsAnAdoTable()
         {
-            Assert.IsInstanceOfType<AdoTable>(Table("EMPS"));
+            Assert.IsAssignableFrom<AdoTable>(Table("EMPS"));
         }
 
-        [TestMethod]
+        [Fact]
         public void ATableKnowsItsDataSource()
         {
-            Assert.IsNotNull(((AdoTable)Table("EMPS")).Schema.DataSource);
+            Assert.NotNull(((AdoTable)Table("EMPS")).Schema.DataSource);
         }
 
         #endregion
 
         #region Row types
 
-        [TestMethod]
+        [Fact]
         public void ColumnsAreDiscoveredInOrder()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "EMPNO", "NAME", "DEPTNO", "SALARY", "HIREDATE" },
                 Columns("EMPS"));
         }
 
-        [TestMethod]
+        [Fact]
         public void DeptsHasItsOwnColumns()
         {
-            CollectionAssert.AreEqual(new[] { "DEPTNO", "DNAME" }, Columns("DEPTS"));
+            Assert.Equal(new[] { "DEPTNO", "DNAME" }, Columns("DEPTS"));
         }
 
-        [TestMethod]
+        [Fact]
         public void AnIntegerColumnBecomesAnIntegralSqlType()
         {
             var name = TypeOf("EMPS", "EMPNO").getSqlTypeName().name();
 
-            CollectionAssert.Contains(
-                new[] { nameof(SqlTypeName.INTEGER), nameof(SqlTypeName.BIGINT), nameof(SqlTypeName.SMALLINT) },
+            new[] { nameof(SqlTypeName.INTEGER), nameof(SqlTypeName.BIGINT), nameof(SqlTypeName.SMALLINT) }.Should().Contain(
                 name,
                 $"EMPNO came back as {name}");
         }
 
-        [TestMethod]
+        [Fact]
         public void ATextColumnBecomesACharacterSqlType()
         {
             var name = TypeOf("EMPS", "NAME").getSqlTypeName().name();
 
-            CollectionAssert.Contains(
-                new[] { nameof(SqlTypeName.VARCHAR), nameof(SqlTypeName.CHAR) },
+            new[] { nameof(SqlTypeName.VARCHAR), nameof(SqlTypeName.CHAR) }.Should().Contain(
                 name,
                 $"NAME came back as {name}");
         }
 
-        [TestMethod]
+        [Fact]
         public void ARealColumnBecomesAnApproximateSqlType()
         {
             var name = TypeOf("EMPS", "SALARY").getSqlTypeName().name();
 
-            CollectionAssert.Contains(
-                new[] { nameof(SqlTypeName.DOUBLE), nameof(SqlTypeName.REAL), nameof(SqlTypeName.FLOAT), nameof(SqlTypeName.DECIMAL) },
+            new[] { nameof(SqlTypeName.DOUBLE), nameof(SqlTypeName.REAL), nameof(SqlTypeName.FLOAT), nameof(SqlTypeName.DECIMAL) }.Should().Contain(
                 name,
                 $"SALARY came back as {name}");
         }
@@ -183,20 +184,20 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// Nullability is carried onto the Calcite type, which is what lets the planner reason about null
         /// rather than discovering one at runtime.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void NullabilityIsCarriedOntoTheType()
         {
-            Assert.IsFalse(TypeOf("EMPS", "EMPNO").isNullable(), "EMPNO is declared NOT NULL");
-            Assert.IsTrue(TypeOf("EMPS", "DEPTNO").isNullable(), "DEPTNO is declared NULL");
+            Assert.False(TypeOf("EMPS", "EMPNO").isNullable(), "EMPNO is declared NOT NULL");
+            Assert.True(TypeOf("EMPS", "DEPTNO").isNullable(), "DEPTNO is declared NULL");
         }
 
-        [TestMethod]
+        [Fact]
         public void TheRowTypeIsStableAcrossCalls()
         {
             var first = Table("EMPS").getRowType(_types);
             var second = Table("EMPS").getRowType(_types);
 
-            Assert.AreEqual(first.getFullTypeString(), second.getFullTypeString());
+            Assert.Equal(first.getFullTypeString(), second.getFullTypeString());
         }
 
         #endregion
@@ -207,18 +208,18 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// The factory picks a metadata provider from the connection type, which is what lets one adapter
         /// serve providers that describe themselves differently.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ASqliteConnectionSelectsTheSqliteMetadata()
         {
             var metadata = Metadata.AdoDatabaseMetadataFactoryImpl.Instance.Create(_sqlite.DataSource);
-            Assert.AreEqual("SqliteDatabaseMetadata", metadata.GetType().Name);
+            Assert.Equal("SqliteDatabaseMetadata", metadata.GetType().Name);
         }
 
-        [TestMethod]
+        [Fact]
         public void TheMetadataOffersADialect()
         {
             var metadata = Metadata.AdoDatabaseMetadataFactoryImpl.Instance.Create(_sqlite.DataSource);
-            Assert.IsNotNull(metadata.Dialect);
+            Assert.NotNull(metadata.Dialect);
         }
 
         #endregion
@@ -229,13 +230,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// A table created after the schema was built is still reachable: a schema that cached its first
         /// answer forever would make a long-lived connection wrong.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ATableAddedLaterCanBeFound()
         {
             _sqlite.Execute("CREATE TABLE LATE (ID INTEGER NOT NULL)");
 
             _schema = AdoSchema.Create(_root, "ADO", _sqlite.DataSource, null, null);
-            CollectionAssert.Contains(TableNames().ToList(), "LATE");
+            Assert.Contains("LATE", TableNames().ToList());
         }
 
         #endregion

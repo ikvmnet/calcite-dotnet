@@ -4,7 +4,7 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -24,7 +24,6 @@ namespace Apache.Calcite.Geography.Tests
     /// the walk settled. A circle a fraction of a percent too wide is a worse bound and still a bound; one a
     /// fraction too narrow is wrong.</para>
     /// </remarks>
-    [TestClass]
     public class GeographyBoundingCircleTests
     {
 
@@ -43,7 +42,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The circle holds what it was built from. Every vertex, and every edge between them.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldContainWhatItBounds()
         {
             foreach (var wkt in new[]
@@ -66,7 +65,7 @@ namespace Apache.Calcite.Geography.Tests
         /// The case with a known answer. The centre is the midpoint of the geodesic and the radius is half
         /// its length, so both can be checked against a measurement rather than against another circle.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldCentreTwoPointsOnTheirMidpoint()
         {
             var a = Wkt("POINT(-1 0)");
@@ -91,7 +90,7 @@ namespace Apache.Calcite.Geography.Tests
         /// and one at sixty north, get circles of the same area. A planar bounding circle would give the
         /// northern one a smaller area, its degrees being worth less there.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldBoundTheSameSizeAtEveryLatitude()
         {
             // a degree of longitude at 60 north is half of one at the equator, so this pair is the same
@@ -111,7 +110,7 @@ namespace Apache.Calcite.Geography.Tests
         /// is drawn a little wide to hold the shape between its vertices, so a few percent over is expected;
         /// far more than that would mean the walk was not converging.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldNotBeMuchLargerThanItMustBe()
         {
             var span = GeographyFunctions.Distance(Wkt("POINT(-1 0)"), Wkt("POINT(1 0)"))!.doubleValue();
@@ -126,7 +125,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// One point has no width, and nothing has no circle.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldDegenerateWhereThereIsNothingToBound()
         {
             Circle("POINT(1 2)").getGeometryType().Should().Be("Point");
@@ -134,13 +133,13 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.BoundingCircle(null).Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldStampTheCircleWithWgs84()
         {
             Circle("MULTIPOINT((0 0), (1 1))").getSRID().Should().Be(GeographyFunctions.Wgs84);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunAsAnOperator()
         {
             var area = GeographyExecutionTests.Run(

@@ -2,9 +2,9 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
+
+using Xunit;
 
 namespace Apache.Calcite.Geography.Tests
 {
@@ -28,7 +28,6 @@ namespace Apache.Calcite.Geography.Tests
     /// what it returns. It is stripped exactly at the boundary with Calcite's spatial library, which is the
     /// boundary a guard would exist to police.</para>
     /// </remarks>
-    [TestClass]
     public class SridPropagationTests
     {
 
@@ -42,7 +41,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A geometry Calcite reads from WKT carries no reference system.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldReadWktWithNoSrid()
         {
             SpatialTypeUtils.fromWkt("POINT(1 2)").getSRID().Should().Be(0);
@@ -57,7 +56,7 @@ namespace Apache.Calcite.Geography.Tests
         /// on how the particular operation is written. <c>reverse</c> copies the geometry, so it keeps it;
         /// the overlay and construction operations build through a factory that does not.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldMostlyDropTheSridThroughAnOperation()
         {
             var g = Stamped("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))");
@@ -76,7 +75,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// WKT does not carry it and EWKT does, which is the whole difference between the two.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldCarryTheSridThroughEwktAndNotWkt()
         {
             var g = Stamped("POINT(1 2)");

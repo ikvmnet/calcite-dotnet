@@ -4,9 +4,9 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -27,7 +27,6 @@ namespace Apache.Calcite.Geography.Tests
     /// line clipped by a polygon on the plane — two models in one expression, which is the thing this package
     /// exists to prevent.</para>
     /// </remarks>
-    [TestClass]
     public class GeographyOverlayTests
     {
 
@@ -44,7 +43,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Two overlapping boxes intersect in the box they share.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldIntersectTwoBoxes()
         {
             var a = Wkt("POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))");
@@ -77,7 +76,7 @@ namespace Apache.Calcite.Geography.Tests
         /// as a planar reading draws it and inside the box as it is. Calcite answers an empty intersection
         /// and this answers a real one.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldIntersectWhereTheGeodesicEdgeReachesAndThePlanarOneDoesNot()
         {
             var wide = Wkt("POLYGON((0 60, 60 60, 60 20, 0 20, 0 60))");
@@ -95,7 +94,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A difference takes one from the other, and the areas add up.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldTakeOneAreaFromAnother()
         {
             var a = Wkt("POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))");
@@ -111,7 +110,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// And the symmetric difference is everything but the overlap, counted once each way.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerBothSidesOfASymmetricDifference()
         {
             var a = Wkt("POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))");
@@ -128,7 +127,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A union of a shape with itself is the shape.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldMergeAShapeWithItself()
         {
             var a = Wkt("POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))");
@@ -139,7 +138,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Shapes that do not meet intersect in nothing.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerEmptyWhereTheyDoNotMeet()
         {
             var a = Wkt("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))");
@@ -151,7 +150,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A hole comes back a hole.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldKeepAHoleThroughTheOverlay()
         {
             var ring = Wkt("POLYGON((0 0, 4 0, 4 4, 0 4, 0 0), (1 1, 3 1, 3 3, 1 3, 1 1))");
@@ -167,7 +166,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Anything without an area is declined rather than answered on a plane.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldDeclineAnythingWithoutAnArea()
         {
             var area = Wkt("POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))");
@@ -177,7 +176,7 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.UnaryUnion(Wkt("POINT(1 1)")).Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerNullForANullArgument()
         {
             var area = Wkt("POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))");
@@ -188,7 +187,7 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.UnaryUnion(null).Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunEachAsAnOperator()
         {
             const string a = "CLR_ST_GEOG_GEOMFROMTEXT('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))')";

@@ -1,12 +1,14 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
-using org.apache.calcite.jdbc;
-using org.apache.calcite.runtime;
-
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Linq;
+
+using FluentAssertions;
+
+using org.apache.calcite.jdbc;
+using org.apache.calcite.runtime;
+
+using Xunit;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -36,7 +38,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// what says it is in the right one.
     /// </para>
     /// </remarks>
-    [TestClass]
     public class SqlServerConcatenationTests
     {
 
@@ -51,11 +52,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             java.lang.Class.forName("org.apache.calcite.jdbc.Driver");
         }
 
-        [TestInitialize]
-        public void Setup()
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        public SqlServerConcatenationTests()
         {
             if (SqlServerFixture.IsAvailable == false)
-                Assert.Inconclusive("No SQL Server LocalDB instance is reachable on this machine.");
+                Assert.Skip("No SQL Server LocalDB instance is reachable on this machine.");
         }
 
         /// <summary>
@@ -71,12 +74,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
                     return SqlServerFixture.Shared.DataSource;
                 case Odbc:
                     if (SqlServerFixture.OdbcDriver is null)
-                        Assert.Inconclusive("No SQL Server ODBC driver is installed on this machine.");
+                        Assert.Skip("No SQL Server ODBC driver is installed on this machine.");
 
                     return SqlServerFixture.Shared.OdbcDataSource;
                 case OleDb:
                     if (SqlServerFixture.OleDbProvider is null)
-                        Assert.Inconclusive("No SQL Server OLE DB provider is registered for this process architecture.");
+                        Assert.Skip("No SQL Server OLE DB provider is registered for this process architecture.");
 
                     return SqlServerFixture.Shared.OleDbDataSource;
                 default:
@@ -153,26 +156,26 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// A select list, which is the shape in the report.
         /// </summary>
-        [TestMethod]
-        [DataRow(SqlClient)]
-        [DataRow(Odbc)]
-        [DataRow(OleDb)]
+        [Theory]
+        [InlineData(SqlClient)]
+        [InlineData(Odbc)]
+        [InlineData(OleDb)]
         public void AProjectionConcatenates(string provider)
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "aabb" },
-                Rows(provider, "SELECT A || B FROM ADO.CAT WHERE ID = 1"));
+                Rows(provider, "SELECT A || B FROM ADO.CAT WHERE ID = 1"), strict: true);
         }
 
-        [TestMethod]
-        [DataRow(SqlClient)]
-        [DataRow(Odbc)]
-        [DataRow(OleDb)]
+        [Theory]
+        [InlineData(SqlClient)]
+        [InlineData(Odbc)]
+        [InlineData(OleDb)]
         public void APredicateConcatenates(string provider)
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "1" },
-                Rows(provider, "SELECT ID FROM ADO.CAT WHERE A || B = 'aabb'"));
+                Rows(provider, "SELECT ID FROM ADO.CAT WHERE A || B = 'aabb'"), strict: true);
         }
 
         /// <summary>
@@ -180,52 +183,52 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// left out: where a null sorts is a separate question from what the operator is written as, and
         /// Calcite already answers it.
         /// </summary>
-        [TestMethod]
-        [DataRow(SqlClient)]
-        [DataRow(Odbc)]
-        [DataRow(OleDb)]
+        [Theory]
+        [InlineData(SqlClient)]
+        [InlineData(Odbc)]
+        [InlineData(OleDb)]
         public void ASortKeyConcatenates(string provider)
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "3", "1" },
                 Rows(provider, "SELECT ID FROM ADO.CAT WHERE B IS NOT NULL ORDER BY A || B DESC"));
         }
 
-        [TestMethod]
-        [DataRow(SqlClient)]
-        [DataRow(Odbc)]
-        [DataRow(OleDb)]
+        [Theory]
+        [InlineData(SqlClient)]
+        [InlineData(Odbc)]
+        [InlineData(OleDb)]
         public void AnAggregateArgumentConcatenates(string provider)
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "ddee" },
-                Rows(provider, "SELECT MAX(A || B) FROM ADO.CAT"));
+                Rows(provider, "SELECT MAX(A || B) FROM ADO.CAT"), strict: true);
         }
 
-        [TestMethod]
-        [DataRow(SqlClient)]
-        [DataRow(Odbc)]
-        [DataRow(OleDb)]
+        [Theory]
+        [InlineData(SqlClient)]
+        [InlineData(Odbc)]
+        [InlineData(OleDb)]
         public void AGroupKeyConcatenates(string provider)
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "aabb|1", "ddee|1", "NULL|1" },
-                Rows(provider, "SELECT A || B, COUNT(*) FROM ADO.CAT GROUP BY A || B"));
+                Rows(provider, "SELECT A || B, COUNT(*) FROM ADO.CAT GROUP BY A || B"), strict: true);
         }
 
         /// <summary>
         /// Two literals, which are not folded away — so there is no shape of the expression that avoids the
         /// operator.
         /// </summary>
-        [TestMethod]
-        [DataRow(SqlClient)]
-        [DataRow(Odbc)]
-        [DataRow(OleDb)]
+        [Theory]
+        [InlineData(SqlClient)]
+        [InlineData(Odbc)]
+        [InlineData(OleDb)]
         public void TwoLiteralsConcatenate(string provider)
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "xy" },
-                Rows(provider, "SELECT 'x' || 'y' FROM ADO.CAT WHERE ID = 1"));
+                Rows(provider, "SELECT 'x' || 'y' FROM ADO.CAT WHERE ID = 1"), strict: true);
         }
 
         #endregion
@@ -237,28 +240,28 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// operand is null and so does <c>+</c>, under the default <c>CONCAT_NULL_YIELDS_NULL</c>; T-SQL's
         /// <c>CONCAT</c> reads a null operand as the empty string and would have answered <c>cc</c>.
         /// </summary>
-        [TestMethod]
-        [DataRow(SqlClient)]
-        [DataRow(Odbc)]
-        [DataRow(OleDb)]
+        [Theory]
+        [InlineData(SqlClient)]
+        [InlineData(Odbc)]
+        [InlineData(OleDb)]
         public void ANullOperandMakesTheWholeExpressionNull(string provider)
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "NULL" },
-                Rows(provider, "SELECT A || B FROM ADO.CAT WHERE ID = 2"));
+                Rows(provider, "SELECT A || B FROM ADO.CAT WHERE ID = 2"), strict: true);
         }
 
         /// <summary>
         /// And the same claim where it decides whether a row is returned at all, which is the failure a
         /// syntax check would not have caught: under <c>CONCAT</c> the row matches.
         /// </summary>
-        [TestMethod]
-        [DataRow(SqlClient)]
-        [DataRow(Odbc)]
-        [DataRow(OleDb)]
+        [Theory]
+        [InlineData(SqlClient)]
+        [InlineData(Odbc)]
+        [InlineData(OleDb)]
         public void ANullOperandMatchesNothing(string provider)
         {
-            Assert.AreEqual(0, Rows(provider, "SELECT ID FROM ADO.CAT WHERE A || B = 'cc'").Count);
+            Assert.Empty(Rows(provider, "SELECT ID FROM ADO.CAT WHERE A || B = 'cc'"));
         }
 
         #endregion
@@ -271,55 +274,55 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// this shape goes wrong. These are the nestings a validated plan produces, and the server is the
         /// authority on whether the parentheses came out right.
         /// </summary>
-        [TestMethod]
-        [DataRow(SqlClient)]
-        [DataRow(Odbc)]
-        [DataRow(OleDb)]
+        [Theory]
+        [InlineData(SqlClient)]
+        [InlineData(Odbc)]
+        [InlineData(OleDb)]
         public void ConcatenationNestsInConcatenation(string provider)
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "aabbaa" },
-                Rows(provider, "SELECT A || B || A FROM ADO.CAT WHERE ID = 1"));
+                Rows(provider, "SELECT A || B || A FROM ADO.CAT WHERE ID = 1"), strict: true);
         }
 
-        [TestMethod]
-        [DataRow(SqlClient)]
-        [DataRow(Odbc)]
-        [DataRow(OleDb)]
+        [Theory]
+        [InlineData(SqlClient)]
+        [InlineData(Odbc)]
+        [InlineData(OleDb)]
         public void ConcatenationNestsToTheRight(string provider)
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "aabbaa" },
-                Rows(provider, "SELECT A || (B || A) FROM ADO.CAT WHERE ID = 1"));
+                Rows(provider, "SELECT A || (B || A) FROM ADO.CAT WHERE ID = 1"), strict: true);
         }
 
         /// <summary>
         /// Arithmetic reaches a string only through a cast, which writes its own parentheses — and the cast
         /// is the one thing on either side of the operator whose rendering this project already corrects.
         /// </summary>
-        [TestMethod]
-        [DataRow(SqlClient)]
-        [DataRow(Odbc)]
-        [DataRow(OleDb)]
+        [Theory]
+        [InlineData(SqlClient)]
+        [InlineData(Odbc)]
+        [InlineData(OleDb)]
         public void ConcatenationAgainstArithmetic(string provider)
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "aa2" },
-                Rows(provider, "SELECT A || CAST(ID + 1 AS VARCHAR(4)) FROM ADO.CAT WHERE ID = 1"));
+                Rows(provider, "SELECT A || CAST(ID + 1 AS VARCHAR(4)) FROM ADO.CAT WHERE ID = 1"), strict: true);
         }
 
         /// <summary>
         /// A comparison binds looser than either spelling, and a conjunction looser still.
         /// </summary>
-        [TestMethod]
-        [DataRow(SqlClient)]
-        [DataRow(Odbc)]
-        [DataRow(OleDb)]
+        [Theory]
+        [InlineData(SqlClient)]
+        [InlineData(Odbc)]
+        [InlineData(OleDb)]
         public void ConcatenationInsideAConjunction(string provider)
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "3" },
-                Rows(provider, "SELECT ID FROM ADO.CAT WHERE A || B > 'aabb' AND ID > 1"));
+                Rows(provider, "SELECT ID FROM ADO.CAT WHERE A || B > 'aabb' AND ID > 1"), strict: true);
         }
 
         #endregion
@@ -331,18 +334,18 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// rather than by Calcite: the statement the adapter generated carries the operator T-SQL has, and
         /// no longer the one it does not.
         /// </summary>
-        [TestMethod]
-        [DataRow(SqlClient)]
-        [DataRow(Odbc)]
-        [DataRow(OleDb)]
+        [Theory]
+        [InlineData(SqlClient)]
+        [InlineData(Odbc)]
+        [InlineData(OleDb)]
         public void TheOperatorIsPushedDownAsPlus(string provider)
         {
             var answer = Run(provider, "SELECT A || B FROM ADO.CAT WHERE ID = 1");
             var generated = string.Join("\n", answer.Statements);
 
-            Assert.AreNotEqual(0, answer.Statements.Count, "nothing was pushed down at all");
-            Assert.IsFalse(generated.Contains("||"), $"the operator the server refuses was pushed down: {generated}");
-            Assert.IsTrue(answer.Statements.Any(s => s.Contains('+')), $"nothing concatenated on the server: {generated}");
+            answer.Statements.Count.Should().NotBe(0, "nothing was pushed down at all");
+            Assert.False(generated.Contains("||"), $"the operator the server refuses was pushed down: {generated}");
+            Assert.True(answer.Statements.Any(s => s.Contains('+')), $"nothing concatenated on the server: {generated}");
         }
 
         #endregion

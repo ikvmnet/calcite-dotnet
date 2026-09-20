@@ -1,13 +1,16 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+using FluentAssertions;
 
 using org.apache.calcite.jdbc;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.runtime;
 using org.apache.calcite.sql.type;
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using Xunit;
+using Xunit.Sdk;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -29,8 +32,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// no server to talk to.
     /// </para>
     /// </remarks>
-    [TestClass]
-    public class SqlServerQueryTests
+    public class SqlServerQueryTests : IDisposable
     {
 
         static SqlServerQueryTests()
@@ -45,11 +47,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         AdoSchema _schema = null!;
         JavaTypeFactoryImpl _types = null!;
 
-        [TestInitialize]
-        public void Setup()
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        public SqlServerQueryTests()
         {
             if (SqlServerFixture.IsAvailable == false)
-                Assert.Inconclusive("No SQL Server LocalDB instance is reachable on this machine.");
+                Assert.Skip("No SQL Server LocalDB instance is reachable on this machine.");
 
             _server = SqlServerFixture.Shared;
             _types = new JavaTypeFactoryImpl();
@@ -66,8 +70,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             root.add("ADO", _schema);
         }
 
-        [TestCleanup]
-        public void Cleanup()
+        /// <inheritdoc />
+        public void Dispose()
         {
             _connection?.close();
         }
@@ -106,7 +110,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         string Scalar(string sql)
         {
             var rows = Rows(sql);
-            Assert.AreEqual(1, rows.Count, $"expected one row from: {sql}");
+            rows.Count.Should().Be(1, $"expected one row from: {sql}");
             return rows[0];
         }
 
@@ -118,7 +122,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         org.apache.calcite.schema.Table Table(string tableName)
         {
             return (org.apache.calcite.schema.Table?)_schema.tables().get(tableName)
-                ?? throw new AssertFailedException($"no table {tableName}; found {string.Join(", ", TableNames())}");
+                ?? throw new XunitException($"no table {tableName}; found {string.Join(", ", TableNames())}");
         }
 
         /// <summary>
@@ -161,7 +165,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         string TypeOf(string tableName, string columnName)
         {
             if (Fields(tableName).TryGetValue(columnName, out var type) == false)
-                throw new AssertFailedException($"no column {columnName} on {tableName}");
+                throw new XunitException($"no column {columnName} on {tableName}");
 
             return type.getSqlTypeName().name();
         }
@@ -172,54 +176,54 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// The query from the report, verbatim in shape: three columns, one of them the <c>INT</c> whose
         /// <c>tinyint</c> precision in the information schema was read as an <c>int</c> and threw.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ScanningATableWithAnIntegerColumnReturnsItsRows()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Widget|Acme|3", "Gadget|Globex|10", "Doohickey|Initech|1" },
-                Rows("SELECT * FROM ADO.SUPPLIERS"));
+                Rows("SELECT * FROM ADO.SUPPLIERS"), strict: true);
         }
 
         /// <summary>
         /// Projecting the two <c>VARCHAR</c> columns failed the same way, because the row type is derived
         /// from every column of the table whatever the query asks for.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ProjectingOnlyTheCharacterColumnsAlsoWorks()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Widget|Acme", "Gadget|Globex", "Doohickey|Initech" },
-                Rows("SELECT PRODUCT, SUPPLIER FROM ADO.SUPPLIERS"));
+                Rows("SELECT PRODUCT, SUPPLIER FROM ADO.SUPPLIERS"), strict: true);
         }
 
         #endregion
 
         #region Discovery
 
-        [TestMethod]
+        [Fact]
         public void ASqlServerConnectionSelectsTheSqlServerMetadata()
         {
             var metadata = Metadata.AdoDatabaseMetadataFactoryImpl.Instance.Create(_server.DataSource);
-            Assert.AreEqual("SqlServerDatabaseMetadata", metadata.GetType().Name);
+            Assert.Equal("SqlServerDatabaseMetadata", metadata.GetType().Name);
         }
 
-        [TestMethod]
+        [Fact]
         public void TheSchemaFindsTheTables()
         {
             var names = TableNames();
 
-            CollectionAssert.Contains(names, "SUPPLIERS");
-            CollectionAssert.Contains(names, "EMPS");
-            CollectionAssert.Contains(names, "DEPTS");
+            Assert.Contains("SUPPLIERS", names);
+            Assert.Contains("EMPS", names);
+            Assert.Contains("DEPTS", names);
         }
 
-        [TestMethod]
+        [Fact]
         public void NullabilityIsCarriedOntoTheType()
         {
             var fields = Fields("EMPS");
 
-            Assert.IsFalse(fields["EMPNO"].isNullable(), "EMPNO is declared NOT NULL");
-            Assert.IsTrue(fields["DEPTNO"].isNullable(), "DEPTNO is declared NULL");
+            Assert.False(fields["EMPNO"].isNullable(), "EMPNO is declared NOT NULL");
+            Assert.True(fields["DEPTNO"].isNullable(), "DEPTNO is declared NULL");
         }
 
         #endregion
@@ -230,74 +234,74 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// Every column of the fixture's wide table has to reach a Calcite type: a name the mapping does not
         /// know throws, and takes the whole table with it.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void EveryColumnTypeIsMapped()
         {
-            Assert.AreEqual(26, Fields("TYPES").Count);
+            Assert.Equal(26, Fields("TYPES").Count);
         }
 
-        [TestMethod]
-        [DataRow("C_BIT", nameof(SqlTypeName.BOOLEAN))]
+        [Theory]
+        [InlineData("C_BIT", nameof(SqlTypeName.BOOLEAN))]
         // the server's tinyint is unsigned 0..255 and Calcite's TINYINT is signed, so UTINYINT is what holds it
-        [DataRow("C_TINYINT", nameof(SqlTypeName.UTINYINT))]
-        [DataRow("C_SMALLINT", nameof(SqlTypeName.SMALLINT))]
-        [DataRow("C_BIGINT", nameof(SqlTypeName.BIGINT))]
-        [DataRow("C_DECIMAL", nameof(SqlTypeName.DECIMAL))]
-        [DataRow("C_NUMERIC", nameof(SqlTypeName.DECIMAL))]
-        [DataRow("C_MONEY", nameof(SqlTypeName.DECIMAL))]
-        [DataRow("C_SMALLMONEY", nameof(SqlTypeName.DECIMAL))]
-        [DataRow("C_FLOAT", nameof(SqlTypeName.DOUBLE))]
-        [DataRow("C_REAL", nameof(SqlTypeName.REAL))]
-        [DataRow("C_CHAR", nameof(SqlTypeName.CHAR))]
-        [DataRow("C_VARCHAR", nameof(SqlTypeName.VARCHAR))]
-        [DataRow("C_NCHAR", nameof(SqlTypeName.CHAR))]
-        [DataRow("C_NVARCHAR", nameof(SqlTypeName.VARCHAR))]
-        [DataRow("C_DATE", nameof(SqlTypeName.DATE))]
-        [DataRow("C_TIME", nameof(SqlTypeName.TIME))]
-        [DataRow("C_DATETIME", nameof(SqlTypeName.TIMESTAMP))]
-        [DataRow("C_SMALLDATETIME", nameof(SqlTypeName.TIMESTAMP))]
-        [DataRow("C_DATETIME2", nameof(SqlTypeName.TIMESTAMP))]
-        [DataRow("C_DATETIMEOFFSET", nameof(SqlTypeName.TIMESTAMP_TZ))]
-        [DataRow("C_BINARY", nameof(SqlTypeName.VARBINARY))]
-        [DataRow("C_VARBINARY", nameof(SqlTypeName.VARBINARY))]
-        [DataRow("C_GUID", nameof(SqlTypeName.UUID))]
-        [DataRow("C_XML", nameof(SqlTypeName.VARCHAR))]
+        [InlineData("C_TINYINT", nameof(SqlTypeName.UTINYINT))]
+        [InlineData("C_SMALLINT", nameof(SqlTypeName.SMALLINT))]
+        [InlineData("C_BIGINT", nameof(SqlTypeName.BIGINT))]
+        [InlineData("C_DECIMAL", nameof(SqlTypeName.DECIMAL))]
+        [InlineData("C_NUMERIC", nameof(SqlTypeName.DECIMAL))]
+        [InlineData("C_MONEY", nameof(SqlTypeName.DECIMAL))]
+        [InlineData("C_SMALLMONEY", nameof(SqlTypeName.DECIMAL))]
+        [InlineData("C_FLOAT", nameof(SqlTypeName.DOUBLE))]
+        [InlineData("C_REAL", nameof(SqlTypeName.REAL))]
+        [InlineData("C_CHAR", nameof(SqlTypeName.CHAR))]
+        [InlineData("C_VARCHAR", nameof(SqlTypeName.VARCHAR))]
+        [InlineData("C_NCHAR", nameof(SqlTypeName.CHAR))]
+        [InlineData("C_NVARCHAR", nameof(SqlTypeName.VARCHAR))]
+        [InlineData("C_DATE", nameof(SqlTypeName.DATE))]
+        [InlineData("C_TIME", nameof(SqlTypeName.TIME))]
+        [InlineData("C_DATETIME", nameof(SqlTypeName.TIMESTAMP))]
+        [InlineData("C_SMALLDATETIME", nameof(SqlTypeName.TIMESTAMP))]
+        [InlineData("C_DATETIME2", nameof(SqlTypeName.TIMESTAMP))]
+        [InlineData("C_DATETIMEOFFSET", nameof(SqlTypeName.TIMESTAMP_TZ))]
+        [InlineData("C_BINARY", nameof(SqlTypeName.VARBINARY))]
+        [InlineData("C_VARBINARY", nameof(SqlTypeName.VARBINARY))]
+        [InlineData("C_GUID", nameof(SqlTypeName.UUID))]
+        [InlineData("C_XML", nameof(SqlTypeName.VARCHAR))]
         public void AColumnGetsItsCalciteType(string columnName, string expected)
         {
-            Assert.AreEqual(expected, TypeOf("TYPES", columnName));
+            Assert.Equal(expected, TypeOf("TYPES", columnName));
         }
 
         /// <summary>
         /// Reading the wide table is a separate claim from typing it: the reader picks its accessor from the
         /// Calcite type, and a mapping that types a column plausibly can still refuse to read one.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void EveryColumnTypeCanBeRead()
         {
-            Assert.AreEqual(2, Rows("SELECT * FROM ADO.TYPES").Count);
+            Assert.Equal(2, Rows("SELECT * FROM ADO.TYPES").Count);
         }
 
-        [TestMethod]
+        [Fact]
         public void ANullOfEveryTypeComesBackNull()
         {
             var row = Scalar("SELECT * FROM ADO.TYPES WHERE ID = 2");
             var values = row.Split('|');
 
-            Assert.AreEqual("2", values[0]);
+            Assert.Equal("2", values[0]);
             for (int i = 1; i < values.Length; i++)
-                Assert.AreEqual("NULL", values[i], $"column {i} of the all-null row");
+                values[i].Should().Be("NULL", $"column {i} of the all-null row");
         }
 
-        [TestMethod]
+        [Fact]
         public void ADecimalKeepsItsScale()
         {
-            Assert.AreEqual("123456789.125", Scalar("SELECT C_DECIMAL FROM ADO.TYPES WHERE ID = 1"));
+            Assert.Equal("123456789.125", Scalar("SELECT C_DECIMAL FROM ADO.TYPES WHERE ID = 1"));
         }
 
-        [TestMethod]
+        [Fact]
         public void AVarcharMaxIsReadable()
         {
-            Assert.AreEqual("unbounded", Scalar("SELECT C_VARCHARMAX FROM ADO.TYPES WHERE ID = 1"));
+            Assert.Equal("unbounded", Scalar("SELECT C_VARCHARMAX FROM ADO.TYPES WHERE ID = 1"));
         }
 
         /// <summary>
@@ -307,17 +311,17 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// does the bare <c>java.util.UUID</c> the wrapper holds — and is a different value to everything
         /// that compares, joins or groups.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AUniqueIdentifierComesBackAsAUuid()
         {
             using var statement = _connection.createStatement();
             var results = statement.executeQuery("SELECT C_GUID FROM ADO.TYPES WHERE ID = 1");
 
-            Assert.IsTrue(results.next(), "expected one row");
+            Assert.True(results.next(), "expected one row");
             var value = results.getObject(1);
 
-            Assert.IsInstanceOfType<org.apache.calcite.util.UuidValue>(value);
-            Assert.AreEqual("3f2504e0-4f89-11d3-9a0c-0305e82c3301", value.ToString());
+            Assert.IsAssignableFrom<org.apache.calcite.util.UuidValue>(value);
+            Assert.Equal("3f2504e0-4f89-11d3-9a0c-0305e82c3301", value.ToString());
         }
 
         /// <summary>
@@ -328,7 +332,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// already typed <c>UUID</c> leaves nothing for the cast to do, so none reaches the wire. Stating a
         /// type the column already has is what a view does, and what the report's schema did.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void AUniqueIdentifierCastToUuidIsRead()
         {
             var generated = new GeneratedSql();
@@ -344,25 +348,25 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
                 handle.close();
             }
 
-            CollectionAssert.AreEqual(new[] { "3f2504e0-4f89-11d3-9a0c-0305e82c3301", "NULL" }, rows);
-            Assert.IsFalse(
+            Assert.Equal(new[] { "3f2504e0-4f89-11d3-9a0c-0305e82c3301", "NULL" }, rows);
+            Assert.False(
                 generated.Statements.Any(s => s.Contains("CAST", StringComparison.OrdinalIgnoreCase)),
                 string.Join("; ", generated.Statements));
         }
 
-        [TestMethod]
-        [DataRow("C_BIT", "true")]
-        [DataRow("C_TINYINT", "200")]
-        [DataRow("C_SMALLINT", "-300")]
-        [DataRow("C_BIGINT", "9000000000")]
-        [DataRow("C_FLOAT", "1.5")]
-        [DataRow("C_REAL", "2.5")]
-        [DataRow("C_CHAR", "abcd")]
-        [DataRow("C_NCHAR", "wxyz")]
-        [DataRow("C_NVARCHAR", "nvarchar")]
+        [Theory]
+        [InlineData("C_BIT", "true")]
+        [InlineData("C_TINYINT", "200")]
+        [InlineData("C_SMALLINT", "-300")]
+        [InlineData("C_BIGINT", "9000000000")]
+        [InlineData("C_FLOAT", "1.5")]
+        [InlineData("C_REAL", "2.5")]
+        [InlineData("C_CHAR", "abcd")]
+        [InlineData("C_NCHAR", "wxyz")]
+        [InlineData("C_NVARCHAR", "nvarchar")]
         public void AScalarValueComesBackAsWritten(string columnName, string expected)
         {
-            Assert.AreEqual(expected, Scalar($"SELECT {columnName} FROM ADO.TYPES WHERE ID = 1"));
+            Assert.Equal(expected, Scalar($"SELECT {columnName} FROM ADO.TYPES WHERE ID = 1"));
         }
 
         #endregion
@@ -374,40 +378,40 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// typed <c>UTINYINT</c>: the value 200 has to survive planning without wrapping to -56, and the
         /// dialect has to unparse the literal as something the server parses.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void AFilterOnATinyIntComparesUnsigned()
         {
-            Assert.AreEqual("1", Scalar("SELECT ID FROM ADO.TYPES WHERE C_TINYINT = 200"));
-            Assert.AreEqual("1", Scalar("SELECT ID FROM ADO.TYPES WHERE C_TINYINT > 100"));
-            Assert.AreEqual(0, Rows("SELECT ID FROM ADO.TYPES WHERE C_TINYINT < 0").Count);
+            Assert.Equal("1", Scalar("SELECT ID FROM ADO.TYPES WHERE C_TINYINT = 200"));
+            Assert.Equal("1", Scalar("SELECT ID FROM ADO.TYPES WHERE C_TINYINT > 100"));
+            Assert.Empty(Rows("SELECT ID FROM ADO.TYPES WHERE C_TINYINT < 0"));
         }
 
-        [TestMethod]
+        [Fact]
         public void AFilterIsApplied()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Gadget" },
-                Rows("SELECT PRODUCT FROM ADO.SUPPLIERS WHERE LEAD_DAYS > 5"));
+                Rows("SELECT PRODUCT FROM ADO.SUPPLIERS WHERE LEAD_DAYS > 5"), strict: true);
         }
 
-        [TestMethod]
+        [Fact]
         public void AnAggregateIsComputed()
         {
-            Assert.AreEqual("14", Scalar("SELECT SUM(LEAD_DAYS) FROM ADO.SUPPLIERS"));
+            Assert.Equal("14", Scalar("SELECT SUM(LEAD_DAYS) FROM ADO.SUPPLIERS"));
         }
 
-        [TestMethod]
+        [Fact]
         public void AJoinAcrossTwoTablesReturnsTheMatchedRows()
         {
-            CollectionAssert.AreEquivalent(
+            Assert.Equivalent(
                 new[] { "Alice|Sales", "Bob|Sales", "Carol|Engineering", "Dave|Engineering" },
-                Rows("SELECT E.NAME, D.DNAME FROM ADO.EMPS E JOIN ADO.DEPTS D ON E.DEPTNO = D.DEPTNO"));
+                Rows("SELECT E.NAME, D.DNAME FROM ADO.EMPS E JOIN ADO.DEPTS D ON E.DEPTNO = D.DEPTNO"), strict: true);
         }
 
-        [TestMethod]
+        [Fact]
         public void AnOrderByIsHonoured()
         {
-            CollectionAssert.AreEqual(
+            Assert.Equal(
                 new[] { "Doohickey", "Widget", "Gadget" },
                 Rows("SELECT PRODUCT FROM ADO.SUPPLIERS ORDER BY LEAD_DAYS"));
         }
@@ -428,10 +432,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// lower — that is the server's own conversion rather than the reader's <c>Guid.ToString</c>, and so
         /// is the evidence the cast was pushed down rather than computed here.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void AnUnboundedCastKeepsTheWholeValue()
         {
-            Assert.AreEqual(
+            Assert.Equal(
                 "3F2504E0-4F89-11D3-9A0C-0305E82C3301",
                 Scalar("SELECT CAST(C_GUID AS VARCHAR) FROM ADO.TYPES WHERE ID = 1"));
         }
@@ -451,16 +455,16 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// says nothing about the rendering. A parameter is how the other cast is come by without one being
         /// written for its own sake.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void AnUnboundedCastAroundAParameterMatches()
         {
             using var statement = _connection.prepareStatement("SELECT ID FROM ADO.TYPES WHERE CAST(C_GUID AS VARCHAR) = CAST(? AS VARCHAR)");
             statement.setString(1, "3f2504e0-4f89-11d3-9a0c-0305e82c3301");
 
             var results = statement.executeQuery();
-            Assert.IsTrue(results.next(), "the row the parameter names");
-            Assert.AreEqual(1, results.getInt(1));
-            Assert.IsFalse(results.next(), "and only that one");
+            Assert.True(results.next(), "the row the parameter names");
+            Assert.Equal(1, results.getInt(1));
+            Assert.False(results.next(), "and only that one");
         }
 
         #endregion
@@ -478,16 +482,16 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <see cref="AUniqueIdentifierComesBackAsItsText"/> holding that, and a literal comparison carries
         /// no parameter at all. Only a bound value goes through the conversion this pins.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void AUuidParameterIsBoundAsAGuid()
         {
             using var statement = _connection.prepareStatement("SELECT ID FROM ADO.TYPES WHERE C_GUID = ?");
             statement.setObject(1, java.util.UUID.fromString("3f2504e0-4f89-11d3-9a0c-0305e82c3301"));
 
             var results = statement.executeQuery();
-            Assert.IsTrue(results.next(), "the row the parameter names");
-            Assert.AreEqual(1, results.getInt(1));
-            Assert.IsFalse(results.next(), "and only that one");
+            Assert.True(results.next(), "the row the parameter names");
+            Assert.Equal(1, results.getInt(1));
+            Assert.False(results.next(), "and only that one");
         }
 
         /// <summary>
@@ -503,16 +507,16 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// any magnitude. Nothing about the value is out of range for a <see cref="decimal"/> — it is only
         /// how the intermediate text is spelt, which is why no existing decimal test saw it.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ADecimalParameterBelowTheExponentThresholdIsBound()
         {
             using var statement = _connection.prepareStatement("SELECT ID FROM ADO.TYPES WHERE C_DECIMAL > ?");
             statement.setBigDecimal(1, new java.math.BigDecimal("0.0000001"));
 
             var results = statement.executeQuery();
-            Assert.IsTrue(results.next(), "the one row with a decimal in it");
-            Assert.AreEqual(1, results.getInt(1));
-            Assert.IsFalse(results.next(), "and only that one");
+            Assert.True(results.next(), "the one row with a decimal in it");
+            Assert.Equal(1, results.getInt(1));
+            Assert.False(results.next(), "and only that one");
         }
 
         #endregion

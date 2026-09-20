@@ -4,9 +4,9 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.runtime;
+
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -26,7 +26,6 @@ namespace Apache.Calcite.Geography.Tests
     /// what every test here turns on. It is not a small effect: across ten degrees of longitude at 60°N the
     /// bow is about seven kilometres.</para>
     /// </remarks>
-    [TestClass]
     public class GeographyDensifyTests
     {
 
@@ -38,7 +37,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The inserted vertices lie north of the parallel the two ends sit on; Calcite's lie on it.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldFollowTheGeodesicRatherThanTheParallel()
         {
             var line = Wkt("LINESTRING(0 60, 10 60)");
@@ -57,7 +56,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// No edge is left longer than the distance asked for.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldLeaveNoEdgeLongerThanAsked()
         {
             var densified = GeographyFunctions.Densify(Wkt("LINESTRING(0 0, 10 0)"), java.lang.Double.valueOf(100000.0))!;
@@ -75,7 +74,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// An edge already short enough is left alone, and so is a point.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldLeaveWhatIsAlreadyShortEnough()
         {
             var line = Wkt("LINESTRING(0 0, 0.001 0)");
@@ -87,7 +86,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A polygon's rings are walked too, and the result is still a polygon.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldWalkEveryRingOfAPolygon()
         {
             var polygon = Wkt("POLYGON((0 50, 10 50, 10 55, 0 55, 0 50))");
@@ -100,7 +99,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A point projected onto a line lands on the geodesic, not on the parallel.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldProjectOntoTheGeodesic()
         {
             var line = Wkt("LINESTRING(-10 60, 10 60)");
@@ -113,7 +112,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// Nothing of more than one dimension is projected onto, as Calcite declines the same way.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldDeclineToProjectOntoAnArea()
         {
             var polygon = Wkt("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))");
@@ -122,7 +121,7 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.ProjectPoint(Wkt("POINT(5 5)"), polygon).Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerNullForANullArgument()
         {
             GeographyFunctions.Densify(null, java.lang.Double.valueOf(1)).Should().BeNull();
@@ -131,7 +130,7 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.ProjectPoint(Wkt("POINT(0 0)"), null).Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldStampBothWithWgs84()
         {
             GeographyFunctions.Densify(Wkt("LINESTRING(0 0, 10 0)"), java.lang.Double.valueOf(100000.0))!
@@ -141,7 +140,7 @@ namespace Apache.Calcite.Geography.Tests
                 .getSRID().Should().Be(GeographyFunctions.Wgs84);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldRunEachAsAnOperator()
         {
             GeographyExecutionTests.Run("SELECT CLR_ST_GEOG_NUMPOINTS(CLR_ST_GEOG_DENSIFY(CLR_ST_GEOG_GEOMFROMTEXT('LINESTRING(0 0, 10 0)'), 100000.0))")[0][0]

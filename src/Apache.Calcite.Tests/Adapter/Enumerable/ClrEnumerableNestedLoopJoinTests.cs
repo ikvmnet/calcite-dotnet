@@ -6,7 +6,7 @@ using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Xunit;
 
 using JoinType = org.apache.calcite.linq4j.JoinType;
 
@@ -27,7 +27,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// query returns either. So these are direct tests of the method, and each one is written against
     /// Calcite's body rather than against what SQL would want.
     /// </remarks>
-    [TestClass]
     public class ClrEnumerableNestedLoopJoinTests
     {
 
@@ -80,7 +79,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// plan, because a semi join's selector ignores its right parameter, and a different answer for
         /// <c>MergeJoin</c>, which calls this method for a semi merge join with a residual.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldPassTheMatchedRightRowToASemiJoin() =>
             Join(["a", "b", "c"], Rows("a1", "a2", "b1"), JoinType.SEMI)
                 .Should().Equal("a/a1", "b/b1");
@@ -88,27 +87,27 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// An anti join passes no right row, because it never returns one that matched.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldPassNoRightRowToAnAntiJoin() =>
             Join(["a", "b", "c"], Rows("a1", "a2", "b1"), JoinType.ANTI)
                 .Should().Equal("c/-");
 
-        [TestMethod]
+        [Fact]
         public void ShouldPairEveryMatchOfAnInnerJoin() =>
             Join(["a", "b", "c"], Rows("a1", "a2", "b1"), JoinType.INNER)
                 .Should().Equal("a/a1", "a/a2", "b/b1");
 
-        [TestMethod]
+        [Fact]
         public void ShouldKeepTheUnmatchedLeftRowOfALeftJoin() =>
             Join(["a", "b", "c"], Rows("a1", "a2", "b1"), JoinType.LEFT)
                 .Should().Equal("a/a1", "a/a2", "b/b1", "c/-");
 
-        [TestMethod]
+        [Fact]
         public void ShouldKeepTheUnmatchedRightRowOfARightJoin() =>
             Join(["a", "b"], Rows("a1", "c1", "b1"), JoinType.RIGHT)
                 .Should().Equal("a/a1", "b/b1", "-/c1");
 
-        [TestMethod]
+        [Fact]
         public void ShouldKeepBothUnmatchedSidesOfAFullJoin() =>
             Join(["a", "b", "d"], Rows("a1", "c1", "b1"), JoinType.FULL)
                 .Should().Equal("a/a1", "b/b1", "d/-", "-/c1");
@@ -124,7 +123,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// unmatched-left branch names only LEFT and ANTI. So a match returns nothing and a miss returns
         /// nothing, and the join is empty. It is not an inner join.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldReturnNothingForAJoinTypeTheSwitchDoesNotName()
         {
             Join(["a", "b"], Rows("a1", "b1"), JoinType.ASOF).Should().BeEmpty();
@@ -141,7 +140,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <c>nestedLoopJoinOptimized</c> calls <c>inner.enumerator()</c> in state 0, which it reaches once
         /// per outer row, and never reads the inner into a list. <c>leftMarkJoinInternal</c> does the same.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldEnumerateTheInnerForEveryOuterRowOfAnInnerJoin()
         {
             var inner = new Counting<Row>(Rows("x1", "y1").ToList());
@@ -157,7 +156,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <c>nestedLoopJoinAsList</c> calls <c>inner.toList()</c>, and that asymmetry with the streaming
         /// body is Calcite's own: it needs the right rows a second time, to emit the ones nothing matched.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldEnumerateTheInnerOnceForARightJoin()
         {
             var inner = new Counting<Row>(Rows("x1", "y1").ToList());
@@ -175,7 +174,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <c>nestedLoopJoinAsList</c> builds the whole result and hands back
         /// <c>Linq4j.asEnumerable(result)</c>, so the work is done before the caller has the sequence.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldRunARightJoinWhenItIsCalled()
         {
             var outer = new Counting<string>(["a", "b"]);
@@ -188,7 +187,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// An inner join runs when its result is enumerated, and not before.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldNotRunAnInnerJoinUntilItIsEnumerated()
         {
             var outer = new Counting<string>(["a", "b"]);
@@ -209,7 +208,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// it twice — the right side has two rows and neither matched — and Calcite does not give that. This
         /// is a port, so the answer here is Calcite's.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldEmitOneRowForTwoUnmatchedRightRowsThatAreTheSameObject()
         {
             var shared = new Row("x1");
@@ -225,7 +224,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// The set keys on the reference and not on the value, so equality of the rows is not what collapses
         /// them; only being the same object is.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldEmitBothUnmatchedRightRowsThatAreEqualButNotTheSameObject() =>
             Join(["a"], [new Row("x1"), new Row("x1")], JoinType.RIGHT)
                 .Should().Equal("-/x1", "-/x1");
@@ -237,7 +236,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// The set holds one entry for the object, so the single <c>remove</c> a match performs leaves
         /// nothing behind for the second occurrence.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldTreatBothOccurrencesOfOneObjectAsMatched()
         {
             var shared = new Row("a1");

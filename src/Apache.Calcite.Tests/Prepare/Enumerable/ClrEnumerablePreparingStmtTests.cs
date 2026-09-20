@@ -6,11 +6,11 @@ using Apache.Calcite.Extensions.Prepare.Tests;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.jdbc;
 using org.apache.calcite.plan;
+
+using Xunit;
 
 namespace Apache.Calcite.Extensions.Prepare.Enumerable.Tests
 {
@@ -25,7 +25,6 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable.Tests
     /// <c>ClrEnumerablePreparingStmt</c> does the same, and this is the whole of that path — the reader alone
     /// would find nothing to read.
     /// </remarks>
-    [TestClass]
     public class ClrEnumerablePreparingStmtTests
     {
 
@@ -76,7 +75,7 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable.Tests
         /// <c>FetchOffsetRoundingPolicy.NONE</c> hands the value on as it is, and the operator counts whole
         /// rows against it, so 2.5 takes three.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldTakeTheRowAFractionalFetchReachesInto()
         {
             Run(Sql, null).Should().HaveCount(3);
@@ -85,7 +84,7 @@ namespace Apache.Calcite.Extensions.Prepare.Enumerable.Tests
         /// <summary>
         /// A caller's policy decides what a fraction means.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldRoundAFractionalFetchTheWayTheCallerAsks()
         {
             Run(Sql, new Floor()).Should().HaveCount(2);

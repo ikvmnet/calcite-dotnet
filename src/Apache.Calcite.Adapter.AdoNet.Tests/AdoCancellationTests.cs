@@ -12,7 +12,7 @@ using Apache.Calcite.Data;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Xunit;
 
 namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
@@ -22,7 +22,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// <c>DbDataReader.ReadAsync</c> is called with, and says what a token given later reaches instead.
     /// </summary>
     /// <remarks>
-    /// <c>ClrAsyncEnumerablePlanCancellationTests</c> establishes that a compiled plan carries a token to a
+    /// <c>ClrEnumerableConventionCancellationTests</c> establishes that a compiled plan carries a token to a
     /// leaf that suspends, over a table written for the purpose. This asks the same of the whole stack a
     /// consumer actually uses — <c>CalciteCommand.ExecuteReaderAsync</c>, <c>CalciteSession</c>, the
     /// implementor, <c>AdoToClrEnumerableConverter</c>, <c>AdoSequences.ReadAsync</c> — ending at a real
@@ -36,20 +36,21 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// handed to the one the caller created settles which token arrived; asserting only that a cancelled
     /// read throws would pass just as well if the throw came from the reader above the leaf.</para>
     /// </remarks>
-    [TestClass]
-    public class AdoCancellationTests
+    public class AdoCancellationTests : IDisposable
     {
 
         SqliteFixture _sqlite = null!;
 
-        [TestInitialize]
-        public void Setup()
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        public AdoCancellationTests()
         {
             _sqlite = new SqliteFixture();
         }
 
-        [TestCleanup]
-        public void Cleanup()
+        /// <inheritdoc />
+        public void Dispose()
         {
             _sqlite?.Dispose();
         }
@@ -80,7 +81,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// would fail on that and say nothing about whether cancelling one cancels the other, which is the
         /// property being asked for.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldCarryExecuteReaderAsyncsTokenToTheProvidersReader()
         {
             var source = new RecordingAdoDataSource(_sqlite.DataSource);
@@ -115,7 +116,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// sends it synchronously, an acquisition being unable to await, so a token cancelled before the
         /// first read would be observed by the row loop and prove nothing about the leaf.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldStopTheProvidersReaderWhenTheCallerCancels()
         {
             var source = new RecordingAdoDataSource(_sqlite.DataSource);
@@ -133,7 +134,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
             cancellation.Cancel();
 
-            await Assert.ThrowsAsync<OperationCanceledException>(async () => await reader.ReadAsync(cancellation.Token));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await reader.ReadAsync(cancellation.Token));
 
             source.Reads.Should().Be(before, "the provider was not asked for another row");
         }
@@ -155,7 +156,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <see cref="CancellationToken.None"/> and nothing given to <c>ReadAsync</c> could reach it: the
         /// read stopped between rows and left the provider waiting.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldCarryAPerReadTokenToTheProvider()
         {
             var source = new RecordingAdoDataSource(_sqlite.DataSource);
@@ -174,7 +175,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
             cancellation.Cancel();
 
-            await Assert.ThrowsAsync<OperationCanceledException>(async () => await reader.ReadAsync(cancellation.Token));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await reader.ReadAsync(cancellation.Token));
         }
 
         /// <summary>
@@ -191,7 +192,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// reaches it by cancelling that rather than by replacing it. <c>MoveNextAsync</c> takes no token,
         /// so there is no replacing it.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldTakeADifferentTokenOnEveryRead()
         {
             var source = new RecordingAdoDataSource(_sqlite.DataSource);
@@ -234,7 +235,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// kill a reader it is still using. Without the scope the first completed read would arm a
         /// cancellation that fires whenever that caller next tidies up.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldSurviveATokenCancelledAfterItsRead()
         {
             var source = new RecordingAdoDataSource(_sqlite.DataSource);
@@ -267,7 +268,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// declined — the statement goes with it, exactly as it would had the token died a moment into the
         /// call instead of a moment before it. Checking first would make those two cases differ by a race.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldCancelTheStatementOnAnAlreadyCancelledReadToken()
         {
             var source = new RecordingAdoDataSource(_sqlite.DataSource);
@@ -284,7 +285,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             using var dead = new CancellationTokenSource();
             dead.Cancel();
 
-            await Assert.ThrowsAsync<OperationCanceledException>(async () => await reader.ReadAsync(dead.Token));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await reader.ReadAsync(dead.Token));
 
             source.ReadTokens.Should().AllSatisfy(t => t.IsCancellationRequested.Should().BeTrue("the statement was cancelled with it"));
         }
@@ -299,7 +300,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// already given up still opened a connection and ran a query, and only learned about it when it
         /// read.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public async Task ShouldRefuseToExecuteOnACancelledToken()
         {
             var source = new RecordingAdoDataSource(_sqlite.DataSource);
@@ -311,7 +312,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             using var cmd = connection.CreateCommand();
             cmd.CommandText = "SELECT empno, name FROM ADO.emps ORDER BY empno";
 
-            await Assert.ThrowsAsync<OperationCanceledException>(async () => await cmd.ExecuteReaderAsync(cancellation.Token));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await cmd.ExecuteReaderAsync(cancellation.Token));
 
             source.Opened.Should().Be(0, "no connection was opened to the provider");
         }

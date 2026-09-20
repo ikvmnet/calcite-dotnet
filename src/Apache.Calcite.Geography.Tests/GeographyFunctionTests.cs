@@ -4,7 +4,7 @@ using Apache.Calcite.Geography.Runtime;
 
 using FluentAssertions;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Xunit;
 
 using Geometry = org.locationtech.jts.geom.Geometry;
 
@@ -20,7 +20,6 @@ namespace Apache.Calcite.Geography.Tests
     /// the disagreement is the reason this package exists, so a test that only pinned our number would not
     /// say anything.
     /// </remarks>
-    [TestClass]
     public class GeographyFunctionTests
     {
 
@@ -49,7 +48,7 @@ namespace Apache.Calcite.Geography.Tests
             return GeographyFunctions.FromWkt(wkt) ?? throw new InvalidOperationException($"'{wkt}' did not parse.");
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldReadWkt()
         {
             var geography = Wkt("POINT(1 2)");
@@ -64,7 +63,7 @@ namespace Apache.Calcite.Geography.Tests
         /// The SRID a caller may name is the only one a geography can be in, and any other is refused rather
         /// than ignored.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldReadWktWithAnSrid()
         {
             var geography = GeographyFunctions.FromWkt("POINT(1 2)", java.lang.Integer.valueOf(GeographyFunctions.Wgs84));
@@ -79,7 +78,7 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.FromWkt("POINT(1 2)", null).Should().BeNull();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldReadGeoJson()
         {
             var geography = GeographyFunctions.FromGeoJson("{\"type\":\"Point\",\"coordinates\":[1,2]}");
@@ -93,7 +92,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The crossings are re-typings and nothing else happens at run time.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldCrossWithoutTouchingTheValue()
         {
             var geography = Wkt("POINT(1 2)");
@@ -105,7 +104,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A degree of longitude on the equator is a degree of arc, and the answer is in metres.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldMeasureADegreeOfArcInMetres()
         {
             var distance = GeographyFunctions.Distance(Wkt("POINT(0 0)"), Wkt("POINT(1 0)"));
@@ -123,7 +122,7 @@ namespace Apache.Calcite.Geography.Tests
         /// than that at fifty degrees north, while the planar answer is one in both places. No conversion of
         /// the result recovers the other, and no transformation of the inputs does either.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldDisagreeWithThePlanarDistanceByMoreThanAScaleFactor()
         {
             var equator = GeographyFunctions.Distance(Wkt("POINT(0 0)"), Wkt("POINT(1 0)"))!.doubleValue();
@@ -139,7 +138,7 @@ namespace Apache.Calcite.Geography.Tests
             (equator / north).Should().NotBeApproximately(1 / Math.Cos(50 * Math.PI / 180), 1e-4);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldMeasureZeroBetweenIntersectingGeographies()
         {
             GeographyFunctions.Distance(Wkt("POINT(5 5)"), Wkt("POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))"))!.doubleValue().Should().Be(0);
@@ -152,7 +151,7 @@ namespace Apache.Calcite.Geography.Tests
         /// A meridian is a great circle, so the arc from the point to it is
         /// <c>asin(sin(1°) · cos(5°))</c> exactly.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldMeasureToTheNearestEdgeOfAPolygon()
         {
             var distance = GeographyFunctions.Distance(Wkt("POINT(11 5)"), Wkt("POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))"));
@@ -170,7 +169,7 @@ namespace Apache.Calcite.Geography.Tests
         /// itself, so only a distance or an intersection nearest that one edge tells the two apart. Without
         /// the closing edge this answers the distance to a corner instead, some five times larger.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldMeasureToTheEdgeThatClosesARing()
         {
             var distance = GeographyFunctions.Distance(Wkt("POINT(-1 5)"), Wkt("POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))"));
@@ -178,7 +177,7 @@ namespace Apache.Calcite.Geography.Tests
             distance!.doubleValue().Should().BeApproximately(EdgeAtFiveDegrees, 0.5);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerDWithinAgainstTheDistance()
         {
             var a = Wkt("POINT(0 0)");
@@ -188,7 +187,7 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.DWithin(a, b, java.lang.Double.valueOf(Degree - 1))!.booleanValue().Should().BeFalse();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerWithinAgainstAPolygon()
         {
             var polygon = Wkt("POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))");
@@ -199,7 +198,7 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.Within(polygon, Wkt("POINT(5 5)"))!.booleanValue().Should().BeFalse();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerIntersects()
         {
             var polygon = Wkt("POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))");
@@ -221,7 +220,7 @@ namespace Apache.Calcite.Geography.Tests
         /// a quarter minutes at the midpoint. A point between the two is inside one polygon and outside the
         /// other — not a different distance, a different answer.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldFollowAGreatCircleEdgeWhereCalciteFollowsAParallel()
         {
             var polygon = Wkt("POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))");
@@ -241,7 +240,7 @@ namespace Apache.Calcite.Geography.Tests
         /// nearer half of that: that this convention is on the right side of the seam at all, and that the
         /// planar reading is not merely a different number but a different journey.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldMeasureAcrossTheAntimeridian()
         {
             var west = Wkt("POINT(179.9 0)");
@@ -254,7 +253,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// The shortest way between two places on opposite meridians near a pole is over the pole.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldMeasureOverThePole()
         {
             var here = Wkt("POINT(0 89.9)");
@@ -270,7 +269,7 @@ namespace Apache.Calcite.Geography.Tests
         /// The pole has a longitude in the coordinates and no longitude on the Earth, so every spelling of it
         /// is the same place.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldTreatEverySpellingOfThePoleAsOnePlace()
         {
             var pole = Wkt("POINT(0 90)");
@@ -292,7 +291,7 @@ namespace Apache.Calcite.Geography.Tests
         /// no tolerance and no reprojection that reconciles them. This is why the two readings need types
         /// that cannot be confused.
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldReadAPolygonAcrossTheAntimeridianInsideOutFromCalcite()
         {
             var box = Wkt("POLYGON((179 -1, -179 -1, -179 1, 179 1, 179 -1))");
@@ -321,7 +320,7 @@ namespace Apache.Calcite.Geography.Tests
         ///
         /// <para>Calcite answers one, which is the box measured in degrees.</para>
         /// </remarks>
-        [TestMethod]
+        [Fact]
         public void ShouldMeasureAreaInSquareMetres()
         {
             var box = Wkt("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))");
@@ -335,7 +334,7 @@ namespace Apache.Calcite.Geography.Tests
             org.apache.calcite.runtime.SpatialTypeFunctions.ST_Area(box)!.doubleValue().Should().BeApproximately(1, 1e-9);
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldMeasureLengthAndPerimeterInMetres()
         {
             var line = Wkt("LINESTRING(0 0, 1 0)");
@@ -357,7 +356,7 @@ namespace Apache.Calcite.Geography.Tests
         /// Two boxes either side of the antimeridian have bounding boxes that meet, and the planar reading
         /// puts them at opposite ends of the world.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerEnvelopesIntersectAcrossTheAntimeridian()
         {
             var west = Wkt("POLYGON((179 -1, 180 -1, 180 1, 179 1, 179 -1))");
@@ -367,7 +366,7 @@ namespace Apache.Calcite.Geography.Tests
             org.apache.calcite.runtime.SpatialTypeFunctions.ST_EnvelopesIntersect(west, east).Should().BeFalse();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerIsValid()
         {
             GeographyFunctions.IsValid(Wkt("POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))"))!.booleanValue().Should().BeTrue();
@@ -378,7 +377,7 @@ namespace Apache.Calcite.Geography.Tests
         /// <summary>
         /// A coordinate that is not a place on the Earth. JTS has no opinion, because a plane has no edges.
         /// </summary>
-        [TestMethod]
+        [Fact]
         public void ShouldRefuseACoordinateThatIsNotOnTheEarth()
         {
             var polygon = Wkt("POLYGON((0 0, 400 0, 400 10, 0 10, 0 0))");
@@ -387,7 +386,7 @@ namespace Apache.Calcite.Geography.Tests
             org.apache.calcite.runtime.SpatialTypeFunctions.ST_IsValid(polygon).Should().BeTrue();
         }
 
-        [TestMethod]
+        [Fact]
         public void ShouldAnswerNullForANullArgument()
         {
             var geography = Wkt("POINT(0 0)");
