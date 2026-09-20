@@ -181,6 +181,27 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
+        /// And the refusal names the accessor that does answer, because the value is the thing asked for
+        /// and the message that says it cannot be converted reads as a defect on its own.
+        /// </summary>
+        /// <remarks>
+        /// <c>GetFieldValue</c> answers .NET readings and nothing else, so a caller naming the class the
+        /// value arrives in is asking the one accessor that will not hand it over. What is missing from the
+        /// refusal is not the reason but the name of the one that will.
+        /// </remarks>
+        [Fact]
+        public void Naming_the_java_class_should_name_the_accessor_that_answers()
+        {
+            using var c = Open();
+            using var r = Row(c, "SELECT 1");
+
+            var e = Assert.Throws<InvalidCastException>(() => r.GetFieldValue<java.lang.Integer>(0));
+
+            Assert.Contains("GetCalciteValue", e.Message);
+            Assert.Equal(java.lang.Integer.valueOf(1), r.GetCalciteValue(0));
+        }
+
+        /// <summary>
         /// And the one way that is left says what it is in its name.
         /// </summary>
         [Fact]
