@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 using Apache.Calcite.Adapter.AdoNet.Rel;
 

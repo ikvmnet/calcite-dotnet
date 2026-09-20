@@ -1,4 +1,4 @@
-﻿using org.apache.calcite.rex;
+using org.apache.calcite.rex;
 using org.apache.calcite.sql;
 
 namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert

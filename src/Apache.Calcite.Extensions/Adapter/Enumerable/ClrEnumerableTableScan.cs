@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq.Expressions;
 
 using Apache.Calcite.Extensions.Linq4j.Tree;

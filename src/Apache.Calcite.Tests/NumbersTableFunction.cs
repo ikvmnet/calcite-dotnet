@@ -1,10 +1,11 @@
+using Apache.Calcite.Extensions;
+
 using org.apache.calcite;
 using org.apache.calcite.linq4j;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.schema;
 using org.apache.calcite.schema.impl;
 using org.apache.calcite.sql.type;
-using Apache.Calcite.Extensions;
 
 namespace Apache.Calcite.Tests
 {

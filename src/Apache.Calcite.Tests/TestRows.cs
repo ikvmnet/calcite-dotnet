@@ -1,13 +1,13 @@
 using System.Collections.Generic;
 
+using Apache.Calcite.Extensions;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Interop;
+using Apache.Calcite.Extensions.Runtime;
+
 using org.apache.calcite;
 using org.apache.calcite.linq4j;
 using org.apache.calcite.runtime;
-using Apache.Calcite.Extensions;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
-
-using Apache.Calcite.Extensions.Runtime;
-using Apache.Calcite.Extensions.Interop;
 
 namespace Apache.Calcite.Tests
 {

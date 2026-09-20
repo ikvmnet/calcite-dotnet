@@ -1,4 +1,4 @@
-﻿using org.apache.calcite.rel;
+using org.apache.calcite.rel;
 
 namespace Apache.Calcite.Adapter.AdoNet.Rel
 {

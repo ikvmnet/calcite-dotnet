@@ -12,7 +12,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using org.apache.calcite.util;
 
-namespace Apache.Calcite.Tests.Interop
+namespace Apache.Calcite.Extensions.Interop.Tests
 {
 
     [TestClass]
@@ -181,7 +181,7 @@ namespace Apache.Calcite.Tests.Interop
         [TestMethod]
         public void ShouldRefuseAnInaccessibleMemberUntilMarkedAccessible()
         {
-            var c = ((Class)typeof(Runtime)).getDeclaredConstructor([]);
+            var c = ((Class)typeof(java.lang.Runtime)).getDeclaredConstructor([]);
 
             var act = () => JavaDelegates.FromMethod(typeof(Func<object>), c);
             act.Should().Throw<java.lang.IllegalAccessException>();
@@ -189,7 +189,7 @@ namespace Apache.Calcite.Tests.Interop
             c.setAccessible(true);
             var d = (Func<object>)JavaDelegates.FromMethod(typeof(Func<object>), c);
 
-            d().Should().BeOfType<Runtime>();
+            d().Should().BeOfType<java.lang.Runtime>();
         }
 
         [TestMethod]
