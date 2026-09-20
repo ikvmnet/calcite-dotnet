@@ -2646,6 +2646,56 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         public void ShouldAgreeOnJsonQueryReturningAnArray() =>
             Same("SELECT JSON_QUERY('{\"c\":[\"a\",\"b\",\"c\"]}', '$.c' RETURNING VARCHAR ARRAY) AS \"A\"");
 
+        /// <summary>
+        /// Both sides refuse an integral JSON number read through <c>RETURNING DOUBLE</c>.
+        /// </summary>
+        /// <remarks>
+        /// <c>RETURNING</c> gives the call a type; it does not give it a conversion.
+        /// <c>JsonFunctions.jsonValue</c> answers whatever Jackson parsed -- an <c>Integer</c> for
+        /// <c>0</c> and a <c>Double</c> for <c>-83.489548</c> -- and the only thing that reads the
+        /// declared type is <c>AbstractRexCallImplementor.genValueStatement</c>, which asks
+        /// <c>EnumUtils.convert</c> for <c>Object</c> to <c>Double</c>. Neither operand is a number
+        /// statically, so every numeric branch there is missed and the method ends at
+        /// <c>Expressions.convert_</c>: a bare Java cast. An <c>Integer</c> is not a <c>Double</c>, so
+        /// the row that holds one throws and the rows either side of it do not.
+        ///
+        /// <para>Nothing of this is this convention's -- Calcite's own
+        /// <c>JdbcTest.testJsonValueError</c> asserts the same cast failing over
+        /// <c>RETURNING INTEGER</c> and a string. A single literal fails the same way, so the two rows
+        /// are here to show that the one either side of it does not: what throws is the value read.</para>
+        /// </remarks>
+        [Fact]
+        public void ShouldAgreeOnRefusingJsonValueReturningDoubleOverAnIntegralNumber() =>
+            SameFailure("SELECT JSON_VALUE(\"V\", '$.c' RETURNING DOUBLE) AS \"A\" FROM (VALUES ('{\"c\":-83.489548}'), ('{\"c\":0}')) AS \"T\"(\"V\")", "Unable to cast object of type 'java.lang.Integer' to type 'java.lang.Double'");
+
+        /// <remarks>
+        /// The control for the test above: the same statement over a number JSON writes with a point
+        /// answers, because Jackson already made it a <c>Double</c> and the cast is the identity. It is
+        /// the value read rather than the statement that decides.
+        /// </remarks>
+        [Fact]
+        public void ShouldAgreeOnJsonValueReturningDoubleOverAFractionalNumber() =>
+            Same("SELECT JSON_VALUE('{\"c\":-83.489548}', '$.c' RETURNING DOUBLE) AS \"A\"");
+
+        /// <remarks>
+        /// And the mirror, so that the finding reads as the shape it is rather than as something about
+        /// DOUBLE: a fractional number through <c>RETURNING INTEGER</c> fails the same way round.
+        /// </remarks>
+        [Fact]
+        public void ShouldAgreeOnRefusingJsonValueReturningIntegerOverAFractionalNumber() =>
+            SameFailure("SELECT JSON_VALUE('{\"c\":0.5}', '$.c' RETURNING INTEGER) AS \"A\"", "Unable to cast object of type 'java.lang.Double' to type 'java.lang.Integer'");
+
+        /// <remarks>
+        /// What does convert is a <c>CAST</c>. Without <c>RETURNING</c> the call is typed
+        /// <c>VARCHAR(2000)</c>, so <c>EnumUtils.convert</c> takes its <c>toType == String.class</c>
+        /// branch and writes <c>x == null ? null : x.toString()</c>; the cast that follows is then
+        /// VARCHAR to DOUBLE, which is <c>SqlFunctions.toDouble</c> and a parse. Both JSON spellings of
+        /// a number survive that, which is the route a caller wanting a number out of a document has.
+        /// </remarks>
+        [Fact]
+        public void ShouldAgreeOnCastingJsonValueToADoubleWhicheverWayTheNumberIsWritten() =>
+            Same("SELECT CAST(JSON_VALUE(\"V\", '$.c') AS DOUBLE) AS \"A\" FROM (VALUES ('{\"c\":-83.489548}'), ('{\"c\":0}')) AS \"T\"(\"V\")");
+
     }
 
 }
