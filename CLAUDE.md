@@ -103,7 +103,7 @@ driver this one is modelled on*, has the reading. Not to be confused with
   |---|---|
   | 1.41 | `rel.core.AsofJoin`, `EnumerableAsofJoin`, `ENUMERABLE_ASOFJOIN_RULE` |
   | 1.42 | `EnumerableCombine`, `EnumerableConditionalCorrelate` and their rules, `EnumUtils.markJoinSelector` and the mark-join paths, `PhysType.generateNullAwareAccessor`, `JoinInfo.nullExclusionFlags` |
-  | 1.43 | `org.apache.calcite.rel.core.Asof`, `FetchOffsetRoundingPolicy`, `RexImplementorTable(s)`, `EnumerableTableModify`'s five private helpers (CALCITE-7510), `TopDownGeneralDecorrelator`, and `case UUID` in `JavaTypeFactoryImpl.getJavaClass` |
+  | 1.43 | `org.apache.calcite.rel.core.Asof`, `FetchOffsetRoundingPolicy`, `RexImplementorTable(s)`, `EnumerableTableModify`'s five private helpers (CALCITE-7510), `TopDownGeneralDecorrelator`, `case UUID` in `JavaTypeFactoryImpl.getJavaClass`, and — in the `20260916.115040` snapshot, CALCITE-7755 — `EnumerableIEJoin`, `ENUMERABLE_IE_JOIN_RULE`, `BuiltInMethod.IE_JOIN`, `EnumerableDefaults.ieJoin` and `IEJoinEnumerator` |
 
   **Maven mediates by nearest and Gradle by highest, and Calcite is built with Gradle.** So an artifact
   the closure reaches more than one way can resolve here at a version Calcite never runs. It has bitten

@@ -1463,6 +1463,102 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         [Fact]
         public void ShouldAgreeOnAJoinWithAnInequality() => Same("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"AMOUNT\" < b.\"AMOUNT\" ORDER BY a.\"ID\", b.\"ID\"");
 
+        // ------------------------------------------------------------------ EnumerableIEJoinTest
+        //
+        // A join whose condition is two cross-input inequalities, which CALCITE-7755 added. Every one names
+        // the node and takes Calcite's rule away, because registerDefaultRules registers it and the planner
+        // keeps whichever equal-cost node it saw first -- which is Calcite's, under a converter that carries
+        // both scans out of this convention with it.
+
+        static readonly RelOptRule[] TheirIeJoin = [EnumerableRules.ENUMERABLE_IE_JOIN_RULE];
+
+        [Fact]
+        public void ShouldAgreeOnAnIeJoin() =>
+            SameThrough("ClrEnumerableIEJoin", "SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"ID\" < b.\"ID\" AND a.\"AMOUNT\" > b.\"AMOUNT\" ORDER BY 1, 2",
+                remove: TheirIeJoin);
+
+        /// <summary>
+        /// The order of an IE join's rows is the order of its two sorts, so a query with no ORDER BY is the
+        /// one that says whether ours agrees with linq4j's.
+        /// </summary>
+        /// <remarks>
+        /// It does not reach the sorts' stability, which is the other thing an order depends on:
+        /// <c>SALES</c> has six rows, so this sorts twelve entries, and .NET's introsort insertion-sorts a
+        /// run of sixteen or fewer, which is stable. Measured -- an unstable sort leaves this green.
+        /// <c>ClrEnumerableDefaultsTests.ShouldHoldTheInputOrderOfEqualIeJoinKeys</c> is what holds that,
+        /// over enough entries to be past the threshold.
+        /// </remarks>
+        [Fact]
+        public void ShouldAgreeOnAnIeJoinsOwnOrder() =>
+            SameThrough("ClrEnumerableIEJoin", "SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"ID\" < b.\"ID\" AND a.\"AMOUNT\" > b.\"AMOUNT\"",
+                remove: TheirIeJoin);
+
+        // The strictness of each operator decides which way the entries of one key tie-break against each
+        // other, and so whether a pair of equal keys is in the answer at all. All four pairings.
+
+        [Fact]
+        public void ShouldAgreeOnAnIeJoinOfTwoNonStrictInequalities() =>
+            SameThrough("ClrEnumerableIEJoin", "SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"AMOUNT\" <= b.\"AMOUNT\" AND a.\"ID\" >= b.\"ID\" ORDER BY 1, 2",
+                remove: TheirIeJoin);
+
+        [Fact]
+        public void ShouldAgreeOnAnIeJoinOfAStrictAndANonStrictInequality() =>
+            SameThrough("ClrEnumerableIEJoin", "SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"AMOUNT\" < b.\"AMOUNT\" AND a.\"ID\" >= b.\"ID\" ORDER BY 1, 2",
+                remove: TheirIeJoin);
+
+        [Fact]
+        public void ShouldAgreeOnAnIeJoinOfANonStrictAndAStrictInequality() =>
+            SameThrough("ClrEnumerableIEJoin", "SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"AMOUNT\" <= b.\"AMOUNT\" AND a.\"ID\" > b.\"ID\" ORDER BY 1, 2",
+                remove: TheirIeJoin);
+
+        // Both descending, which sorts both orders the other way round.
+
+        [Fact]
+        public void ShouldAgreeOnAnIeJoinOfTwoDescendingInequalities() =>
+            SameThrough("ClrEnumerableIEJoin", "SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"ID\" > b.\"ID\" AND a.\"AMOUNT\" > b.\"AMOUNT\" ORDER BY 1, 2",
+                remove: TheirIeJoin);
+
+        /// <summary>
+        /// A condition written right-to-left is the same join, reversed by the rule.
+        /// </summary>
+        [Fact]
+        public void ShouldAgreeOnAnIeJoinWrittenRightToLeft() =>
+            SameThrough("ClrEnumerableIEJoin", "SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON b.\"ID\" > a.\"ID\" AND b.\"AMOUNT\" < a.\"AMOUNT\" ORDER BY 1, 2",
+                remove: TheirIeJoin);
+
+        /// <summary>
+        /// A row whose key is null matches nothing, on either side.
+        /// </summary>
+        /// <remarks>
+        /// <c>SALES</c> has one row with a null <c>AMOUNT</c>, and both keys here are that column, so that
+        /// row is dropped from both inputs before either sort.
+        /// </remarks>
+        [Fact]
+        public void ShouldAgreeOnAnIeJoinOverANullableKeyOnBothSides() =>
+            SameThrough("ClrEnumerableIEJoin", "SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"AMOUNT\" < b.\"AMOUNT\" AND a.\"AMOUNT\" > b.\"ID\" ORDER BY 1, 2",
+                remove: TheirIeJoin);
+
+        [Fact]
+        public void ShouldAgreeOnAnIeJoinOverACharacterKey() =>
+            SameThrough("ClrEnumerableIEJoin", "SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"LABEL\" < b.\"LABEL\" AND a.\"REGION\" >= b.\"REGION\" ORDER BY 1, 2",
+                remove: TheirIeJoin);
+
+        /// <summary>
+        /// The first two inequalities drive the join and the rest are a calc's predicate above it.
+        /// </summary>
+        [Fact]
+        public void ShouldAgreeOnAnIeJoinWithAResidualInequality() =>
+            SameThrough("ClrEnumerableIEJoin", "SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"ID\" < b.\"ID\" AND a.\"AMOUNT\" > b.\"AMOUNT\" AND a.\"LABEL\" < b.\"LABEL\" ORDER BY 1, 2",
+                remove: TheirIeJoin);
+
+        /// <summary>
+        /// Two inequalities that contradict one another still plan, and answer nothing.
+        /// </summary>
+        [Fact]
+        public void ShouldAgreeOnAnIeJoinThatMatchesNothing() =>
+            SameThrough("ClrEnumerableIEJoin", "SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"ID\" < b.\"ID\" AND a.\"ID\" > b.\"ID\" ORDER BY 1, 2",
+                remove: TheirIeJoin);
+
         [Fact]
         public void ShouldAgreeOnAnAsofJoin() =>
             Same("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a ASOF JOIN \"SALES\" b MATCH_CONDITION b.\"ID\" <= a.\"ID\" ON a.\"REGION\" = b.\"REGION\" ORDER BY a.\"ID\"");

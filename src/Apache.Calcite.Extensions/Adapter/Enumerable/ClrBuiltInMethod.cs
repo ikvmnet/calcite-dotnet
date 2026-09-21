@@ -132,6 +132,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         public static readonly MethodInfo AsofJoin = Of(nameof(ClrEnumerableDefaults.AsofJoin));
 
         /// <summary>
+        /// <see cref="ClrEnumerableDefaults.IeJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo IeJoin = Of(nameof(ClrEnumerableDefaults.IeJoin));
+
+        /// <summary>
         /// <see cref="ClrEnumerableDefaults.NestedLoopJoin"/>.
         /// </summary>
         public static readonly MethodInfo NestedLoopJoin = Of(nameof(ClrEnumerableDefaults.NestedLoopJoin));
@@ -434,6 +439,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <see cref="ClrEnumerableDefaults.MergeJoin"/>.
         /// </summary>
         public static readonly MethodInfo MergeJoinAsync = Of(nameof(ClrEnumerableDefaults.MergeJoinAsync));
+
+        /// <summary>
+        /// <see cref="ClrEnumerableDefaults.IeJoinAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo IeJoinAsync = Of(nameof(ClrEnumerableDefaults.IeJoinAsync));
 
         /// <summary>
         /// <see cref="ClrEnumerableDefaults.CorrelateBatchJoin"/>.
