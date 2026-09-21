@@ -133,6 +133,50 @@ The declarations implement `ImplementableFunction` and throw, rather than declin
 
 **These may be supplanted by upstream Calcite**, and the namespace is what makes that survivable. If Calcite ever ships full text operators of its own, ours do not collide with them, are not shadowed by them, and can be mapped onto them or deprecated deliberately. `ShouldFindNoFullTextOperatorInCalcite` is the watch for it: it is not a guard against breakage — with `CLR_` nothing can break — but the test that will fail the day the question is worth revisiting.
 
+## Simplifying a plan
+
+`FullTextRules` is a pass a host sequences in front of whatever program it runs.
+
+```csharp
+using Apache.Calcite.FullText.Rel.Rules;
+
+var config = Frameworks.newConfigBuilder()
+    .defaultSchema(schema)
+    .programs(Programs.sequence(FullTextRules.Program(), Programs.standard()))
+    .build();
+```
+
+| | |
+| --- | --- |
+| `CLR_FT_CONTAINS_ALL(x, k)` → `CLR_FT_CONTAINS(x, k)` | and the same for `CONTAINS_ANY`. One keyword means the same thing either way, which `CLR_FT_CONTAINS`'s own declaration says |
+| `CLR_FT_CONTAINS_ALL(x, 'a', 'b', 'a')` → `CLR_FT_CONTAINS_ALL(x, 'a', 'b')` | asking for every one of a list that names a keyword twice is asking for it once |
+| `CLR_FT_FUZZY(t, 0)` → `t` | the edit count is Levenshtein in every store that has one, and zero edits is an exact match in all of them |
+| `CLR_FT_WEIGHT(s, 1)` → `s` | which `CLR_FT_WEIGHT`'s own declaration says: a store with no weighting renders the inner score and declines only where the weight is not one |
+| `CLR_FT_CONTAINS(x, a) AND CLR_FT_CONTAINS(x, b)` → `CLR_FT_CONTAINS_ALL(x, a, b)` | and a disjunction into `CONTAINS_ANY`. That is the form the stores with an all-of or any-of have — Cosmos's `FullTextContainsAll`, PostgreSQL's `to_tsquery('a & b')`, SQL Server's `CONTAINS('a AND b')` — so it is one index lookup where the conjunction was two |
+
+**Every rewrite is an equality of values**, the merges included, and that is worth stating because it is not
+obvious. These operators are nullable so that a store can have nothing to say about a row a plan keeps — an
+outer join's unmatched side, a row outside the searched partition — and that is a property of the *row*
+rather than of the keyword. So every call over one searched expression is null on the same rows, and
+`CLR_FT_CONTAINS(x, a) AND CLR_FT_CONTAINS(x, b)` is null exactly where `CLR_FT_CONTAINS_ALL(x, a, b)` is.
+The merge needs no filter context to be sound, and only merges calls whose searched expression is the same.
+
+**A pass and not rules on a `VolcanoPlanner`.** `VolcanoCost.isLt` compares the row count and nothing else,
+so a filter whose condition was simplified is never *cheaper* than the same filter unsimplified and the
+planner keeps whichever it registered first. This is the same argument that keeps `Programs.calc` a hep
+pass, and it was measured against the sibling geography package before either was written this way.
+
+**`CLR_FT_PHRASE('steel')` is not unwrapped**, though a single-token phrase is the same search in every
+store surveyed. Whether that text is one token is the analyzer's answer and not this package's —
+`'red-bicycle'` is two tokens under some analyzers and one under others — and deciding it here is the
+in-process approximation the package exists to refuse. Nor is `CLR_FT_RRF` of one score: reciprocal rank
+fusion preserves an ordering and not a value.
+
+**Nothing declares these operators strict.** A `Strong.Policy.ANY` would let `RexSimplify` rewrite
+`CLR_FT_CONTAINS(BODY, 'a') IS NULL` into `BODY IS NULL`, which is a claim about the store — Cosmos answers
+false for a missing property and PostgreSQL answers null. The package cannot know which, so it says
+nothing. The sibling geography package does declare it, because there the bodies are its own.
+
 ## Known limitations
 
 **Registering both routes.** Chaining the operator table *and* declaring on a schema works for everything except an `ARRAY` column, which then fails with `IllegalArgumentException: must contain type: ANY`. `SqlUtil.lookupSubjectRoutines` returns early at `if (list.size() < 2 || coerce)` before its type-precedence pass, so one route leaves one candidate and never reaches it; both leave two, it runs, and it compares each candidate's parameter type using the *argument's* precedence list — which for `ArraySqlType` accepts only another comparable `ARRAY` and throws otherwise. It is not the `ANY` parameter that causes it: any parameter type but a matching `ARRAY` fails identically, and one typed `ARRAY` would refuse every character column. A pass that throws where it should decline is Calcite's to fix.

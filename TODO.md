@@ -467,6 +467,33 @@ Also at 0% and worth deciding about rather than covering: `AdoTableQueryable` (n
   given to the type 'varchar' exceeds the maximum allowed for any data type (8000)". The clamp is not one
   number: `nvarchar` stops at 4000, and nothing in the dialect distinguishes the two today.
 
+## `Apache.Calcite.Geography`: simplifications left on the table, and a Calcite defect found doing it
+
+`GeographyRules` carries the rewrites that could be defended from the implementations. Three more were
+looked at and left.
+
+**`ST_AsEWKB` writes no SRID, which is Calcite's and is worth a Jira.** `SpatialTypeFunctions.ST_AsEWKB` is
+`return ST_AsWKB(geometry);`, so `CLR_ST_GEOG_ASEWKB`, `ASWKB` and `ASBINARY` all answer identical bytes and
+EWKB is not a format this package actually writes. `ST_AsEWKT` has a body of its own and does write one, so
+the asymmetry is an oversight rather than a decision. It is why `ASEWKB` is not in the alias list: an alias
+rule may rest on two names meaning one thing and not on two things being equal by a defect. Fixing it
+upstream would make the alias list wrong if it were there, and would make the README's format table true.
+
+**The idempotent and involutive unaries are not in, and one of the obvious ones is false.**
+`REVERSE(REVERSE(x))`, `FLIPCOORDINATES(FLIPCOORDINATES(x))`, `FORCE2D(FORCE2D(x))`, `NORMALIZE`,
+`REMOVEREPEATEDPOINTS`, `CONVEXHULL`, `UNARYUNION` and `REMOVEHOLES` all look like identities and mostly
+are. `ENVELOPE(ENVELOPE(x))` is **not**: the envelope is a latitude-longitude rectangle whose edges are
+geodesics, and S2's bound of that rectangle is larger than the rectangle, because the northern edge bows
+poleward of the parallel joining its corners. Whether each of the others is an identity *as a value* — the
+same JTS object structure, not merely the same set of places — needs running rather than reasoning, which
+is the whole of the work: a differential test per candidate against the doubled form.
+
+**A bounding-box pre-filter is an adapter's decision, not a general one.** `INTERSECTS(a, b)` implies
+`ENVELOPESINTERSECT(a, b)`, so adding the cheap test in front of the exact one is the classic spatial
+rewrite. In process it is strictly more work, since both run on every row; it pays only where the bounding
+box is indexable or pushable, which is a property of the store. It belongs in an adapter's rule set rather
+than in this pass, which is written to be unconditionally better.
+
 ## `Apache.Calcite.FullText`: the capabilities left out of the first vocabulary
 
 The nine operators cover everything Cosmos DB offers, which is the bar #157 set, and the survey behind them

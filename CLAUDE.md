@@ -12,6 +12,22 @@ instead of Janino, and the prepare pipeline that gets a statement to one.
 | `Apache.Calcite.Data` | the `DbConnection` / `DbCommand` surface |
 | `Apache.Calcite.Extensions` | `ClrEnumerableConvention`, the prepare pipeline, and the IKVM interop helpers |
 | `Apache.Calcite.Geography` | optional; the `CLR_ST_GEOG_*` operator table and a geodesic evaluator over Google's S2. There is no `GEOGRAPHY` type — a geography is Calcite's `GEOMETRY` and the operator's name is what says to read it geodesically, which is what lets these be declared on a schema. Nothing else references it, and it references nothing else here |
+| `Apache.Calcite.FullText` | optional; the `CLR_FT_*` operator table — names, arities and types for full text search, offered by both routes a query can reach a name. **There is no evaluator and will not be**: which documents match is the store's analyzer, so a call no rule pushed down is refused while the plan is turned into code. Nothing else references it, and it references nothing else here |
+
+**Both optional packages carry a simplification pass** — `GeographyRules.Program()` and
+`FullTextRules.Program()` — and each is `Programs.hep` rather than rules on the planner, for the reason the
+calc pass is one: a rewrite that leaves the row count alone is never *cheaper*, so the planner keeps
+whichever it registered first. Measured, 1 of 5 survived a Volcano pass, and the one that did won because
+`RelMdUtil.guessSelectivity` guesses 0.5 for a comparison and 0.25 for any other call. **Two things the
+passes deliberately do not do.** Constant folding is Calcite's and works — but `ReduceExpressionsRule`
+silently does nothing where the planner has no **executor**, saying in a comment that there is no mechanism
+for a warning; `ClrPrepareImpl` and `ClrPrepare` set one as `CalcitePrepareImpl` does, and a caller driving
+`Frameworks` sets whatever the config names, which is nothing, so a WKT literal is parsed once per row.
+And the strictness and symmetry `GeographyFunction` declares are read by `RelOptUtil.simplifyJoin`,
+`RexSimplify` and `RexNormalize` with no rule involved — but they live on the operator *object*, and a name
+resolved through a schema arrives as something `CalciteCatalogReader.toOp` built around the bare
+`Function`. `GeographyOperatorTable.Rebind` is what puts the declaration back, matched by name and
+confirmed by the body being the same object.
 
 `TODO.md` has the outstanding work, sized and reasoned: the ADO.NET adapter's gaps and what more it
 could push, a plan cache, the test suites not yet written, and the decisions not yet taken. It holds

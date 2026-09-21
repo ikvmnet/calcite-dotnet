@@ -13,15 +13,23 @@ namespace Apache.Calcite.Geography.Sql.Type
     /// </summary>
     /// <remarks>
     /// The rest come from <c>ReturnTypes</c> unchanged: a predicate is <c>BOOLEAN_NULLABLE</c> and a
-    /// measurement is <c>DOUBLE_NULLABLE</c>, both of which are right, because each body answers null exactly
-    /// when one of its arguments is null.
+    /// measurement is <c>DOUBLE_NULLABLE</c>.
     ///
     /// <para>Neither runs through <c>SqlTypeTransforms.TO_NULLABLE</c>, and nothing turns on that any
     /// more. It mattered when a geography was a <c>JavaType</c> subclass, because the transform calls
     /// <c>createTypeWithNullability</c> and <c>copySimpleType</c> answers that on a <c>JavaType</c> by
     /// constructing a plain one, dropping the subclass. There is no subclass now. The transform is left off
-    /// because it would not change the answer: every body here returns null exactly when an argument is
-    /// null, so the nullable type is right whatever the operands are.</para>
+    /// because it would not change the answer: nullable is right for every one of these whatever the operands
+    /// are.</para>
+    ///
+    /// <para><b>Which is not the same as each answering null exactly when an argument is null</b>, and a
+    /// remark here used to say that it was. Most do; a great many do not. A typed reader answers null for
+    /// text naming a different shape, <c>CLR_ST_GEOG_X</c> answers null for anything but a point,
+    /// <c>ST_X</c> being <c>geom instanceof Point ? … : null</c>, and <c>POINTN</c>, <c>INTERIORRING</c> and
+    /// <c>STARTPOINT</c> answer null off the end or off the shape. The distinction is load bearing rather
+    /// than pedantic — it is <c>Strong.Policy.ANY</c>, which Calcite reads in both directions — and
+    /// <see cref="GeographyOperatorTable.IsStrict"/> is where the operators it actually holds of are
+    /// listed.</para>
     /// </remarks>
     public static class GeographyReturnTypes
     {
