@@ -103,7 +103,12 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 
             // and the cursor convention's, which is the root
             foreach (var rule in ClrDataCursorRules.Rules())
+            {
+                if (excludeMergeJoin && rule == ClrDataCursorRules.ClrDataCursorMergeJoinRule)
+                    continue;
+
                 rules.add(rule);
+            }
 
             // the three rules the convention declares as fields and leaves out of its default list; a caller
             // turns one on
@@ -541,11 +546,11 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 
         [Fact]
         public Task ShouldAgreeOnARightJoinsOwnOrderOverTwelveKeys() =>
-            SameThrough("ClrEnumerableHashJoin", "SELECT a.N, b.K FROM (SELECT * FROM WIDE WHERE N < 3) a RIGHT JOIN WIDE b ON a.K = b.K");
+            SameThrough("ClrDataCursorHashJoin", "SELECT a.N, b.K FROM (SELECT * FROM WIDE WHERE N < 3) a RIGHT JOIN WIDE b ON a.K = b.K");
 
         [Fact]
         public Task ShouldAgreeOnAFullJoinsOwnOrderOverTwelveKeys() =>
-            SameThrough("ClrEnumerableHashJoin", "SELECT a.N, b.K FROM (SELECT * FROM WIDE WHERE N < 3) a FULL JOIN WIDE b ON a.K = b.K");
+            SameThrough("ClrDataCursorHashJoin", "SELECT a.N, b.K FROM (SELECT * FROM WIDE WHERE N < 3) a FULL JOIN WIDE b ON a.K = b.K");
 
         [Fact]
         public Task ShouldAgreeOnASemiJoin() => Same("SELECT ID FROM SALES WHERE ID IN (SELECT K FROM SORTED)");
@@ -567,7 +572,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         /// </remarks>
         [Fact]
         public Task ShouldAgreeOnAMergeJoin() =>
-            SameThrough("ClrEnumerableMergeJoin", "SELECT a.K, b.V FROM SORTED a JOIN SORTED b ON a.K = b.K", excludeHashJoin: true);
+            SameThrough("ClrDataCursorMergeJoin", "SELECT a.K, b.V FROM SORTED a JOIN SORTED b ON a.K = b.K", excludeHashJoin: true);
 
         [Fact]
         public Task ShouldAgreeOnAMergeJoinWithTies() =>

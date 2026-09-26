@@ -169,6 +169,8 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
             EnumerableRules.ENUMERABLE_MERGE_JOIN_RULE,
             ClrEnumerableRules.ClrEnumerableJoinRule,
             ClrEnumerableRules.ClrEnumerableMergeJoinRule,
+            ClrDataCursorRules.ClrDataCursorJoinRule,
+            ClrDataCursorRules.ClrDataCursorMergeJoinRule,
         ];
 
         /// <summary>
@@ -439,7 +441,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
                 .sort(0)
                 .build(),
                 add: [org.apache.calcite.interpreter.Bindables.BINDABLE_TABLE_SCAN_RULE],
-                remove: [EnumerableRules.ENUMERABLE_JOIN_RULE, ClrEnumerableRules.ClrEnumerableJoinRule]);
+                remove: [EnumerableRules.ENUMERABLE_JOIN_RULE, ClrEnumerableRules.ClrEnumerableJoinRule, ClrDataCursorRules.ClrDataCursorJoinRule]);
 
         // ------------------------------------------------------------------ EnumerableRepeatUnionHierarchyTest
         //
@@ -563,7 +565,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
                 .join(JoinRelType.INNER, builder.equals(builder.field(2, 0, "name"), builder.field(2, 1, "name")))
                 .project(builder.field("v1", "name"), builder.field("v2", "name"))
                 .build(),
-                remove: [EnumerableRules.ENUMERABLE_JOIN_RULE, ClrEnumerableRules.ClrEnumerableJoinRule]);
+                remove: [EnumerableRules.ENUMERABLE_JOIN_RULE, ClrEnumerableRules.ClrEnumerableJoinRule, ClrDataCursorRules.ClrDataCursorJoinRule]);
 
         /// <summary>
         /// CALCITE-5003: a merge union of two inputs whose collations differ.

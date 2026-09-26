@@ -334,6 +334,15 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
             "SELECT ID FROM SALES UNION SELECT ID FROM SALES",
             "SELECT ID FROM SALES UNION ALL SELECT ID FROM SALES",
             "SELECT ID FROM SALES UNION ALL SELECT K FROM SORTED UNION ALL SELECT ID FROM SALES",
+            // the equality is a merge join over two sorts, IS NOT DISTINCT FROM keeps the merge join rule
+            // out and is a hash join, the inequality alone is a nested loop, and IN is a semi hash join,
+            // whose right side is a deferred opener of each kind
+            "SELECT a.ID, b.LABEL FROM SALES a JOIN SALES b ON a.ID = b.ID",
+            "SELECT a.ID, b.LABEL FROM SALES a LEFT JOIN SALES b ON a.ID = b.ID AND a.AMOUNT < b.AMOUNT",
+            "SELECT a.ID, b.LABEL FROM SALES a JOIN SALES b ON a.AMOUNT IS NOT DISTINCT FROM b.AMOUNT",
+            "SELECT a.ID, b.LABEL FROM SALES a LEFT JOIN SALES b ON a.AMOUNT IS NOT DISTINCT FROM b.AMOUNT AND a.ID < b.ID",
+            "SELECT a.ID, b.LABEL FROM SALES a JOIN SALES b ON a.ID < b.ID",
+            "SELECT ID FROM SALES WHERE ID IN (SELECT K FROM SORTED)",
             "SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)",
         ];
 

@@ -15,8 +15,9 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
     /// factory call, because a caller has to be able to name one to remove it, and
     /// <c>RelOptPlanner.removeRule</c> takes the rule itself.
     ///
-    /// <para><b>The list is the nodes written so far, and it is short.</b> Scan, values, calc, sort, limit
-    /// and union, with a project and a filter that become a calc, and four converters: two against
+    /// <para><b>The list is the nodes written so far, and it is short.</b> Scan, values, calc, the hash,
+    /// merge and nested loop joins, sort, limit and union, with a project and a filter that become a calc,
+    /// and four converters: two against
     /// <c>EnumerableConvention</c> and two against <c>ClrEnumerableConvention</c>. Everything else one of
     /// those two plans, and a converter carries the rows — the sequence convention's node where it has
     /// one, which is nearly everywhere, since its converter costs no Janino compile and its rows are
@@ -50,6 +51,17 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         /// Rule that converts a calc to a <see cref="ClrDataCursorCalc"/>.
         /// </summary>
         public static readonly RelOptRule ClrDataCursorCalcRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorCalcRule.Create();
+
+        /// <summary>
+        /// Rule that converts a join to a <see cref="ClrDataCursorHashJoin"/> or a
+        /// <see cref="ClrDataCursorNestedLoopJoin"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorJoinRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorJoinRule.Create();
+
+        /// <summary>
+        /// Rule that converts a join to a <see cref="ClrDataCursorMergeJoin"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorMergeJoinRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorMergeJoinRule.Create();
 
         /// <summary>
         /// Rule that converts a union to a <see cref="ClrDataCursorUnion"/>.
@@ -106,6 +118,8 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             ClrDataCursorProjectRule,
             ClrDataCursorFilterRule,
             ClrDataCursorCalcRule,
+            ClrDataCursorJoinRule,
+            ClrDataCursorMergeJoinRule,
             ClrDataCursorUnionRule,
             ClrDataCursorSortRule,
             ClrDataCursorLimitRule,

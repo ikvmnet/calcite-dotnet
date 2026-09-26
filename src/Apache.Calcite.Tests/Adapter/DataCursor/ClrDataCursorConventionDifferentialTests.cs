@@ -563,7 +563,13 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
                     // and the cursor convention's, which is the root: a node it lacks is the sequence
                     // convention's under a converter, so both rule sets are on the planner
                     foreach (var rule in ClrDataCursorRules.Rules())
+                    {
+                        if (excludeMergeJoin && rule == ClrDataCursorRules.ClrDataCursorMergeJoinRule)
+                            continue;
+
                         rules.add(rule);
+                    }
+
                     foreach (var rule in ClrDataCursorRules.CalcRules())
                         if (calcRules.contains(rule) == false)
                             calcRules.add(rule);
@@ -1620,11 +1626,11 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnARightJoinsOwnOrderOverTwelveKeys() =>
-            SameThrough("ClrEnumerableHashJoin", "SELECT a.\"N\", b.\"K\" FROM (SELECT * FROM \"WIDE\" WHERE \"N\" < 3) a RIGHT JOIN \"WIDE\" b ON a.\"K\" = b.\"K\"");
+            SameThrough("ClrDataCursorHashJoin", "SELECT a.\"N\", b.\"K\" FROM (SELECT * FROM \"WIDE\" WHERE \"N\" < 3) a RIGHT JOIN \"WIDE\" b ON a.\"K\" = b.\"K\"");
 
         [Fact]
         public void ShouldAgreeOnAFullJoinsOwnOrderOverTwelveKeys() =>
-            SameThrough("ClrEnumerableHashJoin", "SELECT a.\"N\", b.\"K\" FROM (SELECT * FROM \"WIDE\" WHERE \"N\" < 3) a FULL JOIN \"WIDE\" b ON a.\"K\" = b.\"K\"");
+            SameThrough("ClrDataCursorHashJoin", "SELECT a.\"N\", b.\"K\" FROM (SELECT * FROM \"WIDE\" WHERE \"N\" < 3) a FULL JOIN \"WIDE\" b ON a.\"K\" = b.\"K\"");
 
         [Fact]
         public void ShouldAgreeOnAFullJoinsOwnOrder() =>
@@ -1804,7 +1810,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         [Fact]
         public void ShouldPlanANestedLoopMarkJoin() =>
             PlanOf("SELECT \"ID\" FROM \"SALES\" WHERE EXISTS (SELECT 1 FROM \"SALES\" \"S2\" WHERE \"S2\".\"ID\" > 4)", true, markJoin: true)
-                .Should().Contain("ClrEnumerableNestedLoopJoin").And.Contain("left_mark");
+                .Should().Contain("ClrDataCursorNestedLoopJoin").And.Contain("left_mark");
 
         [Fact]
         public void ShouldAgreeOnAMarkJoinFromIn() =>
@@ -1829,7 +1835,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         [Fact]
         public void ShouldPlanAHashMarkJoin() =>
             PlanOf("SELECT \"ID\" FROM \"SALES\" WHERE \"AMOUNT\" IN (SELECT \"AMOUNT\" FROM \"SALES\" WHERE \"ID\" > 3)", true, markJoin: true)
-                .Should().Contain("ClrEnumerableHashJoin").And.Contain("left_mark");
+                .Should().Contain("ClrDataCursorHashJoin").And.Contain("left_mark");
 
         [Fact]
         public void ShouldAgreeOnACorrelatedMarkJoinFromExists() =>
@@ -2252,7 +2258,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
             var sql = "SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"REGION\" = b.\"REGION\" AND a.\"AMOUNT\" = b.\"AMOUNT\" ORDER BY a.\"ID\", b.\"ID\"";
 
             PlanOf(sql, false, excludeMergeJoin: true).Should().Contain("EnumerableHashJoin");
-            PlanOf(sql, true, excludeMergeJoin: true).Should().Contain("ClrEnumerableHashJoin");
+            PlanOf(sql, true, excludeMergeJoin: true).Should().Contain("ClrDataCursorHashJoin");
         }
 
         [Fact]
