@@ -381,6 +381,9 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 
             public object apply(object accumulator) => java.lang.Integer.valueOf(((int[])accumulator)[0]);
 
+        }
+
+        /// <summary>
         /// An intersect drains its second source and closes it before it opens its first.
         /// </summary>
         /// <remarks>
