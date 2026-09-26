@@ -41,11 +41,11 @@ namespace Apache.Calcite.Extensions.Runtime
         /// is promised that cannot be delivered: the cursor's own <c>ReadAsync</c> still awaits wherever a
         /// row has to be waited for.
         /// </remarks>
-        public static ValueTask<ClrCursor<T>> Completed<T>(ClrCursor<T> cursor)
+        public static ValueTask<IClrCursor<T>> Completed<T>(IClrCursor<T> cursor)
         {
             ArgumentNullException.ThrowIfNull(cursor);
 
-            return new ValueTask<ClrCursor<T>>(cursor);
+            return new ValueTask<IClrCursor<T>>(cursor);
         }
 
         /// <summary>
@@ -63,7 +63,7 @@ namespace Apache.Calcite.Extensions.Runtime
         /// <para>The token is <see cref="CancellationToken.None"/>, because a synchronous open has none to
         /// give.</para>
         /// </remarks>
-        public static ClrCursor<T> Block<T>(Func<CancellationToken, ValueTask<ClrCursor<T>>> open)
+        public static IClrCursor<T> Block<T>(Func<CancellationToken, ValueTask<IClrCursor<T>>> open)
         {
             ArgumentNullException.ThrowIfNull(open);
 
@@ -95,14 +95,14 @@ namespace Apache.Calcite.Extensions.Runtime
         /// continuation to change the type parameter. It costs a state machine only when the open actually
         /// suspends.
         /// </remarks>
-        public static ValueTask<ClrCursor> Untyped<T>(ValueTask<ClrCursor<T>> open)
+        public static ValueTask<IClrCursor> Untyped<T>(ValueTask<IClrCursor<T>> open)
         {
             if (open.IsCompletedSuccessfully)
-                return new ValueTask<ClrCursor>(open.Result);
+                return new ValueTask<IClrCursor>(open.Result);
 
             return Awaited(open);
 
-            static async ValueTask<ClrCursor> Awaited(ValueTask<ClrCursor<T>> open)
+            static async ValueTask<IClrCursor> Awaited(ValueTask<IClrCursor<T>> open)
             {
                 return await open.ConfigureAwait(false);
             }
@@ -118,7 +118,7 @@ namespace Apache.Calcite.Extensions.Runtime
         /// What a cursor over an asynchronous source writes its <see cref="ClrCursor.Read"/> as. Every
         /// wait here suppresses the context before the call for the reason the class remarks give.
         /// </remarks>
-        internal static bool BlockRead(ClrCursor cursor)
+        internal static bool BlockRead(IClrCursor cursor)
         {
             var context = SynchronizationContext.Current;
             if (context == null)

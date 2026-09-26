@@ -354,7 +354,7 @@ namespace Apache.Calcite.Data.Internal
 
                 // the result owns both from here: they live as long as the rows do, and a reader holds them
                 // open long after this method has returned
-                ClrCursor? cursor = null;
+                IClrCursor? cursor = null;
                 if (!IsDdl(signature.StatementType))
                     cursor = signature.Open(dataContext);
 
@@ -418,7 +418,7 @@ namespace Apache.Calcite.Data.Internal
 
                 // the result owns both from here: they live as long as the rows do, and a reader holds them
                 // open long after this method has returned
-                ClrCursor? cursor = null;
+                IClrCursor? cursor = null;
                 if (!IsDdl(signature.StatementType))
                     cursor = await signature.OpenAsync(dataContext, cancellation.Token).ConfigureAwait(false);
 
@@ -519,7 +519,7 @@ namespace Apache.Calcite.Data.Internal
         /// Returns the first row of <paramref name="cursor"/>, or <see langword="null"/> where there is
         /// none, and closes it.
         /// </summary>
-        static object? FirstRow(ClrCursor cursor)
+        static object? FirstRow(IClrCursor cursor)
         {
             using (cursor)
                 return cursor.Read() ? cursor.Current : null;

@@ -82,7 +82,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
                 var definition = returns.GetGenericTypeDefinition();
                 var awaits = definition == typeof(ValueTask<>);
-                var opens = definition == typeof(ClrCursor<>);
+                var opens = definition == typeof(IClrCursor<>);
 
                 if (awaits == false && opens == false)
                     continue;
@@ -148,9 +148,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             var concat = ClrCursorDefaults.Concat<object[]>(
                 () => { opened.Add("first"); return first = new CountingCursor([[1], [2]]); },
-                token => { opened.Add("firstAsync"); return new ValueTask<ClrCursor<object[]>>(first = new CountingCursor([[1], [2]])); },
+                token => { opened.Add("firstAsync"); return new ValueTask<IClrCursor<object[]>>(first = new CountingCursor([[1], [2]])); },
                 () => { opened.Add("second"); return second = new CountingCursor([[3]]); },
-                token => { opened.Add("secondAsync"); return new ValueTask<ClrCursor<object[]>>(second = new CountingCursor([[3]])); });
+                token => { opened.Add("secondAsync"); return new ValueTask<IClrCursor<object[]>>(second = new CountingCursor([[3]])); });
 
             opened.Should().BeEmpty("the open acquires nothing");
 
@@ -211,16 +211,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var semi = ClrCursorDefaults.SemiJoin<int, int, int>(
                 new RowsCursor<int>([]),
                 () => { opens++; return new RowsCursor<int>([1]); },
-                token => { opens++; return new ValueTask<ClrCursor<int>>(new RowsCursor<int>([1])); },
+                token => { opens++; return new ValueTask<IClrCursor<int>>(new RowsCursor<int>([1])); },
                 x => x, x => x, null, false, null);
 
             semi.Read().Should().BeFalse();
             opens.Should().Be(0);
 
             var semiAsync = await ClrCursorDefaults.SemiJoinAsync<int, int, int>(
-                new ValueTask<ClrCursor<int>>(new RowsCursor<int>([])),
+                new ValueTask<IClrCursor<int>>(new RowsCursor<int>([])),
                 () => { opens++; return new RowsCursor<int>([1]); },
-                token => { opens++; return new ValueTask<ClrCursor<int>>(new RowsCursor<int>([1])); },
+                token => { opens++; return new ValueTask<IClrCursor<int>>(new RowsCursor<int>([1])); },
                 x => x, x => x, null, false, null, CancellationToken.None);
 
             (await semiAsync.ReadAsync(CancellationToken.None)).Should().BeFalse();
@@ -236,10 +236,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         {
             var opened = new List<string>();
 
-            ClrCursor<int> Semi() => ClrCursorDefaults.SemiJoin<int, int, int>(
+            IClrCursor<int> Semi() => ClrCursorDefaults.SemiJoin<int, int, int>(
                 new RowsCursor<int>([1, 2, 3]),
                 () => { opened.Add("inner"); return new RowsCursor<int>([1, 2]); },
-                token => { opened.Add("innerAsync"); return new ValueTask<ClrCursor<int>>(new RowsCursor<int>([1, 2])); },
+                token => { opened.Add("innerAsync"); return new ValueTask<IClrCursor<int>>(new RowsCursor<int>([1, 2])); },
                 x => x, x => x, null, false, null);
 
             var rows = new List<int>();
@@ -277,16 +277,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 var act = () => ClrCursorDefaults.CorrelateJoin<object, object, string>(
                     new ScalarCursor([1]),
                     _ => new ScalarCursor([1]),
-                    (_, _) => new ValueTask<ClrCursor<object>?>(new ScalarCursor([1])),
+                    (_, _) => new ValueTask<IClrCursor<object>?>(new ScalarCursor([1])),
                     (a, b) => $"{a}:{b}",
                     joinType);
 
                 act.Should().Throw<ArgumentException>().WithMessage("*" + joinType.name() + "*");
 
                 var actAsync = () => ClrCursorDefaults.CorrelateJoinAsync<object, object, string>(
-                    new ValueTask<ClrCursor<object>>(new ScalarCursor([1])),
+                    new ValueTask<IClrCursor<object>>(new ScalarCursor([1])),
                     _ => new ScalarCursor([1]),
-                    (_, _) => new ValueTask<ClrCursor<object>?>(new ScalarCursor([1])),
+                    (_, _) => new ValueTask<IClrCursor<object>?>(new ScalarCursor([1])),
                     (a, b) => $"{a}:{b}",
                     joinType,
                     CancellationToken.None).AsTask();
@@ -308,7 +308,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var join = ClrCursorDefaults.CorrelateJoin<object, object, string>(
                 new ScalarCursor([1, 2]),
                 _ => null,
-                (_, _) => new ValueTask<ClrCursor<object>?>((ClrCursor<object>?)null),
+                (_, _) => new ValueTask<IClrCursor<object>?>((IClrCursor<object>?)null),
                 (a, b) => $"{a}:{b ?? "null"}",
                 org.apache.calcite.linq4j.JoinType.LEFT);
 
@@ -344,7 +344,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var join = ClrCursorDefaults.CorrelateJoin<object, object, string>(
                 new ScalarCursor([1, 2]),
                 row => Open("inner", row),
-                (row, token) => new ValueTask<ClrCursor<object>?>(Open("innerAsync", row)),
+                (row, token) => new ValueTask<IClrCursor<object>?>(Open("innerAsync", row)),
                 (a, b) => $"{a}:{b}",
                 org.apache.calcite.linq4j.JoinType.INNER);
 
@@ -498,7 +498,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public async Task ShouldDrainACollectAtTheOpenAsync()
         {
             var source = new CountingCursor([[1], [2], [3]]);
-            var singleton = await ClrCursorDefaults.SingletonJavaListAsync(new ValueTask<ClrCursor<object[]>>(source), CancellationToken.None);
+            var singleton = await ClrCursorDefaults.SingletonJavaListAsync(new ValueTask<IClrCursor<object[]>>(source), CancellationToken.None);
 
             source.Drawn.Should().Be(4, "the open drained the input before any advance");
             source.Disposed.Should().BeTrue();
@@ -584,8 +584,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             var combined = await ClrCursorDefaults.CombineQueryResultsAsync<object[]>(
                 [
-                    token => new ValueTask<ClrCursor<java.util.Map>>(first),
-                    token => { firstDisposedWhenSecondOpened = first.Disposed; return new ValueTask<ClrCursor<java.util.Map>>(second); },
+                    token => new ValueTask<IClrCursor<java.util.Map>>(first),
+                    token => { firstDisposedWhenSecondOpened = first.Disposed; return new ValueTask<IClrCursor<java.util.Map>>(second); },
                 ],
                 org.apache.calcite.runtime.SqlFunctions.combineQueryResults,
                 CancellationToken.None);
@@ -657,13 +657,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             // a running total over scalar rows, ordered by linq4j's own comparator of Comparables
             static int Amount(WindowFrame frame) => ((java.lang.Integer)frame.Rows[frame.Position]).intValue();
 
-            static ClrCursor<int> Open(ScalarCursor source) => ClrCursorDefaults.Window<object, object, int, int>(
+            static IClrCursor<int> Open(ScalarCursor source) => ClrCursorDefaults.Window<object, object, int, int>(
                 source, null, org.apache.calcite.linq4j.function.Functions.nullsComparator(false, false), org.apache.calcite.rex.RexWindowExclusion.EXCLUDE_NO_OTHER,
                 frame => 0, frame => frame.Index, true, false, false, false,
                 () => 0, (frame, acc) => 0, (frame, acc) => acc + Amount(frame), (frame, acc) => acc, null, (frame, acc) => acc);
 
-            static ValueTask<ClrCursor<int>> OpenAsync(ScalarCursor source) => ClrCursorDefaults.WindowAsync<object, object, int, int>(
-                new ValueTask<ClrCursor<object>>(source), null, org.apache.calcite.linq4j.function.Functions.nullsComparator(false, false), org.apache.calcite.rex.RexWindowExclusion.EXCLUDE_NO_OTHER,
+            static ValueTask<IClrCursor<int>> OpenAsync(ScalarCursor source) => ClrCursorDefaults.WindowAsync<object, object, int, int>(
+                new ValueTask<IClrCursor<object>>(source), null, org.apache.calcite.linq4j.function.Functions.nullsComparator(false, false), org.apache.calcite.rex.RexWindowExclusion.EXCLUDE_NO_OTHER,
                 frame => 0, frame => frame.Index, true, false, false, false,
                 () => 0, (frame, acc) => 0, (frame, acc) => acc + Amount(frame), (frame, acc) => acc, null, (frame, acc) => acc, CancellationToken.None);
 
@@ -723,7 +723,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         {
             var source = new CountingCursor([[java.lang.Integer.valueOf(1)], [java.lang.Integer.valueOf(1)], [java.lang.Integer.valueOf(2)]]);
 
-            var groups = await ClrCursorDefaults.GroupByAsync<object[], object, object>(new ValueTask<ClrCursor<object[]>>(source), r => r[0], new Count(), new Add(), new Result(), null, CancellationToken.None);
+            var groups = await ClrCursorDefaults.GroupByAsync<object[], object, object>(new ValueTask<IClrCursor<object[]>>(source), r => r[0], new Count(), new Add(), new Result(), null, CancellationToken.None);
 
             source.Drawn.Should().Be(4, "the fold is awaited inside the open");
             source.Disposed.Should().BeTrue();
@@ -791,7 +791,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             var other = new CountingCursor([[java.lang.Integer.valueOf(1)], [java.lang.Integer.valueOf(1)], [java.lang.Integer.valueOf(2)]]);
 
-            var awaited = await ClrCursorDefaults.SingletonAggregateAsync<object[], object>(new ValueTask<ClrCursor<object[]>>(other), new Count().apply(), new Add(), new SingleResult(), CancellationToken.None);
+            var awaited = await ClrCursorDefaults.SingletonAggregateAsync<object[], object>(new ValueTask<IClrCursor<object[]>>(other), new Count().apply(), new Add(), new SingleResult(), CancellationToken.None);
 
             other.Drawn.Should().Be(4, "the awaiting open awaits the fold, so nothing is left to the first advance");
             other.Disposed.Should().BeTrue();
@@ -821,7 +821,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             var other = new ScalarCursor(["a", "b", "a"]);
 
-            var awaited = await ClrCursorDefaults.DistinctAsync<object>(new ValueTask<ClrCursor<object>>(other), null, CancellationToken.None);
+            var awaited = await ClrCursorDefaults.DistinctAsync<object>(new ValueTask<IClrCursor<object>>(other), null, CancellationToken.None);
 
             other.Disposed.Should().BeTrue("the awaiting open awaits the drain");
 
@@ -912,8 +912,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public async Task ShouldKeepARowOncePerPairingOfAnIntersectAll()
         {
             var intersect = await ClrCursorDefaults.IntersectAsync<object>(
-                token => new ValueTask<ClrCursor<object>>(new ScalarCursor(["a", "b", "b", "c"])),
-                new ValueTask<ClrCursor<object>>(new ScalarCursor(["b", "b", "b"])),
+                token => new ValueTask<IClrCursor<object>>(new ScalarCursor(["a", "b", "b", "c"])),
+                new ValueTask<IClrCursor<object>>(new ScalarCursor(["b", "b", "b"])),
                 null,
                 true,
                 CancellationToken.None);
@@ -965,8 +965,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var opened = 0;
 
             var sources = new java.util.ArrayList();
-            sources.add(new Func<ClrCursor<object>>(() => { opened++; return first; }));
-            sources.add(new Func<ClrCursor<object>>(() => { opened++; return second; }));
+            sources.add(new Func<IClrCursor<object>>(() => { opened++; return first; }));
+            sources.add(new Func<IClrCursor<object>>(() => { opened++; return second; }));
 
             var merge = ClrCursorDefaults.MergeUnion<object, object>(
                 sources,
@@ -999,8 +999,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldDropARepeatedRowOfAMergeUnion()
         {
             var sources = new java.util.ArrayList();
-            sources.add(new Func<ClrCursor<object>>(() => new ScalarCursor([java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(3)])));
-            sources.add(new Func<ClrCursor<object>>(() => new ScalarCursor([java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2), java.lang.Integer.valueOf(3)])));
+            sources.add(new Func<IClrCursor<object>>(() => new ScalarCursor([java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(3)])));
+            sources.add(new Func<IClrCursor<object>>(() => new ScalarCursor([java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2), java.lang.Integer.valueOf(3)])));
 
             var merge = ClrCursorDefaults.MergeUnion<object, object>(
                 sources,
@@ -1067,7 +1067,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             var awaitedSource = Source();
             var awaited = await ClrCursorDefaults.OrderByWithFetchAndOffsetAsync<object, object>(
-                token => new ValueTask<ClrCursor<object>>(awaitedSource),
+                token => new ValueTask<IClrCursor<object>>(awaitedSource),
                 row => row,
                 org.apache.calcite.linq4j.function.Functions.nullsComparator(false, false),
                 java.math.BigDecimal.ONE,

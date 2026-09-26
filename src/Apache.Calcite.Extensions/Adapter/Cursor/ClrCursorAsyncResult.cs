@@ -18,7 +18,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <see cref="ClrCursorRel.ImplementAsync"/> and
     /// <see cref="ClrCursorRelImplementor.VisitChildAsync"/> answer this, and the synchronous members
     /// answer the other. The expression's value is a <see cref="ValueTask{TResult}"/> of a
-    /// <c>ClrCursor&lt;TRow&gt;</c>: the cursor is the same one the other fork opens, and what is awaited
+    /// <c>IClrCursor&lt;TRow&gt;</c>: the cursor is the same one the other fork opens, and what is awaited
     /// is the way to it. Two types rather than one is what makes the two hierarchies checkable — a body
     /// cannot silently hand up the wrong kind, because the wrong kind does not compile.
     /// </remarks>
@@ -45,7 +45,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
         /// <summary>
         /// Gets the expression whose value is the awaited open, a
-        /// <c>ValueTask&lt;ClrCursor&lt;TRow&gt;&gt;</c>.
+        /// <c>ValueTask&lt;IClrCursor&lt;TRow&gt;&gt;</c>.
         /// </summary>
         public Expression Expression { get; }
 

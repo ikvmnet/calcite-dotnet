@@ -53,9 +53,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <c>Expression.Call</c> refuses. Every node whose body visits an eager child writes both.</para>
     ///
     /// <para><b>Each fork has its own result type.</b> <see cref="Implement"/> answers a
-    /// <see cref="ClrCursorResult"/>, whose expression is a <c>ClrCursor&lt;TRow&gt;</c>, and
+    /// <see cref="ClrCursorResult"/>, whose expression is a <c>IClrCursor&lt;TRow&gt;</c>, and
     /// <see cref="ImplementAsync"/> a <see cref="ClrCursorAsyncResult"/>, whose expression is a
-    /// <c>ValueTask&lt;ClrCursor&lt;TRow&gt;&gt;</c>; the factory for each refuses the other kind by
+    /// <c>ValueTask&lt;IClrCursor&lt;TRow&gt;&gt;</c>; the factory for each refuses the other kind by
     /// name. Crossing is <see cref="ClrCursorRelImplementor.Awaited"/>, which costs nothing, and
     /// <see cref="ClrCursorRelImplementor.Pulled"/>, which blocks a thread for the length of the
     /// acquisition and is written where that can be read.</para>

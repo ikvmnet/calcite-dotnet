@@ -165,7 +165,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             return implementor.ResultAsync(physType,
                 ClrCursorBuiltInMethod.CallAsync(implementor, ClrCursorBuiltInMethod.CombineQueryResultsAsync.MakeGenericMethod(typeof(object[])),
-                    Expression.NewArrayInit(typeof(Func<CancellationToken, System.Threading.Tasks.ValueTask<Runtime.ClrCursor<java.util.Map>>>), arguments),
+                    Expression.NewArrayInit(typeof(Func<CancellationToken, System.Threading.Tasks.ValueTask<Runtime.IClrCursor<java.util.Map>>>), arguments),
                     combine));
         }
 

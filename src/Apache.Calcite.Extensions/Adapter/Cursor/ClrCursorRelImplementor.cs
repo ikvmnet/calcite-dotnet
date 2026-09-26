@@ -273,7 +273,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// Defers a synchronous open, for an operator that acquires a source later than at its own open.
         /// </summary>
         /// <param name="result">The input's open.</param>
-        /// <returns>A <c>Func&lt;ClrCursor&lt;TRow&gt;&gt;</c> that runs the open when called.</returns>
+        /// <returns>A <c>Func&lt;IClrCursor&lt;TRow&gt;&gt;</c> that runs the open when called.</returns>
         /// <remarks>
         /// Evaluating an open is the acquisition, so an operator that must not acquire a source at its own
         /// open — linq4j's <c>concat</c> acquires each source at its turn inside <c>moveNext</c> — takes
@@ -293,7 +293,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// Defers an awaiting open, for an operator that acquires a source later than at its own open.
         /// </summary>
         /// <param name="result">The input's open.</param>
-        /// <returns>A <c>Func&lt;CancellationToken, ValueTask&lt;ClrCursor&lt;TRow&gt;&gt;&gt;</c> that
+        /// <returns>A <c>Func&lt;CancellationToken, ValueTask&lt;IClrCursor&lt;TRow&gt;&gt;&gt;</c> that
         /// runs the open when called, under the token it is called with.</returns>
         /// <remarks>
         /// <see cref="Opener"/> for the awaiting fork. The lambda declares <see cref="CancellationToken"/>
@@ -376,11 +376,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             // the conversion to the untyped base is by reference and cannot fail: a row is never a value
             // type, and RequireRowType has held every node to a cursor of its physical row type. The awaiting
             // open goes through one continuation instead, a ValueTask being invariant
-            var open = Expression.Lambda<Func<DataContext, ClrCursor>>(
-                Expression.Convert(pulled.Expression, typeof(ClrCursor)),
+            var open = Expression.Lambda<Func<DataContext, IClrCursor>>(
+                Expression.Convert(pulled.Expression, typeof(IClrCursor)),
                 Root);
 
-            var openAsync = Expression.Lambda<Func<DataContext, CancellationToken, ValueTask<ClrCursor>>>(
+            var openAsync = Expression.Lambda<Func<DataContext, CancellationToken, ValueTask<IClrCursor>>>(
                 Expression.Call(null, ClrCursorBuiltInMethod.Untyped.MakeGenericMethod(rowType), awaited.Expression),
                 Root,
                 CancellationToken);
@@ -479,13 +479,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// Creates the result a node's <see cref="ClrCursorRel.Implement"/> returns.
         /// </summary>
         /// <param name="physType">How the rows are represented.</param>
-        /// <param name="expression">The open, whose value must be a <c>ClrCursor&lt;TRow&gt;</c> of the
+        /// <param name="expression">The open, whose value must be a <c>IClrCursor&lt;TRow&gt;</c> of the
         /// physical row type.</param>
         /// <returns></returns>
         /// <exception cref="java.lang.IllegalStateException">The open is not that.</exception>
         public ClrCursorResult Result(ClrPhysType physType, Expression expression)
         {
-            RequireRowType(physType, expression, typeof(ClrCursor<>), "an open");
+            RequireRowType(physType, expression, typeof(IClrCursor<>), "an open");
 
             // PhysTypeImpl keeps its format package-private, and getFormat is the same value in public
             return new ClrCursorResult(expression, physType, physType.Format);
@@ -496,7 +496,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// </summary>
         /// <param name="physType">How the rows are represented.</param>
         /// <param name="expression">The open, whose value must be a
-        /// <c>ValueTask&lt;ClrCursor&lt;TRow&gt;&gt;</c> of the physical row type.</param>
+        /// <c>ValueTask&lt;IClrCursor&lt;TRow&gt;&gt;</c> of the physical row type.</param>
         /// <returns></returns>
         /// <exception cref="java.lang.IllegalStateException">The open is not that.</exception>
         /// <remarks>
@@ -513,7 +513,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var cursor = expression.Type.GetGenericArguments()[0];
             var cursorDefinition = cursor.IsGenericType ? cursor.GetGenericTypeDefinition() : null;
-            if (cursorDefinition != typeof(ClrCursor<>))
+            if (cursorDefinition != typeof(IClrCursor<>))
                 throw new java.lang.IllegalStateException($"{Node()} handed up a {expression.Type} where an awaiting open of {physType.RowType} was wanted.");
 
             var actual = cursor.GetGenericArguments()[0];

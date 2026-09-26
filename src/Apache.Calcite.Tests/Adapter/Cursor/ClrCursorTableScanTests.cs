@@ -269,16 +269,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             public override RelDataType getRowType(RelDataTypeFactory typeFactory) => AsyncTestRows.SortedRowType(typeFactory);
 
-            public ClrCursor<object?[]> Open(DataContext root)
+            public IClrCursor<object?[]> Open(DataContext root)
             {
                 Opened++;
                 return new RowsCursor(this);
             }
 
-            public ValueTask<ClrCursor<object?[]>> OpenAsync(DataContext root, CancellationToken cancellationToken)
+            public ValueTask<IClrCursor<object?[]>> OpenAsync(DataContext root, CancellationToken cancellationToken)
             {
                 OpenedAsync++;
-                return new ValueTask<ClrCursor<object?[]>>(new RowsCursor(this));
+                return new ValueTask<IClrCursor<object?[]>>(new RowsCursor(this));
             }
 
             sealed class RowsCursor(CursorRowsTable table) : ClrCursor<object?[]>

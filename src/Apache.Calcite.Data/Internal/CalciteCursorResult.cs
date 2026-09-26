@@ -28,7 +28,7 @@ namespace Apache.Calcite.Data.Internal
     internal sealed class CalciteCursorResult : CalciteResult
     {
 
-        readonly ClrCursor? _cursor;
+        readonly IClrCursor? _cursor;
         readonly IDisposable? _dataContext;
         readonly CancellationTokenSource? _cancellation;
 
@@ -44,7 +44,7 @@ namespace Apache.Calcite.Data.Internal
         /// to Calcite's cancel flag.</param>
         /// <param name="cancellation">The source the plan was opened under, linked to the caller's token.
         /// This owns and disposes both: they live as long as the rows do.</param>
-        public CalciteCursorResult(IClrPrepare.Signature signature, ClrTypeRegistry registry, ClrCursor? cursor, long recordsAffected = -1, IDisposable? dataContext = null, CancellationTokenSource? cancellation = null) :
+        public CalciteCursorResult(IClrPrepare.Signature signature, ClrTypeRegistry registry, IClrCursor? cursor, long recordsAffected = -1, IDisposable? dataContext = null, CancellationTokenSource? cancellation = null) :
             base(signature, registry, recordsAffected)
         {
             _cursor = cursor;

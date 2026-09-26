@@ -48,7 +48,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// A one column result is the value, not a one element row. Calcite ends a plan the same way, with
         /// <c>Enumerables.slice0</c>, which is <c>select(elements -&gt; elements[0])</c>.
         /// </remarks>
-        public static ClrCursor<TRow> Slice0<TRow>(ClrCursor<object[]> source)
+        public static IClrCursor<TRow> Slice0<TRow>(IClrCursor<object[]> source)
         {
             ArgumentNullException.ThrowIfNull(source);
 
@@ -58,7 +58,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="Slice0{TRow}"/>, over an open that awaits.
         /// </summary>
-        public static async ValueTask<ClrCursor<TRow>> Slice0Async<TRow>(ValueTask<ClrCursor<object[]>> source, CancellationToken cancellationToken)
+        public static async ValueTask<IClrCursor<TRow>> Slice0Async<TRow>(ValueTask<IClrCursor<object[]>> source, CancellationToken cancellationToken)
         {
             return new Slice0Cursor<TRow>(await source.ConfigureAwait(false));
         }
@@ -66,7 +66,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// The cursor of <see cref="Slice0{TRow}"/>.
         /// </summary>
-        sealed class Slice0Cursor<TRow>(ClrCursor<object[]> source) : ClrCursor<TRow>
+        sealed class Slice0Cursor<TRow>(IClrCursor<object[]> source) : ClrCursor<TRow>
         {
 
             TRow current = default!;
@@ -119,7 +119,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// acquires its input in a field initializer, which runs at <c>enumerator()</c>; here the input
         /// arrives opened, which is the same moment.
         /// </remarks>
-        public static ClrCursor<TResult> Calc<TSource, TResult>(ClrCursor<TSource> source, Func<TSource, bool>? predicate, Func<TSource, TResult> selector)
+        public static IClrCursor<TResult> Calc<TSource, TResult>(IClrCursor<TSource> source, Func<TSource, bool>? predicate, Func<TSource, TResult> selector)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(selector);
@@ -130,7 +130,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="Calc{TSource, TResult}"/>, over an open that awaits.
         /// </summary>
-        public static async ValueTask<ClrCursor<TResult>> CalcAsync<TSource, TResult>(ValueTask<ClrCursor<TSource>> source, Func<TSource, bool>? predicate, Func<TSource, TResult> selector, CancellationToken cancellationToken)
+        public static async ValueTask<IClrCursor<TResult>> CalcAsync<TSource, TResult>(ValueTask<IClrCursor<TSource>> source, Func<TSource, bool>? predicate, Func<TSource, TResult> selector, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(selector);
 
@@ -140,7 +140,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// The cursor of <see cref="Calc{TSource, TResult}"/>.
         /// </summary>
-        sealed class CalcCursor<TSource, TResult>(ClrCursor<TSource> source, Func<TSource, bool>? predicate, Func<TSource, TResult> selector) : ClrCursor<TResult>
+        sealed class CalcCursor<TSource, TResult>(IClrCursor<TSource> source, Func<TSource, bool>? predicate, Func<TSource, TResult> selector) : ClrCursor<TResult>
         {
 
             TResult current = default!;
@@ -198,7 +198,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <c>EnumerableDefaults.select</c>, which acquires its source in a field initializer at
         /// <c>enumerator()</c>; the source arrives opened here, which is the same moment.
         /// </remarks>
-        public static ClrCursor<TResult> Select<TSource, TResult>(ClrCursor<TSource> source, Func<TSource, TResult> selector)
+        public static IClrCursor<TResult> Select<TSource, TResult>(IClrCursor<TSource> source, Func<TSource, TResult> selector)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(selector);
@@ -209,7 +209,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="Select{TSource, TResult}"/>, over an open that awaits.
         /// </summary>
-        public static async ValueTask<ClrCursor<TResult>> SelectAsync<TSource, TResult>(ValueTask<ClrCursor<TSource>> source, Func<TSource, TResult> selector, CancellationToken cancellationToken)
+        public static async ValueTask<IClrCursor<TResult>> SelectAsync<TSource, TResult>(ValueTask<IClrCursor<TSource>> source, Func<TSource, TResult> selector, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(selector);
 
@@ -219,7 +219,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// The cursor of <see cref="Select{TSource, TResult}"/>.
         /// </summary>
-        sealed class SelectCursor<TSource, TResult>(ClrCursor<TSource> source, Func<TSource, TResult> selector) : ClrCursor<TResult>
+        sealed class SelectCursor<TSource, TResult>(IClrCursor<TSource> source, Func<TSource, TResult> selector) : ClrCursor<TResult>
         {
 
             TResult current = default!;
@@ -273,7 +273,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// and by two different routes: a method call returning one when there is a single collation, and
         /// an anonymous class when there are several.</para>
         /// </remarks>
-        public static ClrCursor<TSource> OrderBy<TSource, TKey>(ClrCursor<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator)
+        public static IClrCursor<TSource> OrderBy<TSource, TKey>(IClrCursor<TSource> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(keySelector);
@@ -298,7 +298,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <c>GetAsyncEnumerator</c> cannot await, so the enumerable convention's sort had to leave its
         /// drain to the first advance and say so.
         /// </summary>
-        public static async ValueTask<ClrCursor<TSource>> OrderByAsync<TSource, TKey>(ValueTask<ClrCursor<TSource>> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, CancellationToken cancellationToken)
+        public static async ValueTask<IClrCursor<TSource>> OrderByAsync<TSource, TKey>(ValueTask<IClrCursor<TSource>> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(keySelector);
 
@@ -385,7 +385,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// CALCITE-7624, where an <c>int</c> could not. <c>SkipWhileEnumerator</c> takes
         /// <c>source.enumerator()</c> eagerly, and the source arrives opened here.
         /// </remarks>
-        public static ClrCursor<TSource> Skip<TSource>(ClrCursor<TSource> source, java.math.BigDecimal count)
+        public static IClrCursor<TSource> Skip<TSource>(IClrCursor<TSource> source, java.math.BigDecimal count)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(count);
@@ -396,7 +396,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="Skip{TSource}"/>, over an open that awaits.
         /// </summary>
-        public static async ValueTask<ClrCursor<TSource>> SkipAsync<TSource>(ValueTask<ClrCursor<TSource>> source, java.math.BigDecimal count, CancellationToken cancellationToken)
+        public static async ValueTask<IClrCursor<TSource>> SkipAsync<TSource>(ValueTask<IClrCursor<TSource>> source, java.math.BigDecimal count, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(count);
 
@@ -406,7 +406,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// The cursor of <see cref="Skip{TSource}"/>.
         /// </summary>
-        sealed class SkipCursor<TSource>(ClrCursor<TSource> source, java.math.BigDecimal count) : ClrCursor<TSource>
+        sealed class SkipCursor<TSource>(IClrCursor<TSource> source, java.math.BigDecimal count) : ClrCursor<TSource>
         {
 
             java.math.BigDecimal n = java.math.BigDecimal.ZERO;
@@ -470,7 +470,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// returned, and a count of zero still opens the input and still draws that row. Both are Calcite's
         /// and both are kept.
         /// </remarks>
-        public static ClrCursor<TSource> Take<TSource>(ClrCursor<TSource> source, java.math.BigDecimal count)
+        public static IClrCursor<TSource> Take<TSource>(IClrCursor<TSource> source, java.math.BigDecimal count)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(count);
@@ -481,7 +481,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="Take{TSource}"/>, over an open that awaits.
         /// </summary>
-        public static async ValueTask<ClrCursor<TSource>> TakeAsync<TSource>(ValueTask<ClrCursor<TSource>> source, java.math.BigDecimal count, CancellationToken cancellationToken)
+        public static async ValueTask<IClrCursor<TSource>> TakeAsync<TSource>(ValueTask<IClrCursor<TSource>> source, java.math.BigDecimal count, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(count);
 
@@ -491,7 +491,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// The cursor of <see cref="Take{TSource}"/>.
         /// </summary>
-        sealed class TakeCursor<TSource>(ClrCursor<TSource> source, java.math.BigDecimal count) : ClrCursor<TSource>
+        sealed class TakeCursor<TSource>(IClrCursor<TSource> source, java.math.BigDecimal count) : ClrCursor<TSource>
         {
 
             java.math.BigDecimal n = java.math.BigDecimal.ZERO;
@@ -563,11 +563,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// awaiting one has anything of its own to acquire, which is why <see cref="ConcatAsync{TSource}"/>
         /// completes at once.</para>
         /// </remarks>
-        public static ClrCursor<TSource> Concat<TSource>(
-            Func<ClrCursor<TSource>> first,
-            Func<CancellationToken, ValueTask<ClrCursor<TSource>>> firstAsync,
-            Func<ClrCursor<TSource>> second,
-            Func<CancellationToken, ValueTask<ClrCursor<TSource>>> secondAsync)
+        public static IClrCursor<TSource> Concat<TSource>(
+            Func<IClrCursor<TSource>> first,
+            Func<CancellationToken, ValueTask<IClrCursor<TSource>>> firstAsync,
+            Func<IClrCursor<TSource>> second,
+            Func<CancellationToken, ValueTask<IClrCursor<TSource>>> secondAsync)
         {
             ArgumentNullException.ThrowIfNull(first);
             ArgumentNullException.ThrowIfNull(firstAsync);
@@ -581,24 +581,24 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="Concat{TSource}"/>, over opens that await. Nothing is acquired at this open, so it
         /// completes at once; the sources are acquired inside the advances.
         /// </summary>
-        public static ValueTask<ClrCursor<TSource>> ConcatAsync<TSource>(
-            Func<ClrCursor<TSource>> first,
-            Func<CancellationToken, ValueTask<ClrCursor<TSource>>> firstAsync,
-            Func<ClrCursor<TSource>> second,
-            Func<CancellationToken, ValueTask<ClrCursor<TSource>>> secondAsync,
+        public static ValueTask<IClrCursor<TSource>> ConcatAsync<TSource>(
+            Func<IClrCursor<TSource>> first,
+            Func<CancellationToken, ValueTask<IClrCursor<TSource>>> firstAsync,
+            Func<IClrCursor<TSource>> second,
+            Func<CancellationToken, ValueTask<IClrCursor<TSource>>> secondAsync,
             CancellationToken cancellationToken)
         {
-            return new ValueTask<ClrCursor<TSource>>(Concat(first, firstAsync, second, secondAsync));
+            return new ValueTask<IClrCursor<TSource>>(Concat(first, firstAsync, second, secondAsync));
         }
 
         /// <summary>
         /// The cursor of <see cref="Concat{TSource}"/>: linq4j's <c>CompositeEnumerable</c>'s enumerator,
         /// with the source opened by the open matching the advance.
         /// </summary>
-        sealed class ConcatCursor<TSource>(Func<ClrCursor<TSource>>[] opens, Func<CancellationToken, ValueTask<ClrCursor<TSource>>>[] opensAsync) : ClrCursor<TSource>
+        sealed class ConcatCursor<TSource>(Func<IClrCursor<TSource>>[] opens, Func<CancellationToken, ValueTask<IClrCursor<TSource>>>[] opensAsync) : ClrCursor<TSource>
         {
 
-            ClrCursor<TSource>? current;
+            IClrCursor<TSource>? current;
             int next;
 
             /// <inheritdoc />
@@ -683,7 +683,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// operator yields a row in is the order of the collection it held them in, and Calcite's is this
         /// one.</para>
         /// </remarks>
-        public static ClrCursor<TSource> Union<TSource>(ClrCursor<TSource> source, Func<ClrCursor<TSource>> other, EqualityComparer? comparer)
+        public static IClrCursor<TSource> Union<TSource>(IClrCursor<TSource> source, Func<IClrCursor<TSource>> other, EqualityComparer? comparer)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(other);
@@ -717,7 +717,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="Union{TSource}"/>, over opens that await.
         /// </summary>
-        public static async ValueTask<ClrCursor<TSource>> UnionAsync<TSource>(ValueTask<ClrCursor<TSource>> source, Func<CancellationToken, ValueTask<ClrCursor<TSource>>> other, EqualityComparer? comparer, CancellationToken cancellationToken)
+        public static async ValueTask<IClrCursor<TSource>> UnionAsync<TSource>(ValueTask<IClrCursor<TSource>> source, Func<CancellationToken, ValueTask<IClrCursor<TSource>>> other, EqualityComparer? comparer, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(other);
 
@@ -769,7 +769,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <remarks>
         /// What a VALUES clause becomes, which Calcite spells <c>Linq4j.asEnumerable</c>.
         /// </remarks>
-        public static ClrCursor<TSource> AsCursor<TSource>(TSource[] source)
+        public static IClrCursor<TSource> AsCursor<TSource>(TSource[] source)
         {
             ArgumentNullException.ThrowIfNull(source);
 
@@ -780,9 +780,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="AsCursor{TSource}(TSource[])"/>, as an open that awaits. There is nothing to await, so
         /// it completes at once.
         /// </summary>
-        public static ValueTask<ClrCursor<TSource>> AsCursorAsync<TSource>(TSource[] source, CancellationToken cancellationToken)
+        public static ValueTask<IClrCursor<TSource>> AsCursorAsync<TSource>(TSource[] source, CancellationToken cancellationToken)
         {
-            return new ValueTask<ClrCursor<TSource>>(AsCursor(source));
+            return new ValueTask<IClrCursor<TSource>>(AsCursor(source));
         }
 
         /// <summary>
@@ -798,7 +798,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// open. The cursor's <see cref="ClrCursor.ReadAsync"/> completes synchronously, because its
         /// source is pulled.
         /// </remarks>
-        public static ClrCursor<TSource> AsCursor<TSource>(IEnumerable<TSource> source)
+        public static IClrCursor<TSource> AsCursor<TSource>(IEnumerable<TSource> source)
         {
             ArgumentNullException.ThrowIfNull(source);
 
@@ -821,11 +821,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// context suppressed, which is the cost of a source that can only be awaited and is paid where the
         /// consumer chose to read synchronously.
         /// </remarks>
-        public static ValueTask<ClrCursor<TSource>> AsCursorAsync<TSource>(IAsyncEnumerable<TSource> source, CancellationToken cancellationToken)
+        public static ValueTask<IClrCursor<TSource>> AsCursorAsync<TSource>(IAsyncEnumerable<TSource> source, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(source);
 
-            return new ValueTask<ClrCursor<TSource>>(new AsyncEnumeratorCursor<TSource>(source.GetAsyncEnumerator(cancellationToken)));
+            return new ValueTask<IClrCursor<TSource>>(new AsyncEnumeratorCursor<TSource>(source.GetAsyncEnumerator(cancellationToken)));
         }
 
         /// <summary>
@@ -840,7 +840,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// evaluating an open <em>is</em> the acquisition: an opened cursor handed in would have run the
         /// sub-plan while the enclosing plan was still being built, and once for every enumeration.
         /// </remarks>
-        public static IEnumerable<TSource> AsEnumerable<TSource>(Func<ClrCursor<TSource>> open)
+        public static IEnumerable<TSource> AsEnumerable<TSource>(Func<IClrCursor<TSource>> open)
         {
             ArgumentNullException.ThrowIfNull(open);
 
@@ -861,7 +861,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// first <c>MoveNextAsync</c>. That is the sanctioned exception the sequence convention states at
         /// every awaited drain, and it is stated here for the same reason.
         /// </remarks>
-        public static IAsyncEnumerable<TSource> AsAsyncEnumerable<TSource>(Func<CancellationToken, ValueTask<ClrCursor<TSource>>> open, CancellationToken cancellationToken)
+        public static IAsyncEnumerable<TSource> AsAsyncEnumerable<TSource>(Func<CancellationToken, ValueTask<IClrCursor<TSource>>> open, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(open);
 
@@ -871,7 +871,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// A .NET enumerator over an opened cursor.
         /// </summary>
-        sealed class CursorEnumerator<TSource>(ClrCursor<TSource> cursor) : IEnumerator<TSource>
+        sealed class CursorEnumerator<TSource>(IClrCursor<TSource> cursor) : IEnumerator<TSource>
         {
 
             /// <inheritdoc />
@@ -894,10 +894,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// An asynchronous .NET enumerator over a cursor it opens on its first advance.
         /// </summary>
-        sealed class CursorAsyncEnumerator<TSource>(Func<CancellationToken, ValueTask<ClrCursor<TSource>>> open, CancellationToken cancellationToken) : IAsyncEnumerator<TSource>
+        sealed class CursorAsyncEnumerator<TSource>(Func<CancellationToken, ValueTask<IClrCursor<TSource>>> open, CancellationToken cancellationToken) : IAsyncEnumerator<TSource>
         {
 
-            ClrCursor<TSource>? cursor;
+            IClrCursor<TSource>? cursor;
 
             /// <inheritdoc />
             public TSource Current => cursor is not null ? cursor.Current : throw new InvalidOperationException("The enumerator is not positioned on a row.");
@@ -996,7 +996,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <c>java.util.HashSet</c>, because the order the rows come out in is the set's and Calcite's is
         /// this one.
         /// </remarks>
-        public static ClrCursor<TSource> Distinct<TSource>(ClrCursor<TSource> source, EqualityComparer? comparer)
+        public static IClrCursor<TSource> Distinct<TSource>(IClrCursor<TSource> source, EqualityComparer? comparer)
         {
             ArgumentNullException.ThrowIfNull(source);
 
@@ -1019,7 +1019,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="Distinct{TSource}"/>, over an open that awaits. The drain awaits each row inside the
         /// open, which is what an open can do and a sequence's <c>GetAsyncEnumerator</c> could not.
         /// </summary>
-        public static async ValueTask<ClrCursor<TSource>> DistinctAsync<TSource>(ValueTask<ClrCursor<TSource>> source, EqualityComparer? comparer, CancellationToken cancellationToken)
+        public static async ValueTask<IClrCursor<TSource>> DistinctAsync<TSource>(ValueTask<IClrCursor<TSource>> source, EqualityComparer? comparer, CancellationToken cancellationToken)
         {
             var set = new java.util.HashSet();
 
@@ -1059,8 +1059,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// cursor handed back reads that map, applying the result selector a row at a time as
         /// <c>LookupResultEnumerable</c>'s iterator does.</para>
         /// </remarks>
-        public static ClrCursor<TResult> GroupBy<TSource, TKey, TResult>(
-            ClrCursor<TSource> source,
+        public static IClrCursor<TResult> GroupBy<TSource, TKey, TResult>(
+            IClrCursor<TSource> source,
             Func<TSource, TKey> keySelector,
             Function0 accumulatorInitializer,
             Function2 accumulatorAdder,
@@ -1101,8 +1101,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// inside the open, so every group is finished before the cursor is handed back, exactly as
         /// <c>groupBy_</c> finishes its map before it returns.
         /// </summary>
-        public static async ValueTask<ClrCursor<TResult>> GroupByAsync<TSource, TKey, TResult>(
-            ValueTask<ClrCursor<TSource>> source,
+        public static async ValueTask<IClrCursor<TResult>> GroupByAsync<TSource, TKey, TResult>(
+            ValueTask<IClrCursor<TSource>> source,
             Func<TSource, TKey> keySelector,
             Function0 accumulatorInitializer,
             Function2 accumulatorAdder,
@@ -1160,8 +1160,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// gives: <c>groupByMultiple_</c> drains where it is called and returns a
         /// <c>LookupResultEnumerable</c> over a finished map.</para>
         /// </remarks>
-        public static ClrCursor<TResult> GroupByMultiple<TSource, TKey, TResult>(
-            ClrCursor<TSource> source,
+        public static IClrCursor<TResult> GroupByMultiple<TSource, TKey, TResult>(
+            IClrCursor<TSource> source,
             Func<TSource, TKey>[] keySelectors,
             Function0 accumulatorInitializer,
             Function2 accumulatorAdder,
@@ -1205,8 +1205,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="GroupByMultiple{TSource, TKey, TResult}"/>, over an open that awaits. The fold awaits
         /// each row inside the open, so every group is finished before the cursor is handed back.
         /// </summary>
-        public static async ValueTask<ClrCursor<TResult>> GroupByMultipleAsync<TSource, TKey, TResult>(
-            ValueTask<ClrCursor<TSource>> source,
+        public static async ValueTask<IClrCursor<TResult>> GroupByMultipleAsync<TSource, TKey, TResult>(
+            ValueTask<IClrCursor<TSource>> source,
             Func<TSource, TKey>[] keySelectors,
             Function0 accumulatorInitializer,
             Function2 accumulatorAdder,
@@ -1311,8 +1311,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <para><c>SortedAggregateEnumerator</c>'s constructor acquires <c>enumerable.enumerator()</c>, and
         /// the source arrives opened here, which is the same moment; the walk is in the advances.</para>
         /// </remarks>
-        public static ClrCursor<TResult> SortedGroupBy<TSource, TKey, TResult>(
-            ClrCursor<TSource> source,
+        public static IClrCursor<TResult> SortedGroupBy<TSource, TKey, TResult>(
+            IClrCursor<TSource> source,
             Func<TSource, TKey> keySelector,
             Function0 accumulatorInitializer,
             Function2 accumulatorAdder,
@@ -1333,8 +1333,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="SortedGroupBy{TSource, TKey, TResult}"/>, over an open that awaits. Nothing is read at
         /// the open; the walk is in the advances.
         /// </summary>
-        public static async ValueTask<ClrCursor<TResult>> SortedGroupByAsync<TSource, TKey, TResult>(
-            ValueTask<ClrCursor<TSource>> source,
+        public static async ValueTask<IClrCursor<TResult>> SortedGroupByAsync<TSource, TKey, TResult>(
+            ValueTask<IClrCursor<TSource>> source,
             Func<TSource, TKey> keySelector,
             Function0 accumulatorInitializer,
             Function2 accumulatorAdder,
@@ -1365,7 +1365,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <typeparamref name="TResult"/>, so it is a flag here.
         /// </remarks>
         sealed class SortedAggregateCursor<TSource, TKey, TResult>(
-            ClrCursor<TSource> source,
+            IClrCursor<TSource> source,
             Func<TSource, TKey> keySelector,
             Function0 accumulatorInitializer,
             Function2 accumulatorAdder,
@@ -1521,7 +1521,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// the fold runs where it is called, which here is the open, and <see cref="Singleton{TSource}"/>
         /// makes the row a cursor.
         /// </remarks>
-        public static TResult Aggregate<TSource, TResult>(ClrCursor<TSource> source, object seed, Function2 accumulatorAdder, Function1 resultSelector)
+        public static TResult Aggregate<TSource, TResult>(IClrCursor<TSource> source, object seed, Function2 accumulatorAdder, Function1 resultSelector)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(accumulatorAdder);
@@ -1551,7 +1551,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <remarks>
         /// <c>Linq4j.singletonEnumerable</c>.
         /// </remarks>
-        public static ClrCursor<TSource> Singleton<TSource>(TSource element)
+        public static IClrCursor<TSource> Singleton<TSource>(TSource element)
         {
             return new ListCursor<TSource>([element]);
         }
@@ -1577,8 +1577,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// generated block folds once at bind: an open that awaits can await the fold, so nothing is left to
         /// the first advance and nothing has to be remembered for a second one.</para>
         /// </remarks>
-        public static async ValueTask<ClrCursor<TResult>> SingletonAggregateAsync<TSource, TResult>(
-            ValueTask<ClrCursor<TSource>> source,
+        public static async ValueTask<IClrCursor<TResult>> SingletonAggregateAsync<TSource, TResult>(
+            ValueTask<IClrCursor<TSource>> source,
             object seed,
             Function2 accumulatorAdder,
             Function1 resultSelector,
@@ -1618,7 +1618,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// method body, so it drains here, where the tree is evaluated. A <c>java.util.List</c>, because
         /// this is a value in a row and the reader of that row is Calcite's.
         /// </remarks>
-        public static java.util.List ToJavaList<TSource>(ClrCursor<TSource> source)
+        public static java.util.List ToJavaList<TSource>(IClrCursor<TSource> source)
         {
             ArgumentNullException.ThrowIfNull(source);
 
@@ -1650,7 +1650,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <c>EnumerableDefaults.toMap</c>, which drains inside a <c>try</c> over the enumerator into a
         /// <c>LinkedHashMap</c>, so that the order the rows arrived in is the order the map keeps.
         /// </remarks>
-        public static java.util.Map ToJavaMap<TSource>(ClrCursor<TSource> source, Func<TSource, object> keySelector, Func<TSource, object> valueSelector)
+        public static java.util.Map ToJavaMap<TSource>(IClrCursor<TSource> source, Func<TSource, object> keySelector, Func<TSource, object> valueSelector)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(keySelector);
@@ -1684,7 +1684,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// at <c>enumerator()</c> — the source arrives opened here, which is the same moment — and builds and
         /// acquires each row's sequence at its turn, inside <c>moveNext</c>.
         /// </remarks>
-        public static ClrCursor<TResult> SelectMany<TSource, TResult>(ClrCursor<TSource> source, Function1 selector)
+        public static IClrCursor<TResult> SelectMany<TSource, TResult>(IClrCursor<TSource> source, Function1 selector)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(selector);
@@ -1704,10 +1704,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// holds <c>Linq4j.emptyEnumerator()</c> before the first row and between one row's sequence and
         /// the next.
         /// </remarks>
-        sealed class SelectManyCursor<TSource, TResult>(ClrCursor<TSource> source, Function1 selector) : ClrCursor<TResult>
+        sealed class SelectManyCursor<TSource, TResult>(IClrCursor<TSource> source, Function1 selector) : ClrCursor<TResult>
         {
 
-            ClrCursor<TResult>? result;
+            IClrCursor<TResult>? result;
 
             /// <inheritdoc />
             public override TResult Current => result is not null ? result.Current : throw new InvalidOperationException("The cursor is not positioned on a row.");
@@ -1788,7 +1788,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// through, so each value is converted rather than cast for the reason
         /// <see cref="JavaSequences.FromJava{TSource}"/> gives.
         /// </remarks>
-        public static ClrCursor<TSource> FromJavaList<TSource>(java.util.List source)
+        public static IClrCursor<TSource> FromJavaList<TSource>(java.util.List source)
         {
             ArgumentNullException.ThrowIfNull(source);
 
@@ -1800,7 +1800,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="SelectMany{TSource, TResult}"/>, over an open that awaits.
         /// </summary>
-        public static async ValueTask<ClrCursor<TResult>> SelectManyAsync<TSource, TResult>(ValueTask<ClrCursor<TSource>> source, Function1 selector, CancellationToken cancellationToken)
+        public static async ValueTask<IClrCursor<TResult>> SelectManyAsync<TSource, TResult>(ValueTask<IClrCursor<TSource>> source, Function1 selector, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(selector);
 
@@ -1825,7 +1825,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// first advance and keep the row for every later enumeration. Nothing here is deferred and nothing
         /// is kept — the open awaits the drain and hands back a cursor over the one row.</para>
         /// </remarks>
-        public static async ValueTask<ClrCursor<java.util.List>> SingletonJavaListAsync<TSource>(ValueTask<ClrCursor<TSource>> source, CancellationToken cancellationToken)
+        public static async ValueTask<IClrCursor<java.util.List>> SingletonJavaListAsync<TSource>(ValueTask<IClrCursor<TSource>> source, CancellationToken cancellationToken)
         {
             return Singleton(await ToJavaListAsync(source, cancellationToken).ConfigureAwait(false));
         }
@@ -1844,7 +1844,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="SingletonJavaListAsync{TSource}"/> gives, and draining at the open as that does. A
         /// <c>LinkedHashMap</c>, so that the order the rows arrived in is the order the map keeps.
         /// </remarks>
-        public static async ValueTask<ClrCursor<java.util.Map>> SingletonJavaMapAsync<TSource>(ValueTask<ClrCursor<TSource>> source, Func<TSource, object> keySelector, Func<TSource, object> valueSelector, CancellationToken cancellationToken)
+        public static async ValueTask<IClrCursor<java.util.Map>> SingletonJavaMapAsync<TSource>(ValueTask<IClrCursor<TSource>> source, Func<TSource, object> keySelector, Func<TSource, object> valueSelector, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(keySelector);
             ArgumentNullException.ThrowIfNull(valueSelector);
@@ -1878,7 +1878,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// await what it returns. It is what the operators that have to read everything before they can
         /// hand back a row drain with.
         /// </remarks>
-        public static async ValueTask<java.util.List> ToJavaListAsync<TSource>(ValueTask<ClrCursor<TSource>> source, CancellationToken cancellationToken)
+        public static async ValueTask<java.util.List> ToJavaListAsync<TSource>(ValueTask<IClrCursor<TSource>> source, CancellationToken cancellationToken)
         {
             var list = new java.util.ArrayList();
 
@@ -1922,8 +1922,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// which function Calcite combines with stays the node's decision, as it is in the synchronous
         /// body.</para>
         /// </remarks>
-        public static async ValueTask<ClrCursor<TResult>> CombineQueryResultsAsync<TResult>(
-            Func<CancellationToken, ValueTask<ClrCursor<java.util.Map>>>[] sources,
+        public static async ValueTask<IClrCursor<TResult>> CombineQueryResultsAsync<TResult>(
+            Func<CancellationToken, ValueTask<IClrCursor<java.util.Map>>>[] sources,
             Func<java.util.List[], java.util.List> combine,
             CancellationToken cancellationToken)
         {
@@ -1941,9 +1941,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="FromJavaList{TSource}"/>, as an open that awaits. The list is a value already in
         /// hand, so there is nothing to await and it completes at once.
         /// </summary>
-        public static ValueTask<ClrCursor<TSource>> FromJavaListAsync<TSource>(java.util.List source, CancellationToken cancellationToken)
+        public static ValueTask<IClrCursor<TSource>> FromJavaListAsync<TSource>(java.util.List source, CancellationToken cancellationToken)
         {
-            return new ValueTask<ClrCursor<TSource>>(FromJavaList<TSource>(source));
+            return new ValueTask<IClrCursor<TSource>>(FromJavaList<TSource>(source));
         }
 
         // ---- Correlate ----
@@ -1979,10 +1979,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// looks: its enumerator returns without assigning <c>innerValue</c>, so <c>current()</c> reads
         /// whatever was there. For a join that is SEMI throughout, that is null every time.</para>
         /// </remarks>
-        public static ClrCursor<TResult> CorrelateJoin<TSource, TInner, TResult>(
-            ClrCursor<TSource> outer,
-            Func<TSource, ClrCursor<TInner>?> inner,
-            Func<TSource, CancellationToken, ValueTask<ClrCursor<TInner>?>> innerAsync,
+        public static IClrCursor<TResult> CorrelateJoin<TSource, TInner, TResult>(
+            IClrCursor<TSource> outer,
+            Func<TSource, IClrCursor<TInner>?> inner,
+            Func<TSource, CancellationToken, ValueTask<IClrCursor<TInner>?>> innerAsync,
             Func<TSource?, TInner?, TResult> resultSelector,
             org.apache.calcite.linq4j.JoinType joinType)
         {
@@ -2005,10 +2005,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// refusal of RIGHT and FULL comes before the outer is awaited, so that it happens where
         /// <c>correlateJoin</c> makes it: before anything is acquired for the join itself.
         /// </summary>
-        public static async ValueTask<ClrCursor<TResult>> CorrelateJoinAsync<TSource, TInner, TResult>(
-            ValueTask<ClrCursor<TSource>> outer,
-            Func<TSource, ClrCursor<TInner>?> inner,
-            Func<TSource, CancellationToken, ValueTask<ClrCursor<TInner>?>> innerAsync,
+        public static async ValueTask<IClrCursor<TResult>> CorrelateJoinAsync<TSource, TInner, TResult>(
+            ValueTask<IClrCursor<TSource>> outer,
+            Func<TSource, IClrCursor<TInner>?> inner,
+            Func<TSource, CancellationToken, ValueTask<IClrCursor<TInner>?>> innerAsync,
             Func<TSource?, TInner?, TResult> resultSelector,
             org.apache.calcite.linq4j.JoinType joinType,
             CancellationToken cancellationToken)
@@ -2036,9 +2036,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// opening here is the acquisition <c>enumerator()</c> was there.
         /// </remarks>
         sealed class CorrelateJoinCursor<TSource, TInner, TResult>(
-            ClrCursor<TSource> outer,
-            Func<TSource, ClrCursor<TInner>?> inner,
-            Func<TSource, CancellationToken, ValueTask<ClrCursor<TInner>?>> innerAsync,
+            IClrCursor<TSource> outer,
+            Func<TSource, IClrCursor<TInner>?> inner,
+            Func<TSource, CancellationToken, ValueTask<IClrCursor<TInner>?>> innerAsync,
             Func<TSource?, TInner?, TResult> resultSelector,
             org.apache.calcite.linq4j.JoinType joinType) : ClrCursor<TResult>
         {
@@ -2047,7 +2047,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             readonly bool anti = joinType.name() == nameof(org.apache.calcite.linq4j.JoinType.ANTI);
             readonly bool nullsOnRight = joinType.name() == nameof(org.apache.calcite.linq4j.JoinType.LEFT);
 
-            ClrCursor<TInner>? innerCursor;
+            IClrCursor<TInner>? innerCursor;
             TSource? outerValue;
             TInner? innerValue;
             int state; // 0 -- moving outer, 1 moving inner
@@ -2236,10 +2236,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// So an unknown seen before a match is discarded, and one seen when there is no match is kept —
         /// which is what makes <c>IN</c> over a nullable column answer UNKNOWN rather than FALSE.</para>
         /// </remarks>
-        public static ClrCursor<TResult> CorrelateLeftMarkJoin<TSource, TInner, TResult>(
-            ClrCursor<TSource> outer,
-            Func<TSource, ClrCursor<TInner>?> inner,
-            Func<TSource, CancellationToken, ValueTask<ClrCursor<TInner>?>> innerAsync,
+        public static IClrCursor<TResult> CorrelateLeftMarkJoin<TSource, TInner, TResult>(
+            IClrCursor<TSource> outer,
+            Func<TSource, IClrCursor<TInner>?> inner,
+            Func<TSource, CancellationToken, ValueTask<IClrCursor<TInner>?>> innerAsync,
             Func<TSource, TInner, java.lang.Boolean?> predicate,
             Func<TSource, java.lang.Boolean?, TResult> resultSelector)
         {
@@ -2255,10 +2255,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="CorrelateLeftMarkJoin{TSource, TInner, TResult}"/>, over an outer open that awaits.
         /// </summary>
-        public static async ValueTask<ClrCursor<TResult>> CorrelateLeftMarkJoinAsync<TSource, TInner, TResult>(
-            ValueTask<ClrCursor<TSource>> outer,
-            Func<TSource, ClrCursor<TInner>?> inner,
-            Func<TSource, CancellationToken, ValueTask<ClrCursor<TInner>?>> innerAsync,
+        public static async ValueTask<IClrCursor<TResult>> CorrelateLeftMarkJoinAsync<TSource, TInner, TResult>(
+            ValueTask<IClrCursor<TSource>> outer,
+            Func<TSource, IClrCursor<TInner>?> inner,
+            Func<TSource, CancellationToken, ValueTask<IClrCursor<TInner>?>> innerAsync,
             Func<TSource, TInner, java.lang.Boolean?> predicate,
             Func<TSource, java.lang.Boolean?, TResult> resultSelector,
             CancellationToken cancellationToken)
@@ -2276,9 +2276,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <c>leftMarkJoinInternal</c>'s enumerator.
         /// </summary>
         sealed class CorrelateLeftMarkJoinCursor<TSource, TInner, TResult>(
-            ClrCursor<TSource> outer,
-            Func<TSource, ClrCursor<TInner>?> inner,
-            Func<TSource, CancellationToken, ValueTask<ClrCursor<TInner>?>> innerAsync,
+            IClrCursor<TSource> outer,
+            Func<TSource, IClrCursor<TInner>?> inner,
+            Func<TSource, CancellationToken, ValueTask<IClrCursor<TInner>?>> innerAsync,
             Func<TSource, TInner, java.lang.Boolean?> predicate,
             Func<TSource, java.lang.Boolean?, TResult> resultSelector) : ClrCursor<TResult>
         {
@@ -2401,11 +2401,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// first, because the rest of the batch reads what it cached. Calcite does exactly that, for exactly
         /// that reason.</para>
         /// </remarks>
-        public static ClrCursor<TResult> CorrelateBatchJoin<TSource, TInner, TResult>(
+        public static IClrCursor<TResult> CorrelateBatchJoin<TSource, TInner, TResult>(
             org.apache.calcite.linq4j.JoinType joinType,
-            ClrCursor<TSource> outer,
-            Func<java.util.List, ClrCursor<TInner>?> inner,
-            Func<java.util.List, CancellationToken, ValueTask<ClrCursor<TInner>?>> innerAsync,
+            IClrCursor<TSource> outer,
+            Func<java.util.List, IClrCursor<TInner>?> inner,
+            Func<java.util.List, CancellationToken, ValueTask<IClrCursor<TInner>?>> innerAsync,
             Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             int batchSize)
@@ -2423,11 +2423,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="CorrelateBatchJoin{TSource, TInner, TResult}"/>, over an outer open that awaits.
         /// </summary>
-        public static async ValueTask<ClrCursor<TResult>> CorrelateBatchJoinAsync<TSource, TInner, TResult>(
+        public static async ValueTask<IClrCursor<TResult>> CorrelateBatchJoinAsync<TSource, TInner, TResult>(
             org.apache.calcite.linq4j.JoinType joinType,
-            ValueTask<ClrCursor<TSource>> outer,
-            Func<java.util.List, ClrCursor<TInner>?> inner,
-            Func<java.util.List, CancellationToken, ValueTask<ClrCursor<TInner>?>> innerAsync,
+            ValueTask<IClrCursor<TSource>> outer,
+            Func<java.util.List, IClrCursor<TInner>?> inner,
+            Func<java.util.List, CancellationToken, ValueTask<IClrCursor<TInner>?>> innerAsync,
             Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             int batchSize,
@@ -2457,9 +2457,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// </remarks>
         sealed class CorrelateBatchJoinCursor<TSource, TInner, TResult>(
             org.apache.calcite.linq4j.JoinType joinType,
-            ClrCursor<TSource> outer,
-            Func<java.util.List, ClrCursor<TInner>?> inner,
-            Func<java.util.List, CancellationToken, ValueTask<ClrCursor<TInner>?>> innerAsync,
+            IClrCursor<TSource> outer,
+            Func<java.util.List, IClrCursor<TInner>?> inner,
+            Func<java.util.List, CancellationToken, ValueTask<IClrCursor<TInner>?>> innerAsync,
             Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             int batchSize) : ClrCursor<TResult>
@@ -2474,7 +2474,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             readonly List<TInner> innerValues = [];
             TSource? outerValue;
             TInner? innerValue;
-            ClrCursor<TInner>? innerCursor;
+            IClrCursor<TInner>? innerCursor;
             bool innerEnumHasNext;
             bool atLeastOneResult;
             int i = -1; // outer position
@@ -2763,9 +2763,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// outer is drained and closed before the inner is acquired — one try-with-resources after the
         /// other — which is why the inner arrives as an open rather than as a cursor.</para>
         /// </remarks>
-        public static ClrCursor<TResult> AsofJoin<TSource, TInner, TKey, TResult>(
-            ClrCursor<TSource> outer,
-            Func<ClrCursor<TInner>> inner,
+        public static IClrCursor<TResult> AsofJoin<TSource, TInner, TKey, TResult>(
+            IClrCursor<TSource> outer,
+            Func<IClrCursor<TInner>> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource?, TInner?, TResult> resultSelector,
@@ -2857,9 +2857,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="IAsyncEnumerable{T}"/> could not: its <c>GetAsyncEnumerator</c> cannot await, so the
         /// enumerable convention's ASOF join had to leave its scans to the first advance and say so.
         /// </summary>
-        public static async ValueTask<ClrCursor<TResult>> AsofJoinAsync<TSource, TInner, TKey, TResult>(
-            ValueTask<ClrCursor<TSource>> outer,
-            Func<CancellationToken, ValueTask<ClrCursor<TInner>>> inner,
+        public static async ValueTask<IClrCursor<TResult>> AsofJoinAsync<TSource, TInner, TKey, TResult>(
+            ValueTask<IClrCursor<TSource>> outer,
+            Func<CancellationToken, ValueTask<IClrCursor<TInner>>> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource?, TInner?, TResult> resultSelector,
@@ -3093,9 +3093,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <c>HashTableWithNullSafeKeySet.build</c> drains the build side there — so the build side is drained
         /// and closed here, at the open, and the probe side arrives opened.</para>
         /// </remarks>
-        public static ClrCursor<TResult> LeftMarkHashJoin<TSource, TInner, TKey, TNsKey, TResult>(
-            ClrCursor<TSource> outer,
-            ClrCursor<TInner> inner,
+        public static IClrCursor<TResult> LeftMarkHashJoin<TSource, TInner, TKey, TNsKey, TResult>(
+            IClrCursor<TSource> outer,
+            IClrCursor<TInner> inner,
             Func<TSource, TKey> outerKeyNullAwareSelector,
             Func<TInner, TKey> innerKeyNullAwareSelector,
             Func<TSource, TNsKey>? outerNullSafeKeySelector,
@@ -3145,9 +3145,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// inside the open, which an <see cref="IAsyncEnumerable{T}"/> could not do and a cursor's open
         /// can.
         /// </summary>
-        public static async ValueTask<ClrCursor<TResult>> LeftMarkHashJoinAsync<TSource, TInner, TKey, TNsKey, TResult>(
-            ValueTask<ClrCursor<TSource>> outer,
-            ValueTask<ClrCursor<TInner>> inner,
+        public static async ValueTask<IClrCursor<TResult>> LeftMarkHashJoinAsync<TSource, TInner, TKey, TNsKey, TResult>(
+            ValueTask<IClrCursor<TSource>> outer,
+            ValueTask<IClrCursor<TInner>> inner,
             Func<TSource, TKey> outerKeyNullAwareSelector,
             Func<TInner, TKey> innerKeyNullAwareSelector,
             Func<TSource, TNsKey>? outerNullSafeKeySelector,
@@ -3197,7 +3197,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// The probe loop of <see cref="LeftMarkHashJoin"/>, over the lookup the open built.
         /// </summary>
         sealed class LeftMarkHashJoinCursor<TSource, TInner, TKey, TNsKey, TResult>(
-            ClrCursor<TSource> outer,
+            IClrCursor<TSource> outer,
             Func<TSource, TKey> outerKeyNullAwareSelector,
             Func<TSource, TNsKey>? outerNullSafeKeySelector,
             bool atMostOneNotNullSafeKey,
@@ -3397,9 +3397,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// extra test — what "matched nothing" means is a key in one and a row in the other — so they are
         /// two methods rather than one with a null check inside the loop.</para>
         /// </remarks>
-        public static ClrCursor<TResult> HashJoin<TSource, TInner, TKey, TResult>(
-            ClrCursor<TSource> outer,
-            ClrCursor<TInner> inner,
+        public static IClrCursor<TResult> HashJoin<TSource, TInner, TKey, TResult>(
+            IClrCursor<TSource> outer,
+            IClrCursor<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource?, TInner?, TResult> resultSelector,
@@ -3420,9 +3420,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="HashJoin"/>, over opens that await. The build side is drained with await inside the
         /// open.
         /// </summary>
-        public static ValueTask<ClrCursor<TResult>> HashJoinAsync<TSource, TInner, TKey, TResult>(
-            ValueTask<ClrCursor<TSource>> outer,
-            ValueTask<ClrCursor<TInner>> inner,
+        public static ValueTask<IClrCursor<TResult>> HashJoinAsync<TSource, TInner, TKey, TResult>(
+            ValueTask<IClrCursor<TSource>> outer,
+            ValueTask<IClrCursor<TInner>> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource?, TInner?, TResult> resultSelector,
@@ -3448,9 +3448,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// acquires the probe side's enumerator, both before the first <c>moveNext</c>: the drain is here,
         /// at the open, and the probe side arrives opened.</para>
         /// </remarks>
-        static ClrCursor<TResult> HashEquiJoin<TSource, TInner, TKey, TResult>(
-            ClrCursor<TSource> outer,
-            ClrCursor<TInner> inner,
+        static IClrCursor<TResult> HashEquiJoin<TSource, TInner, TKey, TResult>(
+            IClrCursor<TSource> outer,
+            IClrCursor<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource?, TInner?, TResult> resultSelector,
@@ -3491,9 +3491,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="HashEquiJoin"/>, over opens that await.
         /// </summary>
-        static async ValueTask<ClrCursor<TResult>> HashEquiJoinAsync<TSource, TInner, TKey, TResult>(
-            ValueTask<ClrCursor<TSource>> outer,
-            ValueTask<ClrCursor<TInner>> inner,
+        static async ValueTask<IClrCursor<TResult>> HashEquiJoinAsync<TSource, TInner, TKey, TResult>(
+            ValueTask<IClrCursor<TSource>> outer,
+            ValueTask<IClrCursor<TInner>> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource?, TInner?, TResult> resultSelector,
@@ -3544,7 +3544,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// step the same states; only the draw differs.
         /// </remarks>
         sealed class HashEquiJoinCursor<TSource, TInner, TKey, TResult>(
-            ClrCursor<TSource> outer,
+            IClrCursor<TSource> outer,
             Func<TSource, TKey> outerKeySelector,
             Func<TSource?, TInner?, TResult> resultSelector,
             EqualityComparer? comparer,
@@ -3746,9 +3746,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// and the leftover list, and acquires the probe side's enumerator, all before the first
         /// <c>moveNext</c>: the build side is read here, at the open, and the probe side arrives opened.</para>
         /// </remarks>
-        static ClrCursor<TResult> HashJoinWithPredicate<TSource, TInner, TKey, TResult>(
-            ClrCursor<TSource> outer,
-            ClrCursor<TInner> inner,
+        static IClrCursor<TResult> HashJoinWithPredicate<TSource, TInner, TKey, TResult>(
+            IClrCursor<TSource> outer,
+            IClrCursor<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource?, TInner?, TResult> resultSelector,
@@ -3789,9 +3789,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="HashJoinWithPredicate"/>, over opens that await.
         /// </summary>
-        static async ValueTask<ClrCursor<TResult>> HashJoinWithPredicateAsync<TSource, TInner, TKey, TResult>(
-            ValueTask<ClrCursor<TSource>> outer,
-            ValueTask<ClrCursor<TInner>> inner,
+        static async ValueTask<IClrCursor<TResult>> HashJoinWithPredicateAsync<TSource, TInner, TKey, TResult>(
+            ValueTask<IClrCursor<TSource>> outer,
+            ValueTask<IClrCursor<TInner>> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource?, TInner?, TResult> resultSelector,
@@ -3843,7 +3843,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// of keys.
         /// </remarks>
         sealed class HashJoinWithPredicateCursor<TSource, TInner, TKey, TResult>(
-            ClrCursor<TSource> outer,
+            IClrCursor<TSource> outer,
             Func<TSource, TKey> outerKeySelector,
             Func<TSource?, TInner?, TResult> resultSelector,
             EqualityComparer? comparer,
@@ -4026,10 +4026,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// inside an advance, and the advance may be either, so the inner arrives as openers of both kinds
         /// and the cursor calls the one matching the advance that reached it.</para>
         /// </remarks>
-        public static ClrCursor<TSource> SemiJoin<TSource, TInner, TKey>(
-            ClrCursor<TSource> outer,
-            Func<ClrCursor<TInner>> inner,
-            Func<CancellationToken, ValueTask<ClrCursor<TInner>>> innerAsync,
+        public static IClrCursor<TSource> SemiJoin<TSource, TInner, TKey>(
+            IClrCursor<TSource> outer,
+            Func<IClrCursor<TInner>> inner,
+            Func<CancellationToken, ValueTask<IClrCursor<TInner>>> innerAsync,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             EqualityComparer? comparer,
@@ -4049,10 +4049,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="SemiJoin"/>, over an open that awaits. Nothing but the outer is acquired at this open;
         /// the inner is acquired inside the advance that reads the first outer row.
         /// </summary>
-        public static async ValueTask<ClrCursor<TSource>> SemiJoinAsync<TSource, TInner, TKey>(
-            ValueTask<ClrCursor<TSource>> outer,
-            Func<ClrCursor<TInner>> inner,
-            Func<CancellationToken, ValueTask<ClrCursor<TInner>>> innerAsync,
+        public static async ValueTask<IClrCursor<TSource>> SemiJoinAsync<TSource, TInner, TKey>(
+            ValueTask<IClrCursor<TSource>> outer,
+            Func<IClrCursor<TInner>> inner,
+            Func<CancellationToken, ValueTask<IClrCursor<TInner>>> innerAsync,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             EqualityComparer? comparer,
@@ -4082,9 +4082,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// where one loop is the only consumer.</para>
         /// </remarks>
         sealed class SemiEquiJoinCursor<TSource, TInner, TKey>(
-            ClrCursor<TSource> outer,
-            Func<ClrCursor<TInner>> inner,
-            Func<CancellationToken, ValueTask<ClrCursor<TInner>>> innerAsync,
+            IClrCursor<TSource> outer,
+            Func<IClrCursor<TInner>> inner,
+            Func<CancellationToken, ValueTask<IClrCursor<TInner>>> innerAsync,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             EqualityComparer? comparer,
@@ -4193,9 +4193,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// does reach the lookup. Memoized on the first outer row for the same reason.
         /// </remarks>
         sealed class SemiJoinWithPredicateCursor<TSource, TInner, TKey>(
-            ClrCursor<TSource> outer,
-            Func<ClrCursor<TInner>> inner,
-            Func<CancellationToken, ValueTask<ClrCursor<TInner>>> innerAsync,
+            IClrCursor<TSource> outer,
+            Func<IClrCursor<TInner>> inner,
+            Func<CancellationToken, ValueTask<IClrCursor<TInner>>> innerAsync,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             EqualityComparer? comparer,
@@ -4346,9 +4346,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// so obtaining linq4j's enumerator reads each input as far as its first key run; the open does the
         /// same, and the awaiting open awaits it.</para>
         /// </remarks>
-        public static ClrCursor<TResult> MergeJoin<TSource, TInner, TKey, TResult>(
-            ClrCursor<TSource> outer,
-            ClrCursor<TInner> inner,
+        public static IClrCursor<TResult> MergeJoin<TSource, TInner, TKey, TResult>(
+            IClrCursor<TSource> outer,
+            IClrCursor<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource, TInner, bool>? predicate,
@@ -4375,9 +4375,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="MergeJoin"/>, over opens that await. The positioning <c>start()</c> does is awaited
         /// inside the open, which an <see cref="IAsyncEnumerable{T}"/> could not do and a cursor's open can.
         /// </summary>
-        public static async ValueTask<ClrCursor<TResult>> MergeJoinAsync<TSource, TInner, TKey, TResult>(
-            ValueTask<ClrCursor<TSource>> outer,
-            ValueTask<ClrCursor<TInner>> inner,
+        public static async ValueTask<IClrCursor<TResult>> MergeJoinAsync<TSource, TInner, TKey, TResult>(
+            ValueTask<IClrCursor<TSource>> outer,
+            ValueTask<IClrCursor<TInner>> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource, TInner, bool>? predicate,
@@ -4404,8 +4404,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <c>Read</c> and once with <c>ReadAsync</c> — over the one set of fields.
         /// </summary>
         sealed class MergeJoinCursor<TSource, TInner, TKey, TResult>(
-            ClrCursor<TSource> outer,
-            ClrCursor<TInner> inner,
+            IClrCursor<TSource> outer,
+            IClrCursor<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource, TInner, bool>? predicate,
@@ -4425,7 +4425,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             readonly List<TInner> rights = [];
             bool done;
             bool remainingLeft;
-            ClrCursor<TResult>? results;
+            IClrCursor<TResult>? results;
             TResult current = default!;
 
             bool IsLeftOrAnti => isLeft || isAnti;
@@ -4837,14 +4837,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             /// and obtains its enumerator on the spot; the openers below stand for the second of those, opened
             /// once per left row of the run.
             /// </remarks>
-            ClrCursor<TResult> Residual()
+            IClrCursor<TResult> Residual()
             {
                 var rightRun = new List<TInner>(rights);
 
                 return NestedLoopJoin(
                     new ListCursor<TSource>([.. lefts]),
                     () => new ListCursor<TInner>(rightRun),
-                    token => new ValueTask<ClrCursor<TInner>>(new ListCursor<TInner>(rightRun)),
+                    token => new ValueTask<IClrCursor<TInner>>(new ListCursor<TInner>(rightRun)),
                     resultSelector,
                     predicate!,
                     joinType);
@@ -5058,10 +5058,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <para>The right side is opened afresh for every left row, inside <c>moveNext</c>, so it arrives as
         /// openers of both kinds.</para>
         /// </remarks>
-        public static ClrCursor<TResult> LeftMarkNestedLoopJoin<TSource, TInner, TResult>(
-            ClrCursor<TSource> outer,
-            Func<ClrCursor<TInner>> inner,
-            Func<CancellationToken, ValueTask<ClrCursor<TInner>>> innerAsync,
+        public static IClrCursor<TResult> LeftMarkNestedLoopJoin<TSource, TInner, TResult>(
+            IClrCursor<TSource> outer,
+            Func<IClrCursor<TInner>> inner,
+            Func<CancellationToken, ValueTask<IClrCursor<TInner>>> innerAsync,
             Func<TSource, TInner, java.lang.Boolean?> predicate,
             Func<TSource, java.lang.Boolean?, TResult> resultSelector)
         {
@@ -5075,10 +5075,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="LeftMarkNestedLoopJoin"/>, over an open that awaits. Nothing but the outer is acquired
         /// at this open; the right side is acquired inside each advance.
         /// </summary>
-        public static async ValueTask<ClrCursor<TResult>> LeftMarkNestedLoopJoinAsync<TSource, TInner, TResult>(
-            ValueTask<ClrCursor<TSource>> outer,
-            Func<ClrCursor<TInner>> inner,
-            Func<CancellationToken, ValueTask<ClrCursor<TInner>>> innerAsync,
+        public static async ValueTask<IClrCursor<TResult>> LeftMarkNestedLoopJoinAsync<TSource, TInner, TResult>(
+            ValueTask<IClrCursor<TSource>> outer,
+            Func<IClrCursor<TInner>> inner,
+            Func<CancellationToken, ValueTask<IClrCursor<TInner>>> innerAsync,
             Func<TSource, TInner, java.lang.Boolean?> predicate,
             Func<TSource, java.lang.Boolean?, TResult> resultSelector,
             CancellationToken cancellationToken)
@@ -5103,10 +5103,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// field initializer at <c>enumerator()</c> — the outer arrives opened — and builds and reads each
         /// right side at its left row's turn.
         /// </remarks>
-        static ClrCursor<TResult> LeftMarkJoin<TSource, TInner, TResult>(
-            ClrCursor<TSource> outer,
-            Func<TSource, ClrCursor<TInner>?> inner,
-            Func<TSource, CancellationToken, ValueTask<ClrCursor<TInner>?>> innerAsync,
+        static IClrCursor<TResult> LeftMarkJoin<TSource, TInner, TResult>(
+            IClrCursor<TSource> outer,
+            Func<TSource, IClrCursor<TInner>?> inner,
+            Func<TSource, CancellationToken, ValueTask<IClrCursor<TInner>?>> innerAsync,
             Func<TSource, TInner, java.lang.Boolean?> predicate,
             Func<TSource, java.lang.Boolean?, TResult> resultSelector)
         {
@@ -5123,9 +5123,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// The row loop of <see cref="LeftMarkJoin"/>.
         /// </summary>
         sealed class LeftMarkJoinCursor<TSource, TInner, TResult>(
-            ClrCursor<TSource> outer,
-            Func<TSource, ClrCursor<TInner>?> inner,
-            Func<TSource, CancellationToken, ValueTask<ClrCursor<TInner>?>> innerAsync,
+            IClrCursor<TSource> outer,
+            Func<TSource, IClrCursor<TInner>?> inner,
+            Func<TSource, CancellationToken, ValueTask<IClrCursor<TInner>?>> innerAsync,
             Func<TSource, TInner, java.lang.Boolean?> predicate,
             Func<TSource, java.lang.Boolean?, TResult> resultSelector) : ClrCursor<TResult>
         {
@@ -5251,10 +5251,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// outer row, inside <c>moveNext</c>, by whichever advance reached that row; the buffering body opens
         /// it once, at the open, by the opener of the open's own kind.</para>
         /// </remarks>
-        public static ClrCursor<TResult> NestedLoopJoin<TSource, TInner, TResult>(
-            ClrCursor<TSource> outer,
-            Func<ClrCursor<TInner>> inner,
-            Func<CancellationToken, ValueTask<ClrCursor<TInner>>> innerAsync,
+        public static IClrCursor<TResult> NestedLoopJoin<TSource, TInner, TResult>(
+            IClrCursor<TSource> outer,
+            Func<IClrCursor<TInner>> inner,
+            Func<CancellationToken, ValueTask<IClrCursor<TInner>>> innerAsync,
             Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             org.apache.calcite.linq4j.JoinType joinType)
@@ -5272,10 +5272,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="NestedLoopJoin"/>, over an open that awaits.
         /// </summary>
-        public static async ValueTask<ClrCursor<TResult>> NestedLoopJoinAsync<TSource, TInner, TResult>(
-            ValueTask<ClrCursor<TSource>> outer,
-            Func<ClrCursor<TInner>> inner,
-            Func<CancellationToken, ValueTask<ClrCursor<TInner>>> innerAsync,
+        public static async ValueTask<IClrCursor<TResult>> NestedLoopJoinAsync<TSource, TInner, TResult>(
+            ValueTask<IClrCursor<TSource>> outer,
+            Func<IClrCursor<TInner>> inner,
+            Func<CancellationToken, ValueTask<IClrCursor<TInner>>> innerAsync,
             Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             org.apache.calcite.linq4j.JoinType joinType,
@@ -5318,9 +5318,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// answer SQL wants, and is the answer Calcite gives. This is a port and Calcite's behaviour is the
         /// specification, so the defect is reproduced.</para>
         /// </remarks>
-        static ClrCursor<TResult> NestedLoopJoinAsList<TSource, TInner, TResult>(
-            ClrCursor<TSource> outer,
-            Func<ClrCursor<TInner>> inner,
+        static IClrCursor<TResult> NestedLoopJoinAsList<TSource, TInner, TResult>(
+            IClrCursor<TSource> outer,
+            Func<IClrCursor<TInner>> inner,
             Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             org.apache.calcite.linq4j.JoinType joinType)
@@ -5365,9 +5365,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="NestedLoopJoinAsList"/>, awaiting each row it reads. The whole join still runs at the
         /// open, which an <see cref="IAsyncEnumerable{T}"/> could not do and a cursor's open can.
         /// </summary>
-        static async ValueTask<ClrCursor<TResult>> NestedLoopJoinAsListAsync<TSource, TInner, TResult>(
-            ClrCursor<TSource> outer,
-            Func<CancellationToken, ValueTask<ClrCursor<TInner>>> innerAsync,
+        static async ValueTask<IClrCursor<TResult>> NestedLoopJoinAsListAsync<TSource, TInner, TResult>(
+            IClrCursor<TSource> outer,
+            Func<CancellationToken, ValueTask<IClrCursor<TInner>>> innerAsync,
             Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             org.apache.calcite.linq4j.JoinType joinType,
@@ -5498,10 +5498,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <para>Calcite refuses RIGHT and FULL before it returns its enumerable, and the refusal is here,
         /// at the open, rather than in the cursor.</para>
         /// </remarks>
-        static ClrCursor<TResult> NestedLoopJoinOptimized<TSource, TInner, TResult>(
-            ClrCursor<TSource> outer,
-            Func<ClrCursor<TInner>> inner,
-            Func<CancellationToken, ValueTask<ClrCursor<TInner>>> innerAsync,
+        static IClrCursor<TResult> NestedLoopJoinOptimized<TSource, TInner, TResult>(
+            IClrCursor<TSource> outer,
+            Func<IClrCursor<TInner>> inner,
+            Func<CancellationToken, ValueTask<IClrCursor<TInner>>> innerAsync,
             Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             org.apache.calcite.linq4j.JoinType joinType)
@@ -5521,15 +5521,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// The state machine of <see cref="NestedLoopJoinOptimized"/>.
         /// </summary>
         sealed class NestedLoopJoinOptimizedCursor<TSource, TInner, TResult>(
-            ClrCursor<TSource> outer,
-            Func<ClrCursor<TInner>> inner,
-            Func<CancellationToken, ValueTask<ClrCursor<TInner>>> innerAsync,
+            IClrCursor<TSource> outer,
+            Func<IClrCursor<TInner>> inner,
+            Func<CancellationToken, ValueTask<IClrCursor<TInner>>> innerAsync,
             Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
             string name) : ClrCursor<TResult>
         {
 
-            ClrCursor<TInner>? innerCursor;
+            IClrCursor<TInner>? innerCursor;
             bool outerMatch; // whether the outerValue has matched an innerValue
             TSource outerValue = default!;
             TInner innerValue = default!;
@@ -5709,7 +5709,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <para>The input is acquired in a field initializer of linq4j's enumerator, which runs at
         /// <c>enumerator()</c>; it arrives opened here, which is the same moment.</para>
         /// </remarks>
-        public static ClrCursor<TSource> LazyCollectionSpool<TSource>(java.util.Collection collection, ClrCursor<TSource> input)
+        public static IClrCursor<TSource> LazyCollectionSpool<TSource>(java.util.Collection collection, IClrCursor<TSource> input)
         {
             ArgumentNullException.ThrowIfNull(collection);
             ArgumentNullException.ThrowIfNull(input);
@@ -5720,7 +5720,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="LazyCollectionSpool{TSource}"/>, over an open that awaits.
         /// </summary>
-        public static async ValueTask<ClrCursor<TSource>> LazyCollectionSpoolAsync<TSource>(java.util.Collection collection, ValueTask<ClrCursor<TSource>> input, CancellationToken cancellationToken)
+        public static async ValueTask<IClrCursor<TSource>> LazyCollectionSpoolAsync<TSource>(java.util.Collection collection, ValueTask<IClrCursor<TSource>> input, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(collection);
 
@@ -5732,7 +5732,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <c>moveNext</c> buffers the row it read and flushes the buffer into the collection on every advance
         /// that finds the input exhausted.
         /// </summary>
-        sealed class LazyCollectionSpoolCursor<TSource>(java.util.Collection collection, ClrCursor<TSource> input) : ClrCursor<TSource>
+        sealed class LazyCollectionSpoolCursor<TSource>(java.util.Collection collection, IClrCursor<TSource> input) : ClrCursor<TSource>
         {
 
             readonly List<TSource> tempCollection = [];
@@ -5819,10 +5819,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// compares by reference; a row can never be that object, so a <see cref="bool"/> decides exactly what
         /// the reference comparison decides, without a cast that would be a lie about the row type.</para>
         /// </remarks>
-        public static ClrCursor<TSource> RepeatUnion<TSource>(
-            ClrCursor<TSource> seed,
-            Func<ClrCursor<TSource>> iteration,
-            Func<CancellationToken, ValueTask<ClrCursor<TSource>>> iterationAsync,
+        public static IClrCursor<TSource> RepeatUnion<TSource>(
+            IClrCursor<TSource> seed,
+            Func<IClrCursor<TSource>> iteration,
+            Func<CancellationToken, ValueTask<IClrCursor<TSource>>> iterationAsync,
             int iterationLimit,
             bool all,
             EqualityComparer? comparer,
@@ -5839,10 +5839,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="RepeatUnion{TSource}"/>, over a seed whose open awaits. The rounds are opened inside
         /// the advances, by the open of the advance's kind.
         /// </summary>
-        public static async ValueTask<ClrCursor<TSource>> RepeatUnionAsync<TSource>(
-            ValueTask<ClrCursor<TSource>> seed,
-            Func<ClrCursor<TSource>> iteration,
-            Func<CancellationToken, ValueTask<ClrCursor<TSource>>> iterationAsync,
+        public static async ValueTask<IClrCursor<TSource>> RepeatUnionAsync<TSource>(
+            ValueTask<IClrCursor<TSource>> seed,
+            Func<IClrCursor<TSource>> iteration,
+            Func<CancellationToken, ValueTask<IClrCursor<TSource>>> iterationAsync,
             int iterationLimit,
             bool all,
             EqualityComparer? comparer,
@@ -5860,9 +5860,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// opened by the open matching the advance.
         /// </summary>
         sealed class RepeatUnionCursor<TSource>(
-            ClrCursor<TSource> seed,
-            Func<ClrCursor<TSource>> iteration,
-            Func<CancellationToken, ValueTask<ClrCursor<TSource>>> iterationAsync,
+            IClrCursor<TSource> seed,
+            Func<IClrCursor<TSource>> iteration,
+            Func<CancellationToken, ValueTask<IClrCursor<TSource>>> iterationAsync,
             int iterationLimit,
             bool all,
             EqualityComparer? comparer,
@@ -5877,7 +5877,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             bool seedProcessed;
             int currentIteration;
-            ClrCursor<TSource>? iterativeCursor;
+            IClrCursor<TSource>? iterativeCursor;
 
             // Calcite's set of wrapped rows, consulted only when `all` is false
             readonly HashSet<TSource>? processed = all ? null : new HashSet<TSource>(JavaEqualityComparer<TSource>.Of(comparer));
@@ -6067,7 +6067,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// because the order a set operator yields its rows in is the order of the collection it held
         /// them in.</para>
         /// </remarks>
-        public static ClrCursor<TSource> Intersect<TSource>(Func<ClrCursor<TSource>> source, ClrCursor<TSource> other, EqualityComparer? comparer, bool all)
+        public static IClrCursor<TSource> Intersect<TSource>(Func<IClrCursor<TSource>> source, IClrCursor<TSource> other, EqualityComparer? comparer, bool all)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(other);
@@ -6106,7 +6106,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="Intersect{TSource}"/>, over opens that await.
         /// </summary>
-        public static async ValueTask<ClrCursor<TSource>> IntersectAsync<TSource>(Func<CancellationToken, ValueTask<ClrCursor<TSource>>> source, ValueTask<ClrCursor<TSource>> other, EqualityComparer? comparer, bool all, CancellationToken cancellationToken)
+        public static async ValueTask<IClrCursor<TSource>> IntersectAsync<TSource>(Func<CancellationToken, ValueTask<IClrCursor<TSource>>> source, ValueTask<IClrCursor<TSource>> other, EqualityComparer? comparer, bool all, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(source);
 
@@ -6169,7 +6169,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// against it, removing. The second is acquired after the first has been drained and closed, which
         /// is why it arrives as an open rather than as a cursor — the shape <see cref="Union{TSource}"/> has.
         /// </remarks>
-        public static ClrCursor<TSource> Except<TSource>(ClrCursor<TSource> source, Func<ClrCursor<TSource>> other, EqualityComparer? comparer, bool all)
+        public static IClrCursor<TSource> Except<TSource>(IClrCursor<TSource> source, Func<IClrCursor<TSource>> other, EqualityComparer? comparer, bool all)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(other);
@@ -6202,7 +6202,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="Except{TSource}"/>, over opens that await.
         /// </summary>
-        public static async ValueTask<ClrCursor<TSource>> ExceptAsync<TSource>(ValueTask<ClrCursor<TSource>> source, Func<CancellationToken, ValueTask<ClrCursor<TSource>>> other, EqualityComparer? comparer, bool all, CancellationToken cancellationToken)
+        public static async ValueTask<IClrCursor<TSource>> ExceptAsync<TSource>(ValueTask<IClrCursor<TSource>> source, Func<CancellationToken, ValueTask<IClrCursor<TSource>>> other, EqualityComparer? comparer, bool all, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(other);
 
@@ -6237,7 +6237,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// </summary>
         /// <typeparam name="TSource"></typeparam>
         /// <typeparam name="TKey"></typeparam>
-        /// <param name="sources">Opens each source, as a <c>Func&lt;ClrCursor&lt;TSource&gt;&gt;</c>.</param>
+        /// <param name="sources">Opens each source, as a <c>Func&lt;IClrCursor&lt;TSource&gt;&gt;</c>.</param>
         /// <param name="sortKeySelector"></param>
         /// <param name="sortComparator"></param>
         /// <param name="all">Whether a row that repeats is kept.</param>
@@ -6258,7 +6258,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// current key: the inputs are sorted, so a row that repeats one already emitted arrives before the
         /// key changes. That is Calcite's reasoning and its set is cleared the same way.</para>
         /// </remarks>
-        public static ClrCursor<TSource> MergeUnion<TSource, TKey>(
+        public static IClrCursor<TSource> MergeUnion<TSource, TKey>(
             java.util.List sources,
             Func<TSource, TKey> sortKeySelector,
             java.util.Comparator sortComparator,
@@ -6269,9 +6269,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             ArgumentNullException.ThrowIfNull(sortKeySelector);
             ArgumentNullException.ThrowIfNull(sortComparator);
 
-            var inputs = new ClrCursor<TSource>[sources.size()];
+            var inputs = new IClrCursor<TSource>[sources.size()];
             for (int i = 0; i < inputs.Length; i++)
-                inputs[i] = ((Func<ClrCursor<TSource>>)sources.get(i))();
+                inputs[i] = ((Func<IClrCursor<TSource>>)sources.get(i))();
 
             var cursor = new MergeUnionCursor<TSource, TKey>(inputs, sortKeySelector, sortComparator, all, comparer);
             cursor.Init();
@@ -6281,9 +6281,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
         /// <summary>
         /// <see cref="MergeUnion{TSource, TKey}"/>, over opens that await, each a
-        /// <c>Func&lt;CancellationToken, ValueTask&lt;ClrCursor&lt;TSource&gt;&gt;&gt;</c>.
+        /// <c>Func&lt;CancellationToken, ValueTask&lt;IClrCursor&lt;TSource&gt;&gt;&gt;</c>.
         /// </summary>
-        public static async ValueTask<ClrCursor<TSource>> MergeUnionAsync<TSource, TKey>(
+        public static async ValueTask<IClrCursor<TSource>> MergeUnionAsync<TSource, TKey>(
             java.util.List sources,
             Func<TSource, TKey> sortKeySelector,
             java.util.Comparator sortComparator,
@@ -6295,9 +6295,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             ArgumentNullException.ThrowIfNull(sortKeySelector);
             ArgumentNullException.ThrowIfNull(sortComparator);
 
-            var inputs = new ClrCursor<TSource>[sources.size()];
+            var inputs = new IClrCursor<TSource>[sources.size()];
             for (int i = 0; i < inputs.Length; i++)
-                inputs[i] = await ((Func<CancellationToken, ValueTask<ClrCursor<TSource>>>)sources.get(i))(cancellationToken).ConfigureAwait(false);
+                inputs[i] = await ((Func<CancellationToken, ValueTask<IClrCursor<TSource>>>)sources.get(i))(cancellationToken).ConfigureAwait(false);
 
             var cursor = new MergeUnionCursor<TSource, TKey>(inputs, sortKeySelector, sortComparator, all, comparer);
             await cursor.InitAsync(cancellationToken).ConfigureAwait(false);
@@ -6310,7 +6310,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// fields held once and stepped by either advance.
         /// </summary>
         sealed class MergeUnionCursor<TSource, TKey>(
-            ClrCursor<TSource>[] inputs,
+            IClrCursor<TSource>[] inputs,
             Func<TSource, TKey> sortKeySelector,
             java.util.Comparator sortComparator,
             bool all,
@@ -6537,7 +6537,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// and swaps in an <c>ArrayList</c> when a second row arrives. Ours is always a
         /// <see cref="List{T}"/>. That is an allocation difference, not a logical one.</para>
         /// </remarks>
-        public static ClrCursor<TSource> OrderByWithFetchAndOffset<TSource, TKey>(Func<ClrCursor<TSource>> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, java.math.BigDecimal offset, java.math.BigDecimal fetch)
+        public static IClrCursor<TSource> OrderByWithFetchAndOffset<TSource, TKey>(Func<IClrCursor<TSource>> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, java.math.BigDecimal offset, java.math.BigDecimal fetch)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(keySelector);
@@ -6567,7 +6567,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="OrderByWithFetchAndOffset{TSource, TKey}"/>, over an open that awaits.
         /// </summary>
-        public static async ValueTask<ClrCursor<TSource>> OrderByWithFetchAndOffsetAsync<TSource, TKey>(Func<CancellationToken, ValueTask<ClrCursor<TSource>>> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, java.math.BigDecimal offset, java.math.BigDecimal fetch, CancellationToken cancellationToken)
+        public static async ValueTask<IClrCursor<TSource>> OrderByWithFetchAndOffsetAsync<TSource, TKey>(Func<CancellationToken, ValueTask<IClrCursor<TSource>>> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, java.math.BigDecimal offset, java.math.BigDecimal fetch, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(source);
             ArgumentNullException.ThrowIfNull(keySelector);
@@ -6771,8 +6771,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="WindowAsync"/> awaits the drain and hands back a cursor over the finished list, exactly as
         /// this does.</para>
         /// </remarks>
-        public static ClrCursor<TResult> Window<TSource, TKey, TAccumulator, TResult>(
-            ClrCursor<TSource> source,
+        public static IClrCursor<TResult> Window<TSource, TKey, TAccumulator, TResult>(
+            IClrCursor<TSource> source,
             Func<TSource, TKey>? partitionSelector,
             java.util.Comparator comparator,
             org.apache.calcite.rex.RexWindowExclusion exclude,
@@ -6808,8 +6808,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// synchronous open: there is no first advance for the work to be deferred to, and nothing here
         /// wants one.
         /// </summary>
-        public static async ValueTask<ClrCursor<TResult>> WindowAsync<TSource, TKey, TAccumulator, TResult>(
-            ValueTask<ClrCursor<TSource>> source,
+        public static async ValueTask<IClrCursor<TResult>> WindowAsync<TSource, TKey, TAccumulator, TResult>(
+            ValueTask<IClrCursor<TSource>> source,
             Func<TSource, TKey>? partitionSelector,
             java.util.Comparator comparator,
             org.apache.calcite.rex.RexWindowExclusion exclude,
@@ -6987,7 +6987,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// partition of its own, and <c>arrays</c> sorts with <c>Arrays.sort</c>, which is stable, so rows the
         /// collation does not separate stay in the order they arrived.</para>
         /// </remarks>
-        static (object Collection, java.util.Iterator Iterator) PartitionIterator<TSource, TKey>(ClrCursor<TSource> source, Func<TSource, TKey>? partitionSelector, java.util.Comparator comparator)
+        static (object Collection, java.util.Iterator Iterator) PartitionIterator<TSource, TKey>(IClrCursor<TSource> source, Func<TSource, TKey>? partitionSelector, java.util.Comparator comparator)
         {
             try
             {
@@ -7016,7 +7016,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="PartitionIterator{TSource, TKey}"/>, awaiting each row of the drain.
         /// </summary>
-        static async ValueTask<(object Collection, java.util.Iterator Iterator)> PartitionIteratorAsync<TSource, TKey>(ClrCursor<TSource> source, Func<TSource, TKey>? partitionSelector, java.util.Comparator comparator, CancellationToken cancellationToken)
+        static async ValueTask<(object Collection, java.util.Iterator Iterator)> PartitionIteratorAsync<TSource, TKey>(IClrCursor<TSource> source, Func<TSource, TKey>? partitionSelector, java.util.Comparator comparator, CancellationToken cancellationToken)
         {
             try
             {

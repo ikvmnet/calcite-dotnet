@@ -67,13 +67,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             public int Evaluations { get; private set; }
 
-            public ClrCursor<int> Open()
+            public IClrCursor<int> Open()
             {
                 var round = Evaluations++;
                 return new RowsCursor(round == 0 ? [100] : []);
             }
 
-            public async ValueTask<ClrCursor<int>> OpenAsync(CancellationToken cancellationToken)
+            public async ValueTask<IClrCursor<int>> OpenAsync(CancellationToken cancellationToken)
             {
                 await Task.Yield();
                 return Open();
@@ -89,20 +89,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             public int Evaluations { get; private set; }
 
-            public ClrCursor<int> Open()
+            public IClrCursor<int> Open()
             {
                 Evaluations++;
                 return new RowsCursor([]);
             }
 
-            public ValueTask<ClrCursor<int>> OpenAsync(CancellationToken cancellationToken)
+            public ValueTask<IClrCursor<int>> OpenAsync(CancellationToken cancellationToken)
             {
-                return new ValueTask<ClrCursor<int>>(Open());
+                return new ValueTask<IClrCursor<int>>(Open());
             }
 
         }
 
-        static List<int> ReadAll(ClrCursor<int> cursor)
+        static List<int> ReadAll(IClrCursor<int> cursor)
         {
             var rows = new List<int>();
             while (cursor.Read())
@@ -111,7 +111,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             return rows;
         }
 
-        static async Task<List<int>> ReadAllAsync(ClrCursor<int> cursor)
+        static async Task<List<int>> ReadAllAsync(IClrCursor<int> cursor)
         {
             var rows = new List<int>();
             while (await cursor.ReadAsync(CancellationToken.None))
@@ -150,7 +150,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var rounds = new Rounds();
             var openedAsync = 0;
             var cursor = await ClrCursorDefaults.RepeatUnionAsync(
-                new ValueTask<ClrCursor<int>>(new RowsCursor([1])),
+                new ValueTask<IClrCursor<int>>(new RowsCursor([1])),
                 rounds.Open,
                 token => { openedAsync++; return rounds.OpenAsync(token); },
                 -1, true, null, null, CancellationToken.None);

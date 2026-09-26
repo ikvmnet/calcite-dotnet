@@ -282,7 +282,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             {
                 var returns = node.ReturnType;
 
-                if (returns.IsGenericType && returns.GetGenericTypeDefinition() == typeof(ClrCursor<>))
+                if (returns.IsGenericType && returns.GetGenericTypeDefinition() == typeof(IClrCursor<>))
                 {
                     Check(node, false);
                     return node;
@@ -381,7 +381,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             {
                 var factory = Implement(Plan(sql, Schema()), new java.util.HashMap());
 
-                factory.OpenExpression.ReturnType.Should().Be(typeof(ClrCursor));
+                factory.OpenExpression.ReturnType.Should().Be(typeof(IClrCursor));
                 new OpenChecker(sql, wrong).Check(factory.OpenExpression, false);
             }
 
@@ -400,7 +400,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             {
                 var factory = Implement(Plan(sql, Schema()), new java.util.HashMap());
 
-                factory.OpenAsyncExpression.ReturnType.Should().Be(typeof(ValueTask<ClrCursor>));
+                factory.OpenAsyncExpression.ReturnType.Should().Be(typeof(ValueTask<IClrCursor>));
 
                 // the root ends in the one continuation that changes the type parameter, which is a bridge
                 // by declaring type and the one allowed at the root
@@ -688,10 +688,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             // the synchronous result read as an awaiting one: a completed open over the same cursor
             var awaited = implementor.Awaited(implementor.VisitChild(null, 0, physical, ClrEnumerablePrefer.Array));
-            awaited.Expression.Type.Should().Be(typeof(ValueTask<ClrCursor<object[]>>));
+            awaited.Expression.Type.Should().Be(typeof(ValueTask<IClrCursor<object[]>>));
             ((MethodCallExpression)awaited.Expression).Method.Name.Should().Be(nameof(ClrCursors.Completed));
 
-            var openAwaited = Expression.Lambda<Func<DataContext, CancellationToken, ValueTask<ClrCursor<object[]>>>>(
+            var openAwaited = Expression.Lambda<Func<DataContext, CancellationToken, ValueTask<IClrCursor<object[]>>>>(
                 awaited.Expression, implementor.Root, implementor.CancellationToken).Compile();
 
             var rows = new List<string>();
@@ -704,10 +704,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             // the awaiting result read as a synchronous one: the open is blocked for
             var pulled = implementor.Pulled(implementor.VisitChildAsync(null, 0, physical, ClrEnumerablePrefer.Array));
-            pulled.Expression.Type.Should().Be(typeof(ClrCursor<object[]>));
+            pulled.Expression.Type.Should().Be(typeof(IClrCursor<object[]>));
             ((MethodCallExpression)pulled.Expression).Method.Name.Should().Be(nameof(ClrCursors.Block));
 
-            var openPulled = Expression.Lambda<Func<DataContext, ClrCursor<object[]>>>(pulled.Expression, implementor.Root).Compile();
+            var openPulled = Expression.Lambda<Func<DataContext, IClrCursor<object[]>>>(pulled.Expression, implementor.Root).Compile();
 
             rows.Clear();
             using (var cursor = openPulled(context))

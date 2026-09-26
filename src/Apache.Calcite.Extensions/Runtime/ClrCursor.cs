@@ -6,8 +6,8 @@ namespace Apache.Calcite.Extensions.Runtime
 {
 
     /// <summary>
-    /// A forward-only cursor over the rows of a plan, advanced synchronously or with await, as the reader
-    /// chooses on each advance.
+    /// The base of every cursor of this project: an <see cref="IClrCursor"/> advanced synchronously or with
+    /// await, as the reader chooses on each advance.
     /// </summary>
     /// <remarks>
     /// What a plan of the <c>ClrCursorConvention</c> calling convention opens. The counterpart of a
@@ -39,7 +39,7 @@ namespace Apache.Calcite.Extensions.Runtime
     /// to it, which is .NET's own shape for the pair; a cursor holding something whose release can await
     /// overrides it.</para>
     /// </remarks>
-    public abstract class ClrCursor : IDisposable, IAsyncDisposable
+    public abstract class ClrCursor : IClrCursor
     {
 
         /// <summary>
@@ -116,11 +116,13 @@ namespace Apache.Calcite.Extensions.Runtime
     /// <typeparam name="T">The row type, which is the plan's physical row type: an <c>object[]</c>, a
     /// synthetic record, or the boxed value of a one-column result.</typeparam>
     /// <remarks>
-    /// What every operator of the convention takes and returns, so that a plan is checked as it is built:
-    /// a node that hands up a cursor of the wrong row type does not compile. The root hands out the base
-    /// class, because the plan's caller reads rows as objects.
+    /// What every operator of the convention builds, and the base a table of the cursor SPI may derive
+    /// from; what the operators take and return is <see cref="IClrCursor{T}"/>, so that a plan is checked
+    /// as it is built — a node that hands up a cursor of the wrong row type does not compile — and a source
+    /// that is a cursor already implements the interface directly. The root hands out
+    /// <see cref="IClrCursor"/>, because the plan's caller reads rows as objects.
     /// </remarks>
-    public abstract class ClrCursor<T> : ClrCursor
+    public abstract class ClrCursor<T> : ClrCursor, IClrCursor<T>
     {
 
         /// <summary>

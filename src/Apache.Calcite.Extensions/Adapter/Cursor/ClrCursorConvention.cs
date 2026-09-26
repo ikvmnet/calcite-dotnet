@@ -6,7 +6,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
-    /// Calling convention that returns results as a <see cref="Runtime.ClrCursor"/>: a forward-only
+    /// Calling convention that returns results as a <see cref="Runtime.IClrCursor"/>: a forward-only
     /// cursor advanced synchronously or with await, as the reader chooses on each advance.
     /// </summary>
     /// <remarks>

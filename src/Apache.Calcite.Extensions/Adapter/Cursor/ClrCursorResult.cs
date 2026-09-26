@@ -15,7 +15,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <remarks>
     /// The counterpart of <c>EnumerableRel.Result</c>. Calcite carries a linq4j block whose value is the
     /// enumerable it returns; this carries the expression whose value is the opened cursor, a
-    /// <c>ClrCursor&lt;TRow&gt;</c> of the physical row type, because a parent composes it into its own
+    /// <c>IClrCursor&lt;TRow&gt;</c> of the physical row type, because a parent composes it into its own
     /// open rather than appending to a method body.
     /// </remarks>
     public class ClrCursorResult
@@ -40,7 +40,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Gets the expression whose value is the opened cursor, a <c>ClrCursor&lt;TRow&gt;</c>.
+        /// Gets the expression whose value is the opened cursor, a <c>IClrCursor&lt;TRow&gt;</c>.
         /// </summary>
         public Expression Expression { get; }
 

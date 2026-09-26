@@ -72,7 +72,7 @@ namespace Apache.Calcite.Extensions.Interop
         /// as a linq4j sequence.
         /// </summary>
         /// <param name="plan">The sub-plan, stashed by the converter that emitted this call. It compiles
-        /// itself the first time it is run, rather than during planning. A <c>ClrPlan&lt;ClrCursor&gt;</c>,
+        /// itself the first time it is run, rather than during planning. A <c>ClrPlan&lt;IClrCursor&gt;</c>,
         /// arriving untyped for the reason the class remarks give.</param>
         /// <param name="root">The context the query is being run against.</param>
         /// <returns></returns>
@@ -84,7 +84,7 @@ namespace Apache.Calcite.Extensions.Interop
         {
             ArgumentNullException.ThrowIfNull(plan);
 
-            return JavaCursors.ToJava((ClrPlan<ClrCursor>)plan, root);
+            return JavaCursors.ToJava((ClrPlan<IClrCursor>)plan, root);
         }
 
         /// <summary>
@@ -109,7 +109,7 @@ namespace Apache.Calcite.Extensions.Interop
         /// <summary>
         /// <see cref="BindCursor"/>, with the outer rows of the correlation variables the plan reads.
         /// </summary>
-        /// <param name="plan">The compiled plan, a <c>ClrPlan&lt;ClrCursor&gt;</c>.</param>
+        /// <param name="plan">The compiled plan, a <c>ClrPlan&lt;IClrCursor&gt;</c>.</param>
         /// <param name="root">The context the plan is bound with.</param>
         /// <param name="names">The correlation variables' names.</param>
         /// <param name="rows">The outer rows, one per name, each an <c>Object[]</c> of the row's fields.</param>

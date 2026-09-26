@@ -28,7 +28,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <see cref="Open"/>, <c>ExecuteReaderAsync(token)</c> is <see cref="OpenAsync"/>, and the reader's two
     /// advances are the cursor's.</para>
     ///
-    /// <para>It is the <see cref="IClrCursorBindable"/> a prepared statement carries: the counterpart
+    /// <para>It is the <see cref="IClrCursorFactory"/> a prepared statement carries: the counterpart
     /// of the <c>Bindable</c> Calcite's generated class is, produced at the same point.</para>
     ///
     /// <para><b>Each open is compiled the first time it is called</b>, and not before. The implementor
@@ -37,15 +37,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// independently and at most once each, because a factory is shared by every execution of its
     /// statement.</para>
     /// </remarks>
-    public sealed class ClrCursorFactory : IClrCursorBindable
+    public sealed class ClrCursorFactory : IClrCursorFactory
     {
 
-        readonly Expression<Func<DataContext, ClrCursor>> open;
-        readonly Expression<Func<DataContext, CancellationToken, ValueTask<ClrCursor>>> openAsync;
+        readonly Expression<Func<DataContext, IClrCursor>> open;
+        readonly Expression<Func<DataContext, CancellationToken, ValueTask<IClrCursor>>> openAsync;
         readonly Type elementType;
 
-        Func<DataContext, ClrCursor>? compiledOpen;
-        Func<DataContext, CancellationToken, ValueTask<ClrCursor>>? compiledOpenAsync;
+        Func<DataContext, IClrCursor>? compiledOpen;
+        Func<DataContext, CancellationToken, ValueTask<IClrCursor>>? compiledOpenAsync;
 
         /// <summary>
         /// Initializes a new instance.
@@ -58,8 +58,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// making one: that is where the two trees are required to be two opens of one plan.
         /// </remarks>
         internal ClrCursorFactory(
-            Expression<Func<DataContext, ClrCursor>> open,
-            Expression<Func<DataContext, CancellationToken, ValueTask<ClrCursor>>> openAsync,
+            Expression<Func<DataContext, IClrCursor>> open,
+            Expression<Func<DataContext, CancellationToken, ValueTask<IClrCursor>>> openAsync,
             Type elementType)
         {
             this.open = open ?? throw new ArgumentNullException(nameof(open));
@@ -74,12 +74,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// The tree, so that a caller can read what the plan is made of — which operators it names, and
         /// that every one of them is a synchronous open — where a compiled delegate says nothing.
         /// </remarks>
-        public Expression<Func<DataContext, ClrCursor>> OpenExpression => open;
+        public Expression<Func<DataContext, IClrCursor>> OpenExpression => open;
 
         /// <summary>
         /// Gets the plan as an open that awaits its acquisition, before it is compiled.
         /// </summary>
-        public Expression<Func<DataContext, CancellationToken, ValueTask<ClrCursor>>> OpenAsyncExpression => openAsync;
+        public Expression<Func<DataContext, CancellationToken, ValueTask<IClrCursor>>> OpenAsyncExpression => openAsync;
 
         /// <summary>
         /// Gets the CLR type of one row.
@@ -102,7 +102,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// reading rows is what comes after. A leaf that can only acquire asynchronously blocks here for
         /// that acquisition; nothing above it does.
         /// </remarks>
-        public ClrCursor Open(DataContext root)
+        public IClrCursor Open(DataContext root)
         {
             ArgumentNullException.ThrowIfNull(root);
 
@@ -117,7 +117,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <param name="cancellationToken">The token for the acquisition. It is this open's and not the
         /// cursor's: each advance takes its own.</param>
         /// <returns>The cursor, positioned before the first row.</returns>
-        public ValueTask<ClrCursor> OpenAsync(DataContext root, CancellationToken cancellationToken)
+        public ValueTask<IClrCursor> OpenAsync(DataContext root, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(root);
 

@@ -145,9 +145,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             // the tree, not a delegate. Compiling here would be JIT work done while the plan is still being
             // assembled, and once per converter besides; ClrPlan compiles itself the first time it is run.
-            var plan = new ClrPlan<ClrCursor>(
-                Expression.Lambda<Func<DataContext, ClrCursor>>(
-                    Expression.Convert(expression, typeof(ClrCursor)),
+            var plan = new ClrPlan<IClrCursor>(
+                Expression.Lambda<Func<DataContext, IClrCursor>>(
+                    Expression.Convert(expression, typeof(IClrCursor)),
                     clr.Root));
 
             // stashed as an Object, because the generated source declares the variable by the type's name

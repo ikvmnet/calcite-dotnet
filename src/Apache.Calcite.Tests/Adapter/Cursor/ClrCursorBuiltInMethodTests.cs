@@ -49,7 +49,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// A plan of three awaiting opens over a source the caller supplies, taking the open's token as
         /// the awaiting root does.
         /// </summary>
-        static Func<IAsyncEnumerable<object[]>, CancellationToken, ValueTask<ClrCursor<object>>> Plan()
+        static Func<IAsyncEnumerable<object[]>, CancellationToken, ValueTask<IClrCursor<object>>> Plan()
         {
             var implementor = new ClrCursorRelImplementor(
                 new org.apache.calcite.rex.RexBuilder(new org.apache.calcite.jdbc.JavaTypeFactoryImpl()),
@@ -82,7 +82,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 Expression.Lambda<Func<object, bool>>(Expression.Constant(true), kept),
                 Expression.Lambda<Func<object, object>>(kept, kept));
 
-            return Expression.Lambda<Func<IAsyncEnumerable<object[]>, CancellationToken, ValueTask<ClrCursor<object>>>>(plan, source, implementor.CancellationToken).Compile();
+            return Expression.Lambda<Func<IAsyncEnumerable<object[]>, CancellationToken, ValueTask<IClrCursor<object>>>>(plan, source, implementor.CancellationToken).Compile();
         }
 
         /// <summary>

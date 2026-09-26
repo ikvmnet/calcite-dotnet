@@ -47,7 +47,7 @@ namespace Apache.Calcite.Extensions.Schema
         /// Opening is the acquisition: a table over a statement sends the statement here, as
         /// <c>ScannableTable.scan</c>'s enumerator does at <c>enumerator()</c>.
         /// </remarks>
-        ClrCursor<object?[]> Open(DataContext root);
+        IClrCursor<object?[]> Open(DataContext root);
 
         /// <summary>
         /// Opens a cursor over this table's rows, awaiting the acquisition.
@@ -59,7 +59,7 @@ namespace Apache.Calcite.Extensions.Schema
         /// By default <see cref="Open"/> completed, which is right for a table whose open does not wait on
         /// anything and wrong for one whose <see cref="Open"/> blocks.
         /// </remarks>
-        ValueTask<ClrCursor<object?[]>> OpenAsync(DataContext root, CancellationToken cancellationToken) => new(Open(root));
+        ValueTask<IClrCursor<object?[]>> OpenAsync(DataContext root, CancellationToken cancellationToken) => new(Open(root));
 
     }
 

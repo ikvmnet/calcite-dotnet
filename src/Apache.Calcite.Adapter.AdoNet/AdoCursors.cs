@@ -35,7 +35,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="rowBuilder">Builds one row from the reader positioned on it.</param>
         /// <param name="enricher">Fills the command's parameters, or <see langword="null"/> where it has none.</param>
         /// <returns></returns>
-        public static ClrCursor<TRow> Open<TRow>(AdoDataSource dataSource, string sql, Func<DbDataReader, TRow> rowBuilder, DbCommandEnricher? enricher)
+        public static IClrCursor<TRow> Open<TRow>(AdoDataSource dataSource, string sql, Func<DbDataReader, TRow> rowBuilder, DbCommandEnricher? enricher)
         {
             ArgumentNullException.ThrowIfNull(dataSource);
             ArgumentNullException.ThrowIfNull(sql);
@@ -57,7 +57,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="cancellationToken">The token the open runs under, which is the statement's: each
         /// advance brings its own, and the reader is advanced under both.</param>
         /// <returns></returns>
-        public static async ValueTask<ClrCursor<TRow>> OpenAsync<TRow>(AdoDataSource dataSource, string sql, Func<DbDataReader, TRow> rowBuilder, DbCommandEnricher? enricher, CancellationToken cancellationToken)
+        public static async ValueTask<IClrCursor<TRow>> OpenAsync<TRow>(AdoDataSource dataSource, string sql, Func<DbDataReader, TRow> rowBuilder, DbCommandEnricher? enricher, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(dataSource);
             ArgumentNullException.ThrowIfNull(sql);

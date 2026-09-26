@@ -18,7 +18,7 @@ namespace Apache.Calcite.Extensions.Runtime
     /// the cursor either hands back has both advances, so a plan that could only be opened one way would
     /// still be read either way.
     /// </remarks>
-    public interface IClrCursorBindable : IClrBindableBase
+    public interface IClrCursorFactory : IClrBindableBase
     {
 
         /// <summary>
@@ -27,7 +27,7 @@ namespace Apache.Calcite.Extensions.Runtime
         /// <param name="root">The context the query reads its schema, parameters and stashed values
         /// from.</param>
         /// <returns>The cursor, positioned before the first row.</returns>
-        ClrCursor Open(DataContext root);
+        IClrCursor Open(DataContext root);
 
         /// <summary>
         /// Opens a cursor over the plan's rows, awaiting its acquisition.
@@ -36,7 +36,7 @@ namespace Apache.Calcite.Extensions.Runtime
         /// from.</param>
         /// <param name="cancellationToken">The token for the acquisition; each advance takes its own.</param>
         /// <returns>The cursor, positioned before the first row.</returns>
-        ValueTask<ClrCursor> OpenAsync(DataContext root, CancellationToken cancellationToken);
+        ValueTask<IClrCursor> OpenAsync(DataContext root, CancellationToken cancellationToken);
 
     }
 

@@ -243,7 +243,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var implementor = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters);
 
             var awaited = implementor.Awaited(implementor.VisitChild(null, 0, physical, ClrEnumerablePrefer.Array));
-            var openAwaited = System.Linq.Expressions.Expression.Lambda<Func<DataContext, CancellationToken, ValueTask<ClrCursor<object[]>>>>(
+            var openAwaited = System.Linq.Expressions.Expression.Lambda<Func<DataContext, CancellationToken, ValueTask<IClrCursor<object[]>>>>(
                 awaited.Expression, implementor.Root, implementor.CancellationToken).Compile();
 
             var rows = new List<string>();
@@ -254,7 +254,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             rows.Should().Equal(["4|D", "5|E", "6|F"]);
 
             var pulled = implementor.Pulled(implementor.VisitChildAsync(null, 0, physical, ClrEnumerablePrefer.Array));
-            var openPulled = System.Linq.Expressions.Expression.Lambda<Func<DataContext, ClrCursor<object[]>>>(pulled.Expression, implementor.Root).Compile();
+            var openPulled = System.Linq.Expressions.Expression.Lambda<Func<DataContext, IClrCursor<object[]>>>(pulled.Expression, implementor.Root).Compile();
 
             rows.Clear();
             using (var cursor = openPulled(context))
