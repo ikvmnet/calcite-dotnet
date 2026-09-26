@@ -108,7 +108,10 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
             // the three rules the convention declares as fields and leaves out of its default list; a caller
             // turns one on
             if (sortedAggregate)
+            {
                 rules.add(ClrEnumerableRules.ClrEnumerableSortedAggregateRule);
+                rules.add(ClrDataCursorRules.ClrDataCursorSortedAggregateRule);
+            }
             if (batchNestedLoopJoin)
                 rules.add(ClrEnumerableRules.ClrEnumerableBatchNestedLoopJoinRule);
             if (limitSort)
@@ -436,7 +439,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         public Task ShouldAgreeOnValues() => SameThrough("ClrDataCursorValues", "SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");
 
         [Fact]
-        public Task ShouldAgreeOnAnAggregate() => SameThrough("ClrEnumerableAggregate", "SELECT REGION, SUM(AMOUNT) FROM SALES GROUP BY REGION");
+        public Task ShouldAgreeOnAnAggregate() => SameThrough("ClrDataCursorAggregate", "SELECT REGION, SUM(AMOUNT) FROM SALES GROUP BY REGION");
 
         [Fact]
         public Task ShouldAgreeOnACountOverEverything() => Same("SELECT COUNT(*) FROM SALES");
@@ -451,10 +454,10 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         // included.
 
         [Fact]
-        public Task ShouldAgreeOnAggregatingAnAnyColumn() => SameThrough("ClrEnumerableAggregate", "SELECT MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS");
+        public Task ShouldAgreeOnAggregatingAnAnyColumn() => SameThrough("ClrDataCursorAggregate", "SELECT MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS");
 
         [Fact]
-        public Task ShouldAgreeOnAGroupedAggregateOverAnAnyColumn() => SameThrough("ClrEnumerableAggregate", "SELECT K, MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS GROUP BY K ORDER BY K");
+        public Task ShouldAgreeOnAGroupedAggregateOverAnAnyColumn() => SameThrough("ClrDataCursorAggregate", "SELECT K, MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS GROUP BY K ORDER BY K");
 
         [Fact]
         public Task ShouldAgreeOnAggregatingAnAnyColumnOfStrings() => Same("SELECT MIN(S), MAX(S) FROM ANYS");
@@ -469,7 +472,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         public Task ShouldAgreeOnARunningTotalOverAnAnyColumn() => SameThrough("ClrEnumerableWindow", "SELECT ID, SUM(V) OVER (ORDER BY ID) FROM ANYS ORDER BY ID");
 
         [Fact]
-        public Task ShouldAgreeOnTakingAnyValueOfAnAnyColumn() => SameThrough("ClrEnumerableAggregate", "SELECT ANY_VALUE(V), ANY_VALUE(S) FROM ANYS");
+        public Task ShouldAgreeOnTakingAnyValueOfAnAnyColumn() => SameThrough("ClrDataCursorAggregate", "SELECT ANY_VALUE(V), ANY_VALUE(S) FROM ANYS");
 
         [Fact]
         public Task ShouldAgreeOnDeviatingOverAnAnyColumn() => Same("SELECT VAR_POP(V), VAR_SAMP(V) FROM ANYS");

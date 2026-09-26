@@ -9,6 +9,8 @@ using Apache.Calcite.Extensions.Runtime;
 
 using FluentAssertions;
 
+using org.apache.calcite.linq4j.function;
+
 using Xunit;
 
 namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
@@ -191,6 +193,194 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
                 rows.Add((string)union.Current);
 
             rows.Should().Equal(["a", "b", "c"]);
+        }
+
+        /// <summary>
+        /// A grouped aggregate folds its whole input at the open, before a row is read from it, and closes
+        /// the input there.
+        /// </summary>
+        /// <remarks>
+        /// <c>groupBy_</c> drains the input into the map and only then returns a <c>LookupResultEnumerable</c>
+        /// over a map that is already finished; the call is the open.
+        /// </remarks>
+        [Fact]
+        public async Task ShouldFoldAGroupedAggregateAtTheOpen()
+        {
+            var source = new CountingCursor([[java.lang.Integer.valueOf(1)], [java.lang.Integer.valueOf(1)], [java.lang.Integer.valueOf(2)]]);
+
+            var groups = ClrDataCursorDefaults.GroupBy<object[], object, object>(source, r => r[0], new Count(), new Add(), new Result(), null);
+
+            source.Drawn.Should().Be(4, "the fold runs at the open, reading the input to its end");
+            source.Disposed.Should().BeTrue("and closes it there");
+
+            groups.Read().Should().BeTrue();
+            groups.Current.Should().Be(java.lang.Integer.valueOf(2));
+            (await groups.ReadAsync(CancellationToken.None)).Should().BeTrue("the other advance continues from the same position");
+            groups.Current.Should().Be(java.lang.Integer.valueOf(1));
+            groups.Read().Should().BeFalse();
+            source.Drawn.Should().Be(4, "reading the groups reads nothing more");
+        }
+
+        /// <summary>
+        /// <see cref="ShouldFoldAGroupedAggregateAtTheOpen"/> through the awaiting open, which awaits the
+        /// fold rather than leaving it to the first advance.
+        /// </summary>
+        [Fact]
+        public async Task ShouldFoldAGroupedAggregateAtTheAwaitingOpen()
+        {
+            var source = new CountingCursor([[java.lang.Integer.valueOf(1)], [java.lang.Integer.valueOf(1)], [java.lang.Integer.valueOf(2)]]);
+
+            var groups = await ClrDataCursorDefaults.GroupByAsync<object[], object, object>(new ValueTask<ClrDataCursor<object[]>>(source), r => r[0], new Count(), new Add(), new Result(), null, CancellationToken.None);
+
+            source.Drawn.Should().Be(4, "the fold is awaited inside the open");
+            source.Disposed.Should().BeTrue();
+
+            (await groups.ReadAsync(CancellationToken.None)).Should().BeTrue();
+            groups.Current.Should().Be(java.lang.Integer.valueOf(2));
+            groups.Read().Should().BeTrue();
+            groups.Current.Should().Be(java.lang.Integer.valueOf(1));
+            (await groups.ReadAsync(CancellationToken.None)).Should().BeFalse();
+        }
+
+        /// <summary>
+        /// A sorted aggregate reads nothing at the open and emits a group when its key changes, holding
+        /// nothing but the accumulator of the group being read.
+        /// </summary>
+        /// <remarks>
+        /// <c>SortedAggregateEnumerator</c>'s constructor acquires the enumerator and its <c>moveNext</c>
+        /// reads one row past the group, which is the row that starts the next.
+        /// </remarks>
+        [Fact]
+        public async Task ShouldEmitASortedGroupWhenItsKeyChanges()
+        {
+            var source = new CountingCursor([[java.lang.Integer.valueOf(1)], [java.lang.Integer.valueOf(1)], [java.lang.Integer.valueOf(2)], [java.lang.Integer.valueOf(3)]]);
+
+            var groups = ClrDataCursorDefaults.SortedGroupBy<object[], object, object>(source, r => r[0], new Count(), new Add(), new Result(), java.util.Collections.reverseOrder());
+
+            source.Drawn.Should().Be(0, "the open acquires and reads nothing");
+
+            groups.Read().Should().BeTrue();
+            groups.Current.Should().Be(java.lang.Integer.valueOf(2));
+            source.Drawn.Should().Be(3, "the group ends at the row whose key differs, which has been read");
+
+            (await groups.ReadAsync(CancellationToken.None)).Should().BeTrue("the other advance takes the row the last one stopped on");
+            groups.Current.Should().Be(java.lang.Integer.valueOf(1));
+            source.Drawn.Should().Be(4);
+
+            groups.Read().Should().BeTrue();
+            groups.Current.Should().Be(java.lang.Integer.valueOf(1));
+            source.Drawn.Should().Be(5, "the last group ends where the input does");
+
+            (await groups.ReadAsync(CancellationToken.None)).Should().BeFalse();
+            source.Drawn.Should().Be(5, "and the input is not read again once it has ended");
+
+            groups.Dispose();
+            source.Disposed.Should().BeTrue();
+        }
+
+        /// <summary>
+        /// An aggregate with no group folds where it is called, which is the open, and its awaiting twin
+        /// awaits the fold inside the open and hands back the one row.
+        /// </summary>
+        [Fact]
+        public async Task ShouldFoldASingletonAggregateAtTheOpen()
+        {
+            var source = new CountingCursor([[java.lang.Integer.valueOf(1)], [java.lang.Integer.valueOf(1)], [java.lang.Integer.valueOf(2)]]);
+
+            var one = ClrDataCursorDefaults.Singleton(ClrDataCursorDefaults.Aggregate<object[], object>(source, new Count().apply(), new Add(), new SingleResult()));
+
+            source.Drawn.Should().Be(4, "Aggregate folds where it is called");
+            source.Disposed.Should().BeTrue();
+
+            one.Read().Should().BeTrue();
+            one.Current.Should().Be(java.lang.Integer.valueOf(3));
+            (await one.ReadAsync(CancellationToken.None)).Should().BeFalse();
+
+            var other = new CountingCursor([[java.lang.Integer.valueOf(1)], [java.lang.Integer.valueOf(1)], [java.lang.Integer.valueOf(2)]]);
+
+            var awaited = await ClrDataCursorDefaults.SingletonAggregateAsync<object[], object>(new ValueTask<ClrDataCursor<object[]>>(other), new Count().apply(), new Add(), new SingleResult(), CancellationToken.None);
+
+            other.Drawn.Should().Be(4, "the awaiting open awaits the fold, so nothing is left to the first advance");
+            other.Disposed.Should().BeTrue();
+
+            (await awaited.ReadAsync(CancellationToken.None)).Should().BeTrue();
+            awaited.Current.Should().Be(java.lang.Integer.valueOf(3));
+            awaited.Read().Should().BeFalse();
+        }
+
+        /// <summary>
+        /// A distinct drains its input at the open and closes it there.
+        /// </summary>
+        [Fact]
+        public async Task ShouldDrainADistinctAtTheOpen()
+        {
+            var source = new ScalarCursor(["a", "b", "a"]);
+
+            var distinct = ClrDataCursorDefaults.Distinct<object>(source, null);
+
+            source.Disposed.Should().BeTrue("EnumerableDefaults.distinct drains and closes where it is called");
+
+            var rows = new List<string>();
+            while (distinct.Read())
+                rows.Add((string)distinct.Current);
+
+            rows.Should().Equal(["a", "b"]);
+
+            var other = new ScalarCursor(["a", "b", "a"]);
+
+            var awaited = await ClrDataCursorDefaults.DistinctAsync<object>(new ValueTask<ClrDataCursor<object>>(other), null, CancellationToken.None);
+
+            other.Disposed.Should().BeTrue("the awaiting open awaits the drain");
+
+            rows.Clear();
+            while (await awaited.ReadAsync(CancellationToken.None))
+                rows.Add((string)awaited.Current);
+
+            rows.Should().Equal(["a", "b"]);
+        }
+
+        /// <summary>
+        /// An accumulator of one counter.
+        /// </summary>
+        sealed class Count : Function0
+        {
+
+            public object apply() => new int[1];
+
+        }
+
+        /// <summary>
+        /// Adds a row to the counter.
+        /// </summary>
+        sealed class Add : Function2
+        {
+
+            public object apply(object accumulator, object row)
+            {
+                ((int[])accumulator)[0]++;
+                return accumulator;
+            }
+
+        }
+
+        /// <summary>
+        /// Answers the counter of a group.
+        /// </summary>
+        sealed class Result : Function2
+        {
+
+            public object apply(object key, object accumulator) => java.lang.Integer.valueOf(((int[])accumulator)[0]);
+
+        }
+
+        /// <summary>
+        /// Answers the counter of the one group there is.
+        /// </summary>
+        sealed class SingleResult : Function1
+        {
+
+            public object apply(object accumulator) => java.lang.Integer.valueOf(((int[])accumulator)[0]);
+
         }
 
         /// <summary>
