@@ -478,7 +478,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         /// The one that mattered most: a project holding an OVER is refused by both conventions and becomes a
         /// <c>LogicalWindow</c> by <c>PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW</c> first, so with that rule gone
         /// no window function could be planned through the shipped program at all — while the whole
-        /// <c>ClrEnumerableWindow</c> suite stayed green over a harness that registers it.
+        /// <c>ClrDataCursorWindow</c> suite stayed green over a harness that registers it.
         /// </remarks>
         [Fact]
         public void ShouldWindowThroughTheShippedProgram()

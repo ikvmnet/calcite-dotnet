@@ -194,6 +194,52 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         }
 
         /// <summary>
+        /// A window drains its input and computes every row at the open, whichever open it is, and the
+        /// cursor handed back reads from the finished list.
+        /// </summary>
+        /// <remarks>
+        /// <c>EnumerableWindow</c>'s block runs to <c>Linq4j.asEnumerable(list)</c> where it is evaluated.
+        /// The awaiting open is held to the same moment: the enumerable convention's twin had to leave the
+        /// drain to the first advance, and this one does not.
+        /// </remarks>
+        [Fact]
+        public async Task ShouldComputeTheWindowAtTheOpen()
+        {
+            // a running total over scalar rows, ordered by linq4j's own comparator of Comparables
+            static int Amount(WindowFrame frame) => ((java.lang.Integer)frame.Rows[frame.Position]).intValue();
+
+            static ClrDataCursor<int> Open(ScalarCursor source) => ClrDataCursorDefaults.Window<object, object, int, int>(
+                source, null, org.apache.calcite.linq4j.function.Functions.nullsComparator(false, false), org.apache.calcite.rex.RexWindowExclusion.EXCLUDE_NO_OTHER,
+                frame => 0, frame => frame.Index, true, false, false, false,
+                () => 0, (frame, acc) => 0, (frame, acc) => acc + Amount(frame), (frame, acc) => acc, null, (frame, acc) => acc);
+
+            static ValueTask<ClrDataCursor<int>> OpenAsync(ScalarCursor source) => ClrDataCursorDefaults.WindowAsync<object, object, int, int>(
+                new ValueTask<ClrDataCursor<object>>(source), null, org.apache.calcite.linq4j.function.Functions.nullsComparator(false, false), org.apache.calcite.rex.RexWindowExclusion.EXCLUDE_NO_OTHER,
+                frame => 0, frame => frame.Index, true, false, false, false,
+                () => 0, (frame, acc) => 0, (frame, acc) => acc + Amount(frame), (frame, acc) => acc, null, (frame, acc) => acc, CancellationToken.None);
+
+            var source = new ScalarCursor([java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2), java.lang.Integer.valueOf(3)]);
+            var window = Open(source);
+            source.Drawn.Should().Be(4, "the open reads the input to its end");
+            source.Disposed.Should().BeTrue("and closes it, as into and foreach do");
+
+            var totals = new List<int>();
+            while (window.Read())
+                totals.Add(window.Current);
+            totals.Should().Equal([1, 3, 6]);
+
+            var other = new ScalarCursor([java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2), java.lang.Integer.valueOf(3)]);
+            var windowAsync = await OpenAsync(other);
+            other.Drawn.Should().Be(4, "the awaiting open awaits the drain rather than leaving it to the first advance");
+            other.Disposed.Should().BeTrue();
+
+            totals.Clear();
+            while (await windowAsync.ReadAsync(CancellationToken.None))
+                totals.Add(windowAsync.Current);
+            totals.Should().Equal([1, 3, 6]);
+        }
+
+        /// <summary>
         /// A cursor over scalar rows in hand.
         /// </summary>
         sealed class ScalarCursor(IReadOnlyList<object> rows) : ClrDataCursor<object>
@@ -201,12 +247,16 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 
             int index = -1;
 
+            public int Drawn { get; private set; }
+
             public bool Disposed { get; private set; }
 
             public override object Current => rows[index];
 
             public override bool Read()
             {
+                Drawn++;
+
                 if (index + 1 >= rows.Count)
                     return false;
 

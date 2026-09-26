@@ -15,8 +15,8 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
     /// factory call, because a caller has to be able to name one to remove it, and
     /// <c>RelOptPlanner.removeRule</c> takes the rule itself.
     ///
-    /// <para><b>The list is the nodes written so far, and it is short.</b> Scan, values, calc, sort, limit
-    /// and union, with a project and a filter that become a calc, and four converters: two against
+    /// <para><b>The list is the nodes written so far, and it is short.</b> Scan, values, calc, sort, limit,
+    /// union and window, with a project and a filter that become a calc, and four converters: two against
     /// <c>EnumerableConvention</c> and two against <c>ClrEnumerableConvention</c>. Everything else one of
     /// those two plans, and a converter carries the rows — the sequence convention's node where it has
     /// one, which is nearly everywhere, since its converter costs no Janino compile and its rows are
@@ -67,6 +67,11 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         public static readonly RelOptRule ClrDataCursorLimitRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorLimitRule.Create();
 
         /// <summary>
+        /// Rule that converts a window to a <see cref="ClrDataCursorWindow"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorWindowRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorWindowRule.Create();
+
+        /// <summary>
         /// Rule that turns a filter of this convention into a calc.
         /// </summary>
         public static readonly RelOptRule ClrDataCursorFilterToCalcRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorFilterToCalcRule.Create();
@@ -109,6 +114,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             ClrDataCursorUnionRule,
             ClrDataCursorSortRule,
             ClrDataCursorLimitRule,
+            ClrDataCursorWindowRule,
             EnumerableToClrDataCursorConverterRule,
             ClrDataCursorToEnumerableConverterRule,
             ClrEnumerableToClrDataCursorConverterRule,

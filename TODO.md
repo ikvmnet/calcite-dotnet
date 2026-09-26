@@ -406,14 +406,14 @@ which is what a cache on the root means, the factory being per connection.
 ## `ClrDataCursorConvention`: what is not yet written
 
 The convention, its implementor, its factory and cursor, its operator table, both converters against
-`EnumerableConvention`, and six nodes — scan, `VALUES`, calc (with the project and filter that become
-one), sort, limit and union — exist, and every query the differential suite runs through them answers
+`EnumerableConvention`, and seven nodes — scan, `VALUES`, calc (with the project and filter that become
+one), sort, limit, union and window — exist, and every query the differential suite runs through them answers
 Calcite's rows however the cursor is opened and however each row is advanced to. What is left is the
 rest of the port and the pipeline that would make the provider use it.
 
 - **The nodes not yet ported** — *large, and each is a transcription*. Aggregate and sorted aggregate,
   the hash, merge, nested loop, batch nested loop and ASOF joins, correlate and conditional correlate,
-  combine, intersect and minus, merge union, window, table function scan, collect and uncollect, repeat
+  combine, intersect and minus, merge union, table function scan, collect and uncollect, repeat
   union and table spool, the interpreter, and limit-sort. Each is its `ClrEnumerable*` counterpart with
   the sequence replaced by the open, and the operator becomes a cursor class with `Read` and `ReadAsync`
   over one set of fields. Two things to carry over deliberately: an operator that acquires a source later
