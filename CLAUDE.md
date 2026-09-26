@@ -10,7 +10,7 @@ instead of Janino, and the prepare pipeline that gets a statement to one.
 |---|---|
 | `Apache.Calcite.Adapter.AdoNet` | pushes a plan down to an ADO.NET provider |
 | `Apache.Calcite.Data` | the `DbConnection` / `DbCommand` surface |
-| `Apache.Calcite.Extensions` | `ClrEnumerableConvention`, the prepare pipeline, and the IKVM interop helpers |
+| `Apache.Calcite.Extensions` | `ClrEnumerableConvention`, `ClrDataCursorConvention`, the prepare pipeline, and the IKVM interop helpers |
 | `Apache.Calcite.Geography` | optional; the `CLR_ST_GEOG_*` operator table and a geodesic evaluator over Google's S2. There is no `GEOGRAPHY` type — a geography is Calcite's `GEOMETRY` and the operator's name is what says to read it geodesically, which is what lets these be declared on a schema. Nothing else references it, and it references nothing else here |
 
 `TODO.md` has the outstanding work, sized and reasoned: the ADO.NET adapter's gaps and what more it
@@ -29,8 +29,9 @@ driver this one is modelled on*, has the reading. Not to be confused with
 
 - Build the **solution**: `dotnet build Apache.Calcite.slnx`. A bare `dotnet build` fails — more than one
   project in the root.
-- **The check that matters is `ClrEnumerableConventionDifferentialTests`.** It runs the same SQL through this
-  convention and through `EnumerableConvention` and requires the same rows. Every defect worth having
+- **The check that matters is `ClrEnumerableConventionDifferentialTests`, and its cursor copy
+  `ClrDataCursorConventionDifferentialTests`, which reads every plan four ways.** Each runs the same SQL
+  through its convention and through `EnumerableConvention` and requires the same rows. Every defect worth having
   found in the convention was found by it, three of them in nodes already believed done. Add a query
   there rather than writing an assertion by hand: the expected answer is whatever Calcite says. It lives
   in `Apache.Calcite.Tests`, with the rest of the convention and prepare tests.
@@ -467,7 +468,18 @@ not a mode. The awaiting hierarchy's token is a real parameter, declared by the 
 redeclared by each deferred opener so that it shadows — measured to work in both the compiler and the
 interpreter — and `CallAsync` passes the implementor's parameter, never `default`. Where the enumerable
 convention had to leave an awaited drain to the first `MoveNextAsync`, the cursor's awaiting open awaits it.
-Six nodes and both converters exist; `TODO.md` lists the rest.
+Every node the enumerable convention has, it has — both bodies each, in files named
+`ClrDataCursor<X>` beside `ClrEnumerable<X>`, and diffable against them once the names are normalised —
+with `ClrDataCursorDefaults` holding every operator as a cursor class whose two advances step one set of
+fields. Two facts the port fixed the moment a plan could be rooted in it, both measured. **A converter rule
+must simplify the trait set it copies**: a merge join carries two collations, `RelSet.add` simplifies a
+rel's traits before choosing its subset, so the converter's input subset carries none and a converter
+claiming both claims a sort its input does not keep — `ORDER BY` over an `IN` sub-query lost its sort
+under a cursor root, and `RelOptRule.convert` simplifies for the same reason. And **a sub-plan spliced into
+another implementor's tree shares its translator**: a correlate declares its outer row's field reads into
+a block it translates itself, and a sub-plan under a converter that translated with a translator of its
+own referred to a variable no lambda declares, failing at `Compile`. The prepare pipeline and the provider
+are on this convention; `TODO.md` holds what is left.
 
 **The converter out of either Clr convention is a Janino call into a stashed plan, and two things about the
 generated source were only found when a Clr node first ran under a Calcite node** — no test had done it

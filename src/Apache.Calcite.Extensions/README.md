@@ -117,7 +117,7 @@ while (pulled.Read())
 
 `ImplementRoot` walks the tree twice, through a node's `Implement` and its `ImplementAsync`, and puts both opens on one factory; each is compiled the first time it is called. A node's two bodies differ only in what is acquired at open — one drains a sort by blocking, the other by awaiting — and produce the same cursor class, whose two advances step the same fields. An operator that acquires a source later than at its own open, as linq4j's `concat` does inside `moveNext`, takes both opens of that source and calls the one matching the advance it is in.
 
-The convention shares everything about a *row* with the sequence convention — the physical type, the row formats, the Rex translation and `ClrEnumerablePrefer` — and both directions of converter against `EnumerableConvention` exist, so a statement it has no node for is still planned. What it has today is the scan, `VALUES`, calc, sort, limit and union, with the rest of the nodes and the prepare pipeline's use of it still to come; `TODO.md` has the list.
+The convention shares everything about a *row* with the sequence convention — the physical type, the row formats, the Rex translation and `ClrEnumerablePrefer` — and both directions of converter against `EnumerableConvention` exist, so a statement it has no node for is still planned. It has every node the sequence convention has, and the prepare pipeline plans into it; `TODO.md` has what is left.
 
 ## Key public types
 

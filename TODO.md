@@ -405,38 +405,21 @@ which is what a cache on the root means, the factory being per connection.
 
 ## `ClrDataCursorConvention`: what is not yet written
 
-The convention, its implementor, its factory and cursor, its operator table, both converters against
-`EnumerableConvention`, and ten nodes — scan, `VALUES`, calc (with the project and filter that become
-one), sort, limit, limit-sort, union, merge union, intersect and minus — exist, and every query the
-differential suite runs through them answers Calcite's rows however the cursor is opened and however
-each row is advanced to. What is left is the rest of the port and the pipeline that would make the
-provider use it.
+The convention has every node the sequence convention has, both bodies each, and the four converters,
+and the prepare pipeline and the provider are on it. What is left:
 
-- **The nodes not yet ported** — *large, and each is a transcription*. Aggregate and sorted aggregate,
-  the hash, merge, nested loop, batch nested loop and ASOF joins, correlate and conditional correlate,
-  combine, window, table function scan, collect and uncollect, repeat union and table spool, and the
-  interpreter. Each is its `ClrEnumerable*` counterpart with the sequence replaced by the open, and the
-  operator becomes a cursor class with `Read` and `ReadAsync` over one set of fields. Two things to
-  carry over deliberately: an operator that acquires a source later
-  than at its own open takes both openers of it — the correlate's and nested loop join's inner side, the
-  CALCITE-2909 memoized hash-join lookups, the spool — and a drain the enumerable convention had to leave
-  to the first advance, because `GetAsyncEnumerator` cannot await, moves into the awaiting open here,
-  where it belongs. Until a node is written, Calcite plans it and a converter carries the rows.
-- **The prepare pipeline does not prepare into it, and the provider does not read through it** —
-  *medium*. `ClrPrepareImpl` prepares into `ClrEnumerableConvention` and `IClrPrepare.Signature` holds an
-  `IClrBindableBase`; a `ClrDataCursorPreparingStmt` and a signature carrying the factory are the shape,
-  after which `CalciteDataReader.Read` is `Read` and `ReadAsync(token)` is `ReadAsync(token)`, the per-call
-  token reaching the leaf, and the `Synchronous` connection key has nothing left to select. That last is
-  the reason the convention exists, and it is unproven until the provider is on it.
-- **`ClrRelOptUtil.RegisterDefaultRules` does not register it** — *small, and a decision*. Registering a
-  third convention's rules on every planner gives the planner a third set of nodes at equal cost, and
-  which convention a tied plan lands in is then whichever it saw first. Leave it to the caller until the
-  provider prepares into this convention alone, then decide whether the enumerable one stays registered.
 - **A table SPI for cursors** — *small*. A table whose natural shape is a cursor — a provider's
   `DbDataReader`, opened with `ExecuteReader` or `ExecuteReaderAsync` and advanced with `Read` or
   `ReadAsync(token)` — has no way to hand one in: `IClrScannableTable` and `IClrQueryableTable` produce
   sequences, and the scan opens a cursor over them, losing the per-advance token at the leaf. The
   ADO.NET adapter's leaf is the case that matters.
+- **A converter into `EnumerableConvention` carries no correlation variables** — *small*. The converters
+  into either Clr convention replay the enclosing plan's correlation variables onto the sub-plan's
+  implementor; `ClrDataCursorToEnumerableConverter` and `ClrEnumerableToEnumerableConverter` do not
+  replay Calcite's onto ours, so a calc of ours under Calcite's `EnumerableCorrelate` fails with
+  "Correlation variable $cor0 should be defined". Measured with a correlated `EXISTS` over a table only
+  this project's SPI can scan, planned to end in Calcite's convention. `EnumerableRelImplementor` keeps
+  its map private, so the replay has to go through what it exposes.
 
 ## Test suites not yet written
 

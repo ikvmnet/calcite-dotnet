@@ -196,6 +196,71 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         }
 
         /// <summary>
+        /// A semi join over an empty outer never opens its inner.
+        /// </summary>
+        /// <remarks>
+        /// CALCITE-2909. Calcite holds the inner lookup behind a <c>Suppliers.memoize</c> and only asks for it
+        /// while testing the first outer row, so an outer that has no rows never builds it. Building the
+        /// lookup first reads a whole input for an answer that was already known.
+        /// </remarks>
+        [Fact]
+        public async Task ShouldNotEnumerateTheInnerOfASemiJoinOverAnEmptyOuter()
+        {
+            var opens = 0;
+
+            var semi = ClrDataCursorDefaults.SemiJoin<int, int, int>(
+                new RowsCursor<int>([]),
+                () => { opens++; return new RowsCursor<int>([1]); },
+                token => { opens++; return new ValueTask<ClrDataCursor<int>>(new RowsCursor<int>([1])); },
+                x => x, x => x, null, false, null);
+
+            semi.Read().Should().BeFalse();
+            opens.Should().Be(0);
+
+            var semiAsync = await ClrDataCursorDefaults.SemiJoinAsync<int, int, int>(
+                new ValueTask<ClrDataCursor<int>>(new RowsCursor<int>([])),
+                () => { opens++; return new RowsCursor<int>([1]); },
+                token => { opens++; return new ValueTask<ClrDataCursor<int>>(new RowsCursor<int>([1])); },
+                x => x, x => x, null, false, null, CancellationToken.None);
+
+            (await semiAsync.ReadAsync(CancellationToken.None)).Should().BeFalse();
+            opens.Should().Be(0, "the open acquires the outer alone, and no advance found a row to test");
+        }
+
+        /// <summary>
+        /// A semi join over a non-empty outer builds its lookup once and no more, by the opener of the
+        /// advance that read the first outer row.
+        /// </summary>
+        [Fact]
+        public async Task ShouldEnumerateTheInnerOfASemiJoinOnce()
+        {
+            var opened = new List<string>();
+
+            ClrDataCursor<int> Semi() => ClrDataCursorDefaults.SemiJoin<int, int, int>(
+                new RowsCursor<int>([1, 2, 3]),
+                () => { opened.Add("inner"); return new RowsCursor<int>([1, 2]); },
+                token => { opened.Add("innerAsync"); return new ValueTask<ClrDataCursor<int>>(new RowsCursor<int>([1, 2])); },
+                x => x, x => x, null, false, null);
+
+            var rows = new List<int>();
+            var semi = Semi();
+            while (semi.Read())
+                rows.Add(semi.Current);
+
+            rows.Should().Equal(1, 2);
+            opened.Should().Equal(["inner"]);
+
+            opened.Clear();
+            rows.Clear();
+            semi = Semi();
+            while (await semi.ReadAsync(CancellationToken.None))
+                rows.Add(semi.Current);
+
+            rows.Should().Equal(1, 2);
+            opened.Should().Equal(["innerAsync"], "the first outer row was read by the awaiting advance");
+        }
+
+        /// <summary>
         /// A correlated join refuses RIGHT and FULL where it is built, not where it is read.
         /// </summary>
         /// <remarks>
