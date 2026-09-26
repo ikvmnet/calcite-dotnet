@@ -362,7 +362,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             /// <para>
             /// A Calcite <c>VARCHAR</c> with no precision is unbounded, and <c>SqlDialect.getCastSpec</c>
             /// writes it as the bare keyword, its precision being the type system's
-            /// <c>PRECISION_NOT_SPECIFIED</c>. A bare <c>varchar</c> in T-SQL is not unbounded: it is one
+            /// <c>PRECISION_NOT_SPECIFIED</c>. <c>MssqlSqlDialect</c> writes <c>VARCHAR(MAX)</c> for that
+            /// one type itself from the 1.43 snapshots on (CALCITE-7756); the other three below are still
+            /// written bare. A bare <c>varchar</c> in T-SQL is not unbounded: it is one
             /// character in a declaration and <em>thirty</em> in a <c>CAST</c> or <c>CONVERT</c>. So the
             /// cast that meant "no limit" silently becomes a thirty character one.
             /// </para>

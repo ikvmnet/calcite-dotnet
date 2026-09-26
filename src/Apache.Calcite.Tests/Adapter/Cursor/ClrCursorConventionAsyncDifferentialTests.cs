@@ -637,7 +637,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
         [Fact]
         public Task ShouldAgreeOnUncollectingAnAnyColumnWithOrdinality() =>
-            SameThrough("ClrCursorUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.TAGS) WITH ORDINALITY AS t(X)", remove: TheirUncollect);
+            SameThrough("ClrCursorUncollect", "SELECT d.ID, t.X, t.O FROM DOCS d, UNNEST(d.TAGS) WITH ORDINALITY AS t(X, O)", remove: TheirUncollect);
 
         [Fact]
         public Task ShouldAgreeOnAggregatingOverAnUncollectedAnyColumn() =>
