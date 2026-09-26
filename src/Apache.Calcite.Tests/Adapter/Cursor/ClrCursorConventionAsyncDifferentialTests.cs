@@ -713,6 +713,27 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public Task ShouldAgreeOnAMarkedCorrelatedExists() =>
             Same("SELECT ID FROM SALES S1 WHERE EXISTS (SELECT 1 FROM SALES S2 WHERE S2.REGION = S1.REGION AND S2.ID > 3) ORDER BY ID", markJoin: true);
 
+        // A join of two cross-input inequalities. Calcite's rule is taken away, because registerDefaultRules
+        // registers it and the planner keeps whichever equal-cost node it saw first.
+
+        static readonly RelOptRule[] TheirIeJoin = [org.apache.calcite.adapter.enumerable.EnumerableRules.ENUMERABLE_IE_JOIN_RULE];
+
+        [Fact]
+        public Task ShouldAgreeOnAnIeJoin() =>
+            SameThrough("ClrCursorIEJoin", "SELECT a.ID, b.ID FROM SALES a JOIN SALES b ON a.ID < b.ID AND a.AMOUNT > b.AMOUNT ORDER BY 1, 2", remove: TheirIeJoin);
+
+        /// <summary>
+        /// The order of an IE join's rows is the order of its two sorts, and both inputs are drained before
+        /// either sort runs, at the open whichever way it is opened.
+        /// </summary>
+        [Fact]
+        public Task ShouldAgreeOnAnIeJoinsOwnOrder() =>
+            SameThrough("ClrCursorIEJoin", "SELECT a.ID, b.ID FROM SALES a JOIN SALES b ON a.ID < b.ID AND a.AMOUNT > b.AMOUNT", remove: TheirIeJoin);
+
+        [Fact]
+        public Task ShouldAgreeOnAnIeJoinWithAResidualInequality() =>
+            SameThrough("ClrCursorIEJoin", "SELECT a.ID, b.ID FROM SALES a JOIN SALES b ON a.ID < b.ID AND a.AMOUNT > b.AMOUNT AND a.LABEL < b.LABEL ORDER BY 1, 2", remove: TheirIeJoin);
+
         // A recursive query: the repeat union and the table spool are this convention's own, and only the
         // transient scan is Calcite's, under the converter in, because no scan of this convention reads a
         // transient table (CALCITE-3673) and this harness does not add the interpreter rule. The

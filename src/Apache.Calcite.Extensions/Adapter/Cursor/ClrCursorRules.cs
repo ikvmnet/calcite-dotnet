@@ -61,6 +61,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         public static readonly RelOptRule ClrCursorMergeJoinRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorMergeJoinRule.Create();
 
         /// <summary>
+        /// Rule that converts a join of two cross-input inequalities to a
+        /// <see cref="ClrCursorIEJoin"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrCursorIEJoinRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorIEJoinRule.Create();
+
+        /// <summary>
         /// Rule that converts an ASOF join to a <see cref="ClrCursorAsofJoin"/>.
         /// </summary>
         public static readonly RelOptRule ClrCursorAsofJoinRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorAsofJoinRule.Create();
@@ -223,6 +229,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             ClrCursorCalcRule,
             ClrCursorJoinRule,
             ClrCursorMergeJoinRule,
+            ClrCursorIEJoinRule,
             ClrCursorAsofJoinRule,
             ClrCursorCorrelateRule,
             ClrCursorConditionalCorrelateRule,

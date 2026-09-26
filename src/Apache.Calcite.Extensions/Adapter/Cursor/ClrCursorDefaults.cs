@@ -2946,6 +2946,481 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
+        /// Joins two cursors on two inequalities, one key of each side per inequality.
+        /// </summary>
+        /// <typeparam name="TLeft"></typeparam>
+        /// <typeparam name="TRight"></typeparam>
+        /// <typeparam name="TKey1"></typeparam>
+        /// <typeparam name="TKey2"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="left"></param>
+        /// <param name="right">Opens the right cursor, which is acquired only once the left has been
+        /// drained and closed.</param>
+        /// <param name="leftKeySelector1"></param>
+        /// <param name="rightKeySelector1"></param>
+        /// <param name="leftKeySelector2"></param>
+        /// <param name="rightKeySelector2"></param>
+        /// <param name="comparator1">Orders two keys of the first predicate.</param>
+        /// <param name="comparator2">Orders two keys of the second predicate.</param>
+        /// <param name="operator1">The first predicate's comparison, left key against right key.</param>
+        /// <param name="operator2">The second predicate's comparison, left key against right key.</param>
+        /// <param name="resultSelector"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>EnumerableDefaults.ieJoin</c>. Each operator compares a left key with a
+        /// right key through the comparator of the same number; a row with a null key matches nothing, and
+        /// both inputs are read and sorted before the first row comes out.
+        ///
+        /// <para>Both inputs are read <b>at the open</b>, which is linq4j's own timing: <c>ieJoin</c> returns
+        /// an <c>AbstractEnumerable</c> whose <c>enumerator()</c> constructs the <c>IEJoinEnumerator</c>, and
+        /// that constructor drains the left, closes it, drains the right, closes it, and sorts — one
+        /// try-with-resources after the other, which is why the right arrives as an open.</para>
+        ///
+        /// <para>The operators are checked before anything is read, where linq4j checks them, in the method
+        /// body. The left has already been opened by then, as an argument, so a refusal closes it.</para>
+        /// </remarks>
+        public static IClrCursor<TResult> IeJoin<TLeft, TRight, TKey1, TKey2, TResult>(
+            IClrCursor<TLeft> left,
+            Func<IClrCursor<TRight>> right,
+            Func<TLeft, TKey1> leftKeySelector1,
+            Func<TRight, TKey1> rightKeySelector1,
+            Func<TLeft, TKey2> leftKeySelector2,
+            Func<TRight, TKey2> rightKeySelector2,
+            java.util.Comparator comparator1,
+            java.util.Comparator comparator2,
+            System.Linq.Expressions.ExpressionType operator1,
+            System.Linq.Expressions.ExpressionType operator2,
+            Func<TLeft, TRight, TResult> resultSelector)
+        {
+            ArgumentNullException.ThrowIfNull(left);
+            ArgumentNullException.ThrowIfNull(right);
+
+            try
+            {
+                IeJoinState<TLeft, TRight, TKey1, TKey2, TResult>.CheckOperators(operator1, operator2);
+            }
+            catch
+            {
+                left.Dispose();
+                throw;
+            }
+
+            var state = new IeJoinState<TLeft, TRight, TKey1, TKey2, TResult>(comparator1, comparator2, operator1, operator2, resultSelector);
+
+            try
+            {
+                while (left.Read())
+                {
+                    var row = left.Current;
+                    state.AddLeft(row, leftKeySelector1(row), leftKeySelector2(row));
+                }
+            }
+            finally
+            {
+                left.Dispose();
+            }
+
+            var second = right();
+            try
+            {
+                while (second.Read())
+                {
+                    var row = second.Current;
+                    state.AddRight(row, rightKeySelector1(row), rightKeySelector2(row));
+                }
+            }
+            finally
+            {
+                second.Dispose();
+            }
+
+            state.Order();
+
+            return new IeJoinCursor<TLeft, TRight, TKey1, TKey2, TResult>(state);
+        }
+
+        /// <summary>
+        /// <see cref="IeJoin{TLeft, TRight, TKey1, TKey2, TResult}"/>, over opens that await. Both drains
+        /// await each row inside the open, which is what a cursor lets an open do and an
+        /// <see cref="IAsyncEnumerable{T}"/> could not: its <c>GetAsyncEnumerator</c> cannot await, so an
+        /// IE join over one would have to leave its drains to the first advance.
+        /// </summary>
+        public static async ValueTask<IClrCursor<TResult>> IeJoinAsync<TLeft, TRight, TKey1, TKey2, TResult>(
+            ValueTask<IClrCursor<TLeft>> left,
+            Func<CancellationToken, ValueTask<IClrCursor<TRight>>> right,
+            Func<TLeft, TKey1> leftKeySelector1,
+            Func<TRight, TKey1> rightKeySelector1,
+            Func<TLeft, TKey2> leftKeySelector2,
+            Func<TRight, TKey2> rightKeySelector2,
+            java.util.Comparator comparator1,
+            java.util.Comparator comparator2,
+            System.Linq.Expressions.ExpressionType operator1,
+            System.Linq.Expressions.ExpressionType operator2,
+            Func<TLeft, TRight, TResult> resultSelector,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(right);
+
+            var first = await left.ConfigureAwait(false);
+
+            try
+            {
+                IeJoinState<TLeft, TRight, TKey1, TKey2, TResult>.CheckOperators(operator1, operator2);
+            }
+            catch
+            {
+                await first.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
+
+            var state = new IeJoinState<TLeft, TRight, TKey1, TKey2, TResult>(comparator1, comparator2, operator1, operator2, resultSelector);
+
+            try
+            {
+                while (await first.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    var row = first.Current;
+                    state.AddLeft(row, leftKeySelector1(row), leftKeySelector2(row));
+                }
+            }
+            finally
+            {
+                await first.DisposeAsync().ConfigureAwait(false);
+            }
+
+            var second = await right(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                while (await second.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    var row = second.Current;
+                    state.AddRight(row, rightKeySelector1(row), rightKeySelector2(row));
+                }
+            }
+            finally
+            {
+                await second.DisposeAsync().ConfigureAwait(false);
+            }
+
+            state.Order();
+
+            return new IeJoinCursor<TLeft, TRight, TKey1, TKey2, TResult>(state);
+        }
+
+        /// <summary>
+        /// The state of one IE join: linq4j's <c>IEJoinEnumerator</c>, less its advance, holding the rows it
+        /// holds and the two orders it builds. Shared by
+        /// <see cref="IeJoin{TLeft, TRight, TKey1, TKey2, TResult}"/> and
+        /// <see cref="IeJoinAsync{TLeft, TRight, TKey1, TKey2, TResult}"/>, which differ only in how a row
+        /// reaches <see cref="AddLeft"/> and <see cref="AddRight"/>.
+        /// </summary>
+        /// <typeparam name="TLeft"></typeparam>
+        /// <typeparam name="TRight"></typeparam>
+        /// <typeparam name="TKey1"></typeparam>
+        /// <typeparam name="TKey2"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <remarks>
+        /// Both inputs are held and a row with either key null is dropped. The entries are sorted by each
+        /// key. A right entry satisfies predicate 1 exactly when it follows a left entry in the first order,
+        /// and predicate 2 exactly when it precedes that left entry in the second order. The permutation
+        /// maps a position in the second order to a position in the first: scanning in the second order,
+        /// each right entry sets its first-order position in the active set, and for each left entry the set
+        /// bits after its own first-order position are the right entries satisfying both predicates.
+        ///
+        /// <para>The union-array algorithm of section 4.2 of Khayyat et al., "Lightning Fast and Space
+        /// Efficient Inequality Joins", PVLDB 8(13), 2015.</para>
+        ///
+        /// <para><b>Both sorts have to be stable, and that is not free here.</b> Java sorts a list with a
+        /// stable merge sort and <see cref="List{T}.Sort()"/> is an introsort, which is not stable. The
+        /// comparator answers 0 for two equal keys of the <em>same</em> input -- it breaks a tie only
+        /// between an entry of one input and an entry of the other -- so which of two equal same-side
+        /// entries comes first is decided by stability alone, and it reaches the order the rows come out in.
+        /// <c>OrderBy</c> is stable, which is why both sorts go through it.</para>
+        /// </remarks>
+        sealed class IeJoinState<TLeft, TRight, TKey1, TKey2, TResult>
+        {
+
+            /// <summary>
+            /// Refuses an operator the scan is not written for, where linq4j refuses it: before either input
+            /// is read.
+            /// </summary>
+            /// <param name="operator1"></param>
+            /// <param name="operator2"></param>
+            internal static void CheckOperators(System.Linq.Expressions.ExpressionType operator1, System.Linq.Expressions.ExpressionType operator2)
+            {
+                foreach (var op in new[] { operator1, operator2 })
+                {
+                    switch (op)
+                    {
+                        case System.Linq.Expressions.ExpressionType.LessThan:
+                        case System.Linq.Expressions.ExpressionType.LessThanOrEqual:
+                        case System.Linq.Expressions.ExpressionType.GreaterThan:
+                        case System.Linq.Expressions.ExpressionType.GreaterThanOrEqual:
+                            break;
+                        default:
+                            throw new java.lang.IllegalArgumentException($"Unsupported IEJoin operator: {op}");
+                    }
+                }
+            }
+
+            readonly java.util.Comparator comparator1;
+            readonly java.util.Comparator comparator2;
+            readonly System.Linq.Expressions.ExpressionType operator1;
+            readonly System.Linq.Expressions.ExpressionType operator2;
+
+            readonly List<Entry> entries = [];
+
+            /// <summary>
+            /// Initializes a new instance.
+            /// </summary>
+            /// <param name="comparator1"></param>
+            /// <param name="comparator2"></param>
+            /// <param name="operator1"></param>
+            /// <param name="operator2"></param>
+            /// <param name="resultSelector"></param>
+            internal IeJoinState(
+                java.util.Comparator comparator1,
+                java.util.Comparator comparator2,
+                System.Linq.Expressions.ExpressionType operator1,
+                System.Linq.Expressions.ExpressionType operator2,
+                Func<TLeft, TRight, TResult> resultSelector)
+            {
+                this.comparator1 = comparator1;
+                this.comparator2 = comparator2;
+                this.operator1 = operator1;
+                this.operator2 = operator2;
+                ResultSelector = resultSelector;
+            }
+
+            /// <summary>
+            /// Builds a result row from a left row and a right row.
+            /// </summary>
+            internal Func<TLeft, TRight, TResult> ResultSelector { get; }
+
+            /// <summary>
+            /// The rows of the left input that were kept.
+            /// </summary>
+            internal List<TLeft> LeftRows { get; } = [];
+
+            /// <summary>
+            /// The rows of the right input that were kept.
+            /// </summary>
+            internal List<TRight> RightRows { get; } = [];
+
+            /// <summary>
+            /// The entries in the first order, once <see cref="Order"/> has run.
+            /// </summary>
+            internal List<Entry> FirstOrder { get; private set; } = [];
+
+            /// <summary>
+            /// Each position of the second order mapped to its position in the first, once
+            /// <see cref="Order"/> has run.
+            /// </summary>
+            internal int[] Permutation { get; private set; } = [];
+
+            /// <summary>
+            /// Holds one row of the left input, unless either of its keys is null.
+            /// </summary>
+            /// <param name="row"></param>
+            /// <param name="key1"></param>
+            /// <param name="key2"></param>
+            internal void AddLeft(TLeft row, TKey1 key1, TKey2 key2)
+            {
+                if (key1 is null || key2 is null)
+                    return;
+
+                entries.Add(new Entry(true, LeftRows.Count, key1, key2));
+                LeftRows.Add(row);
+            }
+
+            /// <summary>
+            /// Holds one row of the right input, unless either of its keys is null.
+            /// </summary>
+            /// <param name="row"></param>
+            /// <param name="key1"></param>
+            /// <param name="key2"></param>
+            internal void AddRight(TRight row, TKey1 key1, TKey2 key2)
+            {
+                if (key1 is null || key2 is null)
+                    return;
+
+                entries.Add(new Entry(false, RightRows.Count, key1, key2));
+                RightRows.Add(row);
+            }
+
+            /// <summary>
+            /// Builds the two sort orders and the permutation between them, once both inputs are held.
+            /// </summary>
+            internal void Order()
+            {
+                FirstOrder = [.. entries.OrderBy(e => e, EntryComparer(comparator1, operator1, true))];
+                for (int i = 0; i < FirstOrder.Count; i++)
+                    FirstOrder[i].FirstPosition = i;
+
+                Permutation = new int[entries.Count];
+
+                var next = 0;
+                foreach (var entry in entries.OrderBy(e => e, EntryComparer(comparator2, operator2, false)))
+                    Permutation[next++] = entry.FirstPosition;
+            }
+
+            /// <summary>
+            /// Orders entries by key 1 where <paramref name="isFirstOrder"/>, and by key 2 otherwise.
+            /// </summary>
+            /// <param name="comparator"></param>
+            /// <param name="op"></param>
+            /// <param name="isFirstOrder"></param>
+            /// <returns></returns>
+            /// <remarks>
+            /// For equal keys from different inputs, a strict operator puts the right entry first in the
+            /// first order and last in the second, which excludes the pair; a non-strict one reverses both
+            /// tie-breaks, which includes it.
+            /// </remarks>
+            static IComparer<Entry> EntryComparer(java.util.Comparator comparator, System.Linq.Expressions.ExpressionType op, bool isFirstOrder)
+            {
+                var greaterThan = op is System.Linq.Expressions.ExpressionType.GreaterThan or System.Linq.Expressions.ExpressionType.GreaterThanOrEqual;
+                var descending = isFirstOrder ? greaterThan : greaterThan == false;
+                var strict = op is System.Linq.Expressions.ExpressionType.LessThan or System.Linq.Expressions.ExpressionType.GreaterThan;
+                var leftSideFirst = isFirstOrder != strict;
+
+                return Comparer<Entry>.Create((entry1, entry2) =>
+                {
+                    var key1 = isFirstOrder ? (object?)entry1.Key1 : entry1.Key2;
+                    var key2 = isFirstOrder ? (object?)entry2.Key1 : entry2.Key2;
+
+                    var c = descending
+                        ? comparator.compare(key2, key1)
+                        : comparator.compare(key1, key2);
+
+                    if (c != 0 || entry1.IsLeft == entry2.IsLeft)
+                        return c;
+
+                    return entry1.IsLeft == leftSideFirst ? -1 : 1;
+                });
+            }
+
+            /// <summary>
+            /// One row's place in the two sorted orders.
+            /// </summary>
+            /// <param name="isLeft"></param>
+            /// <param name="rowIndex">The index into the left rows or the right rows, by <paramref name="isLeft"/>.</param>
+            /// <param name="key1"></param>
+            /// <param name="key2"></param>
+            internal sealed class Entry(bool isLeft, int rowIndex, TKey1 key1, TKey2 key2)
+            {
+
+                /// <summary>
+                /// Whether the row came from the left input.
+                /// </summary>
+                internal bool IsLeft { get; } = isLeft;
+
+                /// <summary>
+                /// The index into the left rows or the right rows, by <see cref="IsLeft"/>.
+                /// </summary>
+                internal int RowIndex { get; } = rowIndex;
+
+                /// <summary>
+                /// The first predicate's key.
+                /// </summary>
+                internal TKey1 Key1 { get; } = key1;
+
+                /// <summary>
+                /// The second predicate's key.
+                /// </summary>
+                internal TKey2 Key2 { get; } = key2;
+
+                /// <summary>
+                /// The index in the first order, assigned after that sort.
+                /// </summary>
+                internal int FirstPosition { get; set; }
+
+            }
+
+        }
+
+        /// <summary>
+        /// The cursor of <see cref="IeJoin{TLeft, TRight, TKey1, TKey2, TResult}"/>: linq4j's
+        /// <c>IEJoinEnumerator.moveNext</c> over the finished state.
+        /// </summary>
+        /// <remarks>
+        /// Walks the permutation, which is the second order. A right entry sets its first-order position in
+        /// the active set; a left entry becomes the current left, and every set bit after its own
+        /// first-order position is a right entry satisfying both predicates. The active set is a
+        /// <c>java.util.BitSet</c>, for <c>nextSetBit</c>, which the advance is written in terms of and
+        /// <see cref="System.Collections.BitArray"/> has no counterpart to. Everything it walks is in hand,
+        /// so nothing here awaits and nothing is disposed: both inputs were closed by the open.
+        /// </remarks>
+        sealed class IeJoinCursor<TLeft, TRight, TKey1, TKey2, TResult>(IeJoinState<TLeft, TRight, TKey1, TKey2, TResult> state) : ClrCursor<TResult>
+        {
+
+            readonly java.util.BitSet activeRights = new();
+
+            IeJoinState<TLeft, TRight, TKey1, TKey2, TResult>.Entry? currentLeft;
+            int secondPosition;
+            int nextBit;
+            TResult current = default!;
+
+            /// <inheritdoc />
+            public override TResult Current => current;
+
+            /// <inheritdoc />
+            public override bool Read()
+            {
+                while (true)
+                {
+                    // rights already seen in the second order satisfy predicate 2; active bits after the
+                    // current left's position in the first order also satisfy predicate 1
+                    if (currentLeft != null)
+                    {
+                        var bit = activeRights.nextSetBit(nextBit);
+                        if (bit >= 0)
+                        {
+                            nextBit = bit + 1;
+                            var right = state.FirstOrder[bit];
+                            current = state.ResultSelector(state.LeftRows[currentLeft.RowIndex], state.RightRows[right.RowIndex]);
+                            return true;
+                        }
+
+                        currentLeft = null;
+                    }
+
+                    if (secondPosition >= state.Permutation.Length)
+                    {
+                        current = default!;
+                        return false;
+                    }
+
+                    var firstPosition = state.Permutation[secondPosition++];
+                    var entry = state.FirstOrder[firstPosition];
+                    if (entry.IsLeft)
+                    {
+                        currentLeft = entry;
+                        nextBit = firstPosition + 1;
+                    }
+                    else
+                    {
+                        activeRights.set(firstPosition);
+                    }
+                }
+            }
+
+            /// <inheritdoc />
+            public override ValueTask<bool> ReadAsync(CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                return new ValueTask<bool>(Read());
+            }
+
+            /// <inheritdoc />
+            public override void Dispose()
+            {
+
+            }
+
+        }
+
+        /// <summary>
         /// The cursor of <see cref="AsofJoin{TSource, TInner, TKey, TResult}"/>: the small state machine
         /// <c>asofJoin</c> returns over its finished indexes.
         /// </summary>

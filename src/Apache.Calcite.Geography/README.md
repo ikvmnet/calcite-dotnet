@@ -221,6 +221,74 @@ The pairwise operations are quadratic in the vertex counts. S2 has an indexed fo
 
 The relations are this package's own rather than a library's. `S2BooleanOperation` would settle `CLR_ST_GEOG_WITHIN` by construction, and it cannot be had: the S2 published to Maven Central is the 2021 release, which does not have it, and the current source is compiled to Java 11, which IKVM does not read. What stands in for it is the size of the oracle — `GeographyDifferentialTests` over hand-written shapes, and `GeographyRandomDifferentialTests` over thirty thousand generated pairs a run, both answered by Calcite. Four defects in the relations were found by the generated half after the hand-written half was green.
 
+## Simplifying a plan
+
+`GeographyRules` is a pass a host sequences in front of whatever program it runs.
+
+```csharp
+using Apache.Calcite.Geography.Rel.Rules;
+
+var config = Frameworks.newConfigBuilder()
+    .defaultSchema(schema)
+    .executor(RexUtil.EXECUTOR)
+    .programs(Programs.sequence(GeographyRules.Program(), Programs.standard()))
+    .build();
+```
+
+Every rewrite is an equality of *values* rather than of truth under a filter, so each holds wherever an
+expression can stand — a projection, a filter, a join condition — and each is an identity the
+implementations state rather than one this package decided.
+
+| | |
+| --- | --- |
+| `CLR_ST_GEOG_ASGEOM(CLR_ST_GEOM_ASGEOG(x))` → `x` | both crossings are `return geography;`, so a crossing whose operand already has the call's type costs a dispatch per row and nothing else |
+| `CLR_ST_GEOG_ASWKT` → `CLR_ST_GEOG_ASTEXT` | and `ASWKB`→`ASBINARY`, `GEOMFROMWKT`→`GEOMFROMTEXT`, `NPOINTS`→`NUMPOINTS`, `NUMINTERIORRINGS`→`NUMINTERIORRING`, `MAKEPOINT`→`POINT`, `EXTENT`→`ENVELOPE`. Each pair is one function under two names — `ST_AsText` *is* `return ST_AsWKT(geom);` — and the canonical one is the OGC spelling |
+| `NOT CLR_ST_GEOG_DISJOINT(a, b)` → `CLR_ST_GEOG_INTERSECTS(a, b)` | and the other way round: `Disjoint` is `Intersects` negated, and both answer null on a null argument, so the rewrite is exact under three-valued logic too |
+| `CLR_ST_GEOG_CONTAINS(a, b)` → `CLR_ST_GEOG_WITHIN(b, a)` | and `COVEREDBY`→`COVERS`. `Contains(a, b)` *is* `Within(b, a)`, so canonical is the one the other delegates to |
+| `CLR_ST_GEOG_DISTANCE(a, b) <= d` → `CLR_ST_GEOG_DWITHIN(a, b, d)` | `DWithin` *is* `Distance(a, b) <= d`. Not cheaper in process; the point is that a geodesic store has a within-distance predicate its index can answer and a scalar distance it cannot |
+
+**`CLR_ST_GEOG_ASEWKB` is deliberately not in the alias list**, though today it answers the same bytes as
+`ASBINARY`: Calcite's `ST_AsEWKB` is `return ST_AsWKB(geometry);` and writes no SRID, which is an oversight
+rather than a declared synonym — `ST_AsEWKT` has a body of its own and does write one. An alias rule may
+rest on two names meaning one thing and not on two things being equal by a defect.
+
+**A pass and not rules on a `VolcanoPlanner`, and the difference is not a preference.** Measured: with these
+registered on the planner, one of the five rewrites takes effect and four do not. `VolcanoCost.isLt`
+compares the row count and nothing else, so a filter whose condition was simplified is never *cheaper* than
+the same filter unsimplified and the planner keeps whichever it registered first — the original. The one
+that does take effect wins for a reason unrelated to being better: `RelMdUtil.guessSelectivity` guesses 0.5
+for a comparison and 0.25 for any other call, so the `DWITHIN` form carries a smaller row count. This is
+the same argument that keeps `Programs.calc` a hep pass.
+
+### Two things the pass does not do, and one a caller has to
+
+**Constant folding is Calcite's and already works.** `CLR_ST_GEOG_GEOMFROMTEXT('POINT(0 0)')` in a
+predicate reduces to a `GEOMETRY` literal and a wholly constant predicate reduces to nothing at all, under
+`CoreRules.FILTER_REDUCE_EXPRESSIONS` — which `RelOptUtil.registerDefaultRules` already registers. It needs
+an **executor**, and `ReduceExpressionsRule` gives up without one silently, saying in a comment that there
+is no mechanism for a warning. A `jdbc:calcite:` connection always has one, because `CalcitePrepareImpl`
+sets it; a `Frameworks` config has whatever it was given, which is nothing. **Without one the WKT is parsed
+once per row** — measured. `.executor(RexUtil.EXECUTOR)` is the whole of the fix.
+
+**Strictness and symmetry are declared on the operators**, not rewritten by the pass, and Calcite's own
+machinery reads them with no rule involved. Every `CLR_ST_GEOG_` predicate and measurement is null exactly
+when an argument is null, which is `Strong.Policy.ANY`; `RelOptUtil.simplifyJoin` reads it to turn a
+`LEFT JOIN` whose `WHERE` holds one of these into an `INNER JOIN`, measured to remove both sorts and a
+merge join from the plan. And `CLR_ST_GEOG_DISTANCE`, `MAXDISTANCE`, `INTERSECTS`, `DISJOINT`, `EQUALS` and
+`ENVELOPESINTERSECT` are symmetrical, so `RexNormalize` gives `f(a, b)` and `f(b, a)` one digest and the
+calc evaluates one of them.
+
+**Most of the surface is not strict and does not say it is.** `Strong.Policy.ANY` is read in *both*
+directions — `RexSimplify.simplifyIsNull` turns `f(a) IS NULL` into `a IS NULL` — and a reader answers null
+over a non-null argument all the time: `CLR_ST_GEOG_POINTFROMTEXT` of text naming another shape,
+`CLR_ST_GEOG_X` of anything but a point, `POINTN` past the end.
+
+**These declarations live on the operator object, so only the chained route carries them.** A name resolved
+through `GeographySchema` arrives as something `CalciteCatalogReader.toOp` built around the bare function.
+The pass puts this package's operator back — matched by name and confirmed by the body being the same
+object, so a host that declared a `CLR_ST_GEOG_` name over a body of its own is left alone — which is why
+the join rewrite above happens on that route only with the pass in front.
+
 ## What is not here
 
 - The rest of the mapping in [the design issue](https://github.com/ikvmnet/calcite-dotnet/issues/86) — the constructed-geometry group (buffer, the boolean overlay set, hulls, simplification, triangulation, grids), the point-returning measurements, `CLR_ST_GEOG_RELATE`, and the aggregates and table functions, which need machinery this package does not have.
