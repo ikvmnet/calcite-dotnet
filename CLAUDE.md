@@ -479,7 +479,18 @@ under a cursor root, and `RelOptRule.convert` simplifies for the same reason. An
 another implementor's tree shares its translator**: a correlate declares its outer row's field reads into
 a block it translates itself, and a sub-plan under a converter that translated with a translator of its
 own referred to a variable no lambda declares, failing at `Compile`. The prepare pipeline and the provider
-are on this convention; `TODO.md` holds what is left.
+are on this convention.
+
+**A Clr sub-plan under Calcite's correlate reads its correlation variable through the `DataContext`, and that
+is the only channel there is.** `EnumerableCorrelate` makes the outer row a parameter of the Java lambda it
+generates and places the inner block inside it, so Calcite's own sub-plans read the variable lexically; a
+plan of ours is a delegate compiled apart from that lambda and cannot. The converters out of both Clr
+conventions therefore ask Calcite's getter for every field of every variable the sub-plan uses (which
+declares the reads into the correlate's own block, in scope where the converter's call lands), pass them as
+an `Object[]` to `JavaPlans.BindCorrelated`, and the sub-plan's implementor registers the variable as an
+`ARRAY`-format row read from `DataContext.get(name)`. `ShouldReadACorrelationVariableUnderCalcitesCorrelate`
+in both converter suites holds it. The reverse direction — Calcite's sub-plan under our correlate — is
+lexical, by replaying our registrations onto Calcite's implementor and translating its block into our tree.
 
 **The converter out of either Clr convention is a Janino call into a stashed plan, and two things about the
 generated source were only found when a Clr node first ran under a Calcite node** — no test had done it

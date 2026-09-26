@@ -71,15 +71,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The token given to <c>ExecuteReaderAsync</c> cancels the token the provider's reader is called
-        /// with.
+        /// The token given to <c>ExecuteReaderAsync</c> cancels the statement, and every read after that
+        /// finds the provider's reader stopped.
         /// </summary>
         /// <remarks>
-        /// Linkage rather than identity. What reaches the leaf is the statement's own token — the one
-        /// <c>StatementCancellation</c> makes, so that Calcite's cancel flag and this convention's operators
-        /// can be driven by one cancellation — and it is linked to the caller's. Comparing the two tokens
-        /// would fail on that and say nothing about whether cancelling one cancels the other, which is the
-        /// property being asked for.
+        /// Linkage rather than identity. What the leaf is opened under is the statement's own token — the
+        /// one <c>StatementCancellation</c> makes, so that Calcite's cancel flag and the operators can be
+        /// driven by one cancellation — and it is linked to the caller's. Each advance of the leaf runs the
+        /// provider's reader under that token and the read's own together, so a read asked for after the
+        /// caller's token is cancelled reaches the reader with a cancelled token whatever token it brought.
         /// </remarks>
         [Fact]
         public async Task ShouldCarryExecuteReaderAsyncsTokenToTheProvidersReader()
@@ -104,7 +104,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
             cancellation.Cancel();
 
-            source.ReadTokens.Should().AllSatisfy(t => t.IsCancellationRequested.Should().BeTrue());
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await reader.ReadAsync(CancellationToken.None));
+
+            source.ReadTokens[^1].IsCancellationRequested.Should().BeTrue("the read after the cancellation ran the reader under the statement's token, cancelled");
         }
 
         /// <summary>
@@ -183,14 +185,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// </summary>
         /// <remarks>
         /// The shape a consumer with a per-operation timeout writes: a fresh token per <c>ReadAsync</c>, for
-        /// as many rows as there are. Each is registered against the statement for the length of its own
-        /// call and released at the end of it, so none of them accumulates and none of them outlives its
-        /// read.
-        ///
-        /// <para>The provider sees one token throughout, and that is not a contradiction: the leaf is
-        /// enumerating under the statement's token, fixed at <c>GetAsyncEnumerator</c>, and a per-read token
-        /// reaches it by cancelling that rather than by replacing it. <c>MoveNextAsync</c> takes no token,
-        /// so there is no replacing it.</para>
+        /// as many rows as there are. The leaf is the provider's own reader, handed back as the plan's
+        /// cursor by <c>AdoToClrDataCursorConverter</c>, so each read's token is the token that reader's
+        /// <c>ReadAsync</c> is given — none of them accumulates and none of them outlives its read, because
+        /// none of them is registered anywhere.
         /// </remarks>
         [Fact]
         public async Task ShouldTakeADifferentTokenOnEveryRead()
@@ -220,7 +218,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             rows.Should().Be(5, "the fixture has five employees and every one was read under its own token");
             used.Should().HaveCountGreaterThan(rows, "a token was made for the read that found no row too");
 
-            source.ReadTokens.Distinct().Should().HaveCount(1, "the leaf enumerates under the statement's token, not the caller's");
+            source.ReadTokens.Should().HaveCount(used.Count, "every read reached the provider's reader");
+            source.ReadTokens.Distinct().Should().HaveCount(used.Count, "each under the token of its own call");
 
             foreach (var perRead in used)
                 perRead.Dispose();
@@ -267,6 +266,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// expired tokens to be able to trigger cancellation event". So a dead token is not quietly
         /// declined — the statement goes with it, exactly as it would had the token died a moment into the
         /// call instead of a moment before it. Checking first would make those two cases differ by a race.
+        /// The provider registers the token against the statement before it checks it, so the dead read
+        /// never reaches the provider's reader, and the read after it, under a live token, finds the
+        /// statement cancelled: the leaf advances the reader under the statement's token as well as the
+        /// read's own.
         /// </remarks>
         [Fact]
         public async Task ShouldCancelTheStatementOnAnAlreadyCancelledReadToken()
@@ -287,7 +290,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await reader.ReadAsync(dead.Token));
 
-            source.ReadTokens.Should().AllSatisfy(t => t.IsCancellationRequested.Should().BeTrue("the statement was cancelled with it"));
+            source.ReadTokens.Should().HaveCount(1, "the dead read was refused before it reached the provider's reader");
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await reader.ReadAsync(live.Token));
+
+            source.ReadTokens.Should().HaveCount(2, "the live read after it reached the reader");
+            source.ReadTokens[1].IsCancellationRequested.Should().BeTrue("under the statement's token, which the dead read cancelled");
         }
 
         /// <summary>

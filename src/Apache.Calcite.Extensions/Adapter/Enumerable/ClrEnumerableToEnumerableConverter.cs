@@ -1,8 +1,10 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq.Expressions;
 
 using Apache.Calcite.Extensions.Interop;
+using Apache.Calcite.Extensions.Linq4j.Tree;
 using Apache.Calcite.Extensions.Runtime;
 
 using org.apache.calcite;
@@ -83,13 +85,73 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         {
             // the same map, so what this side stashes reaches the DataContext the plan is bound with
             var clr = new ClrEnumerableRelImplementor(implementor.getRexBuilder(), implementor.map);
+
+            // a correlation variable of a correlate above this node is a parameter of the Java lambda that
+            // correlate generates, and the sub-plan cannot see it: it is compiled apart from that lambda.
+            // So each one the sub-plan reads is handed in through the DataContext, as a row of the ARRAY
+            // format whose fields Calcite's own getter reads out of the parameter, and the sub-plan reads it
+            // back as it would the outer row of a correlate of its own. The field reads that getter declares
+            // land in the block the correlate's lambda holds, which is where this block is placed too.
+            var variables = ClrCorrelationVariables.Used(getInput());
+            var corrBlock = new J.BlockBuilder(false);
+            var builder = new J.BlockBuilder();
+            var names = new java.util.ArrayList();
+            var rows = new java.util.ArrayList();
+            var reads = new List<(ParameterExpression Variable, Expression Read)>();
+
+            foreach (var (name, type) in variables)
+            {
+                var outer = PhysTypeImpl.of(clr.TypeFactory, type, JavaRowFormat.ARRAY, false);
+                var pe = J.Expressions.parameter((java.lang.Class)typeof(object[]), name);
+                var variable = Expression.Parameter(typeof(object[]), name);
+                clr.Translator.Bind(pe, variable);
+                clr.RegisterCorrelVariable(name, pe, corrBlock, outer);
+                reads.Add((variable, Expression.Convert(Expression.Call(clr.Root, DataContextGet, Expression.Constant(name)), typeof(object[]))));
+
+                var getter = implementor.getCorrelVariableGetter(name);
+                var fields = new java.util.ArrayList();
+                for (int i = 0; i < type.getFieldCount(); i++)
+                {
+                    // boxed, because a primitive cannot sit in an Object[] and Janino does not box for an
+                    // array initializer where javac would
+                    var field = getter.field(builder, i, null);
+                    fields.add(J.Primitive.@is(field.getType()) ? J.Expressions.box(field) : field);
+                }
+
+                names.add(J.Expressions.constant(name));
+                rows.add(J.Expressions.newArrayInit((java.lang.reflect.Type)(java.lang.Class)typeof(object), (java.lang.Iterable)fields));
+            }
+
             var result = clr.VisitChild(null, 0, (ClrEnumerableRel)getInput(), ClrEnumerablePrefers.FromCalcite(pref));
+
+            foreach (var (name, _) in variables)
+                clr.ClearCorrelVariable(name);
+
+            var expression = result.Expression;
+            if (variables.Count > 0)
+            {
+                // the outer rows first, read off the context, then the field reads the getter declared
+                // over them, then the sub-plan
+                clr.Translator.TranslateStatements(corrBlock.toBlock(), out var declared, out var statements);
+                var variablesDeclared = new List<ParameterExpression>();
+                var body = new List<Expression>();
+                foreach (var (variable, read) in reads)
+                {
+                    variablesDeclared.Add(variable);
+                    body.Add(Expression.Assign(variable, read));
+                }
+
+                variablesDeclared.AddRange(declared);
+                body.AddRange(statements);
+                body.Add(expression);
+                expression = Expression.Block(expression.Type, variablesDeclared, body);
+            }
 
             // the tree, not a delegate. Compiling here would be JIT work done while the plan is still being
             // assembled, and once per converter besides; ClrPlan compiles itself the first time it is run.
             var plan = new ClrPlan<IEnumerable>(
                 Expression.Lambda<Func<DataContext, IEnumerable>>(
-                    Expression.Convert(result.Expression, typeof(IEnumerable)),
+                    Expression.Convert(expression, typeof(IEnumerable)),
                     clr.Root));
 
             // stashed as an Object, because the generated source declares the variable by the type's name
@@ -100,8 +162,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // is what EnumerableRelImplementor.result takes -- and it casts to PhysTypeImpl besides
             var physType = PhysTypeImpl.of(clr.TypeFactory, result.PhysType.RelRowType, result.PhysType.Format, false);
 
-            return implementor.result(physType,
-                J.Blocks.toBlock(J.Expressions.call(BindMethod, stashed, DataContext.ROOT)));
+            var call = variables.Count == 0
+                ? J.Expressions.call(BindMethod, stashed, DataContext.ROOT)
+                : J.Expressions.call(BindCorrelatedMethod, stashed, DataContext.ROOT,
+                    J.Expressions.newArrayInit((java.lang.reflect.Type)(java.lang.Class)typeof(string), (java.lang.Iterable)names),
+                    J.Expressions.newArrayInit((java.lang.reflect.Type)(java.lang.Class)typeof(object), (java.lang.Iterable)rows));
+
+            builder.add(J.Expressions.return_(null, call));
+
+            return implementor.result(physType, builder.toBlock());
         }
 
         /// <summary>
@@ -109,6 +178,18 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </summary>
         static readonly java.lang.reflect.Method BindMethod = ((java.lang.Class)typeof(JavaPlans))
             .getDeclaredMethod(nameof(JavaPlans.Bind), [typeof(java.lang.Object), typeof(DataContext)]);
+
+        /// <summary>
+        /// <see cref="JavaPlans.BindCorrelated"/>, which is <see cref="JavaPlans.Bind"/> with the outer rows
+        /// of the correlation variables the sub-plan reads.
+        /// </summary>
+        static readonly java.lang.reflect.Method BindCorrelatedMethod = ((java.lang.Class)typeof(JavaPlans))
+            .getDeclaredMethod(nameof(JavaPlans.BindCorrelated), [typeof(java.lang.Object), typeof(DataContext), typeof(string[]), typeof(object[])]);
+
+        /// <summary>
+        /// <c>DataContext.get</c>, which a correlation variable handed in through the context is read by.
+        /// </summary>
+        static readonly System.Reflection.MethodInfo DataContextGet = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.DATA_CONTEXT_GET.method);
 
         /// <inheritdoc />
         public Pair? deriveTraits(RelTraitSet childTraits, int childId) => EnumerableRel.__DefaultMethods.deriveTraits(this, childTraits, childId);

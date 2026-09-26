@@ -3381,6 +3381,22 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return [];
         }
 
+        /// <summary>
+        /// Reads a cursor a table opens as a sequence, opening it at <see cref="IEnumerable{T}.GetEnumerator"/>.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="open">The table's synchronous open, run once per enumerator.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// What a scan of an <see cref="Schema.IClrCursorTable"/> becomes in this convention. The open is
+        /// the acquisition, so it is taken as a delegate and run where a sequence acquires; the cursor is
+        /// advanced with <see cref="Runtime.ClrDataCursor.Read"/>, the advance of this sequence's kind.
+        /// </remarks>
+        public static IEnumerable<TSource> FromCursor<TSource>(Func<ClrDataCursor<TSource>> open)
+        {
+            return DataCursor.ClrDataCursorDefaults.AsEnumerable(open);
+        }
+
         // ------------------------------------------------------------------------------------------
         // The awaiting operators. Each is its pulled twin with foreach made await foreach, named with
         // an Async suffix, and carrying the trailing CancellationToken the generated trees bind by
@@ -6715,6 +6731,25 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return buffer;
         }
 
+
+
+        /// <summary>
+        /// Reads a cursor a table opens as an awaiting sequence, opening it on the first advance.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="open">The table's awaiting open, run once per enumerator.</param>
+        /// <param name="cancellationToken">The token the sequence is enumerated under, which is the open's
+        /// and every advance's: a sequence has no per-advance token to hand down, which is what the cursor
+        /// convention's scan of the same table does have.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <see cref="FromCursor{TSource}"/> for the awaiting half, with the one deferral the CLR imposes:
+        /// <c>GetAsyncEnumerator</c> cannot await, so the open runs inside the first <c>MoveNextAsync</c>.
+        /// </remarks>
+        public static IAsyncEnumerable<TSource> FromCursorAsync<TSource>(Func<CancellationToken, ValueTask<ClrDataCursor<TSource>>> open, CancellationToken cancellationToken = default)
+        {
+            return DataCursor.ClrDataCursorDefaults.AsAsyncEnumerable(open, cancellationToken);
+        }
 
     }
 

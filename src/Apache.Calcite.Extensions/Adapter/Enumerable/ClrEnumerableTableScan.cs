@@ -1,7 +1,10 @@
 using System;
 using System.Linq.Expressions;
+using System.Threading.Tasks;
+using System.Threading;
 
 using Apache.Calcite.Extensions.Linq4j.Tree;
+using Apache.Calcite.Extensions.Runtime;
 using Apache.Calcite.Extensions.Schema;
 
 using java.util.function;
@@ -64,7 +67,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             // this convention's own table SPI, which is read directly rather than through linq4j. One
             // interface each, both halves on it, so there is nothing here to ask about which kind a table is.
-            if (table is IClrScannableTable or IClrQueryableTable)
+            if (table is IClrScannableTable or IClrQueryableTable or IClrCursorTable)
                 return true;
 
             // see org.apache.calcite.prepare.RelOptTableImpl.getClassExpressionFunction
@@ -127,7 +130,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (table is IClrQueryableTable queryable)
                 return (java.lang.Class)queryable.ElementType;
 
-            if (table is IClrScannableTable)
+            if (table is IClrScannableTable or IClrCursorTable)
                 return (java.lang.Class)typeof(object[]);
 
             return EnumerableTableScan.deduceElementType(table);
@@ -199,7 +202,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             // this convention's own table SPI is read directly: the rows are already a .NET sequence, so
             // there is no linq4j tree to translate and no FromJava to read one back
-            if (unwrapped is IClrScannableTable or IClrQueryableTable)
+            if (unwrapped is IClrScannableTable or IClrQueryableTable or IClrCursorTable)
                 return implementor.Result(physType, ToRows(implementor, physType, ClrSource(implementor), true));
 
             var expression = table.getExpression(typeof(Queryable))
@@ -222,7 +225,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             // this convention's own table SPI is read directly: the rows are already a .NET sequence, so
             // there is no linq4j tree to translate and no FromJava to read one back
-            if (unwrapped is IClrScannableTable or IClrQueryableTable)
+            if (unwrapped is IClrScannableTable or IClrQueryableTable or IClrCursorTable)
                 return implementor.ResultAsync(physType, ToRowsAsync(implementor, physType, ClrSourceAsync(implementor), true));
 
             var expression = table.getExpression(typeof(Queryable))
@@ -247,6 +250,14 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         Expression ClrSource(ClrEnumerableRelImplementor implementor)
         {
             var unwrapped = (Table)table.unwrap(typeof(Table));
+
+            // a cursor table is read as a sequence that opens the cursor at its enumerator, which is the
+            // moment a sequence acquires; the open is deferred as a delegate for that reason
+            if (unwrapped is IClrCursorTable cursorTable)
+                return Expression.Call(null,
+                    ClrBuiltInMethod.FromCursor.MakeGenericMethod(typeof(object[])),
+                    Expression.Lambda<Func<ClrDataCursor<object?[]>>>(
+                        Expression.Call(Expression.Constant(cursorTable, typeof(IClrCursorTable)), OpenMethod, implementor.Root)));
 
             if (unwrapped is IClrQueryableTable queryable)
             {
@@ -287,6 +298,19 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         Expression ClrSourceAsync(ClrEnumerableRelImplementor implementor)
         {
             var unwrapped = (Table)table.unwrap(typeof(Table));
+
+            // a cursor table is read as an awaiting sequence that opens the cursor on its first advance,
+            // under the token the sequence was enumerated with, which is the only token a sequence has
+            if (unwrapped is IClrCursorTable cursorTable)
+            {
+                var token = Expression.Parameter(typeof(CancellationToken), "cancellationToken");
+
+                return ClrBuiltInMethod.CallAsync(
+                    ClrBuiltInMethod.FromCursorAsync.MakeGenericMethod(typeof(object[])),
+                    Expression.Lambda<Func<CancellationToken, ValueTask<ClrDataCursor<object?[]>>>>(
+                        Expression.Call(Expression.Constant(cursorTable, typeof(IClrCursorTable)), OpenAsyncMethod, implementor.Root, token),
+                        token));
+            }
 
             if (unwrapped is IClrQueryableTable queryable)
             {
@@ -557,6 +581,18 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </summary>
         static readonly System.Reflection.MethodInfo ScanAsyncMethod = typeof(IClrScannableTable).GetMethod(nameof(IClrScannableTable.ScanAsync))
             ?? throw new System.InvalidOperationException($"'{nameof(IClrScannableTable.ScanAsync)}' is missing.");
+
+        /// <summary>
+        /// <see cref="IClrCursorTable.Open"/>, which the synchronous body calls.
+        /// </summary>
+        static readonly System.Reflection.MethodInfo OpenMethod = typeof(IClrCursorTable).GetMethod(nameof(IClrCursorTable.Open))
+            ?? throw new System.InvalidOperationException($"'{nameof(IClrCursorTable.Open)}' is missing.");
+
+        /// <summary>
+        /// <see cref="IClrCursorTable.OpenAsync"/>, which the awaiting body calls.
+        /// </summary>
+        static readonly System.Reflection.MethodInfo OpenAsyncMethod = typeof(IClrCursorTable).GetMethod(nameof(IClrCursorTable.OpenAsync))
+            ?? throw new System.InvalidOperationException($"'{nameof(IClrCursorTable.OpenAsync)}' is missing.");
 
         static readonly System.Reflection.MethodInfo AsList = ClrTypes.Resolve(BuiltInMethod.AS_LIST.method);
 

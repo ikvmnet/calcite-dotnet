@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Runtime;
 using Apache.Calcite.Extensions.Schema;
 using Apache.Calcite.Tests;
 
@@ -240,6 +241,57 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             return (physical, rows);
         }
 
+
+        /// <summary>
+        /// A table of this project's cursor SPI, recording the token of each advance it was given.
+        /// </summary>
+        sealed class CursorRowsTable : AbstractTable, IClrCursorTable
+        {
+
+            public List<CancellationToken> Tokens { get; } = [];
+
+            public int Opened { get; private set; }
+
+            public int OpenedAsync { get; private set; }
+
+            public override RelDataType getRowType(RelDataTypeFactory typeFactory) => AsyncTestRows.SortedRowType(typeFactory);
+
+            public ClrDataCursor<object?[]> Open(DataContext root)
+            {
+                Opened++;
+                return new RowsCursor(this);
+            }
+
+            public ValueTask<ClrDataCursor<object?[]>> OpenAsync(DataContext root, CancellationToken cancellationToken)
+            {
+                OpenedAsync++;
+                return new ValueTask<ClrDataCursor<object?[]>>(new RowsCursor(this));
+            }
+
+            sealed class RowsCursor(CursorRowsTable table) : ClrDataCursor<object?[]>
+            {
+
+                int index = -1;
+
+                public override object?[] Current => AsyncTestRows.Sorted[index];
+
+                public override bool Read() => ++index < AsyncTestRows.Sorted.Length;
+
+                public override ValueTask<bool> ReadAsync(CancellationToken cancellationToken)
+                {
+                    table.Tokens.Add(cancellationToken);
+                    return new ValueTask<bool>(Read());
+                }
+
+                public override void Dispose()
+                {
+
+                }
+
+            }
+
+        }
+
         sealed class SpiDataContext(SchemaPlus rootSchema, java.util.Map parameters) : DataContext
         {
 
@@ -287,6 +339,27 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 
             RelOptUtil.toString(plan).Should().Contain("ClrEnumerableTableScan");
             rows.Should().Equal(Expected);
+        }
+
+        /// <summary>
+        /// A cursor table is read as a sequence of this convention: the open of the body's kind runs where
+        /// the sequence acquires, and the cursor is advanced with that kind's advance.
+        /// </summary>
+        [Fact]
+        public void ShouldReadAClrCursorTable()
+        {
+            var table = new CursorRowsTable();
+            var (plan, rows) = Run(Sql, table, false);
+
+            RelOptUtil.toString(plan).Should().Contain("ClrEnumerableTableScan");
+            rows.Should().Equal(Expected);
+            table.Opened.Should().Be(1);
+            table.Tokens.Should().BeEmpty("a pulled sequence advances the cursor synchronously");
+
+            var awaited = new CursorRowsTable();
+            Run(Sql, awaited, true).Rows.Should().Equal(Expected);
+            awaited.OpenedAsync.Should().Be(1);
+            awaited.Tokens.Should().HaveCount(AsyncTestRows.Sorted.Length + 1, "an awaited sequence advances the cursor with await, once per row and once past the end");
         }
 
         [Fact]

@@ -403,24 +403,6 @@ which is what a cache on the root means, the factory being per connection.
   as a differential failure on the second bind and nowhere else.
 - Nothing above measured a cache hit's cost — key canonicalisation and lookup — against the 15 ms floor.
 
-## `ClrDataCursorConvention`: what is not yet written
-
-The convention has every node the sequence convention has, both bodies each, and the four converters,
-and the prepare pipeline and the provider are on it. What is left:
-
-- **A table SPI for cursors** — *small*. A table whose natural shape is a cursor — a provider's
-  `DbDataReader`, opened with `ExecuteReader` or `ExecuteReaderAsync` and advanced with `Read` or
-  `ReadAsync(token)` — has no way to hand one in: `IClrScannableTable` and `IClrQueryableTable` produce
-  sequences, and the scan opens a cursor over them, losing the per-advance token at the leaf. The
-  ADO.NET adapter's leaf is the case that matters.
-- **A converter into `EnumerableConvention` carries no correlation variables** — *small*. The converters
-  into either Clr convention replay the enclosing plan's correlation variables onto the sub-plan's
-  implementor; `ClrDataCursorToEnumerableConverter` and `ClrEnumerableToEnumerableConverter` do not
-  replay Calcite's onto ours, so a calc of ours under Calcite's `EnumerableCorrelate` fails with
-  "Correlation variable $cor0 should be defined". Measured with a correlated `EXISTS` over a table only
-  this project's SPI can scan, planned to end in Calcite's convention. `EnumerableRelImplementor` keeps
-  its map private, so the replay has to go through what it exposes.
-
 ## Test suites not yet written
 
 Sized against measured coverage: `Apache.Calcite.Data` 78.0%, `Apache.Calcite.Adapter.AdoNet` ~60%.

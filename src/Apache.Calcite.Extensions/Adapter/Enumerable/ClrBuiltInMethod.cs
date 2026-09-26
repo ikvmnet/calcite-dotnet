@@ -243,6 +243,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             ?? throw new InvalidOperationException($"'{nameof(JavaSequences.FromJava)}' is missing.");
 
         /// <summary>
+        /// <see cref="ClrEnumerableDefaults.FromCursor{TSource}"/>, which a scan of an
+        /// <see cref="Schema.IClrCursorTable"/> is built from.
+        /// </summary>
+        public static readonly MethodInfo FromCursor = Of(nameof(ClrEnumerableDefaults.FromCursor));
+
+        /// <summary>
         /// <see cref="Runtime.ClrSequences.ToEnumerable{TSource}"/>, which reads an awaited sequence by
         /// blocking a thread on each row.
         /// </summary>
@@ -522,6 +528,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </remarks>
         public static readonly MethodInfo FromJavaAsync = typeof(Apache.Calcite.Extensions.Interop.JavaSequences).GetMethod(nameof(Apache.Calcite.Extensions.Interop.JavaSequences.FromJavaAsync), System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
             ?? throw new InvalidOperationException("'FromJavaAsync' is missing.");
+
+        /// <summary>
+        /// <see cref="ClrEnumerableDefaults.FromCursorAsync{TSource}"/>.
+        /// </summary>
+        public static readonly MethodInfo FromCursorAsync = Of(nameof(ClrEnumerableDefaults.FromCursorAsync));
 
         /// <summary>
         /// <see cref="Apache.Calcite.Extensions.Runtime.ClrSequences.ToAsyncEnumerable{TSource}"/>, which

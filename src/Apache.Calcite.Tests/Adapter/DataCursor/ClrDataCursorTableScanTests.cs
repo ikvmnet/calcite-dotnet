@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Adapter.DataCursor;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Runtime;
 using Apache.Calcite.Extensions.Schema;
 using Apache.Calcite.Tests;
 
@@ -183,11 +184,8 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
             distinct.Should().Throw<InvalidCastException>().WithMessage("*System.Int32*java.lang.Integer*");
         }
 
-        static (RelNode Plan, List<string> Rows) Run(string sql, Table table, bool async)
+        static RelNode Plan(string sql, SchemaPlus rootSchema)
         {
-            var rootSchema = Frameworks.createRootSchema(true);
-            rootSchema.add("T", table);
-
             var rules = new java.util.ArrayList();
             var calcRules = new java.util.ArrayList();
 
@@ -216,7 +214,16 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
             var expanded = planner.transform(0, logical.getTraitSet(), logical);
 
             var chosen = planner.transform(1, expanded.getTraitSet().replace(ClrDataCursorConvention.Instance).simplify(), expanded);
-            var physical = planner.transform(2, chosen.getTraitSet(), chosen);
+
+            return planner.transform(2, chosen.getTraitSet(), chosen);
+        }
+
+        static (RelNode Plan, List<string> Rows) Run(string sql, Table table, bool async)
+        {
+            var rootSchema = Frameworks.createRootSchema(true);
+            rootSchema.add("T", table);
+
+            var physical = Plan(sql, rootSchema);
 
             var parameters = new java.util.HashMap();
             var context = new SpiDataContext(rootSchema, parameters);
@@ -245,6 +252,57 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
             }
 
             return (physical, rows);
+        }
+
+
+        /// <summary>
+        /// A table of this project's cursor SPI, recording the token of each advance it was given.
+        /// </summary>
+        sealed class CursorRowsTable : AbstractTable, IClrCursorTable
+        {
+
+            public List<CancellationToken> Tokens { get; } = [];
+
+            public int Opened { get; private set; }
+
+            public int OpenedAsync { get; private set; }
+
+            public override RelDataType getRowType(RelDataTypeFactory typeFactory) => AsyncTestRows.SortedRowType(typeFactory);
+
+            public ClrDataCursor<object?[]> Open(DataContext root)
+            {
+                Opened++;
+                return new RowsCursor(this);
+            }
+
+            public ValueTask<ClrDataCursor<object?[]>> OpenAsync(DataContext root, CancellationToken cancellationToken)
+            {
+                OpenedAsync++;
+                return new ValueTask<ClrDataCursor<object?[]>>(new RowsCursor(this));
+            }
+
+            sealed class RowsCursor(CursorRowsTable table) : ClrDataCursor<object?[]>
+            {
+
+                int index = -1;
+
+                public override object?[] Current => AsyncTestRows.Sorted[index];
+
+                public override bool Read() => ++index < AsyncTestRows.Sorted.Length;
+
+                public override ValueTask<bool> ReadAsync(CancellationToken cancellationToken)
+                {
+                    table.Tokens.Add(cancellationToken);
+                    return new ValueTask<bool>(Read());
+                }
+
+                public override void Dispose()
+                {
+
+                }
+
+            }
+
         }
 
         sealed class SpiDataContext(SchemaPlus rootSchema, java.util.Map parameters) : DataContext
@@ -294,6 +352,53 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 
             RelOptUtil.toString(plan).Should().Contain("ClrDataCursorTableScan");
             rows.Should().Equal(Expected);
+        }
+
+        /// <summary>
+        /// A cursor table is opened by the open of the plan's kind and its cursor is the plan's leaf.
+        /// </summary>
+        [Fact]
+        public void ShouldReadAClrCursorTable()
+        {
+            var table = new CursorRowsTable();
+            var (plan, rows) = Run(Sql, table, false);
+
+            RelOptUtil.toString(plan).Should().Contain("ClrDataCursorTableScan");
+            rows.Should().Equal(Expected);
+            table.Opened.Should().Be(1);
+            table.OpenedAsync.Should().Be(0);
+
+            var awaited = new CursorRowsTable();
+            Run(Sql, awaited, true).Rows.Should().Equal(Expected);
+            awaited.OpenedAsync.Should().Be(1);
+            awaited.Opened.Should().Be(0);
+        }
+
+        /// <summary>
+        /// Each advance's token reaches the cursor table, which is what the SPI exists for: a sequence
+        /// takes its token once, at its enumerator, and a cursor takes one per advance.
+        /// </summary>
+        [Fact]
+        public async Task ShouldHandEachAdvancesTokenToAClrCursorTable()
+        {
+            var table = new CursorRowsTable();
+            var rootSchema = Frameworks.createRootSchema(true);
+            rootSchema.add("T", table);
+
+            // no sort: a sort drains its input at the open, and then no advance of the plan reaches the table
+            var physical = Plan("SELECT K, V FROM T WHERE K > 0", rootSchema);
+            var parameters = new java.util.HashMap();
+            var factory = new ClrDataCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters).ImplementRoot((ClrDataCursorRel)physical, ClrEnumerablePrefer.Array);
+
+            using var first = new CancellationTokenSource();
+            using var second = new CancellationTokenSource();
+
+            using var cursor = factory.Open(new SpiDataContext(rootSchema, parameters));
+            (await cursor.ReadAsync(first.Token)).Should().BeTrue();
+            (await cursor.ReadAsync(second.Token)).Should().BeTrue();
+            cursor.Read().Should().BeTrue();
+
+            table.Tokens.Should().Equal([first.Token, second.Token], "the two awaited advances carried their own tokens and the synchronous one none");
         }
 
         [Fact]

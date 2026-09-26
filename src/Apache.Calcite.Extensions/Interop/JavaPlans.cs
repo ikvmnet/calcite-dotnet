@@ -87,6 +87,41 @@ namespace Apache.Calcite.Extensions.Interop
             return JavaCursors.ToJava((ClrPlan<ClrDataCursor>)plan, root);
         }
 
+        /// <summary>
+        /// <see cref="Bind"/>, with the outer rows of the correlation variables the plan reads.
+        /// </summary>
+        /// <param name="plan">The compiled plan, a <c>ClrPlan&lt;IEnumerable&gt;</c>.</param>
+        /// <param name="root">The context the plan is bound with.</param>
+        /// <param name="names">The correlation variables' names.</param>
+        /// <param name="rows">The outer rows, one per name, each an <c>Object[]</c> of the row's fields.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// What a converter out of a Clr convention calls when its sub-plan sits under a correlate of
+        /// Calcite's. The outer row is a parameter of the Java lambda that correlate generates, which the
+        /// sub-plan cannot see, so the converter reads its fields where it can — through the getter Calcite
+        /// registered — and hands them in through a <see cref="ClrCorrelationDataContext"/>.
+        /// </remarks>
+        public static org.apache.calcite.linq4j.Enumerable BindCorrelated(object plan, DataContext root, string[] names, object[] rows)
+        {
+            return Bind(plan, new ClrCorrelationDataContext(root, names, rows));
+        }
+
+        /// <summary>
+        /// <see cref="BindCursor"/>, with the outer rows of the correlation variables the plan reads.
+        /// </summary>
+        /// <param name="plan">The compiled plan, a <c>ClrPlan&lt;ClrDataCursor&gt;</c>.</param>
+        /// <param name="root">The context the plan is bound with.</param>
+        /// <param name="names">The correlation variables' names.</param>
+        /// <param name="rows">The outer rows, one per name, each an <c>Object[]</c> of the row's fields.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <see cref="BindCorrelated"/> for a plan of the cursor convention.
+        /// </remarks>
+        public static org.apache.calcite.linq4j.Enumerable BindCursorCorrelated(object plan, DataContext root, string[] names, object[] rows)
+        {
+            return BindCursor(plan, new ClrCorrelationDataContext(root, names, rows));
+        }
+
     }
 
 }

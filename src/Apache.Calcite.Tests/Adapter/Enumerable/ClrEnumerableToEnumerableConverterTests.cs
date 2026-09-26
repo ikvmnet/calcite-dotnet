@@ -62,7 +62,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// Plans a statement to end in Calcite's convention, with this convention's rules beside Calcite's.
         /// </summary>
-        static RelNode Plan(string sql, SchemaPlus rootSchema)
+        static RelNode Plan(string sql, SchemaPlus rootSchema, RelOptRule[]? remove = null)
         {
             var rules = new java.util.ArrayList();
             foreach (var rule in ClrEnumerableRules.Rules())
@@ -79,7 +79,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
                 .defaultSchema(rootSchema)
                 .programs(
                     Programs.subQuery(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE),
-                    new DefaultRulesProgram(rules),
+                    new DefaultRulesProgram(rules, remove: remove),
                     Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE))
                 .build();
 
@@ -105,9 +105,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// <summary>
         /// Runs a plan that ends in Calcite's convention and returns its rows rendered as text.
         /// </summary>
-        static List<string> Run(string sql, SchemaPlus rootSchema, out string plan)
+        static List<string> Run(string sql, SchemaPlus rootSchema, out string plan, RelOptRule[]? remove = null)
         {
-            var physical = Plan(sql, rootSchema);
+            var physical = Plan(sql, rootSchema, remove);
             plan = RelOptUtil.toString(physical);
 
             var parameters = new java.util.HashMap();
@@ -141,6 +141,34 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             plan.Should().Contain("ClrEnumerableToEnumerableConverter").And.Contain("ClrEnumerableTableScan");
 
             rows.Should().Equal(Run(sql.Replace("ASALES", "SALES"), rootSchema, out _));
+        }
+
+        /// <summary>
+        /// A sub-plan of this convention under a correlate of Calcite's reads the outer row.
+        /// </summary>
+        /// <remarks>
+        /// The outer row is a parameter of the Java lambda Calcite's correlate generates, and the sub-plan
+        /// is compiled apart from that lambda and cannot see it: the converter reads the row's fields
+        /// through the getter Calcite registered and hands them in through the context. The scans are ours
+        /// because only this project's SPI reads the table; the correlate is Calcite's because this
+        /// convention's correlate rule is taken out, so the only correlate the planner can build is
+        /// Calcite's over converters out of ours.
+        /// </remarks>
+        [Fact]
+        public void ShouldReadACorrelationVariableUnderCalcitesCorrelate()
+        {
+            var sql = "SELECT ID FROM ASALES S1 WHERE EXISTS (SELECT 1 FROM ASALES S2 WHERE S2.REGION = S1.REGION AND S2.ID > 3) ORDER BY ID";
+
+            var rootSchema = Frameworks.createRootSchema(true);
+            rootSchema.add("ASALES", new AsyncRowsTable(AsyncTestRows.Sales, AsyncTestRows.SalesRowType, false));
+            rootSchema.add("SALES", new SyncRowsTable(AsyncTestRows.Sales, AsyncTestRows.SalesRowType, false));
+
+            var rows = Run(sql, rootSchema, out var plan, remove: [ClrEnumerableRules.ClrEnumerableCorrelateRule]);
+
+            plan.Should().Contain("EnumerableCorrelate", plan).And.Contain("ClrEnumerableToEnumerableConverter", plan);
+
+            rows.Should().Equal(Run(sql.Replace("ASALES", "SALES"), rootSchema, out _, remove: [ClrEnumerableRules.ClrEnumerableCorrelateRule]));
+            rows.Should().NotBeEmpty();
         }
 
     }

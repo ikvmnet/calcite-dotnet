@@ -26,10 +26,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// Every other test in this project opens <c>jdbc:calcite:</c> through <c>DriverManager</c>, which is
     /// Calcite's connection and Calcite's prepare. None of them says anything about this path. A plan over
     /// an ADO.NET schema is necessarily a mixed one — the adapter's own subtree stays in its convention —
-    /// and the adapter converts straight into <c>ClrEnumerableConvention</c> through
-    /// <c>AdoToClrEnumerableConverter</c>, whatever the connection's mode. There is no linq4j layer between.
-    /// Which of <c>AdoSequences.Read</c> and <c>ReadAsync</c> that converter builds a call to is the mode's
-    /// doing and is settled when the plan is compiled, so it is not visible in the plan.
+    /// and the provider plans into the cursor convention, so the converter its plans hold is
+    /// <c>AdoToClrDataCursorConverter</c> and <see cref="AdoClrDataCursorTests"/> holds that plan. What is
+    /// held here is the rows the provider reads over the adapter, and <c>AdoSequences</c> read directly:
+    /// the sequence convention's reader, which a plan rooted in that convention still reaches through
+    /// <c>AdoToClrEnumerableConverter</c>.
     /// </remarks>
     public class AdoClrEnumerableTests : IDisposable
     {
@@ -175,34 +176,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             Assert.False(r.Read(), "and only that one");
         }
 
-        /// <summary>
-        /// The adapter converts straight into this convention, pushed down intact.
-        /// </summary>
-        /// <remarks>
-        /// The subtree under the converter is the adapter's own — an <c>AdoProject</c> rather than a scan
-        /// with the work done above it — so the crossing loses no pushdown.
-        ///
-        /// <para>One converter, and nothing of Calcite's between it and the reader. The route this replaced
-        /// was a converter over <c>AdoToEnumerableConverter</c>, which answers the same rows and blocks a
-        /// thread on the socket for every one of them, the ADO leaf being the one place in a plan with real
-        /// network I/O to wait on.</para>
-        ///
-        /// <para><b>The plan does not say whether the rows will be awaited</b>, and there is nothing here
-        /// to assert about that: the reader either open hands back carries both advances, and
-        /// <c>AdoToClrEnumerableConverter</c> reads through <c>ReadAsync</c> or <c>Read</c> according to the
-        /// body that opened it, so which advance the caller uses shows up in the tree the implementor builds
-        /// rather than in the plan. <c>ShouldReadTheAdapterThroughTheAsyncConverter</c> holds that end.</para>
-        /// </remarks>
-        [Fact]
-        public void ShouldCarryTheAdapterIntoThisConvention()
-        {
-            var plan = Explain(_connection, "SELECT empno, name FROM ADO.emps WHERE deptno = 10");
-
-            Assert.Contains("AdoToClrEnumerableConverter", plan);
-            Assert.Contains("AdoProject", plan);
-            Assert.False(plan.Contains("AdoToEnumerableConverter"), plan);
-        }
-
         [Fact]
         public void ShouldScanAnAdoTable()
         {
@@ -252,34 +225,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
             Assert.Equal(1, source.Opened);
             Assert.Equal(1, source.Closed);
-        }
-
-        /// <summary>
-        /// A correlated sub-query pushed down asynchronously still gets its parameters.
-        /// </summary>
-        /// <remarks>
-        /// The rows are read by <c>AdoSequences.ReadAsync</c> here, and the correlation variables come off
-        /// the implementor implementing the plan: a variable is registered on that implementor and is unknown
-        /// to every other, and nothing below here would notice the wrong one at planning time.
-        /// <c>forceDecorrelate=false</c> is what leaves a correlate in the plan at all — Calcite rewrites one
-        /// into a join wherever it can, and by default always tries.
-        /// </remarks>
-        [Fact]
-        public async Task ShouldEnrichACorrelatedSubQueryOnTheAsyncPath()
-        {
-            using var connection = OpenConnection(new CountingAdoDataSource(_sqlite.DataSource), decorrelate: false);
-            const string Sql = "SELECT e.name, (SELECT d.dname FROM ADO.depts d WHERE d.deptno = e.deptno) FROM ADO.emps e";
-
-            // the correlate has to still be there, and the inner sub-plan has to still be the adapter's, or
-            // the query below proves nothing about the enricher
-            var plan = Explain(connection, Sql);
-            Assert.Contains("ClrEnumerableCorrelate", plan);
-            Assert.Contains("AdoFilter(condition=[=($0, $cor0.DEPTNO)])", plan);
-            Assert.Contains("AdoToClrEnumerableConverter", plan);
-
-            Assert.Equivalent(
-                new[] { "Alice|Sales", "Bob|Sales", "Carol|Engineering", "Dave|Engineering", "Erin|null" },
-                await RowsAsync(connection, Sql), strict: true);
         }
 
         /// <summary>
@@ -485,7 +430,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// disposed.
         /// </summary>
         /// <param name="dataSource"></param>
-        sealed class CountingAdoDataSource(DbDataSource dataSource) : AdoDataSource
+        internal sealed class CountingAdoDataSource(DbDataSource dataSource) : AdoDataSource
         {
 
             readonly AdoDatabaseMetadata _metadata = AdoDatabaseMetadataFactoryImpl.Instance.Create(dataSource);
