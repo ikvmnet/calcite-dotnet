@@ -194,6 +194,152 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         }
 
         /// <summary>
+        /// A correlated join refuses RIGHT and FULL where it is built, not where it is read.
+        /// </summary>
+        /// <remarks>
+        /// <c>correlateJoin</c> throws before it constructs the enumerable at all. Deferring the refusal into
+        /// an advance would let a plan be opened and only fail once rows were read; falling through and
+        /// inner-joining would let it not fail at all. The awaiting open refuses before it awaits its outer,
+        /// so the refusal is the open's rather than the first advance's.
+        /// </remarks>
+        [Fact]
+        public async Task ShouldRefuseARightOrFullCorrelateWhereItIsBuilt()
+        {
+            foreach (var joinType in new[] { org.apache.calcite.linq4j.JoinType.RIGHT, org.apache.calcite.linq4j.JoinType.FULL })
+            {
+                var act = () => ClrDataCursorDefaults.CorrelateJoin<object, object, string>(
+                    new ScalarCursor([1]),
+                    _ => new ScalarCursor([1]),
+                    (_, _) => new ValueTask<ClrDataCursor<object>?>(new ScalarCursor([1])),
+                    (a, b) => $"{a}:{b}",
+                    joinType);
+
+                act.Should().Throw<ArgumentException>().WithMessage("*" + joinType.name() + "*");
+
+                var actAsync = () => ClrDataCursorDefaults.CorrelateJoinAsync<object, object, string>(
+                    new ValueTask<ClrDataCursor<object>>(new ScalarCursor([1])),
+                    _ => new ScalarCursor([1]),
+                    (_, _) => new ValueTask<ClrDataCursor<object>?>(new ScalarCursor([1])),
+                    (a, b) => $"{a}:{b}",
+                    joinType,
+                    CancellationToken.None).AsTask();
+
+                await actAsync.Should().ThrowAsync<ArgumentException>().WithMessage("*" + joinType.name() + "*");
+            }
+        }
+
+        /// <summary>
+        /// A correlated function that answers null is read as a cursor of no rows.
+        /// </summary>
+        /// <remarks>
+        /// <c>Linq4j.emptyEnumerable()</c>, which Calcite substitutes rather than dereferencing. A LEFT join
+        /// therefore emits the outer row against null instead of throwing, through either advance.
+        /// </remarks>
+        [Fact]
+        public async Task ShouldReadANullCorrelatedSequenceAsEmpty()
+        {
+            var join = ClrDataCursorDefaults.CorrelateJoin<object, object, string>(
+                new ScalarCursor([1, 2]),
+                _ => null,
+                (_, _) => new ValueTask<ClrDataCursor<object>?>((ClrDataCursor<object>?)null),
+                (a, b) => $"{a}:{b ?? "null"}",
+                org.apache.calcite.linq4j.JoinType.LEFT);
+
+            join.Read().Should().BeTrue();
+            join.Current.Should().Be("1:null");
+            (await join.ReadAsync(CancellationToken.None)).Should().BeTrue();
+            join.Current.Should().Be("2:null");
+            join.Read().Should().BeFalse();
+        }
+
+        /// <summary>
+        /// A correlated join opens its inner once per outer row, by the opener of the advance that reached
+        /// that row, and closes it before opening the next.
+        /// </summary>
+        /// <remarks>
+        /// <c>correlateJoin</c> acquires its outer at <c>enumerator()</c>, which is the open, and each inner
+        /// inside <c>moveNext</c>; the previous inner is closed there before the next is acquired.
+        /// </remarks>
+        [Fact]
+        public async Task ShouldOpenTheInnerPerOuterRowByTheAdvanceThatReachesIt()
+        {
+            var opened = new List<string>();
+            var inners = new List<ScalarCursor>();
+
+            ScalarCursor Open(string kind, object row)
+            {
+                opened.Add($"{kind}:{row}");
+                var inner = new ScalarCursor(["a", "b"]);
+                inners.Add(inner);
+                return inner;
+            }
+
+            var join = ClrDataCursorDefaults.CorrelateJoin<object, object, string>(
+                new ScalarCursor([1, 2]),
+                row => Open("inner", row),
+                (row, token) => new ValueTask<ClrDataCursor<object>?>(Open("innerAsync", row)),
+                (a, b) => $"{a}:{b}",
+                org.apache.calcite.linq4j.JoinType.INNER);
+
+            opened.Should().BeEmpty("the open acquires the outer and nothing else");
+
+            join.Read().Should().BeTrue();
+            opened.Should().Equal(["inner:1"]);
+            join.Current.Should().Be("1:a");
+
+            (await join.ReadAsync(CancellationToken.None)).Should().BeTrue("the second inner row, read through the other advance");
+            join.Current.Should().Be("1:b");
+            opened.Should().Equal(["inner:1"], "the inner already open is read, not reopened");
+
+            (await join.ReadAsync(CancellationToken.None)).Should().BeTrue();
+            opened.Should().Equal(["inner:1", "innerAsync:2"], "the next outer row was reached by an awaiting advance");
+            inners[0].Disposed.Should().BeTrue("and the inner before it was closed first");
+            join.Current.Should().Be("2:a");
+
+            join.Read().Should().BeTrue();
+            join.Read().Should().BeFalse();
+
+            join.Dispose();
+            inners[1].Disposed.Should().BeTrue();
+        }
+
+        /// <summary>
+        /// An ASOF join drains both inputs at the open, the left before the right is opened.
+        /// </summary>
+        /// <remarks>
+        /// <c>asofJoin</c> builds its indexes in the method body, one try-with-resources after the other,
+        /// and only then returns the enumerable that walks them.
+        /// </remarks>
+        [Fact]
+        public void ShouldDrainBothAsofInputsAtTheOpen()
+        {
+            // Java integers, because the keys go into a java.util.HashMap and the timestamps through a Java
+            // comparator, exactly as a plan's would
+            var left = new ScalarCursor([java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2)]);
+            var leftDisposedWhenRightOpened = false;
+            ScalarCursor? right = null;
+
+            var join = ClrDataCursorDefaults.AsofJoin<object, object, object, string>(
+                left,
+                () => { leftDisposedWhenRightOpened = left.Disposed; return right = new ScalarCursor([java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2)]); },
+                x => x,
+                x => x,
+                (a, b) => $"{a}:{b ?? "null"}",
+                (a, b) => true,
+                com.google.common.collect.Ordering.natural(),
+                false);
+
+            leftDisposedWhenRightOpened.Should().BeTrue("asofJoin closes the left before it acquires the right");
+            right!.Disposed.Should().BeTrue("and the right is drained and closed before the cursor is handed back");
+
+            var rows = new List<string>();
+            while (join.Read())
+                rows.Add(join.Current);
+
+            rows.Should().Equal(["1:1", "2:2"]);
+        }
+
+        /// <summary>
         /// A cursor over scalar rows in hand.
         /// </summary>
         sealed class ScalarCursor(IReadOnlyList<object> rows) : ClrDataCursor<object>

@@ -74,17 +74,20 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         }
 
         /// <summary>
-        /// Builds the cursor convention's implementor for the sub-plan, over this plan's own parameter and
-        /// map, with the correlation variables in scope carried across.
+        /// Builds the cursor convention's implementor for the sub-plan, over this plan's own parameter, map
+        /// and translator, with the correlation variables in scope carried across.
         /// </summary>
         /// <remarks>
         /// The token parameter is fresh, because the sequence convention's plan declares none: it is
         /// declared only by the deferred opener the awaiting body builds, which is where the sub-plan's
-        /// awaiting opens read it.
+        /// awaiting opens read it. The translator is this plan's because a variable is keyed by the linq4j
+        /// object it was declared from: a correlate of the sequence convention declares the fields of its
+        /// outer row into a block it translates itself, and a sub-plan under it that reads them has to name
+        /// the same variables.
         /// </remarks>
         static ClrDataCursorRelImplementor Cursor(ClrEnumerableRelImplementor implementor)
         {
-            var cursor = new ClrDataCursorRelImplementor(implementor.RexBuilder, implementor.Map, implementor.Root, Expression.Parameter(typeof(CancellationToken), "cancellationToken"));
+            var cursor = new ClrDataCursorRelImplementor(implementor.RexBuilder, implementor.Map, implementor.Root, Expression.Parameter(typeof(CancellationToken), "cancellationToken"), implementor.Translator);
             implementor.ReplayCorrelVariables(cursor);
 
             return cursor;

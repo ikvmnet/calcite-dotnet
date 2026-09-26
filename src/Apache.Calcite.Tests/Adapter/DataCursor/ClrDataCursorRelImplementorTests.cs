@@ -335,6 +335,10 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
             "SELECT ID FROM SALES UNION ALL SELECT ID FROM SALES",
             "SELECT ID FROM SALES UNION ALL SELECT K FROM SORTED UNION ALL SELECT ID FROM SALES",
             "SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)",
+            "SELECT a.ID, b.V FROM SALES a ASOF JOIN SORTED b MATCH_CONDITION b.K <= a.ID ON a.LABEL = b.V",
+            // a correlate: the inner is a deferred opener over the outer row, of each kind, and the uncollect
+            // under it is Calcite's, read through the converter
+            "SELECT t.x, u.y FROM (VALUES (1, ARRAY[10, 20]), (2, ARRAY[30])) AS t(x, xs), UNNEST(t.xs) AS u(y)",
         ];
 
         /// <summary>

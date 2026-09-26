@@ -88,13 +88,37 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// would produce an expression referring to a parameter the enclosing lambda does not declare, which
         /// fails at <c>Compile</c> rather than here.
         /// </remarks>
-        public ClrEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, ParameterExpression root)
+        public ClrEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, ParameterExpression root) :
+            this(rexBuilder, internalParameters, root, new LixToClrTranslator(internalParameters))
+        {
+
+        }
+
+        /// <summary>
+        /// Initializes a new instance implementing a sub-plan spliced into a tree another implementor is
+        /// building, over that implementor's translator.
+        /// </summary>
+        /// <param name="rexBuilder">The builder for row expressions, from the plan's cluster.</param>
+        /// <param name="internalParameters">The map values are stashed into, which must be the one the
+        /// <see cref="DataContext"/> will serve at run time.</param>
+        /// <param name="root">The parameter the <see cref="DataContext"/> arrives by, which must be the one
+        /// the enclosing plan's lambda declares.</param>
+        /// <param name="translator">The enclosing plan's translator, which must be the one that translates
+        /// every block the sub-plan's tree refers into.</param>
+        /// <remarks>
+        /// The translator is shared for the reason the root parameter is. A correlate declares the fields of
+        /// its outer row into a block and translates that block itself; a sub-plan under it reads those
+        /// fields by the variables the block declares, and a translator keys a variable by the linq4j object
+        /// it was declared from. Two translators give one declaration two variables, and the sub-plan's
+        /// refers to the one no lambda declares.
+        /// </remarks>
+        internal ClrEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, ParameterExpression root, LixToClrTranslator translator)
         {
             this.rexBuilder = rexBuilder ?? throw new ArgumentNullException(nameof(rexBuilder));
             this.map = internalParameters ?? throw new ArgumentNullException(nameof(internalParameters));
 
             Root = root ?? throw new ArgumentNullException(nameof(root));
-            Translator = new LixToClrTranslator(map);
+            Translator = translator ?? throw new ArgumentNullException(nameof(translator));
             Translator.Bind(DataContext.ROOT, Root);
 
             AllCorrelateVariables = new DelegateFunction1<string, RexToLixTranslator.InputGetter>(GetCorrelVariableGetter);

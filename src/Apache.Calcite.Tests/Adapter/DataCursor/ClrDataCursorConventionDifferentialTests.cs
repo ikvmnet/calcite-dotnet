@@ -580,7 +580,14 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
                     rules.add(clr ? ClrEnumerableRules.ClrEnumerableSortedAggregateRule : EnumerableRules.ENUMERABLE_SORTED_AGGREGATE_RULE);
 
                 if (batchNestedLoopJoin)
+                {
                     rules.add(clr ? ClrEnumerableRules.ClrEnumerableBatchNestedLoopJoinRule : EnumerableRules.ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE);
+
+                    // and the cursor convention's, which is the root: both conventions' rule sets are on the
+                    // planner, so the field a caller adds is added for both
+                    if (clr)
+                        rules.add(ClrDataCursorRules.ClrDataCursorBatchNestedLoopJoinRule);
+                }
 
                 // and the limit sort is the third of the three rules Calcite declares as fields and leaves out of
                 // ENUMERABLE_RULES. It was in this convention's default list once, which meant Calcite could
@@ -1846,7 +1853,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         [Fact]
         public void ShouldPlanAConditionalCorrelate() =>
             PlanOf("SELECT \"ID\" FROM \"SALES\" \"S1\" WHERE EXISTS (SELECT 1 FROM \"SALES\" \"S2\" WHERE \"S2\".\"REGION\" = \"S1\".\"REGION\" AND \"S2\".\"ID\" > 3)", true, markJoin: true)
-                .Should().Contain("ClrEnumerableConditionalCorrelate").And.Contain("left_mark");
+                .Should().Contain("ClrDataCursorConditionalCorrelate").And.Contain("left_mark");
 
         [Fact]
         public void ShouldAgreeOnValues() => Same("SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");

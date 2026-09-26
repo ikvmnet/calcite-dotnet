@@ -15,8 +15,9 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
     /// factory call, because a caller has to be able to name one to remove it, and
     /// <c>RelOptPlanner.removeRule</c> takes the rule itself.
     ///
-    /// <para><b>The list is the nodes written so far, and it is short.</b> Scan, values, calc, sort, limit
-    /// and union, with a project and a filter that become a calc, and four converters: two against
+    /// <para><b>The list is the nodes written so far, and it is short.</b> Scan, values, calc, ASOF join,
+    /// correlate, conditional correlate, sort, limit and union, with a project and a filter that become a
+    /// calc, and four converters: two against
     /// <c>EnumerableConvention</c> and two against <c>ClrEnumerableConvention</c>. Everything else one of
     /// those two plans, and a converter carries the rows — the sequence convention's node where it has
     /// one, which is nearly everywhere, since its converter costs no Janino compile and its rows are
@@ -50,6 +51,22 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         /// Rule that converts a calc to a <see cref="ClrDataCursorCalc"/>.
         /// </summary>
         public static readonly RelOptRule ClrDataCursorCalcRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorCalcRule.Create();
+
+        /// <summary>
+        /// Rule that converts an ASOF join to a <see cref="ClrDataCursorAsofJoin"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorAsofJoinRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorAsofJoinRule.Create();
+
+        /// <summary>
+        /// Rule that converts a correlate to a <see cref="ClrDataCursorCorrelate"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorCorrelateRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorCorrelateRule.Create();
+
+        /// <summary>
+        /// Rule that converts a conditional correlate to a
+        /// <see cref="ClrDataCursorConditionalCorrelate"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorConditionalCorrelateRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorConditionalCorrelateRule.Create();
 
         /// <summary>
         /// Rule that converts a union to a <see cref="ClrDataCursorUnion"/>.
@@ -97,6 +114,16 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         public static readonly RelOptRule ClrDataCursorToClrEnumerableConverterRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorToClrEnumerableConverterRule.Create();
 
         /// <summary>
+        /// Rule that converts a join to a <see cref="ClrDataCursorBatchNestedLoopJoin"/>.
+        /// </summary>
+        /// <remarks>
+        /// Not in what <see cref="Rules"/> returns, because <c>ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE</c> is
+        /// not in <c>ENUMERABLE_RULES</c>: a caller turns it on, and chooses the batch size with
+        /// <see cref="ClrDataCursorBatchNestedLoopJoinRule.Create(int)"/>.
+        /// </remarks>
+        public static readonly RelOptRule ClrDataCursorBatchNestedLoopJoinRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorBatchNestedLoopJoinRule.Create();
+
+        /// <summary>
         /// The rules registered by default, in Calcite's order.
         /// </summary>
         static readonly IReadOnlyList<RelOptRule> RuleList =
@@ -106,6 +133,9 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             ClrDataCursorProjectRule,
             ClrDataCursorFilterRule,
             ClrDataCursorCalcRule,
+            ClrDataCursorAsofJoinRule,
+            ClrDataCursorCorrelateRule,
+            ClrDataCursorConditionalCorrelateRule,
             ClrDataCursorUnionRule,
             ClrDataCursorSortRule,
             ClrDataCursorLimitRule,
