@@ -84,14 +84,38 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         /// the enclosing plan's lambda declares.</param>
         /// <param name="cancellationToken">The parameter an awaiting open's token arrives by, which must be
         /// the one the enclosing plan's awaiting lambda declares.</param>
-        public ClrDataCursorRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, ParameterExpression root, ParameterExpression cancellationToken)
+        public ClrDataCursorRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, ParameterExpression root, ParameterExpression cancellationToken) :
+            this(rexBuilder, internalParameters, root, cancellationToken, new LixToClrTranslator(internalParameters))
+        {
+
+        }
+
+        /// <summary>
+        /// Initializes a new instance implementing a sub-plan of a plan already being implemented, sharing
+        /// that plan's translator.
+        /// </summary>
+        /// <param name="rexBuilder">The builder for row expressions, from the plan's cluster.</param>
+        /// <param name="internalParameters">The map values are stashed into, which must be the one the
+        /// <see cref="DataContext"/> will serve at run time.</param>
+        /// <param name="root">The parameter the <see cref="DataContext"/> arrives by, which must be the one
+        /// the enclosing plan's lambda declares.</param>
+        /// <param name="cancellationToken">The parameter an awaiting open's token arrives by.</param>
+        /// <param name="translator">The enclosing plan's translator.</param>
+        /// <remarks>
+        /// What a converter between the two conventions of this project builds, for the reason
+        /// <see cref="ClrEnumerableRelImplementor"/> gives for its own: a variable a node of the enclosing
+        /// plan declared — the field read a correlate appends to its block for a correlation variable — is
+        /// referenced by the linq4j parameter's identity, which only the translator that declared it can
+        /// map to the CLR variable the enclosing tree holds.
+        /// </remarks>
+        internal ClrDataCursorRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, ParameterExpression root, ParameterExpression cancellationToken, LixToClrTranslator translator)
         {
             this.rexBuilder = rexBuilder ?? throw new ArgumentNullException(nameof(rexBuilder));
             this.map = internalParameters ?? throw new ArgumentNullException(nameof(internalParameters));
 
             Root = root ?? throw new ArgumentNullException(nameof(root));
             CancellationToken = cancellationToken ?? throw new ArgumentNullException(nameof(cancellationToken));
-            Translator = new LixToClrTranslator(map);
+            Translator = translator ?? throw new ArgumentNullException(nameof(translator));
             Translator.Bind(DataContext.ROOT, Root);
 
             AllCorrelateVariables = new DelegateFunction1<string, RexToLixTranslator.InputGetter>(GetCorrelVariableGetter);

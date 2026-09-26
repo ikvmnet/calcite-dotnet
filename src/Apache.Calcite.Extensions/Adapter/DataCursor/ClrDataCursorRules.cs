@@ -53,6 +53,11 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         public static readonly RelOptRule ClrDataCursorCalcRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorCalcRule.Create();
 
         /// <summary>
+        /// Rule that converts a combine to a <see cref="ClrDataCursorCombine"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorCombineRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorCombineRule.Create();
+
+        /// <summary>
         /// Rule that converts an aggregate to a <see cref="ClrDataCursorAggregate"/>.
         /// </summary>
         public static readonly RelOptRule ClrDataCursorAggregateRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorAggregateRule.Create();
@@ -86,6 +91,21 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         /// Rule that converts a sort carrying an offset or a fetch to a <see cref="ClrDataCursorLimit"/>.
         /// </summary>
         public static readonly RelOptRule ClrDataCursorLimitRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorLimitRule.Create();
+
+        /// <summary>
+        /// Rule that converts a table function scan to a <see cref="ClrDataCursorTableFunctionScan"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorTableFunctionScanRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorTableFunctionScanRule.Create();
+
+        /// <summary>
+        /// Rule that converts a collect to a <see cref="ClrDataCursorCollect"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorCollectRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorCollectRule.Create();
+
+        /// <summary>
+        /// Rule that converts an uncollect to a <see cref="ClrDataCursorUncollect"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorUncollectRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorUncollectRule.Create();
 
         /// <summary>
         /// Rule that converts a sort carrying an offset or a fetch to a
@@ -156,6 +176,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             ClrDataCursorProjectRule,
             ClrDataCursorFilterRule,
             ClrDataCursorCalcRule,
+            ClrDataCursorCombineRule,
             ClrDataCursorAggregateRule,
             ClrDataCursorUnionRule,
             ClrDataCursorMergeUnionRule,
@@ -163,6 +184,9 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             ClrDataCursorMinusRule,
             ClrDataCursorSortRule,
             ClrDataCursorLimitRule,
+            ClrDataCursorTableFunctionScanRule,
+            ClrDataCursorCollectRule,
+            ClrDataCursorUncollectRule,
             ClrDataCursorWindowRule,
             EnumerableToClrDataCursorConverterRule,
             ClrDataCursorToEnumerableConverterRule,

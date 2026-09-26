@@ -1337,7 +1337,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         /// <c>Uncollect.deriveUncollectRowType</c> does the same — so the validator already reports the table
         /// as having one column, and naming two aliases for it is a validation error rather than anything a
         /// node could answer. The node still carries <c>withOrdinality</c>, so what
-        /// <c>ClrEnumerableUncollect</c> does is keep the rows it emits to the width the row type declares.
+        /// <c>ClrDataCursorUncollect</c> does is keep the rows it emits to the width the row type declares.
         /// </remarks>
         [Fact]
         public void ShouldDropTheOrdinalityOfAnUncollectedAnyColumn() =>
@@ -2436,7 +2436,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         [Fact]
         public void ShouldPlanTumbleInThisConvention() =>
             PlanOf("SELECT \"ID\", \"window_start\" FROM TABLE(TUMBLE(TABLE \"EVENTS\", DESCRIPTOR(\"ROWTIME\"), INTERVAL '1' HOUR))", true)
-                .Should().Contain("ClrEnumerableTableFunctionScan");
+                .Should().Contain("ClrDataCursorTableFunctionScan");
 
         [Fact]
         public void ShouldRunATableFunctionUnderAnAggregate() =>
@@ -2536,46 +2536,49 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 
         [Fact]
         public void ShouldAgreeOnAScalarRowCollectedIntoAnArray() =>
-            SameThrough("ClrEnumerableCollect", "SELECT ARRAY(SELECT \"N\" FROM \"SCALARS\") FROM (VALUES (1))",
+            SameThrough("ClrDataCursorCollect", "SELECT ARRAY(SELECT \"N\" FROM \"SCALARS\") FROM (VALUES (1))",
                 remove: [EnumerableRules.ENUMERABLE_COLLECT_RULE]);
 
         [Fact]
         public void ShouldAgreeOnAScalarRowCollectedIntoAMultiset() =>
-            SameThrough("ClrEnumerableCollect", "SELECT MULTISET(SELECT \"N\" FROM \"SCALARS\") FROM (VALUES (1))",
+            SameThrough("ClrDataCursorCollect", "SELECT MULTISET(SELECT \"N\" FROM \"SCALARS\") FROM (VALUES (1))",
                 remove: [EnumerableRules.ENUMERABLE_COLLECT_RULE]);
 
         [Fact]
         public void ShouldAgreeOnAScalarRowUncollected() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(ARRAY[1, 2, 3])",
+            SameThrough("ClrDataCursorUncollect", "SELECT * FROM UNNEST(ARRAY[1, 2, 3])",
                 remove: [EnumerableRules.ENUMERABLE_UNCOLLECT_RULE]);
 
         // ------------------------------------------------------------------ EnumerableUncollectTest
         //
         // Every shape UNNEST can take, which is Calcite's own list. The node had one test before this, over an
         // array of strings, and the branch CALCITE-4063 added — one field, itself a struct of one item —
-        // had never been entered. Each of these names the node, because the planner prefers Calcite's.
+        // had never been entered. Each of these names the node, because the planner prefers Calcite's —
+        // and, under a join that is not a cursor node, the sequence convention's, which needs no converter
+        // there. With both taken away the uncollect is this convention's wherever it sits, and under that
+        // join it runs beneath the converter out.
 
-        static readonly RelOptRule[] TheirUncollect = [EnumerableRules.ENUMERABLE_UNCOLLECT_RULE];
+        static readonly RelOptRule[] TheirUncollect = [EnumerableRules.ENUMERABLE_UNCOLLECT_RULE, ClrEnumerableRules.ClrEnumerableUncollectRule];
 
         [Fact]
         public void ShouldAgreeOnUnnestingAnArray() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(ARRAY[3, 4]) AS T2(y)", remove: TheirUncollect);
+            SameThrough("ClrDataCursorUncollect", "SELECT * FROM UNNEST(ARRAY[3, 4]) AS T2(y)", remove: TheirUncollect);
 
         [Fact]
         public void ShouldAgreeOnUnnestingANullArray() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(CAST(NULL AS INTEGER ARRAY))", remove: TheirUncollect);
+            SameThrough("ClrDataCursorUncollect", "SELECT * FROM UNNEST(CAST(NULL AS INTEGER ARRAY))", remove: TheirUncollect);
 
         [Fact]
         public void ShouldAgreeOnUnnestingAnArrayOfArrays() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(ARRAY[ARRAY[3], ARRAY[4]]) AS T2(y)", remove: TheirUncollect);
+            SameThrough("ClrDataCursorUncollect", "SELECT * FROM UNNEST(ARRAY[ARRAY[3], ARRAY[4]]) AS T2(y)", remove: TheirUncollect);
 
         [Fact]
         public void ShouldAgreeOnUnnestingAnArrayOfLongerArrays() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(ARRAY[ARRAY[3, 4], ARRAY[4, 5]]) AS T2(y)", remove: TheirUncollect);
+            SameThrough("ClrDataCursorUncollect", "SELECT * FROM UNNEST(ARRAY[ARRAY[3, 4], ARRAY[4, 5]]) AS T2(y)", remove: TheirUncollect);
 
         [Fact]
         public void ShouldAgreeOnUnnestingAnArrayOfArraysOfArrays() =>
-            SameThrough("ClrEnumerableUncollect",
+            SameThrough("ClrDataCursorUncollect",
                 "SELECT * FROM UNNEST(ARRAY[ARRAY[ARRAY[3, 4], ARRAY[4, 5]], ARRAY[ARRAY[7, 8], ARRAY[9, 10]]]) AS T2(y)",
                 remove: TheirUncollect);
 
@@ -2583,15 +2586,15 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         // rather than a list holding it. That is the one branch of the node a lambda of its own stands for.
         [Fact]
         public void ShouldAgreeOnUnnestingAnArrayOfOneFieldRows() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(ARRAY[ROW(3), ROW(4)]) AS T2(y)", remove: TheirUncollect);
+            SameThrough("ClrDataCursorUncollect", "SELECT * FROM UNNEST(ARRAY[ROW(3), ROW(4)]) AS T2(y)", remove: TheirUncollect);
 
         [Fact]
         public void ShouldAgreeOnUnnestingAnArrayOfTwoFieldRows() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(ARRAY[ROW(3, 5), ROW(4, 6)]) AS T2(y, z)", remove: TheirUncollect);
+            SameThrough("ClrDataCursorUncollect", "SELECT * FROM UNNEST(ARRAY[ROW(3, 5), ROW(4, 6)]) AS T2(y, z)", remove: TheirUncollect);
 
         [Fact]
         public void ShouldAgreeOnUnnestingWithOrdinality() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(ARRAY[ROW(3), ROW(4)]) WITH ORDINALITY AS T2(y, o)", remove: TheirUncollect);
+            SameThrough("ClrDataCursorUncollect", "SELECT * FROM UNNEST(ARRAY[ROW(3), ROW(4)]) WITH ORDINALITY AS T2(y, o)", remove: TheirUncollect);
 
         // UNNEST(ARRAY[ROW(1, ROW(5, 10)), ROW(2, ROW(6, 12))]) has no test, because it does not reach a
         // convention at all: RelStructuredTypeFlattener throws NoSuchElementException out of
@@ -2602,29 +2605,29 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 
         [Fact]
         public void ShouldAgreeOnUnnestingAnArrayOfOneFieldRowsHoldingRows() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT * FROM UNNEST(ARRAY[ROW(ROW(3)), ROW(ROW(4))]) AS T2(y)", remove: TheirUncollect);
+            SameThrough("ClrDataCursorUncollect", "SELECT * FROM UNNEST(ARRAY[ROW(ROW(3)), ROW(ROW(4))]) AS T2(y)", remove: TheirUncollect);
 
         [Fact]
         public void ShouldAgreeOnUnnestingAlongsideAnotherInput() =>
-            SameThrough("ClrEnumerableUncollect",
+            SameThrough("ClrDataCursorUncollect",
                 "SELECT * FROM (VALUES (1), (2)) T1(x), UNNEST(ARRAY[3, 4]) AS T2(y) ORDER BY 1, 2",
                 remove: TheirUncollect);
 
         [Fact]
         public void ShouldAgreeOnUnnestingArraysAlongsideAnotherInput() =>
-            SameThrough("ClrEnumerableUncollect",
+            SameThrough("ClrDataCursorUncollect",
                 "SELECT * FROM (VALUES (1), (2)) T1(x), UNNEST(ARRAY[ARRAY[3, 4], ARRAY[4, 5]]) AS T2(y) ORDER BY 1",
                 remove: TheirUncollect);
 
         [Fact]
         public void ShouldAgreeOnUnnestingRowsAlongsideAnotherInput() =>
-            SameThrough("ClrEnumerableUncollect",
+            SameThrough("ClrDataCursorUncollect",
                 "SELECT * FROM (VALUES (1), (2)) T1(x), UNNEST(ARRAY[ROW(3, 5), ROW(4, 6)]) AS T2(y, z) ORDER BY 1, 2",
                 remove: TheirUncollect);
 
         [Fact]
         public void ShouldAgreeOnUnnestingWithOrdinalityAlongsideAnotherInput() =>
-            SameThrough("ClrEnumerableUncollect",
+            SameThrough("ClrDataCursorUncollect",
                 "SELECT * FROM (VALUES (1), (2)) T1(x), UNNEST(ARRAY[ROW(3), ROW(4)]) WITH ORDINALITY AS T2(y, o) ORDER BY 1, 2",
                 remove: TheirUncollect);
 

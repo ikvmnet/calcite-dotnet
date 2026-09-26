@@ -283,9 +283,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
                 .hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)
                 .run(planner, chosen, chosen.getTraitSet(), new java.util.ArrayList(), new java.util.ArrayList());
 
-            // the cursor convention has no combine, so the sequence convention's sits under its converter
-            physical.Should().BeOfType<ClrEnumerableToClrDataCursorConverter>();
-            ((RelNode)physical).getInput(0).Should().BeOfType<Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableCombine>();
+            physical.Should().BeOfType<ClrDataCursorCombine>();
 
             var factory = new ClrDataCursorRelImplementor(physical.getCluster().getRexBuilder(), new java.util.HashMap()).ImplementRoot(physical, ClrEnumerablePrefer.Array);
 

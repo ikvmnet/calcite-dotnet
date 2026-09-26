@@ -358,6 +358,41 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 selector);
         }
 
+        /// <inheritdoc />
+        public Expression ConvertToCursor(Expression expression, JavaRowFormat targetFormat)
+        {
+            ArgumentNullException.ThrowIfNull(expression);
+            ArgumentNullException.ThrowIfNull(targetFormat);
+
+            if (format == targetFormat)
+                return expression;
+
+            var (selector, targetRowType) = Reformatter(targetFormat);
+
+            return Expression.Call(null,
+                DataCursor.ClrDataCursorBuiltInMethod.Select.MakeGenericMethod(javaRowClass, targetRowType),
+                expression,
+                selector);
+        }
+
+        /// <inheritdoc />
+        public Expression ConvertToCursorAsync(DataCursor.ClrDataCursorRelImplementor implementor, Expression expression, JavaRowFormat targetFormat)
+        {
+            ArgumentNullException.ThrowIfNull(implementor);
+            ArgumentNullException.ThrowIfNull(expression);
+            ArgumentNullException.ThrowIfNull(targetFormat);
+
+            if (format == targetFormat)
+                return expression;
+
+            var (selector, targetRowType) = Reformatter(targetFormat);
+
+            return DataCursor.ClrDataCursorBuiltInMethod.CallAsync(implementor,
+                DataCursor.ClrDataCursorBuiltInMethod.SelectAsync.MakeGenericMethod(javaRowClass, targetRowType),
+                expression,
+                selector);
+        }
+
         /// <summary>
         /// Returns the per-row selector that rewrites a row of this format into another, and the type it
         /// yields.
@@ -365,8 +400,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="targetFormat"></param>
         /// <returns></returns>
         /// <remarks>
-        /// What the two <c>ConvertTo</c> overloads share, which is all of the work: reformatting a row is a
-        /// row's business, and which operator carries the selector over the sequence is the convention's.
+        /// What every <c>ConvertTo</c> shares, which is all of the work: reformatting a row is a row's
+        /// business, and which operator carries the selector over the sequence or the cursor is the
+        /// convention's.
         /// </remarks>
         (LambdaExpression Selector, Type TargetRowType) Reformatter(JavaRowFormat targetFormat)
         {

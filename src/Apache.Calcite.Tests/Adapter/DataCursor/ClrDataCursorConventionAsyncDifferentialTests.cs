@@ -75,7 +75,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
                 rootSchema.add("DOCS", new SyncRowsTable(AsyncTestRows.Docs, AsyncTestRows.DocsRowType, false));
             }
 
-            // a table function the schema defines, whose call yields the sequence: ClrEnumerableTableFunctionScan
+            // a table function the schema defines, whose call yields the sequence: ClrDataCursorTableFunctionScan
             // takes it, and there is no input for either body to read
             rootSchema.add("NUMBERS", org.apache.calcite.schema.impl.TableFunctionImpl.create((java.lang.Class)typeof(NumbersTableFunction), "eval"));
 
@@ -85,7 +85,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         /// <summary>
         /// Plans a statement in one convention and returns its rows, rendered.
         /// </summary>
-        static async Task<List<string>> Run(string sql, bool async, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false, bool markJoin = false)
+        static async Task<List<string>> Run(string sql, bool async, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false, bool markJoin = false, RelOptRule[]? remove = null)
         {
             var rootSchema = Schema(async);
 
@@ -134,7 +134,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
                 .defaultSchema(rootSchema)
                 .programs(
                     markJoin ? MarkJoinSubQueryProgram() : Programs.subQuery(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE),
-                    new DefaultRulesProgram(rules, false, excludeMergeJoin, excludeHashJoin, null, null),
+                    new DefaultRulesProgram(rules, false, excludeMergeJoin, excludeHashJoin, null, remove),
                     Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE))
                 .build();
 
@@ -352,10 +352,10 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         /// <summary>
         /// Requires that a query gives the same rows in both conventions.
         /// </summary>
-        static async Task Same(string sql, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false, bool markJoin = false)
+        static async Task Same(string sql, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false, bool markJoin = false, RelOptRule[]? remove = null)
         {
-            var async = await Run(sql, true, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, excludeHashJoin: excludeHashJoin, excludeMergeJoin: excludeMergeJoin, markJoin: markJoin);
-            var sync = await Run(sql, false, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, excludeHashJoin: excludeHashJoin, excludeMergeJoin: excludeMergeJoin, markJoin: markJoin);
+            var async = await Run(sql, true, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, excludeHashJoin: excludeHashJoin, excludeMergeJoin: excludeMergeJoin, markJoin: markJoin, remove: remove);
+            var sync = await Run(sql, false, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, excludeHashJoin: excludeHashJoin, excludeMergeJoin: excludeMergeJoin, markJoin: markJoin, remove: remove);
 
             async.Should().Equal(sync, "'{0}' should give what ClrEnumerableConvention gives", sql);
         }
@@ -406,12 +406,12 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         /// produce a plan of the other convention — it produces no plan at all — but a node reached by a
         /// route nobody intended still looks like a pass.
         /// </remarks>
-        static async Task SameThrough(string node, string sql, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false)
+        static async Task SameThrough(string node, string sql, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false, RelOptRule[]? remove = null)
         {
-            (await Run(sql, true, planOnly: true, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, excludeHashJoin: excludeHashJoin, excludeMergeJoin: excludeMergeJoin))[0]
+            (await Run(sql, true, planOnly: true, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, excludeHashJoin: excludeHashJoin, excludeMergeJoin: excludeMergeJoin, remove: remove))[0]
                 .Should().Contain(node, "'{0}' should be planned through {1}", sql, node);
 
-            await Same(sql, sortedAggregate, batchNestedLoopJoin, limitSort, excludeHashJoin, excludeMergeJoin);
+            await Same(sql, sortedAggregate, batchNestedLoopJoin, limitSort, excludeHashJoin, excludeMergeJoin, remove: remove);
         }
 
         [Fact]
@@ -631,35 +631,40 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
             Same("SELECT * FROM UNNEST(ARRAY[1, 2, 3]) AS t(x)");
 
         // UNNEST over a column of type ANY, whose element type is not known until a row is read. Neither
-        // convention gets this from Calcite — ClrEnumerableUncollect says why and
+        // convention gets this from Calcite — ClrDataCursorUncollect says why and
         // ClrDataCursorConventionDifferentialTests asserts the answers by hand — so what is checked here is that the
         // asynchronous convention gives what the synchronous one gives, through its own node. The plan is a
         // correlate over the uncollect in both, because decorrelation cannot take an UNNEST of a correlation
-        // variable apart.
+        // variable apart. The correlate is the sequence convention's, so its uncollect would be too unless
+        // that rule is taken away — and Calcite's with it, which otherwise wins once ours is gone and fails
+        // at implement over ANY. With both gone the uncollect is this convention's, under the converter
+        // out, and the correlation variable reaches it because that converter replays the ones in scope.
+
+        static readonly RelOptRule[] TheirUncollect = [org.apache.calcite.adapter.enumerable.EnumerableRules.ENUMERABLE_UNCOLLECT_RULE, ClrEnumerableRules.ClrEnumerableUncollectRule];
 
         [Fact]
         public Task ShouldAgreeOnUncollectingAnAnyColumn() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.TAGS) AS t(X)");
+            SameThrough("ClrDataCursorUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.TAGS) AS t(X)", remove: TheirUncollect);
 
         [Fact]
         public Task ShouldAgreeOnUncollectingAnAnyColumnOfMixedNumericTypes() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.NUMS) AS t(X)");
+            SameThrough("ClrDataCursorUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.NUMS) AS t(X)", remove: TheirUncollect);
 
         [Fact]
         public Task ShouldAgreeOnOuterUncollectingAnAnyColumn() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d LEFT JOIN UNNEST(d.TAGS) AS t(X) ON TRUE");
+            SameThrough("ClrDataCursorUncollect", "SELECT d.ID, t.X FROM DOCS d LEFT JOIN UNNEST(d.TAGS) AS t(X) ON TRUE", remove: TheirUncollect);
 
         [Fact]
         public Task ShouldAgreeOnUncollectingAnAnyColumnWithOrdinality() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.TAGS) WITH ORDINALITY AS t(X)");
+            SameThrough("ClrDataCursorUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.TAGS) WITH ORDINALITY AS t(X)", remove: TheirUncollect);
 
         [Fact]
         public Task ShouldAgreeOnAggregatingOverAnUncollectedAnyColumn() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT d.ID, COUNT(*), MIN(t.X), MAX(t.X) FROM DOCS d, UNNEST(d.NUMS) AS t(X) GROUP BY d.ID ORDER BY 1");
+            SameThrough("ClrDataCursorUncollect", "SELECT d.ID, COUNT(*), MIN(t.X), MAX(t.X) FROM DOCS d, UNNEST(d.NUMS) AS t(X) GROUP BY d.ID ORDER BY 1", remove: TheirUncollect);
 
         [Fact]
         public Task ShouldAgreeOnFilteringTheOuterRowOfAnUncollectedAnyColumn() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT t.X FROM DOCS d, UNNEST(d.TAGS) AS t(X) WHERE d.ID = 1");
+            SameThrough("ClrDataCursorUncollect", "SELECT t.X FROM DOCS d, UNNEST(d.TAGS) AS t(X) WHERE d.ID = 1", remove: TheirUncollect);
 
         [Fact]
         public Task ShouldAgreeOnACaseAndCoalesce() =>
