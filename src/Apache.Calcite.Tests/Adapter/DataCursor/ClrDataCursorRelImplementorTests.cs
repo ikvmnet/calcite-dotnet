@@ -330,6 +330,10 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
             "SELECT ID FROM SALES",
             "SELECT * FROM SALES WHERE AMOUNT > 10",
             "SELECT * FROM SALES ORDER BY AMOUNT",
+            "SELECT REGION, SUM(AMOUNT) FROM SALES GROUP BY REGION",
+            "SELECT SUM(AMOUNT) FROM SALES",
+            "SELECT REGION, SUM(AMOUNT) FROM SALES GROUP BY ROLLUP(REGION)",
+            "SELECT DISTINCT REGION FROM SALES",
             "SELECT * FROM SALES ORDER BY AMOUNT LIMIT 2 OFFSET 1",
             "SELECT ID FROM SALES UNION SELECT ID FROM SALES",
             "SELECT ID FROM SALES UNION ALL SELECT ID FROM SALES",
@@ -442,6 +446,86 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
             table.Disposed.Should().Be(1);
 
             (await cursor.ReadAsync(CancellationToken.None)).Should().BeTrue();
+        }
+
+        /// <summary>
+        /// A grouped aggregate folds its whole input at the open, whichever open it is, and closes it there.
+        /// </summary>
+        /// <remarks>
+        /// <c>groupBy_</c> drains the input into the map where it is called and returns a
+        /// <c>LookupResultEnumerable</c> over a finished map; the call is the open.
+        /// </remarks>
+        [Fact]
+        public async Task ShouldFoldAGroupedAggregateAtOpen()
+        {
+            var rootSchema = Frameworks.createRootSchema(true);
+            var table = new CountingTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType);
+            rootSchema.add("SORTED", table);
+
+            var parameters = new java.util.HashMap();
+            var factory = Implement(Plan("SELECT K, COUNT(*) FROM SORTED GROUP BY K", rootSchema), parameters);
+            var context = new TestDataContext(rootSchema, parameters);
+
+            using (var cursor = factory.Open(context))
+            {
+                table.Scans.Should().Be(1);
+                table.RowsProduced.Should().Be(AsyncTestRows.Sorted.Length, "the fold runs at the open");
+                table.Disposed.Should().Be(1, "and the input is closed once folded");
+
+                var groups = 0;
+                while (cursor.Read())
+                    groups++;
+
+                groups.Should().Be(3);
+            }
+
+            await using (var cursor = await factory.OpenAsync(context, CancellationToken.None))
+            {
+                table.AsyncScans.Should().Be(1);
+                table.RowsProduced.Should().Be(AsyncTestRows.Sorted.Length * 2, "the awaiting open awaits the fold");
+                table.Disposed.Should().Be(2);
+
+                var groups = 0;
+                while (await cursor.ReadAsync(CancellationToken.None))
+                    groups++;
+
+                groups.Should().Be(3);
+            }
+        }
+
+        /// <summary>
+        /// A global aggregate folds at the open and hands back one row, whichever open it is.
+        /// </summary>
+        [Fact]
+        public async Task ShouldFoldAGlobalAggregateAtOpen()
+        {
+            var rootSchema = Frameworks.createRootSchema(true);
+            var table = new CountingTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType);
+            rootSchema.add("SORTED", table);
+
+            var parameters = new java.util.HashMap();
+            var factory = Implement(Plan("SELECT COUNT(*) FROM SORTED", rootSchema), parameters);
+            var context = new TestDataContext(rootSchema, parameters);
+
+            using (var cursor = factory.Open(context))
+            {
+                table.RowsProduced.Should().Be(AsyncTestRows.Sorted.Length, "Aggregate folds where it is called, which is the open");
+                table.Disposed.Should().Be(1);
+
+                cursor.Read().Should().BeTrue();
+                cursor.Current.Should().Be(java.lang.Long.valueOf(AsyncTestRows.Sorted.Length));
+                cursor.Read().Should().BeFalse();
+            }
+
+            await using (var cursor = await factory.OpenAsync(context, CancellationToken.None))
+            {
+                table.RowsProduced.Should().Be(AsyncTestRows.Sorted.Length * 2, "SingletonAggregateAsync folds inside the open, once");
+                table.Disposed.Should().Be(2);
+
+                (await cursor.ReadAsync(CancellationToken.None)).Should().BeTrue();
+                cursor.Current.Should().Be(java.lang.Long.valueOf(AsyncTestRows.Sorted.Length));
+                (await cursor.ReadAsync(CancellationToken.None)).Should().BeFalse();
+            }
         }
 
         /// <summary>

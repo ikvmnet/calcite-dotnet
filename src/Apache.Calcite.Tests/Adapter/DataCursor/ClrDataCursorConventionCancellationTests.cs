@@ -212,15 +212,17 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         {
             var (factory, context, leaf) = PlanAny("SELECT MIN(V), MAX(V), SUM(V) FROM ANYS", 5_000);
 
-            // the aggregate is the sequence convention's under a converter, and a sequence folds on its
-            // first advance: the open completes at once and the first read is what suspends
-            await using var cursor = await factory.OpenAsync(context, CancellationToken.None);
+            // the aggregate folds inside its awaiting open, as Calcite's folds once at bind: the open is
+            // what suspends, and the one row is in hand by the time the cursor is
+            var opening = factory.OpenAsync(context, CancellationToken.None);
+            opening.IsCompleted.Should().BeFalse("a fold over a leaf that suspends per row cannot finish synchronously");
+
+            await using var cursor = await opening;
+            leaf.Produced.Should().Be(5_000, "the whole input should have been folded by the time the cursor is handed back");
 
             var reading = cursor.ReadAsync(CancellationToken.None);
-            reading.IsCompleted.Should().BeFalse("a fold over a leaf that suspends per row cannot finish synchronously");
-
+            reading.IsCompleted.Should().BeTrue("the row was folded at the open and the read has nothing to wait for");
             (await reading).Should().BeTrue();
-            leaf.Produced.Should().Be(5_000, "the whole input should have been folded by the time the one row arrives");
         }
 
         [Fact]

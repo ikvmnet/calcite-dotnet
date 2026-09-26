@@ -15,8 +15,8 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
     /// factory call, because a caller has to be able to name one to remove it, and
     /// <c>RelOptPlanner.removeRule</c> takes the rule itself.
     ///
-    /// <para><b>The list is the nodes written so far, and it is short.</b> Scan, values, calc, sort, limit
-    /// and union, with a project and a filter that become a calc, and four converters: two against
+    /// <para><b>The list is the nodes written so far, and it is short.</b> Scan, values, calc, aggregate,
+    /// sort, limit and union, with a project and a filter that become a calc, and four converters: two against
     /// <c>EnumerableConvention</c> and two against <c>ClrEnumerableConvention</c>. Everything else one of
     /// those two plans, and a converter carries the rows — the sequence convention's node where it has
     /// one, which is nearly everywhere, since its converter costs no Janino compile and its rows are
@@ -50,6 +50,11 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         /// Rule that converts a calc to a <see cref="ClrDataCursorCalc"/>.
         /// </summary>
         public static readonly RelOptRule ClrDataCursorCalcRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorCalcRule.Create();
+
+        /// <summary>
+        /// Rule that converts an aggregate to a <see cref="ClrDataCursorAggregate"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorAggregateRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorAggregateRule.Create();
 
         /// <summary>
         /// Rule that converts a union to a <see cref="ClrDataCursorUnion"/>.
@@ -97,6 +102,17 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         public static readonly RelOptRule ClrDataCursorToClrEnumerableConverterRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorToClrEnumerableConverterRule.Create();
 
         /// <summary>
+        /// Rule that converts an aggregate over a sorted input to a
+        /// <see cref="ClrDataCursorSortedAggregate"/>.
+        /// </summary>
+        /// <remarks>
+        /// Not in what <see cref="Rules"/> returns, because <c>ENUMERABLE_SORTED_AGGREGATE_RULE</c> is not
+        /// in <c>ENUMERABLE_RULES</c>: a caller turns it on. It is chosen where a query wants its output
+        /// ordered by the group key over an input carrying that collation.
+        /// </remarks>
+        public static readonly RelOptRule ClrDataCursorSortedAggregateRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorSortedAggregateRule.Create();
+
+        /// <summary>
         /// The rules registered by default, in Calcite's order.
         /// </summary>
         static readonly IReadOnlyList<RelOptRule> RuleList =
@@ -106,6 +122,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             ClrDataCursorProjectRule,
             ClrDataCursorFilterRule,
             ClrDataCursorCalcRule,
+            ClrDataCursorAggregateRule,
             ClrDataCursorUnionRule,
             ClrDataCursorSortRule,
             ClrDataCursorLimitRule,

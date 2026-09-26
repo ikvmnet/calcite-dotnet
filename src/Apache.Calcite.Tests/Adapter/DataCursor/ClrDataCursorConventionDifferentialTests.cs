@@ -577,7 +577,14 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
                 // ENUMERABLE_RULES, and this convention does the same, so a test that wants it asks for it and
                 // each side registers its own
                 if (sortedAggregate)
+                {
                     rules.add(clr ? ClrEnumerableRules.ClrEnumerableSortedAggregateRule : EnumerableRules.ENUMERABLE_SORTED_AGGREGATE_RULE);
+
+                    // and the cursor convention's beside it, as its default rules are beside the sequence
+                    // convention's above
+                    if (clr)
+                        rules.add(ClrDataCursorRules.ClrDataCursorSortedAggregateRule);
+                }
 
                 if (batchNestedLoopJoin)
                     rules.add(clr ? ClrEnumerableRules.ClrEnumerableBatchNestedLoopJoinRule : EnumerableRules.ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE);
@@ -2503,8 +2510,8 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 
         [Fact]
         public void ShouldAgreeOnAScalarRowSortedAggregate() =>
-            SameThrough("ClrEnumerableSortedAggregate", "SELECT \"N\" FROM \"SCALARS\" GROUP BY \"N\" ORDER BY 1",
-                remove: [EnumerableRules.ENUMERABLE_AGGREGATE_RULE, EnumerableRules.ENUMERABLE_SORTED_AGGREGATE_RULE, ClrEnumerableRules.ClrEnumerableAggregateRule],
+            SameThrough("ClrDataCursorSortedAggregate", "SELECT \"N\" FROM \"SCALARS\" GROUP BY \"N\" ORDER BY 1",
+                remove: [EnumerableRules.ENUMERABLE_AGGREGATE_RULE, EnumerableRules.ENUMERABLE_SORTED_AGGREGATE_RULE, ClrEnumerableRules.ClrEnumerableAggregateRule, ClrDataCursorRules.ClrDataCursorAggregateRule],
                 sortedAggregate: true);
 
         [Fact]
