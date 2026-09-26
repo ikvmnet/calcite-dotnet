@@ -13,7 +13,7 @@ namespace Apache.Calcite.Extensions.Runtime
     /// context it wraps.
     /// </summary>
     /// <remarks>
-    /// What a sub-plan of either Clr convention reads its correlation variables through when it runs under a
+    /// What a sub-plan of the Clr convention reads its correlation variables through when it runs under a
     /// correlate of Calcite's. <c>EnumerableCorrelate</c> makes the outer row a parameter of the Java lambda
     /// it generates and the inner block reads it lexically; a sub-plan compiled apart from that lambda cannot
     /// see the parameter, so the converter hands the row in through the context instead — as a row of the

@@ -90,7 +90,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                             ? JavaRowFormat.SCALAR
                             : JavaRowFormat.ARRAY;
 
-                        source = result.PhysType.ConvertToCursor(source, targetFormat);
+                        source = result.PhysType.ConvertTo(source, targetFormat);
                         sourceType = source.Type.GetGenericArguments()[0];
                     }
 
@@ -152,7 +152,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                             ? JavaRowFormat.SCALAR
                             : JavaRowFormat.ARRAY;
 
-                        source = result.PhysType.ConvertToCursorAsync(implementor, source, targetFormat);
+                        source = result.PhysType.ConvertToAsync(implementor, source, targetFormat);
 
                         // the row type of the open, which is one type argument further in than a sequence's
                         sourceType = source.Type.GetGenericArguments()[0].GetGenericArguments()[0];

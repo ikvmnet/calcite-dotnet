@@ -17,27 +17,12 @@ namespace Apache.Calcite.Extensions.Prepare
     /// <param name="explanation">The plan, rendered.</param>
     /// <param name="cursorFactory">How the row is read back, which decides whether it is an array or the
     /// text itself.</param>
-    sealed class ClrExplainBindable(string explanation, Meta.CursorFactory cursorFactory) : IClrBindable, IClrAsyncBindable, IClrCursorFactory
+    sealed class ClrExplainBindable(string explanation, Meta.CursorFactory cursorFactory) : IClrCursorFactory
     {
 
         readonly string explanation = explanation ?? throw new ArgumentNullException(nameof(explanation));
         readonly Meta.CursorFactory cursorFactory = cursorFactory ?? throw new ArgumentNullException(nameof(cursorFactory));
 
-        /// <inheritdoc />
-        IEnumerable<object> IClrBindable.Bind(DataContext root)
-        {
-            ArgumentNullException.ThrowIfNull(root);
-
-            return [Row];
-        }
-
-        /// <inheritdoc />
-        IAsyncEnumerable<object> IClrAsyncBindable.Bind(DataContext root)
-        {
-            ArgumentNullException.ThrowIfNull(root);
-
-            return Adapter.Enumerable.ClrEnumerableDefaults.SingletonAsync(Row);
-        }
 
         /// <inheritdoc />
         IClrCursor IClrCursorFactory.Open(DataContext root)

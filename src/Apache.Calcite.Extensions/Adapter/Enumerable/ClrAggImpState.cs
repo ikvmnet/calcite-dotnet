@@ -5,7 +5,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 {
 
     /// <summary>
-    /// The state of one aggregate call while a node of either CLR convention is being implemented.
+    /// The state of one aggregate call while a node of the CLR convention is being implemented.
     /// </summary>
     /// <remarks>
     /// <c>AggImpState</c> with a second implementor beside the one it already has, which is not a shape anyone

@@ -94,15 +94,15 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <c>standard</c>'s taken away, replaced or reordered. Every rule list <c>standard</c> holds is
         /// Calcite's, so the one thing it cannot do is a pass whose rules name a convention it has never
         /// heard of: its calc pass is <c>RelOptRules.CALC_RULES</c>, three of whose nine name
-        /// <c>EnumerableConvention</c>'s nodes. The appended pass is those three per convention, over all
-        /// three, the five they share with Calcite going in once.
+        /// <c>EnumerableConvention</c>'s nodes. The appended pass is the cursor convention's list, which is
+        /// Calcite's with those three swapped for its own.
         ///
         /// <para>These cannot be planner rules instead. A calc and the project it came from have the same
         /// row count and <c>VolcanoCost.isLt</c> compares nothing else, cpu and io being dead code behind
         /// <c>if (true)</c>, so neither is ever cheaper and the planner keeps whichever it saw first. Nor
         /// would most of the list match: <c>VolcanoPlanner.addRule</c> does not register a
-        /// <c>TransformationRule</c>'s operand against a <c>PhysicalNode</c>, and every node of both
-        /// conventions is one.</para>
+        /// <c>TransformationRule</c>'s operand against a <c>PhysicalNode</c>, and every node of the cursor
+        /// convention is one.</para>
         /// </remarks>
         protected virtual Program GetProgram()
         {
@@ -112,15 +112,9 @@ namespace Apache.Calcite.Extensions.Prepare
             if (holder.get() is Program holderValue)
                 return holderValue;
 
-            // both conventions' lists, the five they share with Calcite going in once: a plan rooted in
-            // the cursor convention holds the sequence convention's nodes under a converter wherever the
-            // cursor one has none, and a project of either refuses to implement itself
             var calcRules = new java.util.ArrayList();
             foreach (var rule in Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.CalcRules())
                 calcRules.add(rule);
-            foreach (var rule in Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableRules.CalcRules())
-                if (calcRules.contains(rule) == false)
-                    calcRules.add(rule);
 
             return Programs.sequence(
                 Programs.standard(),
@@ -403,7 +397,7 @@ namespace Apache.Calcite.Extensions.Prepare
             /// Returns the plan that produces the rows.
             /// </summary>
             /// <param name="cursorFactory">How a row is read back.</param>
-            Apache.Calcite.Extensions.Runtime.IClrBindableBase GetBindable(Meta.CursorFactory cursorFactory);
+            Apache.Calcite.Extensions.Runtime.IClrCursorFactory GetBindable(Meta.CursorFactory cursorFactory);
 
         }
 
@@ -473,7 +467,7 @@ namespace Apache.Calcite.Extensions.Prepare
             public abstract string Code { get; }
 
             /// <inheritdoc />
-            public abstract Apache.Calcite.Extensions.Runtime.IClrBindableBase GetBindable(Meta.CursorFactory cursorFactory);
+            public abstract Apache.Calcite.Extensions.Runtime.IClrCursorFactory GetBindable(Meta.CursorFactory cursorFactory);
 
             /// <summary>
             /// Gets the type of one row, which decides how a row is read back.
@@ -540,7 +534,7 @@ namespace Apache.Calcite.Extensions.Prepare
             public TableModify.Operation? TableModOp => null;
 
             /// <inheritdoc />
-            public abstract Apache.Calcite.Extensions.Runtime.IClrBindableBase GetBindable(Meta.CursorFactory cursorFactory);
+            public abstract Apache.Calcite.Extensions.Runtime.IClrCursorFactory GetBindable(Meta.CursorFactory cursorFactory);
 
         }
 

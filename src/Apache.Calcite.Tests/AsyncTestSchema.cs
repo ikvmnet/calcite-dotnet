@@ -85,8 +85,8 @@ namespace Apache.Calcite.Tests
         /// <remarks>
         /// A provider type the ADO.NET adapter has no <c>SqlTypeName</c> for arrives as ANY, so an
         /// aggregate over one of these has to accumulate a value whose type is only known at run time. The
-        /// same rows as <c>ClrEnumerableConventionDifferentialTests.AnysTable</c>, which is what makes the
-        /// synchronous convention an oracle for this one.
+        /// same rows as <c>ClrCursorConventionDifferentialTests.AnysTable</c>, which is what makes the
+        /// synchronous open an oracle for the awaiting one.
         /// </remarks>
         public static readonly object?[][] Anys =
         [
@@ -101,8 +101,8 @@ namespace Apache.Calcite.Tests
         /// The values a document store puts behind a path that holds a JSON array.
         /// </summary>
         /// <remarks>
-        /// The same rows as <c>ClrEnumerableConventionDifferentialTests.DocsTable</c>, which is what makes the
-        /// synchronous convention an oracle for this one — and it is the only oracle there is, because
+        /// The same rows as <c>ClrCursorConventionDifferentialTests.DocsTable</c>, which is what makes the
+        /// synchronous open an oracle for the awaiting one — and it is the only oracle there is, because
         /// Calcite cannot implement an UNNEST over a column of type ANY at all.
         /// </remarks>
         public static readonly object?[][] Docs =
@@ -117,10 +117,9 @@ namespace Apache.Calcite.Tests
         /// written the way JSON writes it.
         /// </summary>
         /// <remarks>
-        /// The same rows as <c>ClrEnumerableConventionDifferentialTests.CastsTable</c>, whose remarks say what a cast
-        /// out of ANY actually does. This convention reaches the same generator, and the point of running
-        /// the queries here is that it keeps reaching it: the failure that raised the question was in
-        /// <c>ClrEnumerableDefaults.CalcRowsAsync</c>.
+        /// The same rows as <c>ClrCursorConventionDifferentialTests.CastsTable</c>, whose remarks say what a cast
+        /// out of ANY actually does. The awaiting open reaches the same generator, and the point of running
+        /// the queries here is that it keeps reaching it.
         /// </remarks>
         public static readonly object?[][] Casts =
         [

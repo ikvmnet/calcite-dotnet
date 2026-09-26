@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq.Expressions;
 
+using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using org.apache.calcite.adapter.enumerable;
@@ -13,12 +14,12 @@ using org.apache.calcite.rex;
 using org.apache.calcite.sql.type;
 using org.apache.calcite.util;
 
-namespace Apache.Calcite.Extensions.Adapter.Enumerable
+namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
     /// Implementation of an inner <see cref="Join"/> of two inequality predicates in the
-    /// <see cref="ClrEnumerableConvention"/> calling convention.
+    /// <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
     /// <remarks>
     /// <c>EnumerableIEJoin</c>. The condition is exactly two conjunctions, each an inequality between one
@@ -26,25 +27,25 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// condition are left to a calc above, by the rule.
     ///
     /// <para>Based on Khayyat et al., "Lightning Fast and Space Efficient Inequality Joins", PVLDB 8(13),
-    /// 2015, which is the algorithm <see cref="ClrEnumerableDefaults.IeJoin"/> walks.</para>
+    /// 2015, which is the algorithm <see cref="ClrCursorDefaults.IeJoin"/> walks.</para>
     /// </remarks>
-    public class ClrEnumerableIEJoin : Join, ClrEnumerableRel
+    public class ClrCursorIEJoin : Join, ClrCursorRel
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrEnumerableIEJoin"/>.
+        /// Creates a <see cref="ClrCursorIEJoin"/>.
         /// </summary>
         /// <param name="left"></param>
         /// <param name="right"></param>
         /// <param name="condition"></param>
         /// <returns></returns>
-        public static ClrEnumerableIEJoin Create(RelNode left, RelNode right, RexNode condition)
+        public static ClrCursorIEJoin Create(RelNode left, RelNode right, RexNode condition)
         {
             System.ArgumentNullException.ThrowIfNull(left);
 
-            return new ClrEnumerableIEJoin(
+            return new ClrCursorIEJoin(
                 left.getCluster(),
-                left.getCluster().traitSetOf(ClrEnumerableConvention.Instance),
+                left.getCluster().traitSetOf(ClrCursorConvention.Instance),
                 left,
                 right,
                 condition);
@@ -134,7 +135,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="left"></param>
         /// <param name="right"></param>
         /// <param name="condition"></param>
-        public ClrEnumerableIEJoin(RelOptCluster cluster, RelTraitSet traitSet, RelNode left, RelNode right, RexNode condition) :
+        public ClrCursorIEJoin(RelOptCluster cluster, RelTraitSet traitSet, RelNode left, RelNode right, RexNode condition) :
             base(cluster, traitSet, com.google.common.collect.ImmutableList.of(), left, right, condition, com.google.common.collect.ImmutableSet.of(), JoinRelType.INNER)
         {
             var conjunctions = RelOptUtil.conjunctions(condition);
@@ -165,9 +166,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         public override Join copy(RelTraitSet traitSet, RexNode conditionExpr, RelNode left, RelNode right, JoinRelType joinType, bool semiJoinDone)
         {
             if (joinType.name() != nameof(JoinRelType.INNER))
-                throw new java.lang.IllegalArgumentException("ClrEnumerableIEJoin only supports inner joins");
+                throw new java.lang.IllegalArgumentException("ClrCursorIEJoin only supports inner joins");
 
-            return new ClrEnumerableIEJoin(getCluster(), traitSet, left, right, conditionExpr);
+            return new ClrCursorIEJoin(getCluster(), traitSet, left, right, conditionExpr);
         }
 
         /// <inheritdoc />
@@ -192,22 +193,24 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrEnumerableResult Implement(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             System.ArgumentNullException.ThrowIfNull(implementor);
             System.ArgumentNullException.ThrowIfNull(pref);
 
-            var leftResult = implementor.VisitChild(this, 0, (ClrEnumerableRel)getLeft(), pref);
-            var rightResult = implementor.VisitChild(this, 1, (ClrEnumerableRel)getRight(), pref);
+            var leftResult = implementor.VisitChild(this, 0, (ClrCursorRel)getLeft(), pref);
+            var rightResult = implementor.VisitChild(this, 1, (ClrCursorRel)getRight(), pref);
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
             var arguments = Arguments(implementor, leftResult.PhysType, rightResult.PhysType, physType);
 
+            // the right input is acquired only once the left has been drained and closed, as linq4j's
+            // IEJoinEnumerator does it: one try-with-resources after the other
             return implementor.Result(physType,
                 Expression.Call(null,
-                    ClrBuiltInMethod.IeJoin.MakeGenericMethod(
+                    ClrCursorBuiltInMethod.IeJoin.MakeGenericMethod(
                         leftResult.PhysType.RowType, rightResult.PhysType.RowType, arguments.Key1Type, arguments.Key2Type, physType.RowType),
                     leftResult.Expression,
-                    rightResult.Expression,
+                    implementor.Opener(rightResult),
                     arguments.LeftKeySelector1,
                     arguments.RightKeySelector1,
                     arguments.LeftKeySelector2,
@@ -220,22 +223,22 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <inheritdoc />
-        public ClrAsyncEnumerableResult ImplementAsync(ClrEnumerableRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             System.ArgumentNullException.ThrowIfNull(implementor);
             System.ArgumentNullException.ThrowIfNull(pref);
 
-            var leftResult = implementor.VisitChildAsync(this, 0, (ClrEnumerableRel)getLeft(), pref);
-            var rightResult = implementor.VisitChildAsync(this, 1, (ClrEnumerableRel)getRight(), pref);
+            var leftResult = implementor.VisitChildAsync(this, 0, (ClrCursorRel)getLeft(), pref);
+            var rightResult = implementor.VisitChildAsync(this, 1, (ClrCursorRel)getRight(), pref);
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
             var arguments = Arguments(implementor, leftResult.PhysType, rightResult.PhysType, physType);
 
             return implementor.ResultAsync(physType,
-                ClrBuiltInMethod.CallAsync(
-                    ClrBuiltInMethod.IeJoinAsync.MakeGenericMethod(
+                ClrCursorBuiltInMethod.CallAsync(implementor,
+                    ClrCursorBuiltInMethod.IeJoinAsync.MakeGenericMethod(
                         leftResult.PhysType.RowType, rightResult.PhysType.RowType, arguments.Key1Type, arguments.Key2Type, physType.RowType),
                     leftResult.Expression,
-                    rightResult.Expression,
+                    implementor.OpenerAsync(rightResult),
                     arguments.LeftKeySelector1,
                     arguments.RightKeySelector1,
                     arguments.LeftKeySelector2,
@@ -248,7 +251,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <summary>
-        /// Returns everything the operator is called with but the two sequences, which is the whole of what
+        /// Returns everything the operator is called with but the two inputs, which is the whole of what
         /// the two bodies share.
         /// </summary>
         /// <param name="implementor"></param>
@@ -263,7 +266,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// generates takes the boxed class, so the choice is made once here. It is also what lets the scan
         /// ask whether a key is null, which is how a row with a null key is dropped.
         /// </remarks>
-        CallArguments Arguments(ClrEnumerableRelImplementor implementor, ClrPhysType leftPhysType, ClrPhysType rightPhysType, ClrPhysType physType)
+        CallArguments Arguments(ClrCursorRelImplementor implementor, ClrPhysType leftPhysType, ClrPhysType rightPhysType, ClrPhysType physType)
         {
             var typeFactory = implementor.TypeFactory;
             var left_ = Expression.Parameter(leftPhysType.RowType, "leftRow");
@@ -312,7 +315,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
         /// <summary>
         /// What <see cref="Implement"/> and <see cref="ImplementAsync"/> call their operator with, less the
-        /// two sequences.
+        /// two inputs.
         /// </summary>
         /// <param name="Key1Type"></param>
         /// <param name="Key2Type"></param>

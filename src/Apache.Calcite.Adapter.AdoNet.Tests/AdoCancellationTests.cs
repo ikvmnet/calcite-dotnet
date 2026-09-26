@@ -22,10 +22,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// <c>DbDataReader.ReadAsync</c> is called with, and says what a token given later reaches instead.
     /// </summary>
     /// <remarks>
-    /// <c>ClrEnumerableConventionCancellationTests</c> establishes that a compiled plan carries a token to a
+    /// <c>ClrCursorConventionCancellationTests</c> establishes that a compiled plan carries a token to a
     /// leaf that suspends, over a table written for the purpose. This asks the same of the whole stack a
     /// consumer actually uses — <c>CalciteCommand.ExecuteReaderAsync</c>, <c>CalciteSession</c>, the
-    /// implementor, <c>AdoToClrEnumerableConverter</c>, <c>AdoSequences.ReadAsync</c> — ending at a real
+    /// implementor, <c>AdoToClrCursorConverter</c>, <c>AdoCursors</c> — ending at a real
     /// <see cref="DbDataReader"/> over a real database. Nothing between those two ends holds a token: the
     /// convention has none in the plan, so what is measured is that the token
     /// <see cref="IAsyncEnumerable{T}.GetAsyncEnumerator"/> was given is threaded the whole way and nowhere
@@ -114,9 +114,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// </summary>
         /// <remarks>
         /// Cancelled after a row has been read, so that what stops is a read in progress rather than the
-        /// acquisition: <c>AdoSequences.ReadAsync</c> sends the statement at <c>GetAsyncEnumerator</c> and
-        /// sends it synchronously, an acquisition being unable to await, so a token cancelled before the
-        /// first read would be observed by the row loop and prove nothing about the leaf.
+        /// acquisition: <c>AdoCursors.OpenAsync</c> sends the statement at the open, so a token cancelled
+        /// before the first read would stop the open and prove nothing about the reader.
         /// </remarks>
         [Fact]
         public async Task ShouldStopTheProvidersReaderWhenTheCallerCancels()
@@ -303,8 +302,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// </summary>
         /// <remarks>
         /// Acquisition sends the statement, and for an adapter leaf it opens a connection to send it on —
-        /// <c>AdoSequences.ReadAsync</c> does both inside <c>GetAsyncEnumerator</c>, which
-        /// <c>CalciteSession</c> calls from <c>ExecuteReaderAsync</c>. Without the guard a caller who had
+        /// <c>AdoCursors.OpenAsync</c> does both inside the open, which <c>CalciteSession</c> calls from
+        /// <c>ExecuteReaderAsync</c>. Without the guard a caller who had
         /// already given up still opened a connection and ran a query, and only learned about it when it
         /// read.
         /// </remarks>

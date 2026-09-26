@@ -113,7 +113,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// parameter in its place.
         /// </summary>
         /// <remarks>
-        /// <c>ClrEnumerableLimit.Count</c>, over this convention's implementor: nothing of Calcite's
+        /// <c>EnumerableLimit.getExpression</c>, in <c>System.Linq.Expressions</c>: nothing of Calcite's
         /// generates this, so nothing here is linq4j but the one expression Calcite's translator produces,
         /// which is translated where it is produced.
         /// </remarks>

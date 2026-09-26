@@ -44,7 +44,7 @@ Three things carry Java names through this design and are not going away:
   `MaterializedViewTable.MATERIALIZATION_CONNECTION` — a process-wide
   `DriverManager.getConnection("jdbc:calcite:")` — and `CalcitePrepareImpl.parse_` builds the catalog
   reader and the validator from that connection's configuration, so `fun`, `conformance` and
-  `caseSensitive` never reach a view definition even though `ClrPreparingStmt.expandView` uses the real
+  `caseSensitive` never reach a view definition even though `ClrPrepareImpl.PreparingStmt.expandView` uses the real
   configuration when the view is later expanded. Measured against stock Calcite: a plain
   `jdbc:calcite:` connection with `fun=standard,oracle` evaluates `NVL` in a query and fails on the
   same expression inside a model view, with no part of this project involved. `Schemas.makeContext`
@@ -52,7 +52,7 @@ Three things carry Java names through this design and are not going away:
   `CalcitePrepare.Dummy.peek()` — and reaching it needs only a `ViewTableMacro` subclass, but taking it
   would be a divergence we own alone and could diff against nothing; the argument belongs upstream.
   (The *parser* is Calcite's default for a view definition regardless — `parse_` calls
-  `createParser(sql)`, as `ClrPreparingStmt.ParserConfig` does — so the quoting and casing a `lex`
+  `createParser(sql)`, as `ClrPrepareImpl.ParserConfig` does — so the quoting and casing a `lex`
   implies were never taken from the connection.)
   A view registered from code goes through `ViewTable.viewMacro` like any other; pass
   `CalciteSchema.from(schema).path(name)` as the view path, or Calcite cannot detect a view defined in
@@ -254,42 +254,43 @@ Both entry points wrap any non-`CalciteException` failure in a `CalciteException
 This is where a statement becomes a plan. It replaces `CalcitePrepareImpl`'s driver and nothing
 below it: validation, sql-to-rel, view expansion, field trimming and `optimize` are Calcite's own,
 reused as they stand. The driver had to be replaced because its one exit is a `Bindable` — a linq4j
-`Enumerable` — and a plan of `ClrEnumerableConvention` is a compiled delegate.
+`Enumerable` — and a plan of `ClrCursorConvention` is a factory that opens a cursor.
 
 | Type | Counterpart in Calcite | Role |
 | --- | --- | --- |
 | `ClrPrepareImpl` | `CalcitePrepareImpl.prepare_` / `prepare2_` | The driver. Builds the catalog reader, the planner and the preparing statement; parses; executes DDL; describes the result. |
 | `ClrPrepare` | `Prepare` | The algorithm: convert, checked arithmetic, flatten, decorrelate, trim, optimize, implement — with `EXPLAIN`'s two exits where Calcite has them. Knows nothing of a cluster or a schema. |
-| `ClrPreparingStmt` | `CalcitePrepareImpl.CalcitePreparingStmt` | The wiring: cluster, convertlet table, schema, validator, view expansion. Also the `RelOptTable.ViewExpander` given to `SqlToRelConverter`. |
-| `ClrEnumerablePreparingStmt` | — | What one convention adds: the result convention, the program, the root trait set, and the compiler. A second convention writes only these four. |
-| `ClrPrepareResult` | `Prepare.PreparedResult` | What preparing produces, less `getBindable`. |
-| `ClrEnumerablePrepareResult` | `PreparedResultImpl` (anonymous, in `implement`) | Carries an `IClrBindable`. |
-| `ClrExplainResult` / `ClrExplainBindable` | `Prepare.PreparedExplain` / `CalcitePreparedExplain.getBindable` | An `EXPLAIN`: the text is rendered at prepare time and yielded as one row. |
-| `ClrSignature` | `CalcitePrepare.CalciteSignature` | The planned statement, member for member, with `Bindable` swapped for `IClrBindable` and `enumerable` for `Bind`. |
+| `ClrPrepareImpl.PreparingStmt` | `CalcitePrepareImpl.CalcitePreparingStmt` | The wiring: cluster, convertlet table, schema, validator, view expansion. Also the `RelOptTable.ViewExpander` given to `SqlToRelConverter`. |
+| `ClrCursorPreparingStmt` | — | What the convention adds: the result convention, the root trait set, and the implement that builds the factory. |
+| `ClrPrepare.PreparedResultImpl` | `Prepare.PreparedResultImpl` | What preparing produces. |
+| `ClrCursorPrepareResult` | `PreparedResultImpl` (anonymous, in `implement`) | Carries the `IClrCursorFactory`. |
+| `ClrPrepare.PreparedExplain` / `ClrExplainBindable` | `Prepare.PreparedExplain` / `CalcitePreparedExplain.getBindable` | An `EXPLAIN`: the text is rendered at prepare time and yielded as one row. |
+| `IClrPrepare.Signature` | `CalcitePrepare.CalciteSignature` | The planned statement, member for member, with `Bindable` swapped for `IClrCursorFactory` and `enumerable` for `Open` and `OpenAsync`. |
 
 `ClrPrepareImpl.Prepare` is the entry point this provider uses. It creates a `VolcanoPlanner` with
-`RelOptUtil.registerDefaultRules` **plus** `ClrEnumerableRules.Rules()` — one list, because there is
+`RelOptUtil.registerDefaultRules` **plus** `ClrCursorRules.Rules()` — one list, because there is
 one convention — so Calcite's own rules stay on the planner and a statement this convention has no
 node for is still planned and run in `EnumerableConvention`, with a converter carrying its rows. That is how a
 table modification works here. `ClrPrepareQuery.Of(RelNode)` selects the branch that plans a `RelNode` that was
 built rather than parsed; it is exercised by tests and not reached from this project.
 
 A DDL statement is executed inside `Prepare2` rather than planned, exactly as Calcite does. The
-`ClrSignature` it returns has no row type, no columns, a null bindable, `CursorFactory.OBJECT` and
+`Signature` it returns has no row type, no columns, a null bindable, `CursorFactory.OBJECT` and
 `StatementType.OTHER_DDL`.
 
 `Describe` builds one `AvaticaParameter` per dynamic parameter and one `ColumnMetaData` per result
 column, deduces the `CursorFactory` from the columns and the compiled plan's element type, and
-assembles the `ClrSignature`. All of that metadata is ported rather than reused: every piece of it
+assembles the `Signature`. All of that metadata is ported rather than reused: every piece of it
 is a private static of `CalcitePrepareImpl`.
 
-`ClrSignature.Bind(DataContext)` runs the plan and returns `IEnumerable<object>`, applying the row
-limit when `MaxRowCount` is not negative — the limit lives on the signature, not on the bindable, so
-a caller reaching past it would silently lose it. This provider always passes `-1`.
+`Signature.Open(DataContext)` and `OpenAsync(DataContext, CancellationToken)` open the plan and
+return an `IClrCursor`, applying the row limit when `MaxRowCount` is not negative — the limit lives on
+the signature, not on the factory, so a caller reaching past it would silently lose it. This provider
+always passes `-1`. `Bind` and `BindAsync` read the same cursor as a sequence.
 
-`IClrBindable` (in `Apache.Calcite.Extensions/Runtime`) is the compiled plan: `Bind(DataContext)`
-returning rows, plus the `ElementType` the cursor factory is deduced from. It merges Calcite's
-`Bindable` and `Typed`.
+`IClrCursorFactory` (in `Apache.Calcite.Extensions/Runtime`) is the compiled plan: `Open` and
+`OpenAsync`, plus the `ElementType` the cursor factory is deduced from. It merges Calcite's `Bindable`
+and `Typed`.
 
 ### 4. Execution contexts (`Apache.Calcite.Extensions/Prepare`)
 
@@ -588,13 +589,13 @@ returns a `CalciteResult` with a count and no enumerator.
 plan to bind.
 
 **`EXPLAIN`** never reaches `Implement`. `ClrPrepare.PrepareSql` renders the plan or the type as
-text and returns a `ClrExplainResult`; `Describe` wraps that text in a `ClrExplainBindable`, which
+text and returns a `ClrPreparedExplain`; `Describe` wraps that text in a `ClrExplainBindable`, which
 yields one row.
 
 It is read by either reader, and `ClrExplainBindable` holds a string rather than a plan, opening a
 one-row cursor over it. **What gets explained does not depend on which method was called**: there is
-one plan, so an `EXPLAIN` renders a plan rooted in `ClrCursor*` nodes, with `ClrEnumerable*` ones
-beneath a converter wherever the cursor convention lacks the node, and fails to plan wherever the
+one plan, so an `EXPLAIN` renders a plan rooted in `ClrCursor*` nodes, with Calcite's `Enumerable*`
+ones beneath a converter wherever the cursor convention lacks the node, and fails to plan wherever the
 query itself would. It cannot say whether the query will await, because that is decided per read.
 
 ---
@@ -651,7 +652,7 @@ src/
       ParameterBinder.cs                  CLR value → Calcite runtime representation, by DbType
       CalciteValues.cs                    Java value ↔ CLR value, by RelDataType or runtime type
       CalciteVariants.cs                  VARIANT payload → CLR value, by the payload's own type
-      CalciteResult.cs                    Row stream over a ClrSignature
+      CalciteResult.cs                    Row stream over an IClrPrepare.Signature
       CalciteResultColumns.cs             Avatica ColumnMetaData → ADO.NET column metadata
       CalciteResultRow.cs                 Column addressing within one row, by cursor style
       CalciteResultValue.cs               Final value conversion and typed getters
@@ -662,20 +663,18 @@ src/
 
   Apache.Calcite.Extensions/              The convention and the prepare pipeline
     Prepare/
+      IClrPrepare.cs                      The entry point, the query and the planned statement
       ClrPrepareImpl.cs                   The driver: parse, plan, execute DDL, describe
       ClrPrepare.cs                       The algorithm, less any wiring
-      ClrPreparingStmt.cs                 Cluster, validator, view expansion
-      ClrPrepareResult.cs                 What preparing produces
-      ClrSignature.cs                     The planned statement
-      ClrExplainResult.cs                 EXPLAIN, rendered at prepare time
-      ClrExplainBindable.cs               …and yielded as one row
+      ClrExplainBindable.cs               EXPLAIN, yielded as one row
       PrepareContext.cs                   CalcitePrepare.Context
       StatementDataContext.cs             DataContext for execution
-      Enumerable/
-        ClrEnumerablePreparingStmt.cs     Convention, program, traits, compiler
-        ClrEnumerablePrepareResult.cs     Carries the IClrBindable
-    Runtime/IClrBindable.cs               The compiled plan
-    Adapter/Enumerable/                   ClrEnumerableConvention: nodes, rules, implementor
+      Cursor/
+        ClrCursorPreparingStmt.cs         Convention, traits, implement
+        ClrCursorPrepareResult.cs         Carries the IClrCursorFactory
+    Runtime/IClrCursorFactory.cs          The compiled plan
+    Adapter/Cursor/                       ClrCursorConvention: nodes, rules, implementor
+    Adapter/Enumerable/                   The row machinery the convention shares with Calcite's
     Linq4j/, Interop/                     linq4j → System.Linq.Expressions, Java ↔ CLR values
 
   Apache.Calcite.Data.Tests/              xUnit tests for this provider
@@ -690,9 +689,9 @@ src/
   registered once, for view expansion, and no statement executed here reaches it. Avatica's
   `ColumnMetaData`, `AvaticaParameter` and `Meta.*` are used as the metadata value types Calcite's
   prepare produces, and nothing more.
-- **No `Bindable` and no `PreparedResult` on the row path.** A plan is a compiled delegate behind
-  `IClrBindable`; `ClrSignature` and `ClrPrepareResult` exist because Calcite's equivalents are
-  declared in terms of the linq4j types this convention does not produce.
+- **No `Bindable` and no `PreparedResult` on the row path.** A plan is a compiled factory behind
+  `IClrCursorFactory`; `IClrPrepare.Signature` and `ClrPrepare`'s prepared results exist because
+  Calcite's equivalents are declared in terms of the linq4j types this convention does not produce.
 - **The ADO.NET surface owns no engine logic.** Everything that touches Calcite's planner is in
   `CalciteSession` and below it. The `Internal` types are reachable from the public surface; the
   reverse does not happen.

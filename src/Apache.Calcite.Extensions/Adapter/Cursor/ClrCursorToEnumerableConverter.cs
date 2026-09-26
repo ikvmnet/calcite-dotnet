@@ -24,7 +24,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <c>EnumerableConvention</c> one.
     /// </summary>
     /// <remarks>
-    /// <see cref="ClrEnumerableToEnumerableConverter"/> for this convention, and the same arrangement:
     /// Calcite compiles its side with Janino from generated source, which cannot mention an object, so the
     /// sub-plan's tree is stashed on the <see cref="DataContext"/> for the generated code to call back into.
     /// The sub-plan is the synchronous open, because a linq4j <c>Enumerator</c> is pulled and the generated
@@ -70,8 +69,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         {
             var cost = base.computeSelfCost(planner, mq);
 
-            // dearer than the crossing into the sequence convention, for the reason the multiplier gives
-            return cost?.multiplyBy(ClrCursorConvention.JavaCrossingCostMultiplier);
+            return cost?.multiplyBy(EnumerableConvention.COST_MULTIPLIER);
         }
 
         /// <inheritdoc />

@@ -11,7 +11,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 {
 
     /// <summary>
-    /// Physical type of a row of the <see cref="ClrEnumerableConvention"/> calling convention.
+    /// Physical type of a row of the <see cref="Cursor.ClrCursorConvention"/> calling convention.
     /// </summary>
     /// <remarks>
     /// <see cref="PhysType"/>, member for member, answering in <see cref="Expression"/> where Calcite answers
@@ -48,7 +48,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// conversion. So <c>joinSelector</c> and <c>generateComparator</c> each write
         /// <c>Primitive.box(physType.getRowType())</c> where they need it. Here
         /// <see cref="ClrPhysTypeImpl"/> boxes in its constructor and this is that;
-        /// <c>ClrEnumerableRelImplementor.Result</c> refuses a sequence that disagrees.</para>
+        /// <c>ClrCursorRelImplementor.Result</c> refuses a cursor that disagrees.</para>
         /// </remarks>
         Type RowType { get; }
 
@@ -234,7 +234,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <returns></returns>
         /// <remarks>
         /// <c>PhysType.selector</c>, which Calcite documents as used only by <c>EnumerableWindow</c>, and which
-        /// is used only by <see cref="ClrEnumerableWindow"/> here for the same reason: a window builds the
+        /// is used only by <see cref="Cursor.ClrCursorWindow"/> here for the same reason: a window builds the
         /// partition key a field at a time rather than taking the lambda whole.
         /// </remarks>
         (Type RowType, IReadOnlyList<Expression> Expressions) Selector(ParameterExpression parameter, java.util.List fields, JavaRowFormat targetFormat);
@@ -347,7 +347,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         ClrPhysType MakeNullable(bool nullable);
 
         /// <summary>
-        /// Converts a sequence of this physical type to one whose rows use the given physical type.
+        /// Converts an opened cursor of this physical type to one whose rows use the given physical type.
         /// </summary>
         /// <param name="expression"></param>
         /// <param name="targetPhysType"></param>
@@ -361,48 +361,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         Expression ConvertTo(Expression expression, ClrPhysType targetPhysType);
 
         /// <summary>
-        /// Converts a sequence of this physical type to one whose rows use the given row format.
-        /// </summary>
-        /// <param name="expression"></param>
-        /// <param name="targetFormat"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// <c>PhysType.convertTo</c>.
-        /// </remarks>
-        Expression ConvertTo(Expression expression, JavaRowFormat targetFormat);
-
-        /// <summary>
-        /// Converts an asynchronous sequence of this physical type to one whose rows use the given row
-        /// format.
-        /// </summary>
-        /// <param name="expression"></param>
-        /// <param name="targetFormat"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// <see cref="ConvertTo(Expression, JavaRowFormat)"/> for a plan of the asynchronous convention, and
-        /// the member of this type that has one of itself per kind of sequence.
-        ///
-        /// <para>Calcite has no counterpart, so this is a divergence, and an additive one: <c>convertTo</c>
-        /// is the only member of <c>PhysType</c> that takes a <em>sequence</em> rather than a row, so it is
-        /// the only one a second convention cannot share. Moving it out to make this type purely row-shaped
-        /// would have been the smaller change and is not made, because this type mirrors <c>PhysType</c>
-        /// member for member and a member that is there because Calcite put it there stays.</para>
-        /// </remarks>
-        Expression ConvertToAsync(Expression expression, JavaRowFormat targetFormat);
-
-        /// <summary>
         /// Converts an opened cursor of this physical type to one whose rows use the given row format.
         /// </summary>
         /// <param name="expression"></param>
         /// <param name="targetFormat"></param>
         /// <returns></returns>
         /// <remarks>
-        /// <see cref="ConvertTo(Expression, JavaRowFormat)"/> for a plan of the
-        /// <see cref="Cursor.ClrCursorConvention"/>, and additive for the reason
-        /// <see cref="ConvertToAsync"/> gives: the row half of <c>convertTo</c> is one selector, and what
-        /// carries it over the rows is each convention's own operator.
+        /// <c>PhysType.convertTo</c>, over a cursor where Calcite's is over an <c>Enumerable</c>.
         /// </remarks>
-        Expression ConvertToCursor(Expression expression, JavaRowFormat targetFormat);
+        Expression ConvertTo(Expression expression, JavaRowFormat targetFormat);
 
         /// <summary>
         /// Converts an awaiting open of this physical type to one whose rows use the given row format.
@@ -413,11 +380,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="targetFormat"></param>
         /// <returns></returns>
         /// <remarks>
-        /// <see cref="ConvertToCursor"/> for the awaiting fork. It takes the implementor because the
-        /// awaiting hierarchy's token is a parameter of the tree rather than a default, and
+        /// <see cref="ConvertTo(Expression, JavaRowFormat)"/> for the awaiting fork, and a divergence Calcite
+        /// has no counterpart for, because it has no awaiting fork. It takes the implementor because that
+        /// fork's token is a parameter of the tree rather than a default, and
         /// <see cref="Cursor.ClrCursorBuiltInMethod.CallAsync"/> is what passes it.
         /// </remarks>
-        Expression ConvertToCursorAsync(Cursor.ClrCursorRelImplementor implementor, Expression expression, JavaRowFormat targetFormat);
+        Expression ConvertToAsync(Cursor.ClrCursorRelImplementor implementor, Expression expression, JavaRowFormat targetFormat);
 
     }
 

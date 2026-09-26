@@ -5,6 +5,7 @@ using System.Linq.Expressions;
 using Apache.Calcite.Extensions;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Linq4j.Tree;
+using Apache.Calcite.Extensions.Runtime;
 
 using FluentAssertions;
 
@@ -202,7 +203,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// </summary>
         /// <remarks>
         /// The selector <c>PhysType</c> emits here ends in <c>public int apply(Object[] o)</c> — the physical
-        /// field type, not the box. A sequence carries the box, so the conversion has to end in one; this is
+        /// field type, not the box. A cursor carries the box, so the conversion has to end in one; this is
         /// the shape of it, and the only one no plan reaches.
         /// </remarks>
         [Fact]
@@ -211,14 +212,17 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             var oneColumn = typeFactory.builder().add("intField", typeFactory.createSqlType(SqlTypeName.INTEGER)).build();
             var array = ClrPhysTypeImpl.Of(typeFactory, oneColumn, JavaRowFormat.ARRAY, false);
 
-            var implementor = new ClrEnumerableRelImplementor(new org.apache.calcite.rex.RexBuilder(typeFactory), new java.util.HashMap());
             var rows = new object[][] { [Integer.valueOf(1)], [Integer.valueOf(2)] };
+            var source = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorDefaults.AsCursor(rows);
 
-            var converted = array.ConvertTo(Expression.Constant(rows, typeof(IEnumerable<object[]>)), JavaRowFormat.SCALAR);
+            var converted = array.ConvertTo(Expression.Constant(source, typeof(IClrCursor<object[]>)), JavaRowFormat.SCALAR);
 
-            converted.Type.Should().Be(typeof(IEnumerable<Integer>), "a sequence of a one-column scalar row carries the box");
+            converted.Type.Should().Be(typeof(IClrCursor<Integer>), "a cursor of a one-column scalar row carries the box");
 
-            var value = Expression.Lambda<Func<IEnumerable<Integer>>>(converted).Compile()();
+            using var cursor = Expression.Lambda<Func<IClrCursor<Integer>>>(converted).Compile()();
+            var value = new List<Integer>();
+            while (cursor.Read())
+                value.Add(cursor.Current);
 
             value.Should().Equal([Integer.valueOf(1), Integer.valueOf(2)]);
         }

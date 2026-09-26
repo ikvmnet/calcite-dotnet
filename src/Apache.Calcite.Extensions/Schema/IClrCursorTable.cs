@@ -27,10 +27,6 @@ namespace Apache.Calcite.Extensions.Schema
     /// synchronous one by blocking with the context suppressed, and does not leave the default in place: the
     /// default would hand a blocking open to a caller who asked to await.</para>
     ///
-    /// <para>The sequence convention reads such a table too, opening the cursor at its enumerator and
-    /// advancing it with the advance of the sequence's kind; what it cannot do is hand a per-advance token
-    /// down, since a sequence has none.</para>
-    ///
     /// <para>The values in each row are Java's, exactly as an <see cref="IClrScannableTable"/>'s are and for
     /// the same reason: everything downstream is Calcite's.</para>
     /// </remarks>

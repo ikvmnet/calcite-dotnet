@@ -16,9 +16,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
     /// Holds the provider to linq4j's timing: opening the plan is the acquisition, and it runs at Execute.
     /// </summary>
     /// <remarks>
-    /// The one thing the cursor convention changes here is on the awaiting side. A sequence's
-    /// <c>GetAsyncEnumerator</c> cannot await, so the sequence convention had to leave an awaited drain to
-    /// the first advance and say so; an open that awaits can await the drain, so a sort opened with
+    /// The awaiting side keeps the same timing. A sequence's <c>GetAsyncEnumerator</c> cannot await and
+    /// would have to leave an awaited drain to the first advance; an open that awaits can await the drain,
+    /// so a sort opened with
     /// <c>ExecuteReaderAsync</c> has read its whole input by the time the reader is handed back, exactly
     /// as one opened with <c>ExecuteReader</c> has.
     /// </remarks>

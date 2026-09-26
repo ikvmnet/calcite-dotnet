@@ -36,10 +36,9 @@ namespace Apache.Calcite.Tests
     /// <para><c>excludeMergeJoin</c> exists for one reason, and it is a defect of Calcite's rather than a
     /// preference. <c>EnumerableMergeJoin.passThroughTraits</c> returns <c>Pair.of(required, …)</c> — the
     /// trait set it was handed, convention and all — and <c>PhysicalNode.passThrough</c> then copies the node
-    /// onto it. With both conventions in one planner and top-down optimisation on, a CLR_ENUMERABLE subset
-    /// asks it to pass through and gets an <c>EnumerableMergeJoin</c> wearing CLR_ENUMERABLE, which the
-    /// planner then refuses: "has calling-convention CLR_ENUMERABLE but does not implement
-    /// ClrEnumerableRel". <c>TopDownRuleDriver.convert</c> asserts that a pass-through preserves the
+    /// onto it. With both conventions in one planner and top-down optimisation on, a CLR_CURSOR subset
+    /// asks it to pass through and gets an <c>EnumerableMergeJoin</c> wearing CLR_CURSOR, which the
+    /// planner then refuses as a node that does not implement <c>ClrCursorRel</c>. <c>TopDownRuleDriver.convert</c> asserts that a pass-through preserves the
     /// convention, so Calcite means for it to; only assertions being off lets it through. Nothing of ours can
     /// do this — every trait method here builds from <c>getTraitSet()</c> — and a merge join written here
     /// must not follow Calcite's text on that line.</para>
