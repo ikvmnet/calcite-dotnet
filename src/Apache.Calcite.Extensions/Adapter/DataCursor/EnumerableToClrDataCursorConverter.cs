@@ -54,10 +54,22 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         /// <inheritdoc />
         public ClrDataCursorResult Implement(ClrDataCursorRelImplementor implementor, ClrEnumerablePrefer pref)
         {
-            var (physType, source) = Translate(implementor, pref);
+            // the same map, so a value Calcite stashes reaches the DataContext this plan is bound with
+            var enumerable = new EnumerableRelImplementor(implementor.RexBuilder, implementor.Map);
+
+            // and the same correlation variables, because a sub-plan of Calcite's under a correlate of this
+            // convention reads the outer row through them
+            implementor.ReplayCorrelVariables(enumerable);
+
+            var result = enumerable.visitChild(null, 0, (EnumerableRel)getInput(), pref.ToCalcite());
+
+            // a physical type is a type factory, a row type and a format, and theirs answers all three
+            var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, result.physType.getRowType(), result.physType.getFormat(), false);
+            var rowType = physType.RowType;
+            var source = implementor.Translator.TranslateBody(result.block, typeof(org.apache.calcite.linq4j.Enumerable));
 
             return implementor.Result(physType,
-                Expression.Call(null, ClrDataCursorBuiltInMethod.FromJava.MakeGenericMethod(physType.RowType), source));
+                Expression.Call(null, ClrDataCursorBuiltInMethod.FromJava.MakeGenericMethod(rowType), source));
         }
 
         /// <inheritdoc />
@@ -67,17 +79,6 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         /// that is not asynchronous over this part of itself.
         /// </remarks>
         public ClrDataCursorAsyncResult ImplementAsync(ClrDataCursorRelImplementor implementor, ClrEnumerablePrefer pref)
-        {
-            var (physType, source) = Translate(implementor, pref);
-
-            return implementor.ResultAsync(physType,
-                ClrDataCursorBuiltInMethod.CallAsync(implementor, ClrDataCursorBuiltInMethod.FromJavaAsync.MakeGenericMethod(physType.RowType), source));
-        }
-
-        /// <summary>
-        /// Runs Calcite's implementor over the sub-plan and translates the block it produces.
-        /// </summary>
-        (ClrPhysType PhysType, Expression Source) Translate(ClrDataCursorRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             // the same map, so a value Calcite stashes reaches the DataContext this plan is bound with
             var enumerable = new EnumerableRelImplementor(implementor.RexBuilder, implementor.Map);
@@ -90,9 +91,11 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
 
             // a physical type is a type factory, a row type and a format, and theirs answers all three
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, result.physType.getRowType(), result.physType.getFormat(), false);
+            var rowType = physType.RowType;
             var source = implementor.Translator.TranslateBody(result.block, typeof(org.apache.calcite.linq4j.Enumerable));
 
-            return (physType, source);
+            return implementor.ResultAsync(physType,
+                ClrDataCursorBuiltInMethod.CallAsync(implementor, ClrDataCursorBuiltInMethod.FromJavaAsync.MakeGenericMethod(rowType), source));
         }
 
     }

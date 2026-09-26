@@ -117,15 +117,22 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         /// generates this, so nothing here is linq4j but the one expression Calcite's translator produces,
         /// which is translated where it is produced.
         /// </remarks>
-        static Expression Count(ClrDataCursorRelImplementor implementor, RexNode rexNode, string kind, Expression roundingPolicy)
+        internal static Expression Count(ClrDataCursorRelImplementor implementor, RexNode rexNode, string kind, Expression roundingPolicy)
         {
             Expression value;
 
             if (rexNode is RexDynamicParam param)
+                // no conversion: what the parameter holds is whatever was bound, and NumberToBigDecimal is
+                // what decides whether that is a number at all
                 value = Expression.Call(implementor.Root, DataContextGet, Expression.Constant("?" + param.getIndex()));
             else if (rexNode is RexLiteral literal)
                 value = Expression.Constant(RexLiteral.bigDecimalValue(literal), typeof(object));
             else
+                // an expression rather than a literal or a parameter, which the int reading could not take.
+                // Calcite's translator produces it, so it arrives as linq4j and is translated where it is
+                // produced rather than composed into a larger tree first
+                // through translateList, because every translate overload is package private and only the
+                // list forms are reachable -- a list of one is the same call by a name that can be said
                 value = ClrEnumUtils.Convert(
                     implementor.Translator.Translate(
                         (org.apache.calcite.linq4j.tree.Expression)RexToLixTranslator
@@ -144,7 +151,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         /// <c>EnumerableLimit.getRoundingPolicy</c>. Whatever a caller stashed under
         /// <c>_fetchOffsetRoundingPolicy</c>, and <c>FetchOffsetRoundingPolicy.NONE</c> where none did.
         /// </remarks>
-        static Expression RoundingPolicy(ClrDataCursorRelImplementor implementor)
+        internal static Expression RoundingPolicy(ClrDataCursorRelImplementor implementor)
         {
             var policy = implementor.Map.get(ClrDataCursorRelImplementor.FetchOffsetRoundingPolicy);
 

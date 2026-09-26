@@ -463,6 +463,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         {
             RequireRowType(physType, expression, typeof(ClrDataCursor<>), "an open");
 
+            // PhysTypeImpl keeps its format package-private, and getFormat is the same value in public
             return new ClrDataCursorResult(expression, physType, physType.Format);
         }
 

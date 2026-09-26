@@ -62,7 +62,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             if (table is TransientTable)
                 return false;
 
-            // this project's own table SPI, which is read directly rather than through linq4j. One
+            // this convention's own table SPI, which is read directly rather than through linq4j. One
             // interface each, both halves on it, so there is nothing here to ask about which kind a table is.
             if (table is IClrScannableTable or IClrQueryableTable)
                 return true;
@@ -197,7 +197,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             // that is this convention's, and is built as this convention builds everything.
             var unwrapped = (Table)table.unwrap(typeof(Table));
 
-            // this project's own table SPI is read directly: the rows are already a .NET sequence, so there
+            // this convention's own table SPI is read directly: the rows are already a .NET sequence, so there
             // is no linq4j tree to translate and no FromJava to read one back
             if (unwrapped is IClrScannableTable or IClrQueryableTable)
                 return implementor.Result(physType, ToRows(implementor, physType, ClrSource(implementor), true));
@@ -220,7 +220,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             // that is this convention's, and is built as this convention builds everything.
             var unwrapped = (Table)table.unwrap(typeof(Table));
 
-            // this project's own table SPI is read directly: the rows are already a .NET sequence, so there
+            // this convention's own table SPI is read directly: the rows are already a .NET sequence, so there
             // is no linq4j tree to translate and no FromJava to read one back
             if (unwrapped is IClrScannableTable or IClrQueryableTable)
                 return implementor.ResultAsync(physType, ToRowsAsync(implementor, physType, ClrSourceAsync(implementor), true));
@@ -331,7 +331,9 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         {
             var element = ClrTypes.FromClass(elementType);
 
-            Expression Source(Type rowType) => native ? source : Expression.Call(null, ClrDataCursorBuiltInMethod.FromJava.MakeGenericMethod(rowType), source);
+            // a table of this convention's own SPI has already handed back a cursor; one of Calcite's handed
+            // back a linq4j Enumerable, which a cursor is opened over across the boundary. The rest is the same.
+            Expression Source(System.Type rowType) => native ? source : FromJava(rowType, source);
 
             if (physType.Format == JavaRowFormat.SCALAR
                 && ((java.lang.Class)typeof(object[])).isAssignableFrom(elementType)
@@ -387,7 +389,9 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         {
             var element = ClrTypes.FromClass(elementType);
 
-            Expression Source(Type rowType) => native ? source : ClrDataCursorBuiltInMethod.CallAsync(implementor, ClrDataCursorBuiltInMethod.FromJavaAsync.MakeGenericMethod(rowType), source);
+            // a table of this convention's own SPI has already handed back a cursor; one of Calcite's handed
+            // back a linq4j Enumerable, which a cursor is opened over across the boundary. The rest is the same.
+            Expression Source(System.Type rowType) => native ? source : FromJavaAsync(implementor, rowType, source);
 
             if (physType.Format == JavaRowFormat.SCALAR
                 && ((java.lang.Class)typeof(object[])).isAssignableFrom(elementType)
@@ -428,6 +432,29 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
                 parameter);
 
             return ClrDataCursorBuiltInMethod.CallAsync(implementor, ClrDataCursorBuiltInMethod.SelectAsync.MakeGenericMethod(element, rowType), Source(element), selector);
+        }
+
+        /// <summary>
+        /// Opens a cursor over the table's linq4j sequence, of the given row type.
+        /// </summary>
+        /// <param name="element"></param>
+        /// <param name="source"></param>
+        /// <returns></returns>
+        static Expression FromJava(Type element, Expression source)
+        {
+            return Expression.Call(null, ClrDataCursorBuiltInMethod.FromJava.MakeGenericMethod(element), source);
+        }
+
+        /// <summary>
+        /// Opens a cursor over the table's linq4j sequence, of the given row type.
+        /// </summary>
+        /// <param name="implementor"></param>
+        /// <param name="element"></param>
+        /// <param name="source"></param>
+        /// <returns></returns>
+        static Expression FromJavaAsync(ClrDataCursorRelImplementor implementor, Type element, Expression source)
+        {
+            return ClrDataCursorBuiltInMethod.CallAsync(implementor, ClrDataCursorBuiltInMethod.FromJavaAsync.MakeGenericMethod(element), source);
         }
 
         /// <summary>

@@ -54,8 +54,9 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             var relOptTable = scan.getTable();
             var table = (Table)relOptTable.unwrap(typeof(Table));
 
-            // a table of this project's own SPI is read directly and has no linq4j expression to ask for;
-            // RelOptTableImpl throws for a table it has no class-expression function for
+            // a table of this convention's own SPI is read directly and has no linq4j expression to ask
+            // for. Asking is not merely redundant: RelOptTableImpl throws UnsupportedOperationException for
+            // a table it has no class-expression function for, and one of ours always is.
             if (table is Apache.Calcite.Extensions.Schema.IClrScannableTable
                 or Apache.Calcite.Extensions.Schema.IClrQueryableTable)
                 return ClrDataCursorTableScan.Create(scan.getCluster(), relOptTable);
