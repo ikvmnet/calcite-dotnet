@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 using Apache.Calcite.Geography.Runtime;
 using Apache.Calcite.Geography.Sql.Type;
@@ -23,11 +24,13 @@ namespace Apache.Calcite.Geography.Sql
     /// SqlOperatorTables.chain(SqlStdOperatorTable.instance(), GeographyOperatorTable.Instance())
     /// </code>
     ///
-    /// <para>There is no other way in. A function declared through a schema — <c>SchemaPlus.add(name,
-    /// Function)</c> — cannot take a geography parameter at all; see
-    /// <see cref="GeographyOperandTypeChecker"/> for the assertion it dies on. So a caller reaching Calcite
-    /// through a plain connection and a model file cannot resolve these names by themselves: something has to
-    /// chain this table for them.</para>
+    /// <para><see cref="Schema.GeographySchema"/> is the other way in, and is the one an adapter uses,
+    /// because a schema is what brings functions along with tables. It costs something: what
+    /// <c>CalciteCatalogReader.toOp</c> builds around a schema declaration is a plain
+    /// <c>SqlUserDefinedFunction</c> over the bare <c>Function</c>, so the checker, the return type strategy
+    /// and every fact <see cref="GeographyFunction"/> declares are Calcite's own from there on.
+    /// <see cref="Rebind"/> is how a call that came in that way gets this table's declaration back, and
+    /// <c>GeographyRules</c> is what runs it.</para>
     ///
     /// <para>Each operator is a <c>SqlUserDefinedFunction</c> over a <c>ScalarFunctionImpl</c>, which is what
     /// gives the call an implementor: <c>RexImpTable.get</c> answers a user-defined function by asking its
@@ -45,10 +48,10 @@ namespace Apache.Calcite.Geography.Sql
     /// rules would then match a geodesic call and plan it as a planar one. So an adapter that wants to push
     /// one of these down has the operator itself or its name, and the field is the exact one.</para>
     ///
-    /// <para>This is the first increment of the surface. Calcite's spatial library is about 130 names and
-    /// every one of them needs a <c>CLR_ST_GEOG_</c> declaration, because Calcite's own reject the type. What is
-    /// here is the type's constructors, the two crossings, and the five operations a geodesic store actually
-    /// pushes.</para>
+    /// <para>Calcite's spatial library is about 144 names and every one it reads geodesically needs a
+    /// <c>CLR_ST_GEOG_</c> declaration of its own, because Calcite's own read the plane. What is here is the
+    /// constructors, the two crossings, the relations, the measurements, the accessors, the editing
+    /// operations and every format both ways; the package's README says what is not, and why.</para>
     /// </remarks>
     public sealed class GeographyOperatorTable : SqlOperatorTable
     {
@@ -1095,13 +1098,153 @@ namespace Apache.Calcite.Geography.Sql
             var found = ((java.lang.Class)typeof(GeographyFunctions)).getMethod(method, parameters) ??
                 throw new InvalidOperationException($"No method '{method}' on '{nameof(GeographyFunctions)}'.");
 
-            return new SqlUserDefinedFunction(
+            return new GeographyFunction(
                 new SqlIdentifier(name, SqlParserPos.ZERO),
-                SqlKind.OTHER_FUNCTION,
                 returnType,
-                null,
                 new GeographyOperandTypeChecker(operands, names),
-                ScalarFunctionImpl.create(found));
+                ScalarFunctionImpl.create(found),
+                IsStrict(name),
+                IsSymmetrical(name));
+        }
+
+        /// <summary>
+        /// Determines whether an operator answers null whenever an argument is null, and only then.
+        /// </summary>
+        /// <param name="name">The SQL name.</param>
+        /// <returns><c>true</c> where the operator is strict.</returns>
+        /// <remarks>
+        /// <para>This is <c>Strong.Policy.ANY</c>, and Calcite reads it <b>both ways</b>:
+        /// <c>RexSimplify.simplifyIsNull</c> rewrites <c>f(a, b) IS NULL</c> to <c>a IS NULL OR b IS NULL</c>,
+        /// which asserts that a call over non-null arguments cannot be null. So the list is the operators
+        /// whose body wraps a primitive — <c>java.lang.Boolean.valueOf(…)</c>, <c>Double.valueOf(…)</c>,
+        /// <c>Integer.valueOf(…)</c> — behind a guard that answers null for a null argument, which is a
+        /// mechanical proof of both directions at once.</para>
+        ///
+        /// <para><b>Most of the surface is not strict and must not say it is.</b> A reader answers null for
+        /// text naming a different shape, so <c>CLR_ST_GEOG_POINTFROMTEXT('LINESTRING(0 0, 1 1)')</c> is null
+        /// over a non-null argument; so is <c>CLR_ST_GEOG_X</c> of anything but a point, <c>ST_X</c> being
+        /// <c>geom instanceof Point ? … : null</c>; so are <c>POINTN</c> and <c>INTERIORRING</c> out of range,
+        /// and <c>STARTPOINT</c> of a polygon. A remark on <c>GeographyReturnTypes</c> used to say every body
+        /// here answers null exactly when an argument is null, which is why this is written out rather than
+        /// derived from the return type.</para>
+        /// </remarks>
+        static bool IsStrict(string name)
+        {
+            return name switch
+            {
+                "CLR_ST_GEOG_AREA" or "CLR_ST_GEOG_LENGTH" or "CLR_ST_GEOG_PERIMETER" => true,
+                "CLR_ST_GEOG_DISTANCE" or "CLR_ST_GEOG_MAXDISTANCE" or "CLR_ST_GEOG_DWITHIN" => true,
+                "CLR_ST_GEOG_WITHIN" or "CLR_ST_GEOG_CONTAINS" => true,
+                "CLR_ST_GEOG_COVERS" or "CLR_ST_GEOG_COVEREDBY" => true,
+                "CLR_ST_GEOG_INTERSECTS" or "CLR_ST_GEOG_DISJOINT" => true,
+                "CLR_ST_GEOG_EQUALS" or "CLR_ST_GEOG_ORDERINGEQUALS" or "CLR_ST_GEOG_ENVELOPESINTERSECT" => true,
+                "CLR_ST_GEOG_ISVALID" or "CLR_ST_GEOG_ISSIMPLE" or "CLR_ST_GEOG_ISRING" => true,
+                "CLR_ST_GEOG_ISEMPTY" or "CLR_ST_GEOG_IS3D" or "CLR_ST_GEOG_ISCLOSED" => true,
+                "CLR_ST_GEOG_DIMENSION" or "CLR_ST_GEOG_COORDDIM" or "CLR_ST_GEOG_GEOMETRYTYPECODE" or "CLR_ST_GEOG_SRID" => true,
+                "CLR_ST_GEOG_NPOINTS" or "CLR_ST_GEOG_NUMPOINTS" or "CLR_ST_GEOG_NUMGEOMETRIES" => true,
+                "CLR_ST_GEOG_NUMINTERIORRING" or "CLR_ST_GEOG_NUMINTERIORRINGS" => true,
+                _ => false,
+            };
+        }
+
+        /// <summary>
+        /// Determines whether an operator answers the same with its two operands the other way round.
+        /// </summary>
+        /// <param name="name">The SQL name.</param>
+        /// <returns><c>true</c> where the operator is symmetrical.</returns>
+        /// <remarks>
+        /// <para>What this buys is one digest for two spellings, so <c>CLR_ST_GEOG_DISTANCE(a, b)</c> and
+        /// <c>CLR_ST_GEOG_DISTANCE(b, a)</c> in one statement are one expression rather than two.
+        /// <c>RexNormalize</c> is where it is read, and only for a call of exactly two operands — which is why
+        /// <c>CLR_ST_GEOG_DWITHIN</c>, symmetrical in the two it measures between, is not here.</para>
+        ///
+        /// <para>Each is symmetrical in <c>S2Geographies</c> by construction rather than by inspection:
+        /// <c>Disjoint</c> is <c>Intersects</c> negated, <c>Intersects</c> is <c>Angle</c> which considers
+        /// both enclosures, <c>Equals</c> is <c>Covers</c> both ways, and the two distances are over a pair
+        /// chosen by extremum.</para>
+        /// </remarks>
+        static bool IsSymmetrical(string name)
+        {
+            return name switch
+            {
+                "CLR_ST_GEOG_DISTANCE" or "CLR_ST_GEOG_MAXDISTANCE" => true,
+                "CLR_ST_GEOG_INTERSECTS" or "CLR_ST_GEOG_DISJOINT" => true,
+                "CLR_ST_GEOG_EQUALS" or "CLR_ST_GEOG_ENVELOPESINTERSECT" => true,
+                _ => false,
+            };
+        }
+
+        /// <summary>
+        /// Determines whether an operator is the named one, whichever route resolved it.
+        /// </summary>
+        /// <remarks>
+        /// <b>By name, and never by identity.</b> A call resolved through <see cref="Schema.GeographySchema"/>
+        /// carries a <c>SqlUserDefinedFunction</c> Calcite built around the declaration — same name, different
+        /// object — so an identity test recognises a call reached through a chained operator table and
+        /// silently fails to recognise the same call reached through a connection.
+        /// </remarks>
+        /// <param name="op">The operator to test.</param>
+        /// <param name="function">The operator it should be.</param>
+        /// <returns><c>true</c> where the operator is that one.</returns>
+        public static bool Matches(SqlOperator? op, SqlFunction function)
+        {
+            return op is not null && function is not null && op.getName() == function.getName();
+        }
+
+        /// <summary>
+        /// Determines whether an operator is one of these, whichever route resolved it.
+        /// </summary>
+        /// <param name="op">The operator to test.</param>
+        /// <returns><c>true</c> where the operator is a geography operator.</returns>
+        public static bool IsGeography(SqlOperator? op)
+        {
+            return op?.getName().StartsWith("CLR_ST_GEO", StringComparison.Ordinal) == true && Lookup(op) is not null;
+        }
+
+        /// <summary>
+        /// Returns this table's declaration of the given operator, where the two are the same operator.
+        /// </summary>
+        /// <param name="op">The operator a plan carries.</param>
+        /// <returns>The declaration, or <c>null</c> where it is not one of these.</returns>
+        /// <remarks>
+        /// <para><b>What this is for.</b> The facts <see cref="GeographyFunction"/> declares — strictness,
+        /// symmetry — live on the operator object, and a name resolved through
+        /// <see cref="Schema.GeographySchema"/> arrives as something Calcite built:
+        /// <c>CalciteCatalogReader.toOp</c> takes the bare <c>Function</c> out of the schema and wraps it in a
+        /// plain <c>SqlUserDefinedFunction</c>. Putting this table's operator back in its place is what makes
+        /// those facts reach a plan that came in that way.</para>
+        ///
+        /// <para><b>Matched by name and confirmed by the body.</b> The name finds the candidate and the
+        /// <c>Function</c> being the same object is what says the two are the same operator — which it is,
+        /// because <c>GeographySchema.AddTo</c> registers the very <c>ScalarFunctionImpl</c> this table
+        /// built. A host that declared a <c>CLR_ST_GEOG_</c> name over a body of its own is left alone, which
+        /// a name test would not do.</para>
+        /// </remarks>
+        public static SqlFunction? Rebind(SqlOperator? op)
+        {
+            if (op is not SqlUserDefinedFunction udf)
+                return null;
+
+            var mine = Lookup(op);
+            if (mine is null)
+                return null;
+
+            return ReferenceEquals(((SqlUserDefinedFunction)mine).function, udf.function) ? mine : null;
+        }
+
+        /// <summary>
+        /// Returns this table's operator of the given one's name and arity.
+        /// </summary>
+        /// <param name="op"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Keyed by name and arity together, because the overloads of one name here differ only by arity —
+        /// <c>CLR_ST_GEOG_GEOMFROMTEXT</c> with and without an SRID, <c>CLR_ST_GEOG_MAKELINE</c> five ways —
+        /// and a call in a plan has settled on one.
+        /// </remarks>
+        static SqlFunction? Lookup(SqlOperator op)
+        {
+            return Instance().index.TryGetValue((op.getName(), op.getOperandCountRange().getMin()), out var found) ? found : null;
         }
 
         /// <summary>
@@ -1145,6 +1288,11 @@ namespace Apache.Calcite.Geography.Sql
         }
 
         readonly SqlOperatorTable operators;
+
+        /// <summary>
+        /// Each operator by its name and arity, for <see cref="Lookup"/>.
+        /// </summary>
+        readonly Dictionary<(string Name, int Arity), SqlFunction> index = [];
 
         /// <summary>
         /// Initializes a new instance.
@@ -1297,6 +1445,11 @@ namespace Apache.Calcite.Geography.Sql
                 ClrStGeogPolyFromWkb,
                 ClrStGeogPolyFromWkbWithSrid,
             ]);
+
+            var list = operators.getOperatorList();
+            for (var i = 0; i < list.size(); i++)
+                if (list.get(i) is SqlFunction function)
+                    index[(function.getName(), function.getOperandCountRange().getMin())] = function;
         }
 
         /// <inheritdoc />

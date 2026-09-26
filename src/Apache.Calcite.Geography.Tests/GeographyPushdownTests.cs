@@ -95,11 +95,17 @@ namespace Apache.Calcite.Geography.Tests
         /// name rather than by reference.
         /// </summary>
         /// <remarks>
-        /// <c>CalciteCatalogReader.toOp</c> builds a fresh <c>SqlUserDefinedFunction</c> on every lookup and
-        /// caches nothing, so reference equality never holds for a schema-registered operator.
-        /// <c>SqlOperator.equals</c> compares class, name and kind — not the parameter list — so it holds for
-        /// any overload of the name, which is why the safe test is the name and, where an adapter cares which
-        /// overload, the operand count.
+        /// <para><c>CalciteCatalogReader.toOp</c> builds a fresh <c>SqlUserDefinedFunction</c> on every
+        /// lookup and caches nothing, so reference equality never holds for a schema-registered
+        /// operator.</para>
+        ///
+        /// <para><b>Nor does <c>equals</c>, and that changed.</b> <c>SqlOperator.equals</c> begins
+        /// <c>obj.getClass().equals(this.getClass())</c>, and this table's operators are a
+        /// <c>GeographyFunction</c> — a <c>SqlUserDefinedFunction</c> carrying the strictness and symmetry
+        /// Calcite's own simplifications read — while what a schema hands back is the plain class. It used to
+        /// hold, for want of that subclass. <see cref="GeographyOperatorTable.Matches"/> is the test that
+        /// works on both routes, and <see cref="GeographyOperatorTable.Rebind"/> is how a plan gets the
+        /// declaration back.</para>
         /// </remarks>
         [Fact]
         public void ShouldNotGiveThePlanTheOperatorTablesOwnInstance()
@@ -112,7 +118,10 @@ namespace Apache.Calcite.Geography.Tests
             var declared = GeographyOperatorTable.ClrStGeogDistance;
 
             call!.getOperator().Should().NotBeSameAs(declared);
-            call.getOperator().Equals(declared).Should().BeTrue();
+            call.getOperator().Equals(declared).Should().BeFalse();
+
+            GeographyOperatorTable.Matches(call.getOperator(), declared).Should().BeTrue();
+            GeographyOperatorTable.Rebind(call.getOperator()).Should().BeSameAs(declared);
         }
 
         sealed class RexCollector(List<RexCall> found) : RexShuttle

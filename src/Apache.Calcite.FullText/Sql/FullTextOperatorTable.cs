@@ -76,11 +76,14 @@ namespace Apache.Calcite.FullText.Sql
     /// FTS5's tokenizer, Elasticsearch's field mapping. An adapter that needs one takes it from its own
     /// configuration.</para>
     ///
-    /// <para><b>No phrase, proximity, fuzzy, highlight or snippet.</b> Each is offered by some stores and not
-    /// others, and where two offer one they disagree about what it means — proximity is measured in tokens by
-    /// one store and in characters by another. A name in a shared package that means something different per
-    /// adapter is worse than no name, because a query written against one store then plans against another
-    /// and answers differently rather than failing.</para>
+    /// <para><b>No proximity, highlighting or snippets.</b> Each is offered by some stores and not others,
+    /// and where two offer one they disagree about what it means — proximity is measured in tokens by one
+    /// store and in positions by another, and SQL Server's count excludes the search terms themselves. A name
+    /// in a shared package that means something different per adapter is worse than no name, because a query
+    /// written against one store then plans against another and answers differently rather than failing.
+    /// Phrase, prefix and fuzzy are here, as <see cref="ClrFtPhrase"/>, <see cref="ClrFtPrefix"/> and
+    /// <see cref="ClrFtFuzzy"/>: every surveyed store has the first, and the three agree on what they
+    /// mean.</para>
     /// </remarks>
     public sealed class FullTextOperatorTable : SqlOperatorTable
     {

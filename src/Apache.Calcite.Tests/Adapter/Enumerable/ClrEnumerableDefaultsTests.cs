@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Linq4j.Function;
 
 using FluentAssertions;
 
@@ -69,6 +71,59 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             }
 
             wrong.Should().BeEmpty("an operator reading an IAsyncEnumerable is named with the Async suffix and one reading an IEnumerable is not");
+        }
+
+        /// <summary>
+        /// An IE join holds the input order of two entries its comparator calls equal.
+        /// </summary>
+        /// <remarks>
+        /// linq4j sorts both orders with <c>List.sort</c>, which is stable; <see cref="List{T}.Sort()"/> is
+        /// an introsort and is not. The entry comparator answers 0 for two equal keys of the <em>same</em>
+        /// input -- it breaks a tie only between an entry of one input and an entry of the other -- so among
+        /// equal same-side entries the order is decided by stability alone, and it reaches the order the
+        /// pairs come out in.
+        ///
+        /// <para>The differential suite cannot see this. <c>SALES</c> has six rows, so an IE join over it
+        /// sorts twelve entries, and .NET's introsort insertion-sorts a run of sixteen or fewer -- which is
+        /// stable. Measured: swapping <c>OrderBy</c> for <c>List.Sort</c> leaves every query in that suite
+        /// green. Forty entries is past the threshold.</para>
+        ///
+        /// <para>Each predicate holds for every pairing and for no pair of one side, so the whole product
+        /// is in the answer and no tie is ever broken by side: what comes out is that product, left rows
+        /// outermost, each side in the order it arrived. Anything else is a sort that moved an equal
+        /// entry.</para>
+        /// </remarks>
+        [Fact]
+        public void ShouldHoldTheInputOrderOfEqualIeJoinKeys()
+        {
+            const int count = 20;
+
+            var left = System.Linq.Enumerable.Range(0, count).ToList();
+            var right = System.Linq.Enumerable.Range(0, count).ToList();
+
+            var one = java.lang.Integer.valueOf(1);
+            var zero = java.lang.Integer.valueOf(0);
+            var comparator = new DelegateComparator<java.lang.Integer>((x, y) => x.intValue().CompareTo(y.intValue()));
+
+            var rows = ClrEnumerableDefaults.IeJoin<int, int, java.lang.Integer, java.lang.Integer, string>(
+                left,
+                right,
+                _ => zero,
+                _ => one,
+                _ => one,
+                _ => zero,
+                comparator,
+                comparator,
+                ExpressionType.LessThan,
+                ExpressionType.GreaterThan,
+                (l, r) => $"{l}:{r}").ToList();
+
+            var expected = new List<string>();
+            foreach (var l in left)
+                foreach (var r in right)
+                    expected.Add($"{l}:{r}");
+
+            rows.Should().Equal(expected);
         }
 
         /// <summary>

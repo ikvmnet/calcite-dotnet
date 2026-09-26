@@ -524,6 +524,26 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         public Task ShouldAgreeOnAFullJoinsOwnOrderOverTwelveKeys() =>
             SameThrough("ClrEnumerableHashJoin", "SELECT a.N, b.K FROM (SELECT * FROM WIDE WHERE N < 3) a FULL JOIN WIDE b ON a.K = b.K");
 
+        // A join of two cross-input inequalities. This harness registers one convention's rules, so there is
+        // no rule of Calcite's to take away and nothing for a converter to carry.
+
+        [Fact]
+        public Task ShouldAgreeOnAnIeJoin() =>
+            SameThrough("ClrEnumerableIEJoin", "SELECT a.ID, b.ID FROM SALES a JOIN SALES b ON a.ID < b.ID AND a.AMOUNT > b.AMOUNT ORDER BY 1, 2");
+
+        /// <summary>
+        /// The order of an IE join's rows is the order of its two sorts, and both inputs are drained before
+        /// either sort runs -- which is the one thing the awaiting half does differently, in the first
+        /// <c>MoveNextAsync</c> rather than at acquisition.
+        /// </summary>
+        [Fact]
+        public Task ShouldAgreeOnAnIeJoinsOwnOrder() =>
+            SameThrough("ClrEnumerableIEJoin", "SELECT a.ID, b.ID FROM SALES a JOIN SALES b ON a.ID < b.ID AND a.AMOUNT > b.AMOUNT");
+
+        [Fact]
+        public Task ShouldAgreeOnAnIeJoinWithAResidualInequality() =>
+            SameThrough("ClrEnumerableIEJoin", "SELECT a.ID, b.ID FROM SALES a JOIN SALES b ON a.ID < b.ID AND a.AMOUNT > b.AMOUNT AND a.LABEL < b.LABEL ORDER BY 1, 2");
+
         [Fact]
         public Task ShouldAgreeOnASemiJoin() => Same("SELECT ID FROM SALES WHERE ID IN (SELECT K FROM SORTED)");
 

@@ -62,6 +62,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         public static readonly RelOptRule ClrEnumerableMergeJoinRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableMergeJoinRule.Create();
 
         /// <summary>
+        /// Rule that converts a join of two cross-input inequalities to a
+        /// <see cref="ClrEnumerableIEJoin"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrEnumerableIEJoinRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableIEJoinRule.Create();
+
+        /// <summary>
         /// Rule that converts an ASOF join to a <see cref="ClrEnumerableAsofJoin"/>.
         /// </summary>
         public static readonly RelOptRule ClrEnumerableAsofJoinRule = Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableAsofJoinRule.Create();
@@ -238,6 +244,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             ClrEnumerableAggregateRule,
             ClrEnumerableJoinRule,
             ClrEnumerableMergeJoinRule,
+            ClrEnumerableIEJoinRule,
             ClrEnumerableAsofJoinRule,
             ClrEnumerableCorrelateRule,
             ClrEnumerableConditionalCorrelateRule,
