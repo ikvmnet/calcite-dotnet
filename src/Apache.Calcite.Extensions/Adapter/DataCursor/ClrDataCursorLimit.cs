@@ -117,7 +117,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         /// generates this, so nothing here is linq4j but the one expression Calcite's translator produces,
         /// which is translated where it is produced.
         /// </remarks>
-        static Expression Count(ClrDataCursorRelImplementor implementor, RexNode rexNode, string kind, Expression roundingPolicy)
+        internal static Expression Count(ClrDataCursorRelImplementor implementor, RexNode rexNode, string kind, Expression roundingPolicy)
         {
             Expression value;
 
@@ -144,7 +144,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         /// <c>EnumerableLimit.getRoundingPolicy</c>. Whatever a caller stashed under
         /// <c>_fetchOffsetRoundingPolicy</c>, and <c>FetchOffsetRoundingPolicy.NONE</c> where none did.
         /// </remarks>
-        static Expression RoundingPolicy(ClrDataCursorRelImplementor implementor)
+        internal static Expression RoundingPolicy(ClrDataCursorRelImplementor implementor)
         {
             var policy = implementor.Map.get(ClrDataCursorRelImplementor.FetchOffsetRoundingPolicy);
 
