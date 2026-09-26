@@ -36,11 +36,13 @@ namespace Apache.Calcite.Extensions.Plan
         /// reads that flag only to choose <c>BindableConvention</c> as its own result convention, which is
         /// not a choice available here.</para>
         ///
-        /// <para><c>EnumerableRules.TO_INTERPRETER</c> is registered by Calcite's call and its counterpart
-        /// is not registered here, for the reason
-        /// <see cref="ClrEnumerableRules.ClrEnumerableInterpreterRule"/> gives: an interpreted node lands in
-        /// <c>EnumerableConvention</c> under a converter, and a caller wanting it to land in this
-        /// convention instead adds that rule itself.</para>
+        /// <para><c>EnumerableRules.TO_INTERPRETER</c> is registered by Calcite's call and neither
+        /// counterpart is registered here, for the reason
+        /// <see cref="ClrEnumerableRules.ClrEnumerableInterpreterRule"/> and
+        /// <see cref="Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorRules.ClrDataCursorInterpreterRule"/>
+        /// give: an interpreted node lands in <c>EnumerableConvention</c> under a converter, and a caller
+        /// wanting it to land in one of this project's conventions instead adds that convention's rule
+        /// itself.</para>
         /// </remarks>
         public static void RegisterDefaultRules(RelOptPlanner planner, bool enableMaterializations)
         {

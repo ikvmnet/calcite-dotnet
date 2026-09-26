@@ -732,21 +732,20 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         public Task ShouldAgreeOnAMarkedCorrelatedExists() =>
             Same("SELECT ID FROM SALES S1 WHERE EXISTS (SELECT 1 FROM SALES S2 WHERE S2.REGION = S1.REGION AND S2.ID > 3) ORDER BY ID", markJoin: true);
 
-        // A recursive query is the shape the two conventions used to differ on, and it is worth saying how.
-        // The repeat union and the table spool exist here, but the asynchronous convention left their rules
-        // out of its list on the grounds that nothing carried the interpreted transient scan's rows back --
-        // so a WITH RECURSIVE was planned wholly by Calcite under the converter in. There is one rule list
-        // now, so the union and the spool are this convention's own in either mode and only the transient
-        // scan is Calcite's, which is exactly what the synchronous side always did. SameThrough is what says
-        // so; without it these would pass on the old shape too.
+        // A recursive query: the repeat union and the table spool are this convention's own, and only the
+        // transient scan is Calcite's, under the converter in, because no scan of either Clr convention
+        // reads a transient table (CALCITE-3673) and this harness does not add the interpreter rule. The
+        // iterative part is opened afresh each round, inside whichever advance started the round, so this
+        // is the query that exercises both openers of a deferred input. SameThrough is what says the node
+        // is ours; without it these would pass on a plan carried wholly by Calcite too.
 
         [Fact]
         public Task ShouldAgreeOnARecursiveQuery() =>
-            SameThrough("ClrEnumerableRepeatUnion", "WITH RECURSIVE t(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 4) SELECT n FROM t ORDER BY 1");
+            SameThrough("ClrDataCursorRepeatUnion", "WITH RECURSIVE t(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 4) SELECT n FROM t ORDER BY 1");
 
         [Fact]
         public Task ShouldAgreeOnARecursiveQueryOfSeveralColumns() =>
-            SameThrough("ClrEnumerableTableSpool", "WITH RECURSIVE t(n, m) AS (VALUES (1, 10) UNION ALL SELECT n + 1, m + 10 FROM t WHERE n < 4) SELECT n, m FROM t ORDER BY 1");
+            SameThrough("ClrDataCursorTableSpool", "WITH RECURSIVE t(n, m) AS (VALUES (1, 10) UNION ALL SELECT n + 1, m + 10 FROM t WHERE n < 4) SELECT n, m FROM t ORDER BY 1");
 
         // ------------------------------------------------------------------ built by hand
         //

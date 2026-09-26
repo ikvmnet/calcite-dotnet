@@ -602,9 +602,13 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
                 }
 
                 // Calcite registers TO_INTERPRETER from RelOptUtil.registerDefaultRules, so its side always has
-                // one; this convention's counterpart is a field a caller adds, exactly as the sorted aggregate is
+                // one; each Clr convention's counterpart is a field a caller adds, exactly as the sorted
+                // aggregate is, and both go on because both conventions' rules are on this planner
                 if (interpreter && clr)
+                {
                     rules.add(ClrEnumerableRules.ClrEnumerableInterpreterRule);
+                    rules.add(ClrDataCursorRules.ClrDataCursorInterpreterRule);
+                }
 
                 // AVG has no implementor of its own; a real program reduces it to SUM over COUNT first, and this
                 // rule lives in RelOptRules.BASE_RULES rather than in any convention's set
@@ -1864,21 +1868,21 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         [Fact]
         public void ShouldAgreeOnValues() => Same("SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");
 
-        // The only query that reaches ClrEnumerableRepeatUnion and ClrEnumerableTableSpool. The transient
+        // The only query that reaches ClrDataCursorRepeatUnion and ClrDataCursorTableSpool. The transient
         // table is scanned by neither convention — EnumerableTableScan refuses a TransientTable
         // (CALCITE-3673) and so does ours — so both sides read it through the interpreter.
 
         [Fact]
         public void ShouldAgreeOnARecursiveQuery() =>
-            Same("WITH RECURSIVE t(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 4) SELECT n FROM t ORDER BY 1");
+            SameThrough("ClrDataCursorRepeatUnion", "WITH RECURSIVE t(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 4) SELECT n FROM t ORDER BY 1");
 
         [Fact]
         public void ShouldAgreeOnARecursiveQueryOfSeveralColumns() =>
-            Same("WITH RECURSIVE t(n, m) AS (VALUES (1, 10) UNION ALL SELECT n + 1, m + 10 FROM t WHERE n < 4) SELECT n, m FROM t ORDER BY 1");
+            SameThrough("ClrDataCursorTableSpool", "WITH RECURSIVE t(n, m) AS (VALUES (1, 10) UNION ALL SELECT n + 1, m + 10 FROM t WHERE n < 4) SELECT n, m FROM t ORDER BY 1");
 
         // The interpreter, which is the only way either convention reads a transient table. With the rule off
-        // the node is Calcite's under a converter; with it on it is this convention's and there is one
-        // convention boundary fewer. The rows are the same either way, which is what the first two assert.
+        // the node is Calcite's under a converter; with it on it is this convention's and there is no
+        // convention boundary at all. The rows are the same either way, which is what the first two assert.
 
         [Fact]
         public void ShouldAgreeOnARecursiveQueryInterpretedHere() =>
@@ -1893,8 +1897,8 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         {
             var sql = "WITH RECURSIVE t(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 4) SELECT n FROM t ORDER BY 1";
 
-            PlanOf(sql, true).Should().Contain("EnumerableInterpreter");
-            PlanOf(sql, true, interpreter: true).Should().Contain("ClrEnumerableInterpreter");
+            PlanOf(sql, true).Should().Contain("EnumerableInterpreter").And.NotContain("ClrDataCursorInterpreter");
+            PlanOf(sql, true, interpreter: true).Should().Contain("ClrDataCursorInterpreter");
         }
 
         [Fact]

@@ -193,6 +193,57 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
             }
         }
 
+        /// <summary>
+        /// A recursive statement runs through the provider: the transient table goes into the connection's
+        /// root schema at Execute, the spool finds it there by name, each round is opened inside the
+        /// advance that starts it, and the table comes out again when the reader is closed.
+        /// </summary>
+        /// <remarks>
+        /// One command per reading, because a plan holding a transient table is not reread: the table keeps
+        /// whatever its last round left in it.
+        /// </remarks>
+        [Fact]
+        public void ExecuteShouldRunARecursiveQuery()
+        {
+            var (c, _) = Open();
+            using (c)
+            {
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = "WITH RECURSIVE r(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM r WHERE n < 4) SELECT n FROM r ORDER BY 1";
+
+                var rows = new List<int>();
+                using (var reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                        rows.Add(reader.GetInt32(0));
+                }
+
+                rows.Should().Equal([1, 2, 3, 4]);
+                c.RootSchema.getTable("r").Should().BeNull("the clean-up removed the transient table when the cursor was disposed");
+            }
+        }
+
+        [Fact]
+        public async Task ExecuteAsyncShouldRunARecursiveQuery()
+        {
+            var (c, _) = Open();
+            using (c)
+            {
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = "WITH RECURSIVE r(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM r WHERE n < 4) SELECT n FROM r ORDER BY 1";
+
+                var rows = new List<int>();
+                await using (var reader = await cmd.ExecuteReaderAsync())
+                {
+                    while (await reader.ReadAsync())
+                        rows.Add(reader.GetInt32(0));
+                }
+
+                rows.Should().Equal([1, 2, 3, 4]);
+                c.RootSchema.getTable("r").Should().BeNull("the clean-up removed the transient table when the cursor was disposed");
+            }
+        }
+
     }
 
 }

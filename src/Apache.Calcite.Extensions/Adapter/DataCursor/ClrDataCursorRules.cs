@@ -126,6 +126,16 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         public static readonly RelOptRule ClrDataCursorWindowRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorWindowRule.Create();
 
         /// <summary>
+        /// Rule that converts a repeat union to a <see cref="ClrDataCursorRepeatUnion"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorRepeatUnionRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorRepeatUnionRule.Create();
+
+        /// <summary>
+        /// Rule that converts a table spool to a <see cref="ClrDataCursorTableSpool"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorTableSpoolRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorTableSpoolRule.Create();
+
+        /// <summary>
         /// Rule that turns a filter of this convention into a calc.
         /// </summary>
         public static readonly RelOptRule ClrDataCursorFilterToCalcRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorFilterToCalcRule.Create();
@@ -156,6 +166,17 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         public static readonly RelOptRule ClrDataCursorToClrEnumerableConverterRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorToClrEnumerableConverterRule.Create();
 
         /// <summary>
+        /// Rule that reads a plan of <c>BindableConvention</c> as one of this convention, by interpreting it.
+        /// </summary>
+        /// <remarks>
+        /// Not in what <see cref="Rules"/> returns, because <c>TO_INTERPRETER</c> is not in
+        /// <c>ENUMERABLE_RULES</c>: Calcite registers it from <c>RelOptUtil.registerDefaultRules</c>, which
+        /// registers Calcite's own. A caller adds this one to have an interpreted node land here rather than
+        /// in <c>EnumerableConvention</c> under a converter.
+        /// </remarks>
+        public static readonly RelOptRule ClrDataCursorInterpreterRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorInterpreterRule.Create();
+
+        /// <summary>
         /// Rule that converts an aggregate over a sorted input to a
         /// <see cref="ClrDataCursorSortedAggregate"/>.
         /// </summary>
@@ -184,6 +205,8 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             ClrDataCursorMinusRule,
             ClrDataCursorSortRule,
             ClrDataCursorLimitRule,
+            ClrDataCursorRepeatUnionRule,
+            ClrDataCursorTableSpoolRule,
             ClrDataCursorTableFunctionScanRule,
             ClrDataCursorCollectRule,
             ClrDataCursorUncollectRule,
