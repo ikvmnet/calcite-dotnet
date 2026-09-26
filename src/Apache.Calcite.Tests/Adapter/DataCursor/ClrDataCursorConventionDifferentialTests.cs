@@ -593,7 +593,13 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
                 // ENUMERABLE_RULES. It was in this convention's default list once, which meant Calcite could
                 // never plan the node this one planned, so nothing here was comparing limit sorts at all
                 if (limitSort)
+                {
                     rules.add(clr ? ClrEnumerableRules.ClrEnumerableLimitSortRule : EnumerableRules.ENUMERABLE_LIMIT_SORT_RULE);
+
+                    // and the cursor convention's, a field a caller adds for the same reason
+                    if (clr)
+                        rules.add(ClrDataCursorRules.ClrDataCursorLimitSortRule);
+                }
 
                 // Calcite registers TO_INTERPRETER from RelOptUtil.registerDefaultRules, so its side always has
                 // one; this convention's counterpart is a field a caller adds, exactly as the sorted aggregate is
@@ -1753,7 +1759,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         {
             const string sql = "SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY";
 
-            PlanOf(sql, true, limitSort: true).Should().Contain("ClrEnumerableLimitSort");
+            PlanOf(sql, true, limitSort: true).Should().Contain("ClrDataCursorLimitSort");
             PlanOf(sql, false, limitSort: true).Should().Contain("EnumerableLimitSort");
         }
 
@@ -1765,11 +1771,11 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 
         [Fact]
         public void ShouldAgreeOnALimitSortWithTiesAcrossTheBoundary() =>
-            SameThrough("ClrEnumerableLimitSort", "SELECT \"K\", \"V\" FROM \"SORTED\" ORDER BY \"K\" FETCH NEXT 2 ROWS ONLY", limitSort: true);
+            SameThrough("ClrDataCursorLimitSort", "SELECT \"K\", \"V\" FROM \"SORTED\" ORDER BY \"K\" FETCH NEXT 2 ROWS ONLY", limitSort: true);
 
         [Fact]
         public void ShouldAgreeOnALimitSortWithAnOffsetInsideATie() =>
-            SameThrough("ClrEnumerableLimitSort", "SELECT \"K\", \"V\" FROM \"SORTED\" ORDER BY \"K\" OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY", limitSort: true);
+            SameThrough("ClrDataCursorLimitSort", "SELECT \"K\", \"V\" FROM \"SORTED\" ORDER BY \"K\" OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY", limitSort: true);
 
         [Fact]
         /// <remarks>
@@ -1781,15 +1787,15 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 
         [Fact]
         public void ShouldAgreeOnALimitSortTakingEverything() =>
-            SameThrough("ClrEnumerableLimitSort", "SELECT \"K\" FROM \"SORTED\" ORDER BY \"K\" FETCH NEXT 100 ROWS ONLY", limitSort: true);
+            SameThrough("ClrDataCursorLimitSort", "SELECT \"K\" FROM \"SORTED\" ORDER BY \"K\" FETCH NEXT 100 ROWS ONLY", limitSort: true);
 
         [Fact]
         public void ShouldAgreeOnALimitSortOverNulls() =>
-            SameThrough("ClrEnumerableLimitSort", "SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"AMOUNT\" OFFSET 1 ROWS FETCH NEXT 3 ROWS ONLY", limitSort: true);
+            SameThrough("ClrDataCursorLimitSort", "SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"AMOUNT\" OFFSET 1 ROWS FETCH NEXT 3 ROWS ONLY", limitSort: true);
 
         [Fact]
         public void ShouldAgreeOnALimitSortDescending() =>
-            SameThrough("ClrEnumerableLimitSort", "SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" DESC OFFSET 1 ROWS FETCH NEXT 3 ROWS ONLY", limitSort: true);
+            SameThrough("ClrDataCursorLimitSort", "SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" DESC OFFSET 1 ROWS FETCH NEXT 3 ROWS ONLY", limitSort: true);
 
         /// <summary>
         /// With neither side given the rule, both plan a limit over a sort — which is what carried a
@@ -2475,22 +2481,22 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         [Fact]
         public void ShouldAgreeOnAScalarRowUnionAll() =>
             SameThrough("ClrDataCursorUnion", "SELECT \"N\" FROM \"SCALARS\" UNION ALL SELECT \"N\" FROM \"SCALARS\" WHERE \"N\" < 3 ORDER BY 1",
-                remove: [ClrEnumerableRules.ClrEnumerableMergeUnionRule]);
+                remove: [ClrEnumerableRules.ClrEnumerableMergeUnionRule, ClrDataCursorRules.ClrDataCursorMergeUnionRule]);
 
         [Fact]
         public void ShouldAgreeOnAScalarRowUnionDistinct() =>
             SameThrough("ClrDataCursorUnion", "SELECT \"N\" FROM \"SCALARS\" UNION SELECT \"N\" FROM \"SCALARS\" WHERE \"N\" < 3 ORDER BY 1",
-                remove: [EnumerableRules.ENUMERABLE_MERGE_UNION_RULE, ClrEnumerableRules.ClrEnumerableMergeUnionRule]);
+                remove: [EnumerableRules.ENUMERABLE_MERGE_UNION_RULE, ClrEnumerableRules.ClrEnumerableMergeUnionRule, ClrDataCursorRules.ClrDataCursorMergeUnionRule]);
 
         // INTERSECT without ALL is rewritten to an aggregate over a union and never reaches the node; only
         // INTERSECT ALL does, which is why no set-operation test had ever built one over a primitive row
         [Fact]
         public void ShouldAgreeOnAScalarRowIntersectAll() =>
-            SameThrough("ClrEnumerableIntersect", "SELECT \"N\" FROM \"SCALARS\" INTERSECT ALL SELECT \"N\" FROM \"SCALARS\" WHERE \"N\" < 3 ORDER BY 1");
+            SameThrough("ClrDataCursorIntersect", "SELECT \"N\" FROM \"SCALARS\" INTERSECT ALL SELECT \"N\" FROM \"SCALARS\" WHERE \"N\" < 3 ORDER BY 1");
 
         [Fact]
         public void ShouldAgreeOnAScalarRowExceptAll() =>
-            SameThrough("ClrEnumerableMinus", "SELECT \"N\" FROM \"SCALARS\" EXCEPT ALL SELECT \"N\" FROM \"SCALARS\" WHERE \"N\" < 3 ORDER BY 1");
+            SameThrough("ClrDataCursorMinus", "SELECT \"N\" FROM \"SCALARS\" EXCEPT ALL SELECT \"N\" FROM \"SCALARS\" WHERE \"N\" < 3 ORDER BY 1");
 
         [Fact]
         public void ShouldAgreeOnAScalarRowLimit() =>
@@ -2499,13 +2505,13 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 
         [Fact]
         public void ShouldAgreeOnAScalarRowLimitSort() =>
-            SameThrough("ClrEnumerableLimitSort", "SELECT \"N\" FROM \"SCALARS\" ORDER BY \"N\" FETCH NEXT 2 ROWS ONLY",
+            SameThrough("ClrDataCursorLimitSort", "SELECT \"N\" FROM \"SCALARS\" ORDER BY \"N\" FETCH NEXT 2 ROWS ONLY",
                 remove: [EnumerableRules.ENUMERABLE_LIMIT_SORT_RULE, EnumerableRules.ENUMERABLE_LIMIT_RULE],
                 limitSort: true);
 
         [Fact]
         public void ShouldAgreeOnAScalarRowMergeUnion() =>
-            SameThrough("ClrEnumerableMergeUnion", "SELECT \"N\" FROM \"SCALARS\" UNION SELECT \"N\" FROM \"SCALARS\" ORDER BY 1",
+            SameThrough("ClrDataCursorMergeUnion", "SELECT \"N\" FROM \"SCALARS\" UNION SELECT \"N\" FROM \"SCALARS\" ORDER BY 1",
                 remove: [EnumerableRules.ENUMERABLE_MERGE_UNION_RULE, EnumerableRules.ENUMERABLE_UNION_RULE, EnumerableRules.ENUMERABLE_SORT_RULE]);
 
         [Fact]

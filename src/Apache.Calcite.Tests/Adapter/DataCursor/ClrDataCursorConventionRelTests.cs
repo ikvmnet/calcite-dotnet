@@ -581,7 +581,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
                     .sort(0)
                     .build();
             },
-            remove: [EnumerableRules.ENUMERABLE_UNION_RULE, ClrEnumerableRules.ClrEnumerableUnionRule]);
+            remove: [EnumerableRules.ENUMERABLE_UNION_RULE, ClrEnumerableRules.ClrEnumerableUnionRule, ClrDataCursorRules.ClrDataCursorUnionRule]);
 
         [Fact]
         public void ShouldAgreeOnEveryCollatedComparison()

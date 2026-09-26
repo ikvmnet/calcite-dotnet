@@ -381,6 +381,227 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 
             public object apply(object accumulator) => java.lang.Integer.valueOf(((int[])accumulator)[0]);
 
+        /// An intersect drains its second source and closes it before it opens its first.
+        /// </summary>
+        /// <remarks>
+        /// <c>EnumerableDefaults.intersect</c> runs <c>source1.into(set1)</c> to completion and only then
+        /// reads <c>source0.enumerator()</c> against the set, which is why the first source arrives as an
+        /// open and the second as a cursor.
+        /// </remarks>
+        [Fact]
+        public void ShouldDrainTheSecondSourceBeforeOpeningTheFirstOfAnIntersect()
+        {
+            var second = new ScalarCursor(["b", "c", "d"]);
+            var secondDisposedWhenFirstOpened = false;
+
+            var intersect = ClrDataCursorDefaults.Intersect<object>(
+                () => { secondDisposedWhenFirstOpened = second.Disposed; return new ScalarCursor(["a", "b", "c"]); },
+                second,
+                null,
+                false);
+
+            secondDisposedWhenFirstOpened.Should().BeTrue("EnumerableDefaults.intersect runs source1.into(set1) to completion before touching source0");
+
+            var rows = new List<string>();
+            while (intersect.Read())
+                rows.Add((string)intersect.Current);
+
+            rows.Should().Equal(["b", "c"]);
+        }
+
+        /// <summary>
+        /// INTERSECT ALL keeps a row once per pairing, counting rather than merely holding.
+        /// </summary>
+        [Fact]
+        public async Task ShouldKeepARowOncePerPairingOfAnIntersectAll()
+        {
+            var intersect = await ClrDataCursorDefaults.IntersectAsync<object>(
+                token => new ValueTask<ClrDataCursor<object>>(new ScalarCursor(["a", "b", "b", "c"])),
+                new ValueTask<ClrDataCursor<object>>(new ScalarCursor(["b", "b", "b"])),
+                null,
+                true,
+                CancellationToken.None);
+
+            var rows = new List<string>();
+            while (await intersect.ReadAsync(CancellationToken.None))
+                rows.Add((string)intersect.Current);
+
+            rows.Should().Equal(["b", "b"]);
+        }
+
+        /// <summary>
+        /// An except drains its first source and closes it before it opens its second.
+        /// </summary>
+        [Fact]
+        public void ShouldDrainTheFirstSourceBeforeOpeningTheSecondOfAnExcept()
+        {
+            var first = new ScalarCursor(["a", "b", "c"]);
+            var firstDisposedWhenSecondOpened = false;
+
+            var except = ClrDataCursorDefaults.Except<object>(
+                first,
+                () => { firstDisposedWhenSecondOpened = first.Disposed; return new ScalarCursor(["b"]); },
+                null,
+                false);
+
+            firstDisposedWhenSecondOpened.Should().BeTrue("EnumerableDefaults.except runs source0.into(collection) to completion before touching source1");
+
+            var rows = new List<string>();
+            while (except.Read())
+                rows.Add((string)except.Current);
+
+            rows.Should().Equal(["a", "c"]);
+        }
+
+        /// <summary>
+        /// A merge union opens every input and positions each on its first row inside its own open, and
+        /// then advances only the input whose row it emitted.
+        /// </summary>
+        /// <remarks>
+        /// <c>MergeUnionEnumerator</c>'s constructor acquires each input and calls <c>moveNext</c> on it,
+        /// all at <c>enumerator()</c>; the cursor's open does both.
+        /// </remarks>
+        [Fact]
+        public async Task ShouldPositionEveryMergeUnionInputAtTheOpen()
+        {
+            var first = new ScalarCursor([java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(3), java.lang.Integer.valueOf(5)]);
+            var second = new ScalarCursor([java.lang.Integer.valueOf(2), java.lang.Integer.valueOf(3), java.lang.Integer.valueOf(4)]);
+            var opened = 0;
+
+            var sources = new java.util.ArrayList();
+            sources.add(new Func<ClrDataCursor<object>>(() => { opened++; return first; }));
+            sources.add(new Func<ClrDataCursor<object>>(() => { opened++; return second; }));
+
+            var merge = ClrDataCursorDefaults.MergeUnion<object, object>(
+                sources,
+                row => row,
+                org.apache.calcite.linq4j.function.Functions.nullsComparator(false, false),
+                true,
+                null);
+
+            opened.Should().Be(2, "every input is acquired at the open");
+            first.Drawn.Should().Be(1, "and positioned on its first row there");
+            second.Drawn.Should().Be(1);
+
+            var rows = new List<int>();
+            while (rows.Count % 2 == 0 ? merge.Read() : await merge.ReadAsync(CancellationToken.None))
+                rows.Add(((java.lang.Integer)merge.Current).intValue());
+
+            rows.Should().Equal([1, 2, 3, 3, 4, 5]);
+            first.Drawn.Should().Be(4, "each input is drawn once per row it held and once more to find its end");
+            second.Drawn.Should().Be(4);
+
+            merge.Dispose();
+            first.Disposed.Should().BeTrue("closing the merge closes every input");
+            second.Disposed.Should().BeTrue();
+        }
+
+        /// <summary>
+        /// A merge union without ALL drops a row that repeats one already emitted under the same key.
+        /// </summary>
+        [Fact]
+        public void ShouldDropARepeatedRowOfAMergeUnion()
+        {
+            var sources = new java.util.ArrayList();
+            sources.add(new Func<ClrDataCursor<object>>(() => new ScalarCursor([java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(3)])));
+            sources.add(new Func<ClrDataCursor<object>>(() => new ScalarCursor([java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2), java.lang.Integer.valueOf(3)])));
+
+            var merge = ClrDataCursorDefaults.MergeUnion<object, object>(
+                sources,
+                row => row,
+                org.apache.calcite.linq4j.function.Functions.nullsComparator(false, false),
+                false,
+                null);
+
+            var rows = new List<int>();
+            while (merge.Read())
+                rows.Add(((java.lang.Integer)merge.Current).intValue());
+
+            rows.Should().Equal([1, 2, 3]);
+        }
+
+        /// <summary>
+        /// A limit sort drains its source inside its open, and a fetch of no rows never opens it.
+        /// </summary>
+        /// <remarks>
+        /// linq4j's bounded <c>orderBy</c> tests the fetch inside <c>enumerator()</c> before calling
+        /// <c>source.enumerator()</c>, and answers <c>Linq4j.emptyEnumerator()</c> without it.
+        /// </remarks>
+        [Fact]
+        public void ShouldNotOpenTheSourceOfALimitSortForAFetchOfNoRows()
+        {
+            var opened = false;
+
+            var sorted = ClrDataCursorDefaults.OrderByWithFetchAndOffset<object, object>(
+                () => { opened = true; return new ScalarCursor([java.lang.Integer.valueOf(1)]); },
+                row => row,
+                org.apache.calcite.linq4j.function.Functions.nullsComparator(false, false),
+                java.math.BigDecimal.ZERO,
+                java.math.BigDecimal.ZERO);
+
+            opened.Should().BeFalse("a fetch of no rows answers an empty enumerator before the source is acquired");
+            sorted.Read().Should().BeFalse();
+        }
+
+        /// <summary>
+        /// A limit sort has drained and closed its source by the time its open returns, whichever way it
+        /// was opened, and hands back the rows the offset and fetch leave, in order.
+        /// </summary>
+        [Fact]
+        public async Task ShouldDrainTheSourceOfALimitSortAtTheOpen()
+        {
+            static ScalarCursor Source() => new([java.lang.Integer.valueOf(5), java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(4), java.lang.Integer.valueOf(2), java.lang.Integer.valueOf(3)]);
+
+            var source = Source();
+            var sorted = ClrDataCursorDefaults.OrderByWithFetchAndOffset<object, object>(
+                () => source,
+                row => row,
+                org.apache.calcite.linq4j.function.Functions.nullsComparator(false, false),
+                java.math.BigDecimal.ONE,
+                java.math.BigDecimal.valueOf(2));
+
+            source.Drawn.Should().Be(6, "the open read the whole input");
+            source.Disposed.Should().BeTrue("and closed it");
+
+            var rows = new List<int>();
+            while (sorted.Read())
+                rows.Add(((java.lang.Integer)sorted.Current).intValue());
+
+            rows.Should().Equal([2, 3]);
+
+            var awaitedSource = Source();
+            var awaited = await ClrDataCursorDefaults.OrderByWithFetchAndOffsetAsync<object, object>(
+                token => new ValueTask<ClrDataCursor<object>>(awaitedSource),
+                row => row,
+                org.apache.calcite.linq4j.function.Functions.nullsComparator(false, false),
+                java.math.BigDecimal.ONE,
+                java.math.BigDecimal.valueOf(2),
+                CancellationToken.None);
+
+            awaitedSource.Drawn.Should().Be(6, "the awaiting open awaited the whole drain");
+            awaitedSource.Disposed.Should().BeTrue();
+
+            rows.Clear();
+            while (await awaited.ReadAsync(CancellationToken.None))
+                rows.Add(((java.lang.Integer)awaited.Current).intValue());
+
+            rows.Should().Equal([2, 3]);
+        }
+
+        /// <summary>
+        /// An offset past every row a limit sort holds answers nothing.
+        /// </summary>
+        [Fact]
+        public void ShouldAnswerNothingFromALimitSortWhoseOffsetPassesTheEnd()
+        {
+            var sorted = ClrDataCursorDefaults.OrderByWithFetchAndOffset<object, object>(
+                () => new ScalarCursor([java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2)]),
+                row => row,
+                org.apache.calcite.linq4j.function.Functions.nullsComparator(false, false),
+                java.math.BigDecimal.TEN,
+                java.math.BigDecimal.valueOf(2));
+
+            sorted.Read().Should().BeFalse();
         }
 
         /// <summary>
@@ -391,12 +612,16 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 
             int index = -1;
 
+            public int Drawn { get; private set; }
+
             public bool Disposed { get; private set; }
 
             public override object Current => rows[index];
 
             public override bool Read()
             {
+                Drawn++;
+
                 if (index + 1 >= rows.Count)
                     return false;
 

@@ -16,7 +16,8 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
     /// <c>RelOptPlanner.removeRule</c> takes the rule itself.
     ///
     /// <para><b>The list is the nodes written so far, and it is short.</b> Scan, values, calc, aggregate,
-    /// sort, limit and union, with a project and a filter that become a calc, and four converters: two against
+    /// sort, limit, union, merge union, intersect and minus, with a project and a filter that become a calc,
+    /// and four converters: two against
     /// <c>EnumerableConvention</c> and two against <c>ClrEnumerableConvention</c>. Everything else one of
     /// those two plans, and a converter carries the rows — the sequence convention's node where it has
     /// one, which is nearly everywhere, since its converter costs no Janino compile and its rows are
@@ -62,6 +63,21 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         public static readonly RelOptRule ClrDataCursorUnionRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorUnionRule.Create();
 
         /// <summary>
+        /// Rule that converts a sort over a union to a <see cref="ClrDataCursorMergeUnion"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorMergeUnionRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorMergeUnionRule.Create();
+
+        /// <summary>
+        /// Rule that converts an intersect to a <see cref="ClrDataCursorIntersect"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorIntersectRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorIntersectRule.Create();
+
+        /// <summary>
+        /// Rule that converts a minus to a <see cref="ClrDataCursorMinus"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorMinusRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorMinusRule.Create();
+
+        /// <summary>
         /// Rule that converts a sort to a <see cref="ClrDataCursorSort"/>.
         /// </summary>
         public static readonly RelOptRule ClrDataCursorSortRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorSortRule.Create();
@@ -70,6 +86,19 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         /// Rule that converts a sort carrying an offset or a fetch to a <see cref="ClrDataCursorLimit"/>.
         /// </summary>
         public static readonly RelOptRule ClrDataCursorLimitRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorLimitRule.Create();
+
+        /// <summary>
+        /// Rule that converts a sort carrying an offset or a fetch to a
+        /// <see cref="ClrDataCursorLimitSort"/>.
+        /// </summary>
+        /// <remarks>
+        /// Not in what <see cref="Rules"/> returns, because <c>ENUMERABLE_LIMIT_SORT_RULE</c> is not in
+        /// <c>ENUMERABLE_RULES</c>: it is one of the three rule fields Calcite declares and leaves out of
+        /// the list, with <c>ENUMERABLE_SORTED_AGGREGATE_RULE</c> and
+        /// <c>ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE</c>, and nothing in core turns any of them on. A caller
+        /// turns this on to sort only as far as the fetch requires rather than sorting and then discarding.
+        /// </remarks>
+        public static readonly RelOptRule ClrDataCursorLimitSortRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorLimitSortRule.Create();
 
         /// <summary>
         /// Rule that turns a filter of this convention into a calc.
@@ -124,6 +153,9 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             ClrDataCursorCalcRule,
             ClrDataCursorAggregateRule,
             ClrDataCursorUnionRule,
+            ClrDataCursorMergeUnionRule,
+            ClrDataCursorIntersectRule,
+            ClrDataCursorMinusRule,
             ClrDataCursorSortRule,
             ClrDataCursorLimitRule,
             EnumerableToClrDataCursorConverterRule,
