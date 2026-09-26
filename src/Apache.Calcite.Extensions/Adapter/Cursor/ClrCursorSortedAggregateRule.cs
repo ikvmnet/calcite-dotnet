@@ -47,10 +47,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
         /// <inheritdoc />
         /// <remarks>
-        /// One line is not Calcite's: an aggregate over no group set is refused. The node tells one group from
-        /// the next with a comparator built from the collation it carries, and for an empty group set that
-        /// collation is empty; Calcite's rule builds the node anyway and its <c>implement</c> then fails. A
-        /// global aggregate has nothing to sort by and belongs to <see cref="ClrCursorAggregate"/>.
+        /// An aggregate over no group set is refused. The node tells one group from the next with a
+        /// comparator built from the collation it carries, and for an empty group set that collation is
+        /// empty, so a global aggregate has nothing to sort by and belongs to
+        /// <see cref="ClrCursorAggregate"/>.
         /// </remarks>
         public override RelNode? convert(RelNode rel)
         {

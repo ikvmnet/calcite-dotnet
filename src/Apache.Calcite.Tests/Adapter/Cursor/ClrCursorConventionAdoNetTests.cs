@@ -196,7 +196,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             var opened = Explain(c, Sql);
 
-            opened.Should().Contain("ClrCursor").And.NotContain("ClrEnumerableCalc", "a filter over a scan is the cursor convention's own");
+            opened.Should().Contain("ClrCursor").And.NotContain("EnumerableCalc", "a filter over a scan is the cursor convention's own");
             (await ExplainAsync(c, Sql)).Should().Be(opened, "how a plan is opened is not part of the plan");
         }
 

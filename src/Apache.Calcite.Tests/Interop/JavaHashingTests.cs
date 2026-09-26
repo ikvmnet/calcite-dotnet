@@ -18,8 +18,8 @@ namespace Apache.Calcite.Extensions.Interop.Tests
     /// CLR's is randomised per process, and if IKVM handed a string to it, no two runs would agree.
     ///
     /// <para>These tests say it does not: what a string hashes to on the Java side is Java's value. That is
-    /// why holding rows in a <c>java.util.HashMap</c>, as <c>ClrEnumerableDefaults.AsofJoin</c> and
-    /// <c>ClrEnumerableDefaults.Window</c> do, reproduces Calcite's order rather than merely happening to
+    /// why holding rows in a <c>java.util.HashMap</c>, as <c>ClrCursorDefaults.AsofJoin</c> and
+    /// <c>ClrCursorDefaults.GroupBy</c> do, reproduces Calcite's order rather than merely happening to
     /// match it.</para>
     /// </remarks>
     public class JavaHashingTests

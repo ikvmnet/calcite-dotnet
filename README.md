@@ -26,7 +26,7 @@ dotnet add package Apache.Calcite.Adapter.AdoNet
 
 ### [`Apache.Calcite.Extensions`](https://www.nuget.org/packages/Apache.Calcite.Extensions) · `src/Apache.Calcite.Extensions`
 
-`ClrEnumerableConvention` — a calling convention that runs a query plan as a compiled `System.Linq.Expressions` tree instead of generating Java source and compiling it with Janino. It mirrors Calcite's own `EnumerableConvention` node for node and uses the same row types, and converters exist in both directions, so a plan can mix the two.
+`ClrCursorConvention` — a calling convention that runs a query plan as a compiled `System.Linq.Expressions` tree instead of generating Java source and compiling it with Janino. A plan opens a cursor, synchronously or with await, and the cursor is advanced either way on every row, which is the shape `DbDataReader` has. It mirrors Calcite's own `EnumerableConvention` node for node and uses the same row types, and converters exist in both directions, so a plan can mix the two.
 
 With it, the prepare pipeline that takes a statement from SQL text to such a plan, and the interop helpers both need — including `CalciteConnectionProperties`, a strongly-typed wrapper over Calcite's `java.util.Properties`, so you can configure the engine with compile-time-safe .NET properties instead of raw string keys.
 
@@ -54,7 +54,7 @@ dotnet add package Apache.Calcite.Geography
 
 | Project | Purpose |
 |---------|---------|
-| `Apache.Calcite.Tests` | Core engine integration tests, and the convention and prepare pipeline tests — including the differential suites that run the same SQL through `ClrEnumerableConvention` and `EnumerableConvention` and require the same rows |
+| `Apache.Calcite.Tests` | Core engine integration tests, and the convention and prepare pipeline tests — including the differential suites that run the same SQL through `ClrCursorConvention` and `EnumerableConvention` and require the same rows |
 | `Apache.Calcite.Data.Tests` | Provider integration tests |
 | `Apache.Calcite.Adapter.AdoNet.Tests` | Adapter integration tests |
 | `Apache.Calcite.Geography.Tests` | Geography type, operator table and geodesic evaluator tests |

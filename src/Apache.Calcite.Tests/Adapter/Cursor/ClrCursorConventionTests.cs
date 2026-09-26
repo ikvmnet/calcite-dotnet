@@ -28,7 +28,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Runs a query end to end in the <see cref="ClrEnumerableConvention"/> calling convention.
+    /// Runs a query end to end in the <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
     public class ClrCursorConventionTests
     {
@@ -118,14 +118,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add("PEOPLE", new PeopleTable());
 
-            // both conventions' calc rules, the five they share going in once: a node the cursor
-            // convention lacks is the sequence convention's under a converter
+            // the convention's calc rules, as a pass after the planner's
             var calcRules = new java.util.ArrayList();
             foreach (var rule in ClrCursorRules.CalcRules())
                 calcRules.add(rule);
-            foreach (var rule in ClrEnumerableRules.CalcRules())
-                if (calcRules.contains(rule) == false)
-                    calcRules.add(rule);
 
             // what the prepare pipeline runs: Programs.standard itself, and then Programs.calc once more
             // over this convention's list -- added to Calcite's calc pass, which standard still runs, not
@@ -136,7 +132,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 .defaultSchema(rootSchema)
                 .programs(
                     Programs.sequence(
-                        new AddRulesProgram([.. ClrEnumerableRules.Rules(), .. ClrCursorRules.Rules()]),
+                        new AddRulesProgram(ClrCursorRules.Rules()),
                         Programs.standard(),
                         Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)))
                 .build();
@@ -178,16 +174,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A node that cannot implement itself fails with the plan that reached it named, as Calcite's
-        /// <c>implementRoot</c> names it.
-        /// </summary>
-        /// <remarks>
-        /// <see cref="ClrEnumerableProject"/> is the node to ask, because refusing to implement itself is
-        /// what it is for: the calc rules rewrite every project into a calc afterwards, so the refusal is
-        /// unreachable through the planner and reachable by building one by hand. Without the wrap this is an
-        /// <c>UnsupportedOperationException</c> naming nothing.
-        /// </remarks>
-        /// <summary>
         /// Opens the plan both ways, requires the two readings to agree, and returns one of them.
         /// </summary>
         static List<object[]> Rows(ClrCursorFactory factory, DataContext context)
@@ -211,6 +197,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             return rows;
         }
 
+        /// <summary>
+        /// A node that cannot implement itself fails with the plan that reached it named, as Calcite's
+        /// <c>implementRoot</c> names it.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="ClrCursorProject"/> is the node to ask, because refusing to implement itself is
+        /// what it is for: the calc rules rewrite every project into a calc afterwards, so the refusal is
+        /// unreachable through the planner and reachable by building one by hand. Without the wrap this is an
+        /// <c>UnsupportedOperationException</c> naming nothing.
+        /// </remarks>
         [Fact]
         public void ShouldNameThePlanWhenANodeCannotImplementItself()
         {
@@ -260,8 +256,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             var planner = (org.apache.calcite.plan.volcano.VolcanoPlanner)logical.getCluster().getPlanner();
             planner.addRelTraitDef(ConventionTraitDef.INSTANCE);
-            foreach (var rule in ClrEnumerableRules.Rules())
-                planner.addRule((RelOptRule)rule);
             foreach (var rule in ClrCursorRules.Rules())
                 planner.addRule((RelOptRule)rule);
 
@@ -275,9 +269,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var calcRules = new java.util.ArrayList();
             foreach (var rule in ClrCursorRules.CalcRules())
                 calcRules.add(rule);
-            foreach (var rule in ClrEnumerableRules.CalcRules())
-                if (calcRules.contains(rule) == false)
-                    calcRules.add(rule);
 
             var physical = (ClrCursorRel)Programs
                 .hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)

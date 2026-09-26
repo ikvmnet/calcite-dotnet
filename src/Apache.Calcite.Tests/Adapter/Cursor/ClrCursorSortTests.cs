@@ -23,15 +23,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
     ///
     /// <para><b>Every node here carries Calcite's own text, and neither convention answers the query.</b>
     /// Calcite reaches a cast and throws; this convention refuses a node further up, because
-    /// <c>ClrEnumerableRelImplementor.RequireRowType</c> checks the element type a CLR sequence has to name
-    /// and Java's erased <c>Enumerable</c> does not. Same defect, caught earlier and named.</para>
+    /// <c>ClrCursorRelImplementor.RequireRowType</c> checks the element type a CLR cursor has to name and
+    /// Java's erased <c>Enumerable</c> does not. Same defect, caught earlier and named.</para>
     ///
     /// <para><b>The fix belongs upstream</b>, in <c>EnumerableSort</c> — either it stops optimising a format
     /// it is only passing through, or it converts the rows into the one it names. Repairing it here was
     /// tried three ways — in the five pass-through nodes, in the table function scan, and once generally in
     /// the implementor — and every one of them was this project inventing a behaviour Calcite has not got.
-    /// The measurement said so: across the whole suite the repair fired three times, all in
-    /// <c>ClrEnumerableSort</c>, all <c>ARRAY Object[] -&gt; SCALAR</c>.</para>
+    /// The measurement said so: across the whole suite the repair fired three times, all in the sort, all
+    /// <c>ARRAY Object[] -&gt; SCALAR</c>.</para>
     ///
     /// <para><b>The oracle is <c>Smalls.fibonacciTableWithLimit100</c></b>, a one-column table function
     /// written in Java, so Janino can name it. Every table function of this project's own is a CLR class,

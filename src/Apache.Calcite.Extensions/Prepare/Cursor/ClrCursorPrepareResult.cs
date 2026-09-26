@@ -38,7 +38,7 @@ namespace Apache.Calcite.Extensions.Prepare.Cursor
         public override string Code => throw new java.lang.UnsupportedOperationException();
 
         /// <inheritdoc />
-        public override IClrBindableBase GetBindable(org.apache.calcite.avatica.Meta.CursorFactory cursorFactory)
+        public override IClrCursorFactory GetBindable(org.apache.calcite.avatica.Meta.CursorFactory cursorFactory)
         {
             return Factory;
         }

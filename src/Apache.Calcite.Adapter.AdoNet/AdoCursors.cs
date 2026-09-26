@@ -16,11 +16,11 @@ namespace Apache.Calcite.Adapter.AdoNet
     /// for: a <see cref="DbDataReader"/> is a forward-only cursor with <c>Read</c> and
     /// <c>ReadAsync(token)</c> over one position, so the cursor handed back is the reader itself with one
     /// row built per advance, and the token each advance is given is the token the provider's
-    /// <see cref="DbDataReader.ReadAsync(CancellationToken)"/> is given. <see cref="AdoSequences"/> reads the
-    /// same reader as a sequence, where a token can only enter once, at the enumerator.
+    /// <see cref="DbDataReader.ReadAsync(CancellationToken)"/> is given.
     ///
-    /// <para>The open is the acquisition, as it is in <see cref="AdoSequences"/>: the connection is opened
-    /// and the statement sent here, so a failing statement fails the open rather than the first advance.
+    /// <para>The open is the acquisition, as Calcite's JDBC leaf executes its statement at
+    /// <c>enumerator()</c>: the connection is opened and the statement sent here, so a failing statement
+    /// fails the open rather than the first advance.
     /// <see cref="OpenAsync"/> opens the connection and executes with await, under the open's token.</para>
     /// </remarks>
     public static class AdoCursors
@@ -41,7 +41,7 @@ namespace Apache.Calcite.Adapter.AdoNet
             ArgumentNullException.ThrowIfNull(sql);
             ArgumentNullException.ThrowIfNull(rowBuilder);
 
-            AdoSequences.Execute(dataSource, sql, enricher, out var connection, out var command, out var reader);
+            Execute(dataSource, sql, enricher, out var connection, out var command, out var reader);
 
             return new ReaderCursor<TRow>(connection, command, reader, rowBuilder, CancellationToken.None);
         }
@@ -85,6 +85,36 @@ namespace Apache.Calcite.Adapter.AdoNet
                     await created.DisposeAsync().ConfigureAwait(false);
                 if (opened is not null)
                     await opened.DisposeAsync().ConfigureAwait(false);
+
+                throw new AdoCalciteException("Exception while enumerating query.", e);
+            }
+        }
+
+        /// <summary>
+        /// Opens a connection, fills the command and executes it, closing what it opened if that fails.
+        /// </summary>
+        static void Execute(AdoDataSource dataSource, string sql, DbCommandEnricher? enricher, out DbConnection connection, out DbCommand command, out DbDataReader reader)
+        {
+            DbConnection? opened = null;
+            DbCommand? created = null;
+
+            try
+            {
+                opened = dataSource.OpenConnection();
+                created = opened.CreateCommand();
+                created.CommandText = sql;
+                enricher?.Enrich(created);
+
+                connection = opened;
+                command = created;
+                reader = created.ExecuteReader();
+            }
+            catch (DbException e)
+            {
+                // what was opened before the failure is nobody else's to close: the sequence that would have
+                // owned it is never returned
+                created?.Dispose();
+                opened?.Dispose();
 
                 throw new AdoCalciteException("Exception while enumerating query.", e);
             }

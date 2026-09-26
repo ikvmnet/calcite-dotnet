@@ -37,9 +37,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
     /// Calcite's own rules and — by way of <see cref="AddRulesProgram"/> here, and
     /// <c>ClrPrepareImpl.CreatePlanner</c> for a prepared statement — this convention's.
     ///
-    /// <para><c>ClrEnumerableConventionTests</c> is the synchronous counterpart and holds the same four queries.
-    /// There is one program now and it is the same one either way, so what these two hold apart is not the
-    /// program but the pair of bodies each node answers with — the same planned root implemented twice.</para>
+    /// <para><see cref="ClrCursorConventionTests"/> holds the same queries opened synchronously. The program
+    /// is the same one either way, so what these two hold apart is not the program but the pair of bodies
+    /// each node answers with — the same planned root implemented twice.</para>
     /// </remarks>
     public class ClrCursorRulesTests
     {
@@ -90,15 +90,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var calcRules = new java.util.ArrayList();
             foreach (var rule in ClrCursorRules.CalcRules())
                 calcRules.add(rule);
-            foreach (var rule in ClrEnumerableRules.CalcRules())
-                if (calcRules.contains(rule) == false)
-                    calcRules.add(rule);
 
             var config = Frameworks.newConfigBuilder()
                 .defaultSchema(rootSchema)
                 .programs(
                     Programs.sequence(
-                        new AddRulesProgram([.. ClrEnumerableRules.Rules(), .. ClrCursorRules.Rules()]),
+                        new AddRulesProgram(ClrCursorRules.Rules()),
                         Programs.standard(),
                         Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)))
                 .build();
@@ -129,7 +126,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             rows.Select(r => r[0]).Should().Equal(System.Linq.Enumerable.Range(1, 6).Select(i => (object)java.lang.Integer.valueOf(i)));
         }
 
-        /// <inheritdoc cref="ClrEnumerableConventionTests" />
+        /// <inheritdoc cref="ClrCursorConventionTests.ShouldAverageThroughTheShippedProgram" />
         [Fact]
         public async Task ShouldAverageThroughTheShippedProgram()
         {

@@ -40,7 +40,7 @@ namespace Apache.Calcite.Extensions.Schema
         /// </summary>
         /// <remarks>
         /// <c>QueryableTable.getElementType</c>, as a CLR <see cref="Type"/>. It decides the row format the
-        /// scan uses, through <c>ClrEnumerableTableScan.DeduceElementType</c>.
+        /// scan uses, through <c>ClrCursorTableScan.DeduceElementType</c>.
         /// </remarks>
         Type ElementType { get; }
 

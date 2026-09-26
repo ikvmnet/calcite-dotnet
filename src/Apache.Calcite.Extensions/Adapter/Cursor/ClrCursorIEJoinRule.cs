@@ -7,40 +7,40 @@ using org.apache.calcite.rel.core;
 using org.apache.calcite.rel.logical;
 using org.apache.calcite.rex;
 
-namespace Apache.Calcite.Extensions.Adapter.Enumerable
+namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
     /// Rule that converts an inner <see cref="LogicalJoin"/> whose condition is two or more cross-input
-    /// field inequalities to a <see cref="ClrEnumerableIEJoin"/>.
+    /// field inequalities to a <see cref="ClrCursorIEJoin"/>.
     /// </summary>
     /// <remarks>
     /// <c>EnumerableIEJoinRule</c>. The first two inequalities drive the join and the rest are evaluated by
-    /// a <see cref="ClrEnumerableCalc"/> above it.
+    /// a <see cref="ClrCursorCalc"/> above it.
     ///
     /// <para>Based on Khayyat et al., "Lightning Fast and Space Efficient Inequality Joins", PVLDB 8(13),
     /// 2015.</para>
     /// </remarks>
-    public class ClrEnumerableIEJoinRule : ConverterRule
+    public class ClrCursorIEJoinRule : ConverterRule
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrEnumerableIEJoinRule"/>.
+        /// Creates a <see cref="ClrCursorIEJoinRule"/>.
         /// </summary>
         /// <returns></returns>
-        public static ClrEnumerableIEJoinRule Create()
+        public static ClrCursorIEJoinRule Create()
         {
-            return (ClrEnumerableIEJoinRule)Config.INSTANCE
-                .withConversion((java.lang.Class)typeof(LogicalJoin), Convention.NONE, ClrEnumerableConvention.Instance, "ClrEnumerableIEJoinRule")
-                .withRuleFactory(new DelegateFunction<Config, ClrEnumerableIEJoinRule>(c => new ClrEnumerableIEJoinRule(c)))
-                .toRule(typeof(ClrEnumerableIEJoinRule));
+            return (ClrCursorIEJoinRule)Config.INSTANCE
+                .withConversion((java.lang.Class)typeof(LogicalJoin), Convention.NONE, ClrCursorConvention.Instance, "ClrCursorIEJoinRule")
+                .withRuleFactory(new DelegateFunction<Config, ClrCursorIEJoinRule>(c => new ClrCursorIEJoinRule(c)))
+                .toRule(typeof(ClrCursorIEJoinRule));
         }
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
         /// <param name="config"></param>
-        public ClrEnumerableIEJoinRule(Config config) :
+        public ClrCursorIEJoinRule(Config config) :
             base(config)
         {
 
@@ -63,23 +63,23 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             for (int i = 0; i < conjunctions.size(); i++)
             {
-                var condition = ClrEnumerableIEJoin.AnalyzeConjunction((RexNode)conjunctions.get(i), leftFieldCount);
+                var condition = ClrCursorIEJoin.AnalyzeConjunction((RexNode)conjunctions.get(i), leftFieldCount);
                 if (condition == null)
                     return null;
 
                 // only the two that drive the join have to be orderable; the rest are a calc's predicate
-                if (i < 2 && ClrEnumerableIEJoin.SupportsKeyTypes(join.getLeft(), join.getRight(), condition) == false)
+                if (i < 2 && ClrCursorIEJoin.SupportsKeyTypes(join.getLeft(), join.getRight(), condition) == false)
                     return null;
             }
 
-            var left = convert(join.getLeft(), join.getLeft().getTraitSet().replace(ClrEnumerableConvention.Instance));
-            var right = convert(join.getRight(), join.getRight().getTraitSet().replace(ClrEnumerableConvention.Instance));
+            var left = convert(join.getLeft(), join.getLeft().getTraitSet().replace(ClrCursorConvention.Instance));
+            var right = convert(join.getRight(), join.getRight().getTraitSet().replace(ClrCursorConvention.Instance));
 
             var rexBuilder = join.getCluster().getRexBuilder();
             var ieCondition = RexUtil.composeConjunction(rexBuilder, conjunctions.subList(0, 2))
                 ?? throw new java.lang.NullPointerException("ieCondition");
 
-            var ieJoin = ClrEnumerableIEJoin.Create(left, right, ieCondition);
+            var ieJoin = ClrCursorIEJoin.Create(left, right, ieCondition);
             if (conjunctions.size() == 2)
                 return ieJoin;
 
@@ -93,7 +93,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 ieJoin.getRowType(),
                 rexBuilder);
 
-            return ClrEnumerableCalc.Create(ieJoin, program);
+            return ClrCursorCalc.Create(ieJoin, program);
         }
 
     }

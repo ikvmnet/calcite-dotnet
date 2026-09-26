@@ -32,8 +32,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <c>EnumUtils.joinSelector</c> they are ported rather than reused.
     ///
     /// <para>They are static here where Calcite's are instance methods that never read <c>this</c>, because
-    /// a window needs two of them and is not an aggregate — <see cref="ClrEnumerableWindow"/> reads them off
-    /// its own base for that reason. Calcite's window declares each aggregate's state as locals of the
+    /// a window needs two of them and is not an aggregate — <see cref="ClrCursorWindow"/> reads them off
+    /// this class for that reason. Calcite's window declares each aggregate's state as locals of the
     /// method it generates; an expression tree has no method to declare them in, so a window folds its state
     /// into one synthetic record exactly as an aggregate does. That is the whole reason the two accumulator
     /// helpers are reachable from outside.</para>

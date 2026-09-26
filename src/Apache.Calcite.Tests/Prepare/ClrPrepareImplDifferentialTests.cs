@@ -26,7 +26,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
     /// The same SQL through both prepare pipelines, required to give the same rows.
     /// </summary>
     /// <remarks>
-    /// <see cref="ClrEnumerableConventionDifferentialTests"/> plans with <c>Programs.ofRules</c>, which clears the
+    /// <see cref="Extensions.Adapter.Cursor.Tests.ClrCursorConventionDifferentialTests"/> plans with <c>Programs.ofRules</c>, which clears the
     /// planner, so every plan it compares is built wholly in this convention. That is what proves a node is
     /// this convention's own, and it is not what a prepared statement does: <see cref="ClrPrepareImpl"/> leaves
     /// Calcite's rules on the planner, so a real plan is whichever mixture of the two conventions the
@@ -329,7 +329,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// And it runs, correctly, with decorrelation turned off.
         /// </summary>
         /// <remarks>
-        /// The correlate the decorrelator would have removed is kept, <c>ClrEnumerableCorrelate</c> binds
+        /// The correlate the decorrelator would have removed is kept, <c>ClrCursorCorrelate</c> binds
         /// the variable, and the answer is the one SQL says. So nothing in this convention is missing: the
         /// plan the decorrelator produces is malformed and the plan it leaves alone is not.
         ///

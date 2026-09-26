@@ -390,6 +390,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// </summary>
         public static readonly MethodInfo AsofJoin = Of(nameof(ClrCursorDefaults.AsofJoin));
 
+        /// <summary>
+        /// <see cref="ClrCursorDefaults.IeJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo IeJoin = Of(nameof(ClrCursorDefaults.IeJoin));
+
         // ---- the awaiting half ----
 
         /// <summary>
@@ -411,6 +416,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="ClrCursorDefaults.AsofJoinAsync"/>.
         /// </summary>
         public static readonly MethodInfo AsofJoinAsync = Of(nameof(ClrCursorDefaults.AsofJoinAsync));
+
+        /// <summary>
+        /// <see cref="ClrCursorDefaults.IeJoinAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo IeJoinAsync = Of(nameof(ClrCursorDefaults.IeJoinAsync));
 
         // ---- Join ----
         // The joins.

@@ -269,7 +269,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         ///
         /// <para>The object is on the map, and the map is shared with Calcite's implementor precisely so that
         /// what one side stashes reaches the other. An expression tree can hold the object, so it does: the
-        /// same answer <c>ClrEnumerableRelImplementor.Stash</c> gives for a value stashed on this side.
+        /// same answer <c>ClrCursorRelImplementor.Stash</c> gives for a value stashed on this side.
         /// A variable declared inside the block is not on the map and is unaffected.</para>
         /// </remarks>
         Expression? Stashed(J.ParameterExpression parameter)

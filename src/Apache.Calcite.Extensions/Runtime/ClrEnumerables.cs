@@ -8,106 +8,13 @@ namespace Apache.Calcite.Extensions.Runtime
 {
 
     /// <summary>
-    /// The shorthand for the operators' dominant shape: acquire the source's enumerator at
-    /// <c>GetEnumerator</c>, hand it to a row loop, own its disposal.
-    /// </summary>
-    static class ClrEnumerables
-    {
-
-        /// <summary>
-        /// Returns a sequence whose <c>GetEnumerator</c> acquires <paramref name="source"/>'s enumerator,
-        /// as linq4j's operators acquire theirs inside <c>enumerator()</c>, and hands it to
-        /// <paramref name="rows"/>. The acquired enumerator is disposed whether or not the loop ever ran.
-        /// </summary>
-        /// <typeparam name="TSource"></typeparam>
-        /// <typeparam name="TResult"></typeparam>
-        /// <param name="source"></param>
-        /// <param name="rows">Builds the row loop over the acquired enumerator.</param>
-        /// <returns></returns>
-        internal static IEnumerable<TResult> Acquiring<TSource, TResult>(this IEnumerable<TSource> source, Func<IEnumerator<TSource>, IEnumerator<TResult>> rows)
-        {
-            return new ClrEnumerable<TResult>(() =>
-            {
-                var e = source.GetEnumerator();
-                return new AcquiredEnumerator<TResult>(rows(e), e);
-            });
-        }
-
-        /// <summary>
-        /// <see cref="Acquiring{TSource, TResult}(IEnumerable{TSource}, Func{IEnumerator{TSource}, IEnumerator{TResult}})"/>
-        /// for the asynchronous convention: the token enters at <c>GetAsyncEnumerator</c>, where .NET puts
-        /// it, and is handed on to the loop.
-        /// </summary>
-        /// <typeparam name="TSource"></typeparam>
-        /// <typeparam name="TResult"></typeparam>
-        /// <param name="source"></param>
-        /// <param name="rows">Builds the row loop over the acquired enumerator and the caller's token.</param>
-        /// <returns></returns>
-        internal static IAsyncEnumerable<TResult> Acquiring<TSource, TResult>(this IAsyncEnumerable<TSource> source, Func<IAsyncEnumerator<TSource>, CancellationToken, IAsyncEnumerator<TResult>> rows)
-        {
-            return new ClrAsyncEnumerable<TResult>(cancellationToken =>
-            {
-                var e = source.GetAsyncEnumerator(cancellationToken);
-                return new AcquiredAsyncEnumerator<TResult>(rows(e, cancellationToken), e);
-            });
-        }
-
-
-        /// <summary>
-        /// Returns a sequence that is enumerated under <paramref name="cancellationToken"/> as well as
-        /// whatever its own reader gives it.
-        /// </summary>
-        /// <typeparam name="TSource"></typeparam>
-        /// <param name="source"></param>
-        /// <param name="cancellationToken">The statement's cancellation, read off its <c>DataContext</c>.</param>
-        /// <returns></returns>
-        /// <remarks>
-        /// What an awaiting root is wrapped in, and the whole of how the statement's token gets into a
-        /// plan. From here the existing chain does the carrying: each operator hands the token it was given
-        /// at <c>GetAsyncEnumerator</c> to its source's, down to the leaf, which is where a token is
-        /// finally handed to something that can act on it — <c>DbDataReader.ReadAsync(token)</c>.
-        ///
-        /// <para>It does not displace the reader's own token. Where both can be cancelled the two are
-        /// linked and the linked source is disposed with the enumerator; where either cannot, the other is
-        /// passed through and nothing is allocated. So <c>WithCancellation</c> over a plan still works
-        /// alongside the statement's own cancellation, and the ordinary case — the same token in both,
-        /// which is what <c>CalciteSession</c> arranges — allocates nothing.</para>
-        /// </remarks>
-        internal static IAsyncEnumerable<TSource> WithCancellation<TSource>(IAsyncEnumerable<TSource> source, CancellationToken cancellationToken)
-        {
-            ArgumentNullException.ThrowIfNull(source);
-
-            if (cancellationToken.CanBeCanceled == false)
-                return source;
-
-            return new ClrAsyncEnumerable<TSource>(reader =>
-            {
-                if (reader.CanBeCanceled == false || reader == cancellationToken)
-                    return source.GetAsyncEnumerator(cancellationToken);
-
-                var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, reader);
-
-                return new AcquiredAsyncEnumerator<TSource>(source.GetAsyncEnumerator(linked.Token), new ClrSequences.SynchronousDisposal(linked));
-            });
-        }
-
-    }
-
-    /// <summary>
     /// A sequence whose <see cref="IEnumerable{T}.GetEnumerator"/> runs a factory.
     /// </summary>
     /// <remarks>
-    /// The counterpart of linq4j's <c>AbstractEnumerable</c>, and the seam the whole convention's
-    /// execution model hangs on: linq4j runs a plan by obtaining its enumerator — <c>where</c> acquires
-    /// its source's enumerator inside <c>enumerator()</c>, <c>orderBy</c> drains its whole input there,
-    /// and the JDBC leaf executes its statement there — and <c>moveNext</c> only reads rows. A C#
-    /// iterator method cannot say that: it defers everything, acquisition included, to the first
-    /// <c>MoveNext</c>. So an operator builds one of these, and puts in the factory exactly what linq4j
-    /// puts in <c>enumerator()</c>.
-    ///
-    /// <para>Where linq4j defers deliberately — the CALCITE-2909 memoized join lookups — the factory
-    /// defers the same way, and says so at the site. Deferral is the marked exception, not the
-    /// default.</para>
+    /// The counterpart of linq4j's <c>AbstractEnumerable</c>: linq4j runs a plan by obtaining its
+    /// enumerator, and a C# iterator method cannot say that, deferring everything, acquisition included, to
+    /// the first <c>MoveNext</c>. So a cursor plan read as a sequence is one of these, and opening the plan is
+    /// the factory, run where a sequence acquires.
     /// </remarks>
     sealed class ClrEnumerable<T> : IEnumerable<T>
     {
@@ -135,74 +42,13 @@ namespace Apache.Calcite.Extensions.Runtime
     }
 
     /// <summary>
-    /// An enumerator over a row loop, owning the enumerators the factory acquired for it.
-    /// </summary>
-    /// <remarks>
-    /// The row loop is a C# iterator, and disposing one that never moved runs none of its
-    /// <c>finally</c> blocks — so an enumerator the factory acquired eagerly would leak if the loop
-    /// were trusted to dispose it. This owns them instead: <see cref="Dispose"/> disposes the loop and
-    /// then each acquired enumerator, unconditionally, which is linq4j's <c>close()</c> contract — a
-    /// wrapping <c>Enumerator</c> closes its source whether or not a row was ever read.
-    /// </remarks>
-    sealed class AcquiredEnumerator<T> : IEnumerator<T>
-    {
-
-        readonly IEnumerator<T> _rows;
-        readonly IDisposable?[] _acquired;
-
-        /// <summary>
-        /// Initializes a new instance.
-        /// </summary>
-        /// <param name="rows">The row loop, reading from the acquired enumerators.</param>
-        /// <param name="acquired">What the factory acquired, disposed after the loop, in order.</param>
-        public AcquiredEnumerator(IEnumerator<T> rows, params IDisposable?[] acquired)
-        {
-            ArgumentNullException.ThrowIfNull(rows);
-            ArgumentNullException.ThrowIfNull(acquired);
-
-            _rows = rows;
-            _acquired = acquired;
-        }
-
-        /// <inheritdoc />
-        public T Current => _rows.Current;
-
-        /// <inheritdoc />
-        object? IEnumerator.Current => Current;
-
-        /// <inheritdoc />
-        public bool MoveNext() => _rows.MoveNext();
-
-        /// <inheritdoc />
-        public void Reset() => throw new NotSupportedException();
-
-        /// <inheritdoc />
-        public void Dispose()
-        {
-            try
-            {
-                _rows.Dispose();
-            }
-            finally
-            {
-                foreach (var acquired in _acquired)
-                    acquired?.Dispose();
-            }
-        }
-
-    }
-
-    /// <summary>
     /// An asynchronous sequence whose <see cref="IAsyncEnumerable{T}.GetAsyncEnumerator"/> runs a
     /// factory.
     /// </summary>
     /// <remarks>
-    /// <see cref="ClrEnumerable{T}"/> for the asynchronous convention, with the one difference the CLR
-    /// imposes: <c>GetAsyncEnumerator</c> cannot await, so a factory acquires its source enumerators —
-    /// acquisition is synchronous all the way down — but work that must await, a sort's drain above
-    /// all, stays in the first <c>MoveNextAsync</c> and is stated at the site. linq4j has no
-    /// asynchronous counterpart to transcribe; the contract mirrored is the synchronous one's, less
-    /// what an <c>IAsyncEnumerable</c> cannot say.
+    /// <see cref="ClrEnumerable{T}"/> for an awaiting read, with the one difference the CLR imposes:
+    /// <c>GetAsyncEnumerator</c> cannot await, so a factory that has to await its acquisition does it in the
+    /// first <c>MoveNextAsync</c>, and says so at the site.
     /// </remarks>
     sealed class ClrAsyncEnumerable<T> : IAsyncEnumerable<T>
     {
@@ -229,9 +75,9 @@ namespace Apache.Calcite.Extensions.Runtime
     /// An asynchronous enumerator over a row loop, owning the enumerators the factory acquired for it.
     /// </summary>
     /// <remarks>
-    /// <see cref="AcquiredEnumerator{T}"/> for the asynchronous convention: disposing an async
-    /// iterator that never moved runs none of its <c>finally</c> blocks, so what the factory acquired
-    /// is disposed here, unconditionally.
+    /// Disposing an async iterator that never moved runs none of its <c>finally</c> blocks, so what the
+    /// factory acquired is disposed here, unconditionally, which is linq4j's <c>close()</c> contract: a
+    /// wrapping <c>Enumerator</c> closes its source whether or not a row was ever read.
     /// </remarks>
     sealed class AcquiredAsyncEnumerator<T> : IAsyncEnumerator<T>
     {

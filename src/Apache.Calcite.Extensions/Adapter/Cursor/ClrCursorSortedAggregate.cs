@@ -61,7 +61,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 return null;
 
             // a required trait set of another convention is refused rather than copied onto, for the reason
-            // ClrEnumerableMergeJoin gives at more length
+            // ClrCursorMergeJoin gives at more length
             if (required.getConvention() != getConvention())
                 return null;
 

@@ -15,9 +15,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <see cref="ClrCursorConvention"/> one.
     /// </summary>
     /// <remarks>
-    /// <see cref="EnumerableToClrEnumerableConverter"/> with the last hop changed: Calcite's own implementor
-    /// runs the sub-plan, the linq4j block it would have handed to Janino is translated rather than compiled,
-    /// and a cursor is opened over the <c>Enumerable</c> it yields. The rows are not touched, and the open
+    /// Calcite's own implementor runs the sub-plan, the linq4j block it would have handed to Janino is
+    /// translated rather than compiled, and a cursor is opened over the <c>Enumerable</c> it yields. The rows are not touched, and the open
     /// is where the sub-plan's <c>enumerator()</c> runs.
     /// </remarks>
     public class EnumerableToClrCursorConverter : ConverterImpl, ClrCursorRel
@@ -46,9 +45,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         {
             var cost = base.computeSelfCost(planner, mq);
 
-            // dearer than the crossing from the sequence convention, so that a node this convention lacks
-            // is the sequence convention's rather than Calcite's -- see the multiplier
-            return cost?.multiplyBy(ClrCursorConvention.JavaCrossingCostMultiplier);
+            return cost?.multiplyBy(ClrCursorConvention.CostMultiplier);
         }
 
         /// <inheritdoc />

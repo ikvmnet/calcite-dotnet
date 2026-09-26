@@ -14,7 +14,7 @@ namespace Apache.Calcite.Adapter.AdoNet
 
     /// <summary>
     /// Collects the correlation variables needed to construct an <see cref="AdoCorrelationDataContext"/> for a
-    /// correlated sub-query, for a plan of the <see cref="ClrEnumerableConvention"/> calling convention.
+    /// correlated sub-query, for a plan of the <c>ClrCursorConvention</c> calling convention.
     /// </summary>
     /// <remarks>
     /// What <see cref="AdoCorrelationDataContextBuilderImpl"/> does for a plan of Calcite's convention. Two
@@ -28,8 +28,7 @@ namespace Apache.Calcite.Adapter.AdoNet
     /// block is needed and nothing is left to translate.</para>
     ///
     /// <para>One class serves both of a node's bodies because everything it touches is about a <em>row</em> —
-    /// the getter and the translator — and a row is the same thing whether the plan awaits. Nothing here is
-    /// about a sequence.</para>
+    /// the getter and the translator — and a row is the same thing whether the plan awaits.</para>
     /// </remarks>
     public class AdoClrCorrelationDataContextBuilder : IAdoCorrelationDataContextBuilder
     {
@@ -50,25 +49,6 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="implementor">The implementor of the plan the correlation variables are registered on.</param>
         /// <param name="dataContext">The context the outer query was bound with.</param>
         /// <exception cref="ArgumentNullException"></exception>
-        public AdoClrCorrelationDataContextBuilder(ClrEnumerableRelImplementor implementor, Expression dataContext) :
-            this(
-                (implementor ?? throw new ArgumentNullException(nameof(implementor))).GetCorrelVariableGetter,
-                implementor.Translator,
-                dataContext)
-        {
-
-        }
-
-        /// <summary>
-        /// Initializes a new instance.
-        /// </summary>
-        /// <param name="implementor">The implementor of the plan the correlation variables are registered on.</param>
-        /// <param name="dataContext">The context the outer query was bound with.</param>
-        /// <exception cref="ArgumentNullException"></exception>
-        /// <remarks>
-        /// The cursor convention's implementor, which registers a correlation variable exactly as the
-        /// sequence convention's does: a row is the same object under either.
-        /// </remarks>
         public AdoClrCorrelationDataContextBuilder(Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRelImplementor implementor, Expression dataContext) :
             this(
                 (implementor ?? throw new ArgumentNullException(nameof(implementor))).GetCorrelVariableGetter,

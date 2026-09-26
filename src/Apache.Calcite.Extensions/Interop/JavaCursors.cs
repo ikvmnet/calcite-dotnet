@@ -14,10 +14,10 @@ namespace Apache.Calcite.Extensions.Interop
     /// Carries rows between a linq4j <see cref="Enumerable"/> and a <see cref="ClrCursor"/>.
     /// </summary>
     /// <remarks>
-    /// <see cref="JavaSequences"/> for the cursor convention: this is the whole of what a converter between
-    /// <c>EnumerableConvention</c> and <c>ClrCursorConvention</c> does. The rows are not touched — both
-    /// conventions ask the same <c>JavaTypeFactory</c> what a field is — and each value is converted rather
-    /// than cast at the boundary, for the reason <see cref="JavaSequences.FromJava{TSource}"/> gives.
+    /// This is the whole of what a converter between <c>EnumerableConvention</c> and
+    /// <c>ClrCursorConvention</c> does. The rows are not touched — both conventions ask the same
+    /// <c>JavaTypeFactory</c> what a field is, so a value a linq4j sequence yields is already the Java box
+    /// the row type declares, and one this convention yields is too.
     /// </remarks>
     static class JavaCursors
     {

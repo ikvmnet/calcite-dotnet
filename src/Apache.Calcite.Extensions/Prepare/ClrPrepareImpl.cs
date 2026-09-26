@@ -33,8 +33,8 @@ namespace Apache.Calcite.Extensions.Prepare
     /// <remarks>
     /// The cursor convention, because the pipeline exists for the ADO.NET provider and a cursor is what a
     /// <c>DbDataReader</c> is: opened either way and advanced either way, per call. The planner carries
-    /// every convention's rules, so a node the cursor convention lacks is the sequence convention's under a
-    /// converter, and one neither has is Calcite's.
+    /// Calcite's rules beside the cursor convention's, so a node the cursor convention lacks is Calcite's
+    /// under a converter.
     /// </remarks>
     public class ClrPrepareImpl : IClrPrepare
     {
@@ -914,7 +914,7 @@ namespace Apache.Calcite.Extensions.Prepare
             }
 
             /// <inheritdoc />
-            public override IClrBindableBase GetBindable(Meta.CursorFactory cursorFactory)
+            public override IClrCursorFactory GetBindable(Meta.CursorFactory cursorFactory)
             {
                 return new ClrExplainBindable(Code, cursorFactory);
             }

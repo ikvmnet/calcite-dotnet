@@ -35,6 +35,7 @@
              the two are not separable: a disagreement fails inside a type initializer on the first query rather
              than at restore. -->
         <MavenReference Include="org.apache.commons:commons-lang3" Version="3.18.0" />
+        <MavenReference Include="org.slf4j:slf4j-api" Version="2.0.17" />
         <MavenReference Include="org.apache.calcite:calcite-core" Version="1.43.0-SNAPSHOT">
             <Dependencies>
                 com.jayway.jsonpath:json-path/com.fasterxml.jackson.core:jackson-databind:2.22.2,optional=true;

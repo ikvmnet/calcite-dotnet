@@ -15,7 +15,7 @@ namespace Apache.Calcite.Data.Tests
     /// the engine exactly as a consumer of the two packages would — through <c>CalciteConnection</c> and
     /// nothing else. That is the point of the tests as much as the queries are.
     /// </remarks>
-    public class ClrEnumerablePrepareTests
+    public class ClrCursorPrepareTests
     {
 
         static readonly string ConnectionString = new CalciteConnectionStringBuilder

@@ -336,47 +336,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var (selector, targetRowType) = Reformatter(targetFormat);
 
             return Expression.Call(null,
-                ClrBuiltInMethod.Select.MakeGenericMethod(javaRowClass, targetRowType),
-                expression,
-                selector);
-        }
-
-        /// <inheritdoc />
-        public Expression ConvertToAsync(Expression expression, JavaRowFormat targetFormat)
-        {
-            ArgumentNullException.ThrowIfNull(expression);
-            ArgumentNullException.ThrowIfNull(targetFormat);
-
-            if (format == targetFormat)
-                return expression;
-
-            var (selector, targetRowType) = Reformatter(targetFormat);
-
-            return ClrBuiltInMethod.CallAsync(
-                ClrBuiltInMethod.SelectAsync.MakeGenericMethod(javaRowClass, targetRowType),
-                expression,
-                selector);
-        }
-
-        /// <inheritdoc />
-        public Expression ConvertToCursor(Expression expression, JavaRowFormat targetFormat)
-        {
-            ArgumentNullException.ThrowIfNull(expression);
-            ArgumentNullException.ThrowIfNull(targetFormat);
-
-            if (format == targetFormat)
-                return expression;
-
-            var (selector, targetRowType) = Reformatter(targetFormat);
-
-            return Expression.Call(null,
                 Cursor.ClrCursorBuiltInMethod.Select.MakeGenericMethod(javaRowClass, targetRowType),
                 expression,
                 selector);
         }
 
         /// <inheritdoc />
-        public Expression ConvertToCursorAsync(Cursor.ClrCursorRelImplementor implementor, Expression expression, JavaRowFormat targetFormat)
+        public Expression ConvertToAsync(Cursor.ClrCursorRelImplementor implementor, Expression expression, JavaRowFormat targetFormat)
         {
             ArgumentNullException.ThrowIfNull(implementor);
             ArgumentNullException.ThrowIfNull(expression);

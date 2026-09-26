@@ -554,7 +554,7 @@ namespace Apache.Calcite.Data
         /// <para>And <c>roundingMode</c> changes computed values rather than types at all.
         /// <c>RexToLixTranslator</c> writes it into the tree it generates for a numeric cast, so it is
         /// the type system that decides a cast to a narrower decimal truncates — <c>RoundingMode.DOWN</c>
-        /// by default — and it reaches both Clr conventions, the Rex machinery being shared. Note also
+        /// by default — and it reaches the Clr convention too, the Rex machinery being shared. Note also
         /// that <c>isSchemaCaseSensitive</c> does not decide how a schema is looked up, which is
         /// <c>CalciteConnectionConfig.caseSensitive</c>; its readers uniquify struct field names.</para>
         /// </remarks>

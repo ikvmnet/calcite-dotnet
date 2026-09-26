@@ -17,7 +17,7 @@ namespace Apache.Calcite.Extensions.Prepare.Cursor
     /// Prepares a statement into the <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
     /// <remarks>
-    /// <c>ClrEnumerablePreparingStmt</c> with the convention and the compile swapped. The root is
+    /// Calcite's <c>CalcitePreparingStmt</c> with the convention and the compile swapped. The root is
     /// implemented once, through both of its bodies, into a <see cref="ClrCursorFactory"/>, which is
     /// the bindable the signature carries; each of the factory's two opens is compiled the first time a
     /// caller opens that way.

@@ -16,14 +16,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// guessed. Every one of them is about a <em>row</em>: the type factory that decides what a value is, the
     /// conformance a condition is translated under, the translator that turns a linq4j tree into a CLR one,
     /// and the correlation variables a sub-query reads its outer row by. None of them is about a sequence,
-    /// which is why one interface can serve both conventions without being the general abstraction over them
-    /// that this port deliberately does not build.
-    ///
-    /// <para>It exists because <c>ClrEnumUtils.JoinSelector</c>, <c>GeneratePredicate</c> and
-    /// <c>MarkJoinSelector</c> took a <see cref="ClrEnumerableRelImplementor"/> by name. Sharing the helper
-    /// and not the parameter is what the two conventions were always going to collide over, and this is the
-    /// smallest thing that resolves it — the alternative was four duplicated method bodies for the sake of
-    /// one type name.</para>
+    /// which is why the row helpers can take this rather than the cursor convention's implementor, and
+    /// stay in the namespace that mirrors Calcite's <c>adapter.enumerable</c> where <c>EnumUtils</c> is.
     /// </remarks>
     interface IClrRelImplementor
     {

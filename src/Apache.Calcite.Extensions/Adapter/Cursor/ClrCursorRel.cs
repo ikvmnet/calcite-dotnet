@@ -17,8 +17,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// so a node overrides only what it does differently.
     ///
     /// <para><b>A node's expression is an <em>open</em>, not a sequence.</b> Where a node of
-    /// <c>ClrEnumerableConvention</c> hands up an expression whose value is a lazy sequence, a node here
-    /// hands up an expression whose value is an opened cursor: evaluating it is the acquisition, so the
+    /// <c>EnumerableConvention</c> hands up an expression whose value is an <c>Enumerable</c> that runs at
+    /// <c>enumerator()</c>, a node here hands up an expression whose value is an opened cursor: evaluating it is the acquisition, so the
     /// plan's tree of calls <em>is</em> the cascade linq4j runs at <c>enumerator()</c>. A sort drains its
     /// input where its open is evaluated; a leaf executes its statement there. An operator that defers
     /// an acquisition — a concat acquires each source at its turn — takes that source as a delegate,
@@ -34,8 +34,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// opened, and <see cref="ClrCursorRelImplementor.ImplementRoot"/> calls both bodies and puts the
     /// two opens on one <see cref="ClrCursorFactory"/>.</para>
     ///
-    /// <para><b>The two bodies are two call hierarchies for what is acquired at open</b>, kept apart the
-    /// way <c>ClrEnumerableConvention</c> keeps its two: <see cref="Implement"/> reaches an input through
+    /// <para><b>The two bodies are two call hierarchies for what is acquired at open</b>, kept apart:
+    /// <see cref="Implement"/> reaches an input through
     /// <see cref="ClrCursorRelImplementor.VisitChild"/> and <see cref="ImplementAsync"/> through
     /// <see cref="ClrCursorRelImplementor.VisitChildAsync"/>, so an eager input is always of the body's
     /// own kind and nothing consults a mode. <b>A deferred input is the exception, and it is visited both
@@ -46,8 +46,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// choice reaching an acquisition that happens per advance.</para>
     ///
     /// <para><b><see cref="Implement"/> is required and <see cref="ImplementAsync"/> is optional</b>, which
-    /// is .NET's own shape for the pair and the reason the enumerable convention gives: two defaults calling
-    /// each other would compile for a node that overrides neither and then recurse until the process dies.
+    /// is .NET's own shape for the pair — <c>DbDataReader.Read</c> is abstract and <c>ReadAsync</c>
+    /// virtual over it — and the reason for it: two defaults calling each other would compile for a node that overrides neither and then recurse until the process dies.
     /// The default is safe exactly when a body does not compose an eager input: it would otherwise run the
     /// synchronous visit and compose a synchronously opened input into an awaiting operator, which
     /// <c>Expression.Call</c> refuses. Every node whose body visits an eager child writes both.</para>

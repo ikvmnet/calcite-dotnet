@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
+using Apache.Calcite.Extensions.Adapter.Cursor;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
@@ -22,12 +23,12 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// The operators run under <c>ClrEnumerableConvention</c>, read either way, and answer what Calcite's own
+    /// The operators run under <c>ClrCursorConvention</c>, read either way, and answer what Calcite's own
     /// engine answers.
     /// </summary>
     /// <remarks>
     /// <see cref="GeographyExecutionTests"/> runs everything through <c>EnumerableConvention</c>, where the
-    /// block is Java source compiled by Janino. These two conventions translate Calcite's tree into
+    /// block is Java source compiled by Janino. This convention translates Calcite's tree into
     /// <c>System.Linq.Expressions</c> instead, so nothing about the first run says the second will work — the
     /// two reach a row, a cast and a method call by different machinery.
     ///
@@ -35,13 +36,13 @@ namespace Apache.Calcite.Geography.Tests
     /// class, so a scan of a geography column has to type its rows as that class and a call has to reach a
     /// method declared over it; <c>JavaTypeFactoryImpl.getJavaClass</c> answers <c>Geography</c> for the type
     /// because it is an ordinary <c>JavaType</c>, and a type that was not one would have answered
-    /// <c>Object</c> and left every operand needing a cast the conventions would have had to invent.</para>
+    /// <c>Object</c> and left every operand needing a cast the convention would have had to invent.</para>
     ///
-    /// <para>Calcite is the oracle, as everywhere else here: each query is run through all three conventions
-    /// and the rows must match. The comparison is on rendered values rather than objects, because one side
+    /// <para>Calcite is the oracle, as everywhere else here: each query is run through both conventions,
+    /// the Clr one read both ways, and the rows must match. The comparison is on rendered values rather than objects, because one side
     /// reads through a <c>ResultSet</c> and the other takes the row as the plan built it.</para>
     ///
-    /// <para>The package itself references neither convention — <c>Apache.Calcite.Geography</c> depends on
+    /// <para>The package itself references no convention of this repository's — <c>Apache.Calcite.Geography</c> depends on
     /// nothing in this repository, deliberately. This test project references
     /// <c>Apache.Calcite.Extensions</c> so that the claim can be measured rather than argued.</para>
     /// </remarks>
@@ -144,52 +145,46 @@ namespace Apache.Calcite.Geography.Tests
             return rows.Select(r => r.Select(GeographyAccessorTests.Render).ToArray()).ToList();
         }
 
-        static (ClrEnumerableRel Plan, SchemaPlus Schema, java.util.Map Parameters) PlanClr(string sql)
+        static (ClrCursorRel Plan, SchemaPlus Schema, java.util.Map Parameters) PlanClr(string sql)
         {
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add("GEO", new GeographyExecutionTests.GeographyTable());
 
-            var planner = Frameworks.getPlanner(Config(rootSchema, ClrEnumerableRules.Rules(), ClrEnumerableRules.CalcRules()));
+            var planner = Frameworks.getPlanner(Config(rootSchema, ClrCursorRules.Rules(), ClrCursorRules.CalcRules()));
             var logical = planner.rel(planner.validate(planner.parse(sql))).project();
-            var traits = logical.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify();
+            var traits = logical.getTraitSet().replace(ClrCursorConvention.Instance).simplify();
 
-            return ((ClrEnumerableRel)planner.transform(0, traits, logical), rootSchema, new java.util.HashMap());
+            return ((ClrCursorRel)planner.transform(0, traits, logical), rootSchema, new java.util.HashMap());
+        }
+
+        static Apache.Calcite.Extensions.Runtime.IClrCursorFactory Implement(ClrCursorRel physical, java.util.Map parameters)
+        {
+            return new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters).ImplementRoot(physical, ClrEnumerablePrefer.Array);
         }
 
         static List<string[]> RunClr(string sql)
         {
             var (physical, rootSchema, parameters) = PlanClr(sql);
-            var bindable = ClrEnumerableInterpretable.ToBindable(parameters, physical, ClrEnumerablePrefer.Array);
+            var factory = Implement(physical, parameters);
 
             var rows = new List<string[]>();
-            foreach (var current in bindable.Bind(new TestDataContext(rootSchema, parameters)))
-                rows.Add((current as object?[] ?? [current]).Select(GeographyAccessorTests.Render).ToArray());
+            using var cursor = factory.Open(new TestDataContext(rootSchema, parameters));
+            while (cursor.Read())
+                rows.Add((cursor.Current as object?[] ?? [cursor.Current]).Select(GeographyAccessorTests.Render).ToArray());
 
             return rows;
         }
 
         static async Task<List<string[]>> RunClrAsync(string sql)
         {
-            var rootSchema = Frameworks.createRootSchema(true);
-            rootSchema.add("GEO", new GeographyExecutionTests.GeographyTable());
-
-            // both lists, because a scan of this table lands in the synchronous convention and reaches the
-            // asynchronous one through the converter that list carries -- the same reason
-            // the same rules and the same plan as the synchronous run above; only the implementor differs
-            var rules = new List<RelOptRule>(ClrEnumerableRules.Rules());
-            var calcRules = new List<RelOptRule>(ClrEnumerableRules.CalcRules());
-
-            var planner = Frameworks.getPlanner(Config(rootSchema, rules, calcRules));
-            var logical = planner.rel(planner.validate(planner.parse(sql))).project();
-            var traits = logical.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify();
-            var physical = (ClrEnumerableRel)planner.transform(0, traits, logical);
-
-            var parameters = new java.util.HashMap();
-            var bindable = ClrEnumerableInterpretable.ToAsyncBindable(parameters, physical, ClrEnumerablePrefer.Array);
+            // the same rules and the same plan as the synchronous run above; only the open differs
+            var (physical, rootSchema, parameters) = PlanClr(sql);
+            var factory = Implement(physical, parameters);
 
             var rows = new List<string[]>();
-            await foreach (var current in bindable.Bind(new TestDataContext(rootSchema, parameters)))
-                rows.Add((current as object?[] ?? [current]).Select(GeographyAccessorTests.Render).ToArray());
+            await using var cursor = await factory.OpenAsync(new TestDataContext(rootSchema, parameters), default);
+            while (await cursor.ReadAsync(default))
+                rows.Add((cursor.Current as object?[] ?? [cursor.Current]).Select(GeographyAccessorTests.Render).ToArray());
 
             return rows;
         }
@@ -224,7 +219,7 @@ namespace Apache.Calcite.Geography.Tests
         /// </summary>
         /// <param name="rules"></param>
         /// <remarks>
-        /// A <c>Frameworks</c> planner carries Calcite's default rules and has never heard of either Clr
+        /// A <c>Frameworks</c> planner carries Calcite's default rules and has never heard of the Clr
         /// convention, and <c>Programs.standard</c>'s planner pass installs nothing — so the rules go on in a
         /// pass of their own, in front. What <c>ClrPrepareImpl.CreatePlanner</c> does for a prepared
         /// statement, for a caller driving the planner itself.

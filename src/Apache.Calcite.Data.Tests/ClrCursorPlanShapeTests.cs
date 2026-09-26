@@ -7,7 +7,7 @@ namespace Apache.Calcite.Data.Tests
 
     /// <summary>
     /// Holds the provider to the convention it plans into: the root of every plan is the cursor
-    /// convention's, and what the cursor convention lacks is the sequence convention's beneath a converter.
+    /// convention's, and so is every node of a plan the cursor convention has a node for.
     /// </summary>
     public class ClrCursorPlanShapeTests
     {
@@ -62,9 +62,8 @@ namespace Apache.Calcite.Data.Tests
 
             Assert.StartsWith("ClrCursor", plan.TrimStart());
 
-            // a node the cursor convention has not got is the sequence convention's, under the converter
-            // between the two, and nothing is left to Calcite's
-            AssertEveryNode(plan, "ClrCursor", "ClrEnumerable");
+            // every node of these is one the cursor convention has, so nothing is left to Calcite's
+            AssertEveryNode(plan, "ClrCursor");
         }
 
     }

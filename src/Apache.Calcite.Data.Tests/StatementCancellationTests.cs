@@ -19,8 +19,8 @@ namespace Apache.Calcite.Data.Tests
     /// </summary>
     /// <remarks>
     /// A statement's plan may hold nodes of two calling conventions and they do not cancel the same way. A
-    /// node of <c>ClrEnumerableConvention</c> reads the <see cref="CancellationToken"/> its sequence was
-    /// given at <c>GetAsyncEnumerator</c>; a node of Calcite's <c>EnumerableConvention</c> reads
+    /// node of <c>ClrCursorConvention</c> reads the <see cref="CancellationToken"/> its open and each
+    /// advance were given; a node of Calcite's <c>EnumerableConvention</c> reads
     /// <c>DataContext.Variable.CANCEL_FLAG</c>. <c>AdoCancellationTests</c> in the adapter's suite holds the
     /// token end, ending at a real <c>DbDataReader</c>. This holds the flag end: <c>StatementDataContext</c>
     /// takes the statement's token and puts the flag in its map, the way it takes the connection's time zone

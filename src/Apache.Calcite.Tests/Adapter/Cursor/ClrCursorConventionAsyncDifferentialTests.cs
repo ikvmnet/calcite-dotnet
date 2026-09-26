@@ -92,18 +92,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var rules = new java.util.ArrayList();
             var calcRules = new java.util.ArrayList();
 
-            foreach (var rule in ClrEnumerableRules.Rules())
-            {
-                // dropped on both sides together, or the comparison is between two different plans
-                if (excludeMergeJoin && rule == ClrEnumerableRules.ClrEnumerableMergeJoinRule)
-                    continue;
-
-                rules.add(rule);
-            }
-
-            // and the cursor convention's, which is the root
             foreach (var rule in ClrCursorRules.Rules())
             {
+                // dropped on both sides together, or the comparison is between two different plans
                 if (excludeMergeJoin && rule == ClrCursorRules.ClrCursorMergeJoinRule)
                     continue;
 
@@ -113,22 +104,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             // the three rules the convention declares as fields and leaves out of its default list; a caller
             // turns one on
             if (sortedAggregate)
-            {
-                rules.add(ClrEnumerableRules.ClrEnumerableSortedAggregateRule);
                 rules.add(ClrCursorRules.ClrCursorSortedAggregateRule);
-            }
             if (batchNestedLoopJoin)
-            {
-                rules.add(ClrEnumerableRules.ClrEnumerableBatchNestedLoopJoinRule);
                 rules.add(ClrCursorRules.ClrCursorBatchNestedLoopJoinRule);
-            }
             if (limitSort)
-            {
-                rules.add(ClrEnumerableRules.ClrEnumerableLimitSortRule);
                 rules.add(ClrCursorRules.ClrCursorLimitSortRule);
-            }
-            foreach (var rule in ClrEnumerableRules.CalcRules())
-                calcRules.add(rule);
             foreach (var rule in ClrCursorRules.CalcRules())
                 if (calcRules.contains(rule) == false)
                     calcRules.add(rule);
@@ -211,14 +191,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var rootSchema = Schema(async);
 
             var rules = new java.util.ArrayList();
-            foreach (var rule in ClrEnumerableRules.Rules())
-                rules.add(rule);
             foreach (var rule in ClrCursorRules.Rules())
                 rules.add(rule);
 
             var calcRules = new java.util.ArrayList();
-            foreach (var rule in ClrEnumerableRules.CalcRules())
-                calcRules.add(rule);
             foreach (var rule in ClrCursorRules.CalcRules())
                 if (calcRules.contains(rule) == false)
                     calcRules.add(rule);
@@ -270,14 +246,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Requires that a hand-built rel gives the same rows in both conventions.
+        /// Requires that a hand-built rel gives the same rows opened with await as opened synchronously.
         /// </summary>
         static async Task SameRel(Func<RelBuilder, RelNode> build, RelOptRule[]? add = null, RelOptRule[]? remove = null)
         {
             var async = await RunRel(build, true, add: add, remove: remove);
             var sync = await RunRel(build, false, add: add, remove: remove);
 
-            async.Should().Equal(sync, "the plan should give what ClrEnumerableConvention gives");
+            async.Should().Equal(sync, "the plan should give what its synchronous open gives");
         }
 
         /// <summary>
@@ -358,14 +334,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Requires that a query gives the same rows in both conventions.
+        /// Requires that a query gives the same rows opened with await as opened synchronously.
         /// </summary>
         static async Task Same(string sql, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false, bool markJoin = false, RelOptRule[]? remove = null)
         {
             var async = await Run(sql, true, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, excludeHashJoin: excludeHashJoin, excludeMergeJoin: excludeMergeJoin, markJoin: markJoin, remove: remove);
             var sync = await Run(sql, false, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, excludeHashJoin: excludeHashJoin, excludeMergeJoin: excludeMergeJoin, markJoin: markJoin, remove: remove);
 
-            async.Should().Equal(sync, "'{0}' should give what ClrEnumerableConvention gives", sql);
+            async.Should().Equal(sync, "'{0}' should give what its synchronous open gives", sql);
         }
 
         /// <summary>
@@ -638,17 +614,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public Task ShouldAgreeOnAnUncollect() =>
             Same("SELECT * FROM UNNEST(ARRAY[1, 2, 3]) AS t(x)");
 
-        // UNNEST over a column of type ANY, whose element type is not known until a row is read. Neither
-        // convention gets this from Calcite — ClrCursorUncollect says why and
-        // ClrCursorConventionDifferentialTests asserts the answers by hand — so what is checked here is that the
-        // asynchronous convention gives what the synchronous one gives, through its own node. The plan is a
-        // correlate over the uncollect in both, because decorrelation cannot take an UNNEST of a correlation
-        // variable apart. The correlate is the sequence convention's, so its uncollect would be too unless
-        // that rule is taken away — and Calcite's with it, which otherwise wins once ours is gone and fails
-        // at implement over ANY. With both gone the uncollect is this convention's, under the converter
-        // out, and the correlation variable reaches it because that converter replays the ones in scope.
+        // UNNEST over a column of type ANY, whose element type is not known until a row is read. Calcite
+        // cannot answer this — ClrCursorUncollect says why and ClrCursorConventionDifferentialTests asserts
+        // the answers by hand — so what is checked here is that the awaiting open gives what the synchronous
+        // one gives, through this convention's node. The plan is a correlate over the uncollect, because
+        // decorrelation cannot take an UNNEST of a correlation variable apart. Calcite's uncollect rule is
+        // taken away, because the planner otherwise keeps Calcite's node, which fails at implement over ANY.
 
-        static readonly RelOptRule[] TheirUncollect = [org.apache.calcite.adapter.enumerable.EnumerableRules.ENUMERABLE_UNCOLLECT_RULE, ClrEnumerableRules.ClrEnumerableUncollectRule];
+        static readonly RelOptRule[] TheirUncollect = [org.apache.calcite.adapter.enumerable.EnumerableRules.ENUMERABLE_UNCOLLECT_RULE];
 
         [Fact]
         public Task ShouldAgreeOnUncollectingAnAnyColumn() =>
@@ -740,9 +713,30 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public Task ShouldAgreeOnAMarkedCorrelatedExists() =>
             Same("SELECT ID FROM SALES S1 WHERE EXISTS (SELECT 1 FROM SALES S2 WHERE S2.REGION = S1.REGION AND S2.ID > 3) ORDER BY ID", markJoin: true);
 
+        // A join of two cross-input inequalities. Calcite's rule is taken away, because registerDefaultRules
+        // registers it and the planner keeps whichever equal-cost node it saw first.
+
+        static readonly RelOptRule[] TheirIeJoin = [org.apache.calcite.adapter.enumerable.EnumerableRules.ENUMERABLE_IE_JOIN_RULE];
+
+        [Fact]
+        public Task ShouldAgreeOnAnIeJoin() =>
+            SameThrough("ClrCursorIEJoin", "SELECT a.ID, b.ID FROM SALES a JOIN SALES b ON a.ID < b.ID AND a.AMOUNT > b.AMOUNT ORDER BY 1, 2", remove: TheirIeJoin);
+
+        /// <summary>
+        /// The order of an IE join's rows is the order of its two sorts, and both inputs are drained before
+        /// either sort runs, at the open whichever way it is opened.
+        /// </summary>
+        [Fact]
+        public Task ShouldAgreeOnAnIeJoinsOwnOrder() =>
+            SameThrough("ClrCursorIEJoin", "SELECT a.ID, b.ID FROM SALES a JOIN SALES b ON a.ID < b.ID AND a.AMOUNT > b.AMOUNT", remove: TheirIeJoin);
+
+        [Fact]
+        public Task ShouldAgreeOnAnIeJoinWithAResidualInequality() =>
+            SameThrough("ClrCursorIEJoin", "SELECT a.ID, b.ID FROM SALES a JOIN SALES b ON a.ID < b.ID AND a.AMOUNT > b.AMOUNT AND a.LABEL < b.LABEL ORDER BY 1, 2", remove: TheirIeJoin);
+
         // A recursive query: the repeat union and the table spool are this convention's own, and only the
-        // transient scan is Calcite's, under the converter in, because no scan of either Clr convention
-        // reads a transient table (CALCITE-3673) and this harness does not add the interpreter rule. The
+        // transient scan is Calcite's, under the converter in, because no scan of this convention reads a
+        // transient table (CALCITE-3673) and this harness does not add the interpreter rule. The
         // iterative part is opened afresh each round, inside whichever advance started the round, so this
         // is the query that exercises both openers of a deferred input. SameThrough is what says the node
         // is ours; without it these would pass on a plan carried wholly by Calcite too.
@@ -757,8 +751,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
         // ------------------------------------------------------------------ built by hand
         //
-        // Shapes SQL cannot express, through RunRel. Each has a twin in ClrEnumerableConventionRelTests, which checks
-        // the synchronous convention against Calcite; these check this convention against that one.
+        // Shapes SQL cannot express, through RunRel. Each has a twin in ClrCursorConventionRelTests, which checks
+        // the synchronous open against Calcite; these check the awaiting open against the synchronous one.
 
         /// <summary>
         /// A recursive query whose step aggregates the working table rather than reading it row by row.
@@ -808,7 +802,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// </summary>
         /// <remarks>
         /// The harness proving itself: that a rel built rather than parsed reaches this convention at all,
-        /// and reaches it through <c>ClrEnumerableCalc</c> rather than through a converter. Without this
+        /// and reaches it through <c>ClrCursorCalc</c> rather than through a converter. Without this
         /// a failure anywhere above is ambiguous between the shape and the route.
         /// </remarks>
         [Fact]
@@ -861,13 +855,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// rows on unchanged, so the sequence carries arrays where its row type says
         /// <c>java.lang.Integer</c>.
         ///
-        /// <para><b>It surfaces here exactly as it does in a plan read synchronously, and that is the
-        /// change.</b> While there were two conventions this one had no table function rule, so the whole
-        /// subtree went to <c>EnumerableConvention</c> under a converter, the converter believed
-        /// <c>result.physType.getFormat()</c> — the thing that is wrong — and the mismatch arrived as an
-        /// <c>InvalidCastException</c> at the first row. The sort is now our node in either mode, so
-        /// <c>RequireRowType</c> catches it while the plan is being implemented and says which node handed
-        /// up what.</para>
+        /// <para><b>It surfaces here exactly as it does in a plan opened synchronously.</b> The sort is this
+        /// convention's node whichever way the plan is opened, so <c>RequireRowType</c> catches it while the
+        /// plan is being implemented and says which node handed up what.</para>
         ///
         /// <para>Nothing to fix on this side: the convention does what Calcite does, and the check that
         /// would catch it is a check on Calcite's own answer about its own rows.</para>
@@ -883,21 +873,18 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// MATCH_RECOGNIZE over a table that only yields its rows asynchronously now plans, and runs.
+        /// MATCH_RECOGNIZE over a table that only yields its rows asynchronously plans, and runs.
         /// </summary>
         /// <remarks>
-        /// <b>A capability the unification bought, and a blocking one.</b> This query could not be planned at
-        /// all while there were two conventions: nothing here can write a MATCH_RECOGNIZE —
+        /// <b>It runs, and it blocks.</b> Nothing here can write a MATCH_RECOGNIZE —
         /// <c>PassedRowsInputGetter</c> and <c>PrevInputGetter</c> are package-private types Calcite casts to
-        /// by name — so the node has to be Calcite's, Calcite's node needs its input in
-        /// <c>EnumerableConvention</c>, and the asynchronous convention had no converter out for it to arrive
-        /// by. The planner said so and the query failed.
+        /// by name — so the node is Calcite's, and Calcite's node needs its input in
+        /// <c>EnumerableConvention</c>, which the scan reaches through the converter out.
         ///
-        /// <para>Now the scan is a node of the one convention and the converter out is the one that always
-        /// existed. Calcite compiles its side with Janino and generated Java cannot await, so the sub-plan
-        /// under that converter is implemented synchronously and the asynchronous leaf inside it is read
-        /// across, <b>blocking a thread per row</b>. That is the cost, it is paid only by a query of this
-        /// shape, and the alternative it replaces is the query not running.</para>
+        /// <para>Calcite compiles its side with Janino and generated Java cannot await, so the sub-plan
+        /// under that converter is opened synchronously and the asynchronous leaf inside it is read across,
+        /// <b>blocking a thread per row</b>. That is the cost, and it is paid only by a query of this
+        /// shape.</para>
         /// </remarks>
         [Fact]
         public async Task ShouldRunAMatchRecognizeOverAnAsyncTable()

@@ -11,7 +11,7 @@ namespace Apache.Calcite.Extensions.Runtime
     /// because Janino writes them into the generated method as plain locals.
     ///
     /// <para>Calcite's <c>EnumerableWindow</c> declares these as local variables of the generated method and the
-    /// aggregate implementors write expressions naming them. <see cref="ClrEnumerableDefaults.Window"/> owns the loop
+    /// aggregate implementors write expressions naming them. <c>ClrCursorDefaults.Window</c> owns the loop
     /// instead, so they are values it hands to the lambdas; one instance is reused for every row, exactly as
     /// one set of variables is.</para>
     ///

@@ -20,8 +20,7 @@ namespace Apache.Calcite.Extensions.Runtime
     /// synchronization context suppressed <em>before</em> the open is called and not merely around the
     /// wait — a continuation is captured at the moment of suspension, which is inside the call's synchronous
     /// phase, so suppressing it afterwards is too late. That is why it takes the open as a delegate rather
-    /// than the task the open returns. Measured twice on the enumerable convention's crossing, and not
-    /// measured a third time.</para>
+    /// than the task the open returns.</para>
     ///
     /// <para><b>Internal, and it stays internal</b>, for the reason <c>ClrSequences</c> is: it is what the
     /// convention's own plans are built from, not a toolkit for an adapter.</para>

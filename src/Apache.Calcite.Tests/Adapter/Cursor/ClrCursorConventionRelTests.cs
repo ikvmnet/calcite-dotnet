@@ -167,8 +167,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [
             EnumerableRules.ENUMERABLE_JOIN_RULE,
             EnumerableRules.ENUMERABLE_MERGE_JOIN_RULE,
-            ClrEnumerableRules.ClrEnumerableJoinRule,
-            ClrEnumerableRules.ClrEnumerableMergeJoinRule,
             ClrCursorRules.ClrCursorJoinRule,
             ClrCursorRules.ClrCursorMergeJoinRule,
         ];
@@ -353,8 +351,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// </summary>
         /// <remarks>
         /// The spool is written while the correlate is reading it, which is the one shape that exercises
-        /// <c>ClrEnumerableDefaults.LazyCollectionSpool</c> as a write. That method converted nothing for a
-        /// while and no test had ever written to a spool.
+        /// <c>ClrCursorDefaults.LazyCollectionSpool</c> as a write.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnARecursiveQueryWhoseStepIsACorrelate() =>
@@ -441,7 +438,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 .sort(0)
                 .build(),
                 add: [org.apache.calcite.interpreter.Bindables.BINDABLE_TABLE_SCAN_RULE],
-                remove: [EnumerableRules.ENUMERABLE_JOIN_RULE, ClrEnumerableRules.ClrEnumerableJoinRule, ClrCursorRules.ClrCursorJoinRule]);
+                remove: [EnumerableRules.ENUMERABLE_JOIN_RULE, ClrCursorRules.ClrCursorJoinRule]);
 
         // ------------------------------------------------------------------ EnumerableRepeatUnionHierarchyTest
         //
@@ -565,7 +562,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 .join(JoinRelType.INNER, builder.equals(builder.field(2, 0, "name"), builder.field(2, 1, "name")))
                 .project(builder.field("v1", "name"), builder.field("v2", "name"))
                 .build(),
-                remove: [EnumerableRules.ENUMERABLE_JOIN_RULE, ClrEnumerableRules.ClrEnumerableJoinRule, ClrCursorRules.ClrCursorJoinRule]);
+                remove: [EnumerableRules.ENUMERABLE_JOIN_RULE, ClrCursorRules.ClrCursorJoinRule]);
 
         /// <summary>
         /// CALCITE-5003: a merge union of two inputs whose collations differ.
@@ -583,7 +580,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                     .sort(0)
                     .build();
             },
-            remove: [EnumerableRules.ENUMERABLE_UNION_RULE, ClrEnumerableRules.ClrEnumerableUnionRule, ClrCursorRules.ClrCursorUnionRule]);
+            remove: [EnumerableRules.ENUMERABLE_UNION_RULE, ClrCursorRules.ClrCursorUnionRule]);
 
         [Fact]
         public void ShouldAgreeOnEveryCollatedComparison()

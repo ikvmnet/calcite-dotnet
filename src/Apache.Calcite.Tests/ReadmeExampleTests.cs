@@ -72,71 +72,11 @@ namespace Apache.Calcite.Tests
 
         }
 
-        [Fact]
-        public void ShouldRunTheExampleFromTheReadme()
-        {
-            var rootSchema = Frameworks.createRootSchema(true);
-            rootSchema.add("PEOPLE", new PeopleTable());
-
-            var sql = "SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 2";
-            var dataContext = new ExampleDataContext(rootSchema);
-
-            // ---- README example begins ----
-            var calcRules = new java.util.ArrayList();
-            foreach (var rule in ClrEnumerableRules.CalcRules())
-                calcRules.add(rule);
-
-            // Programs.standard(), with this convention's rules put on the planner in front of it -- a
-            // Frameworks planner carries Calcite's alone -- and its calc rules run afterwards, which is
-            // Programs.calc once more over this convention's list. standard's own calc pass still runs
-            var config = Frameworks.newConfigBuilder()
-                .defaultSchema(rootSchema)
-                .programs(
-                    Programs.sequence(
-                        new AddRulesProgram(ClrEnumerableRules.Rules()),
-                        Programs.standard(),
-                        Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)))
-                .build();
-
-            var planner = Frameworks.getPlanner(config);
-            var logical = planner.rel(planner.validate(planner.parse(sql))).project();
-
-            // one sequence, so one transform, exactly as Programs.standard is driven.
-            // the logical root's own traits, not an empty set: they carry the collation the ORDER BY produced,
-            // and SortRemoveRule takes the sort away as unwanted if the required traits do not ask for it
-            var traits = logical.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify();
-            var physical = (ClrEnumerableRel)planner.transform(0, traits, logical);
-
-            // the root is a node of this convention; build its plan and compile it
-            var implementor = new ClrEnumerableRelImplementor(
-                physical.getCluster().getRexBuilder(), new java.util.HashMap());
-            var lambda = implementor.ImplementRoot(physical, ClrEnumerablePrefer.Array);
-            var plan = (Func<DataContext, System.Collections.IEnumerable>)lambda.Compile();
-
-            foreach (var current in plan(dataContext))
-            {
-                // a one-column result is the value itself, not a row of one
-                var row = current as object[] ?? [current];
-                Console.WriteLine(string.Join('\t', row));
-            }
-            // ---- README example ends ----
-
-            // and again, collecting rather than printing, to assert what it produced
-            var rows = new List<object[]>();
-            foreach (var current in plan(dataContext))
-                rows.Add(current as object[] ?? [current]);
-
-            rows.Should().HaveCount(1);
-            rows[0].Should().HaveCount(1);
-            rows[0][0].Should().Be("Bob");
-        }
-
         /// <summary>
-        /// The cursor convention's example from the README, run as written: the same planner set-up with the
-        /// other convention's rules, and one factory opened both ways.
+        /// The example from the README, run as written: one factory, opened both ways.
         /// </summary>
         [Fact]
-        public async System.Threading.Tasks.Task ShouldRunTheCursorExampleFromTheReadme()
+        public async System.Threading.Tasks.Task ShouldRunTheExampleFromTheReadme()
         {
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add("PEOPLE", new PeopleTable());

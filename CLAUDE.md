@@ -10,7 +10,7 @@ instead of Janino, and the prepare pipeline that gets a statement to one.
 |---|---|
 | `Apache.Calcite.Adapter.AdoNet` | pushes a plan down to an ADO.NET provider |
 | `Apache.Calcite.Data` | the `DbConnection` / `DbCommand` surface |
-| `Apache.Calcite.Extensions` | `ClrEnumerableConvention`, `ClrCursorConvention`, the prepare pipeline, and the IKVM interop helpers |
+| `Apache.Calcite.Extensions` | `ClrCursorConvention`, the prepare pipeline, and the IKVM interop helpers |
 | `Apache.Calcite.Geography` | optional; the `CLR_ST_GEOG_*` operator table and a geodesic evaluator over Google's S2. There is no `GEOGRAPHY` type — a geography is Calcite's `GEOMETRY` and the operator's name is what says to read it geodesically, which is what lets these be declared on a schema. Nothing else references it, and it references nothing else here |
 | `Apache.Calcite.FullText` | optional; the `CLR_FT_*` operator table — names, arities and types for full text search, offered by both routes a query can reach a name. **There is no evaluator and will not be**: which documents match is the store's analyzer, so a call no rule pushed down is refused while the plan is turned into code. Nothing else references it, and it references nothing else here |
 
@@ -45,9 +45,8 @@ driver this one is modelled on*, has the reading. Not to be confused with
 
 - Build the **solution**: `dotnet build Apache.Calcite.slnx`. A bare `dotnet build` fails — more than one
   project in the root.
-- **The check that matters is `ClrEnumerableConventionDifferentialTests`, and its cursor copy
-  `ClrCursorConventionDifferentialTests`, which reads every plan four ways.** Each runs the same SQL
-  through its convention and through `EnumerableConvention` and requires the same rows. Every defect worth having
+- **The check that matters is `ClrCursorConventionDifferentialTests`, which reads every plan four ways.**
+  It runs the same SQL through this convention and through `EnumerableConvention` and requires the same rows. Every defect worth having
   found in the convention was found by it, three of them in nodes already believed done. Add a query
   there rather than writing an assertion by hand: the expected answer is whatever Calcite says. It lives
   in `Apache.Calcite.Tests`, with the rest of the convention and prepare tests.
@@ -59,7 +58,7 @@ driver this one is modelled on*, has the reading. Not to be confused with
   so every way of running it works:
   - the built executable, which is what to reach for locally:
     `src\Apache.Calcite.Tests\bin\Debug\net8.0\Apache.Calcite.Tests.exe`, and `-filter` takes a query in
-    `/assembly/namespace/class/method` form, wildcards included — `-filter "/*/*/ClrEnumerableSortTests/*"`.
+    `/assembly/namespace/class/method` form, wildcards included — `-filter "/*/*/ClrCursorSortTests/*"`.
     `--help` prints the whole filter language. `-result-trx <path>` writes the report, relative to where
     the runner was invoked; the tests run in the assembly's directory, which it changes to first.
   - `dotnet test <dll> --filter FullyQualifiedName~Name`, which is vstest.console.
@@ -78,8 +77,11 @@ driver this one is modelled on*, has the reading. Not to be confused with
 - **Everything references 1.43.0-SNAPSHOT, and `D:\calcite` is that same branch.** The snapshot comes from
   `https://repository.apache.org/content/repositories/snapshots/`, named once in `Directory.Build.props`
   rather than per project. **1.43 is unreleased**: it was targeted for the end of August 2026 and slipped,
-  Avatica 1.29.0 being the named blocker and still unreleased; on the recent cadence (1.38→1.42 ran 2 to 7
-  months apart) October to December 2026 is the honest range. Nothing of this is released either, which is
+  Avatica 1.29.0 being the named blocker. Avatica 1.29.0 is on Maven Central now — first resolved here
+  2026-09-22, and the 2026-09-25 snapshot depends on it — so the blocker is gone and the release is not yet
+  out; on the recent cadence (1.38→1.42 ran 2 to 7 months apart) October to December 2026 is the honest
+  range. **A snapshot that moves Avatica moves every project's `avatica.core` with it**, and a project still
+  pinned to the older resolution fails to compile against one that moved — `CS1705`, naming both versions. Nothing of this is released either, which is
   why the move was affordable.
 
   **A snapshot is a moving target**, rebuilt daily, so a member that is there today may not be there in the
@@ -141,14 +143,20 @@ driver this one is modelled on*, has the reading. Not to be confused with
   different assemblies.
   **The next one is found in the resolved graph, not in the poms.** Every project caches it as
   `obj\Debug\<tfm>\<Project>.maven.cache`, a JSON tree carrying `conflict.winner` on every loser: walk it
-  and compare what Maven picked against the highest version present. `slf4j-api` is the one disagreement
-  left, 1.7.25 against 2.0.17, and is not a defect — json-path names only `debug`, `trace`, `error`,
-  `isDebugEnabled` and `getLogger(Class)`, every one of them 1.x.
+  and compare what Maven picked against the highest version present. `slf4j-api` was the third, and it was
+  called harmless here on the grounds that json-path uses only 1.x methods — the API was never the problem.
+  Maven took 1.7.25, whose `LoggerFactory.bind` repairs the placeholder loggers it hands out during
+  initialization only when a binding is found. With none, which is always the case here, a logger taken on
+  another thread while the first is still initializing keeps no delegate and answers `isTraceEnabled()`
+  true for the life of the process. `HepPlanner`'s is one, and its trace-only `dumpGraph` then asserts the
+  graph is consistent: `Should_execute_a_correlated_exists_over_an_uncollect_with_top_down_decorrelation`
+  failed on that assertion in CI, on whichever runner the parallel Data suite raced, and passed on rerun.
+  1.7.26 onward repair on the no-binding path too; it is pinned at 2.0.17, the highest present.
 
   **What 1.43 cost to move to, measured, was one node.** `EnumerableUncollect` was reworked:
   `BuiltInMethod.FLAT_PRODUCT` became `FLAT_ZIP` and took a fourth `isOuter` argument, `FLAT_LIST` gained a
   `FLAT_LIST_OUTER` variant, and a struct element kept whole became a new `FlatProductInputType.STRUCT`.
-  `ClrEnumerableUncollect` carries all of it, in both bodies. `Uncollect`'s five-argument constructor
+  `ClrCursorUncollect` carries all of it, in both bodies. `Uncollect`'s five-argument constructor
   survives and infers the two fields the class gained, which is why nothing else failed to compile.
 
   **And two tests changed meaning rather than breaking.** `ShouldReachEveryBuiltInMethod` is a census of
@@ -161,7 +169,7 @@ driver this one is modelled on*, has the reading. Not to be confused with
   **1.43's DELETE cannot compile over a one-column table** *under Janino*. CALCITE-7510 emits
   `(int) sinkRow` from a `sinkRow` declared `Object`; javac accepts that and **Janino does not** — measured.
   The fix is upstream's: declare `sinkRow` as the row's boxed type rather than `Object`. It costs this
-  project nothing, because `ClrEnumerablePrepare` translates Calcite's tree instead of compiling it. The two
+  project nothing, because `ClrPrepareImpl` translates Calcite's tree instead of compiling it. The two
   `CalciteDdlTests` this held were skipped until `fc3621e` typed a scan's rows by the physical row type;
   **they pass, and nothing in the suite is skipped.** The claim that they are red outlived the fix by four
   commits in this file.
@@ -202,7 +210,7 @@ driver this one is modelled on*, has the reading. Not to be confused with
 specification — not SQL, and not what the algorithm ought to be. Do not drop a step because it looks
 unnecessary. Do not optimize what Calcite does not optimize. Where Calcite has a defect, reproduce the
 defect and say so at the site: `EnumerableWindow`'s outer guard is still false after row 0, so an
-`UNBOUNDED`/`UNBOUNDED` frame with `EXCLUDE` never excludes anything, and `ClrEnumerableWindow` shares that.
+`UNBOUNDED`/`UNBOUNDED` frame with `EXCLUDE` never excludes anything, and `ClrCursorWindow` shares that.
 Correctness against SQL is a later argument to have upstream; a divergence introduced here is a defect we
 own alone and cannot diff against anything.
 
@@ -235,13 +243,10 @@ the port gets to answer.
 enumerator inside `enumerator()` — `where` on the spot, `orderBy` draining its whole input there, the JDBC
 leaf executing its statement there — and deferral is the marked exception (the CALCITE-2909 memoized join
 lookups). A C# iterator method defers everything to its first `MoveNext`, acquisition included, so
-re-expressing an operator as one silently moved that seam, across the whole of both operator sets, and no
-row-comparing test could see it. `ClrEnumerable` and `Acquiring` in `Runtime` put a factory where
-`enumerator()` is; the one sanctioned exception is a drain that must await, which acquires eagerly and
-drains in the first `MoveNextAsync`, stated at the site. Timing is held by `ClrEnumerableDefaultsAcquisitionTests`, which
-reads a counting leaf's acquisitions and its rows as two numbers — and note the operators whose eagerness
-is *call*-time are linq4j's own call-time drains (`union`, `distinct`, `asofJoin`, `groupBy`, the window,
-`nestedLoopJoinAsList`): do not "fix" them toward the factory.
+re-expressing an operator as one silently moves that seam and no row-comparing test can see it. That is why
+a node of this convention hands up an *open*: evaluating it is `enumerator()`, and an operator that defers
+takes an opener, which reads at the site. Timing is held by `ClrCursorDefaultsAcquisitionTests`, which reads
+a counting leaf's acquisitions and its rows as two numbers.
 
 **A claim about how something fails is a claim to run.** Reasoning from a comparator's semantics gave "a
 CLR-boxed row element and a Java-boxed one compare unequal, their hashes agree, so a set operator quietly
@@ -287,10 +292,10 @@ converter out — which casts to `PhysTypeImpl`, so nothing else will do. A node
 other and so is its physical type; there is no adapter between them and none is wanted.
 
 **A row of this convention is boxed, and the physical type says so.** `ClrPhysType.RowType` is
-`getJavaRowType()` boxed, because a CLR sequence states its element type and nothing autoboxes at the
+`getJavaRowType()` boxed, because a CLR cursor states its element type and nothing autoboxes at the
 boundary. Calcite can leave the choice to its callers — there is no `Enumerable<int>` in Java, so the
 element is a reference whatever the physical type says, and javac inserts the conversion. Here it is
-decided once, and `ClrEnumerableRelImplementor.Result` refuses a sequence that disagrees.
+decided once, and `ClrCursorRelImplementor.Result` refuses a cursor that disagrees.
 
 **`JavaCast` is for what Java the language converts and an expression tree will not** — boxing, unboxing,
 numeric promotion, `byte` sign extension. It is not a way to make one type into another where they ought
@@ -314,7 +319,7 @@ against the array overload and passed a list; `size()` on a `SortedMultiMap` is 
 `object`, because then every overload fits.
 
 **A lambda linq4j declared against one of its functional interfaces is one**, so `AnonymousClasses.Wrap`
-makes it one where a Java API is going to read it — `ClrEnumerableWindow.Hoist` does this for the key
+makes it one where a Java API is going to read it — `ClrCursorWindow.Hoist` does this for the key
 selector `BinarySearch` takes as a `Function1`. Converting the delegate instead compiles and throws at run
 time. Everywhere else an operator of this convention takes the delegate as it stands, the generators
 answering in expression trees rather than in linq4j selectors that had to be translated back.
@@ -324,7 +329,7 @@ and casting it to a CLR `int`, or handing an `int` back boxed the CLR way, leave
 one value in a plan and Calcite's own comparators fail on them. This is the invariant the whole port
 exists to keep, and it has leaked three times: once through the SAM adapters, once through
 `JavaSequences.FromJava`, which cast where it had to convert and so could not carry a one-column result of
-a primitive across the converter, and once through `ClrEnumerableDefaults.LazyCollectionSpool`, which wrote
+a primitive across the converter, and once through the sequence convention's `LazyCollectionSpool`, which wrote
 CLR rows into the table's `java.util.Collection` and left `SqlFunctions.toInt` refusing a `System.Int32` when
 the interpreter read them back — that one did not cast, it simply did not convert, and no test had ever
 written to a spool. **Every boundary where a value crosses between the two runtimes is an
@@ -344,7 +349,7 @@ nothing else — cpu and io are dead code behind `if (true)` — so a project an
 than one another and the planner keeps whichever it saw first. `Programs.standard` runs the calc rules
 afterwards as a hep pass. A caller must do the same, and must run `Programs.subQuery` before the planner.
 **It should decorrelate**, and the claim here that it must not — on the grounds that decorrelation would
-leave `ClrEnumerableCorrelate` unreachable — was false and stood for a while. Measured: a scalar sub-query
+leave the convention's correlate unreachable — was false and stood for a while. Measured: a scalar sub-query
 and an `EXISTS` do become joins, which is what Calcite means and what the prepare pipeline has always
 done, but an `UNNEST` over a correlation variable cannot be decorrelated and keeps its correlate. That is
 how Calcite reaches its own `EnumerableCorrelate` under `Programs.standard` too. Leaving the pass out
@@ -370,147 +375,110 @@ a `TransformationRule`'s operand against any `PhysicalNode`, and every node of t
 match a node of ours. The `VolcanoCost` argument (row count only, cpu and io dead behind `if (true)`) is true
 and is the weaker half.
 
-**`ClrRelOptUtil.RegisterDefaultRules` is `RelOptUtil.registerDefaultRules` and then `ClrEnumerableRules.Rules()`** —
+**`ClrRelOptUtil.RegisterDefaultRules` is `RelOptUtil.registerDefaultRules` and then `ClrCursorRules.Rules()`** —
 the whole of the job a caller driving its own planner has, which `ClrPrepareImpl.CreatePlanner` and the tests
 each used to spell out. There is one list because there is one convention.
-`EnumerableRules.TO_INTERPRETER` is registered by Calcite's call and `ClrEnumerableInterpreterRule` is not
+`EnumerableRules.TO_INTERPRETER` is registered by Calcite's call and `ClrCursorInterpreterRule` is not
 registered by ours, so an interpreted node still lands in `EnumerableConvention` under a converter.
-
-**There is one Clr convention, and whether a plan awaits is the implementor's, not the planner's.** There
-were two — `ClrEnumerableConvention` and `ClrAsyncEnumerableConvention`, node for node and rule for rule.
-Normalised and diffed, 60 files were the same code but for a `using` and an `Async`-suffixed operator name;
-only `Aggregate`, `Collect`, `Combine` and the scan differed in shape. So the two class hierarchies became
-one and the two bodies moved into one node. **A plan has no mode**, so `EXPLAIN` no longer tells a caller how
-the rows will be read, and a plan cache would hold one entry for a statement rather than two.
-
-- **Two parallel call hierarchies, sync and async, and no mode anywhere.** `ImplementRoot` and `VisitChild`
-  call only `Implement`; `ImplementRootAsync` and `VisitChildAsync` call only `ImplementAsync`. A body calls
-  the visit of its own kind, so the kind is settled statically at every step and `ClrEnumerableRelImplementor`
-  holds no state about it. **The dispatch has been rebuilt twice and removed twice.** First as
-  `implementor.Methods` and `implementor.Call`, which made the operator set a runtime value. Then, after
-  that went, as a `bool async` field with one `VisitChild` branching on it — the same dispatch one level
-  down, and it forced every result to be type-tested on the way back to find out what a node had produced.
-  There is no third place for it to hide: if something has to ask which kind it is in, the hierarchy is
-  missing a member.
-- **A node has two bodies naming two static operator sets, and both sets are `ClrEnumerableDefaults`.**
-  `Implement` names its pulled operators through the unsuffixed members of `ClrBuiltInMethod`;
-  `ImplementAsync` names the `Async`-suffixed operators through the `Async`-suffixed members of the same
-  table, and builds its calls with `ClrBuiltInMethod.CallAsync`, which appends the trailing
-  `CancellationToken` an expression tree will not default. One class, one table, two sets of names: which
-  operator a node calls is decided where the node is written and can be read there.
-- **One class, one file, and the suffix is load bearing.** `ClrAsyncEnumerableDefaults` was a separate
-  class; merging it cost 71 renames and turned up eleven members that were the same code twice, now shared
-  — `PartitionIterator`, `IsMergeJoinSupported` and nine smaller helpers, one of which differed only in the
-  indentation of a brace. Both sets are in `ClrEnumerableDefaults.cs`, the pulled ones and then the
-  awaiting ones after a banner. Because the two sets no
-  longer differ by declaring type, everything that has to tell them apart reads the name, `ClrEnumerableRelImplementorTests`
-  included, and `ShouldNameEveryAwaitingOperatorWithTheSuffixAndNoOtherOperator` is what keeps that exact: an
-  operator reading an `IAsyncEnumerable` carries the suffix and one reading an `IEnumerable` does not. A
-  missing suffix on a twin fails to compile; the cases that would not are what that test covers.
-- **`Implement` is required; `ImplementAsync` is optional and defaults to it.** That is .NET's own shape,
-  measured against the 10.0 reference assemblies rather than remembered: `DbCommand.ExecuteDbDataReader`,
-  `DbDataReader.Read`, `DbConnection.Open` and `Stream.Read` are abstract, and every `Async` counterpart is
-  virtual over them. Two defaults calling each other would compile for a node overriding neither and then
-  recurse until the process dies, and a `StackOverflowException` cannot be caught.
-- **Each fork has its own result type, and that is what removes the last runtime test.** `Implement`
-  answers a `ClrEnumerableResult` and `ImplementAsync` a `ClrAsyncEnumerableResult`; `Result` and
-  `ResultAsync` each require their own sequence kind and name the node that broke it. Crossing is
-  `implementor.Pulled` and `implementor.Awaited`, unconditional and written at the site that wants one.
-  Before the split there was one result type, so a visit could only recover a node's kind by testing the
-  type of the expression it carried, and every visit did. Measured before it went: that test fired four
-  times in the whole suite, all of them `ClrEnumerableTableFunctionScan` in the awaiting hierarchy, which
-  builds its window with Calcite's linq4j generator and so has a pulled sequence to hand up whatever it
-  does. It now says `Awaited` there, twice, once per crossing. Going to asynchronous costs a state machine
-  and no thread; going to synchronous **blocks a thread per row**, because an `IEnumerable` has nowhere to
-  suspend.
-- **The default is safe exactly when a body does not visit a child, which is not the same as having no
-  input.** The awaiting hierarchy hands a body awaited inputs, so a node that inherits the default composes
-  an awaited input into a pulled operator and `Expression.Call` refuses it — measured, both directions. But
-  `ClrEnumerableInterpreter` has an input and one body and is fine, because it stashes the child node
-  rather than asking for it as a sequence. The rule is the child visit, not the input count. It cost this
-  once already: `ClrEnumerableTableFunctionScan` lost its input pull in a restore, and no test in the suite
-  reached a window table function over an awaited table, so 830 tests stayed green over an
-  `ArgumentException`. `ShouldAgreeOnAWindowTableFunction` holds it now. An adapter with only an awaiting
-  client writes `ImplementAsync` and `Implement` as a delegation to it, which is safe for the same reason:
-  a converter out of an adapter visits no child.
-- **The crossing is a node boundary, not a plan boundary.** A table that only awaits, read by a pulled
-  plan, blocks at the scan, and everything above it is ordinary pulled code; the reverse likewise. That is
-  what `ClrEnumerableRelImplementorTests` reads out of the compiled tree: which operator set each call landed on, and
-  that every awaiting call carries its token.
-- **The table SPI is one interface per table kind, with both halves on it**, matching the nodes: `Scan` is
-  required and `ScanAsync` defaults to it, and the same for a queryable table's two expressions. There were
-  four interfaces, and two of them could not answer the question the scan actually had. Each source builder
-  asked whether the table was of the *other* kind before asking whether it was of its own, so a table
-  implementing both scannable interfaces sent the two builders into mutual recursion and **overflowed the
-  stack while the plan was being built** — measured, not reasoned. One interface makes that unrepresentable
-  and deletes both cross branches. An awaiting-only table writes `Scan` by draining its own `ScanAsync`.
-  **The operator tables stay internal** — `ClrEnumerableDefaults`,
-  `ClrBuiltInMethod` and `ClrSequences` are what this convention's plans are built from, not a toolkit for
-  an adapter, and an adapter builds against its own operations. `ClrSequences` was made public for one
-  commit on the argument that a contract requiring a conversion has to hand out the conversion, and put
-  back. **Know what that costs the implementer**, because the obvious drain is wrong: blocking on
-  `MoveNextAsync` directly deadlocks under a synchronization context, since these operators await without
-  `ConfigureAwait(false)` and the continuation is promised at the moment of suspension, inside the call and
-  before any wait. The context has to be nulled before the call. Measured twice: once when
-  `ClrSequences.ToEnumerable` was written, and again when a four-line drain in `AsyncTestSchema` hung
-  `ShouldReadAnAsynchronousLeafSynchronouslyUnderASynchronizationContext` for thirty seconds. An
-  awaiting-only table has to get that right, and the test tables here show the shape.
-- **What that cost is a test.** The read across used to be written into the plan by the scan, so
-  `ClrEnumerableRelImplementorTests` could count bridging calls in the compiled tree and require exactly one, at the
-  leaf. The crossing is inside the table now, so the tree shows a plain call to `Scan` or `ScanAsync` and
-  that count is gone. What replaced it: each fork is held to calling its own SPI member, and
-  `ShouldReadTheSameRowsThroughEitherHalfOfTheTableSpi` reads a one-sided table both ways and requires the
-  same rows.
-- **What it cost.** Three of the four converters are gone (`ClrEnumerableToClrAsyncEnumerableConverter`,
-  `ClrAsyncEnumerableToClrEnumerableConverter`, `EnumerableToClrAsyncEnumerableConverter`), and with them
-  the two-hop `isGuaranteed` route those tests exercised. What it bought: `WITH RECURSIVE` and MATCH_RECOGNIZE
-  now run over an asynchronous table, neither of which the asynchronous convention could plan at all.
 
 A caller driving a `Frameworks` planner has the same job and only that job — get the rules on first
 (`AddRulesProgram` in the tests), then run `Programs.standard` — and the classes that spelled `standard`'s six
 passes out by hand are gone.
 
-**`ClrCursorConvention` is the second convention, and its plan is an open rather than a sequence.** A node's
-expression evaluates to an *opened* `ClrCursor<TRow>`, so the tree of calls *is* linq4j's `enumerator()`
-cascade: a sort drains where its open is evaluated, a leaf executes there, and an operator that acquires a
-source later — `concat` at its turn inside `moveNext`, `union` after draining its first — takes that source as a
-delegate built by `Opener`/`OpenerAsync`. `Implement` composes opens that acquire synchronously and
-`ImplementAsync` opens that await, in `ValueTask<ClrCursor<TRow>>`; both produce the *same cursor class*,
-whose `Read` and `ReadAsync(token)` step one set of fields, and `ImplementRoot` runs both bodies and puts the
-two opens on one `ClrCursorFactory`. **A deferred source is visited through both hierarchies from both
-bodies**, because the advance that reaches it may be either and the cursor needs the opener of that kind —
-that is the one place the two-closed-hierarchies rule of the enumerable convention does not hold, and it is
-not a mode. The awaiting hierarchy's token is a real parameter, declared by the awaiting root's lambda and
-redeclared by each deferred opener so that it shadows — measured to work in both the compiler and the
-interpreter — and `CallAsync` passes the implementor's parameter, never `default`. Where the enumerable
-convention had to leave an awaited drain to the first `MoveNextAsync`, the cursor's awaiting open awaits it.
-Every node the enumerable convention has, it has — both bodies each, in files named
-`ClrCursor<X>` beside `ClrEnumerable<X>`, and diffable against them once the names are normalised —
-with `ClrCursorDefaults` holding every operator as a cursor class whose two advances step one set of
-fields. Two facts the port fixed the moment a plan could be rooted in it, both measured. **A converter rule
-must simplify the trait set it copies**: a merge join carries two collations, `RelSet.add` simplifies a
-rel's traits before choosing its subset, so the converter's input subset carries none and a converter
-claiming both claims a sort its input does not keep — `ORDER BY` over an `IN` sub-query lost its sort
-under a cursor root, and `RelOptRule.convert` simplifies for the same reason. And **a sub-plan spliced into
-another implementor's tree shares its translator**: a correlate declares its outer row's field reads into
-a block it translates itself, and a sub-plan under a converter that translated with a translator of its
-own referred to a variable no lambda declares, failing at `Compile`. The prepare pipeline and the provider
-are on this convention.
+**There is one Clr convention, `ClrCursorConvention`, and its plan is an open rather than a sequence.** There
+were three: `ClrEnumerableConvention` and `ClrAsyncEnumerableConvention`, merged into one with two bodies per
+node, and then the cursor convention beside it, node for node. The sequence convention was removed once the
+cursor convention reached parity with it, measured; a sequence states once, at `GetEnumerator` or
+`GetAsyncEnumerator`, whether it will be pulled or awaited, and a `DbDataReader` does not. **A plan has no
+mode**, so `EXPLAIN` does not tell a caller how the rows will be read, and a plan cache would hold one entry
+for a statement.
+
+A node's expression evaluates to an *opened* `IClrCursor<TRow>`, so the tree of calls *is* linq4j's
+`enumerator()` cascade: a sort drains where its open is evaluated, a leaf executes there, and an operator that
+acquires a source later — `concat` at its turn inside `moveNext`, `union` after draining its first — takes that
+source as a delegate built by `Opener`/`OpenerAsync`. `Implement` composes opens that acquire synchronously
+and `ImplementAsync` opens that await, in `ValueTask<IClrCursor<TRow>>`; both produce the *same cursor
+class*, whose `Read` and `ReadAsync(token)` step one set of fields, and `ImplementRoot` runs both bodies and
+puts the two opens on one `ClrCursorFactory`.
+
+- **Two parallel call hierarchies, sync and async, and no mode anywhere.** `VisitChild` calls only
+  `Implement` and `VisitChildAsync` only `ImplementAsync`. A body calls the visit of its own kind, so the kind
+  is settled statically at every step and `ClrCursorRelImplementor` holds no state about it. **The dispatch
+  has been rebuilt twice and removed twice.** First as `implementor.Methods` and `implementor.Call`, which
+  made the operator set a runtime value. Then as a `bool async` field with one `VisitChild` branching on it —
+  the same dispatch one level down, and it forced every result to be type-tested on the way back. There is no
+  third place for it to hide: if something has to ask which kind it is in, the hierarchy is missing a member.
+- **A deferred source is visited through both hierarchies from both bodies**, because the advance that
+  reaches it may be either and the cursor needs the opener of that kind. That is the one place the two
+  hierarchies meet, and it is not a mode: it is the consumer's per-advance choice reaching an acquisition
+  that happens per advance.
+- **The awaiting hierarchy's token is a real parameter**, declared by the awaiting root's lambda and
+  redeclared by each deferred opener so that it shadows — measured to work in both the compiler and the
+  interpreter — and `ClrCursorBuiltInMethod.CallAsync` passes the implementor's parameter, never `default`.
+- **One operator class, and the suffix is load bearing.** `ClrCursorDefaults` holds every operator as a
+  cursor class whose two advances step one set of fields: the opens that acquire synchronously, and then the
+  `Async`-suffixed opens that await. Because the two sets do not differ by declaring type, everything that
+  has to tell them apart reads the name, and `ShouldNameEveryAwaitingOpenWithTheSuffixAndNoOtherOpen` keeps
+  that exact: an open returning a `ValueTask` carries the suffix and ends in a token, and one returning a
+  cursor does not.
+- **`Implement` is required; `ImplementAsync` is optional and defaults to it.** That is .NET's own shape,
+  measured against the 10.0 reference assemblies rather than remembered: `DbCommand.ExecuteDbDataReader`,
+  `DbDataReader.Read`, `DbConnection.Open` and `Stream.Read` are abstract, and every `Async` counterpart is
+  virtual over them. Two defaults calling each other would compile for a node overriding neither and then
+  recurse until the process dies, and a `StackOverflowException` cannot be caught.
+- **Each fork has its own result type.** `Implement` answers a `ClrCursorResult` and `ImplementAsync` a
+  `ClrCursorAsyncResult`; `Result` and `ResultAsync` each require their own kind of open and name the node
+  that broke it. Crossing is `implementor.Pulled` and `implementor.Awaited`, unconditional and written at the
+  site that wants one. Going to awaiting costs a completed `ValueTask` and no thread; going to synchronous
+  **blocks the calling thread**, through `ClrCursors.Block`.
+- **The default is safe exactly when a body does not visit a child, which is not the same as having no
+  input.** The awaiting hierarchy hands a body awaiting inputs, so a node that inherits the default composes
+  a synchronously opened input into an awaiting operator and `Expression.Call` refuses it. The interpreter
+  has an input and one body and is fine, because it stashes the child node rather than asking for it as an
+  open. `ShouldAgreeOnAWindowTableFunction` holds the table function scan's two input visits. An adapter with
+  only an awaiting client writes `ImplementAsync` and `Implement` as a delegation to it, which is safe for the
+  same reason: a converter out of an adapter visits no child.
+- **The table SPI is one interface per table kind, with both halves on it**, matching the nodes: `Scan` is
+  required and `ScanAsync` defaults to it, and the same for a queryable table's two expressions and a cursor
+  table's two opens. Two interfaces for one kind of table could not answer the question the scan actually
+  had: each source builder asked whether the table was of the *other* kind before its own, so a table
+  implementing both sent the two into mutual recursion and **overflowed the stack while the plan was being
+  built** — measured. One interface makes that unrepresentable. An awaiting-only table writes `Scan` by
+  draining its own `ScanAsync`. **The operator tables stay internal** — `ClrCursorDefaults`,
+  `ClrCursorBuiltInMethod` and `ClrCursors` are what this convention's plans are built from, not a toolkit
+  for an adapter. **Know what that costs the implementer**, because the obvious drain is wrong: blocking on
+  an awaiting call directly deadlocks under a synchronization context, since these operators await without
+  `ConfigureAwait(false)` and the continuation is promised at the moment of suspension, inside the call and
+  before any wait. The context has to be nulled before the call. Measured twice, once when a four-line drain
+  in `AsyncTestSchema` hung `ShouldReadAnAsynchronousLeafSynchronouslyUnderASynchronizationContext` for
+  thirty seconds. An awaiting-only table has to get that right, and the test tables here show the shape.
+- **Where the plan leaves as a sequence it defers.** `IClrPrepare.Signature.Bind` and `BindAsync` read the
+  cursor as an `IEnumerable` or an `IAsyncEnumerable` for a caller that wants one. `GetAsyncEnumerator`
+  cannot await, so the awaiting one opens in its first `MoveNextAsync`, stated at the site; nothing else in
+  a plan has to.
+
+**Two facts the port fixed the moment a plan could be rooted in this convention, both measured.** **A
+converter rule must simplify the trait set it copies**: a merge join carries two collations, `RelSet.add`
+simplifies a rel's traits before choosing its subset, so the converter's input subset carries none and a
+converter claiming both claims a sort its input does not keep — `ORDER BY` over an `IN` sub-query lost its
+sort under a cursor root, and `RelOptRule.convert` simplifies for the same reason. And **a sub-plan spliced
+into another implementor's tree shares its translator**: a correlate declares its outer row's field reads into
+a block it translates itself, and a sub-plan under a converter that translated with a translator of its own
+referred to a variable no lambda declares, failing at `Compile`.
 
 **A Clr sub-plan under Calcite's correlate reads its correlation variable through the `DataContext`, and that
 is the only channel there is.** `EnumerableCorrelate` makes the outer row a parameter of the Java lambda it
 generates and places the inner block inside it, so Calcite's own sub-plans read the variable lexically; a
-plan of ours is a delegate compiled apart from that lambda and cannot. The converters out of both Clr
-conventions therefore ask Calcite's getter for every field of every variable the sub-plan uses (which
-declares the reads into the correlate's own block, in scope where the converter's call lands), pass them as
-an `Object[]` to `JavaPlans.BindCorrelated`, and the sub-plan's implementor registers the variable as an
-`ARRAY`-format row read from `DataContext.get(name)`. `ShouldReadACorrelationVariableUnderCalcitesCorrelate`
-in both converter suites holds it. The reverse direction — Calcite's sub-plan under our correlate — is
-lexical, by replaying our registrations onto Calcite's implementor and translating its block into our tree.
+plan of ours is a delegate compiled apart from that lambda and cannot. The converter out therefore asks
+Calcite's getter for every field of every variable the sub-plan uses (which declares the reads into the
+correlate's own block, in scope where the converter's call lands), passes them as an `Object[]` to
+`JavaPlans.BindCursorCorrelated`, and the sub-plan's implementor registers the variable as an `ARRAY`-format
+row read from `DataContext.get(name)`. `ShouldReadACorrelationVariableUnderCalcitesCorrelate` holds it. The
+reverse direction — Calcite's sub-plan under our correlate — is lexical, by replaying our registrations onto
+Calcite's implementor and translating its block into our tree.
 
-**The converter out of either Clr convention is a Janino call into a stashed plan, and two things about the
-generated source were only found when a Clr node first ran under a Calcite node** — no test had done it
-before `ClrEnumerableToEnumerableConverterTests`. linq4j writes a class name with every `$` as `.`
+**The converter out is a Janino call into a stashed plan, and two things about the generated source were
+only found when a Clr node first ran under a Calcite node.** linq4j writes a class name with every `$` as `.`
 (`Types.className`, for `Outer.Inner`), so IKVM's `$$`-mangled name for a generic instantiation cannot be
 named: the plan is stashed as `Object` and cast in `JavaPlans`. And IKVM exposes an `internal` class to Java
 as package-private, which Janino silently drops as a candidate — the error lists the method it refused —
@@ -523,7 +491,7 @@ delegate is typed where those interfaces were not.
 
 **A block consumed apart from what reads it needs a non-optimising `BlockBuilder`.** An optimising one
 inlines a declaration used once, leaving a reference already built into a translated sub-plan pointing at
-a variable that no longer exists. `ClrEnumerableCorrelate` needs this.
+a variable that no longer exists. `ClrCursorCorrelate` needs this.
 
 **Calcite keeps a lot of what a port needs package private** — `EnumUtils.joinSelector`,
 `generatePredicate`, `fieldTypes`, `fieldRowTypes`, `javaClass`, `EnumerableAggregateBase`'s four helpers,

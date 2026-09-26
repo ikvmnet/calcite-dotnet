@@ -40,7 +40,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     ///
     /// <para>Calcite declares each aggregate's state, and its last result, as local variables of the generated
     /// method and mutates them in place, which no lambda can carry. They become the fields of one synthetic
-    /// record instead — the same answer <see cref="ClrEnumerableAggregate"/> gives to the same problem — and
+    /// record instead — the same answer <see cref="ClrCursorAggregate"/> gives to the same problem — and
     /// the loop variables the implementors read become parameters bound to the fields of a
     /// <see cref="WindowFrame"/>.</para>
     /// </remarks>
@@ -284,7 +284,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             DeclareAndResetState(typeFactory, inputResultPhysType, constants, windowIdx, aggs, outputCalcite, outputRow, group.exclude, initBlock, stateTypes, initExpressions);
 
             var accPhysType = PhysTypeImplWorkaround.Of(typeFactory, typeFactory.createSyntheticType(stateTypes));
-            ClrEnumerableAggregateBase.DeclareParentAccumulator(initExpressions, initBlock, accPhysType);
+            ClrCursorAggregateBase.DeclareParentAccumulator(initExpressions, initBlock, accPhysType);
 
             var accType = ClrTypes.Resolve(accPhysType.getJavaRowType());
             var acc_ = J.Expressions.parameter(accPhysType.getJavaRowType(), "acc");
@@ -516,7 +516,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             DeclareAndResetState(typeFactory, inputResultPhysType, constants, windowIdx, aggs, outputCalcite, outputRow, group.exclude, initBlock, stateTypes, initExpressions);
 
             var accPhysType = PhysTypeImplWorkaround.Of(typeFactory, typeFactory.createSyntheticType(stateTypes));
-            ClrEnumerableAggregateBase.DeclareParentAccumulator(initExpressions, initBlock, accPhysType);
+            ClrCursorAggregateBase.DeclareParentAccumulator(initExpressions, initBlock, accPhysType);
 
             var accType = ClrTypes.Resolve(accPhysType.getJavaRowType());
             var acc_ = J.Expressions.parameter(accPhysType.getJavaRowType(), "acc");
@@ -775,7 +775,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 var agg = (ClrAggImpState)aggs.get(i);
                 agg.context = new ClrWinAggContext(agg, typeFactory, inputResultPhysType.RelRowType, constants, exclusion);
 
-                var aggName = ClrEnumerableAggregateBase.AggName(agg);
+                var aggName = ClrCursorAggregateBase.AggName(agg);
                 var state = agg.Implementor.getStateType(agg.context);
 
                 var decls = new java.util.ArrayList(state.size());

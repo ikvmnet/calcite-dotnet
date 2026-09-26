@@ -122,7 +122,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 CalciteSchema? rootSchema,
                 java.util.List collations,
                 long maxRowCount,
-                IClrBindableBase? bindable,
+                IClrCursorFactory? bindable,
                 Meta.StatementType statementType) :
                 base(columns, sql, parameters, internalParameters, cursorFactory, statementType)
             {
@@ -190,7 +190,7 @@ namespace Apache.Calcite.Extensions.Prepare
 
             readonly long maxRowCount;
 
-            readonly IClrBindableBase? bindable;
+            readonly IClrCursorFactory? bindable;
 
             /// <summary>
             /// Gets what kind of statement this is.
@@ -202,8 +202,7 @@ namespace Apache.Calcite.Extensions.Prepare
             /// </summary>
             /// <param name="root"></param>
             /// <returns>The cursor, positioned before the first row.</returns>
-            /// <exception cref="InvalidOperationException">There is no plan to run, or it is not one a
-            /// cursor can be opened over.</exception>
+            /// <exception cref="InvalidOperationException">There is no plan to run.</exception>
             /// <remarks>
             /// What the ADO.NET provider's <c>ExecuteReader</c> is: the statement is prepared into the
             /// cursor convention, and the cursor it opens carries both advances over one position.
@@ -214,10 +213,7 @@ namespace Apache.Calcite.Extensions.Prepare
 
                 if (bindable is null)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no plan to run.");
-                if (bindable is not IClrCursorFactory cursor)
-                    throw new InvalidOperationException($"{Sql ?? "The statement"} has no cursor plan.");
-
-                var opened = cursor.Open(root);
+                var opened = bindable.Open(root);
 
                 // apply the limit; in JDBC 0 means "no limit", but for us -1 means "no limit" and 0 is a
                 // valid limit
@@ -233,18 +229,14 @@ namespace Apache.Calcite.Extensions.Prepare
             /// <param name="root"></param>
             /// <param name="cancellationToken">The token for the acquisition; each advance takes its own.</param>
             /// <returns>The cursor, positioned before the first row.</returns>
-            /// <exception cref="InvalidOperationException">There is no plan to run, or it is not one a
-            /// cursor can be opened over.</exception>
+            /// <exception cref="InvalidOperationException">There is no plan to run.</exception>
             public async ValueTask<IClrCursor> OpenAsync(DataContext root, CancellationToken cancellationToken)
             {
                 ArgumentNullException.ThrowIfNull(root);
 
                 if (bindable is null)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no plan to run.");
-                if (bindable is not IClrCursorFactory cursor)
-                    throw new InvalidOperationException($"{Sql ?? "The statement"} has no cursor plan.");
-
-                var opened = await cursor.OpenAsync(root, cancellationToken).ConfigureAwait(false);
+                var opened = await bindable.OpenAsync(root, cancellationToken).ConfigureAwait(false);
 
                 if (maxRowCount >= 0)
                     opened = ClrCursorDefaults.Take((IClrCursor<object>)Typed(opened), java.math.BigDecimal.valueOf(maxRowCount));
@@ -297,10 +289,9 @@ namespace Apache.Calcite.Extensions.Prepare
             /// <returns></returns>
             /// <exception cref="InvalidOperationException">There is no plan to run.</exception>
             /// <remarks>
-            /// A plan of the sequence convention is enumerated as it stands; a plan of the cursor convention
-            /// is opened at <c>GetEnumerator</c> and read through its synchronous advance. The provider does
-            /// not read this way — it opens a cursor — but a caller driving the pipeline for its rows alone
-            /// can.
+            /// The plan is opened at <c>GetEnumerator</c> and read through its synchronous advance. The
+            /// provider does not read this way — it opens a cursor — but a caller driving the pipeline for its
+            /// rows alone can.
             /// </remarks>
             public IEnumerable<object> Bind(DataContext root)
             {
@@ -309,20 +300,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 if (bindable is null)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no plan to run.");
 
-                if (bindable is IClrCursorFactory)
-                    return ClrCursorDefaults.AsEnumerable(() => Typed(Open(root)));
-
-                if (bindable is not IClrBindable sync)
-                    throw new InvalidOperationException($"{Sql ?? "The statement"} has no synchronous plan.");
-
-                var rows = sync.Bind(root);
-
-                // apply the limit; in JDBC 0 means "no limit", but for us -1 means "no limit" and 0 is a
-                // valid limit
-                if (maxRowCount >= 0)
-                    rows = ClrEnumerableDefaults.Take(rows, maxRowCount);
-
-                return rows;
+                return ClrCursorDefaults.AsEnumerable(() => Typed(Open(root)));
             }
 
             /// <summary>
@@ -331,11 +309,10 @@ namespace Apache.Calcite.Extensions.Prepare
             /// </summary>
             /// <param name="root"></param>
             /// <returns></returns>
-            /// <exception cref="InvalidOperationException">There is no plan to run, or it is a synchronous
-            /// one.</exception>
+            /// <exception cref="InvalidOperationException">There is no plan to run.</exception>
             /// <remarks>
-            /// <see cref="Bind"/> for the awaiting sequence. A cursor plan is opened, with await, on the
-            /// first advance, because <c>GetAsyncEnumerator</c> cannot await an open.
+            /// <see cref="Bind"/> for the awaiting sequence. The plan is opened, with await, on the first
+            /// advance, because <c>GetAsyncEnumerator</c> cannot await an open.
             /// </remarks>
             public IAsyncEnumerable<object> BindAsync(DataContext root)
             {
@@ -344,20 +321,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 if (bindable is null)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no plan to run.");
 
-                if (bindable is IClrCursorFactory)
-                    return ClrCursorDefaults.AsAsyncEnumerable(async token => Typed(await OpenAsync(root, token).ConfigureAwait(false)), CancellationToken.None);
-
-                if (bindable is not IClrAsyncBindable async)
-                    throw new InvalidOperationException($"{Sql ?? "The statement"} has no asynchronous plan.");
-
-                var rows = async.Bind(root);
-
-                // apply the limit; in JDBC 0 means "no limit", but for us -1 means "no limit" and 0 is a
-                // valid limit
-                if (maxRowCount >= 0)
-                    rows = ClrEnumerableDefaults.TakeAsync(rows, maxRowCount);
-
-                return rows;
+                return ClrCursorDefaults.AsAsyncEnumerable(async token => Typed(await OpenAsync(root, token).ConfigureAwait(false)), CancellationToken.None);
             }
 
         }
