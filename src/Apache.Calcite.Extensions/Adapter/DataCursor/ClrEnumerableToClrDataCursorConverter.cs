@@ -77,12 +77,17 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         }
 
         /// <summary>
-        /// Builds the sequence convention's implementor for the sub-plan, over this plan's own parameter and
-        /// map, with the correlation variables in scope carried across.
+        /// Builds the sequence convention's implementor for the sub-plan, over this plan's own parameter,
+        /// map and translator, with the correlation variables in scope carried across.
         /// </summary>
+        /// <remarks>
+        /// The translator is shared for the reason <see cref="ClrDataCursorToClrEnumerableConverter"/>
+        /// gives: a correlation variable's field read is declared by the enclosing plan's translator, and
+        /// the sub-plan's reference to it resolves only through that one.
+        /// </remarks>
         static ClrEnumerableRelImplementor Enumerable(ClrDataCursorRelImplementor implementor)
         {
-            var enumerable = new ClrEnumerableRelImplementor(implementor.RexBuilder, implementor.Map, implementor.Root);
+            var enumerable = new ClrEnumerableRelImplementor(implementor.RexBuilder, implementor.Map, implementor.Root, implementor.Translator);
             implementor.ReplayCorrelVariables(enumerable);
 
             return enumerable;

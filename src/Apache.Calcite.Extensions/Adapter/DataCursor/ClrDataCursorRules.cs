@@ -15,8 +15,9 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
     /// factory call, because a caller has to be able to name one to remove it, and
     /// <c>RelOptPlanner.removeRule</c> takes the rule itself.
     ///
-    /// <para><b>The list is the nodes written so far, and it is short.</b> Scan, values, calc, sort, limit
-    /// and union, with a project and a filter that become a calc, and four converters: two against
+    /// <para><b>The list is the nodes written so far, and it is short.</b> Scan, values, calc, sort, limit,
+    /// union, combine, collect, uncollect and the table function scan, with a project and a filter that
+    /// become a calc, and four converters: two against
     /// <c>EnumerableConvention</c> and two against <c>ClrEnumerableConvention</c>. Everything else one of
     /// those two plans, and a converter carries the rows — the sequence convention's node where it has
     /// one, which is nearly everywhere, since its converter costs no Janino compile and its rows are
@@ -52,6 +53,11 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         public static readonly RelOptRule ClrDataCursorCalcRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorCalcRule.Create();
 
         /// <summary>
+        /// Rule that converts a combine to a <see cref="ClrDataCursorCombine"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorCombineRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorCombineRule.Create();
+
+        /// <summary>
         /// Rule that converts a union to a <see cref="ClrDataCursorUnion"/>.
         /// </summary>
         public static readonly RelOptRule ClrDataCursorUnionRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorUnionRule.Create();
@@ -65,6 +71,21 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         /// Rule that converts a sort carrying an offset or a fetch to a <see cref="ClrDataCursorLimit"/>.
         /// </summary>
         public static readonly RelOptRule ClrDataCursorLimitRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorLimitRule.Create();
+
+        /// <summary>
+        /// Rule that converts a table function scan to a <see cref="ClrDataCursorTableFunctionScan"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorTableFunctionScanRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorTableFunctionScanRule.Create();
+
+        /// <summary>
+        /// Rule that converts a collect to a <see cref="ClrDataCursorCollect"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorCollectRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorCollectRule.Create();
+
+        /// <summary>
+        /// Rule that converts an uncollect to a <see cref="ClrDataCursorUncollect"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorUncollectRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorUncollectRule.Create();
 
         /// <summary>
         /// Rule that turns a filter of this convention into a calc.
@@ -106,9 +127,13 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             ClrDataCursorProjectRule,
             ClrDataCursorFilterRule,
             ClrDataCursorCalcRule,
+            ClrDataCursorCombineRule,
             ClrDataCursorUnionRule,
             ClrDataCursorSortRule,
             ClrDataCursorLimitRule,
+            ClrDataCursorTableFunctionScanRule,
+            ClrDataCursorCollectRule,
+            ClrDataCursorUncollectRule,
             EnumerableToClrDataCursorConverterRule,
             ClrDataCursorToEnumerableConverterRule,
             ClrEnumerableToClrDataCursorConverterRule,
