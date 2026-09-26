@@ -12,7 +12,7 @@ namespace Apache.Calcite.Extensions.Plan
     {
 
         /// <summary>
-        /// Registers the rules a planner needs by default: Calcite's, and then both of this project's
+        /// Registers the rules a planner needs by default: Calcite's, and then each of this project's
         /// conventions'.
         /// </summary>
         /// <param name="planner">The planner to register on.</param>
@@ -23,8 +23,9 @@ namespace Apache.Calcite.Extensions.Plan
         /// neither Clr convention has a node for is still planned, implemented in
         /// <c>EnumerableConvention</c>, and a converter carries its rows.
         ///
-        /// <para><b>Both conventions, always.</b> Which one a statement ends in is decided by the convention
-        /// demanded of the root and by nothing here. It has to be that way round: a schema may bring rules
+        /// <para><b>Every convention, always.</b> Which one a statement ends in is decided by the convention
+        /// demanded of the root and by nothing here — the prepare pipeline demands the cursor convention,
+        /// and a node it lacks is planned by the sequence convention under a converter. It has to be that way round: a schema may bring rules
         /// of its own, and there is no telling from here which convention one of them targets, so a planner
         /// carrying half of this project would refuse an adapter aimed at the other for no reason the caller
         /// could see. Registering both is also what makes the two cross-convention converters reachable —
@@ -35,11 +36,13 @@ namespace Apache.Calcite.Extensions.Plan
         /// reads that flag only to choose <c>BindableConvention</c> as its own result convention, which is
         /// not a choice available here.</para>
         ///
-        /// <para><c>EnumerableRules.TO_INTERPRETER</c> is registered by Calcite's call and its counterpart
-        /// is not registered here, for the reason
-        /// <see cref="ClrEnumerableRules.ClrEnumerableInterpreterRule"/> gives: an interpreted node lands in
-        /// <c>EnumerableConvention</c> under a converter, and a caller wanting it to land in this
-        /// convention instead adds that rule itself.</para>
+        /// <para><c>EnumerableRules.TO_INTERPRETER</c> is registered by Calcite's call and neither
+        /// counterpart is registered here, for the reason
+        /// <see cref="ClrEnumerableRules.ClrEnumerableInterpreterRule"/> and
+        /// <see cref="Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.ClrCursorInterpreterRule"/>
+        /// give: an interpreted node lands in <c>EnumerableConvention</c> under a converter, and a caller
+        /// wanting it to land in one of this project's conventions instead adds that convention's rule
+        /// itself.</para>
         /// </remarks>
         public static void RegisterDefaultRules(RelOptPlanner planner, bool enableMaterializations)
         {
@@ -48,6 +51,9 @@ namespace Apache.Calcite.Extensions.Plan
             RelOptUtil.registerDefaultRules(planner, enableMaterializations, false);
 
             foreach (var rule in ClrEnumerableRules.Rules())
+                planner.addRule(rule);
+
+            foreach (var rule in Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.Rules())
                 planner.addRule(rule);
         }
 

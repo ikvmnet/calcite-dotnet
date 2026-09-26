@@ -3681,6 +3681,22 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return [];
         }
 
+        /// <summary>
+        /// Reads a cursor a table opens as a sequence, opening it at <see cref="IEnumerable{T}.GetEnumerator"/>.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="open">The table's synchronous open, run once per enumerator.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// What a scan of an <see cref="Schema.IClrCursorTable"/> becomes in this convention. The open is
+        /// the acquisition, so it is taken as a delegate and run where a sequence acquires; the cursor is
+        /// advanced with <see cref="Runtime.IClrCursor.Read"/>, the advance of this sequence's kind.
+        /// </remarks>
+        public static IEnumerable<TSource> FromCursor<TSource>(Func<IClrCursor<TSource>> open)
+        {
+            return Cursor.ClrCursorDefaults.AsEnumerable(open);
+        }
+
         // ------------------------------------------------------------------------------------------
         // The awaiting operators. Each is its pulled twin with foreach made await foreach, named with
         // an Async suffix, and carrying the trailing CancellationToken the generated trees bind by
@@ -6868,27 +6884,100 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// awaited and <b>an expression tree cannot await</b>, so the composition cannot be written as a
         /// tree and is written as an operator instead.
         ///
-        /// <para>It is also lazier than the pair it replaces. The synchronous <c>Aggregate</c> runs when
-        /// <c>SingletonAsync</c> is called, which is when the compiled plan is invoked rather than when it is
-        /// enumerated; this folds on the first <c>MoveNextAsync</c>, which is where the work belongs.</para>
+        /// <para>It folds later than the pair it replaces, and as often. The synchronous <c>Aggregate</c>
+        /// runs when <c>SingletonAsync</c> is called, which is when the compiled plan is invoked; this
+        /// folds on the first <c>MoveNextAsync</c>, the earliest an await can happen. But it folds once,
+        /// as that pair does: <see cref="SingletonDrainAsync{TResult}"/> keeps the row, and a second
+        /// enumeration — a nested loop join re-reads its right side for every left row — yields it again
+        /// rather than folding again. Folding again over <paramref name="seed"/> would be wrong, not only
+        /// slow: the accumulator Calcite's initializer builds is one object its adder mutates, so a second
+        /// fold over the same seed counts on from where the first stopped.</para>
         ///
         /// <para>The fold itself does not buffer, as the synchronous one does not.</para>
         /// </remarks>
-        public static async IAsyncEnumerable<TResult> SingletonAggregateAsync<TSource, TResult>(
+        public static IAsyncEnumerable<TResult> SingletonAggregateAsync<TSource, TResult>(
             IAsyncEnumerable<TSource> source,
             object seed,
             Function2 accumulatorAdder,
             Function1 resultSelector,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(source);
 
-            var accumulator = seed;
+            return new SingletonDrainAsync<TResult>(async ct =>
+            {
+                var accumulator = seed;
 
-            await foreach (var row in source.WithCancellation(cancellationToken))
-                accumulator = accumulatorAdder.apply(accumulator, row);
+                await foreach (var row in source.WithCancellation(ct))
+                    accumulator = accumulatorAdder.apply(accumulator, row);
 
-            yield return JavaValues.As<TResult>(resultSelector.apply(accumulator));
+                return JavaValues.As<TResult>(resultSelector.apply(accumulator));
+            }, cancellationToken);
+        }
+
+        /// <summary>
+        /// A sequence of one row, folded from a source on the first advance and once only: every later
+        /// enumeration yields the row the first one folded.
+        /// </summary>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="drain">The fold.</param>
+        /// <param name="cancellationToken">The token the operator was called with, linked with each
+        /// enumeration's own the way <c>EnumeratorCancellation</c> links them.</param>
+        /// <remarks>
+        /// What stands in for Calcite's <c>singletonEnumerable(value)</c> over a value the generated block
+        /// folded once, at bind. The fold waits for the first advance because an expression tree cannot
+        /// await; it is kept because that block folded once. The token the fold runs under is the first
+        /// enumeration's.
+        /// </remarks>
+        sealed class SingletonDrainAsync<TResult>(Func<CancellationToken, ValueTask<TResult>> drain, CancellationToken cancellationToken) : IAsyncEnumerable<TResult>
+        {
+
+            readonly Func<CancellationToken, ValueTask<TResult>> drain = drain;
+            readonly CancellationToken cancellationToken = cancellationToken;
+            System.Threading.Tasks.Task<TResult>? folded;
+
+            /// <inheritdoc />
+            public IAsyncEnumerator<TResult> GetAsyncEnumerator(CancellationToken cancellationToken = default)
+            {
+                var linked = this.cancellationToken.CanBeCanceled && cancellationToken.CanBeCanceled
+                    ? CancellationTokenSource.CreateLinkedTokenSource(this.cancellationToken, cancellationToken)
+                    : null;
+
+                return new Enumerator(this, linked?.Token ?? (cancellationToken.CanBeCanceled ? cancellationToken : this.cancellationToken), linked);
+            }
+
+            /// <summary>
+            /// Yields the folded row once.
+            /// </summary>
+            sealed class Enumerator(SingletonDrainAsync<TResult> owner, CancellationToken cancellationToken, CancellationTokenSource? linked) : IAsyncEnumerator<TResult>
+            {
+
+                bool yielded;
+
+                /// <inheritdoc />
+                public TResult Current { get; private set; } = default!;
+
+                /// <inheritdoc />
+                public async ValueTask<bool> MoveNextAsync()
+                {
+                    if (yielded)
+                        return false;
+
+                    cancellationToken.ThrowIfCancellationRequested();
+                    Current = await (owner.folded ??= owner.drain(cancellationToken).AsTask());
+                    yielded = true;
+                    return true;
+                }
+
+                /// <inheritdoc />
+                public ValueTask DisposeAsync()
+                {
+                    linked?.Dispose();
+                    return default;
+                }
+
+            }
+
         }
 
         /// <summary>
@@ -6903,18 +6992,21 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <see cref="SingletonAggregateAsync"/> gives. A <c>java.util.List</c>, because this is a value in a row
         /// and the reader of that row is Calcite's.
         /// </remarks>
-        public static async IAsyncEnumerable<java.util.List> SingletonJavaListAsync<TSource>(
+        public static IAsyncEnumerable<java.util.List> SingletonJavaListAsync<TSource>(
             IAsyncEnumerable<TSource> source,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(source);
 
-            var list = new java.util.ArrayList();
+            return new SingletonDrainAsync<java.util.List>(async ct =>
+            {
+                var list = new java.util.ArrayList();
 
-            await foreach (var row in source.WithCancellation(cancellationToken))
-                list.add(row);
+                await foreach (var row in source.WithCancellation(ct))
+                    list.add(row);
 
-            yield return list;
+                return list;
+            }, cancellationToken);
         }
 
         /// <summary>
@@ -6931,20 +7023,23 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <see cref="SingletonAggregateAsync"/> gives. A <c>LinkedHashMap</c>, so that the order the rows
         /// arrived in is the order the map keeps.
         /// </remarks>
-        public static async IAsyncEnumerable<java.util.Map> SingletonJavaMapAsync<TSource>(
+        public static IAsyncEnumerable<java.util.Map> SingletonJavaMapAsync<TSource>(
             IAsyncEnumerable<TSource> source,
             Func<TSource, object> keySelector,
             Func<TSource, object> valueSelector,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(source);
 
-            var map = new java.util.LinkedHashMap();
+            return new SingletonDrainAsync<java.util.Map>(async ct =>
+            {
+                var map = new java.util.LinkedHashMap();
 
-            await foreach (var row in source.WithCancellation(cancellationToken))
-                map.put(keySelector(row), valueSelector(row));
+                await foreach (var row in source.WithCancellation(ct))
+                    map.put(keySelector(row), valueSelector(row));
 
-            yield return map;
+                return map;
+            }, cancellationToken);
         }
 
         /// <summary>
@@ -7031,6 +7126,25 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             return buffer;
         }
 
+
+
+        /// <summary>
+        /// Reads a cursor a table opens as an awaiting sequence, opening it on the first advance.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <param name="open">The table's awaiting open, run once per enumerator.</param>
+        /// <param name="cancellationToken">The token the sequence is enumerated under, which is the open's
+        /// and every advance's: a sequence has no per-advance token to hand down, which is what the cursor
+        /// convention's scan of the same table does have.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// <see cref="FromCursor{TSource}"/> for the awaiting half, with the one deferral the CLR imposes:
+        /// <c>GetAsyncEnumerator</c> cannot await, so the open runs inside the first <c>MoveNextAsync</c>.
+        /// </remarks>
+        public static IAsyncEnumerable<TSource> FromCursorAsync<TSource>(Func<CancellationToken, ValueTask<IClrCursor<TSource>>> open, CancellationToken cancellationToken = default)
+        {
+            return Cursor.ClrCursorDefaults.AsAsyncEnumerable(open, cancellationToken);
+        }
 
     }
 

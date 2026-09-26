@@ -34,11 +34,6 @@ namespace Apache.Calcite.Data
         public const string SchemaKey = "Schema";
 
         /// <summary>
-        /// Connection string key for whether the provider plans queries into the synchronous convention.
-        /// </summary>
-        public const string SynchronousKey = "Synchronous";
-
-        /// <summary>
         /// Connection string key for whether connections sharing this connection string share one root
         /// schema.
         /// </summary>
@@ -208,42 +203,12 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Gets or sets whether queries are planned into the synchronous convention. Default is
-        /// <see langword="false"/>.
-        /// </summary>
-        /// <remarks>
-        /// A provider option rather than an engine one, the way Calcite's own connection can ask for the
-        /// bindable convention. By default every query is planned into the asynchronous convention, whichever
-        /// entry point asked — a table that cannot produce rows asynchronously is still planned, carried
-        /// across a converter, and that part of the plan completes synchronously. Setting this plans into the
-        /// synchronous convention instead, for both entry points, and <c>ReadAsync</c> answers with completed
-        /// tasks.
-        ///
-        /// <para>It chooses the convention the root must be in, and nothing else. The planner carries both
-        /// either way, so a query touching a table that can <em>only</em> produce rows asynchronously is
-        /// still planned — reached across a converter, with <c>Read</c> blocking there. It has to be that
-        /// way round: a schema may bring rules of its own, and a planner holding one convention would refuse
-        /// an adapter written against the other for no reason the caller could see.</para>
-        /// </remarks>
-        public bool? Synchronous
-        {
-            get => TryGetBool(SynchronousKey);
-            set
-            {
-                if (value is null)
-                    Remove(SynchronousKey);
-                else
-                    this[SynchronousKey] = value.Value;
-            }
-        }
-
-        /// <summary>
         /// Gets or sets whether connections sharing this connection string share one root schema. Default is
         /// <see langword="true"/>.
         /// </summary>
         /// <remarks>
         /// A provider option rather than an engine one. By default every connection opened with the same
-        /// connection string, <see cref="Synchronous"/> aside, draws on one <see cref="CalciteDataSource"/>
+        /// connection string draws on one <see cref="CalciteDataSource"/>
         /// held for the process, so the model is read and its schemas built once rather than per
         /// connection, and a table created by DDL on one connection is visible on the next.
         /// <see langword="false"/> gives each connection a root schema of its own, built when it first opens
@@ -629,9 +594,7 @@ namespace Apache.Calcite.Data
         /// </summary>
         /// <remarks>
         /// Two connection strings that differ only in the order or the casing of their keys describe one
-        /// data source, so the key is written with every key lower-cased and sorted. <see cref="Synchronous"/>
-        /// is left out: it chooses the convention a connection plans into and nothing that is built, and a
-        /// data source built twice for the two conventions would read the same model twice.
+        /// data source, so the key is written with every key lower-cased and sorted.
         /// </remarks>
         internal string DataSourceKey
         {
@@ -639,8 +602,7 @@ namespace Apache.Calcite.Data
             {
                 var keys = new List<string>();
                 foreach (var key in EnumerateKeys())
-                    if (string.Equals(key, SynchronousKey, System.StringComparison.OrdinalIgnoreCase) == false)
-                        keys.Add(key);
+                    keys.Add(key);
 
                 keys.Sort(System.StringComparer.OrdinalIgnoreCase);
 

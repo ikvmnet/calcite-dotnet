@@ -1,12 +1,12 @@
 using Apache.Calcite.Data;
 using Apache.Calcite.Extensions;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Adapter.Cursor;
 
 using FluentAssertions;
 
 using Xunit;
 
-namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
+namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
@@ -17,10 +17,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// rules, so the modification is implemented in <c>EnumerableConvention</c> and a converter carries it.
     /// These tests are what says that fallback actually runs, rather than merely being reachable on paper.
     /// </remarks>
-    public class ClrEnumerableConventionDmlTests
+    public class ClrCursorConventionDmlTests
     {
 
-        static ClrEnumerableConventionDmlTests()
+        static ClrCursorConventionDmlTests()
         {
             ikvm.runtime.Startup.addBootClassPathAssembly(typeof(org.apache.calcite.server.ServerDdlExecutor).Assembly);
         }

@@ -39,13 +39,12 @@ namespace Apache.Calcite.Data.Tests
         /// <summary>
         /// Opens a connection whose root schema holds the given table under <c>CANCELS</c>.
         /// </summary>
-        static CalciteConnection OpenConnection(Table table, bool synchronous = false)
+        static CalciteConnection OpenConnection(Table table)
         {
             return new CalciteDataSourceBuilder(new CalciteConnectionStringBuilder
             {
                 Lex = "JAVA",
                 CaseSensitive = false,
-                Synchronous = synchronous ? true : null,
             }.ToString())
                 .ConfigureRootSchema(root => root.add("CANCELS", table))
                 .Build()
@@ -121,40 +120,39 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And on the synchronous route, because the flag is the context's rather than the convention's.
+        /// And over a plan opened synchronously, because the flag is the context's rather than the open's.
         /// </summary>
         /// <remarks>
-        /// A pulled plan carries no token — no operator of the synchronous set takes one — but the flag does
-        /// not come from the plan. It comes from <c>StatementDataContext</c>, which every statement has and
-        /// which knows nothing about how its rows will be read, so a table of Calcite's convention polls a
-        /// flag tied to the caller's token whichever way the reader above it works.
-        ///
-        /// <para>What the synchronous route does not get is cancellation of the operators <em>above</em>
-        /// that table: they hold no token and a <c>Read</c> already under way cannot be interrupted. The
-        /// next read refuses, and that is the whole of it.</para>
+        /// <c>ExecuteReader</c> opens the plan with no token to give it, but the flag does not come from the
+        /// open. It comes from <c>StatementDataContext</c>, which every statement has and which knows nothing
+        /// about how its rows will be read, and a token given to a later <c>ReadAsync</c> is registered
+        /// against the statement's cancellation for the length of that call — so a table of Calcite's
+        /// convention polls a flag the per-read token can still set, whichever way the reader was opened.
         /// </remarks>
         [Fact]
-        public async Task Should_set_calcites_cancel_flag_on_the_synchronous_route_too()
+        public async Task Should_set_calcites_cancel_flag_from_a_per_read_token_over_a_synchronous_open()
         {
             var table = new FlagCapturingTable();
-            using var connection = OpenConnection(table, synchronous: true);
+            using var connection = OpenConnection(table);
 
             using var cancellation = new CancellationTokenSource();
 
             using var cmd = connection.CreateCommand();
             cmd.CommandText = "SELECT x FROM CANCELS";
 
-            await using var reader = await cmd.ExecuteReaderAsync(cancellation.Token);
-            Assert.True(await reader.ReadAsync(cancellation.Token));
+            await using var reader = cmd.ExecuteReader();
+            Assert.True(reader.Read());
 
             Assert.NotNull(table.CancelFlag);
             Assert.False(table.CancelFlag!.get());
 
             cancellation.Cancel();
 
-            Assert.True(table.CancelFlag.get());
-
+            // a cancelled token given to a read kills the statement before the read is declined, as
+            // SqlDataReader.ReadAsync registers before it checks
             await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await reader.ReadAsync(cancellation.Token));
+
+            Assert.True(table.CancelFlag.get());
         }
 
         /// <summary>

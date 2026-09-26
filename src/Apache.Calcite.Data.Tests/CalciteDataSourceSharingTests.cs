@@ -172,25 +172,6 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(1, CountingSchemaFactory.Builds[token]);
         }
 
-        /// <summary>
-        /// <c>Synchronous</c> chooses the convention a connection plans into and nothing that is built, so
-        /// it is not part of the key. What a key has to separate is what would otherwise be shared
-        /// wrongly, and two connections differing only in this share a root correctly.
-        /// </summary>
-        [Fact]
-        public void Synchronous_should_not_make_a_second_root()
-        {
-            var cs = ConnectionString(out var token);
-
-            using var a = new CalciteConnection(cs);
-            a.Open();
-            using var b = new CalciteConnection(cs + ";Synchronous=true");
-            b.Open();
-
-            Assert.Equal(1, CountingSchemaFactory.Builds[token]);
-            Assert.Same(Underlying(a), Underlying(b));
-        }
-
         [Fact]
         public void A_different_connection_string_should_build_a_root_of_its_own()
         {

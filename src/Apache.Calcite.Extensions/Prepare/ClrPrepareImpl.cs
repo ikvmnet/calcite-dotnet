@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 
 using Apache.Calcite.Extensions.Adapter.Enumerable;
-using Apache.Calcite.Extensions.Prepare.Enumerable;
+using Apache.Calcite.Extensions.Prepare.Cursor;
 using Apache.Calcite.Extensions.Rel.Metadata;
 using Apache.Calcite.Extensions.Runtime;
 
@@ -27,9 +27,15 @@ namespace Apache.Calcite.Extensions.Prepare
 {
 
     /// <summary>
-    /// Parses, plans and compiles a statement into the <see cref="ClrEnumerableConvention"/> calling
-    /// convention.
+    /// Parses, plans and compiles a statement into the
+    /// <see cref="Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorConvention"/> calling convention.
     /// </summary>
+    /// <remarks>
+    /// The cursor convention, because the pipeline exists for the ADO.NET provider and a cursor is what a
+    /// <c>DbDataReader</c> is: opened either way and advanced either way, per call. The planner carries
+    /// every convention's rules, so a node the cursor convention lacks is the sequence convention's under a
+    /// converter, and one neither has is Calcite's.
+    /// </remarks>
     public class ClrPrepareImpl : IClrPrepare
     {
 
@@ -53,11 +59,11 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <param name="query">The statement's text, or a plan that was built rather than parsed.</param>
         /// <param name="elementType">What a caller wants a row to be. <c>Object[]</c> asks for an array.</param>
         /// <param name="maxRowCount">The row limit, or a negative number for none.</param>
-        /// <returns>The planned statement, readable synchronously or with await.</returns>
+        /// <returns>The planned statement, which opens a cursor synchronously or with await.</returns>
         /// <remarks>
-        /// There is no mode here, and there was one until the two Clr conventions became one. A statement is
-        /// planned once; <c>IClrPrepare.Signature.Bind</c> and <c>BindAsync</c> each implement the planned
-        /// root the way they need it, the first time they are asked.
+        /// There is no mode here. A statement is planned once into the cursor convention, and
+        /// <c>IClrPrepare.Signature.Open</c> and <c>OpenAsync</c> open it; the cursor either hands back is
+        /// advanced by <c>Read</c> or <c>ReadAsync</c> as the reader chooses on each row.
         /// </remarks>
         public IClrPrepare.Signature PrepareSql(CalcitePrepare.Context context, IClrPrepare.Query query, System.Type elementType, long maxRowCount)
         {
@@ -270,7 +276,7 @@ namespace Apache.Calcite.Extensions.Prepare
 
             var cluster = CreateCluster(planner, new RexBuilder(typeFactory));
 
-            return new ClrEnumerablePreparingStmt(
+            return new ClrCursorPreparingStmt(
                 this,
                 context,
                 catalogReader,

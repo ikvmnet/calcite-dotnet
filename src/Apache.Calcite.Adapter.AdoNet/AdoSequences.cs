@@ -115,7 +115,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <remarks>
         /// Shared by both sequences, which acquire the same way and differ only in how they read a row.
         /// </remarks>
-        static void Execute(AdoDataSource dataSource, string sql, DbCommandEnricher? enricher, out DbConnection connection, out DbCommand command, out DbDataReader reader)
+        internal static void Execute(AdoDataSource dataSource, string sql, DbCommandEnricher? enricher, out DbConnection connection, out DbCommand command, out DbDataReader reader)
         {
             DbConnection? opened = null;
             DbCommand? created = null;

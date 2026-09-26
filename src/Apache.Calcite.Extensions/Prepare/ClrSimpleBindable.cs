@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Runtime;
 
@@ -18,7 +20,7 @@ namespace Apache.Calcite.Extensions.Prepare
     /// path, and the two bind to different sequences.
     /// </remarks>
     /// <param name="row">The row, which is the value itself — the result has one column.</param>
-    sealed class ClrSimpleBindable(object row) : IClrBindable, IClrAsyncBindable
+    sealed class ClrSimpleBindable(object row) : IClrBindable, IClrAsyncBindable, IClrCursorFactory
     {
 
         readonly object row = row ?? throw new ArgumentNullException(nameof(row));
@@ -37,6 +39,22 @@ namespace Apache.Calcite.Extensions.Prepare
             ArgumentNullException.ThrowIfNull(root);
 
             return Adapter.Enumerable.ClrEnumerableDefaults.SingletonAsync(row);
+        }
+
+        /// <inheritdoc />
+        IClrCursor IClrCursorFactory.Open(DataContext root)
+        {
+            ArgumentNullException.ThrowIfNull(root);
+
+            return Adapter.Cursor.ClrCursorDefaults.AsCursor([row]);
+        }
+
+        /// <inheritdoc />
+        ValueTask<IClrCursor> IClrCursorFactory.OpenAsync(DataContext root, CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(root);
+
+            return new ValueTask<IClrCursor>(Adapter.Cursor.ClrCursorDefaults.AsCursor([row]));
         }
 
         /// <inheritdoc />

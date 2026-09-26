@@ -60,7 +60,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             // for. Asking is not merely redundant: RelOptTableImpl throws UnsupportedOperationException for
             // a table it has no class-expression function for, and one of ours always is.
             if (table is Apache.Calcite.Extensions.Schema.IClrScannableTable
-                or Apache.Calcite.Extensions.Schema.IClrQueryableTable)
+                or Apache.Calcite.Extensions.Schema.IClrQueryableTable
+                or Apache.Calcite.Extensions.Schema.IClrCursorTable)
                 return ClrEnumerableTableScan.Create(scan.getCluster(), relOptTable);
 
             if (table is QueryableTable || relOptTable.getExpression(typeof(object)) != null)

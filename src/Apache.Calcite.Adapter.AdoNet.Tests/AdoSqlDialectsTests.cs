@@ -281,13 +281,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// And the answer this corrects, so that the test says what it is for: Calcite writes the keyword
-        /// alone, which is a different type on the server.
+        /// Calcite's own dialect gives the same answer: it wrote the keyword alone until CALCITE-7756, and
+        /// writes <c>VARCHAR(MAX)</c> from the 1.43 snapshots on.
         /// </summary>
         [Fact]
-        public void CalcitesOwnAnswerIsTheBareKeyword()
+        public void CalcitesOwnAnswerIsVarcharMax()
         {
-            Assert.Equal("VARCHAR", CastSpec(MssqlSqlDialect.DEFAULT, Types.createSqlType(SqlTypeName.VARCHAR)));
+            Assert.Equal("VARCHAR(MAX)", CastSpec(MssqlSqlDialect.DEFAULT, Types.createSqlType(SqlTypeName.VARCHAR)));
         }
 
         /// <summary>

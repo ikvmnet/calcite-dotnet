@@ -415,6 +415,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         [Fact]
         public Task ShouldAgreeOnAnAggregate() => SameThrough("ClrEnumerableAggregate", "SELECT REGION, SUM(AMOUNT) FROM SALES GROUP BY REGION");
 
+        /// <summary>
+        /// A scalar sub-query is a nested loop join whose right side is a single-row aggregate, and that
+        /// side is enumerated again for every left row. Each of those must yield the row folded once.
+        /// </summary>
+        [Fact]
+        public Task ShouldAgreeOnAScalarSubQuery() => Same("SELECT ID, (SELECT COUNT(*) FROM SALES) FROM SALES ORDER BY ID");
+
         [Fact]
         public Task ShouldAgreeOnACountOverEverything() => Same("SELECT COUNT(*) FROM SALES");
 
@@ -642,7 +649,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 
         [Fact]
         public Task ShouldAgreeOnUncollectingAnAnyColumnWithOrdinality() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.TAGS) WITH ORDINALITY AS t(X)");
+            SameThrough("ClrEnumerableUncollect", "SELECT d.ID, t.X, t.O FROM DOCS d, UNNEST(d.TAGS) WITH ORDINALITY AS t(X, O)");
 
         [Fact]
         public Task ShouldAgreeOnAggregatingOverAnUncollectedAnyColumn() =>

@@ -94,8 +94,8 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <c>standard</c>'s taken away, replaced or reordered. Every rule list <c>standard</c> holds is
         /// Calcite's, so the one thing it cannot do is a pass whose rules name a convention it has never
         /// heard of: its calc pass is <c>RelOptRules.CALC_RULES</c>, three of whose nine name
-        /// <c>EnumerableConvention</c>'s nodes. The appended pass is those three per convention, over both,
-        /// the five they share with Calcite going in once.
+        /// <c>EnumerableConvention</c>'s nodes. The appended pass is those three per convention, over all
+        /// three, the five they share with Calcite going in once.
         ///
         /// <para>These cannot be planner rules instead. A calc and the project it came from have the same
         /// row count and <c>VolcanoCost.isLt</c> compares nothing else, cpu and io being dead code behind
@@ -112,9 +112,15 @@ namespace Apache.Calcite.Extensions.Prepare
             if (holder.get() is Program holderValue)
                 return holderValue;
 
+            // both conventions' lists, the five they share with Calcite going in once: a plan rooted in
+            // the cursor convention holds the sequence convention's nodes under a converter wherever the
+            // cursor one has none, and a project of either refuses to implement itself
             var calcRules = new java.util.ArrayList();
-            foreach (var rule in Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableRules.CalcRules())
+            foreach (var rule in Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.CalcRules())
                 calcRules.add(rule);
+            foreach (var rule in Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableRules.CalcRules())
+                if (calcRules.contains(rule) == false)
+                    calcRules.add(rule);
 
             return Programs.sequence(
                 Programs.standard(),

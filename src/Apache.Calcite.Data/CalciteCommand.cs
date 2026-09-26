@@ -262,9 +262,9 @@ namespace Apache.Calcite.Data
 
         /// <inheritdoc />
         /// <remarks>
-        /// The reader path with one row and one column taken off it, through <see cref="CalciteResult.Read"/>.
-        /// The plan is the connection's — mode, not entry point — so in the default mode this blocks per row
-        /// exactly as <c>Read</c> on the reader would, and in synchronous mode nothing here ever waits.
+        /// The reader path with one row and one column taken off it, through <see cref="CalciteResult.Read"/>:
+        /// the plan is opened synchronously and its cursor advanced once, the same way <c>Read</c> on the
+        /// reader would.
         /// </remarks>
         public override object? ExecuteScalar()
         {
@@ -293,14 +293,10 @@ namespace Apache.Calcite.Data
 
         /// <inheritdoc />
         /// <remarks>
-        /// The same plan <see cref="ExecuteDbDataReaderAsync"/> prepares — the convention is the
-        /// connection's mode, not the entry point's choice. In the default mode the reader answers
-        /// <c>Read</c> by blocking wherever the plan genuinely suspends, which is what <c>Read</c> over an
-        /// asynchronous source means; a connection whose consumers are synchronous can say
-        /// <see cref="CalciteConnectionStringBuilder.Synchronous"/> and get a plan rooted in the synchronous
-        /// convention instead. That is a choice of root and not a promise never to wait: where the schema
-        /// itself can only produce rows asynchronously, the plan still reaches it across a converter and
-        /// <c>Read</c> blocks there.
+        /// The same plan <see cref="ExecuteDbDataReaderAsync"/> prepares, opened synchronously rather than
+        /// with await: a plan of the cursor convention has no mode, and the cursor either open hands back
+        /// carries both advances. <c>Read</c> blocks only where the schema itself can only produce rows
+        /// asynchronously, which is what <c>Read</c> over an asynchronous source means in every provider.
         /// </remarks>
         protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
         {

@@ -88,13 +88,37 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// would produce an expression referring to a parameter the enclosing lambda does not declare, which
         /// fails at <c>Compile</c> rather than here.
         /// </remarks>
-        public ClrEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, ParameterExpression root)
+        public ClrEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, ParameterExpression root) :
+            this(rexBuilder, internalParameters, root, new LixToClrTranslator(internalParameters))
+        {
+
+        }
+
+        /// <summary>
+        /// Initializes a new instance implementing a sub-plan of a plan already being implemented, sharing
+        /// that plan's translator.
+        /// </summary>
+        /// <param name="rexBuilder">The builder for row expressions, from the plan's cluster.</param>
+        /// <param name="internalParameters">The map values are stashed into, which must be the one the
+        /// <see cref="DataContext"/> will serve at run time.</param>
+        /// <param name="root">The parameter the <see cref="DataContext"/> arrives by, which must be the one
+        /// the enclosing plan's lambda declares.</param>
+        /// <param name="translator">The enclosing plan's translator.</param>
+        /// <remarks>
+        /// What a converter between the two conventions of this project builds, for the reason the root is
+        /// shared and one more: a variable a node of the enclosing plan declared — the field read a
+        /// correlate appends to its block for a correlation variable — is referenced by the linq4j
+        /// parameter's identity, and the translator is what maps that identity to the one CLR variable the
+        /// enclosing tree declares. A sub-plan translated by a translator of its own refers to a variable
+        /// no lambda declares, which fails at <c>Compile</c> rather than here.
+        /// </remarks>
+        internal ClrEnumerableRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, ParameterExpression root, LixToClrTranslator translator)
         {
             this.rexBuilder = rexBuilder ?? throw new ArgumentNullException(nameof(rexBuilder));
             this.map = internalParameters ?? throw new ArgumentNullException(nameof(internalParameters));
 
             Root = root ?? throw new ArgumentNullException(nameof(root));
-            Translator = new LixToClrTranslator(map);
+            Translator = translator ?? throw new ArgumentNullException(nameof(translator));
             Translator.Bind(DataContext.ROOT, Root);
 
             AllCorrelateVariables = new DelegateFunction1<string, RexToLixTranslator.InputGetter>(GetCorrelVariableGetter);
@@ -495,6 +519,20 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         {
             foreach (var pair in corrVars)
                 enumerable.registerCorrelVariable(pair.Key, pair.Value.Parameter, pair.Value.Block, pair.Value.PhysType);
+        }
+
+        /// <summary>
+        /// Registers on the cursor convention's implementor every correlation variable in scope here.
+        /// </summary>
+        /// <param name="cursor"></param>
+        /// <remarks>
+        /// The same replay for a sub-plan of the cursor convention under a correlate of this one, which
+        /// reads the outer row through the implementor that built it.
+        /// </remarks>
+        internal void ReplayCorrelVariables(Cursor.ClrCursorRelImplementor cursor)
+        {
+            foreach (var pair in corrVars)
+                cursor.RegisterCorrelVariable(pair.Key, pair.Value.Parameter, pair.Value.Block, pair.Value.PhysType);
         }
 
         /// <summary>

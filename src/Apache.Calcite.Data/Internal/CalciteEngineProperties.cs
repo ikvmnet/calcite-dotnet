@@ -61,10 +61,6 @@ namespace Apache.Calcite.Data.Internal
                 if (string.Equals(key, CalciteConnectionStringBuilder.ModelKey, StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                // a provider option, not an engine one: it chooses the convention the session plans into
-                if (string.Equals(key, CalciteConnectionStringBuilder.SynchronousKey, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
                 // provider options, not engine ones: whether connections share a root schema, and for how
                 // long the provider keeps one nobody is using
                 if (string.Equals(key, CalciteConnectionStringBuilder.PoolingKey, StringComparison.OrdinalIgnoreCase))
