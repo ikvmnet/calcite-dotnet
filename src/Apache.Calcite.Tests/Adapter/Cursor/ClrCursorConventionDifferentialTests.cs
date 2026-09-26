@@ -547,23 +547,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
                 if (clr)
                 {
-                    foreach (var rule in ClrEnumerableRules.Rules())
+                    foreach (var rule in ClrCursorRules.Rules())
                     {
                         // dropped on both sides together, or the comparison is between two different plans:
                         // DefaultRulesProgram takes Calcite's out and this takes ours
-                        if (excludeMergeJoin && rule == ClrEnumerableRules.ClrEnumerableMergeJoinRule)
-                            continue;
-
-                        rules.add(rule);
-                    }
-
-                    foreach (var rule in ClrEnumerableRules.CalcRules())
-                        calcRules.add(rule);
-
-                    // and the cursor convention's, which is the root: a node it lacks is the sequence
-                    // convention's under a converter, so both rule sets are on the planner
-                    foreach (var rule in ClrCursorRules.Rules())
-                    {
                         if (excludeMergeJoin && rule == ClrCursorRules.ClrCursorMergeJoinRule)
                             continue;
 
@@ -571,8 +558,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                     }
 
                     foreach (var rule in ClrCursorRules.CalcRules())
-                        if (calcRules.contains(rule) == false)
-                            calcRules.add(rule);
+                        calcRules.add(rule);
                 }
 
                 // Calcite's own rules are registered by DefaultRulesProgram, because RelOptUtil.registerDefaultRules
@@ -583,45 +569,21 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 // ENUMERABLE_RULES, and this convention does the same, so a test that wants it asks for it and
                 // each side registers its own
                 if (sortedAggregate)
-                {
-                    rules.add(clr ? ClrEnumerableRules.ClrEnumerableSortedAggregateRule : EnumerableRules.ENUMERABLE_SORTED_AGGREGATE_RULE);
-
-                    // and the cursor convention's beside it, as its default rules are beside the sequence
-                    // convention's above
-                    if (clr)
-                        rules.add(ClrCursorRules.ClrCursorSortedAggregateRule);
-                }
+                    rules.add(clr ? ClrCursorRules.ClrCursorSortedAggregateRule : EnumerableRules.ENUMERABLE_SORTED_AGGREGATE_RULE);
 
                 if (batchNestedLoopJoin)
-                {
-                    rules.add(clr ? ClrEnumerableRules.ClrEnumerableBatchNestedLoopJoinRule : EnumerableRules.ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE);
-
-                    // and the cursor convention's, which is the root: both conventions' rule sets are on the
-                    // planner, so the field a caller adds is added for both
-                    if (clr)
-                        rules.add(ClrCursorRules.ClrCursorBatchNestedLoopJoinRule);
-                }
+                    rules.add(clr ? ClrCursorRules.ClrCursorBatchNestedLoopJoinRule : EnumerableRules.ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE);
 
                 // and the limit sort is the third of the three rules Calcite declares as fields and leaves out of
                 // ENUMERABLE_RULES. It was in this convention's default list once, which meant Calcite could
                 // never plan the node this one planned, so nothing here was comparing limit sorts at all
                 if (limitSort)
-                {
-                    rules.add(clr ? ClrEnumerableRules.ClrEnumerableLimitSortRule : EnumerableRules.ENUMERABLE_LIMIT_SORT_RULE);
-
-                    // and the cursor convention's, a field a caller adds for the same reason
-                    if (clr)
-                        rules.add(ClrCursorRules.ClrCursorLimitSortRule);
-                }
+                    rules.add(clr ? ClrCursorRules.ClrCursorLimitSortRule : EnumerableRules.ENUMERABLE_LIMIT_SORT_RULE);
 
                 // Calcite registers TO_INTERPRETER from RelOptUtil.registerDefaultRules, so its side always has
-                // one; each Clr convention's counterpart is a field a caller adds, exactly as the sorted
-                // aggregate is, and both go on because both conventions' rules are on this planner
+                // one; this convention's counterpart is a field a caller adds, exactly as the sorted aggregate is
                 if (interpreter && clr)
-                {
-                    rules.add(ClrEnumerableRules.ClrEnumerableInterpreterRule);
                     rules.add(ClrCursorRules.ClrCursorInterpreterRule);
-                }
 
                 // AVG has no implementor of its own; a real program reduces it to SUM over COUNT first, and this
                 // rule lives in RelOptRules.BASE_RULES rather than in any convention's set
@@ -679,8 +641,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// and returns one of them rendered as text.
         /// </summary>
         /// <remarks>
-        /// The sequence convention's harness reads one sequence. A cursor has no mode, so its harness reads
-        /// the same plan four ways — opened synchronously and advanced with <c>Read</c>, opened with await
+        /// A cursor has no mode, so the harness reads the same plan four ways — opened synchronously and advanced with <c>Read</c>, opened with await
         /// and advanced with <c>ReadAsync</c>, opened with await and advanced synchronously, and opened
         /// synchronously with the two advances alternating — and every query in the suite holds all four
         /// to Calcite. The awaited readings run on the pool, because a test thread may carry a
@@ -794,8 +755,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 var rules = new java.util.ArrayList();
                 if (clr)
                 {
-                    foreach (var rule in ClrEnumerableRules.Rules())
-                        rules.add(rule);
                     foreach (var rule in ClrCursorRules.Rules())
                         rules.add(rule);
                 }
@@ -803,8 +762,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 var calcRules = new java.util.ArrayList();
                 if (clr)
                 {
-                    foreach (var rule in ClrEnumerableRules.CalcRules())
-                        calcRules.add(rule);
                     foreach (var rule in ClrCursorRules.CalcRules())
                         if (calcRules.contains(rule) == false)
                             calcRules.add(rule);
@@ -960,9 +917,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// Both conventions' rules are in one planner and <c>VolcanoCost</c> compares the row count and
         /// nothing else, so a node of Calcite's and the same node of this convention never differ in cost and
         /// the planner keeps whichever it saw first — Calcite's, which <c>registerDefaultRules</c> registers.
-        /// A test that only compares rows can therefore be comparing Calcite against Calcite, and three of
-        /// the ones here were: <c>ClrEnumerableLimit</c> had never run at all. The plan assertion is what
-        /// makes the comparison mean something, and the rules taken away are what make the plan possible.
+        /// A test that only compares rows can therefore be comparing Calcite against Calcite. The plan
+        /// assertion is what makes the comparison mean something, and the rules taken away are what make the plan possible.
         ///
         /// <para>Only this convention's run loses them. Calcite's side is planned as it always is, and is the
         /// oracle.</para>
@@ -2414,7 +2370,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         // A join over a one-column table function puts a sort on it, and that is EnumerableSort's defect:
         // it optimises the scan's ARRAY to SCALAR and hands the Object[] rows on unchanged. Refused rather
         // than answered, because Calcite is wrong here in the same way and this convention does what Calcite
-        // does — ClrEnumerableSortTests carries the whole measurement. Restore the expected rows "1",
+        // does — ClrCursorSortTests carries the whole measurement. Restore the expected rows "1",
         // "2" when EnumerableSort is fixed.
         [Fact]
         public void ShouldRefuseATableFunctionInAJoin()
@@ -2512,12 +2468,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public void ShouldAgreeOnAScalarRowUnionAll() =>
             SameThrough("ClrCursorUnion", "SELECT \"N\" FROM \"SCALARS\" UNION ALL SELECT \"N\" FROM \"SCALARS\" WHERE \"N\" < 3 ORDER BY 1",
-                remove: [ClrEnumerableRules.ClrEnumerableMergeUnionRule, ClrCursorRules.ClrCursorMergeUnionRule]);
+                remove: [ClrCursorRules.ClrCursorMergeUnionRule]);
 
         [Fact]
         public void ShouldAgreeOnAScalarRowUnionDistinct() =>
             SameThrough("ClrCursorUnion", "SELECT \"N\" FROM \"SCALARS\" UNION SELECT \"N\" FROM \"SCALARS\" WHERE \"N\" < 3 ORDER BY 1",
-                remove: [EnumerableRules.ENUMERABLE_MERGE_UNION_RULE, ClrEnumerableRules.ClrEnumerableMergeUnionRule, ClrCursorRules.ClrCursorMergeUnionRule]);
+                remove: [EnumerableRules.ENUMERABLE_MERGE_UNION_RULE, ClrCursorRules.ClrCursorMergeUnionRule]);
 
         // INTERSECT without ALL is rewritten to an aggregate over a union and never reaches the node; only
         // INTERSECT ALL does, which is why no set-operation test had ever built one over a primitive row
@@ -2548,7 +2504,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public void ShouldAgreeOnAScalarRowSortedAggregate() =>
             SameThrough("ClrCursorSortedAggregate", "SELECT \"N\" FROM \"SCALARS\" GROUP BY \"N\" ORDER BY 1",
-                remove: [EnumerableRules.ENUMERABLE_AGGREGATE_RULE, EnumerableRules.ENUMERABLE_SORTED_AGGREGATE_RULE, ClrEnumerableRules.ClrEnumerableAggregateRule, ClrCursorRules.ClrCursorAggregateRule],
+                remove: [EnumerableRules.ENUMERABLE_AGGREGATE_RULE, EnumerableRules.ENUMERABLE_SORTED_AGGREGATE_RULE, ClrCursorRules.ClrCursorAggregateRule],
                 sortedAggregate: true);
 
         [Fact]
@@ -2570,12 +2526,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         //
         // Every shape UNNEST can take, which is Calcite's own list. The node had one test before this, over an
         // array of strings, and the branch CALCITE-4063 added — one field, itself a struct of one item —
-        // had never been entered. Each of these names the node, because the planner prefers Calcite's —
-        // and, under a join that is not a cursor node, the sequence convention's, which needs no converter
-        // there. With both taken away the uncollect is this convention's wherever it sits, and under that
-        // join it runs beneath the converter out.
+        // had never been entered. Each of these names the node, because the planner prefers Calcite's. With
+        // Calcite's rule taken away the uncollect is this convention's wherever it sits.
 
-        static readonly RelOptRule[] TheirUncollect = [EnumerableRules.ENUMERABLE_UNCOLLECT_RULE, ClrEnumerableRules.ClrEnumerableUncollectRule];
+        static readonly RelOptRule[] TheirUncollect = [EnumerableRules.ENUMERABLE_UNCOLLECT_RULE];
 
         [Fact]
         public void ShouldAgreeOnUnnestingAnArray() =>

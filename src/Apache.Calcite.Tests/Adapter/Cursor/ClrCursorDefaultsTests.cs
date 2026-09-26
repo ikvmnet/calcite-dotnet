@@ -648,8 +648,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// </summary>
         /// <remarks>
         /// <c>EnumerableWindow</c>'s block runs to <c>Linq4j.asEnumerable(list)</c> where it is evaluated.
-        /// The awaiting open is held to the same moment: the enumerable convention's twin had to leave the
-        /// drain to the first advance, and this one does not.
+        /// The awaiting open is held to the same moment, awaiting the drain rather than leaving it to the
+        /// first advance.
         /// </remarks>
         [Fact]
         public async Task ShouldComputeTheWindowAtTheOpen()

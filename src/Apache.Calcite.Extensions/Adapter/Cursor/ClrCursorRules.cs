@@ -10,16 +10,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// The rules that put a plan into the <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <c>EnumerableRules</c>, and the same shape as <c>ClrEnumerableRules</c>: a field per
-    /// rule, a list of the ones registered by default, and an accessor returning it. A field rather than a
+    /// The counterpart of <c>EnumerableRules</c>, and the same shape: a field per rule, a list of the ones
+    /// registered by default, and an accessor returning it. A field rather than a
     /// factory call, because a caller has to be able to name one to remove it, and
     /// <c>RelOptPlanner.removeRule</c> takes the rule itself.
     ///
-    /// <para><b>The list is <c>ClrEnumerableRules</c>' node for node.</b> Every node the sequence convention
-    /// has, this one has, in Calcite's order, with the same three rules kept out of the list for a caller to
-    /// add — the sorted aggregate, the batch nested loop join and the limit sort — and the interpreter's
-    /// beside them. Four converters follow: two against <c>EnumerableConvention</c> and two against
-    /// <c>ClrEnumerableConvention</c>. MATCH_RECOGNIZE is the one node neither convention can write, and
+    /// <para><b>The list is <c>EnumerableRules.ENUMERABLE_RULES</c>, in Calcite's order</b>, with the same
+    /// three rules kept out of it for a caller to add — the sorted aggregate, the batch nested loop join and
+    /// the limit sort — and the interpreter's beside them. The two converters against
+    /// <c>EnumerableConvention</c> follow. MATCH_RECOGNIZE is the one node this convention cannot write, and
     /// Calcite plans it under a converter.</para>
     /// </remarks>
     public static class ClrCursorRules
@@ -181,16 +180,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         public static readonly RelOptRule ClrCursorToEnumerableConverterRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorToEnumerableConverterRule.Create();
 
         /// <summary>
-        /// Rule that reads a plan of <c>ClrEnumerableConvention</c> as one of this convention.
-        /// </summary>
-        public static readonly RelOptRule ClrEnumerableToClrCursorConverterRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrEnumerableToClrCursorConverterRule.Create();
-
-        /// <summary>
-        /// Rule that reads a plan of this convention as one of <c>ClrEnumerableConvention</c>.
-        /// </summary>
-        public static readonly RelOptRule ClrCursorToClrEnumerableConverterRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorToClrEnumerableConverterRule.Create();
-
-        /// <summary>
         /// Rule that converts a join to a <see cref="ClrCursorBatchNestedLoopJoin"/>.
         /// </summary>
         /// <remarks>
@@ -253,16 +242,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             ClrCursorWindowRule,
             EnumerableToClrCursorConverterRule,
             ClrCursorToEnumerableConverterRule,
-            ClrEnumerableToClrCursorConverterRule,
-            ClrCursorToClrEnumerableConverterRule,
         ];
 
         /// <summary>
         /// The rules that turn a project or a filter into a calc, to be run after <see cref="Rules"/>.
         /// </summary>
         /// <remarks>
-        /// The counterpart of <c>RelOptRules.CALC_RULES</c>, for the reason <c>ClrEnumerableRules.CalcRules</c>
-        /// gives: a project and a calc cover the same rows and <c>VolcanoCost</c> compares nothing else, so
+        /// The counterpart of <c>RelOptRules.CALC_RULES</c>, and a pass of its own for the reason
+        /// <c>Programs.standard</c> runs Calcite's as one: a project and a calc cover the same rows and <c>VolcanoCost</c> compares nothing else, so
         /// the rewrite has to be a pass of its own after the planner, and it cannot be a planner rule anyway
         /// because <c>VolcanoPlanner.addRule</c> does not register a <c>TransformationRule</c>'s operand
         /// against a <c>PhysicalNode</c>.

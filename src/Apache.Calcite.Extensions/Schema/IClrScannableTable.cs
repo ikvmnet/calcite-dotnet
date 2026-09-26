@@ -16,7 +16,7 @@ namespace Apache.Calcite.Extensions.Schema
     ///
     /// <para>It exists because a <see cref="ScannableTable"/> written in .NET has to hand back a linq4j
     /// <c>Enumerable</c>, which means building one of Calcite's <c>Enumerator</c>s by hand, and then
-    /// <c>ClrEnumerableTableScan</c> reads it straight back out through <c>FromJava</c>. The rows make a
+    /// <c>ClrCursorTableScan</c> reads it straight back out through <c>FromJava</c>. The rows make a
     /// round trip through a runtime neither end of it belongs to. A table that implements this is read
     /// directly.</para>
     ///

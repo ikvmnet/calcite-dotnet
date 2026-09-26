@@ -12,8 +12,10 @@ using org.apache.calcite.adapter.java;
 using org.apache.calcite.plan;
 using org.apache.calcite.rel;
 using org.apache.calcite.rel.convert;
+using org.apache.calcite.rel.type;
 using org.apache.calcite.runtime;
 using org.apache.calcite.schema;
+using org.apache.calcite.sql.type;
 
 namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {
@@ -24,13 +26,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
     /// ADO.NET data source.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <see cref="AdoToClrEnumerableConverter"/>, generating the same SQL by the same
-    /// route and building the same row, and the leaf the cursor convention exists for. The rows are read
+    /// The counterpart of <see cref="AdoToEnumerableConverter"/>, generating the same SQL by the same route,
+    /// and the leaf the cursor convention exists for. The rows are read
     /// through <see cref="AdoCursors"/>, which hands the <see cref="DbDataReader"/> back as the cursor: an
     /// advance of the plan is an advance of the reader, and the token a caller gives
-    /// <c>ReadAsync</c> is the token the provider's <c>ReadAsync</c> is given. Under the sequence
-    /// convention that token could only enter once, at the enumerator, and a per-read token reached the
-    /// provider by cancelling the statement's; here it reaches it directly.
+    /// <c>ReadAsync</c> is the token the provider's <c>ReadAsync</c> is given.
     ///
     /// <para><b>Two bodies, and one line between them.</b> <see cref="Implement"/> opens with
     /// <see cref="AdoCursors.Open{TRow}"/>, which opens the connection and sends the statement there, and
@@ -46,6 +46,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 
         static readonly System.Reflection.MethodInfo OpenAsyncMethod = typeof(AdoCursors).GetMethod(nameof(AdoCursors.OpenAsync))
             ?? throw new InvalidOperationException($"'{nameof(AdoCursors.OpenAsync)}' is missing from {nameof(AdoCursors)}.");
+
+        internal static readonly System.Reflection.MethodInfo GetDbReaderValueMethod = typeof(AdoReaderUtil).GetMethod(nameof(AdoReaderUtil.GetDbReaderValue), [typeof(DbDataReader), typeof(int), typeof(SqlTypeName)])
+            ?? throw new InvalidOperationException($"'{nameof(AdoReaderUtil.GetDbReaderValue)}' is missing from {nameof(AdoReaderUtil)}.");
+
+        internal static readonly System.Reflection.MethodInfo CreateEnricherMethod = typeof(AdoEnumerable).GetMethod(nameof(AdoEnumerable.CreateEnricher), [typeof(AdoDataSource), typeof(java.util.List), typeof(java.util.List), typeof(DataContext)])
+            ?? throw new InvalidOperationException($"'{nameof(AdoEnumerable.CreateEnricher)}' is missing from {nameof(AdoEnumerable)}.");
+
 
         /// <summary>
         /// Initializes a new instance.
@@ -79,7 +86,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 
             var dataContextBuilder = new AdoClrCorrelationDataContextBuilder(implementor, implementor.Root);
 
-            var writer = AdoToClrEnumerableConverter.GenerateSql(convention, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder, self, out var sqlImplementor);
+            var writer = GenerateSql(convention, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder, self, out var sqlImplementor);
             var parameters = writer.Indexes;
             var parameterTypeNames = AdoToEnumerableConverter.GetParameterTypeNames(sqlImplementor, parameters);
 
@@ -96,14 +103,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             // handed to the provider unfilled.
             var enricher = parameters.isEmpty()
                 ? (Expression)Expression.Constant(null, typeof(DbCommandEnricher))
-                : Expression.Call(null, AdoToClrEnumerableConverter.CreateEnricherMethod, dataSource, Expression.Constant(parameters), Expression.Constant(parameterTypeNames), dataContextBuilder.Build());
+                : Expression.Call(null, CreateEnricherMethod, dataSource, Expression.Constant(parameters), Expression.Constant(parameterTypeNames), dataContextBuilder.Build());
 
             return implementor.Result(physType,
                 Expression.Call(null,
                     OpenMethod.MakeGenericMethod(rowType),
                     dataSource,
                     Expression.Constant(sql),
-                    AdoToClrEnumerableConverter.RowBuilder(physType, rowType),
+                    RowBuilder(physType, rowType),
                     enricher));
         }
 
@@ -121,7 +128,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 
             var dataContextBuilder = new AdoClrCorrelationDataContextBuilder(implementor, implementor.Root);
 
-            var writer = AdoToClrEnumerableConverter.GenerateSql(convention, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder, self, out var sqlImplementor);
+            var writer = GenerateSql(convention, (JavaTypeFactory)getCluster().getTypeFactory(), dataContextBuilder, self, out var sqlImplementor);
             var parameters = writer.Indexes;
             var parameterTypeNames = AdoToEnumerableConverter.GetParameterTypeNames(sqlImplementor, parameters);
 
@@ -138,7 +145,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             // handed to the provider unfilled.
             var enricher = parameters.isEmpty()
                 ? (Expression)Expression.Constant(null, typeof(DbCommandEnricher))
-                : Expression.Call(null, AdoToClrEnumerableConverter.CreateEnricherMethod, dataSource, Expression.Constant(parameters), Expression.Constant(parameterTypeNames), dataContextBuilder.Build());
+                : Expression.Call(null, CreateEnricherMethod, dataSource, Expression.Constant(parameters), Expression.Constant(parameterTypeNames), dataContextBuilder.Build());
 
             // through ClrCursorBuiltInMethod.CallAsync rather than Expression.Call, because the open ends
             // in a CancellationToken like every other awaiting one, and that is what appends the
@@ -148,8 +155,97 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                     OpenAsyncMethod.MakeGenericMethod(rowType),
                     dataSource,
                     Expression.Constant(sql),
-                    AdoToClrEnumerableConverter.RowBuilder(physType, rowType),
+                    RowBuilder(physType, rowType),
                     enricher));
+        }
+
+
+        /// <summary>
+        /// Builds the delegate that reads one row from the data reader.
+        /// </summary>
+        /// <param name="physType"></param>
+        /// <param name="rowType"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The shape of a row is decided by how many fields it has, exactly as
+        /// <see cref="AdoToEnumerableConverter"/> decides it, because <c>JavaRowFormat.optimize</c> has
+        /// already told the physical type the same thing: no field is a null, one field is the value itself,
+        /// and only beyond that is a row an array.
+        ///
+        /// <para>Shared with <see cref="ImplementAsync"/>, which builds the same delegate
+        /// against the same reader: a row is the same thing whichever way the plan is opened and nothing
+        /// about building one from a materialized reader position awaits.</para>
+        /// </remarks>
+        internal static Expression RowBuilder(ClrPhysType physType, Type rowType)
+        {
+            var reader = Expression.Parameter(typeof(DbDataReader), "reader");
+            var fieldCount = physType.RelRowType.getFieldCount();
+
+            Expression body;
+            if (fieldCount == 0)
+                body = Expression.Constant(null, typeof(object));
+            else if (fieldCount == 1)
+                body = ReadField(reader, physType, 0);
+            else
+            {
+                var values = new Expression[fieldCount];
+                for (int i = 0; i < fieldCount; i++)
+                    values[i] = ReadField(reader, physType, i);
+
+                body = Expression.NewArrayInit(typeof(object), values);
+            }
+
+            // the reader hands back a CLR value already, so what is left is the conversion a row of this
+            // shape needs: unboxing where the row is one column of a value type, and nothing at all where it
+            // is the Object[] every wider row is
+            if (body.Type != rowType)
+                body = Expression.Convert(body, rowType);
+
+            return Expression.Lambda(typeof(Func<,>).MakeGenericType(typeof(DbDataReader), rowType), body, reader);
+        }
+
+        /// <summary>
+        /// Returns the expression reading one field of the reader's current row.
+        /// </summary>
+        /// <param name="reader"></param>
+        /// <param name="physType"></param>
+        /// <param name="index"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The declared SQL type decides how the value is read, not whatever the provider chose to surface it
+        /// as, so the row holds what the plan was built against.
+        /// </remarks>
+        static Expression ReadField(ParameterExpression reader, ClrPhysType physType, int index)
+        {
+            var fieldType = ((RelDataTypeField)physType.RelRowType.getFieldList().get(index)).getType();
+
+            return Expression.Call(null,
+                GetDbReaderValueMethod,
+                reader,
+                Expression.Constant(index),
+                Expression.Constant(fieldType.getSqlTypeName()));
+        }
+
+        /// <summary>
+        /// Generates the SQL string to implement the sequence.
+        /// </summary>
+        /// <param name="convention"></param>
+        /// <param name="typeFactory"></param>
+        /// <param name="dataContextBuilder"></param>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// Shared with <see cref="ImplementAsync"/>: the statement a subtree of the
+        /// adapter's convention becomes does not depend on how its rows are read.
+        /// </remarks>
+        internal static AdoSqlWriter GenerateSql(AdoConvention convention, JavaTypeFactory typeFactory, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input, out AdoImplementor implementor)
+        {
+            implementor = new AdoImplementor(convention.Dialect, typeFactory, dataContextBuilder);
+            var result = implementor.visitRoot(input);
+
+            var writer = new AdoSqlWriter(convention.Dialect, convention.Syntax);
+            convention.Syntax.Rewrite(result.asStatement(), convention.Dialect, typeFactory).unparse(writer, 0, 0);
+            return writer;
         }
 
     }

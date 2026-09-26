@@ -111,7 +111,7 @@ namespace Apache.Calcite.Extensions.Interop
         /// <returns></returns>
         /// <remarks>
         /// <c>EnumerableDefaults.BothValuesAreNullException</c>, which linq4j declares package private, so it
-        /// can be neither named nor constructed from here. <c>ClrEnumerableDefaults.MergeJoin</c> catches it by
+        /// can be neither named nor constructed from here. <c>ClrCursorDefaults.MergeJoin</c> catches it by
         /// the name on the type for the same reason; this is the other half of that.
         /// </remarks>
         static java.lang.RuntimeException BothValuesAreNull()

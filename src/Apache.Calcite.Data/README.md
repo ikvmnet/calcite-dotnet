@@ -312,7 +312,7 @@ cmd.RegisterHook(Hook.PROGRAM, /* ... */);
 
 Overloads accept a Java `Consumer`, a .NET `Action<object>`, or a primitive value to set as the hook's property. Connection hooks run before command hooks.
 
-`EXPLAIN PLAN FOR <query>` also works, and returns the rendered plan as a single row. It is the same plan whatever the connection's mode and whichever entry point asks, because the mode is not part of the plan: it is `ClrEnumerable*` nodes either way, and how their rows will be read is settled after planning. **So an EXPLAIN cannot tell you whether a query will await.**
+`EXPLAIN PLAN FOR <query>` also works, and returns the rendered plan as a single row. It is the same plan whichever entry point asks, because a plan has no mode: it is `ClrCursor*` nodes either way, and how their rows will be read is settled on each read. **So an EXPLAIN cannot tell you whether a query will await.**
 
 ## Accessing the Calcite engine directly
 

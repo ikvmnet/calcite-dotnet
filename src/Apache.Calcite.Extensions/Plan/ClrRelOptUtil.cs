@@ -12,46 +12,30 @@ namespace Apache.Calcite.Extensions.Plan
     {
 
         /// <summary>
-        /// Registers the rules a planner needs by default: Calcite's, and then each of this project's
-        /// conventions'.
+        /// Registers the rules a planner needs by default: Calcite's, and then the cursor convention's.
         /// </summary>
         /// <param name="planner">The planner to register on.</param>
         /// <param name="enableMaterializations">Whether the materialization rules are registered.</param>
         /// <remarks>
-        /// <c>RelOptUtil.registerDefaultRules</c> with this project's conventions added after it, and the
-        /// whole of the job a caller driving its own planner has. Calcite's own rules stay on: a statement
-        /// neither Clr convention has a node for is still planned, implemented in
-        /// <c>EnumerableConvention</c>, and a converter carries its rows.
-        ///
-        /// <para><b>Every convention, always.</b> Which one a statement ends in is decided by the convention
-        /// demanded of the root and by nothing here — the prepare pipeline demands the cursor convention,
-        /// and a node it lacks is planned by the sequence convention under a converter. It has to be that way round: a schema may bring rules
-        /// of its own, and there is no telling from here which convention one of them targets, so a planner
-        /// carrying half of this project would refuse an adapter aimed at the other for no reason the caller
-        /// could see. Registering both is also what makes the two cross-convention converters reachable —
-        /// each rule list holds the converter *into* its own convention, whose input a planner carrying one
-        /// list can never produce.</para>
+        /// <c>RelOptUtil.registerDefaultRules</c> with this project's convention added after it, and the
+        /// whole of the job a caller driving its own planner has. Calcite's own rules stay on: a statement the
+        /// cursor convention has no node for is still planned, implemented in <c>EnumerableConvention</c>,
+        /// and a converter carries its rows.
         ///
         /// <para><c>enableBindable</c> is not a parameter, and is passed <see langword="false"/>. Calcite
         /// reads that flag only to choose <c>BindableConvention</c> as its own result convention, which is
         /// not a choice available here.</para>
         ///
-        /// <para><c>EnumerableRules.TO_INTERPRETER</c> is registered by Calcite's call and neither
-        /// counterpart is registered here, for the reason
-        /// <see cref="ClrEnumerableRules.ClrEnumerableInterpreterRule"/> and
-        /// <see cref="Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.ClrCursorInterpreterRule"/>
-        /// give: an interpreted node lands in <c>EnumerableConvention</c> under a converter, and a caller
-        /// wanting it to land in one of this project's conventions instead adds that convention's rule
-        /// itself.</para>
+        /// <para><c>EnumerableRules.TO_INTERPRETER</c> is registered by Calcite's call and
+        /// <see cref="Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.ClrCursorInterpreterRule"/> is not
+        /// registered here, for the reason it gives: an interpreted node lands in <c>EnumerableConvention</c>
+        /// under a converter, and a caller wanting it in the cursor convention adds that rule itself.</para>
         /// </remarks>
         public static void RegisterDefaultRules(RelOptPlanner planner, bool enableMaterializations)
         {
             System.ArgumentNullException.ThrowIfNull(planner);
 
             RelOptUtil.registerDefaultRules(planner, enableMaterializations, false);
-
-            foreach (var rule in ClrEnumerableRules.Rules())
-                planner.addRule(rule);
 
             foreach (var rule in Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.Rules())
                 planner.addRule(rule);

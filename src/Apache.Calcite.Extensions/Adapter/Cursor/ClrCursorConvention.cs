@@ -10,15 +10,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// cursor advanced synchronously or with await, as the reader chooses on each advance.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <c>EnumerableConvention</c>, as <see cref="Enumerable.ClrEnumerableConvention"/> is,
-    /// and it differs from that one in what a plan is compiled <em>to</em> and in nothing about a row. A plan
-    /// of <c>ClrEnumerableConvention</c> is a sequence, and a sequence states once — at <c>GetEnumerator</c>
-    /// or <c>GetAsyncEnumerator</c> — whether it will be pulled or awaited, and takes its cancellation at
-    /// the same moment. A plan of this convention is a <see cref="ClrCursorFactory"/>, which opens a
+    /// The counterpart of <c>EnumerableConvention</c>, differing from it in what a plan is compiled
+    /// <em>to</em> and in nothing about a row. A plan is a <see cref="ClrCursorFactory"/>, which opens a
     /// cursor synchronously or with await, and the cursor it opens has both <c>Read</c> and
-    /// <c>ReadAsync(token)</c> over one position. That is the shape <c>DbDataReader</c> has, and it is why
-    /// this convention exists: a reader over it never has to choose a mode in advance and never has to
-    /// throw a per-call token away.
+    /// <c>ReadAsync(token)</c> over one position. That is the shape <c>DbDataReader</c> has, rather than a
+    /// sequence's: a sequence states once, at <c>GetEnumerator</c> or <c>GetAsyncEnumerator</c>, whether it
+    /// will be pulled or awaited and takes its cancellation at that moment, where a reader over a cursor
+    /// never has to choose a mode in advance and never has to throw a per-call token away.
     ///
     /// <para>Register <see cref="ClrCursorRules.Rules"/> with the planner and ask for this convention
     /// on the root, then run <see cref="ClrCursorRules.CalcRules"/> as a second pass, which is what
@@ -28,10 +26,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// converters exist in each direction and rows cross untouched — so a statement this convention has
     /// no node for is still planned.</para>
     ///
-    /// <para>What is shared with <c>ClrEnumerableConvention</c> is everything about a <em>row</em>: the
-    /// physical type, the row formats, the Rex translation, and the preference a consumer states for how a
-    /// row is represented. Those live in that convention's namespace and are used from here as they stand,
-    /// because a row is the same object whichever kind of plan carries it.</para>
+    /// <para>Everything about a <em>row</em> — the physical type, the row formats, the Rex translation,
+    /// and the preference a consumer states for how a row is represented — is in the
+    /// <c>Adapter.Enumerable</c> namespace, which mirrors Calcite's <c>adapter.enumerable</c> package, where
+    /// the same machinery lives beside <c>EnumerableConvention</c>.</para>
     /// </remarks>
     public sealed class ClrCursorConvention : Convention.Impl
     {
@@ -46,26 +44,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// convention.
         /// </summary>
         public const double CostMultiplier = 1.0d;
-
-        /// <summary>
-        /// Cost of a converter between this convention and <c>EnumerableConvention</c>, against one between
-        /// this convention and <c>ClrEnumerableConvention</c>.
-        /// </summary>
-        /// <remarks>
-        /// A crossing to or from Calcite's convention is a Janino compile at prepare and a linq4j
-        /// <c>Enumerator</c> bridged per row; a crossing to or from the sequence convention splices one
-        /// expression tree into another and changes only what wraps the rows. <c>VolcanoCost</c> compares
-        /// row counts and nothing else, and a converter's own cost is its input's row count, so without
-        /// this the two routes to a node this convention lacks — Calcite's node under one converter, the
-        /// sequence convention's under the other — tie, and the planner keeps whichever it registered
-        /// first, which is Calcite's. This is what makes the sequence convention's node the one chosen.
-        ///
-        /// <para>Between one and two, and both bounds matter. Above one, so that the sequence convention's
-        /// node under its converter beats Calcite's node under this one. Below two, so that a node only
-        /// Calcite has — a table modification — crosses once, directly, rather than twice by way of the
-        /// sequence convention's converter and then this convention's, each of which costs one.</para>
-        /// </remarks>
-        public const double JavaCrossingCostMultiplier = 1.5d;
 
         /// <summary>
         /// Initializes a new instance.

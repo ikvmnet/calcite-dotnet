@@ -36,7 +36,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
     /// These are the smallest queries that make each one produce a row.
     ///
     /// <para>The oracle is the same table's rows read through Calcite's <see cref="ScannableTable"/>, which
-    /// <c>ClrEnumerableConventionDifferentialTests</c> already checks against Calcite itself. What is under test is the
+    /// <c>ClrCursorConventionDifferentialTests</c> already checks against Calcite itself. What is under test is the
     /// route, not the rows: a scannable table is called, a queryable one hands back an expression the scan
     /// composes, and neither goes through linq4j.</para>
     /// </remarks>
@@ -189,15 +189,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var rules = new java.util.ArrayList();
             var calcRules = new java.util.ArrayList();
 
-            foreach (var rule in ClrEnumerableRules.Rules())
-                rules.add(rule);
             foreach (var rule in ClrCursorRules.Rules())
                 rules.add(rule);
             foreach (var rule in ClrCursorRules.CalcRules())
                 calcRules.add(rule);
-            foreach (var rule in ClrEnumerableRules.CalcRules())
-                if (calcRules.contains(rule) == false)
-                    calcRules.add(rule);
             foreach (var rule in RelOptRules.CALC_RULES.toArray())
                 calcRules.add(rule);
 
@@ -432,13 +427,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// A table of Calcite's is read by this convention's own scan, without a converter.
         /// </summary>
         /// <remarks>
-        /// The point of reaching Calcite's tables the way Calcite reaches them. Before this an awaited plan
-        /// could not read a <see cref="ScannableTable"/> at all, so a query over one was a Calcite subtree
-        /// under <c>EnumerableToClrEnumerableConverter</c> — correct, but a converter and a planning step
-        /// for something that is one node.
+        /// The point of reaching Calcite's tables the way Calcite reaches them: a query over a
+        /// <see cref="ScannableTable"/> is one node rather than a Calcite subtree under
+        /// <c>EnumerableToClrCursorConverter</c>.
         ///
-        /// <para>The converter is still there, and still needed, for what this convention has no node for at
-        /// all — a table function, a MATCH_RECOGNIZE, a recursive query's transient scan.</para>
+        /// <para>The converter is still needed for what this convention has no node for — a
+        /// MATCH_RECOGNIZE, and a recursive query's transient scan.</para>
         /// </remarks>
         [Fact]
         public void ShouldReadACalciteTableWithoutAConverter()

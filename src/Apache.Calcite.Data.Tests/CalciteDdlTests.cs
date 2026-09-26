@@ -434,7 +434,7 @@ namespace Apache.Calcite.Data.Tests
         /// instead, because 1.42 is what CALCITE-7510 fixes.</para>
         /// <para><b>This passes, and the paragraphs above are why it is worth keeping rather than why it
         /// fails.</b> That was the whole story while Janino compiled the plan, and it no longer does: the
-        /// default prepare is <c>ClrEnumerablePrepare</c>, which translates Calcite's tree rather than
+        /// provider's prepare is <c>ClrPrepareImpl</c>, which translates Calcite's tree rather than
         /// compiling it, so the cast Janino refuses costs nothing here. What remained after that was a defect
         /// of ours rather than Calcite's — a one-column table gives the scan a SCALAR physical type while
         /// the table still yields <c>Object[]</c> rows — and the scan now types its rows by the physical row
@@ -542,7 +542,7 @@ namespace Apache.Calcite.Data.Tests
         /// instead, because 1.42 is what CALCITE-7510 fixes.</para>
         /// <para><b>This passes, and the paragraphs above are why it is worth keeping rather than why it
         /// fails.</b> That was the whole story while Janino compiled the plan, and it no longer does: the
-        /// default prepare is <c>ClrEnumerablePrepare</c>, which translates Calcite's tree rather than
+        /// provider's prepare is <c>ClrPrepareImpl</c>, which translates Calcite's tree rather than
         /// compiling it, so the cast Janino refuses costs nothing here. What remained after that was a defect
         /// of ours rather than Calcite's — a one-column table gives the scan a SCALAR physical type while
         /// the table still yields <c>Object[]</c> rows — and the scan now types its rows by the physical row

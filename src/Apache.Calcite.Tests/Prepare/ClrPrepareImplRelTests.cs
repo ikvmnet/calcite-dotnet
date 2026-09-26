@@ -32,13 +32,11 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
     {
 
         /// <summary>
-        /// Puts a convention's rules on the planner the plan was built with, which is the planner
+        /// Puts the cursor convention's rules on the planner the plan was built with, which is the planner
         /// <c>Prepare.optimize</c> reads off the root and therefore the one that chooses.
         /// </summary>
         static RelNode Stocked(RelNode rel)
         {
-            foreach (var rule in ClrEnumerableRules.Rules())
-                rel.getCluster().getPlanner().addRule(rule);
             foreach (var rule in Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.Rules())
                 rel.getCluster().getPlanner().addRule(rule);
 

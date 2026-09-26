@@ -104,10 +104,9 @@ namespace Apache.Calcite.Data.Internal
         /// <para>Every query is planned into <c>ClrCursorConvention</c> and run as a compiled expression
         /// tree that opens a cursor. A cursor is what a <c>DbDataReader</c> is — opened synchronously or
         /// with await, and advanced by <c>Read</c> or <c>ReadAsync(token)</c> as the caller chooses on each
-        /// row — so the connection carries no mode and no key chooses one. The other conventions' rules stay
-        /// on the planner, so a statement the cursor convention has no node for is still planned and run:
-        /// in <c>ClrEnumerableConvention</c> where that one has the node, in <c>EnumerableConvention</c>
-        /// otherwise, with a converter carrying its rows either way.</para>
+        /// row — so the connection carries no mode and no key chooses one. Calcite's rules stay on the
+        /// planner, so a statement the cursor convention has no node for is still planned and run, in
+        /// <c>EnumerableConvention</c> with a converter carrying its rows.</para>
         /// </remarks>
         public CalciteSession(CalciteConnectionStringBuilder options, CalciteDataSourceRoot root, bool ownsRoot, JavaTypeFactory? typeFactory = null, Func<ClrPrepareImpl>? prepareFactory = null, System.Collections.Immutable.ImmutableArray<IClrTypeResolver> typeResolvers = default)
         {
@@ -389,8 +388,8 @@ namespace Apache.Calcite.Data.Internal
         /// <b>The plan is opened with await</b>, so its acquisition — a sort's drain, a leaf's statement —
         /// is awaited rather than waited for: an <c>IClrScannableTable</c> that writes <c>ScanAsync</c> is
         /// scanned asynchronously, a table of Calcite's SPI is read the way Calcite reads it, and a statement
-        /// the cursor convention has no node for is implemented in <c>ClrEnumerableConvention</c> or in
-        /// <c>EnumerableConvention</c> with a converter carrying its rows. Nothing on the asynchronous
+        /// the cursor convention has no node for is implemented in <c>EnumerableConvention</c> with a
+        /// converter carrying its rows. Nothing on the asynchronous
         /// surface parks a thread waiting for a row. Planning is synchronous work and is done before the
         /// first await.
         /// </remarks>
@@ -450,7 +449,7 @@ namespace Apache.Calcite.Data.Internal
         /// <exception cref="CalciteException">Thrown when planning or execution fails.</exception>
         /// <remarks>
         /// Synchronous, and <see cref="ExecuteNonQueryAsync"/> is this method in a completed task. A table
-        /// modification is not a node either Clr convention implements, so the modify itself is Calcite's
+        /// modification is not a node the Clr convention implements, so the modify itself is Calcite's
         /// <c>EnumerableTableModify</c>, and its one count row reaches the cursor through the converter into
         /// the cursor convention, whose advance completes synchronously: there is nothing to await in a
         /// modify, and nothing here pretends otherwise.

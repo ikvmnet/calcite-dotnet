@@ -27,7 +27,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
     /// however the cursor is opened and however each row is advanced to.
     /// </summary>
     /// <remarks>
-    /// The oracle is Calcite, as it is for <c>ClrEnumerableConventionDifferentialTests</c>. What is
+    /// The oracle is Calcite, as it is for <c>ClrCursorConventionDifferentialTests</c>. What is
     /// different here is that one plan is read four ways — opened synchronously and read with
     /// <see cref="ClrCursor.Read"/>, opened with await and read with
     /// <see cref="ClrCursor.ReadAsync"/>, and each open read with the other advance, including

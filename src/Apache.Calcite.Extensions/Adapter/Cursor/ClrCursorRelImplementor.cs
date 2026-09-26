@@ -26,15 +26,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// </summary>
     /// <remarks>
     /// The counterpart of Calcite's <c>EnumerableRelImplementor</c>, and used the same way: one instance
-    /// implements one plan. It is <see cref="ClrEnumerableRelImplementor"/> with the sequence replaced by
-    /// the open, and everything about a <em>row</em> — the physical type, the Rex translation, the
-    /// correlation variables and the stash — is the same code, because a row is the same object.
+    /// implements one plan. What it hands back is an open rather than Calcite's block, and everything about
+    /// a <em>row</em> — the physical type, the Rex translation, the correlation variables and the stash —
+    /// is the shared code in <c>Adapter.Enumerable</c>, as Calcite's is in <c>adapter.enumerable</c>.
     ///
     /// <para><b>Two call hierarchies, parallel, and one root member that runs both.</b>
     /// <see cref="VisitChild"/> calls only <see cref="ClrCursorRel.Implement"/> and
     /// <see cref="VisitChildAsync"/> only <see cref="ClrCursorRel.ImplementAsync"/>, so a body always
-    /// composes eager inputs of its own kind and this class holds no mode. What differs from the enumerable
-    /// convention is that a caller does not choose between two root members: <see cref="ImplementRoot"/>
+    /// composes eager inputs of its own kind and this class holds no mode. A caller does not choose
+    /// between two root members: <see cref="ImplementRoot"/>
     /// walks the tree once through each hierarchy and hands back a <see cref="ClrCursorFactory"/>
     /// carrying both opens, because the cursor either open produces is the same cursor and a consumer
     /// chooses per open and per advance rather than per plan.</para>
@@ -102,9 +102,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <param name="cancellationToken">The parameter an awaiting open's token arrives by.</param>
         /// <param name="translator">The enclosing plan's translator.</param>
         /// <remarks>
-        /// What a converter between the two conventions of this project builds, for the reason
-        /// <see cref="ClrEnumerableRelImplementor"/> gives for its own: a variable a node of the enclosing
-        /// plan declared — the field read a correlate appends to its block for a correlation variable — is
+        /// What a converter that splices a sub-plan into an enclosing tree builds: a variable a node of the
+        /// enclosing plan declared — the field read a correlate appends to its block for a correlation variable — is
         /// referenced by the linq4j parameter's identity, which only the translator that declared it can
         /// map to the CLR variable the enclosing tree holds.
         /// </remarks>
@@ -323,8 +322,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// </exception>
         /// <remarks>
         /// Both bodies of the root, each walking its own hierarchy, and then one wrapper around the two.
-        /// Where the enumerable convention offers two root members and a caller picks one, this offers one
-        /// and builds both, because a plan of this convention has no mode for a caller to pick: the cursor
+        /// One root member builds both, because a plan of this convention has no mode for a caller to pick: the cursor
         /// is the same whichever way it is opened, and which way is the caller's business at each open.
         ///
         /// <para>Nothing is compiled here. The factory compiles each open the first time it is asked for it,
@@ -466,16 +464,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Registers on the sequence convention's implementor every correlation variable in scope here.
-        /// </summary>
-        /// <param name="enumerable"></param>
-        internal void ReplayCorrelVariables(ClrEnumerableRelImplementor enumerable)
-        {
-            foreach (var pair in corrVars)
-                enumerable.RegisterCorrelVariable(pair.Key, pair.Value.Parameter, pair.Value.Block, pair.Value.PhysType);
-        }
-
-        /// <summary>
         /// Creates the result a node's <see cref="ClrCursorRel.Implement"/> returns.
         /// </summary>
         /// <param name="physType">How the rows are represented.</param>
@@ -529,9 +517,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <remarks>
         /// Calcite's <c>EnumerableRelImplementor.result</c> records what it is handed and asks nothing, its
         /// sequences being erased. This asks, because a node here can build a cursor of the wrong type and
-        /// every node below it will still compile. It refuses rather than repairing, for the reason the
-        /// enumerable convention gives: a check with a way out is a check only for the shapes that already
-        /// pass.
+        /// every node below it will still compile. It refuses rather than repairing, because a check with a
+        /// way out is a check only for the shapes that already pass.
         /// </remarks>
         static void RequireRowType(ClrPhysType physType, Expression expression, Type wanted, string what)
         {

@@ -27,9 +27,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
     /// a pulled leaf opened and read with await, and the two joined.
     /// </summary>
     /// <remarks>
-    /// The sequence convention's crossing tests hold the read across a plan makes between an
-    /// <c>IEnumerable</c> and an <c>IAsyncEnumerable</c>. A cursor plan has no such crossing to make —
-    /// the cursor carries both advances — so what is held here is the same rows arriving whichever way
+    /// A cursor plan has no crossing to make between an <c>IEnumerable</c> and an
+    /// <c>IAsyncEnumerable</c> — the cursor carries both advances — so what is held here is the same rows arriving whichever way
     /// the plan was opened and advanced, over leaves of either kind, and that a synchronous read over an
     /// awaited leaf does not deadlock under a synchronization context that cannot pump.
     /// </remarks>
@@ -66,17 +65,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         static RelNode Plan(string sql, SchemaPlus rootSchema)
         {
             var ruleList = new java.util.ArrayList();
-            foreach (var rule in ClrEnumerableRules.Rules())
-                ruleList.add(rule);
             foreach (var rule in ClrCursorRules.Rules())
                 ruleList.add(rule);
 
             var calcRuleList = new java.util.ArrayList();
             foreach (var rule in ClrCursorRules.CalcRules())
                 calcRuleList.add(rule);
-            foreach (var rule in ClrEnumerableRules.CalcRules())
-                if (calcRuleList.contains(rule) == false)
-                    calcRuleList.add(rule);
             foreach (var rule in RelOptRules.CALC_RULES.toArray())
                 calcRuleList.add(rule);
 

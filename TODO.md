@@ -195,7 +195,7 @@ Upstream's `JdbcJoinRule.matches` refuses a join whose type the dialect rejects
 ### 9. The converters are not cheap, and it costs whole joins — measured
 
 `JdbcToEnumerableConverter.computeSelfCost` multiplies by `.1` (`JdbcToEnumerableConverter.java:88`).
-Neither `AdoToEnumerableConverter` nor `AdoToClrEnumerableConverter` overrides `computeSelfCost` at all, so
+Neither `AdoToEnumerableConverter` nor `AdoToClrCursorConverter` overrides `computeSelfCost` at all, so
 leaving the adapter is priced at full row count and a plan that leaves it twice is not obviously worse than
 one that leaves it once.
 
@@ -262,27 +262,14 @@ Calcite's adapter does not have: a `DbBatch` for a multi-row modify, and a bulk-
 (`SqlBulkCopy`, `NpgsqlBinaryImporter`) for `INSERT … SELECT` whose source is another convention, which is
 §12's machinery pointed at a write.
 
-### 14. The connect is synchronous, and timeout and `Cancel()` are not wired
+### 14. Timeout and `Cancel()` are not wired
 
-The row loop awaits; the statement does not. It is sent at `GetAsyncEnumerator`, synchronously, through
-`OpenConnection()` and `ExecuteReader()`. That is where this convention acquires — linq4j acquires inside
-`enumerator()`, `ClrEnumerableDefaultsAcquisitionTests` holds that the whole cascade runs there, and
-`ClrEnumerableConventionAsyncAdoNetTests` states that acquisition-time work is synchronous work because
-`GetAsyncEnumerator` cannot await.
-
-- **An asynchronous connect.** Getting `OpenConnectionAsync` and `ExecuteReaderAsync` as well means
-  awaiting somewhere earlier than the first row, and the only place is `ExecuteReaderAsync` itself.
-  Priming one row there was written and reverted: it fails `ShouldReadNothingUntilTheFirstRead`,
-  `ExecuteAsyncShouldAcquireTheLeafWithoutReading` and
-  `AnAsynchronousSortShouldAcquireAtExecuteAndDrainAtTheFirstRead`, which hold the opposite promise
-  deliberately. So this is a change to the convention's execution contract rather than to the adapter, and
-  it is the decision that gates it.
 - **`DbCommand.Cancel()` is a no-op.** `StatementCancellation.Cancel()` is what it would call and the
   ADO.NET contract is what it costs: the command would have to hold the live statement, and the reader,
   which outlives the execute call, owns it now.
 - **Timeout.** `DbCommand.CommandTimeout` is never set, so every statement takes the provider default.
-- **Connection lifetime.** `AdoEnumerable.enumerator()` and `AdoSequences` open a connection per enumeration
-  (`AdoEnumerable.cs:353`). For a plan with two pushed subtrees that is two connections, and for the
+- **Connection lifetime.** `AdoEnumerable.enumerator()` and `AdoCursors` open a connection per enumeration
+  and per open (`AdoEnumerable.cs:353`). For a plan with two pushed subtrees that is two connections, and for the
   per-row correlated path it is one per row. A connection held on the `DataContext` for the life of the
   execution, and `DbCommand.Prepare()` on the statement that is about to be run per row, are both things
   ADO.NET offers and this does not use. `CommandBehavior` is left at its default too — `SequentialAccess`
@@ -398,7 +385,7 @@ which is what a cache on the root means, the factory being per connection.
 - The numbers are one machine, a Debug build, six-row tables and a warm process. The split is what
   matters and it is not close; the absolute figures are not a benchmark. A cold first statement costs far
   more than any row above and is not what a cache saves.
-- Re-bindability was measured over eight statement shapes. `ClrEnumerableConventionDifferentialTests` has far more,
+- Re-bindability was measured over eight statement shapes. `ClrCursorConventionDifferentialTests` has far more,
   and the cache's own test should be that list bound twice, since a state a bind leaves behind would show
   as a differential failure on the second bind and nowhere else.
 - Nothing above measured a cache hit's cost — key canonicalisation and lookup — against the 15 ms floor.
@@ -512,13 +499,13 @@ against `CLR_ST_GEOG_*` and saying so in that README.
 
 ## Translate a CLR expression tree into a linq4j one
 
-`ClrEnumerableToEnumerableConverter` is the only place a plan of these conventions has to call back out of
+`ClrCursorToEnumerableConverter` is the only place a plan of this convention has to call back out of
 generated Java. Calcite compiles its side with Janino from source that cannot mention a CLR object, so the
-converter stashes the sub-plan's tree on the `DataContext` and emits a call to `JavaPlans.Bind`, which
-compiles it on first use and wraps the result as a linq4j `Enumerable`.
+converter stashes the sub-plan's tree on the `DataContext` and emits a call to `JavaPlans.BindCursor`, which
+compiles it on first use and wraps the cursor it opens as a linq4j `Enumerable`.
 
 What that costs is a boundary in the middle of a plan: a compiled delegate on one side, a Janino class on
-the other, and a sequence adapter between them. The rows still cross untouched, so it is correct — it is
+the other, and a cursor adapter between them. The rows still cross untouched, so it is correct — it is
 not cheap.
 
 The fix is the inverse of `LixToClrTranslator`: translate the `System.Linq.Expressions` tree into a linq4j

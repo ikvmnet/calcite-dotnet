@@ -25,10 +25,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
     /// the advance.
     /// </summary>
     /// <remarks>
-    /// The sequence convention's cancellation tests read a token off the <c>DataContext</c> and wrapped the
-    /// root in it, because an <c>IAsyncEnumerable</c> takes a token once and the plan had nowhere else to
-    /// put one. A cursor takes a token at the open and at every advance, so nothing here goes through the
-    /// context: the token is an argument.
+    /// A cursor takes a token at the open and at every advance, so nothing here goes through the
+    /// <c>DataContext</c>: the token is an argument.
     /// </remarks>
     public class ClrCursorConventionCancellationTests
     {
@@ -77,15 +75,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             var rules = new java.util.ArrayList();
             var calcRules = new java.util.ArrayList();
-            foreach (var rule in ClrEnumerableRules.Rules())
-                rules.add(rule);
             foreach (var rule in ClrCursorRules.Rules())
                 rules.add(rule);
             foreach (var rule in ClrCursorRules.CalcRules())
                 calcRules.add(rule);
-            foreach (var rule in ClrEnumerableRules.CalcRules())
-                if (calcRules.contains(rule) == false)
-                    calcRules.add(rule);
             rules.add(org.apache.calcite.rel.rules.CoreRules.AGGREGATE_REDUCE_FUNCTIONS);
             foreach (var rule in RelOptRules.CALC_RULES.toArray())
                 calcRules.add(rule);

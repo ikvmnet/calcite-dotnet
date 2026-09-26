@@ -32,8 +32,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// opened decides nothing about how it is read.</para>
     ///
     /// <para>The cursor classes are here rather than in <c>Runtime</c> because they are the operators'
-    /// bodies: what <c>ClrEnumerableDefaults</c> writes as an iterator method, this writes as a class with
-    /// two advance methods over one set of fields.</para>
+    /// bodies: what linq4j writes as an anonymous <c>Enumerator</c>, this writes as a class with two advance
+    /// methods over one set of fields.</para>
     /// </remarks>
     static class ClrCursorDefaults
     {
@@ -295,8 +295,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="OrderBy{TSource, TKey}"/>, over an open that awaits. The drain awaits each row, which
         /// is what a cursor lets an open do and an <see cref="IAsyncEnumerable{T}"/> could not: its
-        /// <c>GetAsyncEnumerator</c> cannot await, so the enumerable convention's sort had to leave its
-        /// drain to the first advance and say so.
+        /// <c>GetAsyncEnumerator</c> cannot await, so a sort over one would have to leave its drain to the
+        /// first advance.
         /// </summary>
         public static async ValueTask<IClrCursor<TSource>> OrderByAsync<TSource, TKey>(ValueTask<IClrCursor<TSource>> source, Func<TSource, TKey> keySelector, java.util.Comparator? comparator, CancellationToken cancellationToken)
         {
@@ -858,8 +858,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <remarks>
         /// <see cref="AsEnumerable{TSource}"/> for the awaiting sequence, with the one difference the CLR
         /// imposes: <c>GetAsyncEnumerator</c> cannot await, so an open that awaits has to run inside the
-        /// first <c>MoveNextAsync</c>. That is the sanctioned exception the sequence convention states at
-        /// every awaited drain, and it is stated here for the same reason.
+        /// first <c>MoveNextAsync</c>, which moves the acquisition later than linq4j's <c>enumerator()</c>
+        /// puts it. This is the one place a plan's rows leave as a sequence, and the CLR gives it no
+        /// other shape.
         /// </remarks>
         public static IAsyncEnumerable<TSource> AsAsyncEnumerable<TSource>(Func<CancellationToken, ValueTask<IClrCursor<TSource>>> open, CancellationToken cancellationToken)
         {
@@ -1785,8 +1786,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <returns></returns>
         /// <remarks>
         /// <c>Linq4j.asEnumerable(List)</c>, read through the crossing every linq4j sequence is read
-        /// through, so each value is converted rather than cast for the reason
-        /// <see cref="JavaSequences.FromJava{TSource}"/> gives.
+        /// through, <see cref="JavaCursors.FromJava{TSource}"/>.
         /// </remarks>
         public static IClrCursor<TSource> FromJavaList<TSource>(java.util.List source)
         {
@@ -1821,9 +1821,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         ///
         /// <para>The drain is at the open, as the synchronous pair's is, which is what an awaiting open can
         /// do and an <see cref="System.Collections.Generic.IAsyncEnumerable{T}"/> could not: its
-        /// <c>GetAsyncEnumerator</c> cannot await, so the sequence convention's operator had to fold on the
-        /// first advance and keep the row for every later enumeration. Nothing here is deferred and nothing
-        /// is kept — the open awaits the drain and hands back a cursor over the one row.</para>
+        /// <c>GetAsyncEnumerator</c> cannot await, so an operator over one would have to fold on the first
+        /// advance and keep the row for every later enumeration. Nothing here is deferred and nothing is
+        /// kept — the open awaits the drain and hands back a cursor over the one row.</para>
         /// </remarks>
         public static async ValueTask<IClrCursor<java.util.List>> SingletonJavaListAsync<TSource>(ValueTask<IClrCursor<TSource>> source, CancellationToken cancellationToken)
         {
@@ -2854,8 +2854,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// <see cref="AsofJoin{TSource, TInner, TKey, TResult}"/>, over opens that await. Both scans await
         /// each row inside the open, which is what a cursor lets an open do and an
-        /// <see cref="IAsyncEnumerable{T}"/> could not: its <c>GetAsyncEnumerator</c> cannot await, so the
-        /// enumerable convention's ASOF join had to leave its scans to the first advance and say so.
+        /// <see cref="IAsyncEnumerable{T}"/> could not: its <c>GetAsyncEnumerator</c> cannot await, so an
+        /// ASOF join over one would have to leave its scans to the first advance.
         /// </summary>
         public static async ValueTask<IClrCursor<TResult>> AsofJoinAsync<TSource, TInner, TKey, TResult>(
             ValueTask<IClrCursor<TSource>> outer,
@@ -6766,9 +6766,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// into the partition collection, appends each output row to an <c>ArrayList</c> and evaluates to
         /// <c>Linq4j.asEnumerable(list)</c>, once per window group, each group's list being the next group's
         /// source. So the whole window is computed where the expression is evaluated, which in this convention
-        /// is the open — in both bodies. The enumerable convention's awaiting twin had to leave the drain to the
-        /// first advance, because a <c>GetAsyncEnumerator</c> cannot await; an awaiting open can, and
-        /// <see cref="WindowAsync"/> awaits the drain and hands back a cursor over the finished list, exactly as
+        /// is the open — in both bodies. An awaiting open can await the drain where a
+        /// <c>GetAsyncEnumerator</c> could not, and <see cref="WindowAsync"/> awaits it and hands back a cursor over the finished list, exactly as
         /// this does.</para>
         /// </remarks>
         public static IClrCursor<TResult> Window<TSource, TKey, TAccumulator, TResult>(

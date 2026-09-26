@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions;
+using Apache.Calcite.Extensions.Adapter.Cursor;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Tests;
 
@@ -29,7 +31,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
     /// </summary>
     /// <remarks>
     /// The answers themselves are asserted by the two differential suites; this asks the other question about
-    /// the same plans, which is what they are made of. MIN, MAX and SUM over ANY are the one place in either
+    /// the same plans, which is what they are made of. MIN, MAX and SUM over ANY are the one place in the
     /// convention where this project writes a linq4j tree of its own rather than translating one Calcite
     /// produced — <c>ClrAnyAggImplementors</c> implements <c>AggImplementor</c>, whose contexts hand out a
     /// <c>BlockBuilder</c> and a list of linq4j expressions and admit nothing else — so the claim that it is
@@ -104,8 +106,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         /// Plans a statement, implements it the way asked for, and returns the tree and the rows it gives.
         /// </summary>
         /// <param name="sql"></param>
-        /// <param name="async">Whether to implement the plan as an asynchronous sequence. The planning is
-        /// the same either way; only the implementor differs.</param>
+        /// <param name="async">Whether to read the awaiting open's tree and rows rather than the synchronous
+        /// one's. The plan is the same either way; only the open differs.</param>
         /// <returns></returns>
         /// <remarks>
         /// <c>AGGREGATE_REDUCE_FUNCTIONS</c> for the same reason the differential suites register it: AVG has
@@ -118,13 +120,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             rootSchema.add("ANYS", new AnysTable());
 
             var rules = new java.util.ArrayList();
-            foreach (var rule in ClrEnumerableRules.Rules())
+            foreach (var rule in ClrCursorRules.Rules())
                 rules.add(rule);
             rules.add(org.apache.calcite.rel.rules.CoreRules.AGGREGATE_REDUCE_FUNCTIONS);
             rules.add(org.apache.calcite.rel.rules.CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW);
 
             var calcRules = new java.util.ArrayList();
-            foreach (var rule in ClrEnumerableRules.CalcRules())
+            foreach (var rule in ClrCursorRules.CalcRules())
                 calcRules.add(rule);
             foreach (var rule in RelOptRules.CALC_RULES.toArray())
                 calcRules.add(rule);
@@ -141,32 +143,30 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             var logical = planner.rel(planner.validate(planner.parse(sql))).project();
             var expanded = planner.transform(0, logical.getTraitSet(), logical);
 
-            var chosen = planner.transform(1, expanded.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify(), expanded);
+            var chosen = planner.transform(1, expanded.getTraitSet().replace(ClrCursorConvention.Instance).simplify(), expanded);
             var physical = planner.transform(2, chosen.getTraitSet(), chosen);
 
             var parameters = new java.util.HashMap();
             var context = new TestDataContext(rootSchema, parameters);
             var rows = new List<string>();
 
-            LambdaExpression tree;
+            // one planned root, both opens of it
+            var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters)
+                .ImplementRoot((ClrCursorRel)physical, ClrEnumerablePrefer.Array);
 
-            // one planned root, implemented whichever way is asked for
-            var implementor = new ClrEnumerableRelImplementor(physical.getCluster().getRexBuilder(), parameters);
-            tree = async
-                ? implementor.ImplementRootAsync((ClrEnumerableRel)physical, ClrEnumerablePrefer.Array)
-                : implementor.ImplementRoot((ClrEnumerableRel)physical, ClrEnumerablePrefer.Array);
+            LambdaExpression tree = async ? factory.OpenAsyncExpression : factory.OpenExpression;
 
             if (async)
             {
-                var plan = (Func<DataContext, IAsyncEnumerable<object>>)tree.Compile();
-                await foreach (var row in plan(context))
-                    rows.Add(Render(row));
+                await using var cursor = await factory.OpenAsync(context, CancellationToken.None);
+                while (await cursor.ReadAsync(CancellationToken.None))
+                    rows.Add(Render(cursor.Current!));
             }
             else
             {
-                var plan = (Func<DataContext, IEnumerable<object>>)tree.Compile();
-                foreach (var row in plan(context))
-                    rows.Add(Render(row));
+                using var cursor = factory.Open(context);
+                while (cursor.Read())
+                    rows.Add(Render(cursor.Current!));
             }
 
             return (tree, rows);
