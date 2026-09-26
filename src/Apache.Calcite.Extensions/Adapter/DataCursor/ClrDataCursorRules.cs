@@ -15,13 +15,14 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
     /// factory call, because a caller has to be able to name one to remove it, and
     /// <c>RelOptPlanner.removeRule</c> takes the rule itself.
     ///
-    /// <para><b>The list is the nodes written so far, and it is short.</b> Scan, values, calc, sort, limit
-    /// and union, with a project and a filter that become a calc, and four converters: two against
-    /// <c>EnumerableConvention</c> and two against <c>ClrEnumerableConvention</c>. Everything else one of
-    /// those two plans, and a converter carries the rows — the sequence convention's node where it has
-    /// one, which is nearly everywhere, since its converter costs no Janino compile and its rows are
-    /// already CLR sequences. Each node this convention gains goes into the list as it is written, in
-    /// Calcite's order.</para>
+    /// <para><b>The list is the nodes written so far, and it is short.</b> Scan, values, calc, sort, limit,
+    /// union, repeat union and table spool, with a project and a filter that become a calc, and four
+    /// converters: two against <c>EnumerableConvention</c> and two against <c>ClrEnumerableConvention</c>.
+    /// Everything else one of those two plans, and a converter carries the rows — the sequence
+    /// convention's node where it has one, which is nearly everywhere, since its converter costs no Janino
+    /// compile and its rows are already CLR sequences. Each node this convention gains goes into the list
+    /// as it is written, in Calcite's order. The interpreter is a field a caller adds, as
+    /// <c>ClrEnumerableRules</c> has it.</para>
     /// </remarks>
     public static class ClrDataCursorRules
     {
@@ -67,6 +68,16 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         public static readonly RelOptRule ClrDataCursorLimitRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorLimitRule.Create();
 
         /// <summary>
+        /// Rule that converts a repeat union to a <see cref="ClrDataCursorRepeatUnion"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorRepeatUnionRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorRepeatUnionRule.Create();
+
+        /// <summary>
+        /// Rule that converts a table spool to a <see cref="ClrDataCursorTableSpool"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorTableSpoolRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorTableSpoolRule.Create();
+
+        /// <summary>
         /// Rule that turns a filter of this convention into a calc.
         /// </summary>
         public static readonly RelOptRule ClrDataCursorFilterToCalcRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorFilterToCalcRule.Create();
@@ -97,6 +108,17 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         public static readonly RelOptRule ClrDataCursorToClrEnumerableConverterRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorToClrEnumerableConverterRule.Create();
 
         /// <summary>
+        /// Rule that reads a plan of <c>BindableConvention</c> as one of this convention, by interpreting it.
+        /// </summary>
+        /// <remarks>
+        /// Not in what <see cref="Rules"/> returns, because <c>TO_INTERPRETER</c> is not in
+        /// <c>ENUMERABLE_RULES</c>: Calcite registers it from <c>RelOptUtil.registerDefaultRules</c>, which
+        /// registers Calcite's own. A caller adds this one to have an interpreted node land here rather than
+        /// in <c>EnumerableConvention</c> under a converter.
+        /// </remarks>
+        public static readonly RelOptRule ClrDataCursorInterpreterRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorInterpreterRule.Create();
+
+        /// <summary>
         /// The rules registered by default, in Calcite's order.
         /// </summary>
         static readonly IReadOnlyList<RelOptRule> RuleList =
@@ -109,6 +131,8 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             ClrDataCursorUnionRule,
             ClrDataCursorSortRule,
             ClrDataCursorLimitRule,
+            ClrDataCursorRepeatUnionRule,
+            ClrDataCursorTableSpoolRule,
             EnumerableToClrDataCursorConverterRule,
             ClrDataCursorToEnumerableConverterRule,
             ClrEnumerableToClrDataCursorConverterRule,

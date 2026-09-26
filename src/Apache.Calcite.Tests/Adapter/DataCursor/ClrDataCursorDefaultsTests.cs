@@ -194,6 +194,66 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         }
 
         /// <summary>
+        /// A spool leaves a round's rows in the collection on the advance that finds the input exhausted,
+        /// whichever kind of advance that is, and each row is converted on its way in.
+        /// </summary>
+        /// <remarks>
+        /// <c>lazyCollectionSpool</c> buffers in <c>moveNext</c> and flushes in the same <c>moveNext</c> that
+        /// returns false, so the collection is untouched while rows are being read and holds the round after.
+        /// What reads it back is Java, so a row goes in as Java's: an <see cref="int"/> row is a
+        /// <c>java.lang.Integer</c> in the collection.
+        /// </remarks>
+        [Fact]
+        public async Task ShouldLeaveTheRoundInTheCollectionOnceTheInputIsExhausted()
+        {
+            var collection = new java.util.ArrayList();
+            collection.add(java.lang.Integer.valueOf(99));
+
+            var spool = ClrDataCursorDefaults.LazyCollectionSpool<int>(collection, new ScalarIntCursor([1, 2, 3]));
+
+            spool.Read().Should().BeTrue();
+            (await spool.ReadAsync(CancellationToken.None)).Should().BeTrue();
+            spool.Read().Should().BeTrue();
+            collection.size().Should().Be(1, "the collection is untouched until the input is exhausted");
+
+            (await spool.ReadAsync(CancellationToken.None)).Should().BeFalse();
+            collection.size().Should().Be(3, "the advance that found the input exhausted replaced the collection with the round");
+            collection.get(0).Should().Be(java.lang.Integer.valueOf(1));
+            collection.get(2).Should().Be(java.lang.Integer.valueOf(3));
+        }
+
+        /// <summary>
+        /// A cursor over CLR integers in hand.
+        /// </summary>
+        sealed class ScalarIntCursor(IReadOnlyList<int> rows) : ClrDataCursor<int>
+        {
+
+            int index = -1;
+
+            public override int Current => rows[index];
+
+            public override bool Read()
+            {
+                if (index + 1 >= rows.Count)
+                    return false;
+
+                index++;
+                return true;
+            }
+
+            public override ValueTask<bool> ReadAsync(CancellationToken cancellationToken)
+            {
+                return new ValueTask<bool>(Read());
+            }
+
+            public override void Dispose()
+            {
+
+            }
+
+        }
+
+        /// <summary>
         /// A cursor over scalar rows in hand.
         /// </summary>
         sealed class ScalarCursor(IReadOnlyList<object> rows) : ClrDataCursor<object>

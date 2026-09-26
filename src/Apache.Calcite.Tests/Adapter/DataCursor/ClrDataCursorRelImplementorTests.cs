@@ -335,6 +335,9 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
             "SELECT ID FROM SALES UNION ALL SELECT ID FROM SALES",
             "SELECT ID FROM SALES UNION ALL SELECT K FROM SORTED UNION ALL SELECT ID FROM SALES",
             "SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)",
+            // the repeat union and the spool, with the transient scan Calcite's under the converter in and
+            // the iterative part deferred as an opener of each kind
+            "WITH RECURSIVE t(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 4) SELECT n FROM t",
         ];
 
         /// <summary>
