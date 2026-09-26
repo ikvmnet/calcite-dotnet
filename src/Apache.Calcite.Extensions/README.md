@@ -89,6 +89,36 @@ Three things about this program are deliberate and worth knowing before you subs
 
 A Spark handler is not supported: `ToBindable` throws `UnsupportedOperationException` if one is enabled, because a Spark handler compiles generated Java source and a plan of this convention is an expression tree.
 
+## `ClrDataCursorConvention`: one plan, opened either way, read either way
+
+A second calling convention, `ClrDataCursorConvention`, compiles a plan to a `ClrDataCursorFactory` rather than to a sequence. The factory has two members, `Open(DataContext)` and `OpenAsync(DataContext, CancellationToken)`, and both hand back the same kind of object: a `ClrDataCursor`, a forward-only cursor with `Read()` and `ReadAsync(CancellationToken)` over one position. A consumer chooses how to open, and then chooses again on every advance how to read, and a row read with one member and the next with the other are consecutive rows of one result.
+
+That is the shape `DbDataReader` has, and it is what the sequence convention cannot give it: an `IEnumerable` or an `IAsyncEnumerable` states once, at `GetEnumerator` or `GetAsyncEnumerator`, whether it will be pulled or awaited, and takes its cancellation at the same moment, so `ReadAsync(token)` had nowhere to put its token and `Read` over an awaiting plan blocked a thread per row by construction. A cursor takes the token per advance and hands it down to the leaf.
+
+```csharp
+using Apache.Calcite.Extensions.Adapter.DataCursor;
+
+// the same planner set-up as above, with ClrDataCursorRules.Rules() and CalcRules() in place of the
+// sequence convention's, and ClrDataCursorConvention.Instance asked of the root
+var implementor = new ClrDataCursorRelImplementor(
+    physical.getCluster().getRexBuilder(), new java.util.HashMap());
+var factory = implementor.ImplementRoot((ClrDataCursorRel)physical, ClrEnumerablePrefer.Array);
+
+// opening runs the plan's acquisition -- a sort drains, a leaf executes -- and reading reads rows
+await using var cursor = await factory.OpenAsync(dataContext, cancellationToken);
+while (await cursor.ReadAsync(cancellationToken))
+    Console.WriteLine(cursor.Current);
+
+// or synchronously, over the same factory
+using var pulled = factory.Open(dataContext);
+while (pulled.Read())
+    Console.WriteLine(pulled.Current);
+```
+
+`ImplementRoot` walks the tree twice, through a node's `Implement` and its `ImplementAsync`, and puts both opens on one factory; each is compiled the first time it is called. A node's two bodies differ only in what is acquired at open — one drains a sort by blocking, the other by awaiting — and produce the same cursor class, whose two advances step the same fields. An operator that acquires a source later than at its own open, as linq4j's `concat` does inside `moveNext`, takes both opens of that source and calls the one matching the advance it is in.
+
+The convention shares everything about a *row* with the sequence convention — the physical type, the row formats, the Rex translation and `ClrEnumerablePrefer` — and both directions of converter against `EnumerableConvention` exist, so a statement it has no node for is still planned. What it has today is the scan, `VALUES`, calc, sort, limit and union, with the rest of the nodes and the prepare pipeline's use of it still to come; `TODO.md` has the list.
+
 ## Key public types
 
 | Type | Purpose |
@@ -103,12 +133,17 @@ A Spark handler is not supported: `ToBindable` throws `UnsupportedOperationExcep
 | `ClrEnumerableRelFactories` | `RelBuilder` factories producing nodes of this convention. |
 | `IClrScannableTable` / `IClrQueryableTable` | The table SPI: a table hands back .NET sequences rather than linq4j ones. One interface per table kind, carrying both halves. `Scan` and `GetExpression` are required; `ScanAsync` and `GetAsyncExpression` default to reading them across. A table whose rows only ever arrive asynchronously overrides those and drains its own sequence for the required half. |
 | `ClrEnumerableRel` | The interface every node of this convention implements. Two bodies: `Implement` over the pulled operators, required, and `ImplementAsync` over the awaiting ones, optional and defaulting to `Implement`. That default is safe exactly when a body does not visit a child, which is not the same as having no input: a body that asks for its input as a sequence and takes the default composes an awaited input into a pulled operator, which `Expression.Call` refuses. |
+| `ClrDataCursorConvention` | The cursor calling convention. `ClrDataCursorConvention.Instance` is the singleton trait, and `ClrDataCursorRules` carries its `Rules()` and `CalcRules()`. |
+| `ClrDataCursorRelImplementor` | Builds both opens of a plan of that convention and hands back a `ClrDataCursorFactory`. `VisitChild` and `VisitChildAsync` are the two hierarchies; `Opener` and `OpenerAsync` defer an input's open for an operator that acquires it later. |
+| `ClrDataCursorFactory` | A compiled plan of the cursor convention: `Open(DataContext)` and `OpenAsync(DataContext, CancellationToken)` each hand back a `ClrDataCursor`, and `ElementType` says what one row is. |
+| `ClrDataCursor` / `ClrDataCursor<T>` | A forward-only cursor with `Read()` and `ReadAsync(CancellationToken)` over one position, and `Current`. |
+| `ClrDataCursorRel` | The interface every node of the cursor convention implements: `Implement` composes opens that acquire synchronously and `ImplementAsync` opens that await, the second optional and defaulting to the first with the same caveat as `ClrEnumerableRel`'s. |
 | `CalciteConnectionProperties` | Typed .NET properties over Calcite's `java.util.Properties`. |
 | `CalciteConnectionPropertiesSchemaMap` | The `schema.*` sub-properties, as a dictionary. |
 
 The nodes (`ClrEnumerableCalc`, `ClrEnumerableHashJoin`, `ClrEnumerableWindow`, and the rest) and their rules are public too, so you can subclass or re-register them.
 
-**The operator sets are not public.** `ClrEnumerableDefaults`, which holds both, and the `ClrBuiltInMethod` table that names them are internal to this package, which is what they have always been. A node you write outside it builds calls to its own methods with `Expression.Call`, and an awaiting one appends its own trailing `CancellationToken` as `Expression.Default(typeof(CancellationToken))` — an expression tree does not apply a default argument, and that `default` is what `[EnumeratorCancellation]` reads.
+**The operator sets are not public.** `ClrEnumerableDefaults`, which holds both, and the `ClrBuiltInMethod` table that names them are internal to this package, which is what they have always been, and `ClrDataCursorDefaults` and `ClrDataCursorBuiltInMethod` are internal for the same reason. A node you write outside it builds calls to its own methods with `Expression.Call`, and an awaiting one appends its own trailing `CancellationToken` as `Expression.Default(typeof(CancellationToken))` — an expression tree does not apply a default argument, and that `default` is what `[EnumeratorCancellation]` reads.
 
 **The SQL-text prepare pipeline is internal to these packages.** `ClrPrepareImpl`, `ClrSignature` and the rest of `Apache.Calcite.Extensions.Prepare` are not part of the public API surface — `Apache.Calcite.Data` reaches them through `InternalsVisibleTo`. To run SQL text, use `Apache.Calcite.Data`; to drive the planner directly, use the public types above.
 

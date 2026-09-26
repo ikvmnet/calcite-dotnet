@@ -453,6 +453,31 @@ A caller driving a `Frameworks` planner has the same job and only that job — g
 (`AddRulesProgram` in the tests), then run `Programs.standard` — and the classes that spelled `standard`'s six
 passes out by hand are gone.
 
+**`ClrDataCursorConvention` is the second convention, and its plan is an open rather than a sequence.** A node's
+expression evaluates to an *opened* `ClrDataCursor<TRow>`, so the tree of calls *is* linq4j's `enumerator()`
+cascade: a sort drains where its open is evaluated, a leaf executes there, and an operator that acquires a
+source later — `concat` at its turn inside `moveNext`, `union` after draining its first — takes that source as a
+delegate built by `Opener`/`OpenerAsync`. `Implement` composes opens that acquire synchronously and
+`ImplementAsync` opens that await, in `ValueTask<ClrDataCursor<TRow>>`; both produce the *same cursor class*,
+whose `Read` and `ReadAsync(token)` step one set of fields, and `ImplementRoot` runs both bodies and puts the
+two opens on one `ClrDataCursorFactory`. **A deferred source is visited through both hierarchies from both
+bodies**, because the advance that reaches it may be either and the cursor needs the opener of that kind —
+that is the one place the two-closed-hierarchies rule of the enumerable convention does not hold, and it is
+not a mode. The awaiting hierarchy's token is a real parameter, declared by the awaiting root's lambda and
+redeclared by each deferred opener so that it shadows — measured to work in both the compiler and the
+interpreter — and `CallAsync` passes the implementor's parameter, never `default`. Where the enumerable
+convention had to leave an awaited drain to the first `MoveNextAsync`, the cursor's awaiting open awaits it.
+Six nodes and both converters exist; `TODO.md` lists the rest.
+
+**The converter out of either Clr convention is a Janino call into a stashed plan, and two things about the
+generated source were only found when a Clr node first ran under a Calcite node** — no test had done it
+before `ClrEnumerableToEnumerableConverterTests`. linq4j writes a class name with every `$` as `.`
+(`Types.className`, for `Outer.Inner`), so IKVM's `$$`-mangled name for a generic instantiation cannot be
+named: the plan is stashed as `Object` and cast in `JavaPlans`. And IKVM exposes an `internal` class to Java
+as package-private, which Janino silently drops as a candidate — the error lists the method it refused —
+so `JavaPlans` is public. A probe with the same signature on a public class compiled; on the internal one it
+did not.
+
 **A join boxes its rows.** Calcite builds the selector and predicate against boxed rows because linq4j's
 `Function2` and `Predicate2` erase to `Object`, and because an outer join compares a row to null. A
 delegate is typed where those interfaces were not.

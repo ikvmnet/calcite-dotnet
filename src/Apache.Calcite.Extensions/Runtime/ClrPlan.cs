@@ -9,8 +9,8 @@ namespace Apache.Calcite.Extensions.Runtime
     /// <summary>
     /// A plan of one of the CLR conventions, compiled the first time it is run.
     /// </summary>
-    /// <typeparam name="TRows">What the plan yields — an <c>IEnumerable</c> or an
-    /// <c>IAsyncEnumerable&lt;object&gt;</c>.</typeparam>
+    /// <typeparam name="TRows">What the plan yields — an <c>IEnumerable</c> for the sequence convention,
+    /// a <c>ClrDataCursor</c> for the cursor one.</typeparam>
     /// <remarks>
     /// What a converter <em>out of</em> one of these conventions stashes. It holds the expression tree and
     /// nothing else until something asks it to run.

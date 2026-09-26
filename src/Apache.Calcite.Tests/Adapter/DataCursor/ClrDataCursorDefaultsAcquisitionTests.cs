@@ -9,53 +9,37 @@ using org.apache.calcite.rel.type;
 
 using Xunit;
 
-namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
+namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 {
 
     /// <summary>
-    /// Obtaining an enumerator runs the plan; reading pulls rows.
+    /// Holds the provider to linq4j's timing: opening the plan is the acquisition, and it runs at Execute.
     /// </summary>
     /// <remarks>
-    /// linq4j's contract, transcribed into both conventions: an operator's <c>enumerator()</c> acquires its
-    /// source's enumerator — a sort drains its input there, a linq4j leaf executes its statement there —
-    /// and <c>moveNext</c> only reads. The provider obtains the enumerator at Execute, so Execute is where
-    /// the plan runs. These tests read a counting table's two numbers apart:
-    /// <c>EnumeratorCalls</c> says whether the leaf was <em>acquired</em>, and <c>Produced</c> says how many
-    /// rows were <em>read</em> — and it is the gap between the two that the whole rewrite is about. A suite
-    /// that only compared answers could never see it.
+    /// The one thing the cursor convention changes here is on the awaiting side. A sequence's
+    /// <c>GetAsyncEnumerator</c> cannot await, so the sequence convention had to leave an awaited drain to
+    /// the first advance and say so; an open that awaits can await the drain, so a sort opened with
+    /// <c>ExecuteReaderAsync</c> has read its whole input by the time the reader is handed back, exactly
+    /// as one opened with <c>ExecuteReader</c> has.
     /// </remarks>
-    public class ClrEnumerableDefaultsAcquisitionTests
+    public class ClrDataCursorDefaultsAcquisitionTests
     {
 
         const string Model =
             "Model=inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]};Schema=adhoc";
 
-        const string SynchronousModel = Model + ";Synchronous=true";
-
-        /// <summary>
-        /// A <c>ScannableTable</c> of three rows that counts how often its enumerator is acquired and how
-        /// many rows it has produced.
-        /// </summary>
         sealed class CountingTable : org.apache.calcite.schema.impl.AbstractTable, org.apache.calcite.schema.ScannableTable
         {
 
-            /// <summary>
-            /// How many times <c>scan</c>'s enumerable was asked for an enumerator.
-            /// </summary>
             public int EnumeratorCalls;
 
-            /// <summary>
-            /// How many rows have been read out of it, across every enumerator.
-            /// </summary>
             public int Produced;
 
-            /// <inheritdoc />
             public override RelDataType getRowType(RelDataTypeFactory typeFactory)
             {
                 return typeFactory.builder().add("ID", org.apache.calcite.sql.type.SqlTypeName.INTEGER).build();
             }
 
-            /// <inheritdoc />
             public org.apache.calcite.linq4j.Enumerable scan(org.apache.calcite.DataContext root)
             {
                 return new CountingEnumerable(this);
@@ -66,7 +50,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
         sealed class CountingEnumerable(CountingTable table) : org.apache.calcite.linq4j.AbstractEnumerable
         {
 
-            /// <inheritdoc />
             public override org.apache.calcite.linq4j.Enumerator enumerator()
             {
                 table.EnumeratorCalls++;
@@ -87,10 +70,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 
             int _index = -1;
 
-            /// <inheritdoc />
             public object? current() => Rows[_index];
 
-            /// <inheritdoc />
             public bool moveNext()
             {
                 if (_index + 1 >= Rows.Length)
@@ -101,16 +82,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
                 return true;
             }
 
-            /// <inheritdoc />
             public void reset() => _index = -1;
 
-            /// <inheritdoc />
             public void close()
             {
 
             }
 
-            /// <inheritdoc />
             public void Dispose()
             {
 
@@ -118,10 +96,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 
         }
 
-        static (CalciteConnection Connection, CountingTable Table) Open(string model)
+        static (CalciteConnection Connection, CountingTable Table) Open()
         {
             var table = new CountingTable();
-            var c = new CalciteDataSourceBuilder(model)
+            var c = new CalciteDataSourceBuilder(Model)
                 .ConfigureRootSchema(root => root.add("T", table))
                 .Build()
                 .OpenConnection();
@@ -129,13 +107,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             return (c, table);
         }
 
-        /// <summary>
-        /// A synchronous plan's Execute acquires the leaf without reading a row.
-        /// </summary>
         [Fact]
         public void ExecuteShouldAcquireTheLeafWithoutReading()
         {
-            var (c, table) = Open(SynchronousModel);
+            var (c, table) = Open();
             using (c)
             {
                 using var cmd = c.CreateCommand();
@@ -143,7 +118,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 
                 using var reader = cmd.ExecuteReader();
 
-                table.EnumeratorCalls.Should().Be(1, "Execute obtains the enumerator, and the chain acquires down to the leaf");
+                table.EnumeratorCalls.Should().Be(1, "Execute opens the plan, and the open acquires down to the leaf");
                 table.Produced.Should().Be(0, "no row has been asked for");
 
                 var rows = new List<int>();
@@ -155,14 +130,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             }
         }
 
-        /// <summary>
-        /// A synchronous plan's sort drains its input at Execute, as linq4j's <c>orderBy</c> drains inside
-        /// <c>enumerator()</c>.
-        /// </summary>
         [Fact]
-        public void ExecuteShouldRunASynchronousSort()
+        public void ExecuteShouldRunASort()
         {
-            var (c, table) = Open(SynchronousModel);
+            var (c, table) = Open();
             using (c)
             {
                 using var cmd = c.CreateCommand();
@@ -171,7 +142,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
                 using var reader = cmd.ExecuteReader();
 
                 table.EnumeratorCalls.Should().Be(1);
-                table.Produced.Should().Be(3, "the sort drains its whole input inside GetEnumerator, which Execute called");
+                table.Produced.Should().Be(3, "the sort drains its whole input inside the open, which Execute ran");
 
                 var rows = new List<int>();
                 while (reader.Read())
@@ -181,20 +152,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             }
         }
 
-        /// <summary>
-        /// The default mode's Execute acquires a Calcite leaf under the asynchronous root without reading
-        /// a row.
-        /// </summary>
-        /// <remarks>
-        /// The leaf is a linq4j sequence and its <c>enumerator()</c> is where a sub-plan executes — the
-        /// AdoNet adapter runs its <c>DbCommand</c> there — so the crossing calls it at
-        /// <c>GetAsyncEnumerator</c>, which Execute reaches. This is the asynchronous half of the rewrite's
-        /// point: failures and side effects of starting a plan land at Execute, from either entry point.
-        /// </remarks>
         [Fact]
         public async Task ExecuteAsyncShouldAcquireTheLeafWithoutReading()
         {
-            var (c, table) = Open(Model);
+            var (c, table) = Open();
             using (c)
             {
                 using var cmd = c.CreateCommand();
@@ -202,7 +163,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 
                 await using var reader = await cmd.ExecuteReaderAsync();
 
-                table.EnumeratorCalls.Should().Be(1, "GetAsyncEnumerator acquires down to the leaf, and Execute called it");
+                table.EnumeratorCalls.Should().Be(1, "the awaiting open acquires down to the leaf, and Execute awaited it");
                 table.Produced.Should().Be(0, "no row has been asked for");
 
                 var rows = new List<int>();
@@ -213,19 +174,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
             }
         }
 
-        /// <summary>
-        /// An asynchronous sort acquires its input at Execute and drains at the first read — the one
-        /// deviation the CLR imposes, stated where the operator states it.
-        /// </summary>
-        /// <remarks>
-        /// <c>GetAsyncEnumerator</c> cannot await, so a drain that must await waits for the first
-        /// <c>MoveNextAsync</c>. Acquisition is still eager: the leaf's <c>enumerator()</c> has run before
-        /// the first read is asked for.
-        /// </remarks>
         [Fact]
-        public async Task AnAsynchronousSortShouldAcquireAtExecuteAndDrainAtTheFirstRead()
+        public async Task ExecuteAsyncShouldRunASort()
         {
-            var (c, table) = Open(Model);
+            var (c, table) = Open();
             using (c)
             {
                 using var cmd = c.CreateCommand();
@@ -233,11 +185,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 
                 await using var reader = await cmd.ExecuteReaderAsync();
 
-                table.EnumeratorCalls.Should().Be(1, "acquisition is eager even where the drain cannot be");
-                table.Produced.Should().Be(0, "an awaited drain waits for the first MoveNextAsync");
+                table.EnumeratorCalls.Should().Be(1);
+                table.Produced.Should().Be(3, "an open that awaits can await the drain, so the sort ran inside Execute");
 
                 (await reader.ReadAsync()).Should().BeTrue();
-                table.Produced.Should().Be(3, "the first read ran the drain");
                 reader.GetInt32(0).Should().Be(3);
             }
         }

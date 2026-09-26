@@ -92,7 +92,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                     Expression.Convert(result.Expression, typeof(IEnumerable)),
                     clr.Root));
 
-            var stashed = implementor.stash(plan, (java.lang.Class)typeof(ClrPlan<IEnumerable>));
+            // stashed as an Object, because the generated source declares the variable by the type's name
+            // and cannot name a generic instantiation -- see JavaPlans
+            var stashed = implementor.stash(plan, (java.lang.Class)typeof(java.lang.Object));
 
             // their convention's row abstraction, built from the three values ours carries, because that
             // is what EnumerableRelImplementor.result takes -- and it casts to PhysTypeImpl besides
@@ -106,7 +108,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <see cref="JavaPlans.Bind"/>, which runs the compiled sub-plan and reads it as a linq4j sequence.
         /// </summary>
         static readonly java.lang.reflect.Method BindMethod = ((java.lang.Class)typeof(JavaPlans))
-            .getDeclaredMethod(nameof(JavaPlans.Bind), [typeof(ClrPlan<IEnumerable>), typeof(DataContext)]);
+            .getDeclaredMethod(nameof(JavaPlans.Bind), [typeof(java.lang.Object), typeof(DataContext)]);
 
         /// <inheritdoc />
         public Pair? deriveTraits(RelTraitSet childTraits, int childId) => EnumerableRel.__DefaultMethods.deriveTraits(this, childTraits, childId);

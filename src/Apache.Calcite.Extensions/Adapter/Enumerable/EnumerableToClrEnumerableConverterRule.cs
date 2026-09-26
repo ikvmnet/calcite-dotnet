@@ -53,9 +53,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <inheritdoc />
         public override RelNode? convert(RelNode rel)
         {
+            // simplified, because that is the trait set of the subset the input is registered in: RelSet.add
+            // simplifies a rel's traits before choosing its subset, so a merge join carrying two collations
+            // sits in the subset carrying none, and a converter claiming both over that subset is a claim its
+            // input does not keep. RelOptRule.convert simplifies for the same reason.
             return new EnumerableToClrEnumerableConverter(
                 rel.getCluster(),
-                rel.getTraitSet().replace(ClrEnumerableConvention.Instance),
+                rel.getTraitSet().replace(ClrEnumerableConvention.Instance).simplify(),
                 rel);
         }
 

@@ -339,27 +339,23 @@ namespace Apache.Calcite.Data.Tests
 
         /// <summary>
         /// And the plan runs on the widened type rather than merely reporting it: the same query under
-        /// the same type system through the synchronous convention agrees, both conventions inside one
-        /// session sharing the session's type factory.
+        /// the same type system agrees whichever way the plan is opened, both opens sharing the session's
+        /// type factory.
         /// </summary>
         [Fact]
-        public void A_derived_type_should_hold_across_both_conventions()
+        public async System.Threading.Tasks.Task A_derived_type_should_hold_across_both_opens()
         {
             const string Sql = "SELECT SUM(x) FROM (VALUES (1), (2)) AS t(x)";
             var typeSystem = Cs(typeof(WideSumTypeSystem).AssemblyQualifiedName!);
 
-            using var async = new CalciteConnection(typeSystem);
-            using var sync = new CalciteConnection(typeSystem + ";Synchronous=true");
-            async.Open();
-            sync.Open();
+            using var connection = new CalciteConnection(typeSystem);
+            connection.Open();
 
-            using var a = async.CreateCommand();
-            using var b = sync.CreateCommand();
-            a.CommandText = Sql;
-            b.CommandText = Sql;
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = Sql;
 
-            var left = a.ExecuteScalar();
-            var right = b.ExecuteScalar();
+            var left = cmd.ExecuteScalar();
+            var right = await cmd.ExecuteScalarAsync();
             Assert.Equal(typeof(long), left!.GetType());
             Assert.Equal(left, right);
             Assert.Equal(3L, left);

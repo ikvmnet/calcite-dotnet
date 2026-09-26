@@ -39,6 +39,8 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         {
             foreach (var rule in ClrEnumerableRules.Rules())
                 rel.getCluster().getPlanner().addRule(rule);
+            foreach (var rule in Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorRules.Rules())
+                rel.getCluster().getPlanner().addRule(rule);
 
             return rel;
         }

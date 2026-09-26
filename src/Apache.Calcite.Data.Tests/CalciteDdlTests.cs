@@ -94,23 +94,22 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(1, affected);
         }
 
-        static readonly string SynchronousServerDdlConnectionString = new CalciteConnectionStringBuilder
+        static readonly string PrivateRootServerDdlConnectionString = new CalciteConnectionStringBuilder
         {
             Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
             ParserFactory = "org.apache.calcite.server.ServerDdlExecutor#PARSER_FACTORY",
             // these tests create tables by name, so each connection gets a root of its own
             Pooling = false,
             Schema = "adhoc",
-            Synchronous = true,
         };
 
         /// <summary>
-        /// The synchronous mode's DML drain, so both drains stay covered.
+        /// The DML drain over a root the connection has to itself.
         /// </summary>
         [Fact]
-        public void ExecuteNonQuery_insert_should_return_row_count_in_synchronous_mode()
+        public void ExecuteNonQuery_insert_should_return_row_count_over_a_private_root()
         {
-            using var c = new CalciteConnection(SynchronousServerDdlConnectionString);
+            using var c = new CalciteConnection(PrivateRootServerDdlConnectionString);
             c.Open();
             using var cmd = c.CreateCommand();
 
@@ -126,7 +125,7 @@ namespace Apache.Calcite.Data.Tests
         /// carries its count row, exactly as any node the convention lacks is carried.
         /// </summary>
         [Fact]
-        public void Explain_insert_should_render_the_async_rooted_plan()
+        public void Explain_insert_should_render_the_cursor_rooted_plan()
         {
             using var c = new CalciteConnection(ServerDdlConnectionString);
             c.Open();
@@ -140,7 +139,8 @@ namespace Apache.Calcite.Data.Tests
             Assert.True(r.Read());
 
             var plan = r.GetValue(0)?.ToString() ?? "";
-            Assert.Contains("EnumerableToClrEnumerableConverter", plan);
+            // a modify is Calcite's alone, crossing once, directly, into the cursor convention
+            Assert.Contains("EnumerableToClrDataCursorConverter", plan);
             Assert.Contains("TableModify", plan);
         }
 

@@ -12,7 +12,7 @@ namespace Apache.Calcite.Extensions.Plan
     {
 
         /// <summary>
-        /// Registers the rules a planner needs by default: Calcite's, and then both of this project's
+        /// Registers the rules a planner needs by default: Calcite's, and then each of this project's
         /// conventions'.
         /// </summary>
         /// <param name="planner">The planner to register on.</param>
@@ -23,8 +23,9 @@ namespace Apache.Calcite.Extensions.Plan
         /// neither Clr convention has a node for is still planned, implemented in
         /// <c>EnumerableConvention</c>, and a converter carries its rows.
         ///
-        /// <para><b>Both conventions, always.</b> Which one a statement ends in is decided by the convention
-        /// demanded of the root and by nothing here. It has to be that way round: a schema may bring rules
+        /// <para><b>Every convention, always.</b> Which one a statement ends in is decided by the convention
+        /// demanded of the root and by nothing here — the prepare pipeline demands the cursor convention,
+        /// and a node it lacks is planned by the sequence convention under a converter. It has to be that way round: a schema may bring rules
         /// of its own, and there is no telling from here which convention one of them targets, so a planner
         /// carrying half of this project would refuse an adapter aimed at the other for no reason the caller
         /// could see. Registering both is also what makes the two cross-convention converters reachable —
@@ -48,6 +49,9 @@ namespace Apache.Calcite.Extensions.Plan
             RelOptUtil.registerDefaultRules(planner, enableMaterializations, false);
 
             foreach (var rule in ClrEnumerableRules.Rules())
+                planner.addRule(rule);
+
+            foreach (var rule in Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorRules.Rules())
                 planner.addRule(rule);
         }
 

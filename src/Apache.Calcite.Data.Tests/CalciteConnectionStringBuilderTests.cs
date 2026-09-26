@@ -112,14 +112,13 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The key a data source is looked up by: the same for every spelling of one connection string,
-        /// and without <c>Synchronous</c>, which decides nothing that is built.
+        /// The key a data source is looked up by: the same for every spelling of one connection string.
         /// </summary>
         [Fact]
-        public void DataSourceKey_should_ignore_order_casing_and_the_convention()
+        public void DataSourceKey_should_ignore_order_and_casing()
         {
             var a = new CalciteConnectionStringBuilder("Model=inline:{};Schema=S;Lex=MYSQL");
-            var b = new CalciteConnectionStringBuilder("lex=MYSQL;SCHEMA=S;model=inline:{};Synchronous=true");
+            var b = new CalciteConnectionStringBuilder("lex=MYSQL;SCHEMA=S;model=inline:{}");
             var c = new CalciteConnectionStringBuilder("Model=inline:{};Schema=T;Lex=MYSQL");
 
             Assert.Equal(a.DataSourceKey, b.DataSourceKey);

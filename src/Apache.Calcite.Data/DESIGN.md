@@ -118,7 +118,7 @@ Public, consumer-facing classes implementing the `System.Data.Common` contracts.
 | `CalciteDataSource` | `DbDataSource` | Holds the root schema — model, `DUAL`, whatever the builder added — for the life of the application, and hands it to every connection it opens. Every bare `new CalciteConnection(cs)` draws on one the provider keeps per connection string. |
 | `CalciteDataSourceBuilder` | — | Builds a `CalciteDataSource` from a connection string plus what a string cannot carry: a schema instance, or any step over the root as a `SchemaPlus`. |
 | `CalciteProviderFactory` | `DbProviderFactory` | Standard ADO.NET factory registration. |
-| `CalciteConnectionStringBuilder` | `DbConnectionStringBuilder` | Typed connection-string keys (`Model`, `Schema`, `Synchronous`, `CaseSensitive`, `Conformance`, …). Unknown keys are preserved and forwarded. |
+| `CalciteConnectionStringBuilder` | `DbConnectionStringBuilder` | Typed connection-string keys (`Model`, `Schema`, `CaseSensitive`, `Conformance`, …). Unknown keys are preserved and forwarded. |
 | `CalciteException` | `DbException` | Provider failures, including planning and execution errors. |
 
 `CalciteConnection` also exposes Calcite-native objects directly, so there is no `Unwrap`-style
@@ -157,9 +157,7 @@ Calcite's schema SPI has no hook for.
 
 **`CalciteDataSources`** (`Internal/`) is the process-wide dictionary of data
 sources, keyed by `CalciteConnectionStringBuilder.DataSourceKey`, which is the connection string with
-its keys lower-cased and sorted and `Synchronous` left out — that key chooses the convention a
-connection plans into and nothing that is built, and a key has to separate only what would otherwise
-be shared wrongly. A bare `new CalciteConnection(cs)` resolves its data source here on `Open`; an empty connection
+its keys lower-cased and sorted. A bare `new CalciteConnection(cs)` resolves its data source here on `Open`; an empty connection
 string gets a private one, there being nothing to key on. A data source the application built is never
 here.
 
@@ -181,7 +179,7 @@ rest of `CalciteConnectionImpl`'s constructor:
 
 - Builds a `java.util.Properties` from every key that is the engine's, translating each to the camelCase
   name Calcite expects via `CalciteEngineProperties`, and wraps it in a `CalciteConnectionConfigImpl`.
-  `Model`, `Synchronous`, `Pooling` and `TypeSystem` are the provider's and are left out.
+  `Model`, `Pooling` and `TypeSystem` are the provider's and are left out.
 - Creates a `JavaTypeFactoryImpl` over the type system the `TypeSystem` key names, under the
   conformance's ragged-union wrapper. **The type factory is per connection and the root is per data
   source, and that is the split Calcite makes itself** when it opens an internal connection over an
@@ -190,8 +188,7 @@ rest of `CalciteConnectionImpl`'s constructor:
   window, so a factory shared by connections used concurrently would race, where a root shared by them
   is read. `RelDataType`s are interned process-wide, so a table answers the same types to every factory.
 - Resolves the default schema path to zero or one name — the model's `defaultSchemaName()` wins over the
-  `Schema` key — and reads the `Synchronous` key, which decides the convention every query on this
-  connection is planned into.
+  `Schema` key.
 
 `Dispose` marks the session disposed so later execute calls throw `ObjectDisposedException`, releases
 the session's count on the root, and retires the root first where the session owns it.
@@ -216,10 +213,9 @@ Calcite's exposure, and it is stated rather than closed.
 The session exposes three private steps and the execute entry points.
 
 **`Plan`** constructs a `PrepareContext`, pushes it onto `CalcitePrepare.Dummy`, and calls
-`ClrPrepareImpl.Prepare(ctx, sql, Object[], -1, async)`, returning a `ClrSignature`. The element
-type is what makes the pipeline ask for array-shaped rows; `-1` means no row limit; `async` is the
-connection's mode, `true` unless `Synchronous` was set. Nothing is executed and no per-statement
-state is created.
+`ClrPrepareImpl.PrepareSql(ctx, query, Object[], -1)`, returning a `Signature` whose plan is a
+`ClrDataCursorFactory`. The element type is what makes the pipeline ask for array-shaped rows; `-1`
+means no row limit. Nothing is executed and no per-statement state is created.
 
 **`Bind`** builds the execution-time `DataContext`: a fresh `AtomicBoolean` cancel flag, the
 positional parameters converted by `ParameterBinder`, the command timeout in milliseconds, and
@@ -229,27 +225,22 @@ positional parameters converted by `ParameterBinder`, the command timeout in mil
 **`ActivateHooks` / `DeactivateHooks`** bind each `CalciteHookEntry` to the current thread with
 `Hook.addThread` for the duration of one request and close the handles in a `finally`.
 
-**`ExecuteReader` / `ExecuteReaderAsync`** share one core: plan the statement, bind, and — unless it
-is DDL — take the plan's enumerator. **Whether the rows are awaited is the connection's choice, not
-the entry point's**, and it is no longer a choice of convention: there is one, and the signature
-answers either `Bind` or `BindAsync`, implementing and compiling the planned root the first time
-that one is asked for. By default the core takes
-`signature.BindAsync(dataContext).GetAsyncEnumerator(cancellationToken)` into a
-`CalciteAsyncEnumerableResult` — the token enters here, at the enumerator, which is the only place a
-token can enter an `IAsyncEnumerable`, and cancelling it stops the leaf between rows. With
-`Synchronous` set the core takes
-`signature.Bind(dataContext).GetEnumerator()` into a `CalciteEnumerableResult`; the token is then
-only checked before planning. `ExecuteReaderAsync` is the core in a completed task — planning is
-synchronous work — and `ExecuteReader` is the core with `CancellationToken.None`.
+**`ExecuteReader` / `ExecuteReaderAsync`** each plan the statement, bind, and — unless it is DDL —
+open the plan's cursor: `ExecuteReader` through `signature.Open(dataContext)`, on the calling thread,
+and `ExecuteReaderAsync` through `await signature.OpenAsync(dataContext, token)`. **Neither decides
+how the rows will be read.** The cursor either hands back carries `Read` and `ReadAsync(token)` over
+one position, and `CalciteDataCursorResult` is the one result over it. The token given to
+`ExecuteReaderAsync` is linked into the statement's cancellation, which the data context's cancel
+flag is tied to, so that a token given to a later `ReadAsync` has the same thing to cancel.
 
 **`ExecuteNonQueryAsync`** plans and binds, then branches on `signature.StatementType`:
 
 - DDL (`CREATE`, `ALTER`, `DROP`, `OTHER_DDL`, dispatched on `name()`) has already taken effect
   during prepare, so there is nothing to enumerate and the count is `0`.
 - `SELECT` reports `-1`, by ADO.NET convention.
-- DML drains the enumerator — of the connection's plan, exactly as the reader path prepares it. The
-  modify itself is Calcite's `EnumerableTableModify` in both modes, so under the asynchronous root
-  the count row crosses the converter and completes synchronously; the drain blocks with the
+- DML opens the plan's cursor and reads its one row — the same plan the reader path prepares. The
+  modify itself is Calcite's `EnumerableTableModify`, so the count row crosses the converter into the
+  cursor convention and its advance completes synchronously; the read blocks with the
   synchronization context suppressed all the same. Here — and only here, where the drain can see
   Calcite's check-points — the cancellation token is registered against the cancel flag,
   scoped to the drain. Because the plan was prepared for `Object[]` rows, the single row's element
@@ -335,15 +326,15 @@ returning rows, plus the `ElementType` the cursor factory is deduced from. It me
 
 ### 5. Result stream (`Internal/CalciteResult` and friends)
 
-`CalciteResult` is what an execute call hands back: the `ClrSignature`, a
-`CalciteResultColumns` built from it, the plan's enumerator, and a records-affected count. Two
-subclasses, one per convention — `CalciteEnumerableResult` over an `IEnumerator<object>`,
-`CalciteAsyncEnumerableResult` over an `IAsyncEnumerator<object>` — and both answer both `Read` and
-`ReadAsync`, because `DbDataReader` is a contract: a synchronous plan answers `ReadAsync` with a
-completed task, and an asynchronous plan blocks in `Read`, with the synchronization context
-suppressed before the plan runs so a thread carrying one does not wait on a continuation promised
-to itself. The enumerator is the plan's own — a compiled delegate returns it — so nothing stands
-between a row and the reader. A read wraps the current row in a `CalciteResultRow`; a null
+`CalciteResult` is what an execute call hands back: the `Signature`, a
+`CalciteResultColumns` built from it, the plan's cursor, and a records-affected count. One subclass,
+`CalciteDataCursorResult` over a `ClrDataCursor`, whose `Read` is the cursor's synchronous advance
+and whose `ReadAsync(token)` is its awaiting one with that call's token, because `DbDataReader` is a
+contract: a plan with nothing to await answers `ReadAsync` with a completed task, and a leaf that can
+only be awaited blocks in `Read` with the synchronization context suppressed before the call, so a
+thread carrying one does not wait on a continuation promised to itself. The cursor is the plan's own —
+a compiled delegate opens it — so nothing stands between a row and the reader. A read wraps the
+current row in a `CalciteResultRow`; a null
 enumerator (DDL, or a non-query) reads as an empty result. `Dispose` completes the enumerator's
 disposal — blocking for it on the asynchronous result, under the same suppression — and holds
 nothing else.
@@ -553,9 +544,8 @@ type; both arrive as instances. `GetFieldValue<T>` tested for a Java null and so
   planning or execution failure in one, so a caller sees a single error type.
 - `ObjectDisposedException` is thrown when a disposed session or result is used.
 - Cancellation is honoured before planning on both paths, and during the drain of a DML statement.
-  In the default mode the token given to `ExecuteReaderAsync` also reaches the plan's enumerator, so
-  cancelling it stops the leaf between rows; in synchronous mode it is not wired to a reader's
-  enumeration.
+  The token given to `ExecuteReaderAsync` is the open's, and the token given to each `ReadAsync` is
+  that advance's, reaching every operator down to the leaf; either also cancels the statement.
 
 ---
 
@@ -573,16 +563,16 @@ type; both arrive as instances. `GetFieldValue<T>` tested for a Java null and so
 4. **Request.** `ExecuteReader` builds a `CalciteExecuteRequest` from the text, the parameters, the
    timeout and the resolved hooks, and hands it to the session's reader core.
 5. **Plan.** The session pushes a `PrepareContext` onto `CalcitePrepare.Dummy` and calls
-   `ClrPrepareImpl.Prepare`, which parses, validates, converts to relational algebra and optimises
-   into `ClrEnumerableConvention`. The plan is compiled to a delegate the first time the connection
-   asks for one, as an `IEnumerable` or an `IAsyncEnumerable` according to its mode; the same planned
-   root serves both. The result is a `ClrSignature`.
+   `ClrPrepareImpl.PrepareSql`, which parses, validates, converts to relational algebra and optimises
+   into `ClrDataCursorConvention`. The root is implemented once, through both of its bodies, into a
+   `ClrDataCursorFactory`, and each of the factory's two opens is compiled the first time it is
+   called. The result is a `Signature`.
 6. **Bind.** Parameters are converted and assembled with the cancel flag, the timeout and the
    signature's internal parameters into a `StatementDataContext`.
-7. **Execute.** The plan's enumerator is taken — `BindAsync(...).GetAsyncEnumerator(token)` or
-   `Bind(...).GetEnumerator()` by mode — and wrapped in the matching `CalciteResult`. Obtaining the
-   enumerator **runs** the plan, as it does in linq4j: every operator acquires its source's
-   enumerator there, a sort drains its input there, and a linq4j leaf executes its statement there —
+7. **Execute.** The plan's cursor is opened — `Open(dataContext)` or `await OpenAsync(dataContext,
+   token)` by entry point — and wrapped in a `CalciteDataCursorResult`. Opening **runs** the plan,
+   as obtaining the enumerator does in linq4j: every operator acquires its source there, a sort drains
+   its input there, and a linq4j leaf executes its statement there —
    so failures and side effects of starting the plan land at Execute. No row has been read; an
    asynchronous drain that must await waits for the first `ReadAsync`.
 8. **Read.** `CalciteDataReader` pulls rows through `CalciteResult.ReadAsync`, and each accessor
@@ -601,11 +591,11 @@ plan to bind.
 text and returns a `ClrExplainResult`; `Describe` wraps that text in a `ClrExplainBindable`, which
 yields one row.
 
-It is read by either reader, and `ClrExplainBindable` is the only bindable that is both an
-`IClrBindable` and an `IClrAsyncBindable`, holding a string rather than a plan. **What gets explained
-no longer depends on which method was called, or on the connection's mode**: there is one convention
-and one plan, so an `EXPLAIN` renders `ClrEnumerable*` nodes either way and fails to plan wherever
-the query itself would. It cannot say whether the query will await.
+It is read by either reader, and `ClrExplainBindable` holds a string rather than a plan, opening a
+one-row cursor over it. **What gets explained does not depend on which method was called**: there is
+one plan, so an `EXPLAIN` renders a plan rooted in `ClrDataCursor*` nodes, with `ClrEnumerable*` ones
+beneath a converter wherever the cursor convention lacks the node, and fails to plan wherever the
+query itself would. It cannot say whether the query will await, because that is decided per read.
 
 ---
 

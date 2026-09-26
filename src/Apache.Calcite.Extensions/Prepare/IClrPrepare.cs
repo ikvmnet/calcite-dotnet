@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
+using Apache.Calcite.Extensions.Adapter.DataCursor;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Runtime;
 
@@ -195,17 +198,120 @@ namespace Apache.Calcite.Extensions.Prepare
             public Meta.StatementType StatementType => statementType;
 
             /// <summary>
-            /// Runs the plan against a <see cref="DataContext"/> and returns its rows.
+            /// Opens a cursor over the plan's rows, running its acquisition on the calling thread.
+            /// </summary>
+            /// <param name="root"></param>
+            /// <returns>The cursor, positioned before the first row.</returns>
+            /// <exception cref="InvalidOperationException">There is no plan to run, or it is not one a
+            /// cursor can be opened over.</exception>
+            /// <remarks>
+            /// What the ADO.NET provider's <c>ExecuteReader</c> is: the statement is prepared into the
+            /// cursor convention, and the cursor it opens carries both advances over one position.
+            /// </remarks>
+            public ClrDataCursor Open(DataContext root)
+            {
+                ArgumentNullException.ThrowIfNull(root);
+
+                if (bindable is null)
+                    throw new InvalidOperationException($"{Sql ?? "The statement"} has no plan to run.");
+                if (bindable is not IClrDataCursorBindable cursor)
+                    throw new InvalidOperationException($"{Sql ?? "The statement"} has no cursor plan.");
+
+                var opened = cursor.Open(root);
+
+                // apply the limit; in JDBC 0 means "no limit", but for us -1 means "no limit" and 0 is a
+                // valid limit
+                if (maxRowCount >= 0)
+                    opened = ClrDataCursorDefaults.Take((ClrDataCursor<object>)Typed(opened), java.math.BigDecimal.valueOf(maxRowCount));
+
+                return opened;
+            }
+
+            /// <summary>
+            /// Opens a cursor over the plan's rows, awaiting its acquisition.
+            /// </summary>
+            /// <param name="root"></param>
+            /// <param name="cancellationToken">The token for the acquisition; each advance takes its own.</param>
+            /// <returns>The cursor, positioned before the first row.</returns>
+            /// <exception cref="InvalidOperationException">There is no plan to run, or it is not one a
+            /// cursor can be opened over.</exception>
+            public async ValueTask<ClrDataCursor> OpenAsync(DataContext root, CancellationToken cancellationToken)
+            {
+                ArgumentNullException.ThrowIfNull(root);
+
+                if (bindable is null)
+                    throw new InvalidOperationException($"{Sql ?? "The statement"} has no plan to run.");
+                if (bindable is not IClrDataCursorBindable cursor)
+                    throw new InvalidOperationException($"{Sql ?? "The statement"} has no cursor plan.");
+
+                var opened = await cursor.OpenAsync(root, cancellationToken).ConfigureAwait(false);
+
+                if (maxRowCount >= 0)
+                    opened = ClrDataCursorDefaults.Take((ClrDataCursor<object>)Typed(opened), java.math.BigDecimal.valueOf(maxRowCount));
+
+                return opened;
+            }
+
+            /// <summary>
+            /// Reads the untyped cursor a plan hands out as a cursor of objects, which the limit operator
+            /// takes.
+            /// </summary>
+            /// <remarks>
+            /// The root of a cursor plan is typed by its physical row, and every physical row is a reference
+            /// type, so the cursor is a <c>ClrDataCursor&lt;TRow&gt;</c> for some class and the limit can be
+            /// applied over it as objects only through one more cursor. A row is never a value type — the
+            /// physical type boxes what the type factory answers — so nothing is boxed here either.
+            /// </remarks>
+            static ClrDataCursor<object> Typed(ClrDataCursor cursor)
+            {
+                return cursor as ClrDataCursor<object> ?? new ObjectCursor(cursor);
+            }
+
+            /// <summary>
+            /// A cursor of objects over one of any row type.
+            /// </summary>
+            sealed class ObjectCursor(ClrDataCursor cursor) : ClrDataCursor<object>
+            {
+
+                /// <inheritdoc />
+                public override object Current => cursor.Current!;
+
+                /// <inheritdoc />
+                public override bool Read() => cursor.Read();
+
+                /// <inheritdoc />
+                public override ValueTask<bool> ReadAsync(CancellationToken cancellationToken) => cursor.ReadAsync(cancellationToken);
+
+                /// <inheritdoc />
+                public override void Dispose() => cursor.Dispose();
+
+                /// <inheritdoc />
+                public override ValueTask DisposeAsync() => cursor.DisposeAsync();
+
+            }
+
+            /// <summary>
+            /// Runs the plan against a <see cref="DataContext"/> and returns its rows as a sequence.
             /// </summary>
             /// <param name="root"></param>
             /// <returns></returns>
             /// <exception cref="InvalidOperationException">There is no plan to run.</exception>
+            /// <remarks>
+            /// A plan of the sequence convention is enumerated as it stands; a plan of the cursor convention
+            /// is opened at <c>GetEnumerator</c> and read through its synchronous advance. The provider does
+            /// not read this way — it opens a cursor — but a caller driving the pipeline for its rows alone
+            /// can.
+            /// </remarks>
             public IEnumerable<object> Bind(DataContext root)
             {
                 ArgumentNullException.ThrowIfNull(root);
 
                 if (bindable is null)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no plan to run.");
+
+                if (bindable is IClrDataCursorBindable)
+                    return ClrDataCursorDefaults.AsEnumerable(() => Typed(Open(root)));
+
                 if (bindable is not IClrBindable sync)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no synchronous plan.");
 
@@ -220,18 +326,27 @@ namespace Apache.Calcite.Extensions.Prepare
             }
 
             /// <summary>
-            /// Runs an asynchronous plan against a <see cref="DataContext"/> and returns its rows.
+            /// Runs the plan against a <see cref="DataContext"/> and returns its rows as an asynchronous
+            /// sequence.
             /// </summary>
             /// <param name="root"></param>
             /// <returns></returns>
             /// <exception cref="InvalidOperationException">There is no plan to run, or it is a synchronous
             /// one.</exception>
+            /// <remarks>
+            /// <see cref="Bind"/> for the awaiting sequence. A cursor plan is opened, with await, on the
+            /// first advance, because <c>GetAsyncEnumerator</c> cannot await an open.
+            /// </remarks>
             public IAsyncEnumerable<object> BindAsync(DataContext root)
             {
                 ArgumentNullException.ThrowIfNull(root);
 
                 if (bindable is null)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no plan to run.");
+
+                if (bindable is IClrDataCursorBindable)
+                    return ClrDataCursorDefaults.AsAsyncEnumerable(async token => Typed(await OpenAsync(root, token).ConfigureAwait(false)), CancellationToken.None);
+
                 if (bindable is not IClrAsyncBindable async)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no asynchronous plan.");
 

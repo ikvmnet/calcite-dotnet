@@ -498,6 +498,20 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         }
 
         /// <summary>
+        /// Registers on the cursor convention's implementor every correlation variable in scope here.
+        /// </summary>
+        /// <param name="cursor"></param>
+        /// <remarks>
+        /// The same replay for a sub-plan of the cursor convention under a correlate of this one, which
+        /// reads the outer row through the implementor that built it.
+        /// </remarks>
+        internal void ReplayCorrelVariables(DataCursor.ClrDataCursorRelImplementor cursor)
+        {
+            foreach (var pair in corrVars)
+                cursor.RegisterCorrelVariable(pair.Key, pair.Value.Parameter, pair.Value.Block, pair.Value.PhysType);
+        }
+
+        /// <summary>
         /// Creates the result a node's <c>Implement</c> returns.
         /// </summary>
         /// <param name="physType">How the rows are represented.</param>

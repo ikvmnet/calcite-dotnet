@@ -214,9 +214,9 @@ reused for the life of the `CalciteConnection` object.
 
 **`CommandType.Text` only.** Setting any other `CommandType` throws `NotSupportedException`. There is no stored-procedure concept in Calcite.
 
-**Every query is read asynchronously unless the connection says otherwise.** A statement is planned once and the plan says nothing about how its rows will be read; the connection decides that when the plan is compiled. By default the rows are awaited, so `ReadAsync` is genuinely asynchronous wherever the schema can be, and a synchronous `Read` blocks per row only where the source really is asynchronous — which is what `Read` over an asynchronous source means in every ADO.NET provider. `Synchronous=true` compiles the same plan the other way: nothing ever waits and `ReadAsync` answers with completed tasks, except at a table that can *only* produce rows asynchronously, where the rows are read across and the thread blocks there.
+**A plan has no mode.** A statement is planned once into the cursor convention, and what it opens is a cursor with both `Read` and `ReadAsync(token)` over one position. `ExecuteReader` opens it synchronously and `ExecuteReaderAsync` with await, and the reader either hands back is advanced however the caller chooses on each row: `ReadAsync` is genuinely asynchronous wherever the schema can be, with the token of that call reaching the leaf, and `Read` blocks per row only where the source really is asynchronous — which is what `Read` over an asynchronous source means in every ADO.NET provider.
 
-**Cancellation is per-statement.** A `CancellationToken` is observed before a statement is planned. On a DML statement it is wired to Calcite's cancel flag while the rows are drained. The token given to `ExecuteReaderAsync` also reaches the plan's enumerator, so cancelling it stops the leaf between rows; in `Synchronous` mode it is not wired to a reader's enumeration. `DbCommand.Cancel()` is a no-op.
+**Cancellation is per-statement, and per read.** A `CancellationToken` is observed before a statement is planned. On a DML statement it is wired to Calcite's cancel flag while the rows are drained. The token given to `ExecuteReaderAsync` is the open's, and the token given to each `ReadAsync` is that advance's, reaching every operator down to the leaf; either also cancels the statement, so a sub-plan of Calcite's that polls the cancel flag stops too. `DbCommand.Cancel()` is a no-op.
 
 **`ExecuteNonQuery` return values** follow ADO.NET convention: `-1` for a `SELECT`, `0` for DDL, and the row count Calcite reports for `INSERT` / `UPDATE` / `DELETE` / `MERGE`.
 
@@ -236,7 +236,6 @@ All keys are exposed as typed properties on `CalciteConnectionStringBuilder`. Ke
 |-----|------|---------|-------------|
 | `Model` | `string` | — | Path to a Calcite model JSON file, or `inline:<json>` for an embedded model. |
 | `Schema` | `string` | — | Default schema name when identifiers are unqualified. |
-| `Synchronous` | `bool` | `false` | Plan queries in the synchronous convention instead of the asynchronous one. A provider option, not forwarded to the engine — see [Behaviour worth knowing](#behaviour-worth-knowing). |
 | `Pooling` | `bool` | `true` | Whether connections opened with this connection string share one root schema. A provider option, not forwarded to the engine — see [Using `DbDataSource`](#using-dbdatasource-net-7). |
 | `Connection Idle Lifetime` | `int` | `300` | Seconds a shared root schema is kept with no connection open on it before it is released. A provider option. |
 | `Connection Pruning Interval` | `int` | `10` | Seconds between checks for shared root schemas to release. A provider option. |

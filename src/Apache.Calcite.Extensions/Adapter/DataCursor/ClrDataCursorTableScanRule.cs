@@ -1,0 +1,71 @@
+using java.util.function;
+
+using org.apache.calcite.plan;
+using org.apache.calcite.rel;
+using org.apache.calcite.rel.convert;
+using org.apache.calcite.rel.core;
+using org.apache.calcite.rel.logical;
+using org.apache.calcite.schema;
+
+namespace Apache.Calcite.Extensions.Adapter.DataCursor
+{
+
+    /// <summary>
+    /// Rule that converts a <see cref="LogicalTableScan"/> to a <see cref="ClrDataCursorTableScan"/>.
+    /// </summary>
+    public class ClrDataCursorTableScanRule : ConverterRule
+    {
+
+        /// <summary>
+        /// Creates a <see cref="ClrDataCursorTableScanRule"/>.
+        /// </summary>
+        /// <returns></returns>
+        public static ClrDataCursorTableScanRule Create()
+        {
+            return (ClrDataCursorTableScanRule)Config.INSTANCE
+                .withConversion(
+                    (java.lang.Class)typeof(LogicalTableScan),
+                    new DelegatePredicate<LogicalTableScan>(r => ClrDataCursorTableScan.CanHandle(r.getTable())),
+                    Convention.NONE,
+                    ClrDataCursorConvention.Instance,
+                    "ClrDataCursorTableScanRule")
+                .withRuleFactory(new DelegateFunction<Config, ClrDataCursorTableScanRule>(c => new ClrDataCursorTableScanRule(c)))
+                .toRule(typeof(ClrDataCursorTableScanRule));
+        }
+
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
+        /// <param name="config"></param>
+        public ClrDataCursorTableScanRule(Config config) :
+            base(config)
+        {
+
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// A table with no expression cannot be read by any plan of this convention, and refusing it here is
+        /// the only place the refusal belongs: <c>Implement</c> runs after a plan has been chosen.
+        /// </remarks>
+        public override RelNode? convert(RelNode rel)
+        {
+            var scan = (TableScan)rel;
+            var relOptTable = scan.getTable();
+            var table = (Table)relOptTable.unwrap(typeof(Table));
+
+            // a table of this project's own SPI is read directly and has no linq4j expression to ask for;
+            // RelOptTableImpl throws for a table it has no class-expression function for
+            if (table is Apache.Calcite.Extensions.Schema.IClrScannableTable
+                or Apache.Calcite.Extensions.Schema.IClrQueryableTable)
+                return ClrDataCursorTableScan.Create(scan.getCluster(), relOptTable);
+
+            if (table is QueryableTable || relOptTable.getExpression(typeof(object)) != null)
+                return ClrDataCursorTableScan.Create(scan.getCluster(), relOptTable);
+
+            return null;
+        }
+
+    }
+
+}
