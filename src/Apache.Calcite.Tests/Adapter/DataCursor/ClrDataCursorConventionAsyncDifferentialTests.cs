@@ -113,7 +113,10 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
                 rules.add(ClrDataCursorRules.ClrDataCursorSortedAggregateRule);
             }
             if (batchNestedLoopJoin)
+            {
                 rules.add(ClrEnumerableRules.ClrEnumerableBatchNestedLoopJoinRule);
+                rules.add(ClrDataCursorRules.ClrDataCursorBatchNestedLoopJoinRule);
+            }
             if (limitSort)
             {
                 rules.add(ClrEnumerableRules.ClrEnumerableLimitSortRule);

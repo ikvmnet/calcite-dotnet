@@ -53,6 +53,22 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         public static readonly RelOptRule ClrDataCursorCalcRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorCalcRule.Create();
 
         /// <summary>
+        /// Rule that converts an ASOF join to a <see cref="ClrDataCursorAsofJoin"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorAsofJoinRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorAsofJoinRule.Create();
+
+        /// <summary>
+        /// Rule that converts a correlate to a <see cref="ClrDataCursorCorrelate"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorCorrelateRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorCorrelateRule.Create();
+
+        /// <summary>
+        /// Rule that converts a conditional correlate to a
+        /// <see cref="ClrDataCursorConditionalCorrelate"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorConditionalCorrelateRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorConditionalCorrelateRule.Create();
+
+        /// <summary>
         /// Rule that converts a combine to a <see cref="ClrDataCursorCombine"/>.
         /// </summary>
         public static readonly RelOptRule ClrDataCursorCombineRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorCombineRule.Create();
@@ -166,6 +182,16 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         public static readonly RelOptRule ClrDataCursorToClrEnumerableConverterRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorToClrEnumerableConverterRule.Create();
 
         /// <summary>
+        /// Rule that converts a join to a <see cref="ClrDataCursorBatchNestedLoopJoin"/>.
+        /// </summary>
+        /// <remarks>
+        /// Not in what <see cref="Rules"/> returns, because <c>ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE</c> is
+        /// not in <c>ENUMERABLE_RULES</c>: a caller turns it on, and chooses the batch size with
+        /// <see cref="ClrDataCursorBatchNestedLoopJoinRule.Create(int)"/>.
+        /// </remarks>
+        public static readonly RelOptRule ClrDataCursorBatchNestedLoopJoinRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorBatchNestedLoopJoinRule.Create();
+
+        /// <summary>
         /// Rule that reads a plan of <c>BindableConvention</c> as one of this convention, by interpreting it.
         /// </summary>
         /// <remarks>
@@ -197,6 +223,9 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             ClrDataCursorProjectRule,
             ClrDataCursorFilterRule,
             ClrDataCursorCalcRule,
+            ClrDataCursorAsofJoinRule,
+            ClrDataCursorCorrelateRule,
+            ClrDataCursorConditionalCorrelateRule,
             ClrDataCursorCombineRule,
             ClrDataCursorAggregateRule,
             ClrDataCursorUnionRule,

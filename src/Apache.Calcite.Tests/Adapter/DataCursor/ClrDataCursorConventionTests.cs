@@ -394,7 +394,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         /// </summary>
         /// <remarks>
         /// The decorrelation was left out of the shipped program for a while, on the grounds that it would
-        /// rewrite every correlated sub-query into a join and leave <c>ClrEnumerableCorrelate</c> unreachable.
+        /// rewrite every correlated sub-query into a join and leave <c>ClrDataCursorCorrelate</c> unreachable.
         /// A scalar sub-query and an EXISTS do become joins — which is what Calcite means to happen, and what
         /// the prepare pipeline has always done — but an UNNEST over a correlation variable cannot be
         /// decorrelated at all, so the correlate stays. This is that shape, and it asserts the node by name
