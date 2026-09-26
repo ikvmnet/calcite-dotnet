@@ -1,8 +1,8 @@
-using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading;
+using System;
 
 using Apache.Calcite.Extensions.Interop;
 using Apache.Calcite.Extensions.Runtime;
@@ -31,7 +31,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
     /// <para>A member is added when the node that calls it is written, so that a name here always has a
     /// caller.</para>
     /// </remarks>
-    static partial class ClrDataCursorBuiltInMethod
+    static class ClrDataCursorBuiltInMethod
     {
 
         /// <summary>
@@ -247,6 +247,321 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
 
             return found ?? throw new InvalidOperationException($"'{name}' is missing from {nameof(ClrDataCursorDefaults)}.");
         }
+
+        // ---- Aggregate ----
+
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.Distinct"/>.
+        /// </summary>
+        public static readonly MethodInfo Distinct = Of(nameof(ClrDataCursorDefaults.Distinct));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.GroupBy"/>.
+        /// </summary>
+        public static readonly MethodInfo GroupBy = Of(nameof(ClrDataCursorDefaults.GroupBy));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.GroupByMultiple"/>.
+        /// </summary>
+        public static readonly MethodInfo GroupByMultiple = Of(nameof(ClrDataCursorDefaults.GroupByMultiple));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.SortedGroupBy"/>.
+        /// </summary>
+        public static readonly MethodInfo SortedGroupBy = Of(nameof(ClrDataCursorDefaults.SortedGroupBy));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.Aggregate"/>.
+        /// </summary>
+        public static readonly MethodInfo Aggregate = Of(nameof(ClrDataCursorDefaults.Aggregate));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.Singleton"/>.
+        /// </summary>
+        public static readonly MethodInfo Singleton = Of(nameof(ClrDataCursorDefaults.Singleton));
+
+        // ---- the awaiting half ----
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.DistinctAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo DistinctAsync = Of(nameof(ClrDataCursorDefaults.DistinctAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.GroupByAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo GroupByAsync = Of(nameof(ClrDataCursorDefaults.GroupByAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.GroupByMultipleAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo GroupByMultipleAsync = Of(nameof(ClrDataCursorDefaults.GroupByMultipleAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.SortedGroupByAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo SortedGroupByAsync = Of(nameof(ClrDataCursorDefaults.SortedGroupByAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.SingletonAggregateAsync"/>, which is <see cref="Singleton"/>
+        /// over <see cref="Aggregate"/> as one open, the fold being awaited.
+        /// </summary>
+        public static readonly MethodInfo SingletonAggregateAsync = Of(nameof(ClrDataCursorDefaults.SingletonAggregateAsync));
+
+        // ---- Collect ----
+        // The methods a collect, an uncollect, a combine and a table function scan are built from.
+
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.SelectMany"/>.
+        /// </summary>
+        public static readonly MethodInfo SelectMany = Of(nameof(ClrDataCursorDefaults.SelectMany));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.ToJavaList"/>.
+        /// </summary>
+        public static readonly MethodInfo ToJavaList = Of(nameof(ClrDataCursorDefaults.ToJavaList));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.FromJavaList"/>.
+        /// </summary>
+        public static readonly MethodInfo FromJavaList = Of(nameof(ClrDataCursorDefaults.FromJavaList));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.ToJavaMap"/>.
+        /// </summary>
+        public static readonly MethodInfo ToJavaMap = Of(nameof(ClrDataCursorDefaults.ToJavaMap));
+
+        /// <summary>
+        /// <see cref="JavaSequences.ToJava"/>, which a window table function hands its input to Calcite's
+        /// generator through.
+        /// </summary>
+        public static readonly MethodInfo ToJava = typeof(JavaSequences).GetMethod(nameof(JavaSequences.ToJava))
+            ?? throw new InvalidOperationException($"'{nameof(JavaSequences.ToJava)}' is missing.");
+
+        // ---- the awaiting half ----
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.SelectManyAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo SelectManyAsync = Of(nameof(ClrDataCursorDefaults.SelectManyAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.FromJavaListAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo FromJavaListAsync = Of(nameof(ClrDataCursorDefaults.FromJavaListAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.SingletonJavaListAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo SingletonJavaListAsync = Of(nameof(ClrDataCursorDefaults.SingletonJavaListAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.SingletonJavaMapAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo SingletonJavaMapAsync = Of(nameof(ClrDataCursorDefaults.SingletonJavaMapAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.CombineQueryResultsAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo CombineQueryResultsAsync = Of(nameof(ClrDataCursorDefaults.CombineQueryResultsAsync));
+
+        // ---- Correlate ----
+
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.CorrelateJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo CorrelateJoin = Of(nameof(ClrDataCursorDefaults.CorrelateJoin));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.CorrelateLeftMarkJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo CorrelateLeftMarkJoin = Of(nameof(ClrDataCursorDefaults.CorrelateLeftMarkJoin));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.CorrelateBatchJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo CorrelateBatchJoin = Of(nameof(ClrDataCursorDefaults.CorrelateBatchJoin));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.AsofJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo AsofJoin = Of(nameof(ClrDataCursorDefaults.AsofJoin));
+
+        // ---- the awaiting half ----
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.CorrelateJoinAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo CorrelateJoinAsync = Of(nameof(ClrDataCursorDefaults.CorrelateJoinAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.CorrelateLeftMarkJoinAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo CorrelateLeftMarkJoinAsync = Of(nameof(ClrDataCursorDefaults.CorrelateLeftMarkJoinAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.CorrelateBatchJoinAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo CorrelateBatchJoinAsync = Of(nameof(ClrDataCursorDefaults.CorrelateBatchJoinAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.AsofJoinAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo AsofJoinAsync = Of(nameof(ClrDataCursorDefaults.AsofJoinAsync));
+
+        // ---- Join ----
+        // The joins.
+
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.HashJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo HashJoin = Of(nameof(ClrDataCursorDefaults.HashJoin));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.SemiJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo SemiJoin = Of(nameof(ClrDataCursorDefaults.SemiJoin));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.MergeJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo MergeJoin = Of(nameof(ClrDataCursorDefaults.MergeJoin));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.NestedLoopJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo NestedLoopJoin = Of(nameof(ClrDataCursorDefaults.NestedLoopJoin));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.LeftMarkNestedLoopJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo LeftMarkNestedLoopJoin = Of(nameof(ClrDataCursorDefaults.LeftMarkNestedLoopJoin));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.LeftMarkHashJoin"/>.
+        /// </summary>
+        public static readonly MethodInfo LeftMarkHashJoin = Of(nameof(ClrDataCursorDefaults.LeftMarkHashJoin));
+
+        // ---- the awaiting half ----
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.HashJoinAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo HashJoinAsync = Of(nameof(ClrDataCursorDefaults.HashJoinAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.SemiJoinAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo SemiJoinAsync = Of(nameof(ClrDataCursorDefaults.SemiJoinAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.MergeJoinAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo MergeJoinAsync = Of(nameof(ClrDataCursorDefaults.MergeJoinAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.NestedLoopJoinAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo NestedLoopJoinAsync = Of(nameof(ClrDataCursorDefaults.NestedLoopJoinAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.LeftMarkNestedLoopJoinAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo LeftMarkNestedLoopJoinAsync = Of(nameof(ClrDataCursorDefaults.LeftMarkNestedLoopJoinAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.LeftMarkHashJoinAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo LeftMarkHashJoinAsync = Of(nameof(ClrDataCursorDefaults.LeftMarkHashJoinAsync));
+
+        // ---- Recursion ----
+
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.LazyCollectionSpool"/>.
+        /// </summary>
+        public static readonly MethodInfo LazyCollectionSpool = Of(nameof(ClrDataCursorDefaults.LazyCollectionSpool));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.RepeatUnion"/>.
+        /// </summary>
+        public static readonly MethodInfo RepeatUnion = Of(nameof(ClrDataCursorDefaults.RepeatUnion));
+
+        // ---- the awaiting half ----
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.LazyCollectionSpoolAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo LazyCollectionSpoolAsync = Of(nameof(ClrDataCursorDefaults.LazyCollectionSpoolAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.RepeatUnionAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo RepeatUnionAsync = Of(nameof(ClrDataCursorDefaults.RepeatUnionAsync));
+
+        // ---- SetOp ----
+
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.Intersect"/>.
+        /// </summary>
+        public static readonly MethodInfo Intersect = Of(nameof(ClrDataCursorDefaults.Intersect));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.Except"/>.
+        /// </summary>
+        public static readonly MethodInfo Except = Of(nameof(ClrDataCursorDefaults.Except));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.MergeUnion"/>.
+        /// </summary>
+        public static readonly MethodInfo MergeUnion = Of(nameof(ClrDataCursorDefaults.MergeUnion));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.OrderByWithFetchAndOffset"/>.
+        /// </summary>
+        public static readonly MethodInfo OrderByWithFetchAndOffset = Of(nameof(ClrDataCursorDefaults.OrderByWithFetchAndOffset));
+
+        // ---- the awaiting half ----
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.IntersectAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo IntersectAsync = Of(nameof(ClrDataCursorDefaults.IntersectAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.ExceptAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo ExceptAsync = Of(nameof(ClrDataCursorDefaults.ExceptAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.MergeUnionAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo MergeUnionAsync = Of(nameof(ClrDataCursorDefaults.MergeUnionAsync));
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.OrderByWithFetchAndOffsetAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo OrderByWithFetchAndOffsetAsync = Of(nameof(ClrDataCursorDefaults.OrderByWithFetchAndOffsetAsync));
+
+        // ---- Window ----
+
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.Window"/>.
+        /// </summary>
+        public static readonly MethodInfo Window = Of(nameof(ClrDataCursorDefaults.Window));
+
+        // ---- the awaiting half ----
+
+        /// <summary>
+        /// <see cref="ClrDataCursorDefaults.WindowAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo WindowAsync = Of(nameof(ClrDataCursorDefaults.WindowAsync));
 
     }
 

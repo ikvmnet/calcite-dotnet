@@ -879,7 +879,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 
             (await act.Should().ThrowAsync<java.lang.IllegalStateException>())
                 .WithInnerException<java.lang.IllegalStateException>()
-                .WithMessage("*ClrEnumerableSort handed up a sequence of System.Object[] where its row type is java.lang.Integer*");
+                .WithMessage("*ClrDataCursorSort handed up an open of System.Object[] where its row type is java.lang.Integer*");
         }
 
         /// <summary>

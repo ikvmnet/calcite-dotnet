@@ -49,29 +49,28 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Opens a connection over the fixture's SQLite schema, in the mode asked for.
         /// </summary>
-        CalciteConnection OpenConnection(bool synchronous = false)
+        CalciteConnection OpenConnection()
         {
-            return OpenConnection(root => root.add("ADO", AdoSchema.Create(root, "ADO", _sqlite.DataSource, null, null)), synchronous);
+            return OpenConnection(root => root.add("ADO", AdoSchema.Create(root, "ADO", _sqlite.DataSource, null, null)));
         }
 
         /// <summary>
         /// Opens a connection over the given <see cref="AdoDataSource"/>, in the mode asked for.
         /// </summary>
-        static CalciteConnection OpenConnection(AdoDataSource dataSource, bool synchronous = false, bool decorrelate = true)
+        static CalciteConnection OpenConnection(AdoDataSource dataSource, bool decorrelate = true)
         {
-            return OpenConnection(root => root.add("ADO", AdoSchema.Create(root, "ADO", dataSource, null, null)), synchronous, decorrelate);
+            return OpenConnection(root => root.add("ADO", AdoSchema.Create(root, "ADO", dataSource, null, null)), decorrelate);
         }
 
         /// <summary>
         /// Opens a connection whose root schema is built by <paramref name="configure"/>.
         /// </summary>
-        static CalciteConnection OpenConnection(Action<org.apache.calcite.schema.SchemaPlus> configure, bool synchronous, bool decorrelate = true)
+        static CalciteConnection OpenConnection(Action<org.apache.calcite.schema.SchemaPlus> configure, bool decorrelate = true)
         {
             return new CalciteDataSourceBuilder(new CalciteConnectionStringBuilder
             {
                 Lex = "JAVA",
                 CaseSensitive = false,
-                Synchronous = synchronous ? true : null,
                 ForceDecorrelate = decorrelate ? null : false,
             }.ToString())
                 .ConfigureRootSchema(configure)
@@ -162,7 +161,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             {
                 Lex = "JAVA",
                 CaseSensitive = false,
-                Synchronous = true,
             }.ToString())
                 .ConfigureRootSchema(root => root.add("ADO", AdoSchema.Create(root, "ADO", server.DataSource, null, "dbo")))
                 .Build()
@@ -178,26 +176,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// In synchronous mode the adapter converts straight into the synchronous convention.
-        /// </summary>
-        /// <remarks>
-        /// One converter, and it is that convention's own. Reaching <c>AdoToEnumerableConverter</c> instead
-        /// would still answer correctly, by way of a second converter, and no other assertion here would
-        /// notice. The mode is pinned because the default plans asynchronously and reaches a different
-        /// converter — <see cref="ShouldCarryTheAdapterIntoTheAsyncConvention"/> holds that plan.
-        /// </remarks>
-        [Fact]
-        public void ShouldConvertStraightIntoThisConvention()
-        {
-            using var c = OpenConnection(synchronous: true);
-
-            var plan = Explain(c, "SELECT empno, name FROM ADO.emps WHERE deptno = 10");
-
-            Assert.Contains("AdoToClrEnumerableConverter", plan);
-            Assert.False(plan.Contains("AdoToEnumerableConverter"), plan);
-        }
-
-        /// <summary>
         /// The adapter converts straight into this convention, pushed down intact.
         /// </summary>
         /// <remarks>
@@ -209,11 +187,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// thread on the socket for every one of them, the ADO leaf being the one place in a plan with real
         /// network I/O to wait on.</para>
         ///
-        /// <para><b>The plan no longer says whether the rows will be awaited</b>, and there is nothing here
-        /// to assert about that: <c>AdoToClrEnumerableConverter</c> reads through <c>ReadAsync</c> or
-        /// <c>Read</c> according to the implementor, so what the connection asked for shows up in the tree
-        /// the implementor builds rather than in the plan. <c>ShouldReadTheAdapterAsynchronously</c> holds
-        /// that end.</para>
+        /// <para><b>The plan does not say whether the rows will be awaited</b>, and there is nothing here
+        /// to assert about that: the reader either open hands back carries both advances, and
+        /// <c>AdoToClrEnumerableConverter</c> reads through <c>ReadAsync</c> or <c>Read</c> according to the
+        /// body that opened it, so which advance the caller uses shows up in the tree the implementor builds
+        /// rather than in the plan. <c>ShouldReadTheAdapterThroughTheAsyncConverter</c> holds that end.</para>
         /// </remarks>
         [Fact]
         public void ShouldCarryTheAdapterIntoThisConvention()
@@ -405,13 +383,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The synchronous route has always done this, and still does.
+        /// The synchronous open has always done this, and still does.
         /// </summary>
         [Fact]
-        public void ShouldFailFromExecuteInSynchronousMode()
+        public void ShouldFailFromExecuteSynchronously()
         {
             var source = new CountingAdoDataSource(_sqlite.DataSource) { Failing = true };
-            using var connection = OpenConnection(source, synchronous: true);
+            using var connection = OpenConnection(source);
 
             using var cmd = connection.CreateCommand();
             cmd.CommandText = "SELECT empno, name FROM ADO.emps";
@@ -420,19 +398,17 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The two conventions answer the same rows for the same statements.
+        /// The two advances answer the same rows for the same statements.
         /// </summary>
         /// <remarks>
         /// <c>ClrEnumerableConventionDifferentialTests</c> for the adapter, and the same argument: the expected answer
-        /// is whatever the other convention says, so a divergence shows up as a disagreement rather than as
-        /// an assertion somebody wrote by hand. The five cover a scan, a filter, an aggregate, a real column
+        /// is whatever the other advance says, so a divergence shows up as a disagreement rather than as an
+        /// assertion somebody wrote by hand. The five cover a scan, a filter, an aggregate, a real column
         /// and a join, which is where the row builder and the pushed statement differ most.
         /// </remarks>
         [Fact]
-        public void ShouldReadTheSameRowsInBothConventions()
+        public async Task ShouldReadTheSameRowsThroughBothAdvances()
         {
-            using var synchronous = OpenConnection(synchronous: true);
-
             foreach (var sql in new[]
             {
                 "SELECT empno, name, deptno FROM ADO.emps ORDER BY empno",
@@ -442,7 +418,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
                 "SELECT e.name, d.dname FROM ADO.emps e JOIN ADO.depts d ON e.deptno = d.deptno ORDER BY e.name",
             })
             {
-                Rows(_connection, sql).Should().Equal(Rows(synchronous, sql), sql);
+                (await RowsAsync(_connection, sql)).Should().Equal(Rows(_connection, sql), sql);
             }
         }
 

@@ -225,7 +225,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             // the physical type is reached by conversion
             if (getAggCallList().isEmpty() && groupSet.equals(ImmutableBitSet.range(getInput().getRowType().getFieldCount())))
             {
-                var source = ClrDataCursorPhysTypes.ConvertTo(inputPhysType, result.Expression, physType.Format);
+                var source = inputPhysType.ConvertToCursor(result.Expression, physType.Format);
 
                 return implementor.Result(physType,
                     Expression.Call(null,
@@ -408,7 +408,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             // the physical type is reached by conversion
             if (getAggCallList().isEmpty() && groupSet.equals(ImmutableBitSet.range(getInput().getRowType().getFieldCount())))
             {
-                var source = ClrDataCursorPhysTypes.ConvertToAsync(implementor, inputPhysType, result.Expression, physType.Format);
+                var source = inputPhysType.ConvertToCursorAsync(implementor, result.Expression, physType.Format);
 
                 // the row type is one level further in than the synchronous body reads it: an awaiting
                 // open is a ValueTask of the cursor, and the cursor carries the row

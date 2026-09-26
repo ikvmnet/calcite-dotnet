@@ -2423,7 +2423,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 
             act.Should().Throw<java.lang.IllegalStateException>()
                 .WithInnerException<java.lang.IllegalStateException>()
-                .WithMessage("*ClrEnumerableSort handed up a sequence of System.Object[] where its row type is java.lang.Integer*");
+                .WithMessage("*ClrDataCursorSort handed up an open of System.Object[] where its row type is java.lang.Integer*");
         }
 
         // The window table functions, which are the path RexImpTable implements rather than the schema.
