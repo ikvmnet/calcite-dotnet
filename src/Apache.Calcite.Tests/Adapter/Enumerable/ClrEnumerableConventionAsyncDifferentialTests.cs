@@ -629,7 +629,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 
         [Fact]
         public Task ShouldAgreeOnUncollectingAnAnyColumnWithOrdinality() =>
-            SameThrough("ClrEnumerableUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.TAGS) WITH ORDINALITY AS t(X)");
+            SameThrough("ClrEnumerableUncollect", "SELECT d.ID, t.X, t.O FROM DOCS d, UNNEST(d.TAGS) WITH ORDINALITY AS t(X, O)");
 
         [Fact]
         public Task ShouldAgreeOnAggregatingOverAnUncollectedAnyColumn() =>

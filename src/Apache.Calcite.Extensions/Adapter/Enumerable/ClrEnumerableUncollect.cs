@@ -119,7 +119,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             org.apache.calcite.linq4j.tree.Expression? flatListForSingleItem = null;
 
             var fields = child.getRowType().getFieldList();
-            var ordinality = withOrdinality;
 
             if (IsSingleAnyColumn(fields))
             {
@@ -128,12 +127,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 // a null as the empty sequence, which is what UNNEST of a null array answers anyway
                 fieldCounts.add(java.lang.Integer.valueOf(-1));
                 inputTypes.add(SqlFunctions.FlatProductInputType.SCALAR);
-
-                // the ordinality goes with the row type rather than with the request, because that ANY branch
-                // of deriveUncollectRowType builds one column whatever WITH ORDINALITY said, as
-                // SqlUnnestOperator.inferReturnType does before it. An ordinal here would be a second value
-                // in a row the physical type has one field for.
-                ordinality = false;
             }
             else
             {
@@ -190,7 +183,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 ?? org.apache.calcite.linq4j.tree.Expressions.call(
                     BuiltInMethod.FLAT_ZIP.method,
                     org.apache.calcite.linq4j.tree.Expressions.constant(counts),
-                    org.apache.calcite.linq4j.tree.Expressions.constant(java.lang.Boolean.valueOf(ordinality)),
+                    org.apache.calcite.linq4j.tree.Expressions.constant(java.lang.Boolean.valueOf(withOrdinality)),
                     org.apache.calcite.linq4j.tree.Expressions.constant(types),
                     org.apache.calcite.linq4j.tree.Expressions.constant(java.lang.Boolean.valueOf(isOuter)));
 
@@ -216,7 +209,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             org.apache.calcite.linq4j.tree.Expression? flatListForSingleItem = null;
 
             var fields = child.getRowType().getFieldList();
-            var ordinality = withOrdinality;
 
             if (IsSingleAnyColumn(fields))
             {
@@ -225,12 +217,6 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 // a null as the empty sequence, which is what UNNEST of a null array answers anyway
                 fieldCounts.add(java.lang.Integer.valueOf(-1));
                 inputTypes.add(SqlFunctions.FlatProductInputType.SCALAR);
-
-                // the ordinality goes with the row type rather than with the request, because that ANY branch
-                // of deriveUncollectRowType builds one column whatever WITH ORDINALITY said, as
-                // SqlUnnestOperator.inferReturnType does before it. An ordinal here would be a second value
-                // in a row the physical type has one field for.
-                ordinality = false;
             }
             else
             {
@@ -287,7 +273,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
                 ?? org.apache.calcite.linq4j.tree.Expressions.call(
                     BuiltInMethod.FLAT_ZIP.method,
                     org.apache.calcite.linq4j.tree.Expressions.constant(counts),
-                    org.apache.calcite.linq4j.tree.Expressions.constant(java.lang.Boolean.valueOf(ordinality)),
+                    org.apache.calcite.linq4j.tree.Expressions.constant(java.lang.Boolean.valueOf(withOrdinality)),
                     org.apache.calcite.linq4j.tree.Expressions.constant(types),
                     org.apache.calcite.linq4j.tree.Expressions.constant(java.lang.Boolean.valueOf(isOuter)));
 

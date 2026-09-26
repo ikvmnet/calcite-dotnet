@@ -1205,20 +1205,17 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
                 "1|red", "1|green", "2|blue", "3|<null>");
 
         /// <summary>
-        /// WITH ORDINALITY over an ANY column, which has no ordinal.
+        /// WITH ORDINALITY over an ANY column, which numbers each element from one.
         /// </summary>
         /// <remarks>
-        /// Not a choice of this convention's. <c>SqlUnnestOperator.inferReturnType</c> answers a single
-        /// <c>$unnest</c> column of type ANY and stops, ordinality or not, and
-        /// <c>Uncollect.deriveUncollectRowType</c> does the same — so the validator already reports the table
-        /// as having one column, and naming two aliases for it is a validation error rather than anything a
-        /// node could answer. The node still carries <c>withOrdinality</c>, so what
-        /// <c>ClrEnumerableUncollect</c> does is keep the rows it emits to the width the row type declares.
+        /// <c>SqlUnnestOperator.inferReturnType</c> and <c>Uncollect.deriveUncollectRowType</c> append the
+        /// ORDINALITY column in their ANY branch as in every other (CALCITE-7776), and the node hands
+        /// <c>withOrdinality</c> to <c>FLAT_ZIP</c> as <c>EnumerableUncollect</c> does.
         /// </remarks>
         [Fact]
-        public void ShouldDropTheOrdinalityOfAnUncollectedAnyColumn() =>
-            Gives("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") WITH ORDINALITY AS t(\"X\")",
-                "1|red", "1|green", "2|blue");
+        public void ShouldNumberAnUncollectedAnyColumn() =>
+            Gives("SELECT d.\"ID\", t.\"X\", t.\"O\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") WITH ORDINALITY AS t(\"X\", \"O\")",
+                "1|red|1", "1|green|2", "2|blue|1");
 
         /// <summary>
         /// An aggregate over the column an UNNEST of an ANY column produces, which is itself ANY.
@@ -1290,7 +1287,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 
             StillBeyondCalcite("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") AS t(\"X\")");
             StillBeyondCalcite("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d LEFT JOIN UNNEST(d.\"TAGS\") AS t(\"X\") ON TRUE");
-            StillBeyondCalcite("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") WITH ORDINALITY AS t(\"X\")");
+            StillBeyondCalcite("SELECT d.\"ID\", t.\"X\", t.\"O\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") WITH ORDINALITY AS t(\"X\", \"O\")");
         }
 
         // and the same column read every way that already worked, so that a change here is known to be about
