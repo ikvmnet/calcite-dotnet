@@ -469,10 +469,10 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         public Task ShouldAgreeOnAggregatingAnEmptyAnyColumn() => Same("SELECT MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS WHERE K = 'NORTH'");
 
         [Fact]
-        public Task ShouldAgreeOnWindowingAnAggregateOverAnAnyColumn() => SameThrough("ClrEnumerableWindow", "SELECT ID, MIN(V) OVER (PARTITION BY K), MAX(V) OVER (PARTITION BY K), SUM(V) OVER (PARTITION BY K) FROM ANYS ORDER BY ID");
+        public Task ShouldAgreeOnWindowingAnAggregateOverAnAnyColumn() => SameThrough("ClrDataCursorWindow", "SELECT ID, MIN(V) OVER (PARTITION BY K), MAX(V) OVER (PARTITION BY K), SUM(V) OVER (PARTITION BY K) FROM ANYS ORDER BY ID");
 
         [Fact]
-        public Task ShouldAgreeOnARunningTotalOverAnAnyColumn() => SameThrough("ClrEnumerableWindow", "SELECT ID, SUM(V) OVER (ORDER BY ID) FROM ANYS ORDER BY ID");
+        public Task ShouldAgreeOnARunningTotalOverAnAnyColumn() => SameThrough("ClrDataCursorWindow", "SELECT ID, SUM(V) OVER (ORDER BY ID) FROM ANYS ORDER BY ID");
 
         [Fact]
         public Task ShouldAgreeOnTakingAnyValueOfAnAnyColumn() => SameThrough("ClrDataCursorAggregate", "SELECT ANY_VALUE(V), ANY_VALUE(S) FROM ANYS");

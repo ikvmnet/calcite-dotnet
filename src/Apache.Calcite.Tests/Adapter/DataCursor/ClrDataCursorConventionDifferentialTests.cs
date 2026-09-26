@@ -1215,7 +1215,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         /// <remarks>
         /// The same implementors, reached the other way. <c>RexImpTable</c> answers a window context with the
         /// regular implementor for any function that has no window implementor of its own, and none of these
-        /// three has one, so <c>ClrEnumerableWindow</c> asks for and gets the ANY substitution — but it asks
+        /// three has one, so <c>ClrDataCursorWindow</c> asks for and gets the ANY substitution — but it asks
         /// through its own code rather than through the aggregate's, which is why this is worth running.
         /// </remarks>
         [Fact]
@@ -1916,7 +1916,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
         public void ShouldAgreeOnAPartitionedWindow() => Same("SELECT \"ID\", SUM(\"AMOUNT\") OVER (PARTITION BY \"REGION\") FROM \"SALES\" ORDER BY \"ID\"");
 
         [Fact]
-        public void ShouldAgreeOnARunningTotal() => Same("SELECT \"ID\", SUM(\"AMOUNT\") OVER (PARTITION BY \"REGION\" ORDER BY \"ID\") FROM \"SALES\" ORDER BY \"ID\"");
+        public void ShouldAgreeOnARunningTotal() => SameThrough("ClrDataCursorWindow", "SELECT \"ID\", SUM(\"AMOUNT\") OVER (PARTITION BY \"REGION\" ORDER BY \"ID\") FROM \"SALES\" ORDER BY \"ID\"");
 
         [Fact]
         public void ShouldAgreeOnARowsFrame() => Same("SELECT \"ID\", SUM(\"AMOUNT\") OVER (ORDER BY \"ID\" ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM \"SALES\" ORDER BY \"ID\"");
@@ -2034,6 +2034,20 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor.Tests
 
         [Fact]
         public void ShouldAgreeOnExcludingTheGroup() => Same("SELECT \"ID\", COUNT(\"AMOUNT\") OVER (ORDER BY \"AMOUNT\" ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW EXCLUDE GROUP) FROM \"SALES\" ORDER BY \"ID\"");
+
+        /// <summary>
+        /// An EXCLUDE over a frame whose bounds never move.
+        /// </summary>
+        /// <remarks>
+        /// <c>EnumerableWindow</c> recomputes a frame only when its bounds have moved, and an exclusion is not
+        /// part of that test, so over UNBOUNDED PRECEDING to UNBOUNDED FOLLOWING the frame is computed for
+        /// the first row of a partition and never again: the exclusion depends on which row is current, and
+        /// after row 0 no row is excluded. Every row but the first therefore counts the whole partition.
+        /// <c>ClrDataCursorDefaults.Window</c> reproduces that at the guard rather than mending it, and this
+        /// holds the reproduction — the answer here is Calcite's, not SQL's.
+        /// </remarks>
+        [Fact]
+        public void ShouldAgreeOnExcludingTheCurrentRowOverAnUnboundedFrame() => Same("SELECT \"ID\", COUNT(\"AMOUNT\") OVER (PARTITION BY \"REGION\" ORDER BY \"AMOUNT\" ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) FROM \"SALES\" ORDER BY \"ID\"");
 
         [Fact]
         public void ShouldAgreeOnNtile() => Same("SELECT \"ID\", NTILE(2) OVER (ORDER BY \"ID\") FROM \"SALES\" ORDER BY \"ID\"");

@@ -101,6 +101,11 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
         public static readonly RelOptRule ClrDataCursorLimitSortRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorLimitSortRule.Create();
 
         /// <summary>
+        /// Rule that converts a window to a <see cref="ClrDataCursorWindow"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrDataCursorWindowRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorWindowRule.Create();
+
+        /// <summary>
         /// Rule that turns a filter of this convention into a calc.
         /// </summary>
         public static readonly RelOptRule ClrDataCursorFilterToCalcRule = Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorFilterToCalcRule.Create();
@@ -158,6 +163,7 @@ namespace Apache.Calcite.Extensions.Adapter.DataCursor
             ClrDataCursorMinusRule,
             ClrDataCursorSortRule,
             ClrDataCursorLimitRule,
+            ClrDataCursorWindowRule,
             EnumerableToClrDataCursorConverterRule,
             ClrDataCursorToEnumerableConverterRule,
             ClrEnumerableToClrDataCursorConverterRule,
