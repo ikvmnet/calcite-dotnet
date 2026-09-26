@@ -203,7 +203,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
             var rows = ClrPrepareImplDifferentialTests.RunClr("EXPLAIN PLAN FOR SELECT ID FROM SALES");
 
             Assert.Single(rows);
-            Assert.Contains("ClrDataCursor", rows[0]);
+            Assert.Contains("ClrCursor", rows[0]);
         }
 
         /// <summary>

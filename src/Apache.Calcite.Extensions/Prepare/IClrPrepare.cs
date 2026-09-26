@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Apache.Calcite.Extensions.Adapter.DataCursor;
+using Apache.Calcite.Extensions.Adapter.Cursor;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Runtime;
 
@@ -208,13 +208,13 @@ namespace Apache.Calcite.Extensions.Prepare
             /// What the ADO.NET provider's <c>ExecuteReader</c> is: the statement is prepared into the
             /// cursor convention, and the cursor it opens carries both advances over one position.
             /// </remarks>
-            public ClrDataCursor Open(DataContext root)
+            public ClrCursor Open(DataContext root)
             {
                 ArgumentNullException.ThrowIfNull(root);
 
                 if (bindable is null)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no plan to run.");
-                if (bindable is not IClrDataCursorBindable cursor)
+                if (bindable is not IClrCursorBindable cursor)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no cursor plan.");
 
                 var opened = cursor.Open(root);
@@ -222,7 +222,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 // apply the limit; in JDBC 0 means "no limit", but for us -1 means "no limit" and 0 is a
                 // valid limit
                 if (maxRowCount >= 0)
-                    opened = ClrDataCursorDefaults.Take((ClrDataCursor<object>)Typed(opened), java.math.BigDecimal.valueOf(maxRowCount));
+                    opened = ClrCursorDefaults.Take((ClrCursor<object>)Typed(opened), java.math.BigDecimal.valueOf(maxRowCount));
 
                 return opened;
             }
@@ -235,19 +235,19 @@ namespace Apache.Calcite.Extensions.Prepare
             /// <returns>The cursor, positioned before the first row.</returns>
             /// <exception cref="InvalidOperationException">There is no plan to run, or it is not one a
             /// cursor can be opened over.</exception>
-            public async ValueTask<ClrDataCursor> OpenAsync(DataContext root, CancellationToken cancellationToken)
+            public async ValueTask<ClrCursor> OpenAsync(DataContext root, CancellationToken cancellationToken)
             {
                 ArgumentNullException.ThrowIfNull(root);
 
                 if (bindable is null)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no plan to run.");
-                if (bindable is not IClrDataCursorBindable cursor)
+                if (bindable is not IClrCursorBindable cursor)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no cursor plan.");
 
                 var opened = await cursor.OpenAsync(root, cancellationToken).ConfigureAwait(false);
 
                 if (maxRowCount >= 0)
-                    opened = ClrDataCursorDefaults.Take((ClrDataCursor<object>)Typed(opened), java.math.BigDecimal.valueOf(maxRowCount));
+                    opened = ClrCursorDefaults.Take((ClrCursor<object>)Typed(opened), java.math.BigDecimal.valueOf(maxRowCount));
 
                 return opened;
             }
@@ -258,19 +258,19 @@ namespace Apache.Calcite.Extensions.Prepare
             /// </summary>
             /// <remarks>
             /// The root of a cursor plan is typed by its physical row, and every physical row is a reference
-            /// type, so the cursor is a <c>ClrDataCursor&lt;TRow&gt;</c> for some class and the limit can be
+            /// type, so the cursor is a <c>ClrCursor&lt;TRow&gt;</c> for some class and the limit can be
             /// applied over it as objects only through one more cursor. A row is never a value type — the
             /// physical type boxes what the type factory answers — so nothing is boxed here either.
             /// </remarks>
-            static ClrDataCursor<object> Typed(ClrDataCursor cursor)
+            static ClrCursor<object> Typed(ClrCursor cursor)
             {
-                return cursor as ClrDataCursor<object> ?? new ObjectCursor(cursor);
+                return cursor as ClrCursor<object> ?? new ObjectCursor(cursor);
             }
 
             /// <summary>
             /// A cursor of objects over one of any row type.
             /// </summary>
-            sealed class ObjectCursor(ClrDataCursor cursor) : ClrDataCursor<object>
+            sealed class ObjectCursor(ClrCursor cursor) : ClrCursor<object>
             {
 
                 /// <inheritdoc />
@@ -309,8 +309,8 @@ namespace Apache.Calcite.Extensions.Prepare
                 if (bindable is null)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no plan to run.");
 
-                if (bindable is IClrDataCursorBindable)
-                    return ClrDataCursorDefaults.AsEnumerable(() => Typed(Open(root)));
+                if (bindable is IClrCursorBindable)
+                    return ClrCursorDefaults.AsEnumerable(() => Typed(Open(root)));
 
                 if (bindable is not IClrBindable sync)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no synchronous plan.");
@@ -344,8 +344,8 @@ namespace Apache.Calcite.Extensions.Prepare
                 if (bindable is null)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no plan to run.");
 
-                if (bindable is IClrDataCursorBindable)
-                    return ClrDataCursorDefaults.AsAsyncEnumerable(async token => Typed(await OpenAsync(root, token).ConfigureAwait(false)), CancellationToken.None);
+                if (bindable is IClrCursorBindable)
+                    return ClrCursorDefaults.AsAsyncEnumerable(async token => Typed(await OpenAsync(root, token).ConfigureAwait(false)), CancellationToken.None);
 
                 if (bindable is not IClrAsyncBindable async)
                     throw new InvalidOperationException($"{Sql ?? "The statement"} has no asynchronous plan.");

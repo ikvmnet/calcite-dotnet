@@ -398,7 +398,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <returns></returns>
         /// <remarks>
         /// <see cref="ConvertTo(Expression, JavaRowFormat)"/> for a plan of the
-        /// <see cref="DataCursor.ClrDataCursorConvention"/>, and additive for the reason
+        /// <see cref="Cursor.ClrCursorConvention"/>, and additive for the reason
         /// <see cref="ConvertToAsync"/> gives: the row half of <c>convertTo</c> is one selector, and what
         /// carries it over the rows is each convention's own operator.
         /// </remarks>
@@ -415,9 +415,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <remarks>
         /// <see cref="ConvertToCursor"/> for the awaiting fork. It takes the implementor because the
         /// awaiting hierarchy's token is a parameter of the tree rather than a default, and
-        /// <see cref="DataCursor.ClrDataCursorBuiltInMethod.CallAsync"/> is what passes it.
+        /// <see cref="Cursor.ClrCursorBuiltInMethod.CallAsync"/> is what passes it.
         /// </remarks>
-        Expression ConvertToCursorAsync(DataCursor.ClrDataCursorRelImplementor implementor, Expression expression, JavaRowFormat targetFormat);
+        Expression ConvertToCursorAsync(Cursor.ClrCursorRelImplementor implementor, Expression expression, JavaRowFormat targetFormat);
 
     }
 

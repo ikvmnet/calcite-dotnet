@@ -186,7 +186,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <remarks>
         /// The shape a consumer with a per-operation timeout writes: a fresh token per <c>ReadAsync</c>, for
         /// as many rows as there are. The leaf is the provider's own reader, handed back as the plan's
-        /// cursor by <c>AdoToClrDataCursorConverter</c>, so each read's token is the token that reader's
+        /// cursor by <c>AdoToClrCursorConverter</c>, so each read's token is the token that reader's
         /// <c>ReadAsync</c> is given — none of them accumulates and none of them outlives its read, because
         /// none of them is registered anywhere.
         /// </remarks>

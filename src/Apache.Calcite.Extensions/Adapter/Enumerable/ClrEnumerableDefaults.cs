@@ -3390,11 +3390,11 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <remarks>
         /// What a scan of an <see cref="Schema.IClrCursorTable"/> becomes in this convention. The open is
         /// the acquisition, so it is taken as a delegate and run where a sequence acquires; the cursor is
-        /// advanced with <see cref="Runtime.ClrDataCursor.Read"/>, the advance of this sequence's kind.
+        /// advanced with <see cref="Runtime.ClrCursor.Read"/>, the advance of this sequence's kind.
         /// </remarks>
-        public static IEnumerable<TSource> FromCursor<TSource>(Func<ClrDataCursor<TSource>> open)
+        public static IEnumerable<TSource> FromCursor<TSource>(Func<ClrCursor<TSource>> open)
         {
-            return DataCursor.ClrDataCursorDefaults.AsEnumerable(open);
+            return Cursor.ClrCursorDefaults.AsEnumerable(open);
         }
 
         // ------------------------------------------------------------------------------------------
@@ -6746,9 +6746,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <see cref="FromCursor{TSource}"/> for the awaiting half, with the one deferral the CLR imposes:
         /// <c>GetAsyncEnumerator</c> cannot await, so the open runs inside the first <c>MoveNextAsync</c>.
         /// </remarks>
-        public static IAsyncEnumerable<TSource> FromCursorAsync<TSource>(Func<CancellationToken, ValueTask<ClrDataCursor<TSource>>> open, CancellationToken cancellationToken = default)
+        public static IAsyncEnumerable<TSource> FromCursorAsync<TSource>(Func<CancellationToken, ValueTask<ClrCursor<TSource>>> open, CancellationToken cancellationToken = default)
         {
-            return DataCursor.ClrDataCursorDefaults.AsAsyncEnumerable(open, cancellationToken);
+            return Cursor.ClrCursorDefaults.AsAsyncEnumerable(open, cancellationToken);
         }
 
     }

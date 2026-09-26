@@ -20,7 +20,7 @@ namespace Apache.Calcite.Extensions.Prepare
     /// path, and the two bind to different sequences.
     /// </remarks>
     /// <param name="row">The row, which is the value itself — the result has one column.</param>
-    sealed class ClrSimpleBindable(object row) : IClrBindable, IClrAsyncBindable, IClrDataCursorBindable
+    sealed class ClrSimpleBindable(object row) : IClrBindable, IClrAsyncBindable, IClrCursorBindable
     {
 
         readonly object row = row ?? throw new ArgumentNullException(nameof(row));
@@ -42,19 +42,19 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <inheritdoc />
-        ClrDataCursor IClrDataCursorBindable.Open(DataContext root)
+        ClrCursor IClrCursorBindable.Open(DataContext root)
         {
             ArgumentNullException.ThrowIfNull(root);
 
-            return Adapter.DataCursor.ClrDataCursorDefaults.AsCursor([row]);
+            return Adapter.Cursor.ClrCursorDefaults.AsCursor([row]);
         }
 
         /// <inheritdoc />
-        ValueTask<ClrDataCursor> IClrDataCursorBindable.OpenAsync(DataContext root, CancellationToken cancellationToken)
+        ValueTask<ClrCursor> IClrCursorBindable.OpenAsync(DataContext root, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(root);
 
-            return new ValueTask<ClrDataCursor>(Adapter.DataCursor.ClrDataCursorDefaults.AsCursor([row]));
+            return new ValueTask<ClrCursor>(Adapter.Cursor.ClrCursorDefaults.AsCursor([row]));
         }
 
         /// <inheritdoc />

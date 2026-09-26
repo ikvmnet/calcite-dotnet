@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 
 using Apache.Calcite.Extensions.Adapter.Enumerable;
-using Apache.Calcite.Extensions.Prepare.DataCursor;
+using Apache.Calcite.Extensions.Prepare.Cursor;
 using Apache.Calcite.Extensions.Rel.Metadata;
 using Apache.Calcite.Extensions.Runtime;
 
@@ -28,7 +28,7 @@ namespace Apache.Calcite.Extensions.Prepare
 
     /// <summary>
     /// Parses, plans and compiles a statement into the
-    /// <see cref="Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorConvention"/> calling convention.
+    /// <see cref="Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorConvention"/> calling convention.
     /// </summary>
     /// <remarks>
     /// The cursor convention, because the pipeline exists for the ADO.NET provider and a cursor is what a
@@ -276,7 +276,7 @@ namespace Apache.Calcite.Extensions.Prepare
 
             var cluster = CreateCluster(planner, new RexBuilder(typeFactory));
 
-            return new ClrDataCursorPreparingStmt(
+            return new ClrCursorPreparingStmt(
                 this,
                 context,
                 catalogReader,

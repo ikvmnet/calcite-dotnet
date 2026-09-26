@@ -27,7 +27,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// Calcite's connection and Calcite's prepare. None of them says anything about this path. A plan over
     /// an ADO.NET schema is necessarily a mixed one — the adapter's own subtree stays in its convention —
     /// and the provider plans into the cursor convention, so the converter its plans hold is
-    /// <c>AdoToClrDataCursorConverter</c> and <see cref="AdoClrDataCursorTests"/> holds that plan. What is
+    /// <c>AdoToClrCursorConverter</c> and <see cref="AdoClrCursorTests"/> holds that plan. What is
     /// held here is the rows the provider reads over the adapter, and <c>AdoSequences</c> read directly:
     /// the sequence convention's reader, which a plan rooted in that convention still reaches through
     /// <c>AdoToClrEnumerableConverter</c>.

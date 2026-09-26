@@ -17,7 +17,7 @@ namespace Apache.Calcite.Extensions.Prepare
     /// <param name="explanation">The plan, rendered.</param>
     /// <param name="cursorFactory">How the row is read back, which decides whether it is an array or the
     /// text itself.</param>
-    sealed class ClrExplainBindable(string explanation, Meta.CursorFactory cursorFactory) : IClrBindable, IClrAsyncBindable, IClrDataCursorBindable
+    sealed class ClrExplainBindable(string explanation, Meta.CursorFactory cursorFactory) : IClrBindable, IClrAsyncBindable, IClrCursorBindable
     {
 
         readonly string explanation = explanation ?? throw new ArgumentNullException(nameof(explanation));
@@ -40,19 +40,19 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <inheritdoc />
-        ClrDataCursor IClrDataCursorBindable.Open(DataContext root)
+        ClrCursor IClrCursorBindable.Open(DataContext root)
         {
             ArgumentNullException.ThrowIfNull(root);
 
-            return Adapter.DataCursor.ClrDataCursorDefaults.AsCursor([Row]);
+            return Adapter.Cursor.ClrCursorDefaults.AsCursor([Row]);
         }
 
         /// <inheritdoc />
-        ValueTask<ClrDataCursor> IClrDataCursorBindable.OpenAsync(DataContext root, CancellationToken cancellationToken)
+        ValueTask<ClrCursor> IClrCursorBindable.OpenAsync(DataContext root, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(root);
 
-            return new ValueTask<ClrDataCursor>(Adapter.DataCursor.ClrDataCursorDefaults.AsCursor([Row]));
+            return new ValueTask<ClrCursor>(Adapter.Cursor.ClrCursorDefaults.AsCursor([Row]));
         }
 
         /// <inheritdoc />

@@ -256,7 +256,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (unwrapped is IClrCursorTable cursorTable)
                 return Expression.Call(null,
                     ClrBuiltInMethod.FromCursor.MakeGenericMethod(typeof(object[])),
-                    Expression.Lambda<Func<ClrDataCursor<object?[]>>>(
+                    Expression.Lambda<Func<ClrCursor<object?[]>>>(
                         Expression.Call(Expression.Constant(cursorTable, typeof(IClrCursorTable)), OpenMethod, implementor.Root)));
 
             if (unwrapped is IClrQueryableTable queryable)
@@ -307,7 +307,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
                 return ClrBuiltInMethod.CallAsync(
                     ClrBuiltInMethod.FromCursorAsync.MakeGenericMethod(typeof(object[])),
-                    Expression.Lambda<Func<CancellationToken, ValueTask<ClrDataCursor<object?[]>>>>(
+                    Expression.Lambda<Func<CancellationToken, ValueTask<ClrCursor<object?[]>>>>(
                         Expression.Call(Expression.Constant(cursorTable, typeof(IClrCursorTable)), OpenAsyncMethod, implementor.Root, token),
                         token));
             }

@@ -101,7 +101,7 @@ namespace Apache.Calcite.Data.Internal
         /// <c>Apache.Calcite.Extensions</c> that consumes one are declared against the interface. A
         /// narrower door onto a pipeline typed the other way buys nothing and reads as though it did.</para>
         ///
-        /// <para>Every query is planned into <c>ClrDataCursorConvention</c> and run as a compiled expression
+        /// <para>Every query is planned into <c>ClrCursorConvention</c> and run as a compiled expression
         /// tree that opens a cursor. A cursor is what a <c>DbDataReader</c> is — opened synchronously or
         /// with await, and advanced by <c>Read</c> or <c>ReadAsync(token)</c> as the caller chooses on each
         /// row — so the connection carries no mode and no key chooses one. The other conventions' rules stay
@@ -354,11 +354,11 @@ namespace Apache.Calcite.Data.Internal
 
                 // the result owns both from here: they live as long as the rows do, and a reader holds them
                 // open long after this method has returned
-                ClrDataCursor? cursor = null;
+                ClrCursor? cursor = null;
                 if (!IsDdl(signature.StatementType))
                     cursor = signature.Open(dataContext);
 
-                return new CalciteDataCursorResult(signature, _registry, cursor, 0, dataContext, cancellation);
+                return new CalciteCursorResult(signature, _registry, cursor, 0, dataContext, cancellation);
             }
             catch (CalciteException)
             {
@@ -418,11 +418,11 @@ namespace Apache.Calcite.Data.Internal
 
                 // the result owns both from here: they live as long as the rows do, and a reader holds them
                 // open long after this method has returned
-                ClrDataCursor? cursor = null;
+                ClrCursor? cursor = null;
                 if (!IsDdl(signature.StatementType))
                     cursor = await signature.OpenAsync(dataContext, cancellation.Token).ConfigureAwait(false);
 
-                return new CalciteDataCursorResult(signature, _registry, cursor, 0, dataContext, cancellation);
+                return new CalciteCursorResult(signature, _registry, cursor, 0, dataContext, cancellation);
             }
             catch (CalciteException)
             {
@@ -455,7 +455,7 @@ namespace Apache.Calcite.Data.Internal
         /// the cursor convention, whose advance completes synchronously: there is nothing to await in a
         /// modify, and nothing here pretends otherwise.
         /// </remarks>
-        public CalciteDataCursorResult ExecuteNonQuery(CalciteExecuteRequest request, CancellationToken cancellationToken)
+        public CalciteCursorResult ExecuteNonQuery(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(request);
 
@@ -499,7 +499,7 @@ namespace Apache.Calcite.Data.Internal
                         recordsAffected = ToInt64(cur);
                 }
 
-                return new CalciteDataCursorResult(signature, _registry, null, recordsAffected);
+                return new CalciteCursorResult(signature, _registry, null, recordsAffected);
             }
             catch (CalciteException)
             {
@@ -519,7 +519,7 @@ namespace Apache.Calcite.Data.Internal
         /// Returns the first row of <paramref name="cursor"/>, or <see langword="null"/> where there is
         /// none, and closes it.
         /// </summary>
-        static object? FirstRow(ClrDataCursor cursor)
+        static object? FirstRow(ClrCursor cursor)
         {
             using (cursor)
                 return cursor.Read() ? cursor.Current : null;

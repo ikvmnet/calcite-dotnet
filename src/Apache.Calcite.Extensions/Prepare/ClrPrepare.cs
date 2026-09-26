@@ -116,7 +116,7 @@ namespace Apache.Calcite.Extensions.Prepare
             // the cursor convention holds the sequence convention's nodes under a converter wherever the
             // cursor one has none, and a project of either refuses to implement itself
             var calcRules = new java.util.ArrayList();
-            foreach (var rule in Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorRules.CalcRules())
+            foreach (var rule in Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.CalcRules())
                 calcRules.add(rule);
             foreach (var rule in Apache.Calcite.Extensions.Adapter.Enumerable.ClrEnumerableRules.CalcRules())
                 if (calcRules.contains(rule) == false)

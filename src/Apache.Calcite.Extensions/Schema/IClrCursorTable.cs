@@ -19,7 +19,7 @@ namespace Apache.Calcite.Extensions.Schema
     /// a sequence, and a sequence states once, at its enumerator, whether it will be pulled or awaited and
     /// takes its token there; the cursor convention's scan opened a cursor over it and the token an advance
     /// was given stopped at that cursor. A table implementing this hands the cursor itself in, and every
-    /// <see cref="ClrDataCursor.ReadAsync"/> reaches it with the token of that advance.
+    /// <see cref="ClrCursor.ReadAsync"/> reaches it with the token of that advance.
     ///
     /// <para><b><see cref="Open"/> is required and <see cref="OpenAsync"/> is optional</b>, the shape the
     /// other two SPIs have and the reason they have it: one interface, both halves on it, so that a scan
@@ -47,7 +47,7 @@ namespace Apache.Calcite.Extensions.Schema
         /// Opening is the acquisition: a table over a statement sends the statement here, as
         /// <c>ScannableTable.scan</c>'s enumerator does at <c>enumerator()</c>.
         /// </remarks>
-        ClrDataCursor<object?[]> Open(DataContext root);
+        ClrCursor<object?[]> Open(DataContext root);
 
         /// <summary>
         /// Opens a cursor over this table's rows, awaiting the acquisition.
@@ -59,7 +59,7 @@ namespace Apache.Calcite.Extensions.Schema
         /// By default <see cref="Open"/> completed, which is right for a table whose open does not wait on
         /// anything and wrong for one whose <see cref="Open"/> blocks.
         /// </remarks>
-        ValueTask<ClrDataCursor<object?[]>> OpenAsync(DataContext root, CancellationToken cancellationToken) => new(Open(root));
+        ValueTask<ClrCursor<object?[]>> OpenAsync(DataContext root, CancellationToken cancellationToken) => new(Open(root));
 
     }
 

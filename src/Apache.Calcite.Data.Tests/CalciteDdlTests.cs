@@ -140,7 +140,7 @@ namespace Apache.Calcite.Data.Tests
 
             var plan = r.GetValue(0)?.ToString() ?? "";
             // a modify is Calcite's alone, crossing once, directly, into the cursor convention
-            Assert.Contains("EnumerableToClrDataCursorConverter", plan);
+            Assert.Contains("EnumerableToClrCursorConverter", plan);
             Assert.Contains("TableModify", plan);
         }
 

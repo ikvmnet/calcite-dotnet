@@ -1,0 +1,666 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+using Apache.Calcite.Extensions;
+using Apache.Calcite.Extensions.Adapter.Cursor;
+using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Interop;
+using Apache.Calcite.Extensions.Runtime;
+using Apache.Calcite.Tests;
+
+using FluentAssertions;
+
+using org.apache.calcite;
+using org.apache.calcite.adapter.enumerable;
+using org.apache.calcite.linq4j;
+using org.apache.calcite.plan;
+using org.apache.calcite.rel;
+using org.apache.calcite.rel.type;
+using org.apache.calcite.schema;
+using org.apache.calcite.schema.impl;
+using org.apache.calcite.sql.type;
+using org.apache.calcite.tools;
+
+using Xunit;
+
+namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
+{
+
+    /// <summary>
+    /// Runs a query end to end in the <see cref="ClrEnumerableConvention"/> calling convention.
+    /// </summary>
+    public class ClrCursorConventionTests
+    {
+
+        /// <summary>
+        /// Initializes the static instance.
+        /// </summary>
+        /// <remarks>
+        /// <c>Frameworks.withPrepare</c> opens a <c>jdbc:calcite:</c> connection and reaches its factory
+        /// by name, so the assembly holding that factory has to be on IKVM's boot class path or
+        /// <c>Class.forName</c> cannot find it. The AdoNet tests do the same thing for the same reason.
+        /// </remarks>
+        static ClrCursorConventionTests()
+        {
+            ikvm.runtime.Startup.addBootClassPathAssembly(typeof(org.apache.calcite.jdbc.CalciteJdbc41Factory).Assembly);
+        }
+
+        /// <summary>
+        /// A table of three rows, given to Calcite the way any table is.
+        /// </summary>
+        sealed class PeopleTable : AbstractTable, ScannableTable
+        {
+
+            static readonly object?[][] Rows =
+            [
+                [java.lang.Integer.valueOf(1), "SMITH", java.lang.Integer.valueOf(30), java.lang.Integer.valueOf(5)],
+                [java.lang.Integer.valueOf(2), "JONES", java.lang.Integer.valueOf(40), null],
+                [java.lang.Integer.valueOf(3), "BROWN", java.lang.Integer.valueOf(20), java.lang.Integer.valueOf(7)],
+            ];
+
+            /// <inheritdoc />
+            public override RelDataType getRowType(RelDataTypeFactory typeFactory)
+            {
+                return typeFactory.builder()
+                    .add("ID", typeFactory.createSqlType(SqlTypeName.INTEGER))
+                    .add("NAME", typeFactory.createSqlType(SqlTypeName.VARCHAR))
+                    .add("AGE", typeFactory.createSqlType(SqlTypeName.INTEGER))
+                    .add("BONUS", typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.INTEGER), true))
+                    .build();
+            }
+
+            /// <inheritdoc />
+            public org.apache.calcite.linq4j.Enumerable scan(DataContext root)
+            {
+                var list = new java.util.ArrayList();
+                foreach (var row in Rows)
+                    list.add(row);
+
+                return org.apache.calcite.linq4j.Linq4j.asEnumerable(list);
+            }
+
+        }
+
+        /// <summary>
+        /// The context a plan is bound with.
+        /// </summary>
+        /// <param name="rootSchema"></param>
+        /// <remarks>
+        /// <c>DataContexts.EMPTY</c> will not do: a table's own expression reaches the root schema to find the
+        /// table again at run time, and an empty context has none.
+        /// </remarks>
+        sealed class TestDataContext(SchemaPlus rootSchema) : DataContext
+        {
+
+            /// <inheritdoc />
+            public SchemaPlus getRootSchema() => rootSchema;
+
+            /// <inheritdoc />
+            public org.apache.calcite.adapter.java.JavaTypeFactory getTypeFactory() => new org.apache.calcite.jdbc.JavaTypeFactoryImpl();
+
+            /// <inheritdoc />
+            public QueryProvider getQueryProvider() => null!;
+
+            /// <inheritdoc />
+            public object get(string name) => null!;
+
+        }
+
+        /// <summary>
+        /// Plans a query into the convention and returns the chosen plan and the schema it was planned
+        /// against.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <returns></returns>
+        static (ClrCursorRel Plan, SchemaPlus Schema) Plan(string sql)
+        {
+            var rootSchema = Frameworks.createRootSchema(true);
+            rootSchema.add("PEOPLE", new PeopleTable());
+
+            // both conventions' calc rules, the five they share going in once: a node the cursor
+            // convention lacks is the sequence convention's under a converter
+            var calcRules = new java.util.ArrayList();
+            foreach (var rule in ClrCursorRules.CalcRules())
+                calcRules.add(rule);
+            foreach (var rule in ClrEnumerableRules.CalcRules())
+                if (calcRules.contains(rule) == false)
+                    calcRules.add(rule);
+
+            // what the prepare pipeline runs: Programs.standard itself, and then Programs.calc once more
+            // over this convention's list -- added to Calcite's calc pass, which standard still runs, not
+            // put in its place. A Frameworks planner carries Calcite's default rules and has never heard of
+            // this convention, so the rules go on in front -- which is what ClrPrepareImpl.CreatePlanner
+            // does for a prepared statement
+            var config = Frameworks.newConfigBuilder()
+                .defaultSchema(rootSchema)
+                .programs(
+                    Programs.sequence(
+                        new AddRulesProgram([.. ClrEnumerableRules.Rules(), .. ClrCursorRules.Rules()]),
+                        Programs.standard(),
+                        Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)))
+                .build();
+
+            var planner = Frameworks.getPlanner(config);
+            var parsed = planner.parse(sql);
+            var validated = planner.validate(parsed);
+            var logical = planner.rel(validated).project();
+
+            // Prepare.getDesiredRootTraitSet: the root's own traits with the convention replaced, then
+            // simplified -- an empty set asks for no collation and SortRemoveRule takes an ORDER BY away as
+            // unwanted. One program, so one transform, exactly as Programs.standard is driven.
+            var traitSet = logical.getTraitSet().replace(ClrCursorConvention.Instance).simplify();
+            var physical = (ClrCursorRel)planner.transform(0, traitSet, logical);
+
+            return (physical, rootSchema);
+        }
+
+        /// <summary>
+        /// Plans a query into the convention, compiles it, and returns its rows.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <returns></returns>
+        static List<object[]> Run(string sql)
+        {
+            var (physical, rootSchema) = Plan(sql);
+
+            ClrCursorFactory factory;
+            try
+            {
+                factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), new java.util.HashMap()).ImplementRoot(physical, ClrEnumerablePrefer.Array);
+            }
+            catch (Exception e)
+            {
+                throw new InvalidOperationException($"{e.Message}{Environment.NewLine}{RelOptUtil.toString(physical)}", e);
+            }
+
+            return Rows(factory, new TestDataContext(rootSchema));
+        }
+
+        /// <summary>
+        /// A node that cannot implement itself fails with the plan that reached it named, as Calcite's
+        /// <c>implementRoot</c> names it.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="ClrEnumerableProject"/> is the node to ask, because refusing to implement itself is
+        /// what it is for: the calc rules rewrite every project into a calc afterwards, so the refusal is
+        /// unreachable through the planner and reachable by building one by hand. Without the wrap this is an
+        /// <c>UnsupportedOperationException</c> naming nothing.
+        /// </remarks>
+        /// <summary>
+        /// Opens the plan both ways, requires the two readings to agree, and returns one of them.
+        /// </summary>
+        static List<object[]> Rows(ClrCursorFactory factory, DataContext context)
+        {
+            var rows = new List<object[]>();
+            using (var cursor = factory.Open(context))
+                while (cursor.Read())
+                    rows.Add(cursor.Current as object[] ?? [cursor.Current!]);
+
+            var awaited = System.Threading.Tasks.Task.Run(async () =>
+            {
+                var read = new List<object[]>();
+                await using var cursor = await factory.OpenAsync(context, System.Threading.CancellationToken.None);
+                while (await cursor.ReadAsync(System.Threading.CancellationToken.None))
+                    read.Add(cursor.Current as object[] ?? [cursor.Current!]);
+                return read;
+            }).GetAwaiter().GetResult();
+
+            awaited.Select(r => string.Join("|", r.Select(v => v?.ToString()))).Should().Equal(rows.Select(r => string.Join("|", r.Select(v => v?.ToString()))));
+
+            return rows;
+        }
+
+        [Fact]
+        public void ShouldNameThePlanWhenANodeCannotImplementItself()
+        {
+            var (physical, _) = Plan("SELECT \"ID\", \"NAME\" FROM \"PEOPLE\"");
+
+            var identity = new java.util.ArrayList();
+            for (int i = 0; i < physical.getRowType().getFieldCount(); i++)
+                identity.add(physical.getCluster().getRexBuilder().makeInputRef(physical, i));
+
+            var project = ClrCursorProject.Create(physical, identity, physical.getRowType());
+
+            var act = () => new ClrCursorRelImplementor(project.getCluster().getRexBuilder(), new java.util.HashMap()).ImplementRoot(project, ClrEnumerablePrefer.Array);
+
+            act.Should().Throw<java.lang.IllegalStateException>()
+                .WithMessage("Unable to implement ClrCursorProject*")
+                .WithInnerException<java.lang.UnsupportedOperationException>();
+        }
+
+        /// <summary>
+        /// A combine gives one row per index, each column holding one query values as a map, and the row
+        /// count is the largest of the inputs.
+        /// </summary>
+        /// <remarks>
+        /// No SQL statement produces a <c>Combine</c>: it exists for multi-root optimisation in the planner,
+        /// and a caller builds one with <c>RelBuilder.combine</c>. So this is built rather than parsed —
+        /// which is the only way to run the node at all, and is why it is run rather than assumed.
+        /// </remarks>
+        [Fact]
+        public void ShouldCombineTwoQueries()
+        {
+            var rootSchema = Frameworks.createRootSchema(true);
+            rootSchema.add("PEOPLE", new PeopleTable());
+
+            var config = Frameworks.newConfigBuilder().defaultSchema(rootSchema).build();
+            var builder = RelBuilder.create(config);
+
+            // three names against two ids, so the shorter query runs out and contributes null. The literal
+            // is a java.lang.Integer: RelBuilder.literal takes an Object, and a CLR-boxed int arrives as
+            // cli.System.Int32, which it refuses -- the same invariant JavaValues.From keeps everywhere else
+            var logical = builder
+                .scan("PEOPLE").project(builder.field("NAME"))
+                .scan("PEOPLE")
+                    .filter(builder.call(org.apache.calcite.sql.fun.SqlStdOperatorTable.LESS_THAN, builder.field("ID"), builder.literal(java.lang.Integer.valueOf(3))))
+                    .project(builder.field("ID"))
+                .combine()
+                .build();
+
+            var planner = (org.apache.calcite.plan.volcano.VolcanoPlanner)logical.getCluster().getPlanner();
+            planner.addRelTraitDef(ConventionTraitDef.INSTANCE);
+            foreach (var rule in ClrEnumerableRules.Rules())
+                planner.addRule((RelOptRule)rule);
+            foreach (var rule in ClrCursorRules.Rules())
+                planner.addRule((RelOptRule)rule);
+
+            var traitSet = logical.getTraitSet().replace(ClrCursorConvention.Instance).simplify();
+            planner.setRoot(planner.changeTraits(logical, traitSet));
+
+            var chosen = planner.findBestExp();
+
+            // the second pass Programs.standard makes: a project refuses to implement itself, and the calc
+            // rules are what rewrite every one of them into a calc
+            var calcRules = new java.util.ArrayList();
+            foreach (var rule in ClrCursorRules.CalcRules())
+                calcRules.add(rule);
+            foreach (var rule in ClrEnumerableRules.CalcRules())
+                if (calcRules.contains(rule) == false)
+                    calcRules.add(rule);
+
+            var physical = (ClrCursorRel)Programs
+                .hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)
+                .run(planner, chosen, chosen.getTraitSet(), new java.util.ArrayList(), new java.util.ArrayList());
+
+            physical.Should().BeOfType<ClrCursorCombine>();
+
+            var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), new java.util.HashMap()).ImplementRoot(physical, ClrEnumerablePrefer.Array);
+
+            var rows = Rows(factory, new TestDataContext(rootSchema));
+
+            rows.Should().HaveCount(3);
+            ((java.util.Map)rows[0][0]).get("NAME").Should().Be("SMITH");
+            ((java.util.Map)rows[0][1]).get("ID").Should().Be(java.lang.Integer.valueOf(1));
+
+            // the second query has two rows, so the third has nothing to hold
+            rows[2][0].Should().NotBeNull();
+            rows[2][1].Should().BeNull();
+        }
+
+        [Fact]
+        public void ShouldScanATable()
+        {
+            var rows = Run("SELECT \"ID\", \"NAME\" FROM \"PEOPLE\"");
+
+            rows.Should().HaveCount(3);
+            rows.Select(r => (string)r[1]).Should().BeEquivalentTo(["SMITH", "JONES", "BROWN"]);
+        }
+
+        [Fact]
+        public void ShouldFilter()
+        {
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"AGE\" > 25");
+
+            rows.Select(r => (string)r[0]).Should().BeEquivalentTo(["SMITH", "JONES"]);
+        }
+
+        [Fact]
+        public void ShouldProjectAnExpression()
+        {
+            var rows = Run("SELECT \"AGE\" + 1 FROM \"PEOPLE\" WHERE \"ID\" = 1");
+
+            rows.Should().ContainSingle();
+            rows[0][0].Should().Be(java.lang.Integer.valueOf(31));
+        }
+
+        [Fact]
+        public void ShouldSort()
+        {
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" ORDER BY \"AGE\"");
+
+            rows.Select(r => (string)r[0]).Should().Equal("BROWN", "SMITH", "JONES");
+        }
+
+        [Fact]
+        public void ShouldSortDescending()
+        {
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" ORDER BY \"AGE\" DESC");
+
+            rows.Select(r => (string)r[0]).Should().Equal("JONES", "SMITH", "BROWN");
+        }
+
+        [Fact]
+        public void ShouldLimit()
+        {
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" ORDER BY \"ID\" FETCH NEXT 2 ROWS ONLY");
+
+            rows.Select(r => (string)r[0]).Should().Equal("SMITH", "JONES");
+        }
+
+        [Fact]
+        public void ShouldOffsetAndLimit()
+        {
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" ORDER BY \"ID\" OFFSET 1 ROWS FETCH NEXT 1 ROWS ONLY");
+
+            rows.Select(r => (string)r[0]).Should().Equal("JONES");
+        }
+
+        [Fact]
+        public void ShouldComputeOverANullableColumn()
+        {
+            // a nullable column is a java.lang.Integer and the arithmetic is on an int, so this is the query
+            // that makes RexImpTable emit the boxing and unboxing the tests otherwise never reach
+            var rows = Run("SELECT \"AGE\" + \"BONUS\" FROM \"PEOPLE\" ORDER BY \"ID\"");
+
+            rows.Should().HaveCount(3);
+            rows[0][0].Should().Be(java.lang.Integer.valueOf(35));
+            rows[1][0].Should().BeNull();
+            rows[2][0].Should().Be(java.lang.Integer.valueOf(27));
+        }
+
+        [Fact]
+        public void ShouldCountEveryRow()
+        {
+            var rows = Run("SELECT COUNT(*) FROM \"PEOPLE\"");
+
+            rows.Should().ContainSingle();
+            rows[0][0].Should().Be(java.lang.Long.valueOf(3L));
+        }
+
+        [Fact]
+        public void ShouldAggregateWithoutAGroup()
+        {
+            var rows = Run("SELECT SUM(\"AGE\"), MIN(\"AGE\"), MAX(\"AGE\") FROM \"PEOPLE\"");
+
+            rows.Should().ContainSingle();
+            rows[0][0].Should().Be(java.lang.Integer.valueOf(90));
+            rows[0][1].Should().Be(java.lang.Integer.valueOf(20));
+            rows[0][2].Should().Be(java.lang.Integer.valueOf(40));
+        }
+
+        /// <summary>
+        /// A correlate survives the shipped program, which runs Calcite's decorrelation.
+        /// </summary>
+        /// <remarks>
+        /// The decorrelation was left out of the shipped program for a while, on the grounds that it would
+        /// rewrite every correlated sub-query into a join and leave <c>ClrCursorCorrelate</c> unreachable.
+        /// A scalar sub-query and an EXISTS do become joins — which is what Calcite means to happen, and what
+        /// the prepare pipeline has always done — but an UNNEST over a correlation variable cannot be
+        /// decorrelated at all, so the correlate stays. This is that shape, and it asserts the node by name
+        /// rather than only the rows, because the rows alone would not say which plan produced them.
+        /// </remarks>
+        [Fact]
+        public void ShouldCorrelateThroughTheShippedProgram()
+        {
+            const string sql = "SELECT t.\"x\", u.\"y\" FROM (VALUES (1, ARRAY[10,20]), (2, ARRAY[30])) AS t(\"x\", \"xs\"), UNNEST(t.\"xs\") AS u(\"y\")";
+
+            var (physical, _) = Plan(sql);
+            RelOptUtil.toString(physical).Should().Contain("Correlate", "the decorrelation cannot take an UNNEST of a correlation variable apart");
+
+            var rows = Run(sql);
+
+            rows.Should().HaveCount(3);
+            rows.Select(r => string.Join("|", r.Select(v => v?.ToString()))).Should().Equal("1|10", "1|20", "2|30");
+        }
+
+        /// <summary>
+        /// A correlated sub-query becomes a join through the shipped program.
+        /// </summary>
+        /// <remarks>
+        /// The other side of the same measurement, and the reason to run the decorrelation rather than leave
+        /// it out: without it this stays a correlate, which is a nested loop over the outer rows where
+        /// Calcite would have given a join.
+        /// </remarks>
+        [Fact]
+        public void ShouldDecorrelateASubQueryThroughTheShippedProgram()
+        {
+            const string sql = "SELECT \"ID\" FROM \"PEOPLE\" a WHERE \"AGE\" = (SELECT MAX(\"AGE\") FROM \"PEOPLE\" b WHERE b.\"BONUS\" IS NULL OR a.\"ID\" = b.\"ID\")";
+
+            var (physical, _) = Plan(sql);
+            RelOptUtil.toString(physical).Should().NotContain("Correlate", "Calcite's decorrelation should have made this a join");
+        }
+
+        // Three shapes the shipped program could not plan at all until Rules() stopped clearing the planner.
+        // Each needs a logical rewrite that belongs to no convention and that Calcite registers by default,
+        // so each was a CannotPlanException the moment ofRules threw Calcite's rules away. Nothing here went
+        // through Standard(), so nothing said so: the differential suites register the three rules by hand.
+
+        /// <summary>
+        /// AVG through the shipped program.
+        /// </summary>
+        /// <remarks>
+        /// <c>RexImpTable</c> has no implementor for AVG in any convention, in any type.
+        /// <c>AGGREGATE_REDUCE_FUNCTIONS</c> is what turns it into a <c>$SUM0</c> over a <c>COUNT</c>, and it
+        /// lives in <c>RelOptRules.BASE_RULES</c> rather than in any convention's set.
+        /// </remarks>
+        [Fact]
+        public void ShouldAverageThroughTheShippedProgram()
+        {
+            var rows = Run("SELECT AVG(\"AGE\") FROM \"PEOPLE\"");
+
+            rows.Should().HaveCount(1);
+            rows[0][0].Should().Be(java.lang.Integer.valueOf(30));
+        }
+
+        /// <summary>
+        /// A DISTINCT aggregate through the shipped program.
+        /// </summary>
+        /// <remarks>
+        /// Both conventions refuse a distinct call outright, as <c>EnumerableAggregate</c> does.
+        /// <c>AGGREGATE_EXPAND_DISTINCT_AGGREGATES</c> is what takes the DISTINCT off first.
+        /// </remarks>
+        [Fact]
+        public void ShouldCountDistinctThroughTheShippedProgram()
+        {
+            var rows = Run("SELECT COUNT(DISTINCT \"NAME\") FROM \"PEOPLE\"");
+
+            rows.Should().HaveCount(1);
+            rows[0][0].Should().Be(java.lang.Long.valueOf(3L));
+        }
+
+        /// <summary>
+        /// A window through the shipped program.
+        /// </summary>
+        /// <remarks>
+        /// The one that mattered most: a project holding an OVER is refused by both conventions and becomes a
+        /// <c>LogicalWindow</c> by <c>PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW</c> first, so with that rule gone
+        /// no window function could be planned through the shipped program at all — while the whole
+        /// <c>ClrCursorWindow</c> suite stayed green over a harness that registers it.
+        /// </remarks>
+        [Fact]
+        public void ShouldWindowThroughTheShippedProgram()
+        {
+            var rows = Run("SELECT \"ID\", SUM(\"AGE\") OVER (ORDER BY \"ID\") FROM \"PEOPLE\" ORDER BY \"ID\"");
+
+            rows.Should().HaveCount(3);
+            rows.Select(r => r[1]).Should().Equal(
+                java.lang.Integer.valueOf(30),
+                java.lang.Integer.valueOf(70),
+                java.lang.Integer.valueOf(90));
+        }
+
+        /// <summary>
+        /// A node this convention has no rule for, through the shipped program.
+        /// </summary>
+        /// <remarks>
+        /// The other half of keeping Calcite's rules. There is no table function node here, so the planner
+        /// takes Calcite's and a converter carries the rows across — which <c>Programs.ofRules</c> made
+        /// impossible, Calcite's rules having been cleared away.
+        /// </remarks>
+        [Fact]
+        public void ShouldFallBackToCalciteThroughTheShippedProgram()
+        {
+            var rows = Run("SELECT COUNT(*) FROM \"PEOPLE\" WHERE \"AGE\" > 25");
+
+            rows.Should().HaveCount(1);
+            rows[0][0].Should().Be(java.lang.Long.valueOf(2L));
+        }
+
+        [Fact]
+        public void ShouldGroupBy()
+        {
+            var rows = Run("SELECT \"NAME\", COUNT(*) FROM \"PEOPLE\" GROUP BY \"NAME\" ORDER BY \"NAME\"");
+
+            rows.Should().HaveCount(3);
+            rows.Select(r => (string)r[0]).Should().Equal("BROWN", "JONES", "SMITH");
+            rows.Select(r => r[1]).Should().AllBeEquivalentTo(java.lang.Long.valueOf(1L));
+        }
+
+        [Fact]
+        public void ShouldGroupByAndSum()
+        {
+            var rows = Run("SELECT \"AGE\" > 25, SUM(\"AGE\") FROM \"PEOPLE\" GROUP BY \"AGE\" > 25 ORDER BY 1");
+
+            rows.Should().HaveCount(2);
+            rows[0][1].Should().Be(java.lang.Integer.valueOf(20));
+            rows[1][1].Should().Be(java.lang.Integer.valueOf(70));
+        }
+
+        [Fact]
+        public void ShouldAggregateOverANullableColumn()
+        {
+            // SUM skips a null, so this is 12 rather than null
+            var rows = Run("SELECT SUM(\"BONUS\") FROM \"PEOPLE\"");
+
+            rows.Should().ContainSingle();
+            rows[0][0].Should().Be(java.lang.Integer.valueOf(12));
+        }
+
+        [Fact]
+        public void ShouldInnerJoin()
+        {
+            var rows = Run("SELECT a.\"NAME\", b.\"AGE\" FROM \"PEOPLE\" a JOIN \"PEOPLE\" b ON a.\"ID\" = b.\"ID\" WHERE a.\"ID\" = 1");
+
+            rows.Should().ContainSingle();
+            rows[0][0].Should().Be("SMITH");
+            rows[0][1].Should().Be(java.lang.Integer.valueOf(30));
+        }
+
+        [Fact]
+        public void ShouldLeftJoinAndPadWithNulls()
+        {
+            var rows = Run("SELECT a.\"NAME\", b.\"NAME\" FROM \"PEOPLE\" a LEFT JOIN (SELECT * FROM \"PEOPLE\" WHERE \"ID\" = 1) b ON a.\"ID\" = b.\"ID\" ORDER BY a.\"ID\"");
+
+            rows.Should().HaveCount(3);
+            rows[0][1].Should().Be("SMITH");
+            rows[1][1].Should().BeNull();
+            rows[2][1].Should().BeNull();
+        }
+
+        [Fact]
+        public void ShouldJoinOnMoreThanAnEquality()
+        {
+            var rows = Run("SELECT a.\"NAME\" FROM \"PEOPLE\" a JOIN \"PEOPLE\" b ON a.\"ID\" = b.\"ID\" AND a.\"AGE\" > 25");
+
+            rows.Select(r => (string)r[0]).Should().BeEquivalentTo(["SMITH", "JONES"]);
+        }
+
+        [Fact]
+        public void ShouldJoinOnAnInequalityAlone()
+        {
+            // no equality to build a lookup on, so the hash join rule refuses and the nested loop takes it
+            var rows = Run("SELECT a.\"NAME\", b.\"NAME\" FROM \"PEOPLE\" a JOIN \"PEOPLE\" b ON a.\"AGE\" < b.\"AGE\"");
+
+            rows.Should().HaveCount(3);
+        }
+
+        [Fact]
+        public void ShouldRunACorrelatedSubQuery()
+        {
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" a WHERE \"AGE\" = (SELECT MAX(\"AGE\") FROM \"PEOPLE\" b WHERE b.\"ID\" = a.\"ID\")");
+
+            rows.Select(r => (string)r[0]).Should().BeEquivalentTo(["SMITH", "JONES", "BROWN"]);
+        }
+
+        [Fact]
+        public void ShouldUnionAll()
+        {
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1 UNION ALL SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1");
+
+            rows.Select(r => (string)r[0]).Should().Equal("SMITH", "SMITH");
+        }
+
+        [Fact]
+        public void ShouldUnionDistinct()
+        {
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1 UNION SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1");
+
+            rows.Select(r => (string)r[0]).Should().Equal("SMITH");
+        }
+
+        [Fact]
+        public void ShouldIntersect()
+        {
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"AGE\" > 25 INTERSECT SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" = 1");
+
+            rows.Select(r => (string)r[0]).Should().Equal("SMITH");
+        }
+
+        [Fact]
+        public void ShouldExcept()
+        {
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" EXCEPT SELECT \"NAME\" FROM \"PEOPLE\" WHERE \"AGE\" > 25");
+
+            rows.Select(r => (string)r[0]).Should().Equal("BROWN");
+        }
+
+        [Fact]
+        public void ShouldUnionWholeRowsRatherThanCompareArraysByReference()
+        {
+            // a row of JavaRowFormat.ARRAY is an array, and two equal rows are two arrays. Without the comparer
+            // PhysType gives for the format, a distinct union would keep both.
+            var rows = Run("SELECT \"ID\", \"NAME\" FROM \"PEOPLE\" UNION SELECT \"ID\", \"NAME\" FROM \"PEOPLE\"");
+
+            rows.Should().HaveCount(3);
+        }
+
+        [Fact]
+        public void ShouldSortAndLimitTogether()
+        {
+            // a sort carrying a fetch is one node, so only as many rows as are wanted are kept
+            var rows = Run("SELECT \"NAME\" FROM \"PEOPLE\" ORDER BY \"AGE\" DESC FETCH NEXT 2 ROWS ONLY");
+
+            rows.Select(r => (string)r[0]).Should().Equal("JONES", "SMITH");
+        }
+
+        [Fact]
+        public void ShouldCollectASubQueryIntoAMultiset()
+        {
+            var rows = Run("SELECT MULTISET(SELECT \"NAME\" FROM \"PEOPLE\") FROM (VALUES (1))");
+
+            rows.Should().ContainSingle();
+            ((java.util.List)rows[0][0]).size().Should().Be(3);
+        }
+
+        [Fact]
+        public void ShouldUncollectAnArray()
+        {
+            var rows = Run("SELECT * FROM UNNEST(ARRAY['a', 'b', 'c'])");
+
+            rows.Should().HaveCount(3);
+            rows.Select(r => (string)r[0]).Should().Equal("a", "b", "c");
+        }
+
+        [Fact]
+        public void ShouldReadValues()
+        {
+            var rows = Run("SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");
+
+            rows.Should().HaveCount(2);
+            rows.Select(r => (string)r[1]).Should().Equal("a", "b");
+        }
+
+    }
+
+}

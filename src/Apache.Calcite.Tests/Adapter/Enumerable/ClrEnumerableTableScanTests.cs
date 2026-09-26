@@ -256,19 +256,19 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
 
             public override RelDataType getRowType(RelDataTypeFactory typeFactory) => AsyncTestRows.SortedRowType(typeFactory);
 
-            public ClrDataCursor<object?[]> Open(DataContext root)
+            public ClrCursor<object?[]> Open(DataContext root)
             {
                 Opened++;
                 return new RowsCursor(this);
             }
 
-            public ValueTask<ClrDataCursor<object?[]>> OpenAsync(DataContext root, CancellationToken cancellationToken)
+            public ValueTask<ClrCursor<object?[]>> OpenAsync(DataContext root, CancellationToken cancellationToken)
             {
                 OpenedAsync++;
-                return new ValueTask<ClrDataCursor<object?[]>>(new RowsCursor(this));
+                return new ValueTask<ClrCursor<object?[]>>(new RowsCursor(this));
             }
 
-            sealed class RowsCursor(CursorRowsTable table) : ClrDataCursor<object?[]>
+            sealed class RowsCursor(CursorRowsTable table) : ClrCursor<object?[]>
             {
 
                 int index = -1;

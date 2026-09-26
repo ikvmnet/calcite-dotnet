@@ -56,7 +56,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         {
             yield return AdoToEnumerableConverterRule.Create(convention);
             yield return AdoToClrEnumerableConverterRule.Create(convention);
-            yield return AdoToClrDataCursorConverterRule.Create(convention);
+            yield return AdoToClrCursorConverterRule.Create(convention);
             yield return AdoJoinRule.Create(convention);
             yield return AdoProjectRule.Create(convention);
             yield return AdoFilterRule.Create(convention);
@@ -78,7 +78,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         {
             yield return AdoToEnumerableConverterRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
             yield return AdoToClrEnumerableConverterRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
-            yield return AdoToClrDataCursorConverterRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
+            yield return AdoToClrCursorConverterRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
             yield return AdoJoinRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
             yield return AdoProjectRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();
             yield return AdoFilterRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();

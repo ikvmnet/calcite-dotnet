@@ -214,7 +214,7 @@ The session exposes three private steps and the execute entry points.
 
 **`Plan`** constructs a `PrepareContext`, pushes it onto `CalcitePrepare.Dummy`, and calls
 `ClrPrepareImpl.PrepareSql(ctx, query, Object[], -1)`, returning a `Signature` whose plan is a
-`ClrDataCursorFactory`. The element type is what makes the pipeline ask for array-shaped rows; `-1`
+`ClrCursorFactory`. The element type is what makes the pipeline ask for array-shaped rows; `-1`
 means no row limit. Nothing is executed and no per-statement state is created.
 
 **`Bind`** builds the execution-time `DataContext`: a fresh `AtomicBoolean` cancel flag, the
@@ -229,7 +229,7 @@ positional parameters converted by `ParameterBinder`, the command timeout in mil
 open the plan's cursor: `ExecuteReader` through `signature.Open(dataContext)`, on the calling thread,
 and `ExecuteReaderAsync` through `await signature.OpenAsync(dataContext, token)`. **Neither decides
 how the rows will be read.** The cursor either hands back carries `Read` and `ReadAsync(token)` over
-one position, and `CalciteDataCursorResult` is the one result over it. The token given to
+one position, and `CalciteCursorResult` is the one result over it. The token given to
 `ExecuteReaderAsync` is linked into the statement's cancellation, which the data context's cancel
 flag is tied to, so that a token given to a later `ReadAsync` has the same thing to cancel.
 
@@ -328,7 +328,7 @@ returning rows, plus the `ElementType` the cursor factory is deduced from. It me
 
 `CalciteResult` is what an execute call hands back: the `Signature`, a
 `CalciteResultColumns` built from it, the plan's cursor, and a records-affected count. One subclass,
-`CalciteDataCursorResult` over a `ClrDataCursor`, whose `Read` is the cursor's synchronous advance
+`CalciteCursorResult` over a `ClrCursor`, whose `Read` is the cursor's synchronous advance
 and whose `ReadAsync(token)` is its awaiting one with that call's token, because `DbDataReader` is a
 contract: a plan with nothing to await answers `ReadAsync` with a completed task, and a leaf that can
 only be awaited blocks in `Read` with the synchronization context suppressed before the call, so a
@@ -564,13 +564,13 @@ type; both arrive as instances. `GetFieldValue<T>` tested for a Java null and so
    timeout and the resolved hooks, and hands it to the session's reader core.
 5. **Plan.** The session pushes a `PrepareContext` onto `CalcitePrepare.Dummy` and calls
    `ClrPrepareImpl.PrepareSql`, which parses, validates, converts to relational algebra and optimises
-   into `ClrDataCursorConvention`. The root is implemented once, through both of its bodies, into a
-   `ClrDataCursorFactory`, and each of the factory's two opens is compiled the first time it is
+   into `ClrCursorConvention`. The root is implemented once, through both of its bodies, into a
+   `ClrCursorFactory`, and each of the factory's two opens is compiled the first time it is
    called. The result is a `Signature`.
 6. **Bind.** Parameters are converted and assembled with the cancel flag, the timeout and the
    signature's internal parameters into a `StatementDataContext`.
 7. **Execute.** The plan's cursor is opened — `Open(dataContext)` or `await OpenAsync(dataContext,
-   token)` by entry point — and wrapped in a `CalciteDataCursorResult`. Opening **runs** the plan,
+   token)` by entry point — and wrapped in a `CalciteCursorResult`. Opening **runs** the plan,
    as obtaining the enumerator does in linq4j: every operator acquires its source there, a sort drains
    its input there, and a linq4j leaf executes its statement there —
    so failures and side effects of starting the plan land at Execute. No row has been read; an
@@ -593,7 +593,7 @@ yields one row.
 
 It is read by either reader, and `ClrExplainBindable` holds a string rather than a plan, opening a
 one-row cursor over it. **What gets explained does not depend on which method was called**: there is
-one plan, so an `EXPLAIN` renders a plan rooted in `ClrDataCursor*` nodes, with `ClrEnumerable*` ones
+one plan, so an `EXPLAIN` renders a plan rooted in `ClrCursor*` nodes, with `ClrEnumerable*` ones
 beneath a converter wherever the cursor convention lacks the node, and fails to plan wherever the
 query itself would. It cannot say whether the query will await, because that is decided per read.
 

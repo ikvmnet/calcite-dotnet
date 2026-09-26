@@ -9,7 +9,7 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Opens a statement's <see cref="DbDataReader"/> as a <see cref="ClrDataCursor{T}"/>.
+    /// Opens a statement's <see cref="DbDataReader"/> as a <see cref="ClrCursor{T}"/>.
     /// </summary>
     /// <remarks>
     /// The leaf of a plan of the cursor convention over this adapter, and the shape the convention exists
@@ -35,7 +35,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="rowBuilder">Builds one row from the reader positioned on it.</param>
         /// <param name="enricher">Fills the command's parameters, or <see langword="null"/> where it has none.</param>
         /// <returns></returns>
-        public static ClrDataCursor<TRow> Open<TRow>(AdoDataSource dataSource, string sql, Func<DbDataReader, TRow> rowBuilder, DbCommandEnricher? enricher)
+        public static ClrCursor<TRow> Open<TRow>(AdoDataSource dataSource, string sql, Func<DbDataReader, TRow> rowBuilder, DbCommandEnricher? enricher)
         {
             ArgumentNullException.ThrowIfNull(dataSource);
             ArgumentNullException.ThrowIfNull(sql);
@@ -57,7 +57,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <param name="cancellationToken">The token the open runs under, which is the statement's: each
         /// advance brings its own, and the reader is advanced under both.</param>
         /// <returns></returns>
-        public static async ValueTask<ClrDataCursor<TRow>> OpenAsync<TRow>(AdoDataSource dataSource, string sql, Func<DbDataReader, TRow> rowBuilder, DbCommandEnricher? enricher, CancellationToken cancellationToken)
+        public static async ValueTask<ClrCursor<TRow>> OpenAsync<TRow>(AdoDataSource dataSource, string sql, Func<DbDataReader, TRow> rowBuilder, DbCommandEnricher? enricher, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(dataSource);
             ArgumentNullException.ThrowIfNull(sql);
@@ -100,7 +100,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// one, as it did when the reader was enumerated under that token alone. The two are linked only
         /// where both can be cancelled; where one cannot, the other is passed as it is.
         /// </remarks>
-        sealed class ReaderCursor<TRow>(DbConnection connection, DbCommand command, DbDataReader reader, Func<DbDataReader, TRow> rowBuilder, CancellationToken open) : ClrDataCursor<TRow>
+        sealed class ReaderCursor<TRow>(DbConnection connection, DbCommand command, DbDataReader reader, Func<DbDataReader, TRow> rowBuilder, CancellationToken open) : ClrCursor<TRow>
         {
 
             TRow current = default!;

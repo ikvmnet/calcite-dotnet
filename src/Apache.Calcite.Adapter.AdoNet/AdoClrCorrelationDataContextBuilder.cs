@@ -69,7 +69,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// The cursor convention's implementor, which registers a correlation variable exactly as the
         /// sequence convention's does: a row is the same object under either.
         /// </remarks>
-        public AdoClrCorrelationDataContextBuilder(Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorRelImplementor implementor, Expression dataContext) :
+        public AdoClrCorrelationDataContextBuilder(Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRelImplementor implementor, Expression dataContext) :
             this(
                 (implementor ?? throw new ArgumentNullException(nameof(implementor))).GetCorrelVariableGetter,
                 implementor.Translator,

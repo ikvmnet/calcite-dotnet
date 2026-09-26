@@ -529,7 +529,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// The same replay for a sub-plan of the cursor convention under a correlate of this one, which
         /// reads the outer row through the implementor that built it.
         /// </remarks>
-        internal void ReplayCorrelVariables(DataCursor.ClrDataCursorRelImplementor cursor)
+        internal void ReplayCorrelVariables(Cursor.ClrCursorRelImplementor cursor)
         {
             foreach (var pair in corrVars)
                 cursor.RegisterCorrelVariable(pair.Key, pair.Value.Parameter, pair.Value.Block, pair.Value.PhysType);

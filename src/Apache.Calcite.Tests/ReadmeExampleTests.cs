@@ -146,27 +146,27 @@ namespace Apache.Calcite.Tests
             var cancellationToken = System.Threading.CancellationToken.None;
 
             var calcRules = new java.util.ArrayList();
-            foreach (var rule in Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorRules.CalcRules())
+            foreach (var rule in Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.CalcRules())
                 calcRules.add(rule);
 
             var config = Frameworks.newConfigBuilder()
                 .defaultSchema(rootSchema)
                 .programs(
                     Programs.sequence(
-                        new AddRulesProgram(Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorRules.Rules()),
+                        new AddRulesProgram(Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.Rules()),
                         Programs.standard(),
                         Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)))
                 .build();
 
             var planner = Frameworks.getPlanner(config);
             var logical = planner.rel(planner.validate(planner.parse(sql))).project();
-            var traits = logical.getTraitSet().replace(Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorConvention.Instance).simplify();
+            var traits = logical.getTraitSet().replace(Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorConvention.Instance).simplify();
             var physical = planner.transform(0, traits, logical);
 
             // ---- README example begins ----
-            var implementor = new Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorRelImplementor(
+            var implementor = new Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRelImplementor(
                 physical.getCluster().getRexBuilder(), new java.util.HashMap());
-            var factory = implementor.ImplementRoot((Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorRel)physical, ClrEnumerablePrefer.Array);
+            var factory = implementor.ImplementRoot((Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRel)physical, ClrEnumerablePrefer.Array);
 
             // opening runs the plan's acquisition -- a sort drains, a leaf executes -- and reading reads rows
             await using var cursor = await factory.OpenAsync(dataContext, cancellationToken);

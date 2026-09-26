@@ -10,7 +10,7 @@ instead of Janino, and the prepare pipeline that gets a statement to one.
 |---|---|
 | `Apache.Calcite.Adapter.AdoNet` | pushes a plan down to an ADO.NET provider |
 | `Apache.Calcite.Data` | the `DbConnection` / `DbCommand` surface |
-| `Apache.Calcite.Extensions` | `ClrEnumerableConvention`, `ClrDataCursorConvention`, the prepare pipeline, and the IKVM interop helpers |
+| `Apache.Calcite.Extensions` | `ClrEnumerableConvention`, `ClrCursorConvention`, the prepare pipeline, and the IKVM interop helpers |
 | `Apache.Calcite.Geography` | optional; the `CLR_ST_GEOG_*` operator table and a geodesic evaluator over Google's S2. There is no `GEOGRAPHY` type — a geography is Calcite's `GEOMETRY` and the operator's name is what says to read it geodesically, which is what lets these be declared on a schema. Nothing else references it, and it references nothing else here |
 
 `TODO.md` has the outstanding work, sized and reasoned: the ADO.NET adapter's gaps and what more it
@@ -30,7 +30,7 @@ driver this one is modelled on*, has the reading. Not to be confused with
 - Build the **solution**: `dotnet build Apache.Calcite.slnx`. A bare `dotnet build` fails — more than one
   project in the root.
 - **The check that matters is `ClrEnumerableConventionDifferentialTests`, and its cursor copy
-  `ClrDataCursorConventionDifferentialTests`, which reads every plan four ways.** Each runs the same SQL
+  `ClrCursorConventionDifferentialTests`, which reads every plan four ways.** Each runs the same SQL
   through its convention and through `EnumerableConvention` and requires the same rows. Every defect worth having
   found in the convention was found by it, three of them in nodes already believed done. Add a query
   there rather than writing an assertion by hand: the expected answer is whatever Calcite says. It lives
@@ -454,14 +454,14 @@ A caller driving a `Frameworks` planner has the same job and only that job — g
 (`AddRulesProgram` in the tests), then run `Programs.standard` — and the classes that spelled `standard`'s six
 passes out by hand are gone.
 
-**`ClrDataCursorConvention` is the second convention, and its plan is an open rather than a sequence.** A node's
-expression evaluates to an *opened* `ClrDataCursor<TRow>`, so the tree of calls *is* linq4j's `enumerator()`
+**`ClrCursorConvention` is the second convention, and its plan is an open rather than a sequence.** A node's
+expression evaluates to an *opened* `ClrCursor<TRow>`, so the tree of calls *is* linq4j's `enumerator()`
 cascade: a sort drains where its open is evaluated, a leaf executes there, and an operator that acquires a
 source later — `concat` at its turn inside `moveNext`, `union` after draining its first — takes that source as a
 delegate built by `Opener`/`OpenerAsync`. `Implement` composes opens that acquire synchronously and
-`ImplementAsync` opens that await, in `ValueTask<ClrDataCursor<TRow>>`; both produce the *same cursor class*,
+`ImplementAsync` opens that await, in `ValueTask<ClrCursor<TRow>>`; both produce the *same cursor class*,
 whose `Read` and `ReadAsync(token)` step one set of fields, and `ImplementRoot` runs both bodies and puts the
-two opens on one `ClrDataCursorFactory`. **A deferred source is visited through both hierarchies from both
+two opens on one `ClrCursorFactory`. **A deferred source is visited through both hierarchies from both
 bodies**, because the advance that reaches it may be either and the cursor needs the opener of that kind —
 that is the one place the two-closed-hierarchies rule of the enumerable convention does not hold, and it is
 not a mode. The awaiting hierarchy's token is a real parameter, declared by the awaiting root's lambda and
@@ -469,8 +469,8 @@ redeclared by each deferred opener so that it shadows — measured to work in bo
 interpreter — and `CallAsync` passes the implementor's parameter, never `default`. Where the enumerable
 convention had to leave an awaited drain to the first `MoveNextAsync`, the cursor's awaiting open awaits it.
 Every node the enumerable convention has, it has — both bodies each, in files named
-`ClrDataCursor<X>` beside `ClrEnumerable<X>`, and diffable against them once the names are normalised —
-with `ClrDataCursorDefaults` holding every operator as a cursor class whose two advances step one set of
+`ClrCursor<X>` beside `ClrEnumerable<X>`, and diffable against them once the names are normalised —
+with `ClrCursorDefaults` holding every operator as a cursor class whose two advances step one set of
 fields. Two facts the port fixed the moment a plan could be rooted in it, both measured. **A converter rule
 must simplify the trait set it copies**: a merge join carries two collations, `RelSet.add` simplifies a
 rel's traits before choosing its subset, so the converter's input subset carries none and a converter

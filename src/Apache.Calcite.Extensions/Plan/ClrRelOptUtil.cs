@@ -39,7 +39,7 @@ namespace Apache.Calcite.Extensions.Plan
         /// <para><c>EnumerableRules.TO_INTERPRETER</c> is registered by Calcite's call and neither
         /// counterpart is registered here, for the reason
         /// <see cref="ClrEnumerableRules.ClrEnumerableInterpreterRule"/> and
-        /// <see cref="Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorRules.ClrDataCursorInterpreterRule"/>
+        /// <see cref="Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.ClrCursorInterpreterRule"/>
         /// give: an interpreted node lands in <c>EnumerableConvention</c> under a converter, and a caller
         /// wanting it to land in one of this project's conventions instead adds that convention's rule
         /// itself.</para>
@@ -53,7 +53,7 @@ namespace Apache.Calcite.Extensions.Plan
             foreach (var rule in ClrEnumerableRules.Rules())
                 planner.addRule(rule);
 
-            foreach (var rule in Apache.Calcite.Extensions.Adapter.DataCursor.ClrDataCursorRules.Rules())
+            foreach (var rule in Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.Rules())
                 planner.addRule(rule);
         }
 

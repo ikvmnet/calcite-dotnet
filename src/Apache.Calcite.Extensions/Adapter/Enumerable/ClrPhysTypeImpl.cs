@@ -370,13 +370,13 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             var (selector, targetRowType) = Reformatter(targetFormat);
 
             return Expression.Call(null,
-                DataCursor.ClrDataCursorBuiltInMethod.Select.MakeGenericMethod(javaRowClass, targetRowType),
+                Cursor.ClrCursorBuiltInMethod.Select.MakeGenericMethod(javaRowClass, targetRowType),
                 expression,
                 selector);
         }
 
         /// <inheritdoc />
-        public Expression ConvertToCursorAsync(DataCursor.ClrDataCursorRelImplementor implementor, Expression expression, JavaRowFormat targetFormat)
+        public Expression ConvertToCursorAsync(Cursor.ClrCursorRelImplementor implementor, Expression expression, JavaRowFormat targetFormat)
         {
             ArgumentNullException.ThrowIfNull(implementor);
             ArgumentNullException.ThrowIfNull(expression);
@@ -387,8 +387,8 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
 
             var (selector, targetRowType) = Reformatter(targetFormat);
 
-            return DataCursor.ClrDataCursorBuiltInMethod.CallAsync(implementor,
-                DataCursor.ClrDataCursorBuiltInMethod.SelectAsync.MakeGenericMethod(javaRowClass, targetRowType),
+            return Cursor.ClrCursorBuiltInMethod.CallAsync(implementor,
+                Cursor.ClrCursorBuiltInMethod.SelectAsync.MakeGenericMethod(javaRowClass, targetRowType),
                 expression,
                 selector);
         }

@@ -11,11 +11,11 @@ namespace Apache.Calcite.Extensions.Interop
 {
 
     /// <summary>
-    /// Carries rows between a linq4j <see cref="Enumerable"/> and a <see cref="ClrDataCursor"/>.
+    /// Carries rows between a linq4j <see cref="Enumerable"/> and a <see cref="ClrCursor"/>.
     /// </summary>
     /// <remarks>
     /// <see cref="JavaSequences"/> for the cursor convention: this is the whole of what a converter between
-    /// <c>EnumerableConvention</c> and <c>ClrDataCursorConvention</c> does. The rows are not touched — both
+    /// <c>EnumerableConvention</c> and <c>ClrCursorConvention</c> does. The rows are not touched — both
     /// conventions ask the same <c>JavaTypeFactory</c> what a field is — and each value is converted rather
     /// than cast at the boundary, for the reason <see cref="JavaSequences.FromJava{TSource}"/> gives.
     /// </remarks>
@@ -31,10 +31,10 @@ namespace Apache.Calcite.Extensions.Interop
         /// <remarks>
         /// A linq4j sub-plan executes at <c>enumerator()</c> — <c>ResultSetEnumerable</c> runs its JDBC
         /// statement there — so the crossing calls it here, at the open, where the rest of the plan's
-        /// acquisition happens. The cursor's <see cref="ClrDataCursor.ReadAsync"/> completes synchronously,
+        /// acquisition happens. The cursor's <see cref="ClrCursor.ReadAsync"/> completes synchronously,
         /// because a linq4j <see cref="Enumerator"/> is pulled and cannot be anything else.
         /// </remarks>
-        public static ClrDataCursor<TSource> FromJava<TSource>(Enumerable source)
+        public static ClrCursor<TSource> FromJava<TSource>(Enumerable source)
         {
             ArgumentNullException.ThrowIfNull(source);
 
@@ -50,15 +50,15 @@ namespace Apache.Calcite.Extensions.Interop
         /// <param name="source"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public static ValueTask<ClrDataCursor<TSource>> FromJavaAsync<TSource>(Enumerable source, CancellationToken cancellationToken)
+        public static ValueTask<ClrCursor<TSource>> FromJavaAsync<TSource>(Enumerable source, CancellationToken cancellationToken)
         {
-            return new ValueTask<ClrDataCursor<TSource>>(FromJava<TSource>(source));
+            return new ValueTask<ClrCursor<TSource>>(FromJava<TSource>(source));
         }
 
         /// <summary>
         /// A cursor over a linq4j <see cref="Enumerator"/>.
         /// </summary>
-        sealed class JavaEnumeratorCursor<TSource>(Enumerator enumerator) : ClrDataCursor<TSource>
+        sealed class JavaEnumeratorCursor<TSource>(Enumerator enumerator) : ClrCursor<TSource>
         {
 
             TSource current = default!;
@@ -105,7 +105,7 @@ namespace Apache.Calcite.Extensions.Interop
         /// The sequence's <c>enumerator()</c> is the plan's synchronous open, because a linq4j
         /// <c>Enumerator</c> is pulled and the generated source calling it cannot await.
         /// </remarks>
-        public static Enumerable ToJava(ClrPlan<ClrDataCursor> plan, DataContext root)
+        public static Enumerable ToJava(ClrPlan<ClrCursor> plan, DataContext root)
         {
             ArgumentNullException.ThrowIfNull(plan);
             ArgumentNullException.ThrowIfNull(root);
@@ -116,7 +116,7 @@ namespace Apache.Calcite.Extensions.Interop
         /// <summary>
         /// A linq4j <see cref="Enumerable"/> whose every enumerator is an open of a cursor plan.
         /// </summary>
-        sealed class CursorEnumerable(ClrPlan<ClrDataCursor> plan, DataContext root) : AbstractEnumerable
+        sealed class CursorEnumerable(ClrPlan<ClrCursor> plan, DataContext root) : AbstractEnumerable
         {
 
             /// <inheritdoc />
@@ -137,10 +137,10 @@ namespace Apache.Calcite.Extensions.Interop
         /// opened afresh, which is what the enumerable it stands for would do when asked for a second
         /// enumerator.
         /// </remarks>
-        sealed class CursorEnumerator(ClrPlan<ClrDataCursor> plan, DataContext root) : Enumerator
+        sealed class CursorEnumerator(ClrPlan<ClrCursor> plan, DataContext root) : Enumerator
         {
 
-            ClrDataCursor cursor = plan.Invoke(root);
+            ClrCursor cursor = plan.Invoke(root);
 
             /// <inheritdoc />
             public object? current() => cursor.Current;
