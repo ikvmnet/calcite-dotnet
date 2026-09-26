@@ -125,9 +125,15 @@ driver this one is modelled on*, has the reading. Not to be confused with
   different assemblies.
   **The next one is found in the resolved graph, not in the poms.** Every project caches it as
   `obj\Debug\<tfm>\<Project>.maven.cache`, a JSON tree carrying `conflict.winner` on every loser: walk it
-  and compare what Maven picked against the highest version present. `slf4j-api` is the one disagreement
-  left, 1.7.25 against 2.0.17, and is not a defect — json-path names only `debug`, `trace`, `error`,
-  `isDebugEnabled` and `getLogger(Class)`, every one of them 1.x.
+  and compare what Maven picked against the highest version present. `slf4j-api` was the third, and it was
+  called harmless here on the grounds that json-path uses only 1.x methods — the API was never the problem.
+  Maven took 1.7.25, whose `LoggerFactory.bind` repairs the placeholder loggers it hands out during
+  initialization only when a binding is found. With none, which is always the case here, a logger taken on
+  another thread while the first is still initializing keeps no delegate and answers `isTraceEnabled()`
+  true for the life of the process. `HepPlanner`'s is one, and its trace-only `dumpGraph` then asserts the
+  graph is consistent: `Should_execute_a_correlated_exists_over_an_uncollect_with_top_down_decorrelation`
+  failed on that assertion in CI, on whichever runner the parallel Data suite raced, and passed on rerun.
+  1.7.26 onward repair on the no-binding path too; it is pinned at 2.0.17, the highest present.
 
   **What 1.43 cost to move to, measured, was one node.** `EnumerableUncollect` was reworked:
   `BuiltInMethod.FLAT_PRODUCT` became `FLAT_ZIP` and took a fourth `isOuter` argument, `FLAT_LIST` gained a

@@ -38,6 +38,7 @@
              BuiltInMethod initializer looks for ExtendedEnumerable.update, which 1.42's linq4j does not
              have. Every test in that project then fails in a type initializer. -->
         <MavenReference Include="org.apache.commons:commons-lang3" Version="3.18.0" />
+        <MavenReference Include="org.slf4j:slf4j-api" Version="2.0.17" />
         <MavenReference Include="org.apache.calcite:calcite-core" Version="1.43.0-SNAPSHOT">
             <Dependencies>
                 com.jayway.jsonpath:json-path/com.fasterxml.jackson.core:jackson-databind:2.22.2,optional=true;
