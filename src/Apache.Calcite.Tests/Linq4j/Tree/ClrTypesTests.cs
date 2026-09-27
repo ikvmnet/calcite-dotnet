@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 
 using Apache.Calcite.Extensions;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Adapter.Cursor;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using FluentAssertions;

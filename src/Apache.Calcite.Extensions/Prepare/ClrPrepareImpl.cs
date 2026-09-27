@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Adapter.Cursor;
 using Apache.Calcite.Extensions.Prepare.Cursor;
 using Apache.Calcite.Extensions.Rel.Metadata;
 using Apache.Calcite.Extensions.Runtime;
@@ -271,8 +271,8 @@ namespace Apache.Calcite.Extensions.Prepare
         {
             var typeFactory = context.getTypeFactory();
             var prefer = elementType == typeof(object[])
-                ? ClrEnumerablePrefer.Array
-                : ClrEnumerablePrefer.Custom;
+                ? ClrCursorPrefer.Array
+                : ClrCursorPrefer.Custom;
 
             var cluster = CreateCluster(planner, new RexBuilder(typeFactory));
 
@@ -685,7 +685,7 @@ namespace Apache.Calcite.Extensions.Prepare
             readonly CalciteSchema schema;
             readonly RelDataTypeFactory typeFactory;
             readonly SqlRexConvertletTable convertletTable;
-            readonly ClrEnumerablePrefer prefer;
+            readonly ClrCursorPrefer prefer;
             readonly RelOptCluster cluster;
 
             /// <summary>
@@ -707,7 +707,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 CalciteCatalogReader catalogReader,
                 RelDataTypeFactory typeFactory,
                 CalciteSchema schema,
-                ClrEnumerablePrefer prefer,
+                ClrCursorPrefer prefer,
                 RelOptCluster cluster,
                 Convention resultConvention,
                 SqlRexConvertletTable convertletTable) :
@@ -736,7 +736,7 @@ namespace Apache.Calcite.Extensions.Prepare
             /// <summary>
             /// Gets the representation a consumer of the plan would prefer its rows to arrive in.
             /// </summary>
-            protected ClrEnumerablePrefer Prefer => prefer;
+            protected ClrCursorPrefer Prefer => prefer;
 
             /// <summary>
             /// Gets the type factory the statement is prepared with.

@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable.Tests;
+using Apache.Calcite.Extensions.Adapter.Cursor.Tests;
 using Apache.Calcite.Extensions.Prepare;
 
 using FluentAssertions;

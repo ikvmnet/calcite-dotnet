@@ -5,7 +5,7 @@ using org.apache.calcite.adapter.java;
 
 using J = org.apache.calcite.linq4j.tree;
 
-namespace Apache.Calcite.Extensions.Adapter.Enumerable
+namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>

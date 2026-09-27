@@ -1,6 +1,5 @@
 using System.Linq.Expressions;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using org.apache.calcite;
@@ -64,7 +63,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
-        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             if (IsImplementorDefined((RexCall)getCall()))
                 return TvfImplementorBasedImplement(implementor, pref);
@@ -84,7 +83,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <para>A table function the schema defines has no input at all — the call yields the sequence —
         /// so that half is the same body in both modes.</para>
         /// </remarks>
-        public ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             if (IsImplementorDefined((RexCall)getCall()))
                 return TvfImplementorBasedImplementAsync(implementor, pref);
@@ -127,7 +126,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// shadows the local. That is what <c>LixToClrTranslator</c>'s scope by name is for, and this is the
         /// node that needs it.</para>
         /// </remarks>
-        ClrCursorResult TvfImplementorBasedImplement(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrCursorResult TvfImplementorBasedImplement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var child = (ClrCursorRel)getInputs().get(0);
             var result = implementor.VisitChild(this, 0, child, pref);
@@ -154,7 +153,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// to be waited for, which is the only thing that can be done, a linq4j <c>Enumerable</c> having
         /// nowhere to suspend.
         /// </remarks>
-        ClrCursorAsyncResult TvfImplementorBasedImplementAsync(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrCursorAsyncResult TvfImplementorBasedImplementAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var child = (ClrCursorRel)getInputs().get(0);
             var result = implementor.VisitChildAsync(this, 0, child, pref);
@@ -183,7 +182,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// Everything from here down is Calcite's and is linq4j, so both bodies share it. It is not a
         /// dispatch: which sequence <paramref name="pulled"/> was made from is settled by the caller.
         /// </remarks>
-        ClrCursorResult TvfImplementorBasedWindow(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref, ClrPhysType inputPhysType, JavaRowFormat inputFormat, Expression pulled)
+        ClrCursorResult TvfImplementorBasedWindow(ClrCursorRelImplementor implementor, ClrCursorPrefer pref, ClrPhysType inputPhysType, JavaRowFormat inputFormat, Expression pulled)
         {
             var typeFactory = implementor.TypeFactory;
             var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.Prefer(inputFormat));

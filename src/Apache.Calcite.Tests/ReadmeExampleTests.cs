@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 
 using Apache.Calcite.Extensions;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Adapter.Cursor;
 
 using FluentAssertions;
 
@@ -106,7 +106,7 @@ namespace Apache.Calcite.Tests
             // ---- README example begins ----
             var implementor = new Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRelImplementor(
                 physical.getCluster().getRexBuilder(), new java.util.HashMap());
-            var factory = implementor.ImplementRoot((Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRel)physical, ClrEnumerablePrefer.Array);
+            var factory = implementor.ImplementRoot((Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRel)physical, ClrCursorPrefer.Array);
 
             // opening runs the plan's acquisition -- a sort drains, a leaf executes -- and reading reads rows
             await using var cursor = await factory.OpenAsync(dataContext, cancellationToken);

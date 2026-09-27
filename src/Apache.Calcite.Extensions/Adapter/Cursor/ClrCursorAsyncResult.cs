@@ -2,7 +2,6 @@ using System;
 using System.Linq.Expressions;
 using System.Threading.Tasks;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using org.apache.calcite.adapter.enumerable;
 

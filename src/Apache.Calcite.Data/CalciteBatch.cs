@@ -240,10 +240,8 @@ namespace Apache.Calcite.Data
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         /// <remarks>
-        /// The connection's plan, exactly as a command prepares it — the convention is the connection's
-        /// mode, so a batch does not fail or block on the strength of how it happened to be executed. The
-        /// token goes to the session, where an asynchronous plan's enumerator is the place a token can
-        /// enter.
+        /// The plan exactly as a command prepares it, opened with await. The token goes to the session,
+        /// which hands it to the plan's open and links it into the statement's cancellation.
         /// </remarks>
         Task<CalciteResult> ExecuteReaderCoreAsync(CalciteSession session, CalciteBatchCommand command, CancellationToken cancellationToken)
         {

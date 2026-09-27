@@ -14,29 +14,15 @@ namespace Apache.Calcite.Data.Internal
     /// </summary>
     /// <remarks>
     /// What a reader holds, and what both execute paths return. Everything about a <em>row</em> is here —
-    /// the columns, the cursor factory, the current row, the affected count — because a row is the same
-    /// thing whichever convention produced it. Reading is what the two subclasses differ by, and it is the
-    /// only thing they differ by.
+    /// the columns, the cursor factory, the current row, the affected count. Reading is the subclass's,
+    /// and <see cref="CalciteCursorResult"/> is the only one: it steps the plan's cursor.
     ///
-    /// <para>Two classes rather than one holding two enumerators. A single class decided which it was
-    /// from a nullable field, so nothing could be relied on at a call site; here the type is the answer and
-    /// each subclass holds exactly the enumerator it has.</para>
-    ///
-    /// <para><b>Both read methods are on both</b>, and that is deliberate rather than a compromise.
+    /// <para><b>Both read methods are always answered</b>, and that is deliberate rather than a compromise.
     /// <c>DbDataReader</c> is a contract: a consumer that knows nothing but <c>DbDataReader</c> -- a
     /// micro-ORM, <c>DataTable.Load</c>, anything generic -- calls <c>Read</c>, and a provider whose reader
-    /// throws there is not a provider. So a synchronous plan answers <c>ReadAsync</c> with a completed
-    /// task, and an asynchronous plan blocks in <c>Read</c>. Which plan a query gets is the connection's
-    /// mode, not the entry point's choice, so either crossing is the normal case rather than an edge.</para>
-    ///
-    /// <para>Neither is the sync-over-async this surface refuses, and the line is about who chose. A
-    /// <em>plan's</em> internals can block too — an awaiting node read synchronously is exactly
-    /// that, one blocked thread per row — and what makes it refusable there is that the planner would be
-    /// choosing it, invisibly, on behalf of a caller who asked for nothing of the sort. That is why the
-    /// prepare pipeline registers one convention's rules and not both, and so never produces a plan holding
-    /// one. Here the block is at the boundary, where every ADO.NET provider blocks: it is what <c>Read</c>
-    /// on an asynchronous source means, and the asynchronous surface never blocks at all — a synchronous
-    /// part of a plan completes synchronously, which parks nothing.</para>
+    /// throws there is not a provider. A plan has no mode, and its cursor carries both advances, so
+    /// <c>Read</c> blocks only where a leaf can only be awaited and <c>ReadAsync</c> completes
+    /// synchronously wherever nothing is awaited.</para>
     /// </remarks>
     internal abstract class CalciteResult : IDisposable, IAsyncDisposable
     {
@@ -114,12 +100,12 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Releases the plan's enumerator.
+        /// Releases the plan's cursor.
         /// </summary>
         protected abstract void Release();
 
         /// <summary>
-        /// Releases the plan's enumerator, awaiting it where it has something to await.
+        /// Releases the plan's cursor, awaiting it where it has something to await.
         /// </summary>
         protected abstract ValueTask ReleaseAsync();
 

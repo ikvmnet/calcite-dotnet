@@ -1,7 +1,7 @@
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.rel.core;
 
-namespace Apache.Calcite.Extensions.Adapter.Enumerable
+namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
@@ -36,7 +36,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// <c>RexImpTable.INSTANCE</c> and ignore the caller.</para>
     ///
     /// <para>Calcite never sees one of these: nothing upstream builds this project's nodes or reads their
-    /// state, so every <c>AggImpState</c> in either convention is one of these and the cast at each read
+    /// state, so every <c>AggImpState</c> this convention reads is one of these and the cast at each read
     /// site is total.</para>
     /// </remarks>
     sealed class ClrAggImpState : AggImpState

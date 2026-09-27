@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Linq;
 
 using Apache.Calcite.Extensions.Adapter.Cursor;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Tests;
 
 using FluentAssertions;

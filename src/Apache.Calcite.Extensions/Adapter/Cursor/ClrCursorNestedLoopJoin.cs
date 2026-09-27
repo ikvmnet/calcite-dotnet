@@ -1,6 +1,5 @@
 using System.Linq.Expressions;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using java.util.function;
 using org.apache.calcite.adapter.enumerable;
@@ -77,13 +76,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// </remarks>
         public org.apache.calcite.util.Pair? passThroughTraits(RelTraitSet required)
         {
-            return ClrEnumerableTraitsUtils.PassThroughTraitsForJoin(required, joinType, getLeft().getRowType().getFieldCount(), getTraitSet());
+            return ClrCursorTraitsUtils.PassThroughTraitsForJoin(required, joinType, getLeft().getRowType().getFieldCount(), getTraitSet());
         }
 
         /// <inheritdoc />
         public org.apache.calcite.util.Pair? deriveTraits(RelTraitSet childTraits, int childId)
         {
-            return ClrEnumerableTraitsUtils.DeriveTraitsForJoin(childTraits, childId, joinType, getTraitSet(), getRight().getTraitSet());
+            return ClrCursorTraitsUtils.DeriveTraitsForJoin(childTraits, childId, joinType, getTraitSet(), getRight().getTraitSet());
         }
 
         /// <inheritdoc />
@@ -130,7 +129,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
-        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             if (joinType.name() == nameof(JoinRelType.LEFT_MARK))
                 return ImplementNLMarkJoin(implementor, pref);
@@ -139,7 +138,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
-        public ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             if (joinType.name() == nameof(JoinRelType.LEFT_MARK))
                 return ImplementNLMarkJoinAsync(implementor, pref);
@@ -159,7 +158,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// its non-equi part, and it is the three-valued one: a mark join's marker is null where a comparison
         /// was unknown, which is what makes <c>IN</c> over a nullable column answer UNKNOWN.
         /// </remarks>
-        ClrCursorAsyncResult ImplementNLMarkJoinAsync(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrCursorAsyncResult ImplementNLMarkJoinAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrCursorRel)left, pref);
             var rightResult = implementor.VisitChildAsync(this, 1, (ClrCursorRel)right, pref);
@@ -189,7 +188,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <param name="implementor"></param>
         /// <param name="pref"></param>
         /// <returns></returns>
-        ClrCursorAsyncResult ImplementNLJoinAsync(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrCursorAsyncResult ImplementNLJoinAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrCursorRel)left, pref);
             var rightResult = implementor.VisitChildAsync(this, 1, (ClrCursorRel)right, pref);
@@ -226,7 +225,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// its non-equi part, and it is the three-valued one: a mark join's marker is null where a comparison
         /// was unknown, which is what makes <c>IN</c> over a nullable column answer UNKNOWN.
         /// </remarks>
-        ClrCursorResult ImplementNLMarkJoin(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrCursorResult ImplementNLMarkJoin(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrCursorRel)left, pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrCursorRel)right, pref);
@@ -257,7 +256,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <param name="implementor"></param>
         /// <param name="pref"></param>
         /// <returns></returns>
-        ClrCursorResult ImplementNLJoin(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrCursorResult ImplementNLJoin(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrCursorRel)left, pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrCursorRel)right, pref);

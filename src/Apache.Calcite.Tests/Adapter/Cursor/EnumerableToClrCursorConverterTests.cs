@@ -4,7 +4,6 @@ using System.Linq;
 
 using Apache.Calcite.Extensions;
 using Apache.Calcite.Extensions.Adapter.Cursor;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Linq4j;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 using Apache.Calcite.Tests;
@@ -130,7 +129,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var rows = new List<object[]>();
             if (physical is ClrCursorRel clr)
             {
-                var factory = new ClrCursorRelImplementor(clr.getCluster().getRexBuilder(), parameters).ImplementRoot(clr, ClrEnumerablePrefer.Array);
+                var factory = new ClrCursorRelImplementor(clr.getCluster().getRexBuilder(), parameters).ImplementRoot(clr, ClrCursorPrefer.Array);
 
                 using var cursor = factory.Open(context);
                 while (cursor.Read())
@@ -195,7 +194,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var physical = planner.transform(1, chosen.getTraitSet(), chosen);
 
             var rows = new List<object[]>();
-            var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), new java.util.HashMap()).ImplementRoot((ClrCursorRel)physical, ClrEnumerablePrefer.Array);
+            var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), new java.util.HashMap()).ImplementRoot((ClrCursorRel)physical, ClrCursorPrefer.Array);
 
             using var cursor = factory.Open(new TestDataContext(rootSchema));
             while (cursor.Read())
@@ -285,7 +284,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             try
             {
                 var rows = new List<object[]>();
-                var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), new java.util.HashMap()).ImplementRoot((ClrCursorRel)physical, ClrEnumerablePrefer.Array);
+                var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), new java.util.HashMap()).ImplementRoot((ClrCursorRel)physical, ClrCursorPrefer.Array);
                 using var cursor = factory.Open(new TestDataContext(rootSchema));
                 while (cursor.Read())
                     rows.Add(cursor.Current as object[] ?? [cursor.Current!]);

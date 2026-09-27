@@ -4,7 +4,6 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Adapter.Cursor;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Runtime;
 using Apache.Calcite.Tests;
 
@@ -98,7 +97,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var physical = planner.transform(2, chosen.getTraitSet(), chosen);
 
             var parameters = new java.util.HashMap();
-            var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters).ImplementRoot((ClrCursorRel)physical, ClrEnumerablePrefer.Array);
+            var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters).ImplementRoot((ClrCursorRel)physical, ClrCursorPrefer.Array);
 
             return (factory, new PlanDataContext(rootSchema, parameters), leaf);
         }

@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable.Tests;
+using Apache.Calcite.Extensions.Adapter.Cursor.Tests;
 using Apache.Calcite.Extensions.Schema;
 
 using org.apache.calcite;

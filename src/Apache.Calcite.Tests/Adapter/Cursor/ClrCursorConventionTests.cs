@@ -4,7 +4,6 @@ using System.Linq;
 
 using Apache.Calcite.Extensions;
 using Apache.Calcite.Extensions.Adapter.Cursor;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Interop;
 using Apache.Calcite.Extensions.Runtime;
 using Apache.Calcite.Tests;
@@ -163,7 +162,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             ClrCursorFactory factory;
             try
             {
-                factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), new java.util.HashMap()).ImplementRoot(physical, ClrEnumerablePrefer.Array);
+                factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), new java.util.HashMap()).ImplementRoot(physical, ClrCursorPrefer.Array);
             }
             catch (Exception e)
             {
@@ -218,7 +217,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             var project = ClrCursorProject.Create(physical, identity, physical.getRowType());
 
-            var act = () => new ClrCursorRelImplementor(project.getCluster().getRexBuilder(), new java.util.HashMap()).ImplementRoot(project, ClrEnumerablePrefer.Array);
+            var act = () => new ClrCursorRelImplementor(project.getCluster().getRexBuilder(), new java.util.HashMap()).ImplementRoot(project, ClrCursorPrefer.Array);
 
             act.Should().Throw<java.lang.IllegalStateException>()
                 .WithMessage("Unable to implement ClrCursorProject*")
@@ -276,7 +275,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             physical.Should().BeOfType<ClrCursorCombine>();
 
-            var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), new java.util.HashMap()).ImplementRoot(physical, ClrEnumerablePrefer.Array);
+            var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), new java.util.HashMap()).ImplementRoot(physical, ClrCursorPrefer.Array);
 
             var rows = Rows(factory, new TestDataContext(rootSchema));
 

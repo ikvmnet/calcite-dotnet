@@ -5,7 +5,6 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Adapter.Cursor;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Runtime;
 using Apache.Calcite.Tests;
 
@@ -94,7 +93,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         {
             var physical = Plan(sql, rootSchema);
             var parameters = new java.util.HashMap();
-            var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters).ImplementRoot((ClrCursorRel)physical, ClrEnumerablePrefer.Array);
+            var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters).ImplementRoot((ClrCursorRel)physical, ClrCursorPrefer.Array);
 
             return (factory, new TestDataContext(rootSchema, parameters));
         }
@@ -236,7 +235,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var context = new TestDataContext(rootSchema, parameters);
             var implementor = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters);
 
-            var awaited = implementor.Awaited(implementor.VisitChild(null, 0, physical, ClrEnumerablePrefer.Array));
+            var awaited = implementor.Awaited(implementor.VisitChild(null, 0, physical, ClrCursorPrefer.Array));
             var openAwaited = System.Linq.Expressions.Expression.Lambda<Func<DataContext, CancellationToken, ValueTask<IClrCursor<object[]>>>>(
                 awaited.Expression, implementor.Root, implementor.CancellationToken).Compile();
 
@@ -247,7 +246,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             rows.Should().Equal(["4|D", "5|E", "6|F"]);
 
-            var pulled = implementor.Pulled(implementor.VisitChildAsync(null, 0, physical, ClrEnumerablePrefer.Array));
+            var pulled = implementor.Pulled(implementor.VisitChildAsync(null, 0, physical, ClrCursorPrefer.Array));
             var openPulled = System.Linq.Expressions.Expression.Lambda<Func<DataContext, IClrCursor<object[]>>>(pulled.Expression, implementor.Root).Compile();
 
             rows.Clear();

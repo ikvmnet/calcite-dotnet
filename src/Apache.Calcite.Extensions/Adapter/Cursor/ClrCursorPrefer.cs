@@ -1,6 +1,6 @@
 using org.apache.calcite.adapter.enumerable;
 
-namespace Apache.Calcite.Extensions.Adapter.Enumerable
+namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
@@ -8,10 +8,10 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// </summary>
     /// <remarks>
     /// The counterpart of <c>EnumerableRel.Prefer</c>, with the same five values.
-    /// <see cref="ClrEnumerablePrefers"/> has the methods that answer what format a preference asks for, and
+    /// <see cref="ClrCursorPrefers"/> has the methods that answer what format a preference asks for, and
     /// converts to and from Calcite's enum.
     /// </remarks>
-    public enum ClrEnumerablePrefer
+    public enum ClrCursorPrefer
     {
 
         /// <summary>
@@ -46,7 +46,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// <summary>
     /// The methods <c>EnumerableRel.Prefer</c> carries on its values, which a C# enum cannot.
     /// </summary>
-    public static class ClrEnumerablePrefers
+    public static class ClrCursorPrefers
     {
 
         /// <summary>
@@ -54,7 +54,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </summary>
         /// <param name="prefer"></param>
         /// <returns></returns>
-        public static JavaRowFormat PreferCustom(this ClrEnumerablePrefer prefer)
+        public static JavaRowFormat PreferCustom(this ClrCursorPrefer prefer)
         {
             return prefer.Prefer(JavaRowFormat.CUSTOM);
         }
@@ -64,7 +64,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </summary>
         /// <param name="prefer"></param>
         /// <returns></returns>
-        public static JavaRowFormat PreferArray(this ClrEnumerablePrefer prefer)
+        public static JavaRowFormat PreferArray(this ClrCursorPrefer prefer)
         {
             return prefer.Prefer(JavaRowFormat.ARRAY);
         }
@@ -75,12 +75,12 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// <param name="prefer"></param>
         /// <param name="format"></param>
         /// <returns></returns>
-        public static JavaRowFormat Prefer(this ClrEnumerablePrefer prefer, JavaRowFormat format)
+        public static JavaRowFormat Prefer(this ClrCursorPrefer prefer, JavaRowFormat format)
         {
             return prefer switch
             {
-                ClrEnumerablePrefer.Custom => JavaRowFormat.CUSTOM,
-                ClrEnumerablePrefer.Array => JavaRowFormat.ARRAY,
+                ClrCursorPrefer.Custom => JavaRowFormat.CUSTOM,
+                ClrCursorPrefer.Array => JavaRowFormat.ARRAY,
                 _ => format,
             };
         }
@@ -90,9 +90,9 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </summary>
         /// <param name="format"></param>
         /// <returns></returns>
-        public static ClrEnumerablePrefer Of(JavaRowFormat format)
+        public static ClrCursorPrefer Of(JavaRowFormat format)
         {
-            return format.name() == nameof(JavaRowFormat.ARRAY) ? ClrEnumerablePrefer.Array : ClrEnumerablePrefer.Custom;
+            return format.name() == nameof(JavaRowFormat.ARRAY) ? ClrCursorPrefer.Array : ClrCursorPrefer.Custom;
         }
 
         /// <summary>
@@ -101,20 +101,20 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// </summary>
         /// <param name="prefer"></param>
         /// <returns></returns>
-        public static EnumerableRel.Prefer ToCalcite(this ClrEnumerablePrefer prefer)
+        public static EnumerableRel.Prefer ToCalcite(this ClrCursorPrefer prefer)
         {
             return prefer switch
             {
-                ClrEnumerablePrefer.Array => EnumerableRel.Prefer.ARRAY,
-                ClrEnumerablePrefer.ArrayNice => EnumerableRel.Prefer.ARRAY_NICE,
-                ClrEnumerablePrefer.Custom => EnumerableRel.Prefer.CUSTOM,
-                ClrEnumerablePrefer.CustomNice => EnumerableRel.Prefer.CUSTOM_NICE,
+                ClrCursorPrefer.Array => EnumerableRel.Prefer.ARRAY,
+                ClrCursorPrefer.ArrayNice => EnumerableRel.Prefer.ARRAY_NICE,
+                ClrCursorPrefer.Custom => EnumerableRel.Prefer.CUSTOM,
+                ClrCursorPrefer.CustomNice => EnumerableRel.Prefer.CUSTOM_NICE,
                 _ => EnumerableRel.Prefer.ANY,
             };
         }
 
         /// <summary>
-        /// Returns the <see cref="ClrEnumerablePrefer"/> that means the same, for a sub-plan of this
+        /// Returns the <see cref="ClrCursorPrefer"/> that means the same, for a sub-plan of this
         /// convention under one of Calcite's.
         /// </summary>
         /// <param name="prefer"></param>
@@ -123,15 +123,15 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
         /// Dispatched on the name, because a Java enum's ordinals are not stable across versions and its
         /// names are.
         /// </remarks>
-        public static ClrEnumerablePrefer FromCalcite(EnumerableRel.Prefer prefer)
+        public static ClrCursorPrefer FromCalcite(EnumerableRel.Prefer prefer)
         {
             return prefer.name() switch
             {
-                nameof(EnumerableRel.Prefer.ARRAY) => ClrEnumerablePrefer.Array,
-                nameof(EnumerableRel.Prefer.ARRAY_NICE) => ClrEnumerablePrefer.ArrayNice,
-                nameof(EnumerableRel.Prefer.CUSTOM) => ClrEnumerablePrefer.Custom,
-                nameof(EnumerableRel.Prefer.CUSTOM_NICE) => ClrEnumerablePrefer.CustomNice,
-                _ => ClrEnumerablePrefer.Any,
+                nameof(EnumerableRel.Prefer.ARRAY) => ClrCursorPrefer.Array,
+                nameof(EnumerableRel.Prefer.ARRAY_NICE) => ClrCursorPrefer.ArrayNice,
+                nameof(EnumerableRel.Prefer.CUSTOM) => ClrCursorPrefer.Custom,
+                nameof(EnumerableRel.Prefer.CUSTOM_NICE) => ClrCursorPrefer.CustomNice,
+                _ => ClrCursorPrefer.Any,
             };
         }
 

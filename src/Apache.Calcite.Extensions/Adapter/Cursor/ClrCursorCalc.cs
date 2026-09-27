@@ -1,7 +1,6 @@
 using System;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using java.util.function;
@@ -85,7 +84,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <inheritdoc />
         public org.apache.calcite.util.Pair? passThroughTraits(RelTraitSet required)
         {
-            return ClrEnumerableTraitsUtils.PassThroughTraitsForProject(
+            return ClrCursorTraitsUtils.PassThroughTraitsForProject(
                 required,
                 Exps(),
                 getInput().getRowType(),
@@ -96,7 +95,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <inheritdoc />
         public org.apache.calcite.util.Pair? deriveTraits(RelTraitSet childTraits, int childId)
         {
-            return ClrEnumerableTraitsUtils.DeriveTraitsForProject(
+            return ClrCursorTraitsUtils.DeriveTraitsForProject(
                 childTraits,
                 childId,
                 Exps(),
@@ -106,7 +105,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
-        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var typeFactory = implementor.TypeFactory;
             var child = (ClrCursorRel)getInput();
@@ -183,7 +182,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
-        public ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var typeFactory = implementor.TypeFactory;
             var child = (ClrCursorRel)getInput();

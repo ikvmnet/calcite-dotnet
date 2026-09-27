@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Adapter.Cursor;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
@@ -159,7 +158,7 @@ namespace Apache.Calcite.Geography.Tests
 
         static Apache.Calcite.Extensions.Runtime.IClrCursorFactory Implement(ClrCursorRel physical, java.util.Map parameters)
         {
-            return new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters).ImplementRoot(physical, ClrEnumerablePrefer.Array);
+            return new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters).ImplementRoot(physical, ClrCursorPrefer.Array);
         }
 
         static List<string[]> RunClr(string sql)

@@ -1,7 +1,7 @@
 using Apache.Calcite.Extensions;
 
 using Xunit;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Adapter.Cursor;
 
 namespace Apache.Calcite.Data.Tests
 {

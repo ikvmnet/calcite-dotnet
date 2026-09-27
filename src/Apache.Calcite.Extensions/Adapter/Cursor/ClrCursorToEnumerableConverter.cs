@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Interop;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 using Apache.Calcite.Extensions.Runtime;
@@ -116,7 +115,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 rows.add(J.Expressions.newArrayInit((java.lang.reflect.Type)(java.lang.Class)typeof(object), (java.lang.Iterable)fields));
             }
 
-            var result = clr.VisitChild(null, 0, (ClrCursorRel)getInput(), ClrEnumerablePrefers.FromCalcite(pref));
+            var result = clr.VisitChild(null, 0, (ClrCursorRel)getInput(), ClrCursorPrefers.FromCalcite(pref));
 
             foreach (var (name, _) in variables)
                 clr.ClearCorrelVariable(name);
