@@ -554,6 +554,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                         if (excludeMergeJoin && rule == ClrCursorRules.ClrCursorMergeJoinRule)
                             continue;
 
+                        // and the same for the hash join. Only Calcite's was taken out once, and the plans
+                        // agreed only because this convention's merge join cost its output alone and so beat
+                        // a hash join it ought to have lost to
+                        if (excludeHashJoin && rule == ClrCursorRules.ClrCursorJoinRule)
+                            continue;
+
                         rules.add(rule);
                     }
 
@@ -1743,9 +1749,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnALimitSortWithTiesAcrossTheBoundary() =>
             SameThrough("ClrCursorLimitSort", "SELECT \"K\", \"V\" FROM \"SORTED\" ORDER BY \"K\" FETCH NEXT 2 ROWS ONLY", limitSort: true);
 
+        // descending, because SORTED is already ascending by K and with an offset Calcite then plans a bare
+        // EnumerableLimit over the scan. This convention planned a limit sort there only while its limit
+        // answered its input's row count rather than RelMdRowCount's for a limit
         [Fact]
         public void ShouldAgreeOnALimitSortWithAnOffsetInsideATie() =>
-            SameThrough("ClrCursorLimitSort", "SELECT \"K\", \"V\" FROM \"SORTED\" ORDER BY \"K\" OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY", limitSort: true);
+            SameThrough("ClrCursorLimitSort", "SELECT \"K\", \"V\" FROM \"SORTED\" ORDER BY \"K\" DESC OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY", limitSort: true);
 
         [Fact]
         /// <remarks>
@@ -2364,19 +2373,36 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             Gives(sql, "1", "2", "3");
         }
 
-        // A join over a one-column table function puts a sort on it, and that is EnumerableSort's defect:
+        // A merge join over a one-column table function puts a sort on it, and that is EnumerableSort's defect:
         // it optimises the scan's ARRAY to SCALAR and hands the Object[] rows on unchanged. Refused rather
         // than answered, because Calcite is wrong here in the same way and this convention does what Calcite
         // does — ClrCursorSortTests carries the whole measurement. Restore the expected rows "1",
-        // "2" when EnumerableSort is fixed.
+        // "2" when EnumerableSort is fixed. The hash join is taken away on both sides, because left to itself
+        // Calcite hashes this join and there is no sort under it; this convention sorted and merged only while
+        // its merge join cost its output alone, and the test was holding that rather than the defect.
         [Fact]
         public void ShouldRefuseATableFunctionInAJoin()
         {
-            var act = () => Gives("SELECT \"S\".\"ID\" FROM \"SALES\" AS \"S\", TABLE(NUMBERS(2)) AS \"N\" WHERE \"S\".\"ID\" = \"N\".\"N\" ORDER BY 1", "1", "2");
+            const string sql = "SELECT \"S\".\"ID\" FROM \"SALES\" AS \"S\", TABLE(NUMBERS(2)) AS \"N\" WHERE \"S\".\"ID\" = \"N\".\"N\" ORDER BY 1";
+
+            Run(sql, true, planOnly: true, excludeHashJoin: true)[0].Should().Contain("ClrCursorMergeJoin");
+
+            var act = () => Run(sql, true, excludeHashJoin: true);
 
             act.Should().Throw<java.lang.IllegalStateException>()
                 .WithInnerException<java.lang.IllegalStateException>()
                 .WithMessage("*ClrCursorSort handed up an open of System.Object[] where its row type is java.lang.Integer*");
+        }
+
+        // the same join as Calcite plans it, hashed, with no sort under it
+        [Fact]
+        public void ShouldAgreeOnATableFunctionInAHashJoin()
+        {
+            const string sql = "SELECT \"S\".\"ID\" FROM \"SALES\" AS \"S\", TABLE(NUMBERS(2)) AS \"N\" WHERE \"S\".\"ID\" = \"N\".\"N\" ORDER BY 1";
+
+            Run(sql, true, planOnly: true)[0].Should().Contain("ClrCursorHashJoin");
+            Same(sql);
+            Gives(sql, "1", "2");
         }
 
         // The window table functions, which are the path RexImpTable implements rather than the schema.
@@ -2712,6 +2738,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public void ShouldAgreeOnABatchNestedLoopJoinOnAMismatchedKey() =>
             SameBatchNestedLoopJoin("SELECT COUNT(e.\"name\") FROM \"HR\".\"emps\" e JOIN \"HR\".\"depts\" d ON d.\"deptno\" = e.\"empid\"");
+
+        // an outer join whose null-generating side is a CUSTOM row with a primitive field. The selector reads
+        // `right.empid` as the int it is and Calcite writes `right == null ? null : right.empid`, which Java
+        // types as Integer; the conditional here was typed as the int and could not hold the null, so the
+        // plan could not be built. Hidden until the merge join cost what Calcite's does, because until then
+        // this convention never hashed this join
+        [Fact]
+        public void ShouldAgreeOnAHashLeftJoinOverAPrimitiveField()
+        {
+            const string sql = "SELECT d.\"deptno\", e.\"empid\" FROM \"HR\".\"depts\" d LEFT JOIN \"HR\".\"emps\" e ON d.\"deptno\" = e.\"deptno\" ORDER BY 1, 2";
+
+            Run(sql, true, planOnly: true)[0].Should().MatchRegex(@"ClrCursorHashJoin\(condition=\[[^\]]*\], joinType=\[left\]\)");
+            Same(sql);
+        }
 
         [Fact]
         public void ShouldAgreeOnABatchNestedLoopLeftJoinCount() =>

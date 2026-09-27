@@ -98,6 +98,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 if (excludeMergeJoin && rule == ClrCursorRules.ClrCursorMergeJoinRule)
                     continue;
 
+                // and the same for the hash join, which DefaultRulesProgram takes out of Calcite's rules only
+                if (excludeHashJoin && rule == ClrCursorRules.ClrCursorJoinRule)
+                    continue;
+
                 rules.add(rule);
             }
 
@@ -865,7 +869,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public async Task ShouldRefuseATableFunctionJoinedToATable()
         {
-            var act = async () => await Run("SELECT s.ID FROM SALES s, TABLE(NUMBERS(6)) n WHERE s.ID = n.N ORDER BY 1", true);
+            // the hash join taken away, because with it the planner hashes and there is no sort to show the
+            // defect — this convention sorted here only while its merge join cost its output alone
+            var act = async () => await Run("SELECT s.ID FROM SALES s, TABLE(NUMBERS(6)) n WHERE s.ID = n.N ORDER BY 1", true, excludeHashJoin: true);
 
             (await act.Should().ThrowAsync<java.lang.IllegalStateException>())
                 .WithInnerException<java.lang.IllegalStateException>()

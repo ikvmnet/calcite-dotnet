@@ -483,11 +483,16 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
             if (value.Type.IsValueType)
                 return body;
 
+            // and a body that is a primitive is boxed, because that is the type Java gives `c ? null : body`
+            // (JLS 15.25) and the conversion javac writes into it. Calcite relies on it wherever a row is read
+            // by field: an outer join's selector over a CUSTOM row reads `right.empid` as the int it is
+            var type = ClrPrimitive.Box(body.Type);
+
             return Expression.Condition(
                 Expression.Equal(value, Expression.Constant(null, value.Type)),
-                Expression.Constant(null, body.Type),
-                body,
-                body.Type);
+                Expression.Constant(null, type),
+                Convert(body, type),
+                type);
         }
 
         /// <summary>

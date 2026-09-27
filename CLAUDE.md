@@ -270,6 +270,17 @@ re-derived `deduceElementType`'s precedence by hand, and a limit sort that sorte
 linq4j keeps a bounded `TreeMap`. A green suite does not mean a member has been ported. Reading Calcite's
 source for that member is what settles it.
 
+**Nor does it see a cost.** `ClrCursorMergeJoin.computeSelfCost` charged its output rows alone, "a merge join
+is cheaper than a hash join", where `EnumerableMergeJoin` charges inputs and output; a million rows joined to
+a thousand sorted both and merged where Calcite hashes the thousand, and ran about ten times slower with
+every row right. It also hid a defect: with the merge join winning every equi-join, nothing ever hashed an
+outer join over a primitive field, and the selector's `c ? null : right.empid` — boxed by Java, typed as the
+`int` here — could not be built. Six tests were holding plans that only the wrong costs produced.
+`ClrCursorCostTests` plans a statement both ways and requires the same text with
+`Enumerable` read as `ClrCursor`, and builds a node over the inputs of Calcite's and requires the same cost
+where the plans cannot tell two formulas apart. A metadata handler Calcite keys on an `Enumerable*` class
+is the same kind of divergence, reached by class rather than by override — `TODO.md` has what is left.
+
 **Where linq4j may appear.** A node holds linq4j only where a generator of Calcite's produced one or takes
 one, and it is translated where it is produced rather than composed into a larger tree first. That is four
 things: Rex (`translateCondition`, `translateProjects`, `translateLiteral`, everything `RexImpTable`

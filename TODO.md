@@ -575,3 +575,31 @@ config, and the pipeline already skips its own decorrelation where the property 
 pipeline and `Should_execute_a_correlated_exists_over_an_uncollect_with_top_down_decorrelation` through the
 connection string. Turning it on *by default* is still a decision not taken — it is a different algorithm
 over every statement, not a fix aimed at this one.
+
+## Metadata Calcite answers by `Enumerable*` class, which this convention's nodes never reach — *small to medium*
+
+Calcite's own metadata handlers name some of its physical nodes by class, and a handler is chosen by the
+rel's class, so a `ClrCursor*` node with the same base class falls through to the handler for that base.
+Found auditing every node's `computeSelfCost` and `estimateRowCount` against its `Enumerable*` counterpart,
+2026-09-27. What an override on the node could carry has been carried — `ClrCursorLimit.estimateRowCount`
+is `RelMdRowCount.getRowCount(EnumerableLimit)`, reached because the handler for `SingleRel` asks the node.
+What is left needs a handler of our own on the cluster's provider:
+
+- `RelMdMaxRowCount.getMaxRowCount(EnumerableLimit)` and `RelMdMinRowCount.getMinRowCount(EnumerableLimit)`.
+  `ClrCursorLimit` gets the `RelNode` catch-alls, which answer null.
+- `RelMdCollation.collations` for `EnumerableMergeJoin`, `EnumerableHashJoin`, `EnumerableNestedLoopJoin`,
+  `EnumerableMergeUnion`, `EnumerableCorrelate` and `EnumerableLimit`. Ours get the catch-all, which answers
+  null. The nodes put the right collation in their *trait set*, computed by the same static
+  `RelMdCollation` helpers, so a `RelSubset` in the Volcano pass answers the same; the difference is for a
+  query asked of the node itself — the hep calc pass, where `ClrCursorCalc.Create` asks
+  `RelMdCollation.calc(mq, input, …)` of the real input and so gets no collation over a join or a limit
+  where Calcite's calc gets one.
+- `RelMdPercentageOriginalRows.getCumulativeCost(EnumerableInterpreter)`, which is the node's own cost
+  with its input's left out. `ClrCursorInterpreter` gets the sum. `ClrCursorInterpreterRule` is not
+  registered, so no plan reaches it today.
+
+The shape is a `ReflectiveRelMetadataProvider` source per handler, keyed on the `ClrCursor*` classes and
+delegating to the same code, chained ahead of `DefaultRelMetadataProvider.INSTANCE` wherever this project
+names that — `ClrPrepareImpl`'s query supplier and `ClrPrepare.GetProgram`'s hep pass. A caller driving
+`Frameworks` would have to chain it too, which is the decision still to take. `ClrCursorCostTests` is where
+a test of it belongs: plan both ways and require the same text.
