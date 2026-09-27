@@ -154,6 +154,36 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 .sort(0, 1)
                 .build());
 
+        /// <summary>
+        /// CALCITE-7826: IS [NOT] DISTINCT FROM over two DECIMALs of different scales.
+        /// </summary>
+        /// <remarks>
+        /// <c>RelBuilderTest.testIsNotDistinctFromDecimal</c>. Only a call built by hand reaches
+        /// <c>DistinctFromImplementor</c> — the parser and <c>RelBuilder.isNotDistinctFrom</c> both expand the
+        /// operator into <c>IS NULL</c> and <c>=</c> over operands cast to a common type — so there is no SQL
+        /// for it. <c>BigDecimal.equals</c> is sensitive to scale, and before the fix 1.10 and 1.1 were
+        /// distinct. This convention translates through Calcite's <c>RexImpTable</c>, so it takes the fix
+        /// with no change here; the test is what shows that, and the rows are held to SQL's answer as well as
+        /// to Calcite's, since agreeing with Calcite is exactly what both did while both were wrong.
+        /// </remarks>
+        [Fact]
+        public void ShouldAgreeOnIsNotDistinctFromOverDecimalsOfDifferentScales()
+        {
+            static org.apache.calcite.rel.RelNode Build(org.apache.calcite.tools.RelBuilder builder) => builder
+                .values(["a", "b"], new java.math.BigDecimal("1.10"), new java.math.BigDecimal("1.1"))
+                .project(
+                    builder.field("a"),
+                    builder.field("b"),
+                    builder.alias(builder.equals(builder.field("a"), builder.field("b")), "eq"),
+                    builder.alias(builder.call(SqlStdOperatorTable.IS_NOT_DISTINCT_FROM, builder.field("a"), builder.field("b")), "indf"),
+                    builder.alias(builder.call(SqlStdOperatorTable.IS_DISTINCT_FROM, builder.field("a"), builder.field("b")), "idf"))
+                .build();
+
+            ClrCursorConventionDifferentialTests.SameRelThrough("ClrCursorCalc", Build);
+
+            Assert.Equal(["1.10|1.1|true|true|false"], ClrCursorConventionDifferentialTests.RunRel(Build, true));
+        }
+
         // ------------------------------------------------------------------ EnumerableCorrelateTest
         //
         // A correlate is only chosen when the joins are taken away and JOIN_TO_CORRELATE is put in, which is
