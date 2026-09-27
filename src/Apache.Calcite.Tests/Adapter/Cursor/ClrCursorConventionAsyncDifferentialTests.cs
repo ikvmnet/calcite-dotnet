@@ -125,9 +125,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var config = Frameworks.newConfigBuilder()
                 .defaultSchema(rootSchema)
                 .programs(
-                    markJoin ? MarkJoinSubQueryProgram() : Programs.subQuery(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE),
+                    markJoin ? MarkJoinSubQueryProgram() : Programs.subQuery(Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider),
                     new DefaultRulesProgram(rules, false, excludeMergeJoin, excludeHashJoin, null, remove),
-                    Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE))
+                    Programs.hep(calcRules, true, Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider))
                 .build();
 
             var planner = Frameworks.getPlanner(config);
@@ -217,7 +217,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var chosen = new DefaultRulesProgram(rules, false, false, false, add, remove)
                 .run(planner, logical, logical.getTraitSet().replace(ClrCursorConvention.Instance).simplify(), empty, empty);
 
-            var physical = Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)
+            var physical = Programs.hep(calcRules, true, Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider)
                 .run(planner, chosen, chosen.getTraitSet(), empty, empty);
 
             if (planOnly)
@@ -326,7 +326,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var builder = org.apache.calcite.plan.hep.HepProgram.builder();
             builder.addRuleCollection(rules);
 
-            return Programs.of(builder.build(), true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE);
+            return Programs.of(builder.build(), true, Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider);
         }
 
         static string Render(object row)

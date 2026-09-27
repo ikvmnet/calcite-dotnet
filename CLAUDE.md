@@ -278,8 +278,21 @@ outer join over a primitive field, and the selector's `c ? null : right.empid` �
 `int` here — could not be built. Six tests were holding plans that only the wrong costs produced.
 `ClrCursorCostTests` plans a statement both ways and requires the same text with
 `Enumerable` read as `ClrCursor`, and builds a node over the inputs of Calcite's and requires the same cost
-where the plans cannot tell two formulas apart. A metadata handler Calcite keys on an `Enumerable*` class
-is the same kind of divergence, reached by class rather than by override — `TODO.md` has what is left.
+where the plans cannot tell two formulas apart, and dumps every node's row count, bounds, collations and
+cumulative cost on both sides and requires those the same too.
+
+**A metadata handler Calcite keys on an `Enumerable*` class is a cost this convention's node never reaches.**
+A handler is chosen by the rel's class, and ours share a *base* class with Calcite's, so `ClrCursorLimit`
+reached the handler for `SingleRel` and answered its input's row count, and a merge join, a hash join, a
+merge union and a limit answered no collation. `ClrCursorRelMetadata.Provider` is Calcite's provider with the
+same handlers keyed on our classes in front; where an override on the node can carry it instead
+(`ClrCursorLimit.estimateRowCount`) it does, because that holds whatever provider is installed. **The
+provider a program is given is the one the planner costs with**, which is not obvious:
+`RelOptCluster.setMetadataProvider`, called by every hep pass, sets `RelMetadataQueryBase.THREAD_PROVIDERS`,
+and a cluster built with Calcite's default query supplier answers from that. So
+`Programs.standard(ClrCursorRelMetadata.Provider)`, whose sub-query pass runs before the planner pass, is
+how a `Frameworks` caller gets it; a cluster caches its query, and one made before that pass is stale until a
+rule fires.
 
 **Where linq4j may appear.** A node holds linq4j only where a generator of Calcite's produced one or takes
 one, and it is translated where it is produced rather than composed into a larger tree first. That is four
@@ -367,8 +380,9 @@ how Calcite reaches its own `EnumerableCorrelate` under `Programs.standard` too.
 bought nothing and cost every correlated sub-query the join Calcite would have given it.
 
 **There is no program of this project's own, and there is nothing for one to do.** `ClrPrepare.GetProgram`
-is `Prepare.getProgram` — `Programs.sequence(Programs.standard(), Programs.hep(calcRules, true, provider))`,
-Calcite's program as it stands with one pass added after it. **One member, and nothing overrides it.** The
+is `Prepare.getProgram` — `Programs.sequence(Programs.standard(provider), Programs.hep(calcRules, true, provider))`,
+Calcite's program as it stands with one pass added after it, `provider` being
+`ClrCursorRelMetadata.Provider`, Calcite's own with this convention's nodes added. **One member, and nothing overrides it.** The
 calc list is this convention's, the five it shares with Calcite going in once, so the program is the same for
 every statement. There is no second hook and no per-convention override; `Hook.PROGRAM` replaces the whole of
 it, as upstream.
@@ -393,7 +407,7 @@ each used to spell out. There is one list because there is one convention.
 registered by ours, so an interpreted node still lands in `EnumerableConvention` under a converter.
 
 A caller driving a `Frameworks` planner has the same job and only that job — get the rules on first
-(`AddRulesProgram` in the tests), then run `Programs.standard` — and the classes that spelled `standard`'s six
+(`AddRulesProgram` in the tests), then run `Programs.standard(ClrCursorRelMetadata.Provider)` — and the classes that spelled `standard`'s six
 passes out by hand are gone.
 
 **There is one Clr convention, `ClrCursorConvention`, and its plan is an open rather than a sequence.** There

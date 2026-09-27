@@ -33,11 +33,12 @@ That is the shape `DbDataReader` has. A sequence cannot have it: an `IEnumerable
 
 ## Running a plan yourself
 
-Put this convention's rules on the planner, run `Programs.standard()`, then build the root with `ClrCursorRelImplementor`. This example is executed by a test in the repository, so it cannot go stale silently:
+Put this convention's rules on the planner, run `Programs.standard(ClrCursorRelMetadata.Provider)`, then build the root with `ClrCursorRelImplementor`. This example is executed by a test in the repository, so it cannot go stale silently:
 
 ```csharp
 using Apache.Calcite.Extensions.Adapter.Cursor;
 using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Rel.Metadata;
 using org.apache.calcite;
 using org.apache.calcite.tools;
 
@@ -53,8 +54,8 @@ var config = Frameworks.newConfigBuilder()
     .programs(
         Programs.sequence(
             new AddRulesProgram(ClrCursorRules.Rules()),
-            Programs.standard(),
-            Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)))
+            Programs.standard(ClrCursorRelMetadata.Provider),
+            Programs.hep(calcRules, true, ClrCursorRelMetadata.Provider)))
     .build();
 
 var planner = Frameworks.getPlanner(config);
@@ -85,11 +86,12 @@ A one-column result is the value itself, not a row of one.
 
 `ImplementRoot` walks the tree twice, through each node's `Implement` and its `ImplementAsync`, and puts both opens on one factory; each is compiled the first time it is called. A node's two bodies differ only in what is acquired at open — one drains a sort by blocking, the other by awaiting — and produce the same cursor class, whose two advances step the same fields. An operator that acquires a source later than at its own open, as linq4j's `concat` does inside `moveNext`, takes both opens of that source and calls the one matching the advance it is in.
 
-Three things about this program are deliberate and worth knowing before you substitute your own:
+Four things about this program are deliberate and worth knowing before you substitute your own:
 
 - **The calc rules are a separate pass.** `VolcanoCost.isLt` compares row counts and nothing else, so a project and a calc are never cheaper than one another and the planner keeps whichever it saw first. Rewriting unconditionally afterwards as a hep pass is what makes a project's refusal to implement itself safe. `Programs.standard()` does the same thing for the same reason.
 - **The planner pass registers Calcite's rules, then this convention's.** `Programs.standard()` installs none and plans with whatever is on the planner, which works because `RelOptUtil.registerDefaultRules` has already put Calcite's there. Nothing has heard of this convention, so `Rules()` registers — but it registers Calcite's set *as well as* ours, not instead of it. Dropping Calcite's takes with it the logical rewrites that belong to no convention, and `AVG`, every `DISTINCT` aggregate and every `OVER` window each need one of those before any planner sees them. It is also what lets a node this convention has no rule for be planned in `EnumerableConvention` and carried across a converter.
 - **The decorrelation is Calcite's and is run.** A scalar sub-query and an `EXISTS` become joins, and an `UNNEST` over a correlation variable cannot be decorrelated and keeps its correlate — which is how Calcite reaches its own `EnumerableCorrelate` under `Programs.standard()` as well.
+- **The metadata provider is Calcite's, with this convention's nodes added.** Calcite answers some of what a plan is costed from — a limit's row-count bounds, the collation a merge join or a hash join keeps, an interpreter's cumulative cost — from handlers keyed on the `Enumerable*` class, which this convention's nodes never reach. `ClrCursorRelMetadata.Provider` puts the same handlers, keyed on the `ClrCursor*` class, in front of `DefaultRelMetadataProvider.INSTANCE`. Pass it to `standard` as well as to the calc pass: each hep pass sets the thread's metadata provider as it runs, and the planner pass inside `standard` costs with whatever the sub-query pass before it set.
 
 ## Key public types
 

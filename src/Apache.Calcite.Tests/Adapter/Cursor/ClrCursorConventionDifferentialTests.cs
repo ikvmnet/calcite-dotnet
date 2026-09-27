@@ -604,9 +604,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 var config = Frameworks.newConfigBuilder()
                     .defaultSchema(rootSchema)
                     .programs(
-                        markJoin ? MarkJoinSubQueryProgram() : Programs.subQuery(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE),
+                        markJoin ? MarkJoinSubQueryProgram(Provider(clr)) : Programs.subQuery(Provider(clr)),
                         new DefaultRulesProgram(rules, topDown, (clr && topDown) || excludeMergeJoin, excludeHashJoin, add, remove),
-                        Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE))
+                        Programs.hep(calcRules, true, Provider(clr)))
                     .build();
 
                 var planner = Frameworks.getPlanner(config);
@@ -788,7 +788,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 var chosen = new DefaultRulesProgram(rules, false, false, false, add, remove)
                     .run(planner, logical, logical.getTraitSet().replace(convention).simplify(), empty, empty);
 
-                var physical = Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)
+                var physical = Programs.hep(calcRules, true, Provider(clr))
                     .run(planner, chosen, chosen.getTraitSet(), empty, empty);
 
                 var parameters = new java.util.HashMap();
@@ -857,6 +857,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
         }
+
+        /// <summary>
+        /// The metadata provider each side plans with: Calcite's own, and for this convention the same with
+        /// the handlers Calcite keys on an <c>Enumerable*</c> class answered for its nodes, as
+        /// <c>ClrPrepare.GetProgram</c> passes it.
+        /// </summary>
+        /// <param name="clr"></param>
+        /// <returns></returns>
+        static org.apache.calcite.rel.metadata.RelMetadataProvider Provider(bool clr) =>
+            clr ? Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider : org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE;
 
         /// <summary>
         /// Requires that a query gives the same rows in both conventions.
@@ -1034,7 +1044,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// mark-join rules are not reached through it. They have the same standing as the sorted aggregate
         /// rule: Calcite ships them and a caller turns them on. This is that second set, spelled out.
         /// </remarks>
-        static Program MarkJoinSubQueryProgram()
+        static Program MarkJoinSubQueryProgram(org.apache.calcite.rel.metadata.RelMetadataProvider provider)
         {
             var rules = new java.util.ArrayList();
             rules.add(org.apache.calcite.rel.rules.CoreRules.FILTER_SUB_QUERY_TO_MARK_CORRELATE);
@@ -1045,7 +1055,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var builder = org.apache.calcite.plan.hep.HepProgram.builder();
             builder.addRuleCollection(rules);
 
-            return Programs.of(builder.build(), true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE);
+            return Programs.of(builder.build(), true, provider);
         }
 
         /// <summary>

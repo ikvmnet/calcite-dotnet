@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 
 using Apache.Calcite.Extensions.Adapter.Cursor;
+using Apache.Calcite.Extensions.Rel.Metadata;
 using Apache.Calcite.Tests;
 
 using FluentAssertions;
@@ -45,9 +46,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table of two integer columns that states its row count.
+        /// A table of two integer columns that states its row count, and that its rows arrive sorted by the
+        /// first where <paramref name="sorted"/> says so.
         /// </summary>
-        sealed class CountedTable(double rowCount) : AbstractTable, ScannableTable
+        sealed class CountedTable(double rowCount, bool sorted = false) : AbstractTable, ScannableTable
         {
 
             /// <inheritdoc />
@@ -62,7 +64,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             /// <inheritdoc />
             public override Statistic getStatistic()
             {
-                return Statistics.of(rowCount, null);
+                return sorted
+                    ? Statistics.of(rowCount, new java.util.ArrayList(), com.google.common.collect.ImmutableList.of(RelCollations.of(0)))
+                    : Statistics.of(rowCount, null);
             }
 
             /// <inheritdoc />
@@ -83,8 +87,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <returns></returns>
         /// <remarks>
         /// Calcite's side runs <c>Programs.standard</c> over the rules the planner already carries, which is
-        /// <c>Prepare.getProgram</c>; this convention's adds its rules first and its calc pass after, which is
-        /// <c>ClrPrepare.GetProgram</c>.
+        /// <c>Prepare.getProgram</c>; this convention's adds its rules first and its calc pass after, and gives
+        /// both <c>ClrCursorRelMetadata.Provider</c>, which is <c>ClrPrepare.GetProgram</c>. Nothing sets the
+        /// cluster's query supplier: <c>standard</c>'s sub-query pass sets the thread's provider, and that is
+        /// what the planner pass costs with.
         /// </remarks>
         static RelNode PlanRel(string sql, Convention convention, bool batch)
         {
@@ -92,6 +98,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             rootSchema.add("BIG", new CountedTable(1_000_000));
             rootSchema.add("SMALL", new CountedTable(1_000));
             rootSchema.add("TINY", new CountedTable(50));
+            rootSchema.add("SBIG", new CountedTable(1_000_000, true));
+            rootSchema.add("SSMALL", new CountedTable(1_000, true));
 
             var rules = new List<RelOptRule>();
             Program program;
@@ -107,8 +115,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
                 program = Programs.sequence(
                     new AddRulesProgram(rules),
-                    Programs.standard(),
-                    Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE));
+                    Programs.standard(ClrCursorRelMetadata.Provider),
+                    Programs.hep(calcRules, true, ClrCursorRelMetadata.Provider));
             }
             else
             {
@@ -140,7 +148,47 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <returns></returns>
         static string Plan(string sql, Convention convention, bool batch = false)
         {
-            return RelOptUtil.toString(PlanRel(sql, convention, batch));
+            var rel = PlanRel(sql, convention, batch);
+            var text = new System.Text.StringBuilder(RelOptUtil.toString(rel));
+
+            // a fresh query, because the cluster caches one and a plan that fired no rule after the sub-query
+            // pass set the thread's provider is still holding the one it made before
+            rel.getCluster().invalidateMetadataQuery();
+            Metadata(rel, rel.getCluster().getMetadataQuery(), 0, text);
+            return text.ToString();
+        }
+
+        /// <summary>
+        /// Gives <paramref name="cluster"/> the query supplier <c>ClrPrepareImpl</c> gives its own.
+        /// </summary>
+        /// <param name="cluster"></param>
+        static void Install(RelOptCluster cluster)
+        {
+            cluster.setMetadataQuerySupplier(ClrRelMetadataProvider.QuerySupplier(ClrCursorRelMetadata.Provider));
+            cluster.invalidateMetadataQuery();
+        }
+
+        /// <summary>
+        /// Writes what the metadata query answers for every node of <paramref name="rel"/>: the row count and
+        /// its bounds, the collations and the cumulative cost, which is what a plan is chosen from.
+        /// </summary>
+        /// <param name="rel"></param>
+        /// <param name="mq"></param>
+        /// <param name="depth"></param>
+        /// <param name="text"></param>
+        static void Metadata(RelNode rel, org.apache.calcite.rel.metadata.RelMetadataQuery mq, int depth, System.Text.StringBuilder text)
+        {
+            text.Append(new string(' ', depth * 2))
+                .Append(rel.getRelTypeName())
+                .Append(": rows=").Append(mq.getRowCount(rel))
+                .Append(", max=").Append(mq.getMaxRowCount(rel))
+                .Append(", min=").Append(mq.getMinRowCount(rel))
+                .Append(", collations=").Append(mq.collations(rel))
+                .Append(", cost=").Append(mq.getCumulativeCost(rel))
+                .Append('\n');
+
+            foreach (RelNode input in (IEnumerable<object>)rel.getInputs().toArray())
+                Metadata(input, mq, depth + 1, text);
         }
 
         [Theory]
@@ -154,6 +202,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [InlineData("SELECT L.A, SMALL.B FROM (SELECT * FROM BIG LIMIT 10) L JOIN SMALL ON L.B = SMALL.A")]
         [InlineData("SELECT L.A, SMALL.B FROM (SELECT * FROM BIG LIMIT 10 OFFSET 5) L JOIN SMALL ON L.B = SMALL.A")]
         [InlineData("SELECT BIG.A, S.B FROM BIG JOIN (SELECT * FROM SMALL ORDER BY A) S ON BIG.B = S.A")]
+        [InlineData("SELECT SBIG.B, SSMALL.B FROM SBIG JOIN SSMALL ON SBIG.A = SSMALL.A")]
+        [InlineData("SELECT SBIG.B, SSMALL.B FROM SBIG LEFT JOIN SSMALL ON SBIG.A = SSMALL.A ORDER BY SBIG.A")]
+        [InlineData("SELECT A FROM SBIG UNION ALL SELECT A FROM SSMALL ORDER BY A")]
+        [InlineData("SELECT BIG.A, SMALL.B FROM BIG JOIN SMALL ON BIG.B < SMALL.A")]
+        [InlineData("SELECT BIG.A, SMALL.B FROM BIG JOIN SMALL ON BIG.B = SMALL.A ORDER BY BIG.B")]
+        [InlineData("SELECT * FROM SBIG LIMIT 10")]
+        [InlineData("SELECT * FROM BIG LIMIT 10 OFFSET 5")]
+        [InlineData("SELECT * FROM BIG OFFSET 5")]
         public void ShouldPlanTheSameJoinAsCalcite(string sql)
         {
             var expected = Plan(sql, EnumerableConvention.INSTANCE).Replace("Enumerable", "ClrCursor");
@@ -214,6 +270,29 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var mq = calcite.getCluster().getMetadataQuery();
 
             ours.computeSelfCost(planner, mq).ToString().Should().Be(calcite.computeSelfCost(planner, mq).ToString());
+        }
+
+        /// <summary>
+        /// Builds both conventions' interpreters over one input and requires the same cumulative cost, which
+        /// Calcite takes to be the interpreter's own cost with its input's left out.
+        /// </summary>
+        /// <remarks>
+        /// Built rather than planned, because <c>ClrCursorInterpreterRule</c> is a field a caller adds and
+        /// the planner never reaches the node otherwise. Calcite answers it from a handler keyed on
+        /// <c>EnumerableInterpreter</c>, and without one of ours the interpreter is charged its input too.
+        /// </remarks>
+        [Fact]
+        public void ShouldCostAnInterpreterAsCalciteDoes()
+        {
+            var input = PlanRel("SELECT * FROM BIG WHERE A > 5", EnumerableConvention.INSTANCE, false);
+            Install(input.getCluster());
+
+            var calcite = EnumerableInterpreter.create(input, 0.5);
+            var ours = ClrCursorInterpreter.Create(input, 0.5);
+            var mq = input.getCluster().getMetadataQuery();
+
+            mq.getCumulativeCost(ours).ToString().Should().Be(mq.getCumulativeCost(calcite).ToString());
+            mq.getCumulativeCost(ours).ToString().Should().Be(mq.getNonCumulativeCost(ours).ToString());
         }
 
         /// <summary>

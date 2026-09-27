@@ -42,6 +42,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         readonly RexNode? fetch;
 
         /// <summary>
+        /// The number of rows skipped, which <c>EnumerableLimit</c> exposes as a public field.
+        /// </summary>
+        public RexNode? Offset => offset;
+
+        /// <summary>
+        /// The number of rows returned, which <c>EnumerableLimit</c> exposes as a public field.
+        /// </summary>
+        public RexNode? Fetch => fetch;
+
+        /// <summary>
         /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
         /// </summary>
         /// <param name="cluster"></param>

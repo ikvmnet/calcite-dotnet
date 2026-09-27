@@ -94,8 +94,8 @@ namespace Apache.Calcite.Tests
                 .programs(
                     Programs.sequence(
                         new AddRulesProgram(Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.Rules()),
-                        Programs.standard(),
-                        Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)))
+                        Programs.standard(Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider),
+                        Programs.hep(calcRules, true, Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider)))
                 .build();
 
             var planner = Frameworks.getPlanner(config);

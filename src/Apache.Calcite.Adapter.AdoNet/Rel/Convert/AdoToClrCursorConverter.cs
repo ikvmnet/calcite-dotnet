@@ -73,6 +73,20 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// <c>JdbcToEnumerableConverter.computeSelfCost</c>, this converter being that one with the rows
+        /// handed to a cursor rather than to a Java enumerable.
+        /// </remarks>
+        public override RelOptCost? computeSelfCost(RelOptPlanner planner, org.apache.calcite.rel.metadata.RelMetadataQuery mq)
+        {
+            var cost = base.computeSelfCost(planner, mq);
+            if (cost == null)
+                return null;
+
+            return cost.multiplyBy(.1);
+        }
+
+        /// <inheritdoc />
         public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
         {
             if (getInput() is not AdoRel self)
