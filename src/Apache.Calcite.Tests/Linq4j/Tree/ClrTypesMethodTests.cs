@@ -153,9 +153,10 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
 
             // a census of Calcite's table, so it moves with the version and with the snapshot: 594 under
             // 1.42, 607 under the first 1.43 snapshots this was run against, 608 since IEJoin arrived
-            // (CALCITE-7755, in 20260916.115040). What matters is that each one that arrives resolves,
-            // which the failure list above says and this number only notices.
-            called.Should().Be(608);
+            // (CALCITE-7755, in 20260916.115040), 609 since EQ_DECIMAL arrived (CALCITE-7826, in
+            // 20260927.175943). What matters is that each one that arrives resolves, which the failure list
+            // above says and this number only notices.
+            called.Should().Be(609);
             invoked.Should().BeEquivalentTo([
                 "STRING_TO_UPPER: public java.lang.String java.lang.String.toUpperCase()",
                 "OBJECT_TO_STRING: public java.lang.String java.lang.Object.toString()",
