@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq.Expressions;
 
 using Apache.Calcite.Extensions.Adapter.Enumerable;
@@ -20,7 +21,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// may be either — through <see cref="ClrCursorRelImplementor.Opener"/> and
     /// <see cref="ClrCursorRelImplementor.OpenerAsync"/>. So each body visits every input through both
     /// hierarchies and folds both chains in step, and what differs between the bodies is which chain is
-    /// handed up. <c>UNION</c> is linq4j's <c>union</c>, which drains its first source and then acquires its
+    /// handed up. The fold is Calcite's — a pairwise <c>concat</c>, left to right — with each step's pair of
+    /// opens bound to locals, as Calcite binds each child, so that a step names the fold before it once.
+    /// <c>UNION</c> is linq4j's <c>union</c>, which drains its first source and then acquires its
     /// second inside the open, so the second is deferred within the body's own kind and only that opener is
     /// needed.
     /// </remarks>
@@ -55,6 +58,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             // has to be openable by the advance of either kind
             Expression? unionExpAsync = null;
 
+            // the fold so far, bound once per step as Calcite binds each child
+            var locals = new List<ParameterExpression>();
+            var body = new List<Expression>();
+
             for (int i = 0; i < getInputs().size(); i++)
             {
                 var result = implementor.VisitChild(this, i, (ClrCursorRel)getInputs().get(i), pref);
@@ -71,10 +78,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
                 if (all)
                 {
+                    var (open, openAsync) = Bind(implementor, locals, body, i,
+                        new ClrCursorResult(unionExp, result.PhysType, result.Format),
+                        new ClrCursorAsyncResult(unionExpAsync!, result.PhysType, result.Format));
+
                     Expression[] openers =
                     [
-                        implementor.Opener(new ClrCursorResult(unionExp, result.PhysType, result.Format)),
-                        implementor.OpenerAsync(new ClrCursorAsyncResult(unionExpAsync!, result.PhysType, result.Format)),
+                        open,
+                        openAsync,
                         implementor.Opener(result),
                         implementor.OpenerAsync(resultAsync!),
                     ];
@@ -90,7 +101,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
 
-            return implementor.Result(physType, unionExp ?? throw new java.lang.IllegalStateException("unionExp"));
+            return implementor.Result(physType, Block(locals, body, unionExp ?? throw new java.lang.IllegalStateException("unionExp")));
         }
 
         /// <inheritdoc />
@@ -101,6 +112,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             // the other hierarchy's fold, kept in step for a concat: a source it acquires inside an advance
             // has to be openable by the advance of either kind
             Expression? unionExpSync = null;
+
+            // the fold so far, bound once per step as Calcite binds each child
+            var locals = new List<ParameterExpression>();
+            var body = new List<Expression>();
 
             for (int i = 0; i < getInputs().size(); i++)
             {
@@ -118,10 +133,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
                 if (all)
                 {
+                    var (open, openAsync) = Bind(implementor, locals, body, i,
+                        new ClrCursorResult(unionExpSync!, result.PhysType, result.Format),
+                        new ClrCursorAsyncResult(unionExp, result.PhysType, result.Format));
+
                     Expression[] openers =
                     [
-                        implementor.Opener(new ClrCursorResult(unionExpSync!, result.PhysType, result.Format)),
-                        implementor.OpenerAsync(new ClrCursorAsyncResult(unionExp, result.PhysType, result.Format)),
+                        open,
+                        openAsync,
                         implementor.Opener(resultSync!),
                         implementor.OpenerAsync(result),
                     ];
@@ -137,7 +156,42 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
 
-            return implementor.ResultAsync(physType, unionExp ?? throw new java.lang.IllegalStateException("unionExp"));
+            return implementor.ResultAsync(physType, Block(locals, body, unionExp ?? throw new java.lang.IllegalStateException("unionExp")));
+        }
+
+        /// <summary>
+        /// Binds both opens of the fold so far to locals, and returns the locals.
+        /// </summary>
+        /// <remarks>
+        /// Calcite's <c>EnumerableUnion</c> appends each child to its block as <c>child{i}</c> and folds
+        /// <c>concat</c> over those names, so every step names the fold once. A step here needs the fold
+        /// twice — as the open of each kind, since the advance that reaches it may be either — and each open
+        /// holds the other hierarchy's fold as well, so inlined the expression doubles with every input: a
+        /// twenty-way <c>UNION ALL</c>, which an <c>IN</c> list of twenty dynamic parameters becomes, compiled
+        /// about a million copies of its first input. Bound, each step names the previous pair once.
+        /// </remarks>
+        static (ParameterExpression Open, ParameterExpression OpenAsync) Bind(ClrCursorRelImplementor implementor, List<ParameterExpression> locals, List<Expression> body, int i, ClrCursorResult fold, ClrCursorAsyncResult foldAsync)
+        {
+            var opener = implementor.Opener(fold);
+            var openerAsync = implementor.OpenerAsync(foldAsync);
+
+            var open = Expression.Variable(opener.Type, "union" + i);
+            var openAsync = Expression.Variable(openerAsync.Type, "unionAsync" + i);
+
+            locals.Add(open);
+            locals.Add(openAsync);
+            body.Add(Expression.Assign(open, opener));
+            body.Add(Expression.Assign(openAsync, openerAsync));
+
+            return (open, openAsync);
+        }
+
+        /// <summary>
+        /// Wraps the result in the block that binds the fold's locals, where there are any.
+        /// </summary>
+        static Expression Block(List<ParameterExpression> locals, List<Expression> body, Expression result)
+        {
+            return locals.Count == 0 ? result : Expression.Block(result.Type, locals, [.. body, result]);
         }
 
     }
