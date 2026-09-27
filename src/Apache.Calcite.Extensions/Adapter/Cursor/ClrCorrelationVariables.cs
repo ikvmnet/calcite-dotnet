@@ -4,7 +4,7 @@ using org.apache.calcite.rel;
 using org.apache.calcite.rel.type;
 using org.apache.calcite.rex;
 
-namespace Apache.Calcite.Extensions.Adapter.Enumerable
+namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>

@@ -4,7 +4,6 @@ using System.Linq;
 
 using Apache.Calcite.Extensions;
 using Apache.Calcite.Extensions.Adapter.Cursor;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Interop;
 using Apache.Calcite.Tests;
 
@@ -656,7 +655,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 var (node, parameters, context) = plan();
                 var implementor = new ClrCursorRelImplementor(node.getCluster().getRexBuilder(), parameters);
 
-                return (implementor.ImplementRoot(node, ClrEnumerablePrefer.Array), context);
+                return (implementor.ImplementRoot(node, ClrCursorPrefer.Array), context);
             }
 
             var read = new List<string>();

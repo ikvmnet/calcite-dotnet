@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Adapter.Cursor;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Runtime;
 using Apache.Calcite.Extensions.Schema;
 using Apache.Calcite.Tests;
@@ -234,7 +233,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         {
             var implementor = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters);
 
-            return implementor.ImplementRoot((ClrCursorRel)physical, ClrEnumerablePrefer.Array);
+            return implementor.ImplementRoot((ClrCursorRel)physical, ClrCursorPrefer.Array);
         }
 
         /// <summary>
@@ -687,7 +686,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var implementor = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters);
 
             // the synchronous result read as an awaiting one: a completed open over the same cursor
-            var awaited = implementor.Awaited(implementor.VisitChild(null, 0, physical, ClrEnumerablePrefer.Array));
+            var awaited = implementor.Awaited(implementor.VisitChild(null, 0, physical, ClrCursorPrefer.Array));
             awaited.Expression.Type.Should().Be(typeof(ValueTask<IClrCursor<object[]>>));
             ((MethodCallExpression)awaited.Expression).Method.Name.Should().Be(nameof(ClrCursors.Completed));
 
@@ -703,7 +702,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             table.Scans.Should().Be(1, "the open underneath was the synchronous one");
 
             // the awaiting result read as a synchronous one: the open is blocked for
-            var pulled = implementor.Pulled(implementor.VisitChildAsync(null, 0, physical, ClrEnumerablePrefer.Array));
+            var pulled = implementor.Pulled(implementor.VisitChildAsync(null, 0, physical, ClrCursorPrefer.Array));
             pulled.Expression.Type.Should().Be(typeof(IClrCursor<object[]>));
             ((MethodCallExpression)pulled.Expression).Method.Name.Should().Be(nameof(ClrCursors.Block));
 

@@ -1,4 +1,3 @@
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using java.util.function;
 using org.apache.calcite.plan;
@@ -57,7 +56,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <inheritdoc />
         public org.apache.calcite.util.Pair? passThroughTraits(RelTraitSet required)
         {
-            return ClrEnumerableTraitsUtils.PassThroughTraitsForProject(
+            return ClrCursorTraitsUtils.PassThroughTraitsForProject(
                 required,
                 getProjects(),
                 getInput().getRowType(),
@@ -68,7 +67,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <inheritdoc />
         public org.apache.calcite.util.Pair? deriveTraits(RelTraitSet childTraits, int childId)
         {
-            return ClrEnumerableTraitsUtils.DeriveTraitsForProject(
+            return ClrCursorTraitsUtils.DeriveTraitsForProject(
                 childTraits,
                 childId,
                 getProjects(),
@@ -84,7 +83,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// a convention's rule set in Calcite either, but of <c>RelOptRules.CALC_RULES</c>, which
         /// <c>Programs.standard</c> runs as a hep pass after the planner.
         /// </remarks>
-        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             throw new java.lang.UnsupportedOperationException(
                 "ClrCursorProject cannot implement itself, exactly as EnumerableProject cannot: a calc " +

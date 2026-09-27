@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Adapter.Cursor;
 using Apache.Calcite.Extensions.Prepare;
 
 using FluentAssertions;

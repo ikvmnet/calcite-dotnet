@@ -1,7 +1,6 @@
 using System;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using java.util.function;
 using org.apache.calcite.adapter.enumerable;
@@ -72,14 +71,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <inheritdoc />
         public org.apache.calcite.util.Pair? passThroughTraits(RelTraitSet required)
         {
-            return ClrEnumerableTraitsUtils.PassThroughTraitsForJoin(required, joinType, getLeft().getRowType().getFieldCount(), getTraitSet());
+            return ClrCursorTraitsUtils.PassThroughTraitsForJoin(required, joinType, getLeft().getRowType().getFieldCount(), getTraitSet());
         }
 
         /// <inheritdoc />
         public org.apache.calcite.util.Pair? deriveTraits(RelTraitSet childTraits, int childId)
         {
             // should only derive traits (limited to collation for now) from the left join input
-            return ClrEnumerableTraitsUtils.DeriveTraitsForJoin(childTraits, childId, joinType, getTraitSet(), getRight().getTraitSet());
+            return ClrCursorTraitsUtils.DeriveTraitsForJoin(childTraits, childId, joinType, getTraitSet(), getRight().getTraitSet());
         }
 
         /// <inheritdoc />
@@ -134,7 +133,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
-        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             switch (joinType.name())
             {
@@ -149,7 +148,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
-        public ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             switch (joinType.name())
             {
@@ -173,7 +172,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// The right input is acquired inside the advance that reads the first left row, so it goes to the
         /// operator as openers of both kinds, and this body visits it through the other hierarchy too.
         /// </remarks>
-        ClrCursorAsyncResult ImplementHashSemiJoinAsync(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrCursorAsyncResult ImplementHashSemiJoinAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrCursorRel)left, pref);
             var rightResult = implementor.VisitChildAsync(this, 1, (ClrCursorRel)right, pref);
@@ -216,7 +215,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// selectors and a flag saying whether at most one key is not null-safe, because that is the case a
         /// hash lookup alone can decide.</para>
         /// </remarks>
-        ClrCursorAsyncResult ImplementHashMarkJoinAsync(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrCursorAsyncResult ImplementHashMarkJoinAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrCursorRel)left, pref);
             var rightResult = implementor.VisitChildAsync(this, 1, (ClrCursorRel)right, pref);
@@ -303,7 +302,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <param name="implementor"></param>
         /// <param name="pref"></param>
         /// <returns></returns>
-        ClrCursorAsyncResult ImplementHashJoinAsync(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrCursorAsyncResult ImplementHashJoinAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrCursorRel)left, pref);
             var rightResult = implementor.VisitChildAsync(this, 1, (ClrCursorRel)right, pref);
@@ -341,7 +340,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <param name="implementor"></param>
         /// <param name="pref"></param>
         /// <returns></returns>
-        ClrCursorResult ImplementHashJoin(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrCursorResult ImplementHashJoin(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrCursorRel)left, pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrCursorRel)right, pref);
@@ -384,7 +383,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// The right input is acquired inside the advance that reads the first left row, so it goes to the
         /// operator as openers of both kinds, and this body visits it through the other hierarchy too.
         /// </remarks>
-        ClrCursorResult ImplementHashSemiJoin(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrCursorResult ImplementHashSemiJoin(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrCursorRel)left, pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrCursorRel)right, pref);
@@ -428,7 +427,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// selectors and a flag saying whether at most one key is not null-safe, because that is the case a
         /// hash lookup alone can decide.</para>
         /// </remarks>
-        ClrCursorResult ImplementHashMarkJoin(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        ClrCursorResult ImplementHashMarkJoin(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrCursorRel)left, pref);
             var rightResult = implementor.VisitChild(this, 1, (ClrCursorRel)right, pref);

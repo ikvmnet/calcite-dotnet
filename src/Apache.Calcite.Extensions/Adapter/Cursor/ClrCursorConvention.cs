@@ -27,9 +27,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// no node for is still planned.</para>
     ///
     /// <para>Everything about a <em>row</em> — the physical type, the row formats, the Rex translation,
-    /// and the preference a consumer states for how a row is represented — is in the
-    /// <c>Adapter.Enumerable</c> namespace, which mirrors Calcite's <c>adapter.enumerable</c> package, where
-    /// the same machinery lives beside <c>EnumerableConvention</c>.</para>
+    /// and the preference a consumer states for how a row is represented — lives beside the nodes, as
+    /// Calcite's lives beside <c>EnumerableConvention</c> in <c>adapter.enumerable</c>.</para>
     /// </remarks>
     public sealed class ClrCursorConvention : Convention.Impl
     {

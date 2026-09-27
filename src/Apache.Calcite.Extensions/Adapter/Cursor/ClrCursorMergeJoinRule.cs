@@ -1,4 +1,3 @@
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using java.util.function;
 using org.apache.calcite.plan;

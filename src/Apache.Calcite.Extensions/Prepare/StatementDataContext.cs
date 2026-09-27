@@ -200,7 +200,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 _typeFactory,
                 SqlValidator.Config.DEFAULT);
 
-            // this duplicates ClrPrepareImpl.Prepare2, as Calcite's own comment says of its copy
+            // this duplicates ClrPrepareImpl.Prepare2_, as Calcite's own comment says of its copy
             var parserConfig = SqlParser.config()
                 .withQuotedCasing(_config.quotedCasing())
                 .withUnquotedCasing(_config.unquotedCasing())

@@ -1,7 +1,6 @@
 using System;
 
 using Apache.Calcite.Extensions;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 

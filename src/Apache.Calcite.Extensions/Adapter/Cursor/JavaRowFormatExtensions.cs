@@ -11,7 +11,7 @@ using org.apache.calcite.rel.type;
 using org.apache.calcite.sql.type;
 using org.apache.calcite.util;
 
-namespace Apache.Calcite.Extensions.Adapter.Enumerable
+namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
