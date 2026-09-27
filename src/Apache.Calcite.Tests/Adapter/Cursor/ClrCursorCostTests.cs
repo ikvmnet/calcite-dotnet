@@ -296,6 +296,71 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
+        /// Asks every node of a plan every metadata question through both dispatchers over
+        /// <see cref="ClrCursorRelMetadata.Provider"/>, and requires the same answers.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <remarks>
+        /// The provider reaches a plan two ways. <c>ClrPrepareImpl</c> dispatches through
+        /// <see cref="ClrRelMetadataProvider"/>; a caller driving <c>Frameworks</c> gets Janino's, because each
+        /// hep pass sets the thread's provider. The plan tests above only go the second way, so this is what
+        /// says the prepare path answers the same — handlers written in .NET included, which Janino reaches
+        /// by their <c>cli.</c> names.
+        /// </remarks>
+        [Theory]
+        [InlineData("SELECT SBIG.B, SSMALL.B FROM SBIG LEFT JOIN SSMALL ON SBIG.A = SSMALL.A ORDER BY SBIG.A")]
+        [InlineData("SELECT A FROM SBIG UNION ALL SELECT A FROM SSMALL ORDER BY A")]
+        [InlineData("SELECT BIG.A, SMALL.B FROM BIG JOIN SMALL ON BIG.B < SMALL.A")]
+        [InlineData("SELECT L.A, SMALL.B FROM (SELECT * FROM BIG LIMIT 10 OFFSET 5) L JOIN SMALL ON L.B = SMALL.A")]
+        [InlineData("SELECT * FROM SBIG LIMIT 10")]
+        public void ShouldAnswerTheSameThroughEitherDispatcher(string sql)
+        {
+            var plan = PlanRel(sql, ClrCursorConvention.Instance, false);
+            var janino = org.apache.calcite.rel.metadata.JaninoRelMetadataProvider.of(ClrCursorRelMetadata.Provider);
+            var clr = ClrRelMetadataProvider.Of(ClrCursorRelMetadata.Provider);
+
+            var differences = new List<string>();
+            foreach (var rel in Rel.Metadata.Tests.ClrRelMetadataProviderTests.Nodes(plan))
+            {
+                // a fresh query per question on each side, so neither answers from what the other cached
+                foreach (var (name, ask) in Rel.Metadata.Tests.ClrRelMetadataProviderTests.Questions(rel))
+                {
+                    var j = Rel.Metadata.Tests.ClrRelMetadataProviderTests.Answer(ask, new org.apache.calcite.rel.metadata.RelMetadataQuery(janino));
+                    var c = Rel.Metadata.Tests.ClrRelMetadataProviderTests.Answer(ask, new org.apache.calcite.rel.metadata.RelMetadataQuery(clr));
+
+                    if (j != c)
+                        differences.Add($"{rel.getRelTypeName()}.{name}: janino={j} clr={c}");
+                }
+            }
+
+            differences.Should().BeEmpty();
+        }
+
+        /// <summary>
+        /// The handlers are reached through <see cref="ClrRelMetadataProvider"/> at all: a limit's bounds are
+        /// the handler's answer over the chain and the catch-all's over Calcite's provider alone.
+        /// </summary>
+        /// <remarks>
+        /// Two dispatchers agreeing would hold as well if neither reached a handler of ours. This is the
+        /// check that one does.
+        /// </remarks>
+        [Fact]
+        public void ShouldReachTheHandlersThroughThePreparePathsDispatcher()
+        {
+            var plan = PlanRel("SELECT * FROM SBIG LIMIT 10 OFFSET 5", ClrCursorConvention.Instance, false);
+            var limit = Find<ClrCursorLimit>(plan);
+
+            var ours = new org.apache.calcite.rel.metadata.RelMetadataQuery(ClrRelMetadataProvider.Of(ClrCursorRelMetadata.Provider));
+            var calcite = new org.apache.calcite.rel.metadata.RelMetadataQuery(ClrRelMetadataProvider.Of(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE));
+
+            ours.getMaxRowCount(limit).Should().Be(java.lang.Double.valueOf(10d));
+            ours.getMinRowCount(limit).Should().Be(java.lang.Double.valueOf(0d));
+            ours.collations(limit).Should().NotBeNull();
+            calcite.getMaxRowCount(limit).Should().BeNull();
+            calcite.collations(limit).Should().BeNull();
+        }
+
+        /// <summary>
         /// Returns the one node of type <typeparamref name="T"/> in <paramref name="rel"/>.
         /// </summary>
         /// <typeparam name="T"></typeparam>
