@@ -1637,6 +1637,19 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public void ShouldAgreeOnUnionAll() => Same("SELECT \"ID\" FROM \"SALES\" UNION ALL SELECT \"ID\" FROM \"SALES\" ORDER BY 1");
 
+        /// <summary>
+        /// A union of many inputs is implemented as one concat over all of them, not a pairwise fold.
+        /// </summary>
+        /// <remarks>
+        /// The fold nested itself inside both opens of each next step, so the compiled plan doubled with
+        /// every input: twenty-four branches is some eight million copies of the first, and the process
+        /// runs out of memory rather than failing. An <c>IN</c> list of twenty dynamic parameters becomes
+        /// exactly such a union, which is how EF Core's parameter bucketization reached it.
+        /// </remarks>
+        [Fact]
+        public void ShouldAgreeOnAUnionAllOfManyInputs() =>
+            Same(string.Join(" UNION ALL ", System.Linq.Enumerable.Range(1, 24).Select(i => $"SELECT \"ID\" FROM \"SALES\" WHERE \"ID\" = {i % 6}")) + " ORDER BY 1");
+
         [Fact]
         public void ShouldAgreeOnUnionDistinct() => Same("SELECT \"REGION\" FROM \"SALES\" UNION SELECT \"REGION\" FROM \"SALES\" ORDER BY 1");
 
