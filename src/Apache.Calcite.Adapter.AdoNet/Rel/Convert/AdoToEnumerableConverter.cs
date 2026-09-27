@@ -56,6 +56,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// <c>JdbcToEnumerableConverter.computeSelfCost</c>.
+        /// </remarks>
+        public override RelOptCost? computeSelfCost(RelOptPlanner planner, org.apache.calcite.rel.metadata.RelMetadataQuery mq)
+        {
+            var cost = base.computeSelfCost(planner, mq);
+            if (cost == null)
+                return null;
+
+            return cost.multiplyBy(.1);
+        }
+
+        /// <inheritdoc />
         public EnumerableRel.Result implement(EnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
         {
             var list = new BlockBuilder();

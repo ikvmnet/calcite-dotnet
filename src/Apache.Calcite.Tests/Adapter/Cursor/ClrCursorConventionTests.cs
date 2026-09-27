@@ -132,8 +132,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 .programs(
                     Programs.sequence(
                         new AddRulesProgram(ClrCursorRules.Rules()),
-                        Programs.standard(),
-                        Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)))
+                        Programs.standard(Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider),
+                        Programs.hep(calcRules, true, Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider)))
                 .build();
 
             var planner = Frameworks.getPlanner(config);
@@ -270,7 +270,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 calcRules.add(rule);
 
             var physical = (ClrCursorRel)Programs
-                .hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)
+                .hep(calcRules, true, Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider)
                 .run(planner, chosen, chosen.getTraitSet(), new java.util.ArrayList(), new java.util.ArrayList());
 
             physical.Should().BeOfType<ClrCursorCombine>();

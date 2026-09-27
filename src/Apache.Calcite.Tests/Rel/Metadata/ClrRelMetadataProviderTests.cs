@@ -99,7 +99,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         /// </summary>
         /// <param name="rel"></param>
         /// <returns></returns>
-        static IEnumerable<RelNode> Nodes(RelNode rel)
+        internal static IEnumerable<RelNode> Nodes(RelNode rel)
         {
             var inputs = rel.getInputs();
             for (int i = 0; i < inputs.size(); i++)
@@ -114,7 +114,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         /// </summary>
         /// <param name="rel"></param>
         /// <returns></returns>
-        static (string Name, Func<RelMetadataQuery, object?> Ask)[] Questions(RelNode rel)
+        internal static (string Name, Func<RelMetadataQuery, object?> Ask)[] Questions(RelNode rel)
         {
             var bits = ImmutableBitSet.of(0);
             var all = ImmutableBitSet.range(0, rel.getRowType().getFieldCount());
@@ -162,7 +162,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         /// <param name="ask"></param>
         /// <param name="mq"></param>
         /// <returns></returns>
-        static string Answer(Func<RelMetadataQuery, object?> ask, RelMetadataQuery mq)
+        internal static string Answer(Func<RelMetadataQuery, object?> ask, RelMetadataQuery mq)
         {
             try
             {

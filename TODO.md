@@ -136,6 +136,13 @@ true of the renderer: `RelToSqlConverter.visit(Join)` dispatches both to `visitA
 Measured, `WHERE DEPTNO IN (SELECT …)` and `WHERE EXISTS (SELECT …)` both plan to `EnumerableHashJoin
 (joinType=[semi])` over two `AdoToEnumerableConverter`s — two statements, and the join done here.
 
+**And the converters' cost makes it worse.** Both converters out of the adapter now carry upstream's `.1`
+(`JdbcToEnumerableConverter.computeSelfCost`). When that was measured it turned `EMPS FULL JOIN DEPTS` and a
+correlated scalar count from two statements into one, and changed nothing else in the thirty but this: with
+cheap converters the planner stops pushing the `GROUP BY` under the semi-join and pulls both tables whole,
+because there is no way to push the join itself. The multiplier is safe upstream because upstream's rule set
+covers the join it makes attractive, and that is this item.
+
 ### 4. A `Correlate` that survives decorrelation runs one statement per row
 
 `AdoCorrelationDataContext` and its builder exist so that a correlation variable referenced from inside a
@@ -191,25 +198,6 @@ Upstream's `JdbcJoinRule.matches` refuses a join whose type the dialect rejects
 (`JdbcRules.java:372`, `dialect.supportsJoinType(joinType)`). `AdoJoinRule` has no `matches` override, so a
 `FULL JOIN` planned against MySQL is pushed and the server refuses it. This is a divergence that pushes
 *more* than upstream, which is why it has not shown up: SQLite and SQL Server both do full joins.
-
-### 9. The converters are not cheap, and it costs whole joins — measured
-
-`JdbcToEnumerableConverter.computeSelfCost` multiplies by `.1` (`JdbcToEnumerableConverter.java:88`).
-Neither `AdoToEnumerableConverter` nor `AdoToClrCursorConverter` overrides `computeSelfCost` at all, so
-leaving the adapter is priced at full row count and a plan that leaves it twice is not obviously worse than
-one that leaves it once.
-
-Measured by adding the `.1` to both converters and re-running the probe:
-
-| statement | statements before | after |
-|---|---|---|
-| `EMPS FULL JOIN DEPTS` | 2, `EnumerableHashJoin(full)` | 1, `AdoJoin(full)` |
-| `SELECT DNAME, (SELECT COUNT(*) FROM EMPS e WHERE e.DEPTNO = d.DEPTNO) FROM DEPTS d` | 2, `EnumerableMergeJoin(left)` | 1, the whole decorrelated tree pushed |
-
-Nothing else in the thirty changed except the semi-join, which got *worse*: with cheap converters the
-planner stops pushing the `GROUP BY` under the semi-join and pulls both tables whole, because §3 leaves it
-no way to push the join itself. The two belong together — the multiplier is upstream's number and the reason
-it is safe upstream is that upstream's rule set covers the join it makes attractive.
 
 ### 10. The adapter tells the planner nothing about the data
 
@@ -291,17 +279,16 @@ Ordered by what a query gains per unit of work:
 | | item | why first |
 |---|---|---|
 | 1 | `AdoWindow` (§1) | a live crash, and the fix is the capability |
-| 2 | converter cost multiplier (§9) | two lines, measured to turn 2 statements into 1 twice |
-| 3 | semi/anti join (§3) | one rule; pairs with §9, which makes its absence worse |
-| 4 | grouping sets (§2) | one guard removed, two dialect calls added |
-| 5 | `supportsFunction` gate (§7) | converts run-time provider failures into in-memory operators |
-| 6 | `supportsJoinType` guard (§8) | a divergence that is wrong today |
-| 7 | `AdoCorrelate` (§4) | N+1 statements to one, but needs §1 first to be reachable |
-| 8 | statistics SPI (§10) | unlocks three core rules and everything cost-based |
-| 9 | DML (§13) | the known feature gap |
-| 10 | convention per data source (§11) | multi-schema databases join server-side |
-| 11 | `AdoSample`, `AdoUncollect`, `AdoTableFunctionScan`, `AdoMatch` | renderable, narrower demand |
-| 12 | cross-source shipping (§12) | the largest, and the one with no precedent to copy |
+| 2 | semi/anti join (§3) | one rule; the converters' cost makes its absence worse |
+| 3 | grouping sets (§2) | one guard removed, two dialect calls added |
+| 4 | `supportsFunction` gate (§7) | converts run-time provider failures into in-memory operators |
+| 5 | `supportsJoinType` guard (§8) | a divergence that is wrong today |
+| 6 | `AdoCorrelate` (§4) | N+1 statements to one, but needs §1 first to be reachable |
+| 7 | statistics SPI (§10) | unlocks three core rules and everything cost-based |
+| 8 | DML (§13) | the known feature gap |
+| 9 | convention per data source (§11) | multi-schema databases join server-side |
+| 10 | `AdoSample`, `AdoUncollect`, `AdoTableFunctionScan`, `AdoMatch` | renderable, narrower demand |
+| 11 | cross-source shipping (§12) | the largest, and the one with no precedent to copy |
 
 `Calc` is on rel2sql's list and is deliberately not on this one: `JdbcCalc` exists upstream with no rule
 that produces it, and `AdoProject` and `AdoFilter` already push everything a calc would.
@@ -575,3 +562,14 @@ config, and the pipeline already skips its own decorrelation where the property 
 pipeline and `Should_execute_a_correlated_exists_over_an_uncollect_with_top_down_decorrelation` through the
 connection string. Turning it on *by default* is still a decision not taken — it is a different algorithm
 over every statement, not a fix aimed at this one.
+
+## `collations(JdbcToEnumerableConverter)` has no counterpart for the adapter's converters — *small*
+
+`RelMdCollation` answers a `JdbcToEnumerableConverter`'s collations as its input's, from a handler keyed on
+that class. `AdoToEnumerableConverter` and `AdoToClrCursorConverter` reach the catch-all, which answers
+null. The cursor convention's nodes had the same gap and have a handler provider now,
+`ClrCursorRelMetadata.Provider`, which `ClrPrepareImpl` and `ClrPrepare.GetProgram` install; the adapter's
+converters live in an assembly `Apache.Calcite.Extensions` does not reference, so the handler has to be the
+adapter's and something has to chain it in. Neither prepare path has a hook for a provider from outside.
+The trait set carries the collation either way, so a `RelSubset` in the planner answers correctly; what is
+missing is the answer for the node itself, which the calc pass asks when it builds a calc over the converter.

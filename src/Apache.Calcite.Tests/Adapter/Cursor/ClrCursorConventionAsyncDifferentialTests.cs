@@ -97,6 +97,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 if (excludeMergeJoin && rule == ClrCursorRules.ClrCursorMergeJoinRule)
                     continue;
 
+                // and the same for the hash join, which DefaultRulesProgram takes out of Calcite's rules only
+                if (excludeHashJoin && rule == ClrCursorRules.ClrCursorJoinRule)
+                    continue;
+
                 rules.add(rule);
             }
 
@@ -120,9 +124,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var config = Frameworks.newConfigBuilder()
                 .defaultSchema(rootSchema)
                 .programs(
-                    markJoin ? MarkJoinSubQueryProgram() : Programs.subQuery(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE),
+                    markJoin ? MarkJoinSubQueryProgram() : Programs.subQuery(Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider),
                     new DefaultRulesProgram(rules, false, excludeMergeJoin, excludeHashJoin, null, remove),
-                    Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE))
+                    Programs.hep(calcRules, true, Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider))
                 .build();
 
             var planner = Frameworks.getPlanner(config);
@@ -212,7 +216,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var chosen = new DefaultRulesProgram(rules, false, false, false, add, remove)
                 .run(planner, logical, logical.getTraitSet().replace(ClrCursorConvention.Instance).simplify(), empty, empty);
 
-            var physical = Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)
+            var physical = Programs.hep(calcRules, true, Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider)
                 .run(planner, chosen, chosen.getTraitSet(), empty, empty);
 
             if (planOnly)
@@ -321,7 +325,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var builder = org.apache.calcite.plan.hep.HepProgram.builder();
             builder.addRuleCollection(rules);
 
-            return Programs.of(builder.build(), true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE);
+            return Programs.of(builder.build(), true, Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider);
         }
 
         static string Render(object row)
@@ -864,7 +868,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public async Task ShouldRefuseATableFunctionJoinedToATable()
         {
-            var act = async () => await Run("SELECT s.ID FROM SALES s, TABLE(NUMBERS(6)) n WHERE s.ID = n.N ORDER BY 1", true);
+            // the hash join taken away, because with it the planner hashes and there is no sort to show the
+            // defect — this convention sorted here only while its merge join cost its output alone
+            var act = async () => await Run("SELECT s.ID FROM SALES s, TABLE(NUMBERS(6)) n WHERE s.ID = n.N ORDER BY 1", true, excludeHashJoin: true);
 
             (await act.Should().ThrowAsync<java.lang.IllegalStateException>())
                 .WithInnerException<java.lang.IllegalStateException>()

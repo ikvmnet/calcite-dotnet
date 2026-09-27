@@ -553,6 +553,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                         if (excludeMergeJoin && rule == ClrCursorRules.ClrCursorMergeJoinRule)
                             continue;
 
+                        // and the same for the hash join. Only Calcite's was taken out once, and the plans
+                        // agreed only because this convention's merge join cost its output alone and so beat
+                        // a hash join it ought to have lost to
+                        if (excludeHashJoin && rule == ClrCursorRules.ClrCursorJoinRule)
+                            continue;
+
                         rules.add(rule);
                     }
 
@@ -597,9 +603,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 var config = Frameworks.newConfigBuilder()
                     .defaultSchema(rootSchema)
                     .programs(
-                        markJoin ? MarkJoinSubQueryProgram() : Programs.subQuery(org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE),
+                        markJoin ? MarkJoinSubQueryProgram(Provider(clr)) : Programs.subQuery(Provider(clr)),
                         new DefaultRulesProgram(rules, topDown, (clr && topDown) || excludeMergeJoin, excludeHashJoin, add, remove),
-                        Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE))
+                        Programs.hep(calcRules, true, Provider(clr)))
                     .build();
 
                 var planner = Frameworks.getPlanner(config);
@@ -781,7 +787,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 var chosen = new DefaultRulesProgram(rules, false, false, false, add, remove)
                     .run(planner, logical, logical.getTraitSet().replace(convention).simplify(), empty, empty);
 
-                var physical = Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE)
+                var physical = Programs.hep(calcRules, true, Provider(clr))
                     .run(planner, chosen, chosen.getTraitSet(), empty, empty);
 
                 var parameters = new java.util.HashMap();
@@ -850,6 +856,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
         }
+
+        /// <summary>
+        /// The metadata provider each side plans with: Calcite's own, and for this convention the same with
+        /// the handlers Calcite keys on an <c>Enumerable*</c> class answered for its nodes, as
+        /// <c>ClrPrepare.GetProgram</c> passes it.
+        /// </summary>
+        /// <param name="clr"></param>
+        /// <returns></returns>
+        static org.apache.calcite.rel.metadata.RelMetadataProvider Provider(bool clr) =>
+            clr ? Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider : org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE;
 
         /// <summary>
         /// Requires that a query gives the same rows in both conventions.
@@ -1027,7 +1043,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// mark-join rules are not reached through it. They have the same standing as the sorted aggregate
         /// rule: Calcite ships them and a caller turns them on. This is that second set, spelled out.
         /// </remarks>
-        static Program MarkJoinSubQueryProgram()
+        static Program MarkJoinSubQueryProgram(org.apache.calcite.rel.metadata.RelMetadataProvider provider)
         {
             var rules = new java.util.ArrayList();
             rules.add(org.apache.calcite.rel.rules.CoreRules.FILTER_SUB_QUERY_TO_MARK_CORRELATE);
@@ -1038,7 +1054,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var builder = org.apache.calcite.plan.hep.HepProgram.builder();
             builder.addRuleCollection(rules);
 
-            return Programs.of(builder.build(), true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE);
+            return Programs.of(builder.build(), true, provider);
         }
 
         /// <summary>
@@ -1755,9 +1771,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnALimitSortWithTiesAcrossTheBoundary() =>
             SameThrough("ClrCursorLimitSort", "SELECT \"K\", \"V\" FROM \"SORTED\" ORDER BY \"K\" FETCH NEXT 2 ROWS ONLY", limitSort: true);
 
+        // descending, because SORTED is already ascending by K and with an offset Calcite then plans a bare
+        // EnumerableLimit over the scan. This convention planned a limit sort there only while its limit
+        // answered its input's row count rather than RelMdRowCount's for a limit
         [Fact]
         public void ShouldAgreeOnALimitSortWithAnOffsetInsideATie() =>
-            SameThrough("ClrCursorLimitSort", "SELECT \"K\", \"V\" FROM \"SORTED\" ORDER BY \"K\" OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY", limitSort: true);
+            SameThrough("ClrCursorLimitSort", "SELECT \"K\", \"V\" FROM \"SORTED\" ORDER BY \"K\" DESC OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY", limitSort: true);
 
         [Fact]
         /// <remarks>
@@ -2376,19 +2395,36 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             Gives(sql, "1", "2", "3");
         }
 
-        // A join over a one-column table function puts a sort on it, and that is EnumerableSort's defect:
+        // A merge join over a one-column table function puts a sort on it, and that is EnumerableSort's defect:
         // it optimises the scan's ARRAY to SCALAR and hands the Object[] rows on unchanged. Refused rather
         // than answered, because Calcite is wrong here in the same way and this convention does what Calcite
         // does — ClrCursorSortTests carries the whole measurement. Restore the expected rows "1",
-        // "2" when EnumerableSort is fixed.
+        // "2" when EnumerableSort is fixed. The hash join is taken away on both sides, because left to itself
+        // Calcite hashes this join and there is no sort under it; this convention sorted and merged only while
+        // its merge join cost its output alone, and the test was holding that rather than the defect.
         [Fact]
         public void ShouldRefuseATableFunctionInAJoin()
         {
-            var act = () => Gives("SELECT \"S\".\"ID\" FROM \"SALES\" AS \"S\", TABLE(NUMBERS(2)) AS \"N\" WHERE \"S\".\"ID\" = \"N\".\"N\" ORDER BY 1", "1", "2");
+            const string sql = "SELECT \"S\".\"ID\" FROM \"SALES\" AS \"S\", TABLE(NUMBERS(2)) AS \"N\" WHERE \"S\".\"ID\" = \"N\".\"N\" ORDER BY 1";
+
+            Run(sql, true, planOnly: true, excludeHashJoin: true)[0].Should().Contain("ClrCursorMergeJoin");
+
+            var act = () => Run(sql, true, excludeHashJoin: true);
 
             act.Should().Throw<java.lang.IllegalStateException>()
                 .WithInnerException<java.lang.IllegalStateException>()
                 .WithMessage("*ClrCursorSort handed up an open of System.Object[] where its row type is java.lang.Integer*");
+        }
+
+        // the same join as Calcite plans it, hashed, with no sort under it
+        [Fact]
+        public void ShouldAgreeOnATableFunctionInAHashJoin()
+        {
+            const string sql = "SELECT \"S\".\"ID\" FROM \"SALES\" AS \"S\", TABLE(NUMBERS(2)) AS \"N\" WHERE \"S\".\"ID\" = \"N\".\"N\" ORDER BY 1";
+
+            Run(sql, true, planOnly: true)[0].Should().Contain("ClrCursorHashJoin");
+            Same(sql);
+            Gives(sql, "1", "2");
         }
 
         // The window table functions, which are the path RexImpTable implements rather than the schema.
@@ -2724,6 +2760,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public void ShouldAgreeOnABatchNestedLoopJoinOnAMismatchedKey() =>
             SameBatchNestedLoopJoin("SELECT COUNT(e.\"name\") FROM \"HR\".\"emps\" e JOIN \"HR\".\"depts\" d ON d.\"deptno\" = e.\"empid\"");
+
+        // an outer join whose null-generating side is a CUSTOM row with a primitive field. The selector reads
+        // `right.empid` as the int it is and Calcite writes `right == null ? null : right.empid`, which Java
+        // types as Integer; the conditional here was typed as the int and could not hold the null, so the
+        // plan could not be built. Hidden until the merge join cost what Calcite's does, because until then
+        // this convention never hashed this join
+        [Fact]
+        public void ShouldAgreeOnAHashLeftJoinOverAPrimitiveField()
+        {
+            const string sql = "SELECT d.\"deptno\", e.\"empid\" FROM \"HR\".\"depts\" d LEFT JOIN \"HR\".\"emps\" e ON d.\"deptno\" = e.\"deptno\" ORDER BY 1, 2";
+
+            Run(sql, true, planOnly: true)[0].Should().MatchRegex(@"ClrCursorHashJoin\(condition=\[[^\]]*\], joinType=\[left\]\)");
+            Same(sql);
+        }
 
         [Fact]
         public void ShouldAgreeOnABatchNestedLoopLeftJoinCount() =>

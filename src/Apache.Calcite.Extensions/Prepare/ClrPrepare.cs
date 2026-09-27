@@ -103,6 +103,15 @@ namespace Apache.Calcite.Extensions.Prepare
         /// would most of the list match: <c>VolcanoPlanner.addRule</c> does not register a
         /// <c>TransformationRule</c>'s operand against a <c>PhysicalNode</c>, and every node of the cursor
         /// convention is one.</para>
+        ///
+        /// <para>The one argument that differs is the metadata provider, which is
+        /// <see cref="Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider"/> where Calcite's is
+        /// <c>DefaultRelMetadataProvider.INSTANCE</c>: Calcite's own, with the handlers it keys on an
+        /// <c>Enumerable*</c> class answered for this convention's node too. It is not only for the passes that
+        /// take it. <c>RelOptCluster.setMetadataProvider</c>, which each hep pass calls, sets
+        /// <c>RelMetadataQueryBase.THREAD_PROVIDERS</c>, and that is what a cluster built with Calcite's default
+        /// query supplier answers from — so the provider <c>standard</c>'s sub-query pass is given is the one
+        /// the Volcano pass after it costs with.</para>
         /// </remarks>
         protected virtual Program GetProgram()
         {
@@ -117,8 +126,8 @@ namespace Apache.Calcite.Extensions.Prepare
                 calcRules.add(rule);
 
             return Programs.sequence(
-                Programs.standard(),
-                Programs.hep(calcRules, true, org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE));
+                Programs.standard(Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider),
+                Programs.hep(calcRules, true, Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider));
         }
 
         /// <summary>

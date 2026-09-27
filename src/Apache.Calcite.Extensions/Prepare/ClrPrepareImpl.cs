@@ -180,7 +180,7 @@ namespace Apache.Calcite.Extensions.Prepare
         protected virtual RelOptCluster CreateCluster(RelOptPlanner planner, RexBuilder rexBuilder)
         {
             var cluster = RelOptCluster.create(planner, rexBuilder);
-            cluster.setMetadataQuerySupplier(ClrRelMetadataProvider.QuerySupplier(DefaultRelMetadataProvider.INSTANCE));
+            cluster.setMetadataQuerySupplier(ClrRelMetadataProvider.QuerySupplier(ClrCursorRelMetadata.Provider));
             cluster.invalidateMetadataQuery();
             return cluster;
         }

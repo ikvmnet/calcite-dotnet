@@ -129,6 +129,26 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
+        /// Leaving the adapter costs a tenth of what it carries, as <c>JdbcToEnumerableConverter</c> does, so
+        /// a plan that leaves it once beats one that leaves it twice and joins here.
+        /// </summary>
+        /// <remarks>
+        /// Neither converter out of the adapter overrode <c>computeSelfCost</c>, so leaving it was priced at
+        /// its full row count and both of these read each table in a statement of its own and joined in
+        /// memory.
+        /// </remarks>
+        [Theory]
+        [InlineData("SELECT e.name, d.dname FROM ADO.emps e FULL JOIN ADO.depts d ON e.deptno = d.deptno")]
+        [InlineData("SELECT d.dname, (SELECT COUNT(*) FROM ADO.emps e WHERE e.deptno = d.deptno) FROM ADO.depts d")]
+        public void ShouldLeaveTheAdapterOnceForAJoinItCanPush(string sql)
+        {
+            var plan = Explain(_connection, sql);
+
+            plan.Split("AdoToClrCursorConverter").Length.Should().Be(2, plan);
+            plan.Should().Contain("AdoJoin");
+        }
+
+        /// <summary>
         /// The two advances answer the same rows for the same statements.
         /// </summary>
         [Fact]

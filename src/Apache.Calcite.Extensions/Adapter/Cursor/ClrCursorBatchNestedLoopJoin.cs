@@ -105,15 +105,24 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         {
             var rowCount = mq.getRowCount(this).doubleValue();
 
+            var rightRowCount = mq.getRowCount(getRight()).doubleValue();
+            var leftRowCount = mq.getRowCount(getLeft()).doubleValue();
+            if (double.IsInfinity(leftRowCount) || double.IsInfinity(rightRowCount))
+                return planner.getCostFactory().makeInfiniteCost();
+
             // the right input is read once per batch rather than once per row, which is the whole point of
             // the node, so the restart count is the left's row count divided by the batch size
             var restartCount = mq.getRowCount(getLeft()).doubleValue() / getVariablesSet().size();
 
             var rightCost = planner.getCost(getRight(), mq);
-            var rescanCost = rightCost.multiplyBy(java.lang.Math.max(1.0, restartCount) - 1);
+            if (rightCost == null)
+                return null;
 
+            var rescanCost = rightCost.multiplyBy(java.lang.Math.max(1.0, restartCount - 1));
+
+            // TODO add cost of last loop (the one that looks for the match)
             return planner.getCostFactory()
-                .makeCost(rowCount + mq.getRowCount(getLeft()).doubleValue(), 0, 0)
+                .makeCost(rowCount + leftRowCount, 0, 0)
                 .plus(rescanCost);
         }
 

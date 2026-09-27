@@ -41,6 +41,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         readonly RexNode? fetch;
 
         /// <summary>
+        /// The number of rows skipped, which <c>EnumerableLimit</c> exposes as a public field.
+        /// </summary>
+        public RexNode? Offset => offset;
+
+        /// <summary>
+        /// The number of rows returned, which <c>EnumerableLimit</c> exposes as a public field.
+        /// </summary>
+        public RexNode? Fetch => fetch;
+
+        /// <summary>
         /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
         /// </summary>
         /// <param name="cluster"></param>
@@ -65,6 +75,26 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         public override RelWriter explainTerms(RelWriter pw)
         {
             return base.explainTerms(pw).itemIf("offset", offset, offset != null).itemIf("fetch", fetch, fetch != null);
+        }
+
+        /// <summary>
+        /// <c>RelMdRowCount.getRowCount(EnumerableLimit, RelMetadataQuery)</c>. Calcite answers an
+        /// <c>EnumerableLimit</c>'s row count from a handler keyed on that class, which this node does not
+        /// reach; it reaches the handler for <see cref="SingleRel"/>, which asks this method. Where the input's
+        /// count is null the handler answers null, and this cannot: it unboxes, as <c>SingleRel</c>'s own
+        /// estimate does.
+        /// </summary>
+        /// <param name="mq"></param>
+        /// <returns></returns>
+        public override double estimateRowCount(RelMetadataQuery mq)
+        {
+            var rowCount = mq.getRowCount(getInput()).doubleValue();
+
+            var offset = RelMdUtil.literalValueApproximatedByDouble(this.offset, 0D);
+            var rows = java.lang.Math.max(rowCount - offset, 0D);
+
+            var limit = RelMdUtil.literalValueApproximatedByDouble(fetch, rows);
+            return limit < rows ? limit : rows;
         }
 
         /// <inheritdoc />

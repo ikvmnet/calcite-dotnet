@@ -373,15 +373,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <inheritdoc />
         public override RelOptCost? computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq)
         {
+            // we assume that the inputs are sorted. The price of sorting them has already been paid. The cost of
+            // the join is therefore proportional to the input and output size.
+            var rightRowCount = mq.getRowCount(getRight()).doubleValue();
+            var leftRowCount = mq.getRowCount(getLeft()).doubleValue();
             var rowCount = mq.getRowCount(this).doubleValue();
-
-            // a merge join is cheaper than a hash join, and the inputs are already sorted
-            if (joinType.name() == nameof(JoinRelType.SEMI) || joinType.name() == nameof(JoinRelType.ANTI))
-                rowCount = RelMdUtil.addEpsilon(rowCount);
-            else if (RelNodes.COMPARATOR.compare(getLeft(), getRight()) > 0)
-                rowCount = RelMdUtil.addEpsilon(rowCount);
-
-            return planner.getCostFactory().makeCost(rowCount, 0, 0);
+            var d = leftRowCount + rightRowCount + rowCount;
+            return planner.getCostFactory().makeCost(d, 0, 0);
         }
 
         /// <inheritdoc />
