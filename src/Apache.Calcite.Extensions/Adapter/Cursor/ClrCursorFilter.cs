@@ -1,4 +1,3 @@
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using java.util.function;
 
@@ -82,7 +81,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// A calc is always better, exactly as for <c>EnumerableFilter</c>. See
         /// <see cref="ClrCursorProject.Implement"/>.
         /// </remarks>
-        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             throw new java.lang.UnsupportedOperationException(
                 "ClrCursorFilter cannot implement itself, exactly as EnumerableFilter cannot: a calc " +

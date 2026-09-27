@@ -2,7 +2,6 @@ using System;
 using System.Linq.Expressions;
 using System.Threading;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using java.util.function;
@@ -96,13 +95,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// </remarks>
         public Pair? passThroughTraits(RelTraitSet required)
         {
-            return ClrEnumerableTraitsUtils.PassThroughTraitsForJoin(required, getJoinType(), getLeft().getRowType().getFieldCount(), getTraitSet());
+            return ClrCursorTraitsUtils.PassThroughTraitsForJoin(required, getJoinType(), getLeft().getRowType().getFieldCount(), getTraitSet());
         }
 
         /// <inheritdoc />
         public Pair? deriveTraits(RelTraitSet childTraits, int childId)
         {
-            return ClrEnumerableTraitsUtils.DeriveTraitsForJoin(childTraits, childId, getJoinType(), getTraitSet(), getRight().getTraitSet());
+            return ClrCursorTraitsUtils.DeriveTraitsForJoin(childTraits, childId, getJoinType(), getTraitSet(), getRight().getTraitSet());
         }
 
         /// <inheritdoc />
@@ -112,7 +111,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
-        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             if (getJoinType().name() != nameof(JoinRelType.LEFT_MARK))
                 throw new java.lang.UnsupportedOperationException($"ClrCursorConditionalCorrelate does not support join type: {getJoinType()}");
@@ -179,7 +178,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
-        public ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             if (getJoinType().name() != nameof(JoinRelType.LEFT_MARK))
                 throw new java.lang.UnsupportedOperationException($"ClrCursorConditionalCorrelate does not support join type: {getJoinType()}");

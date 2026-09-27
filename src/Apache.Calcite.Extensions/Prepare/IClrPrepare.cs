@@ -4,7 +4,6 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Adapter.Cursor;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Runtime;
 
 using org.apache.calcite;
@@ -31,7 +30,6 @@ namespace Apache.Calcite.Extensions.Prepare
         /// rules of the convention asked for.</param>
         /// <param name="elementType">What a caller wants a row to be. <c>object[]</c> asks for an array.</param>
         /// <param name="maxRowCount">The row limit, or a negative number for none.</param>
-        /// <param name="async">Whether to prepare into the asynchronous convention.</param>
         /// <returns>The planned statement.</returns>
         Signature PrepareSql(CalcitePrepare.Context context, Query query, System.Type elementType, long maxRowCount);
 

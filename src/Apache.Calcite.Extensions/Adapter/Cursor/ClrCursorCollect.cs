@@ -1,7 +1,6 @@
 using System;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using org.apache.calcite.adapter.enumerable;
@@ -60,12 +59,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
-        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var child = (ClrCursorRel)getInput();
 
             // rows are asked for as arrays, though as Calcite notes the child need not oblige
-            var result = implementor.VisitChild(this, 0, child, ClrEnumerablePrefer.Array);
+            var result = implementor.VisitChild(this, 0, child, ClrCursorPrefer.Array);
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), JavaRowFormat.LIST);
 
             var collectionType = getCollectionType();
@@ -119,12 +118,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
-        public ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        public ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var child = (ClrCursorRel)getInput();
 
             // rows are asked for as arrays, though as Calcite notes the child need not oblige
-            var result = implementor.VisitChildAsync(this, 0, child, ClrEnumerablePrefer.Array);
+            var result = implementor.VisitChildAsync(this, 0, child, ClrCursorPrefer.Array);
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), JavaRowFormat.LIST);
 
             var collectionType = getCollectionType();

@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions;
 using Apache.Calcite.Extensions.Adapter.Cursor;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Tests;
 
 using FluentAssertions;
@@ -144,7 +143,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             // one factory, opened the way the side asks: with await over the asynchronous tables and read
             // with the awaiting advance, synchronously over the synchronous ones and read with the other
             var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters)
-                .ImplementRoot((ClrCursorRel)physical, ClrEnumerablePrefer.Array);
+                .ImplementRoot((ClrCursorRel)physical, ClrCursorPrefer.Array);
 
             if (async)
             {
@@ -227,7 +226,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             // one factory, opened the way the side asks: with await over the asynchronous tables and read
             // with the awaiting advance, synchronously over the synchronous ones and read with the other
             var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters)
-                .ImplementRoot((ClrCursorRel)physical, ClrEnumerablePrefer.Array);
+                .ImplementRoot((ClrCursorRel)physical, ClrCursorPrefer.Array);
 
             if (async)
             {
@@ -257,7 +256,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Requires the same rows, and that the asynchronous convention really planned the node aimed at.
+        /// Requires the same rows, and that the cursor convention really planned the node aimed at.
         /// </summary>
         /// <remarks>
         /// The reason <see cref="SameThrough"/> gives, and it applies here with more force: a rel built by
@@ -381,7 +380,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Requires the same rows, and that the asynchronous convention really planned the node aimed at.
+        /// Requires the same rows, and that the cursor convention really planned the node aimed at.
         /// </summary>
         /// <remarks>
         /// The plan assertion is what stops a test from comparing something against itself. It matters more

@@ -1,5 +1,5 @@
 using Apache.Calcite.Extensions;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Adapter.Cursor;
 
 using FluentAssertions;
 

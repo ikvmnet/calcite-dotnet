@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
@@ -82,7 +81,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
-        public override ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        public override ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
             var rowType = physType.RowType;
@@ -123,7 +122,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
-        public override ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref)
+        public override ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
             var rowType = physType.RowType;

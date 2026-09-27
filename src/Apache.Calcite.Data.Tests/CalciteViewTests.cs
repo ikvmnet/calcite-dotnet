@@ -1093,7 +1093,7 @@ namespace Apache.Calcite.Data.Tests
         /// <c>RelRunner.prepareStatement</c> is declared to return a <c>java.sql.PreparedStatement</c>, and
         /// this provider implements no JDBC, so <c>PrepareContext.getRelRunner</c> refuses.
         ///
-        /// <para>The planning half is not what is missing — <c>ClrPrepareImpl.Prepare</c> over a <c>IClrPrepare.Query.Of(rel)</c> is the
+        /// <para>The planning half is not what is missing — <c>ClrPrepareImpl.PrepareSql</c> over an <c>IClrPrepare.Query.Of(rel)</c> is the
         /// <c>prepare2_</c> branch Calcite's own runner uses. What is missing is a hundred-odd members of
         /// <c>PreparedStatement</c> that exist so that two of them can be called.</para>
         ///

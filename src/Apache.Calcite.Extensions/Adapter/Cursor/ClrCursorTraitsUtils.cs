@@ -8,7 +8,7 @@ using org.apache.calcite.sql.validate;
 using org.apache.calcite.util;
 using org.apache.calcite.util.mapping;
 
-namespace Apache.Calcite.Extensions.Adapter.Enumerable
+namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
@@ -23,7 +23,7 @@ namespace Apache.Calcite.Extensions.Adapter.Enumerable
     /// <c>RelCollationImpl.apply</c> is <c>RexUtil.apply(mapping, this)</c>. The interface method is a
     /// generic default that IKVM erases, so the public static is called directly. It is the same call.</para>
     /// </remarks>
-    static class ClrEnumerableTraitsUtils
+    static class ClrCursorTraitsUtils
     {
 
         /// <summary>

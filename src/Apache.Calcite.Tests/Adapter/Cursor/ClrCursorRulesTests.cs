@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions;
 using Apache.Calcite.Extensions.Adapter.Cursor;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Tests;
 
 using FluentAssertions;
@@ -107,7 +106,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var physical = (ClrCursorRel)planner.transform(0, traits, logical);
 
             var parameters = new java.util.HashMap();
-            var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters).ImplementRoot(physical, ClrEnumerablePrefer.Array);
+            var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters).ImplementRoot(physical, ClrCursorPrefer.Array);
 
             var rows = new List<object[]>();
             await using var cursor = await factory.OpenAsync(new TestDataContext(rootSchema, parameters), System.Threading.CancellationToken.None);

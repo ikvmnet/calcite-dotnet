@@ -1,5 +1,4 @@
 using Apache.Calcite.Extensions.Adapter.Cursor;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using org.apache.calcite.jdbc;
 using org.apache.calcite.plan;
@@ -34,7 +33,7 @@ namespace Apache.Calcite.Extensions.Prepare.Cursor
             CalciteCatalogReader catalogReader,
             RelDataTypeFactory typeFactory,
             CalciteSchema schema,
-            ClrEnumerablePrefer prefer,
+            ClrCursorPrefer prefer,
             RelOptCluster cluster,
             SqlRexConvertletTable convertletTable) :
             base(prepare, context, catalogReader, typeFactory, schema, prefer, cluster, ClrCursorConvention.Instance, convertletTable)

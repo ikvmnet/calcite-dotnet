@@ -306,13 +306,11 @@ namespace Apache.Calcite.Data
 
         /// <inheritdoc />
         /// <remarks>
-        /// Prepares the connection's plan. By default that is the asynchronous convention, and everything
-        /// plans: an <c>IClrScannableTable</c> that writes <c>ScanAsync</c> is scanned asynchronously, a table Calcite can scan is
-        /// read the way Calcite reads it and completes synchronously — a state machine and no thread — and
-        /// anything else is implemented in <c>EnumerableConvention</c> with a converter carrying its rows.
-        /// In synchronous mode this is the synchronous plan in a completed task, and a query touching a
-        /// table that can <em>only</em> produce rows asynchronously fails to plan — visibly, rather than
-        /// blocking behind a surface that looks asynchronous.
+        /// The same plan <see cref="ExecuteDbDataReader"/> prepares, opened with await: an
+        /// <c>IClrScannableTable</c> that writes <c>ScanAsync</c> is scanned asynchronously, a table Calcite
+        /// can scan is read the way Calcite reads it and completes synchronously — a state machine and no
+        /// thread — and anything else is implemented in <c>EnumerableConvention</c> with a converter
+        /// carrying its rows.
         /// </remarks>
         protected override async Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
         {

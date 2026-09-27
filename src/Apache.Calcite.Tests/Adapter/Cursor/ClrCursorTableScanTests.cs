@@ -7,7 +7,6 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Apache.Calcite.Extensions.Adapter.Cursor;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Runtime;
 using Apache.Calcite.Extensions.Schema;
 using Apache.Calcite.Tests;
@@ -224,7 +223,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var context = new SpiDataContext(rootSchema, parameters);
             var rows = new List<string>();
 
-            var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters).ImplementRoot((ClrCursorRel)physical, ClrEnumerablePrefer.Array);
+            var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters).ImplementRoot((ClrCursorRel)physical, ClrCursorPrefer.Array);
 
             if (async)
             {
@@ -383,7 +382,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             // no sort: a sort drains its input at the open, and then no advance of the plan reaches the table
             var physical = Plan("SELECT K, V FROM T WHERE K > 0", rootSchema);
             var parameters = new java.util.HashMap();
-            var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters).ImplementRoot((ClrCursorRel)physical, ClrEnumerablePrefer.Array);
+            var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters).ImplementRoot((ClrCursorRel)physical, ClrCursorPrefer.Array);
 
             using var first = new CancellationTokenSource();
             using var second = new CancellationTokenSource();

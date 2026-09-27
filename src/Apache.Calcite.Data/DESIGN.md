@@ -267,14 +267,14 @@ reused as they stand. The driver had to be replaced because its one exit is a `B
 | `ClrPrepare.PreparedExplain` / `ClrExplainBindable` | `Prepare.PreparedExplain` / `CalcitePreparedExplain.getBindable` | An `EXPLAIN`: the text is rendered at prepare time and yielded as one row. |
 | `IClrPrepare.Signature` | `CalcitePrepare.CalciteSignature` | The planned statement, member for member, with `Bindable` swapped for `IClrCursorFactory` and `enumerable` for `Open` and `OpenAsync`. |
 
-`ClrPrepareImpl.Prepare` is the entry point this provider uses. It creates a `VolcanoPlanner` with
+`ClrPrepareImpl.PrepareSql` is the entry point this provider uses. It creates a `VolcanoPlanner` with
 `RelOptUtil.registerDefaultRules` **plus** `ClrCursorRules.Rules()` — one list, because there is
 one convention — so Calcite's own rules stay on the planner and a statement this convention has no
 node for is still planned and run in `EnumerableConvention`, with a converter carrying its rows. That is how a
-table modification works here. `ClrPrepareQuery.Of(RelNode)` selects the branch that plans a `RelNode` that was
+table modification works here. `IClrPrepare.Query.Of(RelNode)` selects the branch that plans a `RelNode` that was
 built rather than parsed; it is exercised by tests and not reached from this project.
 
-A DDL statement is executed inside `Prepare2` rather than planned, exactly as Calcite does. The
+A DDL statement is executed inside `Prepare2_` rather than planned, exactly as Calcite does. The
 `Signature` it returns has no row type, no columns, a null bindable, `CursorFactory.OBJECT` and
 `StatementType.OTHER_DDL`.
 
@@ -303,7 +303,7 @@ and `Typed`.
   `RelRunner.prepareStatement` is declared to return a `java.sql.PreparedStatement`. Its one caller is
   `ServerDdlExecutor.populate`, which uses two members of it, so supporting it means a hundred-odd
   members of a JDBC interface this project exists to not have. The planning half is already here:
-  `ClrPrepareImpl.Prepare` over a `ClrPrepareQuery.Of(rel)` is the `prepare2_` branch Calcite's own runner uses, ready for a runner
+  `ClrPrepareImpl.PrepareSql` over an `IClrPrepare.Query.Of(rel)` is the `prepare2_` branch Calcite's own runner uses, ready for a runner
   that wants it. So `CREATE MATERIALIZED VIEW` and `CREATE TABLE ... AS SELECT` are unsupported, and
   fail *after* `ServerDdlExecutor` has added the table — that ordering is upstream's. Both are pinned
   by tests. `populate` also resolves its INSERT against `getRootSchema()` unconditionally, so neither
@@ -673,8 +673,7 @@ src/
         ClrCursorPreparingStmt.cs         Convention, traits, implement
         ClrCursorPrepareResult.cs         Carries the IClrCursorFactory
     Runtime/IClrCursorFactory.cs          The compiled plan
-    Adapter/Cursor/                       ClrCursorConvention: nodes, rules, implementor
-    Adapter/Enumerable/                   The row machinery the convention shares with Calcite's
+    Adapter/Cursor/                       ClrCursorConvention: nodes, rules, implementor, row machinery
     Linq4j/, Interop/                     linq4j → System.Linq.Expressions, Java ↔ CLR values
 
   Apache.Calcite.Data.Tests/              xUnit tests for this provider

@@ -7,7 +7,7 @@ using Apache.Calcite.Extensions.Linq4j.Tree;
 
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.rel.core;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Adapter.Cursor;
 
 namespace Apache.Calcite.Adapter.AdoNet
 {

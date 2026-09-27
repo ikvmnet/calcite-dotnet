@@ -37,7 +37,6 @@ Put this convention's rules on the planner, run `Programs.standard()`, then buil
 
 ```csharp
 using Apache.Calcite.Extensions.Adapter.Cursor;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using org.apache.calcite;
 using org.apache.calcite.tools;
 
@@ -68,7 +67,7 @@ var physical = planner.transform(0, traits, logical);
 
 var implementor = new ClrCursorRelImplementor(
     physical.getCluster().getRexBuilder(), new java.util.HashMap());
-var factory = implementor.ImplementRoot((ClrCursorRel)physical, ClrEnumerablePrefer.Array);
+var factory = implementor.ImplementRoot((ClrCursorRel)physical, ClrCursorPrefer.Array);
 
 // opening runs the plan's acquisition -- a sort drains, a leaf executes -- and reading reads rows
 await using var cursor = await factory.OpenAsync(dataContext, cancellationToken);
@@ -101,7 +100,7 @@ Three things about this program are deliberate and worth knowing before you subs
 | `ClrCursorResult` / `ClrCursorAsyncResult` | What a node's two bodies answer, one type per kind, built by `Result` and `ResultAsync`. |
 | `IClrCursorFactory` / `ClrCursorFactory` | A compiled plan: `Open(DataContext)` and `OpenAsync(DataContext, CancellationToken)` each hand back an `IClrCursor`, and `ElementType` says what one row is. `ClrCursorFactory` is the one the implementor builds. |
 | `IClrCursor` / `IClrCursor<T>` | A forward-only cursor with `Read()` and `ReadAsync(CancellationToken)` over one position, and `Current`. `ClrCursor` and `ClrCursor<T>` are the abstract bases every cursor of this project derives from; a source that is a cursor already implements the interface directly. |
-| `ClrEnumerablePrefer` | How a caller wants rows represented — `Array` is what a prepared statement asks for. It is in the `Adapter.Enumerable` namespace with the rest of the row machinery, which mirrors Calcite's `adapter.enumerable` package. |
+| `ClrCursorPrefer` | How a caller wants rows represented — `Array` is what a prepared statement asks for. It is in the `Adapter.Cursor` namespace with the rest of the convention. |
 | `ClrCursorRelFactories` | `RelBuilder` factories producing nodes of this convention. |
 | `IClrScannableTable` / `IClrQueryableTable` / `IClrCursorTable` | The table SPI: a table hands back .NET sequences rather than linq4j ones, or a cursor. One interface per table kind, carrying both halves. `Scan`, `GetExpression` and `Open` are required; `ScanAsync`, `GetAsyncExpression` and `OpenAsync` default to reading them across. A table whose rows only ever arrive asynchronously overrides those and drains its own sequence for the required half. A cursor table is for a source that is a forward-only cursor already, a `DbDataReader` say: its cursor is the plan's leaf and the token of each `ReadAsync` reaches it. |
 | `ClrCursorRel` | The interface every node of this convention implements. Two bodies: `Implement` composes opens that acquire synchronously, required, and `ImplementAsync` opens that await, optional and defaulting to `Implement`. That default is safe exactly when a body does not visit a child, which is not the same as having no input: a body that asks for its input and takes the default composes a synchronously opened input into an awaiting operator, which `Expression.Call` refuses. |

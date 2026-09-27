@@ -1,13 +1,12 @@
 using System;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
 using Xunit;
 
-namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
+namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>

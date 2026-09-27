@@ -1,4 +1,3 @@
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;
@@ -72,7 +71,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <param name="pref">How the parent would prefer this node's rows represented. A node may return
         /// another format; the result says which it chose.</param>
         /// <returns>The open, the physical type of the rows it yields, and their format.</returns>
-        ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref);
+        ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref);
 
         /// <summary>
         /// Builds the plan for this node, as an open that awaits its acquisition.
@@ -88,7 +87,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="Implement"/>. That default holds only for a body that never visits an eager child;
         /// every node whose body does writes this one.
         /// </remarks>
-        ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrEnumerablePrefer pref) => implementor.Awaited(Implement(implementor, pref));
+        ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref) => implementor.Awaited(Implement(implementor, pref));
 
         /// <inheritdoc cref="PhysicalNode.passThroughTraits" />
         Pair? PhysicalNode.passThroughTraits(RelTraitSet required) => null;

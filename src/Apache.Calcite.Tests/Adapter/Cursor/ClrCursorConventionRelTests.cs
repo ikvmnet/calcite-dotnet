@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 
 using Apache.Calcite.Extensions;
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.plan;

@@ -1,4 +1,4 @@
-using Apache.Calcite.Extensions.Adapter.Enumerable;
+using Apache.Calcite.Extensions.Adapter.Cursor;
 
 using org.apache.calcite.plan;
 

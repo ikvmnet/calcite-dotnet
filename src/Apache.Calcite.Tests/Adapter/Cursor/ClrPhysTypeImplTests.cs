@@ -1,7 +1,6 @@
 using System;
 using System.Linq.Expressions;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 
 using FluentAssertions;
 
@@ -10,7 +9,7 @@ using org.apache.calcite.jdbc;
 
 using Xunit;
 
-namespace Apache.Calcite.Extensions.Adapter.Enumerable.Tests
+namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>

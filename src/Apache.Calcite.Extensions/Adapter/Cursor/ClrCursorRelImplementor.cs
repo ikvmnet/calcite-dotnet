@@ -4,7 +4,6 @@ using System.Linq.Expressions;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Apache.Calcite.Extensions.Adapter.Enumerable;
 using Apache.Calcite.Extensions.Linq4j.Function;
 using Apache.Calcite.Extensions.Linq4j.Tree;
 using Apache.Calcite.Extensions.Runtime;
@@ -28,7 +27,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// The counterpart of Calcite's <c>EnumerableRelImplementor</c>, and used the same way: one instance
     /// implements one plan. What it hands back is an open rather than Calcite's block, and everything about
     /// a <em>row</em> — the physical type, the Rex translation, the correlation variables and the stash —
-    /// is the shared code in <c>Adapter.Enumerable</c>, as Calcite's is in <c>adapter.enumerable</c>.
+    /// is the row machinery beside the nodes, as Calcite's is in <c>adapter.enumerable</c>.
     ///
     /// <para><b>Two call hierarchies, parallel, and one root member that runs both.</b>
     /// <see cref="VisitChild"/> calls only <see cref="ClrCursorRel.Implement"/> and
@@ -46,7 +45,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// is the one the advance was given — a nested lambda's declaration shadows the enclosing one's, which
     /// the expression compiler and the interpreter both honour.</para>
     /// </remarks>
-    public class ClrCursorRelImplementor : IClrRelImplementor
+    public class ClrCursorRelImplementor
     {
 
         /// <summary>
@@ -157,9 +156,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// </summary>
         internal LixToClrTranslator Translator { get; }
 
-        /// <inheritdoc />
-        LixToClrTranslator IClrRelImplementor.Translator => Translator;
-
         /// <summary>
         /// Gets the internal parameters, which reach the query through the <see cref="DataContext"/> it is
         /// bound with rather than through the plan.
@@ -200,7 +196,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// input's <see cref="ClrCursorRel.Implement"/> in turn. The synchronous hierarchy is closed: every
         /// call in it reaches a synchronous body and answers a synchronous open.
         /// </remarks>
-        public ClrCursorResult VisitChild(ClrCursorRel? parent, int ordinal, ClrCursorRel child, ClrEnumerablePrefer prefer)
+        public ClrCursorResult VisitChild(ClrCursorRel? parent, int ordinal, ClrCursorRel child, ClrCursorPrefer prefer)
         {
             ArgumentNullException.ThrowIfNull(child);
 
@@ -219,7 +215,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// The awaiting counterpart, and the one place <see cref="ClrCursorRel.ImplementAsync"/> is
         /// called from a node.
         /// </remarks>
-        public ClrCursorAsyncResult VisitChildAsync(ClrCursorRel? parent, int ordinal, ClrCursorRel child, ClrEnumerablePrefer prefer)
+        public ClrCursorAsyncResult VisitChildAsync(ClrCursorRel? parent, int ordinal, ClrCursorRel child, ClrCursorPrefer prefer)
         {
             ArgumentNullException.ThrowIfNull(child);
 
@@ -328,7 +324,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <para>Nothing is compiled here. The factory compiles each open the first time it is asked for it,
         /// so a caller that only ever opens one way pays for one.</para>
         /// </remarks>
-        public ClrCursorFactory ImplementRoot(ClrCursorRel rootRel, ClrEnumerablePrefer prefer)
+        public ClrCursorFactory ImplementRoot(ClrCursorRel rootRel, ClrCursorPrefer prefer)
         {
             ArgumentNullException.ThrowIfNull(rootRel);
 
@@ -352,7 +348,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             // a one column result is the value, not a one element row, which is what every caller of a query
             // expects and what EnumerableRelImplementor arranges the same way
-            if (prefer == ClrEnumerablePrefer.Array
+            if (prefer == ClrCursorPrefer.Array
                 && pulled.Format == JavaRowFormat.ARRAY
                 && rootRel.getRowType().getFieldCount() == 1)
             {
@@ -389,7 +385,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Returns what one row of the plan is, which is the same answer whichever way it is opened.
         /// </summary>
-        Type ElementType(ClrCursorRel rel, ClrEnumerablePrefer prefer)
+        Type ElementType(ClrCursorRel rel, ClrCursorPrefer prefer)
         {
             return ClrTypes.Resolve(ClrPhysTypeImpl.Of(TypeFactory, rel.getRowType(), prefer.PreferArray()).JavaRowType);
         }
