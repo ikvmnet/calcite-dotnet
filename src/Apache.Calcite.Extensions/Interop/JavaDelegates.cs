@@ -96,6 +96,26 @@ namespace Apache.Calcite.Extensions.Interop
         }
 
         /// <summary>
+        /// Returns a delegate that reads the given field, taking the receiver where it has one.
+        /// </summary>
+        /// <param name="field"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The signature is chosen as <see cref="FromMethod(java.lang.reflect.Executable)"/> chooses it. The
+        /// handle is <c>unreflectGetter</c>'s, so access is checked as it checks it, and a field that is not
+        /// public is the caller's to mark accessible.
+        /// </remarks>
+        public static Delegate FromGetter(java.lang.reflect.Field field)
+        {
+            ArgumentNullException.ThrowIfNull(field);
+
+            var types = (field.getModifiers() & java.lang.reflect.Modifier.STATIC) == 0 ? new[] { typeof(object) } : [];
+            var handle = java.lang.invoke.MethodHandles.publicLookup().unreflectGetter(field);
+
+            return ikvm.runtime.Util.getDelegateFromMethodHandle(CreateDelegateType(types, Erase(field.getType())), handle);
+        }
+
+        /// <summary>
         /// Returns the type a value of the given class crosses a delegate boundary as.
         /// </summary>
         /// <param name="clazz"></param>

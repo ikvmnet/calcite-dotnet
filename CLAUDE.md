@@ -549,8 +549,19 @@ calls `setOffset` the same way, and reads a field through each. This file said f
 node could not be written, and it was never true: Java's own `Constructor.newInstance` after
 `setAccessible` would have built them at any time. What stopped it was a line here reading "reflection is
 not the answer", written on the reasoning that a lookalike class fails the casts, which says nothing about
-constructing the real one. **The node is not written yet**: a MATCH_RECOGNIZE query runs because the
-planner leaves the whole subtree in `EnumerableConvention` and one converter carries the rows.
+constructing the real one. `ClrCursorMatch` is written that way: both getters, `setIndex`, the
+translator's package private `translate(RexNode)`, and on the runtime side `Matcher.matchOne` (protected)
+and the package private `PartitionState` and `PartialMatch`, whose fields go through
+`JavaDelegates.FromGetter`.
+
+**Java allows only four kinds of expression as a statement, and the translator holds it to that.** An
+assignment, an increment or decrement, a method invocation or an object creation; Janino refuses the rest
+and an expression tree would evaluate them and discard the value. linq4j writes the rest without meaning
+to, because `BlockBuilder.append` turns a trailing `return expr;` into `expr;` whenever anything is
+appended after it. `EnumerableMatch` puts every `DEFINE` into one builder, so a second definition leaves the
+first one's comparison standing as a statement and Calcite refuses the query — unless the first condition
+translated to a call, which is legal and runs. `ShouldRefuseMatchRecognizeOfTwoComparedDefinitions` and
+`ShouldAgreeOnMatchRecognizeOfTwoDefinitionsWhereTheFirstIsACall` hold the two sides of it.
 
 **An anonymous class of one method is a lambda; one of several is a thing.** `Anonymous` turns the first
 into a lambda and the second into an object holding a delegate per method — `DelegateEnumerator` for the

@@ -17,9 +17,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     ///
     /// <para><b>The list is <c>EnumerableRules.ENUMERABLE_RULES</c>, in Calcite's order</b>, with the same
     /// three rules kept out of it for a caller to add — the sorted aggregate, the batch nested loop join and
-    /// the limit sort — and the interpreter's beside them. The two converters against
-    /// <c>EnumerableConvention</c> follow. MATCH_RECOGNIZE is the one node this convention does not yet write,
-    /// and Calcite plans it under a converter.</para>
+    /// the limit sort — and the interpreter's beside them. The match rule is last,
+    /// as <c>ENUMERABLE_MATCH_RULE</c> is, and the two converters against <c>EnumerableConvention</c> follow.</para>
     /// </remarks>
     public static class ClrCursorRules
     {
@@ -156,6 +155,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         public static readonly RelOptRule ClrCursorWindowRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorWindowRule.Create();
 
         /// <summary>
+        /// Rule that converts a match to a <see cref="ClrCursorMatch"/>.
+        /// </summary>
+        public static readonly RelOptRule ClrCursorMatchRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorMatchRule.Create();
+
+        /// <summary>
         /// Rule that converts a repeat union to a <see cref="ClrCursorRepeatUnion"/>.
         /// </summary>
         public static readonly RelOptRule ClrCursorRepeatUnionRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRepeatUnionRule.Create();
@@ -247,6 +251,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             ClrCursorCollectRule,
             ClrCursorUncollectRule,
             ClrCursorWindowRule,
+            ClrCursorMatchRule,
             EnumerableToClrCursorConverterRule,
             ClrCursorToEnumerableConverterRule,
         ];

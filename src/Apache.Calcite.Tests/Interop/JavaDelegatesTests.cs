@@ -153,6 +153,40 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             d().Should().BeOfType<java.lang.Runtime>();
         }
 
+        /// <summary>
+        /// A field that is not public, read once it is marked accessible: <c>ArrayList.size</c> is private.
+        /// </summary>
+        [Fact]
+        public void ShouldReadAnInstanceField()
+        {
+            var f = ((Class)typeof(java.util.ArrayList)).getDeclaredField("size");
+            f.setAccessible(true);
+            var d = (MH<object, int>)JavaDelegates.FromGetter(f);
+
+            var list = new java.util.ArrayList();
+            list.add("a");
+            list.add("b");
+
+            d(list).Should().Be(2);
+        }
+
+        [Fact]
+        public void ShouldReadAStaticField()
+        {
+            var d = (MH<int>)JavaDelegates.FromGetter(((Class)typeof(Integer)).getField("MAX_VALUE"));
+
+            d().Should().Be(int.MaxValue);
+        }
+
+        [Fact]
+        public void ShouldRefuseAnInaccessibleFieldUntilMarkedAccessible()
+        {
+            var f = ((Class)typeof(java.util.ArrayList)).getDeclaredField("size");
+
+            var act = () => JavaDelegates.FromGetter(f);
+            act.Should().Throw<java.lang.IllegalAccessException>();
+        }
+
         [Fact]
         public void ShouldRefuseANullMethod()
         {

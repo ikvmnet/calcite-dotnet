@@ -878,24 +878,24 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// MATCH_RECOGNIZE over a table that only yields its rows asynchronously plans, and runs.
+        /// MATCH_RECOGNIZE over a table that only yields its rows asynchronously plans through
+        /// <see cref="ClrCursorMatch"/>, and gives the rows the same table gives read synchronously.
         /// </summary>
         /// <remarks>
-        /// <b>It runs, and it blocks.</b> This convention has no MATCH_RECOGNIZE node yet, so the node is
-        /// Calcite's, and Calcite's node needs its input in <c>EnumerableConvention</c>, which the scan reaches
-        /// through the converter out.
-        ///
-        /// <para>Calcite compiles its side with Janino and generated Java cannot await, so the sub-plan
-        /// under that converter is opened synchronously and the asynchronous leaf inside it is read across,
-        /// <b>blocking a thread per row</b>. That is the cost, and it is paid only by a query of this
-        /// shape.</para>
+        /// This used to run as Calcite's node under a converter, whose generated Java cannot await, so the
+        /// asynchronous leaf under it was read across a thread blocked per row. The awaiting body of
+        /// <see cref="ClrCursorMatch"/> awaits its input like every other node's.
         /// </remarks>
         [Fact]
         public async Task ShouldRunAMatchRecognizeOverAnAsyncTable()
         {
-            var rows = await Run("SELECT * FROM SALES MATCH_RECOGNIZE (ORDER BY ID MEASURES CLASSIFIER() AS cl PATTERN (a b) DEFINE a AS a.AMOUNT > 0, b AS b.AMOUNT > 0)", true);
+            const string sql = "SELECT * FROM SALES MATCH_RECOGNIZE (ORDER BY ID MEASURES CLASSIFIER() AS cl PATTERN (a b) DEFINE a AS a.AMOUNT > 0, b AS b.AMOUNT > 0)";
 
+            (await Run(sql, true, planOnly: true))[0].Should().Contain("ClrCursorMatch");
+
+            var rows = await Run(sql, true);
             rows.Should().NotBeEmpty();
+            rows.Should().Equal(await Run(sql, false));
         }
 
     }

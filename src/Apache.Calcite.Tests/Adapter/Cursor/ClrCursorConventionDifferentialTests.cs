@@ -2462,34 +2462,142 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
 
 
-        // MATCH_RECOGNIZE, in a plan rooted in this convention: the whole subtree stays in
-        // EnumerableConvention with one converter at the top. The node itself cannot be written here —
-        // Calcite casts its input getter to two package-private *types* — and does not have to be for the
-        // query to answer.
-        //
-        // Three things have to be true at once for this to run. The measures row is
-        // built with Expressions.new_ on the row's Java type, so an ARRAY-format input gives "new Object[]()"
-        // — not Java, and not completable by a translator either; HR.emps is CUSTOM, so that line emits a
-        // record constructor instead. The predicate's parameter is a Memory around the row and the condition
-        // was translated against the row itself, both named row_, which is the lexical scope by name. And
-        // EnumerableMatch.implementPattern takes a symbol or a concatenation and nothing else, so PATTERN
-        // (STRT UP+) throws "unknown kind: PATTERN_QUANTIFIER" out of Calcite's own node, in either
-        // convention — a fixed pattern is what either side can run.
+        // MATCH_RECOGNIZE, through ClrCursorMatch. HR.emps is CUSTOM, so a measures row of two or more is a
+        // record and EnumerableMatch's new_ on its class builds one. The pattern is a plain sequence of symbols
+        // in every one of these, because that is all EnumerableMatch generates: implementPattern handles a
+        // literal and a concatenation and throws on anything else, in either convention.
+
+        const string Emps = "SELECT * FROM \"HR\".\"emps\" MATCH_RECOGNIZE (ORDER BY \"empid\" ";
 
         [Fact]
         public void ShouldAgreeOnMatchRecognize() =>
-            Same("SELECT * FROM \"HR\".\"emps\" MATCH_RECOGNIZE (ORDER BY \"empid\" MEASURES STRT.\"empid\" AS \"s\", UP.\"empid\" AS \"e\" PATTERN (STRT UP) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\")) AS T");
-
-        // PARTITION BY has no test because it does not run in either convention. The partition key of one
-        // column has a SCALAR physical type, EnumerableMatch builds the key with Expressions.new_ on its Java
-        // row type, and that emits "new Integer()" — Janino: "No applicable constructor/method found for zero
-        // actual parameters". Measured on EnumerableConvention alone, so it is Calcite's defect, and it is the
-        // same one as "new Object[]()" a few lines further on in that node.
+            SameThrough("ClrCursorMatch", Emps + "MEASURES STRT.\"empid\" AS \"s\", UP.\"empid\" AS \"e\" PATTERN (STRT UP) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\")) AS T");
 
         [Fact]
-        public void ShouldPlanMatchRecognizeUnderAConverter() =>
-            PlanOf("SELECT * FROM \"HR\".\"emps\" MATCH_RECOGNIZE (ORDER BY \"empid\" MEASURES STRT.\"empid\" AS \"s\" PATTERN (STRT UP) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\")) AS T", true)
-                .Should().StartWith("EnumerableToClrCursorConverter");
+        public void ShouldAgreeOnMatchRecognizeMeasuringTheLastRowOfASymbol() =>
+            SameThrough("ClrCursorMatch", Emps + "MEASURES LAST(UP.\"empid\") AS \"e\", STRT.\"salary\" AS \"s\" PATTERN (STRT UP) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\")) AS T");
+
+        // ONE ROW PER MATCH wraps every measure in FINAL, so RUNNING is FINAL(RUNNING(LAST(...))), and
+        // implementMeasure looks one level in: it finds RUNNING rather than LAST and hands it to the
+        // translator, which has no implementor for it.
+        [Fact]
+        public void ShouldRefuseMatchRecognizeMeasuringRunning() =>
+            BothFail(Emps + "MEASURES RUNNING LAST(UP.\"empid\") AS \"e\", STRT.\"salary\" AS \"s\" PATTERN (STRT UP) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\")) AS T", "cannot translate call RUNNING");
+
+        [Fact]
+        public void ShouldAgreeOnMatchRecognizeMeasuringAClassifier() =>
+            SameThrough("ClrCursorMatch", Emps + "MEASURES CLASSIFIER() AS \"c\", STRT.\"name\" AS \"n\" PATTERN (STRT UP) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\")) AS T");
+
+        // two rows of history, which is what the memory keeps for a predicate
+        [Fact]
+        public void ShouldAgreeOnMatchRecognizeLookingTwoRowsBack() =>
+            SameThrough("ClrCursorMatch", Emps + "MEASURES STRT.\"empid\" AS \"s\", UP.\"empid\" AS \"e\" PATTERN (STRT UP) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\", 2)) AS T");
+
+        [Fact]
+        public void ShouldAgreeOnMatchRecognizeOfThreeSymbols() =>
+            SameThrough("ClrCursorMatch", Emps + "MEASURES A.\"empid\" AS \"a\", B.\"empid\" AS \"b\", C.\"empid\" AS \"c\" PATTERN (A B C) DEFINE C AS C.\"salary\" < PREV(C.\"salary\")) AS T");
+
+        // A one-measure row is SCALAR, and new_ on its class is Java's constructor of no arguments. String has
+        // one, so a VARCHAR measure runs under Calcite, where System.String has none.
+        [Fact]
+        public void ShouldAgreeOnMatchRecognizeOfOneStringMeasure() =>
+            SameThrough("ClrCursorMatch", Emps + "MEASURES CLASSIFIER() AS \"c\" PATTERN (STRT UP) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\")) AS T");
+
+        // EnumerableMatch collects every definition's condition in one BlockBuilder and makes each predicate
+        // of the block as it stands. BlockBuilder.append turns the trailing "return cond;" into "cond;" when
+        // the next condition is appended, so B's predicate begins with A's condition as a bare statement. Java
+        // allows only an assignment, an increment, a call or an allocation there: a comparison is refused by
+        // Janino, and so by the translator here.
+        [Fact]
+        public void ShouldRefuseMatchRecognizeOfTwoComparedDefinitions() =>
+            BothFail(Emps + "MEASURES A.\"empid\" AS \"a\", B.\"empid\" AS \"b\" PATTERN (A B) DEFINE A AS A.\"salary\" > 9000, B AS B.\"salary\" < 9000) AS T", "not allowed as an expression statement");
+
+        // Where the first condition translates to a call, the bare statement is legal Java and the query runs:
+        // over a nullable column the comparison is SqlFunctions'. SALES is ARRAY, so the one measure is a
+        // VARCHAR, whose row String builds.
+        [Fact]
+        public void ShouldAgreeOnMatchRecognizeOfTwoDefinitionsWhereTheFirstIsACall() =>
+            SameThrough("ClrCursorMatch", "SELECT * FROM \"SALES\" MATCH_RECOGNIZE (ORDER BY \"ID\" MEASURES CLASSIFIER() AS \"cl\" PATTERN (A B) DEFINE A AS A.\"AMOUNT\" > 0, B AS B.\"AMOUNT\" > 0) AS T");
+
+        [Fact]
+        public void ShouldAgreeOnMatchRecognizePartitioned() =>
+            SameThrough("ClrCursorMatch", Emps.Replace("(ORDER BY", "(PARTITION BY \"deptno\" ORDER BY") + "MEASURES STRT.\"empid\" AS \"s\", UP.\"empid\" AS \"e\" PATTERN (STRT UP) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\")) AS T");
+
+        // The rows new_ cannot build. Integer has no constructor of no arguments and neither has an array, so a
+        // one-measure INTEGER row and any ARRAY row — SALES is one — are refused by Janino, and by this.
+        [Fact]
+        public void ShouldRefuseMatchRecognizeOfOneIntegerMeasure() =>
+            BothFail(Emps + "MEASURES STRT.\"empid\" AS \"s\" PATTERN (STRT UP) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\")) AS T", "java.lang.Integer");
+
+        [Fact]
+        public void ShouldRefuseMatchRecognizeOverAnArrayRow() =>
+            BothFail("SELECT * FROM \"SALES\" MATCH_RECOGNIZE (ORDER BY \"ID\" MEASURES A.\"ID\" AS \"a\", B.\"ID\" AS \"b\" PATTERN (A B) DEFINE A AS A.\"AMOUNT\" > 0, B AS B.\"AMOUNT\" > 0) AS T", "Object");
+
+        [Fact]
+        public void ShouldRefuseMatchRecognizeWithAQuantifier() =>
+            SameFailure(Emps + "MEASURES STRT.\"empid\" AS \"s\", UP.\"empid\" AS \"e\" PATTERN (STRT UP+) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\")) AS T", "unknown kind: PATTERN_QUANTIFIER");
+
+        // the rows AdoClrCursorTests reads from SQLite, so that what that test asserts has Calcite's answer
+        // behind it: over an adapter there is no EnumerableMatch to compare with
+        const string EmpsValues = "SELECT * FROM (SELECT * FROM (VALUES (1, 'Alice', 100.5), (2, 'Bob', 200.0), (3, 'Carol', 300.25), (4, 'Dave', CAST(NULL AS DOUBLE)), (5, 'Erin', 50.0)) AS E (\"empno\", \"name\", \"salary\")) MATCH_RECOGNIZE (ORDER BY \"empno\" MEASURES STRT.\"name\" AS \"n\" PATTERN (STRT UP) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\")) AS T";
+
+        // Four rows, where SQL would give two, and they are Calcite's: this is the oracle for AdoClrCursorTests,
+        // which reads the same five rows from SQLite. The names are CHAR(5) here, so padded, and NVARCHAR there.
+        [Fact]
+        public void ShouldAgreeOnMatchRecognizeOverANull()
+        {
+            SameThrough("ClrCursorMatch", EmpsValues);
+            Gives(EmpsValues, "Alice", "Bob  ", "Bob  ", "Carol");
+        }
+
+        [Fact]
+        public void ShouldPlanMatchRecognizeInThisConvention() =>
+            PlanOf(Emps + "MEASURES STRT.\"empid\" AS \"s\", UP.\"empid\" AS \"e\" PATTERN (STRT UP) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\")) AS T", true)
+                .Should().StartWith("ClrCursorMatch");
+
+        /// <summary>
+        /// Requires that a query fails in both conventions, each naming the row it could not build.
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <param name="named">What both failures have to name.</param>
+        /// <remarks>
+        /// <see cref="SameFailure"/> cannot hold these: Calcite's failure is Janino refusing generated source,
+        /// or Calcite's implementor naming its own node, and neither message is one this convention can write.
+        /// </remarks>
+        static void BothFail(string sql, string named)
+        {
+            static string Failure(string sql, bool clr)
+            {
+                try
+                {
+                    Run(sql, clr);
+                    return "<no failure>";
+                }
+                catch (Exception e)
+                {
+                    // a Java cause is not always an inner exception, and Calcite's implementor keeps what failed
+                    // as a suppressed exception rather than a cause, so all three are followed
+                    var messages = new List<string>();
+                    void Collect(Exception? i)
+                    {
+                        if (i == null)
+                            return;
+
+                        messages.Add(i.Message);
+                        Collect(i.InnerException ?? (i as java.lang.Throwable)?.getCause());
+                        if (i is java.lang.Throwable t)
+                            foreach (var suppressed in t.getSuppressed())
+                                Collect(suppressed);
+                    }
+
+                    Collect(e);
+                    return string.Join(" / ", messages);
+                }
+            }
+
+            Failure(sql, false).Should().Contain(named, "'{0}' should fail under EnumerableConvention", sql);
+            Failure(sql, true).Should().Contain(named, "'{0}' should fail in this convention as it fails in Calcite's", sql);
+        }
 
         // ------------------------------------------------------------------ a row that is one primitive
         //

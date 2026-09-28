@@ -573,6 +573,18 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// </summary>
         public static readonly MethodInfo WindowAsync = Of(nameof(ClrCursorDefaults.WindowAsync));
 
+        /// <summary>
+        /// <see cref="ClrCursorDefaults.Match"/>.
+        /// </summary>
+        public static readonly MethodInfo Match = Of(nameof(ClrCursorDefaults.Match));
+
+        // ---- the awaiting half ----
+
+        /// <summary>
+        /// <see cref="ClrCursorDefaults.MatchAsync"/>.
+        /// </summary>
+        public static readonly MethodInfo MatchAsync = Of(nameof(ClrCursorDefaults.MatchAsync));
+
     }
 
 }
