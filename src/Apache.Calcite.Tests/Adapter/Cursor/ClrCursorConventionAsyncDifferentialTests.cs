@@ -901,21 +901,25 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// MATCH_RECOGNIZE over a table that yields its rows only asynchronously plans and runs.
+        /// MATCH_RECOGNIZE over a table that only yields its rows asynchronously plans through
+        /// <see cref="ClrCursorMatch"/>, and gives the rows the same table gives read synchronously.
         /// </summary>
         /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// This convention does not yet have a MATCH_RECOGNIZE node, so the node is Calcite's, and its input
-        /// reaches <c>EnumerableConvention</c> through the converter out of this convention. Generated Java
-        /// cannot await, so the sub-plan under that converter is opened synchronously and the asynchronous leaf
-        /// inside it is read by blocking a thread per row.
+        /// This used to run as Calcite's node under a converter, whose generated Java cannot await, so the
+        /// asynchronous leaf under it was read across a thread blocked per row. The awaiting body of
+        /// <see cref="ClrCursorMatch"/> awaits its input like every other node's.
         /// </remarks>
         [Fact]
         public async Task ShouldRunAMatchRecognizeOverAnAsyncTable()
         {
-            var rows = await Run("SELECT * FROM SALES MATCH_RECOGNIZE (ORDER BY ID MEASURES CLASSIFIER() AS cl PATTERN (a b) DEFINE a AS a.AMOUNT > 0, b AS b.AMOUNT > 0)", true);
+            const string sql = "SELECT * FROM SALES MATCH_RECOGNIZE (ORDER BY ID MEASURES CLASSIFIER() AS cl PATTERN (a b) DEFINE a AS a.AMOUNT > 0, b AS b.AMOUNT > 0)";
 
+            (await Run(sql, true, planOnly: true))[0].Should().Contain("ClrCursorMatch");
+
+            var rows = await Run(sql, true);
             rows.Should().NotBeEmpty();
+            rows.Should().Equal(await Run(sql, false));
         }
 
     }

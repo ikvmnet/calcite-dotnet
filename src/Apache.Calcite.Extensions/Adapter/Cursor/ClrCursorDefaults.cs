@@ -8360,6 +8360,289 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             };
         }
 
+        /// <summary>
+        /// Recognizes a pattern in each partition of the rows and emits what each match measures.
+        /// </summary>
+        /// <typeparam name="TSource"></typeparam>
+        /// <typeparam name="TKey"></typeparam>
+        /// <typeparam name="TResult"></typeparam>
+        /// <param name="source"></param>
+        /// <param name="keySelector">Selects the partition a row belongs to.</param>
+        /// <param name="matcher">The automaton and one predicate per symbol, Calcite's own.</param>
+        /// <param name="emitter">Turns one match into the rows it contributes.</param>
+        /// <param name="history">How many rows back a predicate reads, which is how many the memory keeps.</param>
+        /// <param name="future">How many rows forward a predicate reads.</param>
+        /// <returns></returns>
+        /// <remarks>
+        /// The counterpart of <c>Enumerables.match</c>. Its anonymous <c>Enumerator</c> acquires the input in a
+        /// field initializer, which runs at <c>enumerator()</c>; here the input arrives opened, which is the same
+        /// moment. Each advance hands back a row the last match left queued, and otherwise reads one input row,
+        /// feeds it to its partition and lets <c>matchOne</c> queue whatever that completes.
+        ///
+        /// <para>The matcher is Calcite's, reached as <c>Enumerables</c> reaches it from its own package:
+        /// <c>matchOne</c> is protected, and the partition state and the match it hands back are package
+        /// private types, so <see cref="MatcherMembers"/> calls each through a delegate.</para>
+        /// </remarks>
+        public static IClrCursor<TResult> Match<TSource, TKey, TResult>(
+            IClrCursor<TSource> source,
+            Func<TSource, TKey> keySelector,
+            org.apache.calcite.runtime.Matcher matcher,
+            org.apache.calcite.runtime.Enumerables.Emitter emitter,
+            int history,
+            int future)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(keySelector);
+            ArgumentNullException.ThrowIfNull(matcher);
+            ArgumentNullException.ThrowIfNull(emitter);
+
+            return new MatchCursor<TSource, TKey, TResult>(source, keySelector, matcher, emitter, history, future);
+        }
+
+        /// <summary>
+        /// <see cref="Match{TSource, TKey, TResult}"/>, over an open that awaits.
+        /// </summary>
+        public static async ValueTask<IClrCursor<TResult>> MatchAsync<TSource, TKey, TResult>(
+            ValueTask<IClrCursor<TSource>> source,
+            Func<TSource, TKey> keySelector,
+            org.apache.calcite.runtime.Matcher matcher,
+            org.apache.calcite.runtime.Enumerables.Emitter emitter,
+            int history,
+            int future,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(keySelector);
+            ArgumentNullException.ThrowIfNull(matcher);
+            ArgumentNullException.ThrowIfNull(emitter);
+
+            return new MatchCursor<TSource, TKey, TResult>(await source.ConfigureAwait(false), keySelector, matcher, emitter, history, future);
+        }
+
+        /// <summary>
+        /// The members of <c>Matcher</c> that <c>Enumerables.match</c> reaches from Calcite's own package and
+        /// nothing outside it can call by name.
+        /// </summary>
+        static class MatcherMembers
+        {
+
+            static java.lang.reflect.Method Method(java.lang.Class declaring, string name, params java.lang.Class[] parameters)
+            {
+                var method = declaring.getDeclaredMethod(name, parameters);
+                method.setAccessible(true);
+                return method;
+            }
+
+            static java.lang.reflect.Field Field(java.lang.Class declaring, string name)
+            {
+                var field = declaring.getDeclaredField(name);
+                field.setAccessible(true);
+                return field;
+            }
+
+            static java.lang.Class Nested(string name) =>
+                ((java.lang.Class)typeof(org.apache.calcite.runtime.Matcher)).getDeclaredClasses().Single(c => c.getSimpleName() == name);
+
+            static readonly java.lang.Class PartitionState = Nested("PartitionState");
+
+            static readonly java.lang.Class PartialMatch = Nested("PartialMatch");
+
+            /// <summary>
+            /// <c>Matcher.createPartitionState(int, int)</c>, which is public and returns a package private type.
+            /// </summary>
+            public static readonly IKVM.Runtime.MH<object, int, int, object> CreatePartitionState =
+                (IKVM.Runtime.MH<object, int, int, object>)JavaDelegates.FromMethod(Method((java.lang.Class)typeof(org.apache.calcite.runtime.Matcher), "createPartitionState", java.lang.Integer.TYPE, java.lang.Integer.TYPE));
+
+            /// <summary>
+            /// <c>PartitionState.getMemoryFactory()</c>.
+            /// </summary>
+            public static readonly IKVM.Runtime.MH<object, object> GetMemoryFactory =
+                (IKVM.Runtime.MH<object, object>)JavaDelegates.FromMethod(Method(PartitionState, "getMemoryFactory"));
+
+            /// <summary>
+            /// <c>PartitionState.getRows()</c>.
+            /// </summary>
+            public static readonly IKVM.Runtime.MH<object, object> GetRows =
+                (IKVM.Runtime.MH<object, object>)JavaDelegates.FromMethod(Method(PartitionState, "getRows"));
+
+            /// <summary>
+            /// <c>Matcher.matchOne(Memory, PartitionState, Consumer)</c>, which is protected.
+            /// </summary>
+            public static readonly IKVM.Runtime.MHV<object, object, object, object> MatchOne =
+                (IKVM.Runtime.MHV<object, object, object, object>)JavaDelegates.FromMethod(Method((java.lang.Class)typeof(org.apache.calcite.runtime.Matcher), "matchOne", (java.lang.Class)typeof(org.apache.calcite.linq4j.MemoryFactory.Memory), PartitionState, (java.lang.Class)typeof(java.util.function.Consumer)));
+
+            /// <summary>
+            /// <c>PartialMatch.rows</c>.
+            /// </summary>
+            public static readonly IKVM.Runtime.MH<object, object> Rows =
+                (IKVM.Runtime.MH<object, object>)JavaDelegates.FromGetter(Field(PartialMatch, "rows"));
+
+            /// <summary>
+            /// <c>PartialMatch.symbols</c>.
+            /// </summary>
+            public static readonly IKVM.Runtime.MH<object, object> Symbols =
+                (IKVM.Runtime.MH<object, object>)JavaDelegates.FromGetter(Field(PartialMatch, "symbols"));
+
+        }
+
+        /// <summary>
+        /// The cursor of <see cref="Match{TSource, TKey, TResult}"/>.
+        /// </summary>
+        sealed class MatchCursor<TSource, TKey, TResult> : ClrCursor<TResult>
+        {
+
+            readonly IClrCursor<TSource> source;
+            readonly Func<TSource, TKey> keySelector;
+            readonly org.apache.calcite.runtime.Matcher matcher;
+            readonly org.apache.calcite.runtime.Enumerables.Emitter emitter;
+            readonly int history;
+            readonly int future;
+
+            // the state of each partition, in a java.util.HashMap because the key is a Calcite value and its
+            // equality is Java's
+            readonly java.util.HashMap partitionStates = new();
+
+            // the rows the matches completed so far produced and nothing has read yet, in the ArrayDeque
+            // Calcite queues them in
+            readonly java.util.ArrayDeque emitRows = new();
+
+            readonly java.util.function.Consumer emitRowsAdd;
+            readonly java.util.function.Consumer onMatch;
+
+            int inputRow = -1;
+
+            // Oracle numbers matches from 1
+            int matchCounter = 1;
+
+            TResult current = default!;
+
+            /// <summary>
+            /// Initializes a new instance.
+            /// </summary>
+            public MatchCursor(
+                IClrCursor<TSource> source,
+                Func<TSource, TKey> keySelector,
+                org.apache.calcite.runtime.Matcher matcher,
+                org.apache.calcite.runtime.Enumerables.Emitter emitter,
+                int history,
+                int future)
+            {
+                this.source = source;
+                this.keySelector = keySelector;
+                this.matcher = matcher;
+                this.emitter = emitter;
+                this.history = history;
+                this.future = future;
+
+                emitRowsAdd = new DelegateConsumer(row => emitRows.add(row));
+                onMatch = new DelegateConsumer(OnMatch);
+            }
+
+            /// <inheritdoc />
+            public override TResult Current => current;
+
+            /// <summary>
+            /// What <c>Enumerables.match</c> passes <c>matchOne</c> as its consumer: each match is emitted, with
+            /// the next number, into the queue. The row states are null, as they are there.
+            /// </summary>
+            /// <param name="match"></param>
+            void OnMatch(object match)
+            {
+                emitter.emit((java.util.List)MatcherMembers.Rows(match), null, (java.util.List)MatcherMembers.Symbols(match), matchCounter++, emitRowsAdd);
+            }
+
+            /// <summary>
+            /// Hands back a queued row, if there is one.
+            /// </summary>
+            /// <returns></returns>
+            bool Poll()
+            {
+                var row = emitRows.pollFirst();
+                if (row == null)
+                    return false;
+
+                current = JavaValues.As<TResult>(row);
+                return true;
+            }
+
+            /// <summary>
+            /// Feeds one input row to its partition, queueing whatever matches it completes.
+            /// </summary>
+            /// <param name="row"></param>
+            void Feed(TSource row)
+            {
+                ++inputRow;
+
+                var key = JavaValues.From(keySelector(row));
+
+                // computeIfAbsent, which a map of non-null values answers the same way as a get and a put
+                var partitionState = partitionStates.get(key);
+                if (partitionState == null)
+                {
+                    partitionState = MatcherMembers.CreatePartitionState(matcher, history, future);
+                    partitionStates.put(key, partitionState);
+                }
+
+                ((org.apache.calcite.linq4j.MemoryFactory)MatcherMembers.GetMemoryFactory(partitionState)).add(JavaValues.From(row));
+                MatcherMembers.MatchOne(matcher, MatcherMembers.GetRows(partitionState), partitionState, onMatch);
+            }
+
+            /// <inheritdoc />
+            public override bool Read()
+            {
+                for (; ; )
+                {
+                    if (Poll())
+                        return true;
+
+                    // no rows are ready to emit: read the next input row, and see whether it completes a match
+                    if (source.Read() == false)
+                        return false;
+
+                    Feed(source.Current);
+                }
+            }
+
+            /// <inheritdoc />
+            public override async ValueTask<bool> ReadAsync(CancellationToken cancellationToken)
+            {
+                for (; ; )
+                {
+                    if (Poll())
+                        return true;
+
+                    if (await source.ReadAsync(cancellationToken).ConfigureAwait(false) == false)
+                        return false;
+
+                    Feed(source.Current);
+                }
+            }
+
+            /// <inheritdoc />
+            public override void Dispose() => source.Dispose();
+
+            /// <inheritdoc />
+            public override ValueTask DisposeAsync() => source.DisposeAsync();
+
+        }
+
+        /// <summary>
+        /// A <see cref="java.util.function.Consumer"/> over a delegate: what Calcite writes as a method
+        /// reference or a lambda where a match is handed on.
+        /// </summary>
+        sealed class DelegateConsumer(Action<object> action) : java.util.function.Consumer
+        {
+
+            /// <inheritdoc />
+            public void accept(object t) => action(t);
+
+            // C# does not inherit the defaults of an interface IKVM compiled, so the one there is is forwarded
+
+            /// <inheritdoc />
+            public java.util.function.Consumer andThen(java.util.function.Consumer after) => java.util.function.Consumer.__DefaultMethods.andThen(this, after);
+
+        }
+
+
     }
 
 }

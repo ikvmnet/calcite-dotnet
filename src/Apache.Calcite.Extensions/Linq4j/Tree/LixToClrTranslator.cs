@@ -400,7 +400,13 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             {
                 case nameof(J.GotoExpressionKind.Sequence):
                     // linq4j represents an expression statement as a Sequence goto
-                    return statement.expression == null ? Expression.Empty() : Void(Visit(statement.expression));
+                    if (statement.expression == null)
+                        return Expression.Empty();
+
+                    if (IsStatementExpression(statement.expression) == false)
+                        throw new NotSupportedException($"'{statement.expression}' is not allowed as an expression statement: Java takes an assignment, an increment or decrement, a method invocation or an object allocation there, and Janino refuses anything else.");
+
+                    return Void(Visit(statement.expression));
 
                 case nameof(J.GotoExpressionKind.Return):
                     if (frames.Count == 0)
@@ -430,6 +436,33 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 default:
                     throw new NotSupportedException($"Cannot translate a {statement.kind.name()}.");
             }
+        }
+
+        /// <summary>
+        /// Returns whether Java allows an expression to stand as a statement.
+        /// </summary>
+        /// <param name="expression"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// An expression tree evaluates anything as a statement and discards the value; Java takes only an
+        /// assignment, an increment or decrement, a method invocation or a class instance creation, and Janino
+        /// refuses the rest. linq4j produces the rest without meaning to: <c>BlockBuilder.append</c> turns a
+        /// trailing <c>return expr;</c> into <c>expr;</c> whenever anything is appended after it, which is
+        /// harmless for a call and fatal for a comparison. <c>EnumerableMatch</c> is where it shows — every
+        /// pattern definition's condition goes into one builder, so a second definition leaves the first one's
+        /// comparison standing as a statement, and Calcite refuses the query. Accepting it here would answer a
+        /// query Calcite cannot.
+        /// </remarks>
+        static bool IsStatementExpression(J.Expression expression)
+        {
+            return expression switch
+            {
+                J.MethodCallExpression => true,
+                J.NewExpression => true,
+                J.BinaryExpression e => e.getNodeType().name().EndsWith("Assign", StringComparison.Ordinal),
+                J.UnaryExpression e => e.getNodeType().name().EndsWith("Assign", StringComparison.Ordinal),
+                _ => false,
+            };
         }
 
         /// <summary>

@@ -166,14 +166,6 @@ pushed in its place.
 
 This is one instance of a general hole — see §7.
 
-### 6. `MATCH_RECOGNIZE` over an ADO table cannot be implemented at all
-
-`SELECT * FROM (SELECT EMPNO, SALARY FROM ADO.EMPS) MATCH_RECOGNIZE (…)` plans to an `EnumerableMatch` over
-`AdoToEnumerableConverter` and then fails: *"Unable to implement EnumerableMatch … AdoToEnumerableConverter"*.
-So the operator is unreachable over this adapter today by either route. `RelToSqlConverter.visit(Match)`
-writes the clause, and Oracle and SQL Server 2022 have it. Whether that is worth a node is a separate
-question from the fact that the query currently has no plan; the failure should at least be understood.
-
 ### 7. Nothing checks whether the target has the function or the type
 
 `SqlDialect.supportsFunction(SqlOperator, RelDataType, List<RelDataType>)` and

@@ -124,6 +124,29 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
+        /// MATCH_RECOGNIZE over an ADO table, through <c>ClrCursorMatch</c> over the adapter's own converter.
+        /// </summary>
+        /// <remarks>
+        /// Under Calcite's node this had no plan: <c>EnumerableMatch</c> over <c>AdoToEnumerableConverter</c>
+        /// failed to implement. The adapter's rows are <c>ARRAY</c>, so the measures row is too, and
+        /// <c>EnumerableMatch</c> builds it with <c>new</c> on its class — which only one <c>VARCHAR</c>
+        /// measure, a <c>String</c>, survives.
+        ///
+        /// <para>The rows are Calcite's answer rather than SQL's, and there is no <c>EnumerableMatch</c> over an
+        /// adapter to compare against, so the oracle is
+        /// <c>ClrCursorConventionDifferentialTests.ShouldAgreeOnMatchRecognizeOverANull</c>, which holds the same
+        /// five rows as <c>VALUES</c> against Calcite's node: four matches, where SQL would give two.</para>
+        /// </remarks>
+        [Fact]
+        public void ShouldRecognizeAPatternOverAnAdoTable()
+        {
+            const string sql = "SELECT * FROM (SELECT empno, name, salary FROM ADO.emps) MATCH_RECOGNIZE (ORDER BY empno MEASURES STRT.name AS n PATTERN (STRT UP) DEFINE UP AS UP.salary > PREV(UP.salary))";
+
+            Assert.Contains("ClrCursorMatch", Explain(_connection, sql));
+            Rows(_connection, sql).Should().Equal("Alice", "Bob", "Bob", "Carol");
+        }
+
+        /// <summary>
         /// A join the adapter can push down leaves the adapter once rather than reading each table separately
         /// and joining in memory.
         /// </summary>

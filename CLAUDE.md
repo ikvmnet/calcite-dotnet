@@ -97,8 +97,11 @@ version present; the POMs do not show it.
   `PhysTypeImplWorkaround`). A package-private *type* that Calcite casts to cannot be replaced by a lookalike
   class, but the real one can be constructed the same way, through a delegate over its constructor
   (`EnumerableMatchInputGetterTests`). A rename upstream then fails at run time, not at compile time.
-- **MATCH_RECOGNIZE has no node in this convention yet**; the planner leaves the subtree in
-  `EnumerableConvention` under a converter. Nothing prevents writing one.
+- **`ClrCursorMatch` builds its input getters, `setIndex` and `RexToLixTranslator.translate(RexNode)` that way**,
+  and its operator reaches `Matcher.matchOne` (protected) and the package-private `PartitionState` and
+  `PartialMatch` through delegates, their fields through `JavaDelegates.FromGetter`. It refuses a measures row
+  whose class has no no-argument constructor in `Implement`, because the row's format is not known until the
+  input is implemented, and Calcite fails at the same point.
 - **Metadata handlers are keyed by rel class.** Anything Calcite keys on an `Enumerable*` class needs the same
   handler keyed on the `ClrCursor*` class in `ClrCursorRelMetadata.Provider`, or an override on the node.
 - **`Rules()` goes on the planner; `CalcRules()` is a separate hep pass afterwards.** Calc and project rules on
@@ -119,6 +122,11 @@ version present; the POMs do not show it.
 - Java resolves names lexically, and Calcite's generators reuse names on purpose (`_input`, `row_`): a lambda
   parameter hides an outer variable of the same name, before anything already bound.
 - A sub-plan spliced into another implementor's tree shares that implementor's translator.
+- Java allows only an assignment, an increment or decrement, a method call or an object creation as an
+  expression statement, and `LixToClrTranslator` refuses anything else, as Janino does. linq4j produces the rest
+  without meaning to: `BlockBuilder.append` turns a trailing `return expr;` into `expr;`. `EnumerableMatch` puts
+  every `DEFINE` into one builder, so a second definition leaves the first one's comparison as a statement and
+  Calcite refuses the query, unless the first condition translated to a call.
 - A converter rule must simplify the trait set it copies, as `RelOptRule.convert` does, or it claims a
   collation its input does not keep.
 
