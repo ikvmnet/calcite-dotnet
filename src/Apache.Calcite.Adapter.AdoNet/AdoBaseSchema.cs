@@ -9,13 +9,12 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Base class for Calcite <see cref="Schema"/> implementations backed by an ADO.NET data source.
+    /// Base class for the adapter's Calcite schemas.
     /// </summary>
     /// <remarks>
-    /// Provides default implementations of the Calcite <see cref="Schema"/> interface that delegate
-    /// table and sub-schema resolution to the abstract <see cref="tables"/> and <see cref="subSchemas"/>
-    /// lookups. Concrete types such as <see cref="AdoSchema"/> and <see cref="AdoDatabaseSchema"/>
-    /// supply those lookups from an <see cref="AdoDataSource"/>.
+    /// Table and sub-schema resolution goes through the <see cref="tables"/> and <see cref="subSchemas"/>
+    /// lookups a derived class supplies. The schema declares no types and no functions, is not mutable, and
+    /// returns itself as its snapshot.
     /// </remarks>
     public abstract class AdoBaseSchema : Schema
     {

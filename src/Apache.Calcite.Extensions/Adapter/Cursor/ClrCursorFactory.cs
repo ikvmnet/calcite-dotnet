@@ -15,27 +15,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <see cref="DataContext"/>.
     /// </summary>
     /// <remarks>
-    /// What <see cref="ClrCursorRelImplementor.ImplementRoot"/> produces, and the counterpart of the
-    /// <c>Bindable</c> Calcite's Janino-generated class is: one object per prepared statement, re-openable,
-    /// holding the plan and nothing about any execution of it.
+    /// Produced by <see cref="ClrCursorRelImplementor.ImplementRoot"/>; the counterpart of the <c>Bindable</c>
+    /// that Calcite's generated class implements. It holds the plan and no execution state, so one instance
+    /// serves every execution of a prepared statement and can be opened any number of times.
     ///
-    /// <para><b>Two opens, one cursor.</b> <see cref="Open"/> runs the plan's acquisition synchronously —
-    /// a sort drains its input, a leaf executes its statement, on the calling thread — and
-    /// <see cref="OpenAsync"/> awaits the same acquisition. What either hands back is a
-    /// <see cref="ClrCursor"/> with both <see cref="ClrCursor.Read"/> and
-    /// <see cref="ClrCursor.ReadAsync"/> over one position, so a caller chooses how to open and then
-    /// chooses again, on every advance, how to read. <c>DbCommand.ExecuteReader</c> is
-    /// <see cref="Open"/>, <c>ExecuteReaderAsync(token)</c> is <see cref="OpenAsync"/>, and the reader's two
-    /// advances are the cursor's.</para>
+    /// <para><see cref="Open"/> runs the plan's acquisition on the calling thread (a sort drains its input, a
+    /// leaf executes its statement) and <see cref="OpenAsync"/> awaits the same acquisition. Either returns a
+    /// cursor offering both <see cref="ClrCursor.Read"/> and <see cref="ClrCursor.ReadAsync"/> over one
+    /// position, so the caller chooses how to open and then, on each advance, how to read.</para>
     ///
-    /// <para>It is the <see cref="IClrCursorFactory"/> a prepared statement carries: the counterpart
-    /// of the <c>Bindable</c> Calcite's generated class is, produced at the same point.</para>
-    ///
-    /// <para><b>Each open is compiled the first time it is called</b>, and not before. The implementor
-    /// builds both trees when it implements the root, because both are the plan; compiling is JIT work
-    /// that a caller who only ever opens one way should not pay for the other. The two are compiled
-    /// independently and at most once each, because a factory is shared by every execution of its
-    /// statement.</para>
+    /// <para>Each open is compiled on its first call, so a caller that opens only one way does not pay to
+    /// compile the other.</para>
     /// </remarks>
     public sealed class ClrCursorFactory : IClrCursorFactory
     {
@@ -54,8 +44,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <param name="openAsync">The plan as an open that awaits its acquisition.</param>
         /// <param name="elementType">The CLR type of one row.</param>
         /// <remarks>
-        /// Internal, so that <see cref="ClrCursorRelImplementor.ImplementRoot"/> is the only way of
-        /// making one: that is where the two trees are required to be two opens of one plan.
+        /// Instances are created by <see cref="ClrCursorRelImplementor.ImplementRoot"/>, which builds both opens
+        /// from one plan.
         /// </remarks>
         internal ClrCursorFactory(
             Expression<Func<DataContext, IClrCursor>> open,
@@ -68,16 +58,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Gets the plan as an open that acquires synchronously, before it is compiled.
+        /// Gets the uncompiled expression tree of the open that acquires synchronously.
         /// </summary>
         /// <remarks>
-        /// The tree, so that a caller can read what the plan is made of — which operators it names, and
-        /// that every one of them is a synchronous open — where a compiled delegate says nothing.
+        /// Exposes the operators the plan calls, for inspection.
         /// </remarks>
         public Expression<Func<DataContext, IClrCursor>> OpenExpression => open;
 
         /// <summary>
-        /// Gets the plan as an open that awaits its acquisition, before it is compiled.
+        /// Gets the uncompiled expression tree of the open that awaits its acquisition.
         /// </summary>
         public Expression<Func<DataContext, CancellationToken, ValueTask<IClrCursor>>> OpenAsyncExpression => openAsync;
 
@@ -85,9 +74,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// Gets the CLR type of one row.
         /// </summary>
         /// <remarks>
-        /// The counterpart of <c>Typed.getElementType</c>, and what <c>Meta.CursorFactory.deduce</c> is
-        /// given; the same answer whichever way the plan is opened, because what a row is does not depend on
-        /// how it was waited for.
+        /// The counterpart of <c>Typed.getElementType</c>. It is the same whichever way the plan is opened.
         /// </remarks>
         public Type ElementType => elementType;
 
@@ -97,10 +84,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <param name="root">The context the query reads its schema, parameters and stashed values
         /// from.</param>
         /// <returns>The cursor, positioned before the first row.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="root"/> is null.</exception>
         /// <remarks>
-        /// <c>Bindable.bind</c> followed by <c>enumerator()</c>: obtaining the cursor runs the plan, and
-        /// reading rows is what comes after. A leaf that can only acquire asynchronously blocks here for
-        /// that acquisition; nothing above it does.
+        /// The counterpart of <c>Bindable.bind</c> followed by <c>enumerator()</c>: the plan's acquisition runs
+        /// here, before the first row is read. A leaf that can only acquire asynchronously blocks the calling
+        /// thread for that acquisition.
         /// </remarks>
         public IClrCursor Open(DataContext root)
         {
@@ -114,9 +102,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// </summary>
         /// <param name="root">The context the query reads its schema, parameters and stashed values
         /// from.</param>
-        /// <param name="cancellationToken">The token for the acquisition. It is this open's and not the
-        /// cursor's: each advance takes its own.</param>
+        /// <param name="cancellationToken">The token for the acquisition only; each
+        /// <see cref="ClrCursor.ReadAsync"/> takes its own.</param>
         /// <returns>The cursor, positioned before the first row.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="root"/> is null.</exception>
         public ValueTask<IClrCursor> OpenAsync(DataContext root, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(root);

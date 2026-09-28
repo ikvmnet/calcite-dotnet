@@ -20,12 +20,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Cancellation through a cursor: the open's token reaches the leaf, and each advance's token reaches
-    /// the advance.
+    /// Tests cancellation of a cursor plan: the token given to the open reaches the leaf, and the token given
+    /// to each advance cancels that advance.
     /// </summary>
     /// <remarks>
-    /// A cursor takes a token at the open and at every advance, so nothing here goes through the
-    /// <c>DataContext</c>: the token is an argument.
+    /// A cursor takes a token as an argument at the open and at every advance; none is passed through the
+    /// <c>DataContext</c>.
     /// </remarks>
     public class ClrCursorConventionCancellationTests
     {
@@ -118,6 +118,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Opens with the token and reads every row under it, cancelling at the row the caller names.
         /// </summary>
+        /// <param name="factory">The implemented plan.</param>
+        /// <param name="context">The context to open the plan with.</param>
+        /// <param name="cancellation">The source whose token is given to the open and to every advance, and which is
+        /// cancelled once <paramref name="cancelAt"/> rows have been read.</param>
+        /// <param name="cancelAt">The number of rows to read before cancelling.</param>
+        /// <returns>Whether reading ended in an <see cref="OperationCanceledException"/>, and how many rows were read.</returns>
         static async Task<(bool Cancelled, int Read)> ReadUntilCancelled(ClrCursorFactory factory, DataContext context, CancellationTokenSource cancellation, int cancelAt)
         {
             var read = 0;
@@ -157,9 +163,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             using var cancellation = new CancellationTokenSource();
 
-            // cancelled at a known point in the input rather than after a delay, so that the sort is
-            // certainly still reading when it happens -- and the sort drains inside the open, so it is
-            // the open that is cancelled
+            // cancelled at a known row of the input rather than after a delay, so the sort is still reading
+            // when it happens; the sort drains its input inside the open, so the open is what is cancelled
             leaf.OnRow = n => { if (n == 50) cancellation.Cancel(); };
 
             var (cancelled, _) = await ReadUntilCancelled(factory, context, cancellation, int.MaxValue);
@@ -204,8 +209,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         {
             var (factory, context, leaf) = PlanAny("SELECT MIN(V), MAX(V), SUM(V) FROM ANYS", 5_000);
 
-            // the aggregate folds inside its awaiting open, as Calcite's folds once at bind: the open is
-            // what suspends, and the one row is in hand by the time the cursor is
+            // the aggregate folds its whole input inside the awaiting open, so the open is what suspends and the
+            // result row exists before the cursor is returned
             var opening = factory.OpenAsync(context, CancellationToken.None);
             opening.IsCompleted.Should().BeFalse("a fold over a leaf that suspends per row cannot finish synchronously");
 
@@ -242,6 +247,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// The open's token is the leaf's for the whole read, so cancelling it stops an advance given no
         /// token of its own.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldCancelFromTheOpensToken()
         {
@@ -265,6 +271,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A cursor opened with no token is still cancelled by the token given to an advance.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldCancelFromAnAdvancesToken()
         {

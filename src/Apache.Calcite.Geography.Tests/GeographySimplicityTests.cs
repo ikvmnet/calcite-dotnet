@@ -14,14 +14,13 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// Whether a geography touches itself, which is a question about where its edges go — and its edges are
-    /// geodesics.
+    /// Tests <c>CLR_ST_GEOG_ISSIMPLE</c> and <c>CLR_ST_GEOG_ISRING</c>, which test for self-intersection along
+    /// geodesic edges.
     /// </summary>
     /// <remarks>
-    /// This joins <c>CLR_ST_GEOG_ISVALID</c>, which was here from the first increment. The rule is JTS's: a point
-    /// is simple, a set of points is simple when none repeats, a line is simple when no two of its edges meet
-    /// except where they are joined, an area is simple because its self-intersections are a question of
-    /// validity instead, and a collection is simple when its parts are.
+    /// The rules are JTS's: a point is simple; a multi-point is simple when no point repeats; a line is simple
+    /// when no two edges meet except where they join; a polygon is simple, its self-intersection being a
+    /// matter of validity; and a collection is simple when its parts are.
     /// </remarks>
     public class GeographySimplicityTests
     {
@@ -42,18 +41,14 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The one that separates the two readings: a line simple on the map and not on the Earth.
+        /// A line that is simple in the plane crosses itself along geodesic edges.
         /// </summary>
         /// <remarks>
-        /// The first edge runs sixty degrees of longitude along the 60th parallel, and a geodesic between two
-        /// points on a parallel bows poleward — this one to 63.4 degrees at its middle. The last edge is drawn
-        /// at latitude 62 but spans only twenty-five degrees, so it bows to 62.6 and stays under the first
-        /// edge's peak while sitting above its ends. They therefore cross. On a plane they are two horizontal
-        /// segments two degrees apart and never meet, so Calcite calls the line simple.
-        ///
-        /// <para>How much an edge bows is <c>atan(tan φ / cos(Δλ/2))</c>, which grows with the span. It is the
-        /// difference in span rather than the difference in latitude that puts one edge over the other: two
-        /// edges spanning the same longitude bow alike however far apart their parallels are.</para>
+        /// The first edge spans sixty degrees of longitude on the 60th parallel and as a geodesic reaches 63.4
+        /// degrees at its middle. The last edge, on the 62nd parallel, spans twenty-five degrees and reaches
+        /// only 62.6, so it lies below the first edge's peak and above its ends, and the two cross. On a plane
+        /// they are parallel segments two degrees apart, so Calcite calls the line simple. A geodesic between
+        /// two points at latitude φ peaks at <c>atan(tan φ / cos(Δλ/2))</c>.
         /// </remarks>
         [Fact]
         public void ShouldSeeACrossingThatOnlyExistsOnTheEarth()
@@ -65,7 +60,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// An ordinary self-crossing line is not simple either way.
+        /// A self-crossing line is not simple in either reading.
         /// </summary>
         [Fact]
         public void ShouldSeeAnOrdinaryCrossing()
@@ -75,7 +70,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A line that does not touch itself is simple, and so is one that closes.
+        /// A line that does not touch itself is simple, closed or not.
         /// </summary>
         [Fact]
         public void ShouldAcceptALineAndARing()
@@ -85,7 +80,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A vertex reached twice is a touch, save for the one that closes a ring.
+        /// A repeated vertex, other than the one closing a ring, makes a line or multi-point not simple.
         /// </summary>
         [Fact]
         public void ShouldRefuseARepeatedVertex()
@@ -96,7 +91,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A point is simple, and so is an area whatever it does to itself.
+        /// A point and a polygon are simple.
         /// </summary>
         [Fact]
         public void ShouldCallAPointAndAnAreaSimple()
@@ -118,7 +113,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A ring whose edges cross on the Earth is not a ring here either.
+        /// A closed line whose geodesic edges cross is not a ring, though its planar edges do not cross.
         /// </summary>
         [Fact]
         public void ShouldRefuseARingThatCrossesOnlyOnTheEarth()

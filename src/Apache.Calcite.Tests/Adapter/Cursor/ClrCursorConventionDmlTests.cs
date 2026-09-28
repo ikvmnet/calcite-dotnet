@@ -13,9 +13,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
     /// Statements that modify a table, run over a connection whose plans are compiled by this convention.
     /// </summary>
     /// <remarks>
-    /// This convention has no table-modification node. It does not need one: its planner keeps Calcite's own
-    /// rules, so the modification is implemented in <c>EnumerableConvention</c> and a converter carries it.
-    /// These tests are what says that fallback actually runs, rather than merely being reachable on paper.
+    /// This convention has no table-modification node. Its planner keeps Calcite's own rules, so the
+    /// modification is implemented in <c>EnumerableConvention</c> and a converter carries its result into this
+    /// convention. These tests check that the combination executes.
     /// </remarks>
     public class ClrCursorConventionDmlTests
     {
@@ -37,7 +37,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Opens a connection that plans into this convention.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>An open connection, which the caller disposes.</returns>
         static CalciteConnection Open()
         {
             var c = new CalciteConnection(ServerDdl);

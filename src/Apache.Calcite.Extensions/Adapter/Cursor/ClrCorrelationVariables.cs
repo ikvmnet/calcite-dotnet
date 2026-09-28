@@ -11,9 +11,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// Finds the correlation variables a sub-plan reads, with the row type of each.
     /// </summary>
     /// <remarks>
-    /// <c>RelOptUtil.getVariablesUsed</c> answers the names; the type is what a converter out of a Clr
-    /// convention needs as well, to build the physical type the sub-plan reads the outer row through, and
-    /// every <see cref="RexCorrelVariable"/> carries it.
+    /// <c>RelOptUtil.getVariablesUsed</c> answers only the names; a converter out of this convention also needs
+    /// each variable's type to build the physical type the sub-plan reads the outer row through.
     /// </remarks>
     static class ClrCorrelationVariables
     {
@@ -21,8 +20,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Returns the correlation variables referenced anywhere under a node, in the order first met.
         /// </summary>
-        /// <param name="rel"></param>
-        /// <returns></returns>
+        /// <param name="rel">The root of the sub-plan.</param>
+        /// <returns>Each distinct variable's name and row type.</returns>
         public static IReadOnlyList<(string Name, RelDataType Type)> Used(RelNode rel)
         {
             var collector = new Collector();

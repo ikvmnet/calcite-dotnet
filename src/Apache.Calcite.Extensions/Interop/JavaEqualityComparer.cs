@@ -9,12 +9,12 @@ namespace Apache.Calcite.Extensions.Interop
     /// <summary>
     /// An <see cref="IEqualityComparer{T}"/> over a linq4j <see cref="EqualityComparer"/>.
     /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <param name="comparer"></param>
+    /// <typeparam name="T">The type compared.</typeparam>
+    /// <param name="comparer">The linq4j comparer.</param>
     /// <remarks>
-    /// A row of <c>JavaRowFormat.ARRAY</c> is an array, whose own equality is by reference, so a set operation
-    /// over one needs to be told how to compare. <c>PhysType.comparer</c> is what says so, and what it returns
-    /// is Calcite's own comparer for that format.
+    /// Used where an operator needs the comparer <c>PhysType.comparer</c> returns, which is how rows of
+    /// <c>JavaRowFormat.ARRAY</c>, whose own equality is by reference, are compared by value. Two nulls are
+    /// equal and a null is unequal to any other value, without consulting the comparer.
     /// </remarks>
     sealed class JavaEqualityComparer<T>(EqualityComparer comparer) : IEqualityComparer<T>
     {
@@ -37,10 +37,11 @@ namespace Apache.Calcite.Extensions.Interop
         }
 
         /// <summary>
-        /// Returns a comparer over <paramref name="comparer"/>, or the default one when there is none.
+        /// Returns a comparer over <paramref name="comparer"/>, or <see cref="EqualityComparer{T}.Default"/>
+        /// when it is <see langword="null"/>.
         /// </summary>
-        /// <param name="comparer"></param>
-        /// <returns></returns>
+        /// <param name="comparer">The linq4j comparer, or <see langword="null"/> for default equality.</param>
+        /// <returns>A CLR comparer that answers equality and hash codes through <paramref name="comparer"/>.</returns>
         public static IEqualityComparer<T> Of(EqualityComparer? comparer)
         {
             return comparer == null ? EqualityComparer<T>.Default : new JavaEqualityComparer<T>(comparer);

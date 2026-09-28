@@ -10,18 +10,10 @@ namespace Apache.Calcite.FullText.Schema
     /// One parameter of a <see cref="FullTextSchemaFunction"/>.
     /// </summary>
     /// <remarks>
-    /// <para>The type is the one <see cref="FullTextOperandTypeChecker.TypeOf"/> gives the position, and that
-    /// is the whole of what keeps the two routes agreeing. <c>CalciteCatalogReader.toOp</c> builds a schema
-    /// function's operand checker from its declared parameter types, mapping each to
-    /// <c>getSqlTypeName().getFamily()</c> — so declaring the type whose family the operator's own checker
-    /// looks for makes the derived checker accept what the operator accepts, rather than leaving the two to
-    /// be kept in step by hand.</para>
-    ///
-    /// <para>A searched position is <c>ANY</c>, which a schema function may declare and a geography may not:
-    /// <c>SqlTypeAssignmentRule</c> has an entry for <c>ANY</c>, and routine resolution reaches that table
-    /// through <c>SqlUtil.filterRoutinesByParameterTypeAndName</c>. <c>OTHER</c> has no entry, which is why
-    /// <c>Apache.Calcite.Geography</c> had to give up a distinct <c>GEOGRAPHY</c> type to be registerable on
-    /// a schema at all.</para>
+    /// The type is <see cref="FullTextOperandTypeChecker.TypeOf"/> for the position. <c>CalciteCatalogReader.toOp</c>
+    /// builds a schema function's operand checker from the families of its declared parameter types, so
+    /// declaring a type in the family the operator's own checker requires makes both routes accept the same
+    /// operands.
     /// </remarks>
     public sealed class FullTextSchemaFunctionParameter : FunctionParameter
     {
@@ -32,7 +24,7 @@ namespace Apache.Calcite.FullText.Schema
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="ordinal">The parameter's position.</param>
+        /// <param name="ordinal">The parameter's zero-based position.</param>
         /// <param name="operand">What the position takes.</param>
         public FullTextSchemaFunctionParameter(int ordinal, FullTextOperand operand)
         {
@@ -46,7 +38,11 @@ namespace Apache.Calcite.FullText.Schema
             return ordinal;
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns the parameter's name: <c>SEARCHED</c> for the searched operand, <c>SCORE</c> followed by the
+        /// ordinal for a score, and <c>KEYWORD</c> followed by the ordinal for any other position.
+        /// </summary>
+        /// <returns>The name.</returns>
         public string getName()
         {
             return operand switch
@@ -64,14 +60,12 @@ namespace Apache.Calcite.FullText.Schema
         }
 
         /// <summary>
-        /// Returns <c>false</c>: a declaration takes exactly the operands it names.
+        /// Returns <c>false</c>: every parameter is required.
         /// </summary>
         /// <remarks>
-        /// This is what stops the <c>DEFAULT</c> padding. <c>SqlCallBinding.operands</c> pads a call out to
-        /// the whole parameter list where there is room under the count range, the position is optional, and
-        /// the checker's parameters are fixed — and no store has a rendering for <c>DEFAULT</c>. One
-        /// declaration per arity with every parameter required is what
-        /// <see cref="FullTextSchema.VariadicOperandLimit"/> exists to make possible.
+        /// Calcite pads a call with <c>DEFAULT</c> for an omitted optional parameter, and no store can render
+        /// <c>DEFAULT</c>. Variable arity is provided by declaring one function per arity instead (see
+        /// <see cref="FullTextSchema.VariadicOperandLimit"/>).
         /// </remarks>
         /// <returns><c>false</c>.</returns>
         public bool isOptional()

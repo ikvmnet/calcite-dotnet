@@ -13,8 +13,13 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Queryable implementation across an entire <see cref="AdoTable"/>.
+    /// A linq4j queryable over every row of an <see cref="AdoTable"/>, returned by
+    /// <see cref="AdoTable.asQueryable"/>.
     /// </summary>
+    /// <remarks>
+    /// Enumerating it runs <c>SELECT *</c> against the table and yields each row as an <c>object[]</c>. The query
+    /// provider must be a <see cref="CalciteConnection"/>, whose type factory types the rows.
+    /// </remarks>
     public class AdoTableQueryable : AbstractTableQueryable
     {
 
@@ -23,10 +28,11 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="adoTable"></param>
-        /// <param name="queryProvider"></param>
-        /// <param name="schema"></param>
-        /// <param name="tableName"></param>
+        /// <param name="adoTable">The table.</param>
+        /// <param name="queryProvider">The query provider, a <see cref="CalciteConnection"/>.</param>
+        /// <param name="schema">The schema the table is registered in.</param>
+        /// <param name="tableName">The name the table is registered under.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="adoTable"/> is <see langword="null"/>.</exception>
         public AdoTableQueryable(AdoTable adoTable, QueryProvider queryProvider, SchemaPlus schema, string tableName) :
             base(queryProvider, schema, adoTable, tableName)
         {
@@ -34,11 +40,14 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Gets the ADO table being queried.
+        /// Gets the table.
         /// </summary>
         public AdoTable Table => _adoTable;
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Runs the query and returns an enumerator over its rows.
+        /// </summary>
+        /// <returns>The enumerator, which owns the connection until it is closed.</returns>
         public override Enumerator enumerator()
         {
             var typeFactory = ((CalciteConnection)queryProvider).getTypeFactory();
@@ -49,9 +58,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Generates the SQL for the queryable.
+        /// Returns <c>SELECT *</c> from the table, in the schema's dialect.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The SQL.</returns>
         SqlString GenerateSql()
         {
             var selectList = SqlNodeList.SINGLETON_STAR;

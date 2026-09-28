@@ -11,30 +11,30 @@ namespace Apache.Calcite.Tests
 {
 
     /// <summary>
-    /// A user-defined table function, which is the path of <c>TableFunctionScan</c> where the call itself
-    /// yields the sequence.
+    /// A user-defined table function returning the integers from one to a count, for tests of a
+    /// <c>TableFunctionScan</c> whose call yields the rows.
     /// </summary>
     /// <remarks>
-    /// Top level, and with the method named as Calcite looks for it, because
-    /// <c>TableFunctionImpl.create</c> finds it by name through reflection.
+    /// The method is named <c>eval</c> because <c>TableFunctionImpl.create</c> looks it up by that name through
+    /// reflection.
     /// </remarks>
     public class NumbersTableFunction
     {
 
         /// <summary>
-        /// Returns a table of the numbers from one to <paramref name="count"/>.
+        /// Returns a one-column table of the integers from one to <paramref name="count"/>.
         /// </summary>
-        /// <param name="count"></param>
-        /// <returns></returns>
+        /// <param name="count">The last number in the table.</param>
+        /// <returns>A table with one <c>INTEGER</c> column, <c>N</c>.</returns>
         public static ScannableTable eval(int count)
         {
             return new NumbersTable(count);
         }
 
         /// <summary>
-        /// The table one call yields.
+        /// The table one call returns.
         /// </summary>
-        /// <param name="count"></param>
+        /// <param name="count">The last number in the table.</param>
         sealed class NumbersTable(int count) : AbstractTable, ScannableTable
         {
 

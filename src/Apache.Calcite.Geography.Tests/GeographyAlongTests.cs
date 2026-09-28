@@ -14,12 +14,12 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// Positions taken relative to a line, and the narrowest way across a shape.
+    /// Tests <c>CLR_ST_GEOG_LOCATEALONG</c> and <c>CLR_ST_GEOG_MINIMUMDIAMETER</c>.
     /// </summary>
     /// <remarks>
-    /// Both turn on the same fact as the rest of this package: the line between two coordinates is a geodesic
-    /// and not a straight line in degrees, so a point partway along it is somewhere else, sideways is a
-    /// different direction, and the pair of parallel lines that hold a shape are great circles.
+    /// Both treat the edge between two coordinates as a geodesic rather than a straight line in degrees, so a
+    /// point partway along an edge, an offset perpendicular to it, and the width of a shape all differ from
+    /// Calcite's planar answers.
     /// </remarks>
     public class GeographyAlongTests
     {
@@ -38,9 +38,8 @@ namespace Apache.Calcite.Geography.Tests
         /// Halfway along a geodesic is not halfway along a line drawn in degrees.
         /// </summary>
         /// <remarks>
-        /// Across sixty degrees of longitude on the 60th parallel the geodesic bows to 63.4 at its middle, so
-        /// the halfway point is three and a half degrees north of where Calcite puts it. The longitude agrees
-        /// and the latitude does not, which is the bow and nothing else.
+        /// Across sixty degrees of longitude on the 60th parallel the geodesic reaches about 63.4 degrees
+        /// north at its middle, while Calcite's planar midpoint stays on the parallel. The longitudes agree.
         /// </remarks>
         [Fact]
         public void ShouldPlaceTheMidpointOnTheGeodesic()
@@ -58,7 +57,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The fraction runs from one end to the other.
+        /// A fraction of 0 is the start of the line and 1 is its end.
         /// </summary>
         [Fact]
         public void ShouldRunFromEndToEnd()
@@ -71,7 +70,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The offset is metres, to the left of the way the line is going.
+        /// The offset is in metres, positive to the left of the line's direction.
         /// </summary>
         [Fact]
         public void ShouldOffsetInMetresToTheLeft()
@@ -90,7 +89,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// One point for every segment, of every part, as Calcite answers.
+        /// The result has one point per segment of every part, as Calcite's does.
         /// </summary>
         [Fact]
         public void ShouldAnswerOnePointPerSegment()
@@ -100,12 +99,12 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A shape's width is measured between great circles, not between lines drawn in degrees.
+        /// A shape's width is measured between geodesic edges, not between lines drawn in degrees.
         /// </summary>
         /// <remarks>
-        /// The narrow way across this sliver is north to south, and its two long edges bow. A planar diameter
-        /// measures the gap between two horizontal lines and gets the full two degrees; the geodesic one is
-        /// narrower, because the southern edge bows up into the shape.
+        /// This sliver is narrowest north to south. In degrees it is two degrees wide; its long edges are
+        /// geodesics that bow north, so the southern edge bows into the shape and the geodesic width is less
+        /// than the distance between the two parallels.
         /// </remarks>
         [Fact]
         public void ShouldMeasureWidthBetweenGreatCircles()
@@ -123,7 +122,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The diameter of a square is its side, near enough.
+        /// The minimum diameter of a small square is its side, within one percent.
         /// </summary>
         [Fact]
         public void ShouldMeasureASquareAcrossItsSide()
@@ -136,7 +135,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A shape with no width has no diameter to name.
+        /// A point or a line has no width, and its minimum diameter is empty.
         /// </summary>
         [Fact]
         public void ShouldAnswerNothingForSomethingWithNoWidth()
@@ -165,7 +164,7 @@ namespace Apache.Calcite.Geography.Tests
         public void ShouldRunEachAsAnOperator()
         {
             var along = GeographyExecutionTests.Run(
-                // through the centroid, a multi-point of one being its own centre, because CLR_ST_GEOG_Y wants a point
+                // LOCATEALONG returns a multi-point and CLR_ST_GEOG_Y needs a point; the centroid of one point is itself
                 "SELECT CLR_ST_GEOG_Y(CLR_ST_GEOG_CENTROID(CLR_ST_GEOG_LOCATEALONG(CLR_ST_GEOG_GEOMFROMTEXT('LINESTRING(0 60, 60 60)'), 0.5, 0.0)))")[0][0];
             (along is java.lang.Number a ? a.doubleValue() : double.NaN).Should().BeApproximately(63.435, 0.01);
 

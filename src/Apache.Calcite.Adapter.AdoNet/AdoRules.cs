@@ -12,8 +12,12 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Rules and relational operators for the <see cref="AdoConvention"/> calling convention.
+    /// The planner rules of an <see cref="AdoConvention"/>. The counterpart of Calcite's <c>JdbcRules</c>.
     /// </summary>
+    /// <remarks>
+    /// An <see cref="AdoConvention"/> adds its rules to a planner itself, so a caller needs these only to drive a
+    /// planner some other way.
+    /// </remarks>
     public static class AdoRules
     {
 
@@ -31,8 +35,15 @@ namespace Apache.Calcite.Adapter.AdoNet
         static readonly SnapshotFactory SNAPSHOT_FACTORY = new AdoSnapshotFactory();
 
         /// <summary>
-        /// A <see cref="RelBuilderFactory"/> that creates a <see cref="RelBuilder"/> that will crate ADO relational expressions for everything.
+        /// A <see cref="RelBuilderFactory"/> whose <see cref="RelBuilder"/> creates the adapter's own nodes for every
+        /// kind of relational expression it builds. Mirrors <c>JdbcRules.JDBC_BUILDER</c>.
         /// </summary>
+        /// <remarks>
+        /// A node is created in its input's convention. Several factories do not create a node at all and throw
+        /// (exchange, sort exchange, match, snapshot, sort, table scan, values), and the filter and project
+        /// factories throw when given no correlation variables, which is the reverse of <c>JdbcRules</c>; see each
+        /// factory in <c>Apache.Calcite.Adapter.AdoNet.Rel.RelFactories</c>. Nothing in the adapter uses this.
+        /// </remarks>
         public static readonly RelBuilderFactory Builder = RelBuilder.proto(Contexts.of(
             PROJECT_FACTORY,
             FILTER_FACTORY,
@@ -48,10 +59,12 @@ namespace Apache.Calcite.Adapter.AdoNet
             SNAPSHOT_FACTORY));
 
         /// <summary>
-        /// Creates a list of rules with the given ADO convention instance.
+        /// Returns the rules for a convention: the converters out of it into <c>EnumerableConvention</c> and
+        /// <c>ClrCursorConvention</c>, and the rules that convert a join, project, filter, aggregate, sort, union,
+        /// intersect, minus and values into it.
         /// </summary>
-        /// <param name="convention"></param>
-        /// <returns></returns>
+        /// <param name="convention">The convention.</param>
+        /// <returns>The rules.</returns>
         public static IEnumerable<RelOptRule> GetRules(AdoConvention convention)
         {
             yield return AdoToEnumerableConverterRule.Create(convention);
@@ -68,11 +81,12 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Creates a list of rules with the given ADO convention instance.
+        /// Returns the rules of <see cref="GetRules(AdoConvention)"/>, each configured with the given
+        /// <see cref="RelBuilderFactory"/>.
         /// </summary>
-        /// <param name="convention"></param>
-        /// <param name="relBuilderFactory"></param>
-        /// <returns></returns>
+        /// <param name="convention">The convention.</param>
+        /// <param name="relBuilderFactory">The factory the rules build relational expressions with.</param>
+        /// <returns>The rules.</returns>
         public static IEnumerable<RelOptRule> GetRules(AdoConvention convention, RelBuilderFactory relBuilderFactory)
         {
             yield return AdoToEnumerableConverterRule.Create(convention).config.withRelBuilderFactory(relBuilderFactory).toRule();

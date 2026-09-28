@@ -8,7 +8,8 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Implements an enumerable that executes a statement that returns multiple records.
+    /// An <see cref="AdoEnumerable"/> that runs a query and yields its rows. Created by
+    /// <see cref="AdoEnumerable.CreateReader(AdoDataSource, string)"/> and its overloads.
     /// </summary>
     public class AdoReaderEnumerable : AdoEnumerable
     {
@@ -16,9 +17,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="sql"></param>
-        /// <param name="rowBuilderFactory"></param>
+        /// <param name="dataSource">The data source to run the query against.</param>
+        /// <param name="sql">The query.</param>
+        /// <param name="rowBuilderFactory">Makes the row builder for the reader.</param>
         internal AdoReaderEnumerable(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory) :
             base(dataSource, sql, rowBuilderFactory)
         {
@@ -28,10 +29,10 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="sql"></param>
-        /// <param name="rowBuilderFactory"></param>
-        /// <param name="dbCommandEnricher"></param>
+        /// <param name="dataSource">The data source to run the query against.</param>
+        /// <param name="sql">The query.</param>
+        /// <param name="rowBuilderFactory">Makes the row builder for the reader.</param>
+        /// <param name="dbCommandEnricher">Called with each command before it executes.</param>
         internal AdoReaderEnumerable(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory, DbCommandEnricher dbCommandEnricher) :
             base(dataSource, sql, rowBuilderFactory, dbCommandEnricher)
         {

@@ -14,19 +14,19 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// A schema holding one geography column and one geometry column, and a planner that can see Calcite's
-    /// spatial functions and this package's alongside them.
+    /// A table <c>GEO</c> with an <c>ID</c> column and two geometry columns, <c>GEOG</c> and <c>GEOM</c>, and
+    /// the operator table that resolves Calcite's spatial functions and this package's alongside them.
     /// </summary>
     /// <remarks>
-    /// The two columns are the whole of the fixture, because the property under test is that the same query
-    /// text is accepted over one and refused over the other.
+    /// Both columns have the type <see cref="GeographyTypes.Of"/> returns; the names only say how a query is
+    /// meant to read them.
     /// </remarks>
     static class GeographyFixture
     {
 
         /// <summary>
-        /// The operator table a host chains, with Calcite's spatial functions in it so that <c>ST_DISTANCE</c>
-        /// is a name that resolves at all.
+        /// Returns the standard operator table chained with Calcite's spatial functions and
+        /// <see cref="GeographyOperatorTable"/>.
         /// </summary>
         public static SqlOperatorTable OperatorTable()
         {
@@ -45,10 +45,10 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Parses and validates the given query against the fixture, and returns the type of its row.
+        /// Parses and validates a query against a root schema holding <c>GEO</c>, and returns its row type.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The query text.</param>
+        /// <returns>The validated row type.</returns>
         public static RelDataType Validate(string sql)
         {
             var schema = Frameworks.createRootSchema(true);
@@ -62,12 +62,12 @@ namespace Apache.Calcite.Geography.Tests
             var planner = Frameworks.getPlanner(config);
 
             // Pair's left and right fields are shadowed by its static methods of the same name, so C#
-            // resolves either to a method group; a Pair is a Map.Entry and getValue is the way in
+            // resolves them to method groups; Pair is a Map.Entry, so getValue reads right.
             return (RelDataType)planner.validateAndGetType(planner.parse(sql)).getValue();
         }
 
         /// <summary>
-        /// A table with a geography column and a geometry column.
+        /// The <c>GEO</c> table: <c>ID INTEGER</c>, <c>GEOG</c> and <c>GEOM</c>.
         /// </summary>
         sealed class GeographyTable : AbstractTable
         {

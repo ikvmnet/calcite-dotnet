@@ -13,24 +13,20 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
 {
 
     /// <summary>
-    /// Translates a linq4j tree into a <see cref="System.Linq.Expressions"/> tree.
+    /// Translates a linq4j expression tree into a <see cref="System.Linq.Expressions"/> tree.
     /// </summary>
     /// <remarks>
-    /// Named as Calcite names the same kind of thing. <c>RexToLixTranslator</c> translates a Rex expression
-    /// into a linq4j one and <c>LixToRelTranslator</c> goes the other way, Lix being Calcite's word for a
-    /// linq4j expression; this carries one the last step, to the tree that runs here.
+    /// Calcite's code generators (<c>RexToLixTranslator</c>, <c>RexImpTable</c>, the expression-producing
+    /// members of <c>PhysType</c>) produce linq4j trees for Janino; this translates their output so it can be
+    /// compiled as a CLR expression tree. ("Lix" is Calcite's name for a linq4j expression.)
     ///
-    /// <para>Calcite generates code as linq4j trees and hands them to Janino. Everything that generates one is
-    /// reused here rather than rewritten — <c>RexToLixTranslator</c>, <c>RexImpTable</c> and every
-    /// expression-producing member of <c>PhysType</c> — so this is the layer that has to exist for that reuse
-    /// to be possible, and the only place the two tree models are allowed to meet.</para>
+    /// <para>Most linq4j nodes map one to one. The exceptions are Java casts, which go through
+    /// <see cref="ClrEnumUtils.Convert(Expression, Type)"/> because a Java cast is not a CLR conversion; anonymous classes,
+    /// which become lambdas (see <see cref="New"/>); and variables declared part way through a block, which
+    /// are hoisted to the start of the block.</para>
     ///
-    /// <para>linq4j's model was taken from this one, so most of it is one node for one node. Three things are
-    /// not: a Java cast is not a CLR conversion (see <see cref="ClrEnumUtils.Convert"/>), an anonymous class is not
-    /// something an expression tree can declare (see <see cref="New"/>), and a variable declared part way
-    /// through a block has to be hoisted to the block that will hold it.</para>
-    ///
-    /// <para>A translator carries the scope its tree is translated in, so one is used for one tree.</para>
+    /// <para>A translator holds the variable bindings and scopes of the tree it is translating, so an instance
+    /// is used for one tree, or for trees that share variables.</para>
     /// </remarks>
     sealed class LixToClrTranslator
     {
@@ -38,50 +34,49 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// A function being translated, and the label its returns leave by.
         /// </summary>
-        /// <param name="Return"></param>
+        /// <param name="Return">The label a <c>return</c> jumps to, typed as the function's return type.</param>
         sealed record Frame(LabelTarget Return);
 
         /// <summary>
         /// A loop being translated, and the labels its breaks and continues leave by.
         /// </summary>
-        /// <param name="Break"></param>
-        /// <param name="Continue"></param>
+        /// <param name="Break">The label a <c>break</c> jumps to, after the loop.</param>
+        /// <param name="Continue">The label a <c>continue</c> jumps to.</param>
         sealed record Loop(LabelTarget Break, LabelTarget Continue);
 
-        // keyed by reference: linq4j uses one ParameterExpression object everywhere a variable is mentioned,
-        // and two variables that merely share a name are two variables
+        // keyed by reference: linq4j uses one ParameterExpression object for every mention of a variable, and
+        // two variables can share a name
         readonly Dictionary<J.ParameterExpression, ParameterExpression> variables = new(ReferenceEqualityComparer.Instance);
         readonly Stack<Frame> frames = new();
         readonly Stack<Loop> loops = new();
 
-        // Java resolves a name, and a lambda's parameter shadows anything outside it that shares one.
-        // Calcite relies on that: a generator builds part of a lambda's body against a ParameterExpression
-        // it made itself and another generator makes the lambda's parameter, both named the same thing, and
-        // the source Janino compiles says that name twice. Keyed by reference there are two variables, one
-        // of them free.
+        // the parameters of the lambdas being translated, by name. Java resolves names, so a lambda parameter
+        // hides any outer variable of the same name, and Calcite relies on that: one generator builds part of
+        // a lambda body against a ParameterExpression of its own, another creates the lambda's parameter with
+        // the same name, and in the Java source they are one variable
         readonly Stack<Dictionary<string, ParameterExpression>> scopes = new();
         readonly java.util.Map? stashed;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="internalParameters">The values passed to the executor rather than written into the
-        /// plan, or <see langword="null"/> where the caller has none.</param>
+        /// <param name="internalParameters">The implementor's internal parameters, which hold the values
+        /// stashed with <c>stash</c>, or <see langword="null"/> if there are none.</param>
         public LixToClrTranslator(java.util.Map? internalParameters = null)
         {
             stashed = internalParameters;
         }
 
         /// <summary>
-        /// Binds a linq4j variable to the one the translated tree will use for it.
+        /// Binds a linq4j variable to the CLR variable the translated tree uses for it.
         /// </summary>
-        /// <param name="parameter"></param>
-        /// <param name="target"></param>
         /// <remarks>
-        /// Every tree translated has at least one of these: <c>DataContext.ROOT</c>, which
-        /// <c>RexToLixTranslator</c> reaches for a dynamic parameter, for <c>CURRENT_TIMESTAMP</c> and for
-        /// <c>USER</c>. A tree translated against a row has that row's parameter as well.
+        /// Callers bind at least <c>DataContext.ROOT</c>, which <c>RexToLixTranslator</c> uses for dynamic
+        /// parameters, <c>CURRENT_TIMESTAMP</c> and <c>USER</c>, and the row parameter of a tree translated
+        /// against a row.
         /// </remarks>
+        /// <param name="parameter">The linq4j variable, matched by reference.</param>
+        /// <param name="target">The CLR variable or parameter every mention of <paramref name="parameter"/> translates to.</param>
         public void Bind(J.ParameterExpression parameter, ParameterExpression target)
         {
             ArgumentNullException.ThrowIfNull(parameter);
@@ -97,12 +92,12 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <returns>The translated expression.</returns>
         /// <exception cref="NotSupportedException">The node has no CLR counterpart.</exception>
         /// <remarks>
-        /// An expression is run through <c>OptimizeShuttle</c> first, which is what
-        /// <c>BlockBuilder.append</c> does to everything Calcite compiles. That pass is required rather than
-        /// cosmetic: a generator may write <c>field == null</c> against a primitive field — Janino rejects it
-        /// and the CLR would convert a null to an <c>int</c> and throw — and the shuttle folds it away.
+        /// An expression is first run through <c>OptimizeShuttle</c>, as <c>BlockBuilder.append</c> runs every
+        /// tree Calcite compiles. The trees depend on it: a generator may write <c>field == null</c> for a
+        /// primitive field, which the shuttle folds away and which would otherwise convert a null to a
+        /// primitive and throw.
         ///
-        /// <para>Statements are translated as they arrive, because a statement the shuttle removes becomes
+        /// <para>Statements are not optimized, because a statement the shuttle removes becomes
         /// <c>OptimizeShuttle.EMPTY_STATEMENT</c>, which only a <c>BlockBuilder</c> filters out.</para>
         /// </remarks>
         public Expression Translate(J.Node node)
@@ -113,16 +108,15 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// The shuttle <c>BlockBuilder</c> runs over everything Calcite compiles.
+        /// The <c>OptimizeShuttle</c> that <see cref="Translate"/> runs over an expression.
         /// </summary>
         static readonly J.Shuttle Optimizer = new J.OptimizeShuttle();
 
         /// <summary>
-        /// Translates a node, which has already been optimised.
+        /// Translates a node, without optimizing it.
         /// </summary>
-        /// <param name="node"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
+        /// <param name="node">The linq4j node.</param>
+        /// <returns>The equivalent CLR expression.</returns>
         Expression Visit(J.Node node)
         {
             ArgumentNullException.ThrowIfNull(node);
@@ -156,15 +150,16 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Translates the body of a function, whose returns leave by a label rather than by falling off the end.
+        /// Translates the body of a function, turning each <c>return</c> into a jump to a label after the
+        /// body.
         /// </summary>
-        /// <param name="body"></param>
-        /// <param name="returnType"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// A linq4j block returns from wherever it likes, and an expression tree yields the value of its last
-        /// expression, so a return becomes a jump to a label placed after the block.
+        /// A linq4j block can return from anywhere, while an expression tree block yields the value of its
+        /// last expression.
         /// </remarks>
+        /// <param name="body">The function's body.</param>
+        /// <param name="returnType">The function's CLR return type, or <see cref="void"/>.</param>
+        /// <returns>A block of <paramref name="returnType"/> ending in the return label; falling off the end yields the type's default.</returns>
         public Expression TranslateBody(J.BlockStatement body, Type returnType)
         {
             ArgumentNullException.ThrowIfNull(body);
@@ -191,34 +186,33 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Translates a node in a position that takes a statement rather than a value.
         /// </summary>
-        /// <param name="node"></param>
-        /// <returns></returns>
+        /// <param name="node">The linq4j node.</param>
+        /// <returns>The translated expression, of type <see cref="void"/>.</returns>
         Expression Statement(J.Node node)
         {
             return Void(Visit(node));
         }
 
         /// <summary>
-        /// Discards the value of an expression standing in a statement's place.
+        /// Discards the value of an expression used as a statement.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <returns></returns>
+        /// <param name="expression">The expression.</param>
+        /// <returns><paramref name="expression"/> if it is already of type <see cref="void"/>, otherwise a <see cref="void"/> block around it.</returns>
         static Expression Void(Expression expression)
         {
             return expression.Type == typeof(void) ? expression : Expression.Block(typeof(void), expression);
         }
 
         /// <summary>
-        /// Returns the variable a linq4j parameter stands for, declaring it if this is the first mention.
+        /// Returns the variable a linq4j parameter stands for, creating it on first mention.
         /// </summary>
-        /// <param name="parameter"></param>
-        /// <returns></returns>
+        /// <param name="parameter">The linq4j parameter.</param>
+        /// <returns>The lambda parameter in scope with that name, the bound variable, or a new variable of the resolved type.</returns>
         ParameterExpression Variable(J.ParameterExpression parameter)
         {
-            // by name first, innermost out, and ahead of what the object is already bound to: inside a lambda
-            // a mention of something named as one of its parameters *is* that parameter, whatever object it
-            // was built from and whatever that object means outside. Java has no way to say otherwise — the
-            // parameter shadows the outer variable and the name is all the generated source carries.
+            // lambda parameters by name first, innermost scope out, and before the reference bindings: in the
+            // Java source a lambda parameter hides every outer variable of its name, whichever object the
+            // mention was built from
             foreach (var scope in scopes)
                 if (scope.TryGetValue(parameter.name, out var shadowed))
                     return shadowed;
@@ -230,12 +224,12 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Translates the body of a lambda, with its parameters in scope by name.
+        /// Translates the body of a lambda with its parameters in scope by name.
         /// </summary>
-        /// <param name="parameters"></param>
-        /// <param name="body"></param>
-        /// <param name="returnType"></param>
-        /// <returns></returns>
+        /// <param name="parameters">The lambda's parameters, which shadow outer variables of the same names.</param>
+        /// <param name="body">The lambda's body.</param>
+        /// <param name="returnType">The lambda's CLR return type.</param>
+        /// <returns>The translated body, as <see cref="TranslateBody"/> returns it.</returns>
         Expression Scoped(ParameterExpression[] parameters, J.BlockStatement body, Type returnType)
         {
             var scope = new Dictionary<string, ParameterExpression>(parameters.Length);
@@ -255,23 +249,18 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Returns the value a stashed variable stands for, or <see langword="null"/> where the variable is
-        /// an ordinary one.
+        /// Returns a constant holding the value a stashed variable stands for, or <see langword="null"/> if the
+        /// variable is not stashed or is already bound.
         /// </summary>
-        /// <param name="parameter"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// <c>EnumerableRelImplementor.stash</c> puts an object on the internal-parameter map and returns a
-        /// variable named for it; <c>implementRoot</c> then declares that variable at the top of the method
-        /// it generates, reading the object back with <c>root.get(name)</c>. A sub-plan translated on its own
-        /// — which is what a converter hands over — never sees that declaration, so the variable arrives
-        /// free.
-        ///
-        /// <para>The object is on the map, and the map is shared with Calcite's implementor precisely so that
-        /// what one side stashes reaches the other. An expression tree can hold the object, so it does: the
-        /// same answer <c>ClrCursorRelImplementor.Stash</c> gives for a value stashed on this side.
-        /// A variable declared inside the block is not on the map and is unaffected.</para>
+        /// <c>EnumerableRelImplementor.stash</c> puts an object in the internal parameters and returns a
+        /// variable named for it, which <c>implementRoot</c> declares at the top of the generated method. A
+        /// sub-plan translated on its own, as at a converter, never sees that declaration, so the object is
+        /// looked up in the shared internal parameters and embedded as a constant, as
+        /// <c>ClrCursorRelImplementor.Stash</c> does.
         /// </remarks>
+        /// <param name="parameter">The linq4j variable.</param>
+        /// <returns>A constant of the variable's resolved type, or <see langword="null"/>.</returns>
         Expression? Stashed(J.ParameterExpression parameter)
         {
             if (stashed == null || variables.ContainsKey(parameter))
@@ -287,12 +276,13 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Translates a constant.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// linq4j holds the value of a primitive constant boxed, as Java must, so a constant typed <c>int</c>
-        /// arrives as a <c>java.lang.Integer</c> and the CLR would refuse it.
+        /// linq4j holds the value of a primitive constant in a Java box, so a constant typed <c>int</c> holds a
+        /// <c>java.lang.Integer</c>, which is unboxed. Any other value, a <c>java.lang.Class</c> included, is
+        /// kept as it is: <c>Schemas.queryable</c>, for one, takes a <c>Class</c>.
         /// </remarks>
+        /// <param name="expression">The linq4j constant.</param>
+        /// <returns>A constant of the resolved type.</returns>
         Expression Constant(J.ConstantExpression expression)
         {
             var type = ClrTypes.Resolve(expression.getType());
@@ -301,9 +291,6 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             if (value == null)
                 return Expression.Constant(null, type.IsValueType ? typeof(object) : type);
 
-            // a Class used as a value stays a Class. Schemas.tableExpression passes the element type of a
-            // QueryableTable to Schemas.queryable, which takes a Class, so turning it into a System.Type here
-            // leaves the call unable to be built.
             if (type.IsValueType && value.GetType() != type)
                 return Expression.Constant(JavaValues.Unwrap(value, type), type);
 
@@ -311,10 +298,10 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Translates a variable declaration, which has already had its variable hoisted by <see cref="Block"/>.
+        /// Translates a variable declaration as an assignment; <see cref="Block"/> declares the variable.
         /// </summary>
-        /// <param name="statement"></param>
-        /// <returns></returns>
+        /// <param name="statement">The declaration.</param>
+        /// <returns>An assignment of the converted initializer to the variable, or an empty expression where there is no initializer.</returns>
         Expression Declaration(J.DeclarationStatement statement)
         {
             var variable = Variable(statement.parameter);
@@ -327,12 +314,12 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Translates a block, hoisting every variable declared in it.
         /// </summary>
-        /// <param name="block"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// Java declares a variable where it is first assigned; an expression tree declares every variable of
-        /// a block up front. The declaration stays where it was, as an assignment.
+        /// Java declares a variable at the point of its declaration statement; an expression tree block declares
+        /// its variables up front. The declaration statement stays where it was, as an assignment.
         /// </remarks>
+        /// <param name="block">The linq4j block.</param>
+        /// <returns>A <see cref="void"/> block that declares the block's variables; an empty block holds an empty expression.</returns>
         Expression Block(J.BlockStatement block)
         {
             TranslateStatements(block, out var declared, out var body);
@@ -344,16 +331,16 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Translates the statements of a block without closing it, so a caller can put something of its own
-        /// in the same scope.
+        /// Translates the statements of a block without closing it, so that a caller can add expressions in
+        /// the same scope.
         /// </summary>
-        /// <param name="block"></param>
-        /// <param name="declared"></param>
-        /// <param name="body"></param>
         /// <remarks>
-        /// A correlate needs this. The variables holding the fields of the outer row are declared in a block of
-        /// Calcite's making, and the inner sub-plan reads them, so the two have to end up in one scope.
+        /// A correlate uses this: Calcite's block declares the variables holding the outer row's fields, and
+        /// the inner sub-plan reads them.
         /// </remarks>
+        /// <param name="block">The linq4j block.</param>
+        /// <param name="declared">Receives the variables the block declares, which the caller must declare in the block it builds.</param>
+        /// <param name="body">Receives the translated statements, in order.</param>
         public void TranslateStatements(J.BlockStatement block, out List<ParameterExpression> declared, out List<Expression> body)
         {
             ArgumentNullException.ThrowIfNull(block);
@@ -375,14 +362,14 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Translates a chain of if / else if / else.
         /// </summary>
-        /// <param name="statement"></param>
-        /// <returns></returns>
+        /// <param name="statement">The linq4j conditional statement.</param>
+        /// <returns>A nested chain of <c>if</c> / <c>else</c> expressions of type <see cref="void"/>.</returns>
         Expression Conditional(J.ConditionalStatement statement)
         {
             var list = statement.expressionList;
             var count = list.size();
 
-            // an odd length ends in the else, an even one has none
+            // the list alternates condition and statement; an odd length ends with the else
             Expression? result = null;
             var i = count;
             if (count % 2 == 1)
@@ -403,17 +390,16 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Translates a return, break, continue, or a bare expression standing as a statement.
+        /// Translates a return, break, continue, or an expression used as a statement.
         /// </summary>
-        /// <param name="statement"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
+        /// <param name="statement">The linq4j goto statement.</param>
+        /// <returns>A jump to the enclosing frame's or loop's label, or the translated expression.</returns>
         Expression Goto(J.GotoStatement statement)
         {
             switch (statement.kind.name())
             {
                 case nameof(J.GotoExpressionKind.Sequence):
-                    // linq4j writes an expression used as a statement this way
+                    // linq4j represents an expression statement as a Sequence goto
                     return statement.expression == null ? Expression.Empty() : Void(Visit(statement.expression));
 
                 case nameof(J.GotoExpressionKind.Return):
@@ -449,12 +435,12 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Translates a for loop.
         /// </summary>
-        /// <param name="statement"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// The continue label sits before the post expression rather than at the top of the loop, because a
-        /// Java continue still advances the loop.
+        /// The continue label is placed before the post expression rather than at the top of the loop, because
+        /// a Java <c>continue</c> still runs it.
         /// </remarks>
+        /// <param name="statement">The linq4j for statement.</param>
+        /// <returns>A block declaring the loop's variables and running the loop.</returns>
         Expression For(J.ForStatement statement)
         {
             var declared = new List<ParameterExpression>();
@@ -500,8 +486,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Translates a while loop.
         /// </summary>
-        /// <param name="statement"></param>
-        /// <returns></returns>
+        /// <param name="statement">The linq4j while statement.</param>
+        /// <returns>The translated loop.</returns>
         Expression While(J.WhileStatement statement)
         {
             var loop = new Loop(Expression.Label("break"), Expression.Label("continue"));
@@ -517,7 +503,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 loops.Pop();
             }
 
-            // the continue label is the top of the loop, where the condition is tested again
+            // continue goes to the top of the loop, where the condition is tested again
             return Expression.Loop(
                 Expression.IfThenElse(
                     ClrEnumUtils.Convert(Visit(statement.condition), typeof(bool)),
@@ -530,8 +516,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Translates a for-each loop over an array or an <see cref="java.lang.Iterable"/>.
         /// </summary>
-        /// <param name="statement"></param>
-        /// <returns></returns>
+        /// <param name="statement">The linq4j for-each statement.</param>
+        /// <returns>A loop that indexes an array, or one that drives the <c>Iterable</c>'s iterator.</returns>
         Expression ForEach(J.ForEachStatement statement)
         {
             var element = Variable(statement.parameter);
@@ -555,8 +541,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 var array = Expression.Variable(source.Type, "array");
                 var index = Expression.Variable(typeof(int), "index");
 
-                // the continue label sits before the step and not at the top of the loop, for the reason it
-                // does in For: a Java continue still advances the loop, and here the advance is the index
+                // continue goes to the index increment rather than the top of the loop, as in For
                 return Expression.Block(typeof(void), [array, index, element],
                     Expression.Assign(array, source),
                     Expression.Assign(index, Expression.Constant(0)),
@@ -592,8 +577,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Translates a try / catch / finally.
         /// </summary>
-        /// <param name="statement"></param>
-        /// <returns></returns>
+        /// <param name="statement">The linq4j try statement.</param>
+        /// <returns>The translated try expression.</returns>
         Expression Try(J.TryStatement statement)
         {
             var body = Statement(statement.body);
@@ -614,8 +599,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Translates a conditional expression.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <returns></returns>
+        /// <param name="expression">The linq4j conditional expression.</param>
+        /// <returns>A conditional of the resolved type, with both branches converted to it.</returns>
         Expression Ternary(J.TernaryExpression expression)
         {
             var type = ClrTypes.Resolve(expression.getType());
@@ -630,8 +615,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Translates a member access.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <returns></returns>
+        /// <param name="expression">The linq4j member expression; a static member has no target.</param>
+        /// <returns>The field or property read, as <see cref="ClrTypes.Resolve(Expression, J.PseudoField)"/> resolves it.</returns>
         Expression Member(J.MemberExpression expression)
         {
             return ClrTypes.Resolve(expression.expression == null ? null : Visit(expression.expression), expression.field);
@@ -640,8 +625,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Translates an array element access.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <returns></returns>
+        /// <param name="expression">The linq4j index expression.</param>
+        /// <returns>The array access, each index converted to <see cref="int"/>.</returns>
         Expression Index(J.IndexExpression expression)
         {
             var array = Visit(expression.array);
@@ -651,15 +636,16 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             for (int i = 0; i < indexes.size(); i++)
                 resolved[i] = ClrEnumUtils.Convert(Visit((J.Node)indexes.get(i)), typeof(int));
 
-            // ArrayAccess rather than ArrayIndex, because linq4j assigns to one of these
+            // ArrayAccess rather than ArrayIndex, because linq4j also uses an index expression as an assignment
+            // target
             return Expression.ArrayAccess(array, resolved);
         }
 
         /// <summary>
         /// Translates an instanceof test.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <returns></returns>
+        /// <param name="expression">The linq4j <c>instanceof</c> expression.</param>
+        /// <returns>A type test against the resolved type.</returns>
         Expression TypeBinary(J.TypeBinaryExpression expression)
         {
             return Expression.TypeIs(Visit(expression.expression), ClrTypes.Resolve(expression.type));
@@ -668,8 +654,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Translates an array creation.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <returns></returns>
+        /// <param name="expression">The linq4j array creation.</param>
+        /// <returns>An array initialized from the elements, each converted to the element type, or one created with the given bound.</returns>
         Expression NewArray(J.NewArrayExpression expression)
         {
             var type = ClrTypes.Resolve(expression.getType());
@@ -694,8 +680,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Translates a method call.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <returns></returns>
+        /// <param name="expression">The linq4j method call.</param>
+        /// <returns>The CLR call, or a delegate invocation where the method has no CLR counterpart.</returns>
         Expression Call(J.MethodCallExpression expression)
         {
             var method = ClrTypes.TryResolve(expression.method);
@@ -703,13 +689,12 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
 
             var arguments = expression.expressions;
 
-            // no CLR method of that name and signature is on that type at all, which is what a remapped class
-            // or a ghost interface leaves behind. IKVM knows which method it compiled; a name search does not
+            // no CLR method of that name and signature exists, as for a method of a remapped class or a ghost
+            // interface, so the call goes through a delegate IKVM binds to the member
             if (method == null)
                 return Invoke(expression.method, target, arguments);
 
-            // a method IKVM moved off a remapped class is static and takes the receiver first, so what Java
-            // called the target is argument zero
+            // a method IKVM moved off a remapped class is static and takes the receiver as its first argument
             var offset = target != null && method.IsStatic ? 1 : 0;
             var translated = new Expression[arguments.size() + offset];
             if (offset == 1)
@@ -718,8 +703,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             for (int i = 0; i < arguments.size(); i++)
                 translated[i + offset] = Visit((J.Node)arguments.get(i));
 
-            // the overload is chosen by the receiver and by what is being passed, not by the method the tree
-            // names: Janino resolves both from the source text and never looks at that method
+            // the recorded method is advisory: Java chooses the overload from the receiver and argument types
             var argumentTypes = new Type[arguments.size()];
             for (int i = 0; i < argumentTypes.Length; i++)
                 argumentTypes[i] = translated[i + offset].Type;
@@ -745,23 +729,18 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Translates a method call as an invocation of a delegate over the method.
+        /// Translates a method call as an invocation of a delegate IKVM binds to the method.
         /// </summary>
-        /// <param name="method"></param>
-        /// <param name="target"></param>
-        /// <param name="arguments"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// The route for a method the CLR type system cannot be asked about — one of a remapped class, whose
-        /// Java methods went elsewhere, or of a ghost interface, which declares nothing. The delegate is
-        /// IKVM's own resolution of the member and takes the receiver first where the method has one, so the
-        /// receiver moves the same way it does for a method that landed on a <c>Helper</c> class.
-        ///
-        /// <para>Its signature is objects and primitives — see <c>JavaDelegates.FromMethod</c> — so the
-        /// conversions here are reference conversions and the boxing of a primitive argument, both of which
-        /// <see cref="Coerce"/> already does. A primitive never crosses as an object, which is the one thing
-        /// that would put a <c>java.lang.Integer</c> where a CLR int belongs.</para>
+        /// Used for a method with no CLR method of the same name and signature, such as one of a remapped
+        /// class or a ghost interface. The delegate from <c>JavaDelegates.FromMethod</c> takes the receiver
+        /// first and types every parameter as <see cref="object"/> or a primitive, so each argument needs at
+        /// most a reference conversion or a Java boxing, which <see cref="Coerce"/> performs.
         /// </remarks>
+        /// <param name="method">The Java method.</param>
+        /// <param name="target">The receiver, or <see langword="null"/> for a static method.</param>
+        /// <param name="arguments">The linq4j argument expressions.</param>
+        /// <returns>An invocation of the method's delegate.</returns>
         Expression Invoke(java.lang.reflect.Method method, Expression? target, java.util.List arguments)
         {
             var del = JavaDelegates.FromMethod(method);
@@ -779,11 +758,10 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Translates a constructor call, or an anonymous class.
+        /// Translates a constructor call or an anonymous class.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
+        /// <param name="expression">The linq4j <c>new</c> expression.</param>
+        /// <returns>The constructor call, or the anonymous class as <see cref="Anonymous"/> translates it.</returns>
         Expression New(J.NewExpression expression)
         {
             var type = ClrTypes.Resolve(expression.type);
@@ -797,9 +775,10 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Translates an ordinary constructor call.
         /// </summary>
-        /// <param name="type"></param>
-        /// <param name="arguments"></param>
-        /// <returns></returns>
+        /// <param name="type">The type to construct.</param>
+        /// <param name="arguments">The linq4j argument expressions.</param>
+        /// <returns>A <c>new</c> expression calling the first constructor the arguments fit, packing varargs if they must.</returns>
+        /// <exception cref="NotSupportedException">No constructor takes the arguments.</exception>
         Expression Construct(Type type, java.util.List arguments)
         {
             var resolved = new Expression[arguments.size()];
@@ -816,8 +795,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 if (parameters.Length != resolved.Length)
                     continue;
 
-                // a trailing array parameter handed something that is not one is a varargs call rather
-                // than a coercion, and coercing into the array is what threw before the pass below existed
+                // a varargs call is left to the pass below, which packs the trailing arguments into the array
                 if (IsVarArgs(parameters, resolved))
                     continue;
 
@@ -836,17 +814,16 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Returns whether these arguments reach these parameters as a varargs call.
+        /// Returns whether the arguments bind to the parameters as a varargs call.
         /// </summary>
-        /// <param name="parameters"></param>
-        /// <param name="arguments"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// Java's own test, which is the last parameter being an array that the call did not pass one to:
-        /// either there are more arguments than parameters, or the final argument is not the array itself.
-        /// A call that hands the array over as the array is an ordinary call and is left alone, which is
-        /// what Java does with it too.
+        /// As in Java: the last parameter is an array, and either the argument count differs from the parameter
+        /// count or the last argument is not assignable to the array type. A call that passes the array itself
+        /// is an ordinary call.
         /// </remarks>
+        /// <param name="parameters">The candidate method's parameters.</param>
+        /// <param name="arguments">The translated arguments.</param>
+        /// <returns><see langword="true"/> if the trailing arguments must be packed into the last parameter's array.</returns>
         static bool IsVarArgs(ParameterInfo[] parameters, Expression[] arguments)
         {
             if (parameters.Length == 0 || arguments.Length < parameters.Length - 1)
@@ -860,27 +837,19 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Returns the arguments of a varargs call packed the way the call expects them, or
-        /// <see langword="null"/> where the call is not one.
+        /// Returns the arguments of a varargs call with the trailing ones packed into an array, or
+        /// <see langword="null"/> if the call is not a varargs call.
         /// </summary>
-        /// <param name="parameters"></param>
-        /// <param name="arguments"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// A Java varargs call passes its trailing arguments individually and lets the compiler collect them
-        /// into an array; Janino does that collecting and an expression tree has no step that would. So a
-        /// tree Calcite generates for one arrives with more arguments than the method has parameters, or
-        /// with a single argument where an array belongs, and neither shape binds.
-        ///
-        /// <para><c>CAST(x AS VARIANT)</c> is what reaches it: the variant carries its payload's type, and
-        /// <c>RuntimeTypeInformation.createExpression</c> compiles that type into the plan as
-        /// <c>new GenericSqlTypeRtti(ARRAY, new BasicSqlTypeRtti(INTEGER))</c> for an array — two arguments
-        /// against two parameters, the second of which is a <c>RuntimeTypeInformation[]</c> — as
-        /// <c>new GenericSqlTypeRtti(MAP, key, value)</c> for a map, which is three against two, and as
-        /// <c>new RowSqlTypeRtti(entry, entry)</c> for a row, which is two against one and whose elements
-        /// are <c>AbstractMap.SimpleEntry</c> where the array is of <c>Map.Entry</c>. Every element is
-        /// coerced for that last reason.</para>
+        /// The Java compiler packs varargs; a linq4j tree carries them individually. <c>CAST(x AS VARIANT)</c>
+        /// produces such calls through <c>RuntimeTypeInformation.createExpression</c>, for example
+        /// <c>new GenericSqlTypeRtti(MAP, key, value)</c> and <c>new RowSqlTypeRtti(entry, entry)</c>. Each
+        /// packed element is coerced to the array's element type, since the row case passes
+        /// <c>AbstractMap.SimpleEntry</c> values for a <c>Map.Entry[]</c>.
         /// </remarks>
+        /// <param name="parameters">The candidate method's parameters.</param>
+        /// <param name="arguments">The translated arguments.</param>
+        /// <returns>One argument per parameter, the last an array of the trailing arguments, or <see langword="null"/>.</returns>
         Expression[]? BindVarArgs(ParameterInfo[] parameters, Expression[] arguments)
         {
             if (IsVarArgs(parameters, arguments) == false)
@@ -900,25 +869,23 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Translates an anonymous class into the lambda it stands for.
+        /// Translates an anonymous class into a lambda, or a lambda per method, wrapped in an adapter of the
+        /// declared type.
         /// </summary>
-        /// <param name="type"></param>
-        /// <param name="expression"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
         /// <remarks>
-        /// <c>PhysType.generateComparator</c>, <c>generateCollationKey</c> and <c>comparer</c> all end in an
-        /// anonymous <c>Comparator</c>, which an expression tree cannot declare because it cannot declare a
-        /// class at all. The class has one method that matters, so it becomes that method as a lambda; the
-        /// bridge Java needs for erasure is dropped, since a delegate has no erasure to bridge.
+        /// An expression tree cannot declare a class. A class of one method, such as the anonymous
+        /// <c>Comparator</c> <c>PhysType.generateComparator</c> produces, becomes that method as a lambda; an
+        /// erasure bridge method alongside it is dropped. A multi-method type known to
+        /// <see cref="AnonymousClasses"/>, such as <c>Enumerator</c>, becomes a lambda per method.
         ///
-        /// <para>A field is the other thing such a class can declare. linq4j puts one there itself:
-        /// <c>DeterministicCodeOptimizer</c> hoists a sub-expression it can prove constant into a field so the
-        /// generated class computes it once, which is how a MATCH_RECOGNIZE predicate ends up holding
-        /// <c>$L4J$C$0_1 = 0 * -1</c>. A lambda has no fields, so each becomes a variable of the block that
-        /// builds the lambda: assigned once where the class would have been constructed, and closed over.
-        /// </para>
+        /// <para>The class's fields, such as the constants linq4j's <c>DeterministicCodeOptimizer</c> hoists into
+        /// fields, become variables of a block that assigns them once and then creates the adapter, whose
+        /// lambdas close over them.</para>
         /// </remarks>
+        /// <param name="type">The declared type of the anonymous class.</param>
+        /// <param name="expression">The linq4j <c>new</c> expression with member declarations.</param>
+        /// <returns>An adapter of <paramref name="type"/>, or a block that assigns the class's fields and then yields it.</returns>
+        /// <exception cref="NotSupportedException">The class has constructor arguments, declares no method, or declares a member that is neither a method nor a field.</exception>
         Expression Anonymous(Type type, J.NewExpression expression)
         {
             if (expression.arguments.size() > 0)
@@ -948,7 +915,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
 
             if (AnonymousClasses.MethodsOf(type) != null)
             {
-                // several methods over shared state, so one lambda each rather than one for the class
+                // a multi-method type: one lambda per method
                 var declared = new Dictionary<string, LambdaExpression>();
                 foreach (var method in methods)
                     declared[method.name] = Lambda(method);
@@ -957,8 +924,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             }
             else
             {
-                // the value still has to be the interface it was declared against, because the same operator
-                // takes one that never was an anonymous class
+                // wrapped as the declared interface, since consumers also receive values of it that were never
+                // anonymous classes
                 wrapped = AnonymousClasses.Wrap(type, Lambda(methods.Count == 1 ? methods[0] : Unbridged(type, methods)));
             }
 
@@ -983,10 +950,10 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Translates one method of an anonymous class into the lambda that stands for it.
+        /// Translates one method of an anonymous class into a lambda.
         /// </summary>
-        /// <param name="declaration"></param>
-        /// <returns></returns>
+        /// <param name="declaration">The method declaration.</param>
+        /// <returns>A lambda over the method's parameters, whose body is translated with them in scope by name.</returns>
         LambdaExpression Lambda(J.MethodDeclaration declaration)
         {
             var parameters = new ParameterExpression[declaration.parameters.size()];
@@ -997,16 +964,15 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Picks the declaration that carries the body, from a set that also holds the bridge Java erasure needs.
+        /// Picks the method that carries the body from a set that also holds erasure bridge methods.
         /// </summary>
-        /// <param name="type"></param>
-        /// <param name="methods"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
+        /// <param name="type">The declared type, named in the exception.</param>
+        /// <param name="methods">The declarations of one method name.</param>
+        /// <returns>The one declaration whose parameters are not all <see cref="object"/>.</returns>
+        /// <exception cref="NotSupportedException">No single declaration qualifies.</exception>
         static J.MethodDeclaration Unbridged(Type type, List<J.MethodDeclaration> methods)
         {
-            // a bridge takes the interface's erased parameters, which are Object; the one that matters takes
-            // the row's own type
+            // a bridge takes the interface's erased parameters, all Object; the real method takes the row type
             var candidates = methods.FindAll(m => AllObject(m) == false);
             if (candidates.Count == 1)
                 return candidates[0];
@@ -1017,8 +983,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Returns whether every parameter of a declaration is <see cref="object"/>.
         /// </summary>
-        /// <param name="method"></param>
-        /// <returns></returns>
+        /// <param name="method">The method declaration.</param>
+        /// <returns><see langword="true"/> if it has at least one parameter and every parameter resolves to <see cref="object"/>.</returns>
         static bool AllObject(J.MethodDeclaration method)
         {
             if (method.parameters.size() == 0)
@@ -1051,16 +1017,15 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         };
 
         /// <summary>
-        /// Type each rank promotes to. Anything narrower than an int becomes one, as Java does.
+        /// The type each rank promotes to; as in Java, anything narrower than <c>int</c> becomes <c>int</c>.
         /// </summary>
         static readonly Type[] Promoted = [typeof(bool), typeof(int), typeof(int), typeof(int), typeof(long), typeof(float), typeof(double)];
 
         /// <summary>
         /// Translates a binary operator.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
+        /// <param name="expression">The linq4j binary expression.</param>
+        /// <returns>The CLR binary expression, with operands converted as Java would evaluate them.</returns>
         Expression Binary(J.BinaryExpression expression)
         {
             var left = Visit(expression.expression0);
@@ -1073,17 +1038,15 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             if (CompoundAssignments.Contains(op))
                 return Expression.MakeBinary(op, left, ClrEnumUtils.Convert(right, left.Type));
 
-            // a shift takes its distance as an int however wide the value being shifted is
+            // a shift distance is an int whatever the width of the value shifted
             if (op is ExpressionType.LeftShift or ExpressionType.RightShift)
                 return Expression.MakeBinary(op, left, ClrEnumUtils.Convert(right, typeof(int)));
 
             if (op == ExpressionType.Add && ClrTypes.Resolve(expression.getType()) == typeof(string))
                 return Expression.Call(Concat, ClrEnumUtils.Convert(left, typeof(object)), ClrEnumUtils.Convert(right, typeof(object)));
 
-            // Java's && and || take booleans and unbox a Boolean to get one; the CLR has no operator for two
-            // references, so the unboxing that Java leaves implicit is written out. A condition over a
-            // nullable column is a Boolean, and a disjunction of a hundred of them is what a batch nested
-            // loop join builds.
+            // Java unboxes a Boolean operand of && and || implicitly; the CLR operators need bool, so the
+            // unboxing is explicit. A condition over a nullable column is a Boolean.
             if (op is ExpressionType.AndAlso or ExpressionType.OrElse)
                 return Expression.MakeBinary(op, ClrEnumUtils.Convert(left, typeof(bool)), ClrEnumUtils.Convert(right, typeof(bool)));
 
@@ -1093,13 +1056,13 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Concatenation, which is what Java's <c>+</c> means when either side is a string.
+        /// String concatenation, which Java's <c>+</c> means when the result is a string.
         /// </summary>
         static readonly MethodInfo Concat = typeof(string).GetMethod(nameof(string.Concat), [typeof(object), typeof(object)])
             ?? throw new InvalidOperationException("String has no Concat(object, object).");
 
         /// <summary>
-        /// The three members a for-each over a <c>java.lang.Iterable</c> is written against.
+        /// The members a for-each loop over a <c>java.lang.Iterable</c> calls.
         /// </summary>
         static readonly MethodInfo IterableIterator = typeof(java.lang.Iterable).GetMethod("iterator")
             ?? throw new InvalidOperationException("java.lang.Iterable has no iterator().");
@@ -1113,13 +1076,11 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             ?? throw new InvalidOperationException("java.util.Iterator has no next().");
 
         /// <summary>
-        /// The operators that assign to their left operand, which therefore must be left alone rather than
-        /// promoted.
+        /// The compound assignment operators, whose left operand must not be promoted.
         /// </summary>
         /// <remarks>
-        /// Written out rather than tested by the operator's name. Three of these end in <c>Checked</c> and not
-        /// in <c>Assign</c>, so a name test lets them fall through to <see cref="Promote"/>, which may wrap the
-        /// left operand in a conversion and leave nothing to assign to.
+        /// Listed explicitly rather than matched by name, because three end in <c>Checked</c>.
+        /// <see cref="Promote"/> may wrap an operand in a conversion, which cannot be assigned to.
         /// </remarks>
         static readonly HashSet<ExpressionType> CompoundAssignments =
         [
@@ -1139,18 +1100,16 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         ];
 
         /// <summary>
-        /// Brings two operands to the type Java would evaluate them at.
+        /// Converts two operands to the type Java would evaluate the operator at.
         /// </summary>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <param name="op"></param>
+        /// <param name="left">The left operand; replaced by its converted form.</param>
+        /// <param name="right">The right operand; replaced by its converted form.</param>
+        /// <param name="op">The operator, which decides whether two boxes of one type are unboxed.</param>
         static void Promote(ref Expression left, ref Expression right, ExpressionType op)
         {
             if (left.Type == right.Type)
             {
-                // two boxes of one type, which Java unboxes for anything but == and !=: those compare
-                // references, and the CLR does the same, so they are left as they are. Everything else needs
-                // a primitive and has none, which is the unboxing Java left implicit
+                // two boxes of one type: Java compares references for == and != and unboxes for anything else
                 if (op is not (ExpressionType.Equal or ExpressionType.NotEqual) && ClrPrimitive.PrimitiveClass(left.Type) is Type primitive)
                 {
                     left = ClrEnumUtils.Convert(left, primitive);
@@ -1171,7 +1130,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 return;
             }
 
-            // Java unboxes the other side when one is a primitive, whatever the operator
+            // with one primitive operand, Java unboxes the other whatever the operator
             if (l >= 0)
             {
                 right = ClrEnumUtils.Convert(right, left.Type);
@@ -1184,7 +1143,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 return;
             }
 
-            // two references, which only == and != can be applied to, and which have to meet at a common type
+            // two references, which only == and != apply to, converted to a common type
             if (left.Type.IsAssignableFrom(right.Type))
                 right = Expression.Convert(right, left.Type);
             else if (right.Type.IsAssignableFrom(left.Type))
@@ -1199,40 +1158,38 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Translates a unary operator.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
+        /// <param name="expression">The linq4j unary expression.</param>
+        /// <returns>The conversion for a cast, the logical negation for <c>!</c>, or the CLR operator over the promoted operand.</returns>
         Expression Unary(J.UnaryExpression expression)
         {
             var operand = Visit(expression.expression);
 
             switch (expression.getNodeType().name())
             {
-                // Java has no checked conversion: a narrowing cast truncates, which is what ClrEnumUtils does.
-                // Expression.ConvertChecked would throw on overflow, and also demands a type where the
-                // arithmetic operators take none.
+                // a Java narrowing cast truncates, as ClrEnumUtils.Convert does; ConvertChecked would throw on
+                // overflow
                 case nameof(J.ExpressionType.Convert):
                 case nameof(J.ExpressionType.ConvertChecked):
                     return ClrEnumUtils.Convert(operand, ClrTypes.Resolve(expression.getType()));
 
-                // Java's ! is only ever applied to a boolean; its bitwise complement is a separate operator
+                // Java's ! applies only to a boolean; bitwise complement is a separate operator
                 case nameof(J.ExpressionType.Not):
                     return Expression.Not(ClrEnumUtils.Convert(operand, typeof(bool)));
 
                 default:
                     var op = Operator(expression.getNodeType());
 
-                    // null is the documented way to say "no conversion type", and these operators take none.
-                    // The parameter is annotated non-nullable all the same, so the suppression is the BCL's
+                    // null means "no conversion type", which these operators take, although the parameter is
+                    // annotated non-nullable
                     return Expression.MakeUnary(op, Widen(operand), null!);
             }
         }
 
         /// <summary>
-        /// Promotes an operand narrower than an int, as Java does before a unary operator.
+        /// Promotes an operand narrower than <c>int</c>, as Java does before a unary operator.
         /// </summary>
-        /// <param name="operand"></param>
-        /// <returns></returns>
+        /// <param name="operand">The operand.</param>
+        /// <returns>The operand converted to the type Java promotes it to if it is a ranked primitive, otherwise unchanged.</returns>
         static Expression Widen(Expression operand)
         {
             if (Ranks.TryGetValue(operand.Type, out var rank) == false)
@@ -1244,20 +1201,15 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Returns the CLR operator a linq4j one stands for.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
         /// <remarks>
-        /// linq4j took this enumeration from the CLR's, so nearly every operator is the same word in both.
-        /// Nearly is the reason each is written out: <c>Mod</c> is <c>Modulo</c> here and linq4j has a
-        /// <c>Modulo</c> of its own besides, and there is no checked divide to be had. Parsing the name
-        /// into the CLR enumeration reads those two as a failure and anything the two runtimes happen to
-        /// spell alike as a success, which is a match by coincidence rather than by decision.
-        ///
-        /// <para>Dispatch is on the name and not the ordinal, which is not stable across versions of
-        /// either, and the labels are <c>nameof</c> so that an operator leaving linq4j stops compiling
-        /// here rather than throwing when some plan reaches it.</para>
+        /// The two enumerations mostly share names but not entirely: linq4j has both <c>Mod</c> and
+        /// <c>Modulo</c>, and the CLR has no checked divide. So each operator is mapped explicitly rather than
+        /// by parsing its name. Dispatch is on the Java enum's name, since ordinals are not stable across
+        /// versions, with <c>nameof</c> labels so that an operator removed from linq4j fails to compile here.
         /// </remarks>
+        /// <param name="type">The linq4j operator.</param>
+        /// <returns>The CLR operator.</returns>
+        /// <exception cref="NotSupportedException">The operator has no CLR counterpart.</exception>
         static ExpressionType Operator(J.ExpressionType type)
         {
             return type.name() switch
@@ -1320,8 +1272,9 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Translates a lambda.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <returns></returns>
+        /// <param name="expression">The linq4j function expression.</param>
+        /// <returns>The lambda, wrapped as its declared interface where <see cref="AnonymousClasses"/> has an adapter for it.</returns>
+        /// <exception cref="NotSupportedException">The function has no body.</exception>
         Expression Function(J.FunctionExpression expression)
         {
             var body = expression.body ?? throw new NotSupportedException("A lambda with no body cannot be translated.");
@@ -1332,25 +1285,24 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
 
             var lambda = Expression.Lambda(Scoped(parameters, body, ClrTypes.Resolve(body.getType())), parameters);
 
-            // linq4j declares a lambda against one of its functional interfaces, and a block of Calcite's making
-            // uses it as that interface, including where it is passed as an object. So it is one from here, and
-            // a node of this convention that wants the delegate asks for it back through TranslateSelector.
+            // a lambda declared against a linq4j functional interface is used as that interface by Calcite's
+            // code, including where it is passed as an object, so it is wrapped; an operator that wants the
+            // delegate recovers it with AnonymousClasses.Unwrap
             var declared = ClrTypes.Resolve(expression.getType());
 
             return AnonymousClasses.Handles(declared) ? AnonymousClasses.Wrap(declared, lambda) : lambda;
         }
 
         /// <summary>
-        /// Brings a value to the type it is being passed as.
+        /// Converts a value to the type of the parameter it is passed as.
         /// </summary>
-        /// <param name="value"></param>
-        /// <param name="type"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// A lambda is left a lambda everywhere else, because the operators of this convention take delegates.
-        /// A block of Calcite's making takes one of linq4j's functional interfaces, and that is decided here,
-        /// where the value meets the parameter it is passed as, rather than where the lambda was built.
+        /// A lambda passed where one of the interfaces <see cref="AnonymousClasses"/> adapts is expected is
+        /// wrapped as that interface; anything else goes through <see cref="ClrEnumUtils.Convert(Expression, Type)"/>.
         /// </remarks>
+        /// <param name="value">The argument.</param>
+        /// <param name="type">The parameter type.</param>
+        /// <returns><paramref name="value"/> wrapped or converted to <paramref name="type"/>.</returns>
         static Expression Coerce(Expression value, Type type)
         {
             if (value is LambdaExpression lambda && AnonymousClasses.Handles(type))

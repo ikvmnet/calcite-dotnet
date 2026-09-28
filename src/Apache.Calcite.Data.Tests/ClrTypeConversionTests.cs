@@ -12,14 +12,13 @@ namespace Apache.Calcite.Data.Tests
 {
 
     /// <summary>
-    /// Covers every conversion the built-in chain performs without anyone registering anything, in both
-    /// directions, and the collections that recurse through it.
+    /// Covers the conversions the default type mapper performs in both directions, and the collections that
+    /// recurse through it.
     /// </summary>
     /// <remarks>
-    /// A round trip is the assertion worth making. It fails if either half is wrong and, unlike checking a
-    /// converted value against a literal, it cannot be satisfied by two mistakes that cancel. The
-    /// representation is checked separately where the storage form is the interesting fact — a <c>DATE</c>
-    /// is a count of days in an <c>Integer</c>, and nothing about a <see cref="DateTime"/> says so.
+    /// Most tests assert a round trip, which fails if either direction is wrong. Where Calcite's storage form
+    /// matters in its own right, such as a <c>DATE</c> held as an <c>Integer</c> count of days, the held value
+    /// is checked separately.
     /// </remarks>
     public class ClrTypeConversionTests
     {
@@ -39,7 +38,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Writes a value and reads it back, answering what came back.
+        /// Writes a value and reads it back, returning what was read.
         /// </summary>
         static object? RoundTrip(RelDataType type, object value, Type? clrType = null)
         {
@@ -88,8 +87,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The types whose .NET value is not what the pairing above would suggest, because the CLR type they
-        /// pair with is already spoken for.
+        /// <c>CHAR</c>, <c>FLOAT</c>, <c>BINARY</c> and <c>DATE</c> have no CLR type of their own and read back
+        /// as the type of <c>VARCHAR</c>, <c>DOUBLE</c>, <c>VARBINARY</c> and <c>TIMESTAMP</c> respectively.
         /// </summary>
         [Fact]
         public void A_char_should_read_back_as_a_string()
@@ -120,8 +119,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The storage form, which is the fact the .NET value cannot carry: a <c>DATE</c> is a count of days
-        /// and a <c>TIMESTAMP</c> a count of milliseconds, both integers.
+        /// Calcite holds a <c>DATE</c> as an <c>Integer</c> count of days since the epoch and a
+        /// <c>TIMESTAMP</c> as a <c>Long</c> count of milliseconds.
         /// </summary>
         [Fact]
         public void A_date_should_be_held_as_a_count_of_days()
@@ -140,7 +139,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The zoned temporal types, which all read back as an offset.
+        /// Both zoned timestamp types read back as a <see cref="DateTimeOffset"/>.
         /// </summary>
         [Theory]
         [InlineData(nameof(SqlTypeName.TIMESTAMP_TZ))]
@@ -155,7 +154,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A <c>NULL</c> column is null whatever a provider handed over, which is the whole of that type.
+        /// A column of type <c>NULL</c> reads as null whatever value it is handed.
         /// </summary>
         [Fact]
         public void A_null_type_should_read_as_null()
@@ -164,7 +163,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
-        // What a bare CLR value is written as, which is the other direction of the same table.
+        // What a bare CLR value is written as.
         // ------------------------------------------------------------------------------------
 
         [Theory]
@@ -183,8 +182,7 @@ namespace Apache.Calcite.Data.Tests
 
         /// <summary>
         /// A bare <see cref="DateTime"/> is a <c>TIMESTAMP</c> and never a <c>DATE</c>, and a
-        /// <see cref="DateOnly"/> is the reverse. The two directions are separate facts, which is what the
-        /// match flags are for.
+        /// <see cref="DateOnly"/> is a <c>DATE</c>.
         /// </summary>
         [Fact]
         public void A_bare_date_time_should_be_written_as_a_timestamp()
@@ -199,8 +197,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And a <c>DATE</c> column is never read back as a <see cref="DateOnly"/> unless asked, which is
-        /// the same fact from the other side.
+        /// A <c>DATE</c> column reads back as a <see cref="DateOnly"/> only when that type is asked for.
         /// </summary>
         [Fact]
         public void A_date_should_read_back_as_a_date_only_only_when_asked()
@@ -210,8 +207,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A conversion nobody defaults to is still legal when both types are named. This is the
-        /// "can a caller read a <c>TIMESTAMP</c> as a <see cref="DateOnly"/>" question, answered yes.
+        /// A conversion that is not a default is available when both types are named: a <c>TIMESTAMP</c> can
+        /// be read as a <see cref="DateOnly"/>.
         /// </summary>
         [Fact]
         public void A_named_conversion_should_be_legal_without_being_a_default()
@@ -221,12 +218,9 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// <b>Text is never read as a <see cref="Guid"/>, and a <see cref="Guid"/> is never written as
-        /// text.</b> Parsing text into a <see cref="Guid"/> is a conversion and a typed getter is a cast,
-        /// so a <c>CHAR</c> or <c>VARCHAR</c> column holding something that looks like one is still a
-        /// string. The pairing existed only because Calcite had no <c>UUID</c> type before 1.43; the ADO
-        /// adapter typed a provider <c>uniqueidentifier</c> as <c>CHAR(36)</c> for the same reason and
-        /// stopped.
+        /// Text is never read as a <see cref="Guid"/>, and a <see cref="Guid"/> is never written as text.
+        /// Parsing text is a conversion and a typed getter is a cast, so a <c>CHAR</c> or <c>VARCHAR</c>
+        /// column holding a GUID's text is a string.
         /// </summary>
         [Theory]
         [InlineData(nameof(SqlTypeName.CHAR))]
@@ -261,7 +255,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And a character column still reads as a string, so refusing the Guid costs nothing else.
+        /// A character column holding a GUID's text reads as that text.
         /// </summary>
         [Fact]
         public void A_character_column_holding_guid_text_should_read_as_a_string()
@@ -272,8 +266,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And a pair nothing in the table carries is refused rather than guessed at. This is the
-        /// "can a caller read a <c>BIGINT</c> as an <see cref="int"/>" question, answered no.
+        /// A pair no mapping covers is refused rather than converted: a <c>BIGINT</c> cannot be read as an
+        /// <see cref="int"/>.
         /// </summary>
         [Fact]
         public void A_pair_the_table_does_not_carry_should_be_refused()
@@ -283,12 +277,12 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
-        // What the table does not claim, which is refused rather than guessed at.
+        // ANY, and types no mapping claims.
         // ------------------------------------------------------------------------------------
 
         /// <summary>
-        /// <c>ANY</c> says nothing about what it holds, so its mapping is a reading of the value's own
-        /// class. That is an entry for <c>ANY</c> and not a rule about every type nobody claimed.
+        /// <c>ANY</c> says nothing about what it holds, so its mapping reads each value by its runtime class.
+        /// That applies to <c>ANY</c> only, not to every type without a mapping.
         /// </summary>
         [Fact]
         public void An_any_column_should_be_read_by_the_value_s_own_class()
@@ -302,7 +296,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And it descends, because what an <c>ANY</c> holds has no declared type either.
+        /// A collection in an <c>ANY</c> column is read the same way, element by element.
         /// </summary>
         [Fact]
         public void An_any_column_holding_a_collection_should_still_be_read()
@@ -315,11 +309,9 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// <b>A type the table does not claim has no mapping.</b> The <c>ANY</c> entry used to claim every
-        /// type nobody else had, so anything unmapped was read by guessing at the value's runtime class. It
-        /// says so instead. <c>CURSOR</c> stands in for the case here because it is reachable and named;
-        /// the one that matters in practice is a <c>RelDataType</c> a schema supplied that names no
-        /// <c>SqlTypeName</c> at all.
+        /// A type no mapping claims has no mapping, and reading or writing it throws. <c>CURSOR</c> stands in
+        /// for the case; in practice it is usually a <c>RelDataType</c> from a schema that names no
+        /// <c>SqlTypeName</c>.
         /// </summary>
         [Fact]
         public void An_unclaimed_type_should_have_no_mapping()
@@ -332,7 +324,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And a caller that wants one read says so, which is what the chain is for.
+        /// A caller supplies a mapping for an unclaimed type by prepending a resolver.
         /// </summary>
         [Fact]
         public void A_caller_should_be_able_to_claim_an_unclaimed_type()
@@ -358,8 +350,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
-        // The types ADO.NET's list has no name for, which are most of what Calcite has beyond the shared
-        // ones and were all falling to the catch-all.
+        // Calcite types with no DbType counterpart, and CLR types with no Calcite counterpart.
         // ------------------------------------------------------------------------------------
 
         /// <summary>
@@ -422,8 +413,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A <c>CHAR</c> is a string in Calcite's runtime, so a bare <see cref="char"/> is a string of one.
-        /// Without this a CLR <see cref="char"/> reached a plan unconverted.
+        /// A <c>CHAR</c> is a string in Calcite's runtime, so a bare <see cref="char"/> is written as a string
+        /// of one character.
         /// </summary>
         [Fact]
         public void A_bare_char_should_be_written_as_a_one_character_string()
@@ -435,7 +426,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Calcite has no unbounded integer type, and a <c>DECIMAL</c> is what an integer of any width is.
+        /// Calcite has no unbounded integer type, so a <see cref="System.Numerics.BigInteger"/> is written as a
+        /// <c>DECIMAL</c>.
         /// </summary>
         [Fact]
         public void A_bare_big_integer_should_be_written_as_a_decimal()
@@ -448,8 +440,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A bare collection names no Calcite type and the one it wants is built from its element's, which
-        /// is why this recurses the same way reading does.
+        /// A bare collection's Calcite type is built from its element type's mapping, recursively.
         /// </summary>
         [Fact]
         public void A_bare_array_should_be_written_as_an_array_of_its_element()
@@ -514,8 +505,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The element's nullability is the array's element type, an array having no other way to hold a
-        /// null.
+        /// A nullable element type gives an array of <see cref="Nullable{T}"/>, since an array of a value type
+        /// cannot hold a null otherwise.
         /// </summary>
         [Fact]
         public void An_array_of_a_nullable_element_should_be_an_array_of_nullable()
@@ -527,8 +518,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// An empty collection and one holding nothing but nulls still know what they are, because the type
-        /// says so and nothing is measured from the values.
+        /// An empty array, and one holding only nulls, keep their element type, because the element type comes
+        /// from the declared type rather than from the values.
         /// </summary>
         [Fact]
         public void An_empty_array_should_keep_its_element_type()
@@ -547,8 +538,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The recursion, which is the whole point: an array of arrays is the element's mapping wrapped
-        /// twice, and no entry anywhere names <c>int[][]</c>.
+        /// An array of arrays is the element's mapping wrapped twice; no mapping names <c>int[][]</c>
+        /// directly.
         /// </summary>
         [Fact]
         public void A_nested_array_should_read_back_as_a_nested_array()
@@ -614,8 +605,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A map whose key type admits a null cannot be a dictionary at all, so the declared type decides
-        /// the shape and it decides it the same way for every row.
+        /// A <see cref="Dictionary{TKey, TValue}"/> cannot hold a null key, so a map whose declared key type is
+        /// nullable reads as an array of pairs, for every row whether or not its keys are null.
         /// </summary>
         [Fact]
         public void A_map_with_a_nullable_key_should_read_back_as_pairs()
@@ -661,11 +652,9 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// <c>RepresentationType</c> is not <c>ClrType</c>. One is the class the value is actually held in
-        /// between the plan and here, which for nearly every Calcite type is a Java class reached through
-        /// IKVM; the other is the .NET type a caller is handed. They coincide only where Calcite's runtime
-        /// already holds a .NET type, which is why both exist and why the registry checks one against the
-        /// other.
+        /// <c>RepresentationType</c> is the class Calcite's runtime holds the value in, which for most types
+        /// is a Java class; <c>ClrType</c> is the .NET type a caller is handed. They coincide only where
+        /// Calcite's runtime holds a .NET type.
         /// </summary>
         [Fact]
         public void The_representation_should_not_be_the_clr_type()
@@ -678,8 +667,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And the representation is what the value actually is on the way in, which is the thing the
-        /// check on a mapping's first conversion enforces.
+        /// A written value is an instance of the mapping's <c>RepresentationType</c>, which a mapping's first
+        /// conversion checks.
         /// </summary>
         [Fact]
         public void A_written_value_should_be_of_the_representation_type()
@@ -693,8 +682,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A mapping that answers with the wrong class fails at the boundary rather than inside a plan
-        /// several frames away, which is what that check is for.
+        /// A mapping that returns the wrong class is refused when it converts, rather than failing later
+        /// inside a plan.
         /// </summary>
         [Fact]
         public void A_mapping_that_answers_with_the_wrong_class_should_be_refused()
@@ -719,13 +708,12 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
-        // What a mapping says about itself, which is where both fixed lists are inferred from.
+        // The DbType and CalciteDbType a mapping infers.
         // ------------------------------------------------------------------------------------
 
         /// <summary>
-        /// Every mapping infers both names, and from different halves of itself: the ADO.NET one from the
-        /// .NET type it presents, the Calcite one from the Calcite type it is for. Neither is stated by the
-        /// table, so a mapping a caller registers gets both without doing anything.
+        /// A mapping infers its <see cref="System.Data.DbType"/> from its .NET type and its
+        /// <see cref="CalciteDbType"/> from its Calcite type.
         /// </summary>
         [Theory]
         [InlineData(nameof(SqlTypeName.INTEGER), System.Data.DbType.Int32, CalciteDbType.Integer)]
@@ -742,10 +730,9 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The two names are inferred from different halves, which shows where one is exact and the other
-        /// approximates. A <c>DATE</c> and a <c>TIMESTAMP</c> are one <see cref="System.Data.DbType"/>
-        /// because both are read back as a <see cref="DateTime"/>, and two Calcite names because they are
-        /// two types.
+        /// A <c>DATE</c> and a <c>TIMESTAMP</c> share a <see cref="System.Data.DbType"/> because both read
+        /// back as a <see cref="DateTime"/>, and have different <see cref="CalciteDbType"/> values because
+        /// they are different Calcite types.
         /// </summary>
         [Fact]
         public void Two_calcite_types_read_as_one_clr_type_should_share_a_db_type_and_not_a_calcite_one()
@@ -759,7 +746,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A collection infers both too, and the ADO.NET list has nothing for one.
+        /// A collection is <see cref="System.Data.DbType.Object"/>, since <see cref="System.Data.DbType"/> has
+        /// no collection member, and its <see cref="CalciteDbType"/> combines the collection and element flags.
         /// </summary>
         [Fact]
         public void A_collection_mapping_should_infer_both_names()
@@ -771,8 +759,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A mapping a caller registered for a type of its own infers both without stating either, which is
-        /// the point of deriving rather than declaring them.
+        /// A mapping from a caller's resolver infers both without declaring either.
         /// </summary>
         [Fact]
         public void A_caller_mapping_should_infer_both_names()
@@ -785,8 +772,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A collection's mapping holds its element's, which is what makes the tree walkable by a caller
-        /// doing introspection rather than conversion.
+        /// A collection's mapping exposes its element's mapping, so a caller can walk the tree of mappings.
         /// </summary>
         [Fact]
         public void A_collection_mapping_should_expose_the_mapping_it_wraps()
@@ -800,8 +786,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A caller's own resolver reaches inside a collection without the collection knowing, because the
-        /// element is resolved through the registry rather than by a table here.
+        /// A caller's resolver applies to a collection's elements, because the element mapping is resolved
+        /// through the registry.
         /// </summary>
         [Fact]
         public void A_caller_mapping_should_be_reached_through_a_collection()

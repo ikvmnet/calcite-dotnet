@@ -10,32 +10,33 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
 {
 
     /// <summary>
-    /// Which underlying handler answers a metadata method for a rel of a given class, and in what order the
-    /// classes are tried.
+    /// Computes which underlying handler answers a metadata method for each rel class, and the order in which
+    /// the classes are tested.
     /// </summary>
     /// <remarks>
-    /// <c>DispatchGenerator</c>. Calcite asks each handler which rel classes it declares the method for,
-    /// orders the classes so that no class comes before one it is a supertype of, and writes an
-    /// <c>instanceof</c> chain in that order; where two candidates are unrelated it is their Java names that
-    /// decide, and where two handlers declare the same class the first handler wins.
+    /// Mirrors Calcite's <c>DispatchGenerator</c>: collect the rel classes each handler declares the method
+    /// for, order them so that no class precedes one of its subclasses (unrelated classes by Java name), and
+    /// test them in that order. Where two handlers declare the same class, the first wins.
     /// </remarks>
     static class ClrMetadataTargets
     {
 
         /// <summary>
-        /// One branch of the chain.
+        /// One branch of the dispatch.
         /// </summary>
         /// <param name="RelClass">The class the rel is tested against.</param>
-        /// <param name="Provider">Which of the handlers answers.</param>
+        /// <param name="Provider">The index of the handler that answers.</param>
         /// <param name="Method">The method of that handler to call.</param>
         public readonly record struct Target(Type RelClass, int Provider, MethodInfo Method);
 
         /// <summary>
-        /// Returns the chain for <paramref name="superMethod"/> over <paramref name="handlers"/>.
+        /// Returns the dispatch branches for <paramref name="superMethod"/> over <paramref name="handlers"/>,
+        /// in the order they are tested.
         /// </summary>
-        /// <param name="superMethod"></param>
-        /// <param name="handlers"></param>
-        /// <returns></returns>
+        /// <param name="superMethod">The method of the handler interface being dispatched.</param>
+        /// <param name="handlers">The handlers, in order; the first to declare a rel class answers for it.</param>
+        /// <returns>One target per rel class any handler declares, ordered so that a subclass is tested before its superclasses.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="superMethod"/> or <paramref name="handlers"/> is <see langword="null"/>.</exception>
         public static Target[] Of(MethodInfo superMethod, IReadOnlyList<MetadataHandler> handlers)
         {
             ArgumentNullException.ThrowIfNull(superMethod);
@@ -55,11 +56,12 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// Returns the parameters of the underlying method: the method's own, with the rel narrowed.
+        /// Returns the parameter types of a handler's method: the interface method's, with the rel narrowed
+        /// to <paramref name="relClass"/>.
         /// </summary>
-        /// <param name="superMethod"></param>
-        /// <param name="relClass"></param>
-        /// <returns></returns>
+        /// <param name="superMethod">The method of the handler interface.</param>
+        /// <param name="relClass">The rel class the handler's method takes.</param>
+        /// <returns>The parameter types, <paramref name="relClass"/> first.</returns>
         static Type[] Parameters(MethodInfo superMethod, Type relClass)
         {
             var parameters = superMethod.GetParameters();
@@ -74,9 +76,9 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         /// <summary>
         /// Returns the rel classes <paramref name="handler"/> declares <paramref name="superMethod"/> for.
         /// </summary>
-        /// <param name="superMethod"></param>
-        /// <param name="handler"></param>
-        /// <returns></returns>
+        /// <param name="superMethod">The method of the handler interface.</param>
+        /// <param name="handler">The handler whose public methods are searched.</param>
+        /// <returns>The distinct rel classes, in no particular order.</returns>
         static HashSet<Type> RelClasses(MethodInfo superMethod, MetadataHandler handler)
         {
             var set = new HashSet<Type>();
@@ -89,12 +91,12 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// Returns the rel class <paramref name="candidate"/> answers <paramref name="superMethod"/> for, or
-        /// null where it does not answer it at all.
+        /// Returns the rel class <paramref name="candidate"/> implements <paramref name="superMethod"/> for, or
+        /// <see langword="null"/> if it is not an implementation of it.
         /// </summary>
-        /// <param name="superMethod"></param>
-        /// <param name="candidate"></param>
-        /// <returns></returns>
+        /// <param name="superMethod">The method of the handler interface.</param>
+        /// <param name="candidate">A public method of a handler.</param>
+        /// <returns>The type of the candidate's first parameter, or <see langword="null"/>.</returns>
         static Type? ToRelClass(MethodInfo superMethod, MethodInfo candidate)
         {
             if (candidate.Name != superMethod.Name)
@@ -117,14 +119,14 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// Orders <paramref name="classes"/> so that no class comes before one it is a supertype of.
+        /// Orders <paramref name="classes"/> so that no class comes before one of its subclasses.
         /// </summary>
-        /// <param name="classes"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// Ordering by the Java name, which is what decides between two candidates neither of which is the
-        /// other's supertype — and is not the CLR name for a class of this project's own.
+        /// Unrelated classes are ordered by Java name, as in Calcite; for a .NET class that differs from the
+        /// CLR name.
         /// </remarks>
+        /// <param name="classes">The rel classes to order.</param>
+        /// <returns>The classes, each subclass before its superclasses.</returns>
         static List<Type> TopologicalSort(IEnumerable<Type> classes)
         {
             var sorted = new List<Type>();

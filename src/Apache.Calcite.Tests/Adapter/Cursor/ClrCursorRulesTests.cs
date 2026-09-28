@@ -22,29 +22,25 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Runs a query through <c>Programs.standard()</c> with this convention's rules, which is what the
-    /// prepare pipeline runs and what a caller driving the planner reaches for.
+    /// Runs queries, read through the awaiting open, through <c>Programs.standard</c> with this convention's
+    /// rules added to the planner: the configuration the prepare pipeline uses and a caller driving a
+    /// <c>Frameworks</c> planner should use.
     /// </summary>
     /// <remarks>
-    /// Nothing ran through it before. Every other test of this convention builds its own program — the
-    /// differential harness registers its rules by hand, and the cancellation tests do the same — so the
-    /// configuration a caller actually gets was the only one nothing measured, and three whole shapes could
-    /// not plan through it while their own suites were green: AVG, every DISTINCT aggregate, and every OVER
-    /// window. Each needs a logical rewrite that belongs to no convention, and <c>Programs.ofRules</c> had
-    /// cleared Calcite's rules off the planner along with it. Running <c>Programs.standard</c> itself is
-    /// what keeps them: its planner pass installs nothing and plans with what the planner carries, which is
-    /// Calcite's own rules and — by way of <see cref="AddRulesProgram"/> here, and
-    /// <c>ClrPrepareImpl.CreatePlanner</c> for a prepared statement — this convention's.
+    /// <c>Programs.standard</c>'s planner pass installs no rules and plans with whatever the planner carries,
+    /// which is Calcite's own rules plus this convention's (added here by <see cref="AddRulesProgram"/>, and by
+    /// <c>ClrPrepareImpl.CreatePlanner</c> for a prepared statement). AVG, DISTINCT aggregates and OVER windows
+    /// each need a logical rewrite from Calcite's rules that belongs to no convention, so they are the shapes
+    /// covered here.
     ///
-    /// <para><see cref="ClrCursorConventionTests"/> holds the same queries opened synchronously. The program
-    /// is the same one either way, so what these two hold apart is not the program but the pair of bodies
-    /// each node answers with — the same planned root implemented twice.</para>
+    /// <para><see cref="ClrCursorConventionTests"/> runs the same queries opened synchronously, so the two
+    /// classes together cover both bodies of each node for one planned root.</para>
     /// </remarks>
     public class ClrCursorRulesTests
     {
 
         /// <summary>
-        /// Initializes the static instance.
+        /// Puts Calcite's JDBC assembly on the boot class path.
         /// </summary>
         static ClrCursorRulesTests()
         {
@@ -54,6 +50,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// The context a plan is bound with.
         /// </summary>
+        /// <param name="rootSchema">The schema the plan was planned against.</param>
+        /// <param name="parameters">The map the implementor stashed values into, which <c>get</c> answers from.</param>
         sealed class TestDataContext(SchemaPlus rootSchema, java.util.Map parameters) : DataContext
         {
 
@@ -72,14 +70,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Plans a statement through the shipped program and returns its rows.
+        /// Plans a statement through the shipped program and returns its rows, read through the awaiting open.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement, over the asynchronous <c>SALES</c> table.</param>
+        /// <returns>The rows, a one-column result wrapped in a one-element array.</returns>
         /// <remarks>
-        /// One <c>transform</c>, because the sequence is one <c>Program</c> as <c>Programs.standard</c> is,
-        /// and the traits are the logical root's own rather than an empty set — an empty one asks for no
-        /// collation and <c>SortRemoveRule</c> takes the ORDER BY away.
+        /// The sequence is one <c>Program</c>, so there is one <c>transform</c>. The requested traits are the
+        /// logical root's own rather than an empty set: an empty set asks for no collation, and
+        /// <c>SortRemoveRule</c> then removes the ORDER BY.
         /// </remarks>
         static async Task<List<object[]>> Run(string sql)
         {
@@ -162,11 +160,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// An ORDER BY survives the shipped program.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// Its own test because it is what caught the trait set being wrong. <c>SortRemoveRule</c> arrives
-        /// with Calcite's abstract rules, which the planner pass now keeps, and it takes a sort away when the
-        /// traits the root is asked for carry no collation — so a plan driven from
-        /// <c>getEmptyTraitSet()</c> returns the right rows in the wrong order and nothing else notices.
+        /// <c>SortRemoveRule</c>, one of Calcite's rules the planner pass keeps, removes a sort when the traits
+        /// requested for the root carry no collation. A plan requested with an empty trait set then returns the
+        /// right rows in the wrong order, which only a test of the order detects.
         /// </remarks>
         [Fact]
         public async Task ShouldSortThroughTheShippedProgram()

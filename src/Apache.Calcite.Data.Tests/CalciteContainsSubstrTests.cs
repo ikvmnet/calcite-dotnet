@@ -4,11 +4,13 @@ namespace Apache.Calcite.Data.Tests
 {
 
     /// <summary>
-    /// Verifies BigQuery's <c>CONTAINS_SUBSTR</c> executes end-to-end. Calcite normalizes both operands
-    /// through commons-text's <c>StringEscapeUtils.unescapeJava</c>, which calls commons-lang3; a regression
-    /// here most likely means the closure has resolved a commons-lang3 older than the one commons-text was
-    /// built against, and org.apache.commons.text.dll is once again compiling against lang3 stubs.
+    /// Verifies BigQuery's <c>CONTAINS_SUBSTR</c> executes end to end.
     /// </summary>
+    /// <remarks>
+    /// Calcite normalizes both operands through commons-text's <c>StringEscapeUtils.unescapeJava</c>, which
+    /// calls commons-lang3. A failure here usually means the dependency closure resolved a commons-lang3
+    /// older than the one commons-text requires.
+    /// </remarks>
     public class CalciteContainsSubstrTests
     {
 

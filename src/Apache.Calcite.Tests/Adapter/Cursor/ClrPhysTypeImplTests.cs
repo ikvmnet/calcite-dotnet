@@ -13,20 +13,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Holds the two constants a row of no fields is, and the fact about IKVM that had them resolving to
-    /// nothing.
+    /// Tests of the rows <c>ClrPhysTypeImpl</c> and <c>JavaRowFormatExtensions</c> build for a row type with no
+    /// fields.
     /// </summary>
     /// <remarks>
-    /// <c>FlatLists.COMPARABLE_EMPTY_LIST</c> and <c>Unit.INSTANCE</c> are Java <c>static final</c> fields,
-    /// and <b>IKVM does not compile one to a CLR field of that name</b> — it emits a property over a backing
-    /// field it renames to <c>__&lt;&gt;NAME</c>, so that reading it from C# runs the class initializer the
-    /// way Java guarantees. <c>GetField</c> by the Java name answers nothing, and both of these were looked
-    /// up that way behind a <c>!</c>: null since they were written, and an NRE waiting for the first query
-    /// whose row type has no fields.
-    ///
-    /// <para>Nothing had ever reached that shape, which is why the suite was green over a null. These
-    /// evaluate the expressions rather than assert on their node type, because what was wrong was the
-    /// resolution and only running it settles that.</para>
+    /// Such a row is one of two Java constants, <c>FlatLists.COMPARABLE_EMPTY_LIST</c> or <c>Unit.INSTANCE</c>.
+    /// IKVM compiles a Java <c>static final</c> field to a property over a renamed backing field, so the
+    /// expression must reach it as a property rather than a field of the Java name. These tests evaluate the
+    /// expressions, because only evaluating them shows that the member resolved.
     /// </remarks>
     public class ClrPhysTypeImplTests
     {
@@ -56,8 +50,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// The selector a physical type of no fields generates, which is the path a plan actually reaches
-        /// the constant through.
+        /// A selector projecting no fields builds the empty-list row; this is the route by which a plan reaches
+        /// the constant.
         /// </summary>
         [Fact]
         public void ShouldGenerateASelectorForARowOfNoFields()
@@ -80,10 +74,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Runs an expression that takes nothing.
+        /// Compiles and runs an expression that takes no parameters, returning its value.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <returns></returns>
+        /// <param name="expression">An expression with no free parameters.</param>
+        /// <returns>The expression's value, boxed.</returns>
         static object Evaluate(Expression expression)
         {
             return Expression.Lambda<Func<object>>(Expression.Convert(expression, typeof(object))).Compile()();

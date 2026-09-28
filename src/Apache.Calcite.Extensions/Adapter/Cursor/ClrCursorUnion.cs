@@ -14,17 +14,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// Implementation of <see cref="Union"/> in the <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
     /// <remarks>
-    /// The node that shows the shape a deferred source takes in this convention. <c>UNION ALL</c> is
-    /// linq4j's <c>concat</c>, which acquires each source at its turn inside <c>moveNext</c>, so the inputs
-    /// are handed to the operator as opens — both opens of each, because the advance that reaches a source
-    /// may be either — through <see cref="ClrCursorRelImplementor.Opener"/> and
-    /// <see cref="ClrCursorRelImplementor.OpenerAsync"/>. So each body visits every input through both
-    /// hierarchies and folds both chains in step, and what differs between the bodies is which chain is
-    /// handed up. The fold is Calcite's — a pairwise <c>concat</c>, left to right — with each step's pair of
-    /// opens bound to locals, as Calcite binds each child, so that a step names the fold before it once.
-    /// <c>UNION</c> is linq4j's <c>union</c>, which drains its first source and then acquires its
-    /// second inside the open, so the second is deferred within the body's own kind and only that opener is
-    /// needed.
+    /// Mirrors <c>EnumerableUnion</c>, folding the inputs pairwise from left to right.
+    ///
+    /// <para><c>UNION ALL</c> uses linq4j's <c>concat</c>, which acquires each source in turn inside an
+    /// advance of either kind. Each implementation therefore visits every input through both hierarchies and
+    /// passes a synchronous and an awaiting opener for each operand, building the synchronous and awaiting
+    /// folds side by side.</para>
+    ///
+    /// <para><c>UNION</c> uses linq4j's <c>union</c>, which drains its first source and then acquires the
+    /// next within its own open, so each later input is passed as an opener of the implementation's own
+    /// kind.</para>
     /// </remarks>
     public class ClrCursorUnion : Union, ClrCursorRel
     {
@@ -32,10 +31,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="inputs"></param>
-        /// <param name="all"></param>
+        /// <param name="cluster">The cluster the node belongs to.</param>
+        /// <param name="traitSet">The node's traits.</param>
+        /// <param name="inputs">The inputs, a list of <see cref="org.apache.calcite.rel.RelNode"/>.</param>
+        /// <param name="all">Whether duplicates are kept (<c>UNION ALL</c>).</param>
         public ClrCursorUnion(RelOptCluster cluster, RelTraitSet traitSet, java.util.List inputs, bool all) :
             base(cluster, traitSet, inputs, all)
         {
@@ -53,11 +52,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         {
             Expression? unionExp = null;
 
-            // the other hierarchy's fold, kept in step for a concat: a source it acquires inside an advance
-            // has to be openable by the advance of either kind
+            // the other kind's fold, needed by concat, which acquires sources inside advances of either kind
             Expression? unionExpAsync = null;
 
-            // the fold so far, bound once per step as Calcite binds each child
+            // locals holding the openers of the fold so far; see Bind
             var locals = new List<ParameterExpression>();
             var body = new List<Expression>();
 
@@ -108,11 +106,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         {
             Expression? unionExp = null;
 
-            // the other hierarchy's fold, kept in step for a concat: a source it acquires inside an advance
-            // has to be openable by the advance of either kind
+            // the other kind's fold, needed by concat, which acquires sources inside advances of either kind
             Expression? unionExpSync = null;
 
-            // the fold so far, bound once per step as Calcite binds each child
+            // locals holding the openers of the fold so far; see Bind
             var locals = new List<ParameterExpression>();
             var body = new List<Expression>();
 
@@ -159,15 +156,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Binds both opens of the fold so far to locals, and returns the locals.
+        /// Assigns the synchronous and awaiting openers of the fold so far to new locals, and returns them.
         /// </summary>
         /// <remarks>
-        /// Calcite's <c>EnumerableUnion</c> appends each child to its block as <c>child{i}</c> and folds
-        /// <c>concat</c> over those names, so every step names the fold once. A step here needs the fold
-        /// twice — as the open of each kind, since the advance that reaches it may be either — and each open
-        /// holds the other hierarchy's fold as well, so inlined the expression doubles with every input: a
-        /// twenty-way <c>UNION ALL</c>, which an <c>IN</c> list of twenty dynamic parameters becomes, compiled
-        /// about a million copies of its first input. Bound, each step names the previous pair once.
+        /// Each step of a <c>UNION ALL</c> fold refers to the previous step's fold twice, once per kind, so
+        /// inlining it would double the expression with every input. Binding each step to locals keeps the
+        /// tree linear in the number of inputs, as <c>EnumerableUnion</c> binds each child to a variable.
         /// </remarks>
         static (ParameterExpression Open, ParameterExpression OpenAsync) Bind(ClrCursorRelImplementor implementor, List<ParameterExpression> locals, List<Expression> body, int i, ClrCursorResult fold, ClrCursorAsyncResult foldAsync)
         {
@@ -186,7 +180,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Wraps the result in the block that binds the fold's locals, where there are any.
+        /// Wraps the result in a block declaring and assigning the fold's locals, if there are any.
         /// </summary>
         static Expression Block(List<ParameterExpression> locals, List<Expression> body, Expression result)
         {

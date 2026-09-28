@@ -15,26 +15,22 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// The accessors and the serializers, against the <c>ST_*</c> each one mirrors.
+    /// Compares the accessors and serializers with the Calcite <c>ST_*</c> function each one delegates to.
     /// </summary>
     /// <remarks>
-    /// These read or rearrange coordinates without interpreting the space between them, so unlike the
-    /// relations there is no geodesy in them at all and each is a delegation to the very method Calcite's
-    /// operator of that name calls. What can go wrong is therefore not the arithmetic but the wiring: forty
-    /// declarations written to one pattern is forty chances to point a name at the wrong body. Comparing
-    /// every one against Calcite over shapes of every kind is what catches that.
+    /// These read or rearrange coordinates without any geodesy, so each delegates to the method Calcite's
+    /// operator of the same name calls. What these tests check is the wiring: that each name reaches the
+    /// right body and is typed to match it.
     ///
-    /// <para>The bounding-box accessors are the exception worth stating. <c>CLR_ST_GEOG_XMIN</c> and its four
-    /// relatives are computed structurally and are wrong in the usual way for anything crossing the
-    /// antimeridian, where the least longitude of a shape spanning the seam is not the westmost point of it.
-    /// That is inherited rather than introduced, and it is a documentation problem rather than a second
-    /// implementation; nothing here is near the seam.</para>
+    /// <para><c>CLR_ST_GEOG_XMIN</c> and its relatives are computed from coordinates, so for a shape crossing
+    /// the antimeridian the least longitude is not the westmost point. No shape here is near the
+    /// antimeridian.</para>
     /// </remarks>
     public class GeographyAccessorTests
     {
 
         /// <summary>
-        /// Shapes of every kind an accessor has something to say about.
+        /// One shape of each kind the accessors distinguish.
         /// </summary>
         static readonly string[] shapes =
         [
@@ -57,7 +53,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Every one-argument accessor and serializer, ours beside Calcite's.
+        /// Every one-argument accessor and serializer, with the Calcite function it is compared with.
         /// </summary>
         static readonly (string Name, Func<Geometry, object?> Ours, Func<Geometry, object?> Theirs)[] unary =
         [
@@ -99,37 +95,37 @@ namespace Apache.Calcite.Geography.Tests
         ];
 
         /// <summary>
-        /// Renders an answer so that two of them can be compared whatever their type.
+        /// Renders an answer as a string, so that answers of different runtime types can be compared.
         /// </summary>
-        /// <param name="answer"></param>
-        /// <returns></returns>
+        /// <param name="answer">The value a function or query returned; may be <c>null</c>.</param>
+        /// <returns><c>null</c> as <c>"null"</c>, a geometry as WKT, a boolean in lowercase, a byte array as lowercase
+        /// hex, and anything else by <c>ToString</c>.</returns>
         internal static string Render(object? answer)
         {
             return answer switch
             {
                 null => "null",
                 Geometry geometry => geometry.toText(),
-                // one side of a pair returns a boxed Boolean and the other a primitive, and the two spell
-                // themselves differently — java.lang.Boolean lowercase, System.Boolean capitalised
+                // One side of a pair may return a java.lang.Boolean and the other a bool, and they print
+                // differently ("true" and "True").
                 java.lang.Boolean boxed => boxed.booleanValue() ? "true" : "false",
                 bool value => value ? "true" : "false",
-                // a ByteString renders itself as lowercase hex, and the same value read back out of a result
-                // set is a byte array, which is what says the operator was typed VARBINARY
+                // A ByteString prints as lowercase hex; the same value read from a result set is a byte array
+                // when the operator is typed VARBINARY.
                 byte[] bytes => Convert.ToHexString(bytes).ToLowerInvariant(),
                 _ => answer.ToString() ?? "null",
             };
         }
 
         /// <summary>
-        /// Calls a function and renders what came back, an exception included.
+        /// Calls a function and renders its result, or the name of the exception type it throws.
         /// </summary>
-        /// <param name="call"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// Some of Calcite's accessors throw over a shape they do not apply to, and a delegation throws the
-        /// same way. That is an answer to compare like any other, so the kind of the exception is rendered
-        /// rather than allowed to end the run.
+        /// Some of Calcite's accessors throw over a shape they do not apply to, and throwing the same exception
+        /// is part of agreeing with them.
         /// </remarks>
+        /// <param name="call">The function to call.</param>
+        /// <returns>The rendered result, or the simple name of the exception's type if the call throws.</returns>
         internal static string Answer(Func<object?> call)
         {
             try
@@ -165,18 +161,12 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Every accessor, called as SQL rather than as a method, and answered the same.
+        /// Runs every accessor as a SQL operator and requires the same answer as calling its method.
         /// </summary>
         /// <remarks>
-        /// The comparison above is between two C# methods and says nothing about which of them a name is
-        /// wired to. This runs the operator, so a declaration pointing <c>CLR_ST_GEOG_XMIN</c> at
-        /// <c>XMax</c> — or typed as though it returned something else — is caught here and only here.
-        /// Everything goes in one statement per shape rather than one per operator, which is thirty-five
-        /// declarations checked in three round trips.
-        ///
-        /// <para>An accessor that throws over the shape is left out of the statement rather than expected to
-        /// throw: an exception in one column ends the whole query, and what it would prove is already proven
-        /// by the comparison above.</para>
+        /// This checks the operator declarations: an operator bound to the wrong method, or declared with the
+        /// wrong return type, fails here. All accessors go into one statement per shape. An accessor that
+        /// throws over the shape is left out, since one throwing column would end the whole query.
         /// </remarks>
         [Fact]
         public void ShouldRunEveryAccessorAsAnOperator()
@@ -253,13 +243,10 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Every format writes something the matching reader takes back.
+        /// Each format's writer produces something that format's reader reads back to the same geometry.
         /// </summary>
         /// <remarks>
-        /// The serializers and the constructors are declared as a pair for each format, and a round trip is
-        /// what says the pair was wired to one another rather than to a neighbour. GML is left out because
-        /// Calcite writes a form its own reader does not take, which is its defect and not one to reproduce
-        /// by asserting it.
+        /// GML is left out: Calcite's <c>ST_AsGML</c> writes a form its own GML reader does not accept.
         /// </remarks>
         [Fact]
         public void ShouldReadBackEveryFormatItWrites()
@@ -289,8 +276,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// An SRID a geography cannot be in is refused however it arrives — as an argument, or written into
-        /// the text or the bytes themselves.
+        /// An SRID other than 4326 is refused, whether passed as an argument or written into EWKT.
         /// </summary>
         [Fact]
         public void ShouldRefuseAnSridThatIsNotWgs84()
@@ -301,7 +287,7 @@ namespace Apache.Calcite.Geography.Tests
             ((Action)(() => GeographyFunctions.FromWkt("POINT(1 2)", wrong))).Should().Throw<java.lang.IllegalArgumentException>();
             ((Action)(() => GeographyFunctions.FromWkb(wkb, wrong))).Should().Throw<java.lang.IllegalArgumentException>();
             ((Action)(() => GeographyFunctions.FromGml("<gml:Point><gml:coordinates>1,2</gml:coordinates></gml:Point>", wrong))).Should().Throw<java.lang.IllegalArgumentException>();
-            // Calcite spells the prefix srid:N; rather than the PostGIS SRID=N;, and reads no other form
+            // Calcite's EWKT prefix is srid:N; rather than PostGIS's SRID=N;, and it reads no other form.
             ((Action)(() => GeographyFunctions.FromEwkt("srid:3857;POINT(1 2)"))).Should().Throw<java.lang.IllegalArgumentException>();
         }
 

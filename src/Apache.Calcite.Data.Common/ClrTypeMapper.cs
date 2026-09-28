@@ -9,34 +9,26 @@ namespace Apache.Calcite.Data.Common
 {
 
     /// <summary>
-    /// Assembles the chain of resolvers that answers type questions, and is where a caller adds its own.
+    /// Builds the chain of resolvers that maps Calcite types to CLR types, and is where a caller adds its own
+    /// resolvers.
     /// </summary>
     /// <remarks>
-    /// <b>A builder, and not where a chain lives.</b> It holds no type factory and answers no lookups. A
-    /// chain is settled somewhere — a data source settles one when it is built and holds it fixed
-    /// thereafter, a connection before it opens — and what holds it afterwards holds
-    /// <see cref="Resolvers"/>, which is immutable, rather than this. A session binds that to the type
-    /// factory it created and gets a <see cref="ClrTypeRegistry"/>, because what a Calcite type is held in
-    /// is the type factory's answer and two sessions need not agree.
+    /// A mapper starts with <see cref="DefaultClrTypeResolver"/> and answers no lookups itself. Its chain,
+    /// <see cref="Resolvers"/>, is an immutable snapshot; <see cref="Bind"/> combines it with a session's type
+    /// factory into a <see cref="ClrTypeRegistry"/>, which does the lookups. Changes made to a mapper after a
+    /// chain has been taken from it do not affect that chain. The members are safe to call from multiple
+    /// threads.
     /// </remarks>
     public sealed class ClrTypeMapper
     {
 
         /// <summary>
-        /// The chain, replaced whole rather than mutated.
+        /// The chain, replaced whole on every change so that reading or copying it needs no lock.
         /// </summary>
-        /// <remarks>
-        /// <b>Immutable so that reading it costs nothing.</b> Every connection reads this chain when it
-        /// opens and almost none of them change it, so the cost that matters is the read and the copy, not
-        /// the change. A list behind a lock made both allocate — the copy constructor took the lock and
-        /// copied the elements, and <see cref="Resolvers"/> allocated an array per call — where replacing
-        /// an immutable one makes a read a field load and a copy a reference assignment. A change allocates
-        /// instead, which is the right way round for something configured once and read per connection.
-        /// </remarks>
         ImmutableArray<IClrTypeResolver> _resolvers;
 
         /// <summary>
-        /// Initializes a new instance carrying the built-in mappings.
+        /// Initializes a new instance whose chain holds only the built-in mappings.
         /// </summary>
         public ClrTypeMapper()
         {
@@ -44,13 +36,13 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Initializes a new instance carrying the same resolvers as another.
+        /// Initializes a new instance with the same chain as another.
         /// </summary>
         /// <param name="other">The mapper to copy the chain of.</param>
         /// <remarks>
-        /// One reference, because the chain is immutable: what this copies is which chain, and a change to
-        /// either mapper afterwards replaces its own reference and leaves the other's alone.
+        /// Later changes to either mapper do not affect the other.
         /// </remarks>
+        /// <exception cref="ArgumentNullException"><paramref name="other"/> is <see langword="null"/>.</exception>
         public ClrTypeMapper(ClrTypeMapper other)
         {
             ArgumentNullException.ThrowIfNull(other);
@@ -59,13 +51,10 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Initializes a new instance carrying a chain already settled.
+        /// Initializes a new instance with a given chain.
         /// </summary>
-        /// <param name="resolvers">The chain, in the order it is to be asked.</param>
-        /// <remarks>
-        /// What a connection uses to go on from the chain its data source fixed: the data source holds the
-        /// chain and not a mapper, so adding to it starts here.
-        /// </remarks>
+        /// <param name="resolvers">The chain, in the order it is asked. The sequence is copied.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="resolvers"/> is <see langword="null"/>.</exception>
         public ClrTypeMapper(IEnumerable<IClrTypeResolver> resolvers)
         {
             ArgumentNullException.ThrowIfNull(resolvers);
@@ -74,16 +63,16 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Puts a resolver in front of every other, so that it answers first.
+        /// Puts a resolver at the front of the chain, so that it is asked first.
         /// </summary>
-        /// <param name="resolver"></param>
-        /// <returns></returns>
+        /// <param name="resolver">The resolver.</param>
+        /// <returns>This mapper.</returns>
         /// <remarks>
-        /// This is the usual direction. A resolver added at the front overrides the built-in answer for the
-        /// types it claims and passes everything else along by answering <see langword="null"/>. Adding a
-        /// resolver of a type already present moves it rather than duplicating it, so registering twice is
-        /// the same as registering once.
+        /// A resolver at the front overrides the built-in mappings for the types it answers, and passes every
+        /// other lookup on by returning <see langword="null"/>. A resolver of the same runtime type already
+        /// in the chain is removed first, so adding one twice leaves a single instance.
         /// </remarks>
+        /// <exception cref="ArgumentNullException"><paramref name="resolver"/> is <see langword="null"/>.</exception>
         public ClrTypeMapper Prepend(IClrTypeResolver resolver)
         {
             ArgumentNullException.ThrowIfNull(resolver);
@@ -93,10 +82,15 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Puts a resolver behind every other, so that it answers only what nothing else claimed.
+        /// Puts a resolver at the end of the chain, so that it answers only lookups no other resolver
+        /// answers.
         /// </summary>
-        /// <param name="resolver"></param>
-        /// <returns></returns>
+        /// <param name="resolver">The resolver.</param>
+        /// <returns>This mapper.</returns>
+        /// <remarks>
+        /// A resolver of the same runtime type already in the chain is removed first.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException"><paramref name="resolver"/> is <see langword="null"/>.</exception>
         public ClrTypeMapper Append(IClrTypeResolver resolver)
         {
             ArgumentNullException.ThrowIfNull(resolver);
@@ -106,15 +100,12 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Replaces the chain with one that has the resolver put where <paramref name="place"/> puts it.
+        /// Replaces the chain with one in which any resolver of the same runtime type as
+        /// <paramref name="resolver"/> is removed and <paramref name="resolver"/> is placed by
+        /// <paramref name="place"/>, retrying until the compare-and-swap succeeds.
         /// </summary>
         /// <param name="resolver">The resolver to add.</param>
-        /// <param name="place">Where in the chain it goes.</param>
-        /// <remarks>
-        /// A resolver of a type already present is moved rather than duplicated, so registering twice is the
-        /// same as registering once. The compare-and-swap is what makes two callers configuring one mapper
-        /// safe without a lock on the read path, which is the path that matters.
-        /// </remarks>
+        /// <param name="place">Inserts the resolver into the chain.</param>
         void Replace(IClrTypeResolver resolver, Func<ImmutableArray<IClrTypeResolver>, IClrTypeResolver, ImmutableArray<IClrTypeResolver>> place)
         {
             while (true)
@@ -137,7 +128,7 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Discards every added resolver and restores the built-in mappings.
+        /// Replaces the chain with one holding only the built-in mappings.
         /// </summary>
         public void Reset()
         {
@@ -145,19 +136,20 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Gets the resolvers in the order they will be asked.
+        /// Gets the chain, in the order its resolvers are asked.
         /// </summary>
         /// <remarks>
-        /// Immutable, so this is what a data source or a connection keeps once its chain is settled: holding
-        /// it is holding a chain nothing can change, and binding it needs no copy.
+        /// The array is immutable, so it can be kept as a fixed chain; later changes to this mapper do not
+        /// affect it.
         /// </remarks>
         public ImmutableArray<IClrTypeResolver> Resolvers => _resolvers;
 
         /// <summary>
-        /// Binds these resolvers to a type factory.
+        /// Returns a registry that answers lookups with the current chain against a type factory.
         /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <returns></returns>
+        /// <param name="typeFactory">The type factory of the session the registry serves.</param>
+        /// <returns>The registry.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="typeFactory"/> is <see langword="null"/>.</exception>
         public ClrTypeRegistry Bind(JavaTypeFactory typeFactory)
         {
             ArgumentNullException.ThrowIfNull(typeFactory);

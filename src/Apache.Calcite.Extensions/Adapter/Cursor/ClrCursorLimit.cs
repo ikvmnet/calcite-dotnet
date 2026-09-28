@@ -16,16 +16,19 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// Relational expression that applies a limit and/or offset, in the
     /// <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
+    /// <remarks>
+    /// Mirrors <c>EnumerableLimit</c>.
+    /// </remarks>
     public class ClrCursorLimit : SingleRel, ClrCursorRel
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorLimit"/>.
+        /// Creates a <see cref="ClrCursorLimit"/>, deriving its collation and distribution from its input.
         /// </summary>
-        /// <param name="input"></param>
-        /// <param name="offset"></param>
-        /// <param name="fetch"></param>
-        /// <returns></returns>
+        /// <param name="input">The input.</param>
+        /// <param name="offset">The number of rows to skip, or null.</param>
+        /// <param name="fetch">The maximum number of rows to return, or null.</param>
+        /// <returns>The new node.</returns>
         public static ClrCursorLimit Create(RelNode input, RexNode? offset, RexNode? fetch)
         {
             var cluster = input.getCluster();
@@ -41,23 +44,24 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         readonly RexNode? fetch;
 
         /// <summary>
-        /// The number of rows skipped, which <c>EnumerableLimit</c> exposes as a public field.
+        /// Gets the number of rows skipped, or null. <c>EnumerableLimit</c> exposes this as a public field.
         /// </summary>
         public RexNode? Offset => offset;
 
         /// <summary>
-        /// The number of rows returned, which <c>EnumerableLimit</c> exposes as a public field.
+        /// Gets the maximum number of rows returned, or null. <c>EnumerableLimit</c> exposes this as a public
+        /// field.
         /// </summary>
         public RexNode? Fetch => fetch;
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Initializes a new instance. <see cref="Create"/> is preferred, as it derives the trait set.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="input"></param>
-        /// <param name="offset"></param>
-        /// <param name="fetch"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traitSet">The trait set, which carries <see cref="ClrCursorConvention"/>.</param>
+        /// <param name="input">The input.</param>
+        /// <param name="offset">The number of rows to skip, or null.</param>
+        /// <param name="fetch">The maximum number of rows to return, or null.</param>
         public ClrCursorLimit(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, RexNode? offset, RexNode? fetch) :
             base(cluster, traitSet, input)
         {
@@ -78,14 +82,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// <c>RelMdRowCount.getRowCount(EnumerableLimit, RelMetadataQuery)</c>. Calcite answers an
-        /// <c>EnumerableLimit</c>'s row count from a handler keyed on that class, which this node does not
-        /// reach; it reaches the handler for <see cref="SingleRel"/>, which asks this method. Where the input's
-        /// count is null the handler answers null, and this cannot: it unboxes, as <c>SingleRel</c>'s own
-        /// estimate does.
+        /// Estimates the row count as <c>RelMdRowCount.getRowCount(EnumerableLimit, RelMetadataQuery)</c> does:
+        /// the input's count less the offset, capped at the fetch.
         /// </summary>
-        /// <param name="mq"></param>
-        /// <returns></returns>
+        /// <param name="mq">The metadata query.</param>
+        /// <returns>The estimated row count.</returns>
+        /// <remarks>
+        /// Calcite's handler is keyed on <c>EnumerableLimit</c>, so this node reaches the handler for
+        /// <see cref="SingleRel"/>, which calls this method. Unlike Calcite's handler, this cannot answer null
+        /// when the input's count is unknown; it unboxes the count, as <c>SingleRel.estimateRowCount</c> does.
+        /// </remarks>
         public override double estimateRowCount(RelMetadataQuery mq)
         {
             var rowCount = mq.getRowCount(getInput()).doubleValue();
@@ -138,30 +144,30 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the expression giving a row count, which is a literal unless the query was prepared with a
-        /// parameter in its place.
+        /// Returns an expression evaluating an offset or fetch to a <c>BigDecimal</c>, validated and rounded by
+        /// <c>EnumUtils.numberToBigDecimal</c>.
         /// </summary>
+        /// <param name="implementor">The implementor.</param>
+        /// <param name="rexNode">The offset or fetch: a literal, a dynamic parameter, or another expression.</param>
+        /// <param name="kind"><c>OFFSET</c> or <c>FETCH</c>, for the error message.</param>
+        /// <param name="roundingPolicy">The expression from <see cref="RoundingPolicy"/>.</param>
+        /// <returns>The count expression.</returns>
         /// <remarks>
-        /// <c>EnumerableLimit.getExpression</c>, in <c>System.Linq.Expressions</c>: nothing of Calcite's
-        /// generates this, so nothing here is linq4j but the one expression Calcite's translator produces,
-        /// which is translated where it is produced.
+        /// Mirrors <c>EnumerableLimit.getExpression</c>.
         /// </remarks>
         internal static Expression Count(ClrCursorRelImplementor implementor, RexNode rexNode, string kind, Expression roundingPolicy)
         {
             Expression value;
 
             if (rexNode is RexDynamicParam param)
-                // no conversion: what the parameter holds is whatever was bound, and NumberToBigDecimal is
-                // what decides whether that is a number at all
+                // not converted: NumberToBigDecimal checks that whatever was bound is a number
                 value = Expression.Call(implementor.Root, DataContextGet, Expression.Constant("?" + param.getIndex()));
             else if (rexNode is RexLiteral literal)
                 value = Expression.Constant(RexLiteral.bigDecimalValue(literal), typeof(object));
             else
-                // an expression rather than a literal or a parameter, which the int reading could not take.
-                // Calcite's translator produces it, so it arrives as linq4j and is translated where it is
-                // produced rather than composed into a larger tree first
-                // through translateList, because every translate overload is package private and only the
-                // list forms are reachable -- a list of one is the same call by a name that can be said
+                // any other expression is translated by Calcite's translator and converted immediately. It goes
+                // through translateList because every translate overload is package private; a list of one is
+                // the same call
                 value = ClrEnumUtils.Convert(
                     implementor.Translator.Translate(
                         (org.apache.calcite.linq4j.tree.Expression)RexToLixTranslator
@@ -174,11 +180,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the expression giving the policy a FETCH or an OFFSET is rounded by.
+        /// Returns an expression giving the policy by which a FETCH or OFFSET is rounded.
         /// </summary>
+        /// <param name="implementor">The implementor.</param>
+        /// <returns>The policy the caller put in the implementor's map under
+        /// <see cref="ClrCursorRelImplementor.FetchOffsetRoundingPolicy"/>, or
+        /// <c>FetchOffsetRoundingPolicy.NONE</c>.</returns>
         /// <remarks>
-        /// <c>EnumerableLimit.getRoundingPolicy</c>. Whatever a caller stashed under
-        /// <c>_fetchOffsetRoundingPolicy</c>, and <c>FetchOffsetRoundingPolicy.NONE</c> where none did.
+        /// Mirrors <c>EnumerableLimit.getRoundingPolicy</c>.
         /// </remarks>
         internal static Expression RoundingPolicy(ClrCursorRelImplementor implementor)
         {
@@ -190,13 +199,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// <c>EnumUtils.numberToBigDecimal</c>, which checks that a FETCH or OFFSET evaluated to a
-        /// non-negative number and applies the rounding policy.
+        /// <c>EnumUtils.numberToBigDecimal</c>, which checks that a FETCH or OFFSET is a non-negative number
+        /// and applies the rounding policy.
         /// </summary>
         static readonly System.Reflection.MethodInfo NumberToBigDecimal = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.NUMBER_TO_BIG_DECIMAL_LIMIT.method);
 
         /// <summary>
-        /// <c>DataContext.get</c>, which a value prepared as a parameter arrives by.
+        /// <c>DataContext.get</c>, through which a dynamic parameter's value is read.
         /// </summary>
         static readonly System.Reflection.MethodInfo DataContextGet = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.DATA_CONTEXT_GET.method);
 

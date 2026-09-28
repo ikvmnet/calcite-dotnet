@@ -8,11 +8,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// A SQLite database on disk, populated, and disposed with the test.
+    /// A populated SQLite database in a temporary file, deleted on dispose.
     /// </summary>
     /// <remarks>
-    /// On disk rather than in memory because the adapter opens its own connections: an in-memory SQLite
-    /// database belongs to the connection that made it, so a second connection would find nothing there.
+    /// On disk rather than in memory because the adapter opens its own connections, and an in-memory SQLite
+    /// database is visible only to the connection that created it.
     /// </remarks>
     sealed class SqliteFixture : IDisposable
     {
@@ -20,7 +20,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         readonly string _path;
 
         /// <summary>
-        /// Creates a database holding the standard tables the tests query.
+        /// Creates the database with the <c>EMPS</c> and <c>DEPTS</c> tables the tests query.
         /// </summary>
         public SqliteFixture()
         {
@@ -58,7 +58,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Runs a statement against the database.
         /// </summary>
-        /// <param name="sql"></param>
+        /// <param name="sql">The statement to run.</param>
         public void Execute(string sql)
         {
             using var connection = DataSource.CreateConnection();
@@ -82,14 +82,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             }
             catch (IOException)
             {
-                // a file the process still holds open is not worth failing a test over
+                // a file still held open is left behind rather than failing the test
             }
         }
 
         /// <summary>
-        /// The <see cref="DbDataSource"/> Microsoft.Data.Sqlite does not ship.
+        /// A <see cref="DbDataSource"/> over SQLite connections, which Microsoft.Data.Sqlite does not provide.
         /// </summary>
-        /// <param name="connectionString"></param>
+        /// <param name="connectionString">The connection string each connection is created with.</param>
         sealed class Source(string connectionString) : DbDataSource
         {
 

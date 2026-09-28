@@ -10,16 +10,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
     /// <summary>
     /// Result of implementing a relational expression of the <see cref="ClrCursorConvention"/> calling
-    /// convention, as an open that awaits its acquisition.
+    /// convention as an awaiting open.
     /// </summary>
     /// <remarks>
-    /// <see cref="ClrCursorResult"/>'s companion, and the return type of the awaiting fork:
-    /// <see cref="ClrCursorRel.ImplementAsync"/> and
-    /// <see cref="ClrCursorRelImplementor.VisitChildAsync"/> answer this, and the synchronous members
-    /// answer the other. The expression's value is a <see cref="ValueTask{TResult}"/> of a
-    /// <c>IClrCursor&lt;TRow&gt;</c>: the cursor is the same one the other fork opens, and what is awaited
-    /// is the way to it. Two types rather than one is what makes the two hierarchies checkable — a body
-    /// cannot silently hand up the wrong kind, because the wrong kind does not compile.
+    /// Returned by <see cref="ClrCursorRel.ImplementAsync"/> and <see cref="ClrCursorRelImplementor.VisitChildAsync"/>;
+    /// the synchronous members return a <see cref="ClrCursorResult"/>. The expression's value is a
+    /// <see cref="ValueTask{TResult}"/> of an <c>IClrCursor&lt;TRow&gt;</c>, the same cursor type the synchronous
+    /// open produces. Instances are created with <see cref="ClrCursorRelImplementor.ResultAsync"/>.
     /// </remarks>
     public class ClrCursorAsyncResult
     {
@@ -28,13 +25,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// Initializes a new instance.
         /// </summary>
         /// <param name="expression">Expression whose value is the awaited open.</param>
-        /// <param name="physType">The Java type returned by this relational expression, and how it maps onto
-        /// the fields of the logical row type.</param>
+        /// <param name="physType">The physical type of the rows, and how it maps onto the fields of the
+        /// logical row type.</param>
         /// <param name="format">How a row is represented.</param>
-        /// <remarks>
-        /// Internal, so that <see cref="ClrCursorRelImplementor.ResultAsync"/> is the only way a node
-        /// has of making one, exactly as for the synchronous result.
-        /// </remarks>
         internal ClrCursorAsyncResult(Expression expression, ClrPhysType physType, JavaRowFormat format)
         {
             Expression = expression ?? throw new ArgumentNullException(nameof(expression));
@@ -49,8 +42,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         public Expression Expression { get; }
 
         /// <summary>
-        /// Gets the Java type returned by this relational expression, and how it maps onto the fields of the
-        /// logical row type.
+        /// Gets the physical type of the rows, and how it maps onto the fields of the logical row type.
         /// </summary>
         public ClrPhysType PhysType { get; }
 

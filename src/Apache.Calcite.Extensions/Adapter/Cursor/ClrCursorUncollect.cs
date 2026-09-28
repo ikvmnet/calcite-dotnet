@@ -18,20 +18,22 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// convention.
     /// </summary>
     /// <remarks>
-    /// Turns each row holding a collection into a row per element, which is what UNNEST becomes.
+    /// Mirrors <c>EnumerableUncollect</c>, which implements <c>UNNEST</c>: each input row produces a row per
+    /// element of its collections. It also accepts an input of a single <c>ANY</c> column, which
+    /// <c>EnumerableUncollect</c> cannot implement; such a value is read as a <c>java.util.List</c>.
     /// </remarks>
     public class ClrCursorUncollect : Uncollect, ClrCursorRel
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorUncollect"/>. Each field of the input must be an array or a
-        /// multiset, or the input must be the single column of type ANY that
-        /// <see cref="IsSingleAnyColumn"/> is about.
+        /// Creates a <see cref="ClrCursorUncollect"/> that expands struct elements into their fields and
+        /// produces no row for an empty collection.
         /// </summary>
-        /// <param name="traitSet"></param>
-        /// <param name="input"></param>
-        /// <param name="withOrdinality">whether the output carries an ORDINALITY column</param>
-        /// <returns></returns>
+        /// <param name="traitSet">The node's traits.</param>
+        /// <param name="input">The input, whose every field is an array, multiset or map, or which has a
+        /// single column of type <c>ANY</c>.</param>
+        /// <param name="withOrdinality">Whether the output has an <c>ORDINALITY</c> column.</param>
+        /// <returns>The new uncollect.</returns>
         public static ClrCursorUncollect Create(RelTraitSet traitSet, RelNode input, bool withOrdinality)
         {
             return Create(traitSet, input, withOrdinality, true, false);
@@ -40,33 +42,29 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates a <see cref="ClrCursorUncollect"/>.
         /// </summary>
-        /// <param name="traitSet"></param>
-        /// <param name="input"></param>
-        /// <param name="withOrdinality">whether the output carries an ORDINALITY column</param>
-        /// <param name="expandStructFields">whether a collection of a struct gives one column per field of
-        /// it, rather than one column holding the element whole</param>
-        /// <param name="isOuter">whether an empty or null collection gives one row of nulls, as a LEFT JOIN
-        /// would, rather than no row at all</param>
-        /// <returns></returns>
+        /// <param name="traitSet">The node's traits.</param>
+        /// <param name="input">The input, whose every field is an array, multiset or map, or which has a
+        /// single column of type <c>ANY</c>.</param>
+        /// <param name="withOrdinality">Whether the output has an <c>ORDINALITY</c> column.</param>
+        /// <param name="expandStructFields">Whether a struct element produces a column per field, rather than
+        /// one column holding the element.</param>
+        /// <param name="isOuter">Whether an empty or null collection produces one row of nulls rather than no
+        /// row.</param>
+        /// <returns>The new uncollect.</returns>
         public static ClrCursorUncollect Create(RelTraitSet traitSet, RelNode input, bool withOrdinality, bool expandStructFields, bool isOuter)
         {
             return new ClrCursorUncollect(input.getCluster(), traitSet, input, withOrdinality, com.google.common.collect.ImmutableList.of(), expandStructFields, isOuter);
         }
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create(RelTraitSet, RelNode, bool)"/> unless you know
-        /// what you are doing.
+        /// Initializes a new instance whose struct elements are expanded only if <paramref name="itemAliases"/>
+        /// is empty, as with <see cref="Uncollect"/>'s constructor of the same arity, and which is not outer.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="input"></param>
-        /// <param name="withOrdinality"></param>
-        /// <param name="itemAliases"></param>
-        /// <remarks>
-        /// <c>expandStructFields</c> is derived from the aliases being absent, which is what
-        /// <see cref="Uncollect"/>'s own constructor of this arity does and why this delegates rather than
-        /// naming a default: non-empty aliases historically meant the struct is not expanded.
-        /// </remarks>
+        /// <param name="cluster">The cluster the node belongs to.</param>
+        /// <param name="traitSet">The node's traits.</param>
+        /// <param name="input">The input.</param>
+        /// <param name="withOrdinality">Whether the output has an <c>ORDINALITY</c> column.</param>
+        /// <param name="itemAliases">Aliases for the output items, a list of strings, or an empty list.</param>
         public ClrCursorUncollect(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, bool withOrdinality, java.util.List itemAliases) :
             this(cluster, traitSet, input, withOrdinality, itemAliases, itemAliases.isEmpty(), false)
         {
@@ -74,16 +72,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create(RelTraitSet, RelNode, bool, bool, bool)"/>
-        /// unless you know what you are doing.
+        /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="input"></param>
-        /// <param name="withOrdinality"></param>
-        /// <param name="itemAliases"></param>
-        /// <param name="expandStructFields"></param>
-        /// <param name="isOuter"></param>
+        /// <param name="cluster">The cluster the node belongs to.</param>
+        /// <param name="traitSet">The node's traits.</param>
+        /// <param name="input">The input.</param>
+        /// <param name="withOrdinality">Whether the output has an <c>ORDINALITY</c> column.</param>
+        /// <param name="itemAliases">Aliases for the output items, a list of strings, or an empty list.</param>
+        /// <param name="expandStructFields">Whether a struct element produces a column per field, rather than
+        /// one column holding the element.</param>
+        /// <param name="isOuter">Whether an empty or null collection produces one row of nulls rather than no
+        /// row.</param>
         public ClrCursorUncollect(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, bool withOrdinality, java.util.List itemAliases, bool expandStructFields, bool isOuter) :
             base(cluster, traitSet, input, withOrdinality, itemAliases, expandStructFields, isOuter)
         {
@@ -92,16 +91,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
         /// <inheritdoc />
         /// <remarks>
-        /// <c>EnumerableUncollect.copy</c>, which carries the two fields 1.43 added and hands on no aliases.
-        /// Dropping <c>isOuter</c> would make a copy mean something the original did not — an uncollect that
-        /// yields a row of nulls for an empty collection becoming one that yields no row.
-        ///
-        /// <para>The aliases are not carried because they cannot be: <c>Uncollect.itemAliases</c> is private
-        /// and has no getter. Calcite's own node is in the same position and does the same thing, every one
-        /// of its constructors passing <c>Collections.emptyList()</c>. It matters only that the flags are
-        /// passed explicitly — the constructor that takes aliases instead <em>derives</em>
-        /// <c>expandStructFields</c> from their absence, so going through it here would set that field from
-        /// an emptiness that says nothing about the node being copied.</para>
+        /// Mirrors <c>EnumerableUncollect.copy</c>: <c>expandStructFields</c> and <c>isOuter</c> are copied, and
+        /// the item aliases are not, because <c>Uncollect.itemAliases</c> is private with no getter. The flags
+        /// are passed explicitly because the constructor without them derives <c>expandStructFields</c> from the
+        /// aliases.
         /// </remarks>
         public override RelNode copy(RelTraitSet traitSet, RelNode input)
         {
@@ -123,9 +116,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             if (IsSingleAnyColumn(fields))
             {
-                // the same pair every non-struct element type emits below, which SqlFunctions.flatProduct
-                // answers with LIST_AS_ENUMERABLE: it reads the run-time value as a java.util.List and takes
-                // a null as the empty sequence, which is what UNNEST of a null array answers anyway
+                // treated as a scalar-element collection: SqlFunctions reads the value as a java.util.List,
+                // and a null as an empty one
                 fieldCounts.add(java.lang.Integer.valueOf(-1));
                 inputTypes.add(SqlFunctions.FlatProductInputType.SCALAR);
             }
@@ -145,9 +137,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     var elementType = org.apache.calcite.sql.type.NonNullableAccessors.getComponentTypeOrThrow(type);
                     if (elementType.isStruct() && expandStructFields)
                     {
-                        // CALCITE-4063: one field, itself a struct of one item, and no ordinality, means the
-                        // result is a scalar rather than a list of one. The outer variant answers one null
-                        // scalar for an empty or null collection.
+                        // as in EnumerableUncollect, a single field whose element is a struct of
+                        // one field, without ordinality, yields scalars rather than one-element lists; the
+                        // outer variant yields one null for an empty or null collection
                         if (elementType.getFieldCount() == 1 && fields.size() == 1 && withOrdinality == false)
                             flatListForSingleItem = org.apache.calcite.linq4j.tree.Expressions.call(
                                 isOuter ? BuiltInMethod.FLAT_LIST_OUTER.method : BuiltInMethod.FLAT_LIST.method);
@@ -159,8 +151,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     }
                     else if (elementType.isStruct())
                     {
-                        // a struct element kept whole occupies a single output column, like a scalar one, but
-                        // its row value is converted out of the collection's internal list representation
+                        // a struct element kept whole occupies one output column, like a scalar, but is
+                        // converted from the collection's internal list representation
                         fieldCounts.add(java.lang.Integer.valueOf(-1));
                         inputTypes.add(SqlFunctions.FlatProductInputType.STRUCT);
                     }
@@ -213,9 +205,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             if (IsSingleAnyColumn(fields))
             {
-                // the same pair every non-struct element type emits below, which SqlFunctions.flatProduct
-                // answers with LIST_AS_ENUMERABLE: it reads the run-time value as a java.util.List and takes
-                // a null as the empty sequence, which is what UNNEST of a null array answers anyway
+                // treated as a scalar-element collection: SqlFunctions reads the value as a java.util.List,
+                // and a null as an empty one
                 fieldCounts.add(java.lang.Integer.valueOf(-1));
                 inputTypes.add(SqlFunctions.FlatProductInputType.SCALAR);
             }
@@ -235,9 +226,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     var elementType = org.apache.calcite.sql.type.NonNullableAccessors.getComponentTypeOrThrow(type);
                     if (elementType.isStruct() && expandStructFields)
                     {
-                        // CALCITE-4063: one field, itself a struct of one item, and no ordinality, means the
-                        // result is a scalar rather than a list of one. The outer variant answers one null
-                        // scalar for an empty or null collection.
+                        // as in EnumerableUncollect, a single field whose element is a struct of
+                        // one field, without ordinality, yields scalars rather than one-element lists; the
+                        // outer variant yields one null for an empty or null collection
                         if (elementType.getFieldCount() == 1 && fields.size() == 1 && withOrdinality == false)
                             flatListForSingleItem = org.apache.calcite.linq4j.tree.Expressions.call(
                                 isOuter ? BuiltInMethod.FLAT_LIST_OUTER.method : BuiltInMethod.FLAT_LIST.method);
@@ -249,8 +240,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     }
                     else if (elementType.isStruct())
                     {
-                        // a struct element kept whole occupies a single output column, like a scalar one, but
-                        // its row value is converted out of the collection's internal list representation
+                        // a struct element kept whole occupies one output column, like a scalar, but is
+                        // converted from the collection's internal list representation
                         fieldCounts.add(java.lang.Integer.valueOf(-1));
                         inputTypes.add(SqlFunctions.FlatProductInputType.STRUCT);
                     }
@@ -288,23 +279,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Whether the input is the one column of type ANY that <c>Uncollect.deriveUncollectRowType</c>
-        /// answers with a single ANY column of its own.
+        /// Returns whether the input is a single column of type <c>ANY</c>, for which
+        /// <c>Uncollect.deriveUncollectRowType</c> produces a single <c>ANY</c> column.
         /// </summary>
-        /// <param name="fields">the input's fields</param>
-        /// <returns></returns>
+        /// <param name="fields">The input's fields.</param>
         /// <remarks>
-        /// Not a port, and an addition rather than a defect: <c>EnumerableUncollect</c> cannot implement this
-        /// shape either, and fails before a row is read — it asks
-        /// <c>NonNullableAccessors.getComponentTypeOrThrow</c> for an element type an ANY has not got, which
-        /// is a plan Calcite forms and then throws <c>componentType is null for ANY</c> over.
-        /// <see cref="ClrAnyAggImplementors"/> is the same argument for the aggregates, and says more about
-        /// why a column of type ANY is the ordinary case rather than an exotic one.
-        ///
-        /// <para>The test is <c>deriveUncollectRowType</c>'s own, which is what makes it exact rather than a
-        /// guess: one field and ANY is the only shape that reaches the branch, because two fields of which
-        /// one is ANY throws <c>unnestArgument</c> while the node is being built and never arrives here.</para>
+        /// An addition to Calcite: <c>EnumerableUncollect</c> throws for this input, because
+        /// <c>NonNullableAccessors.getComponentTypeOrThrow</c> finds no component type for <c>ANY</c>. The
+        /// test is the one <c>deriveUncollectRowType</c> applies; an <c>ANY</c> column among several fields is
+        /// rejected when the node's row type is derived.
         /// </remarks>
+        /// <returns><see langword="true"/> if <paramref name="fields"/> holds exactly one field, of type <c>ANY</c>.</returns>
         static bool IsSingleAnyColumn(java.util.List fields)
         {
             return fields.size() == 1

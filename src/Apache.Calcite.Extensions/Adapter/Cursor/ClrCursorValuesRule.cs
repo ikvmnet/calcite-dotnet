@@ -12,13 +12,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <summary>
     /// Rule that converts a <see cref="LogicalValues"/> to a <see cref="ClrCursorValues"/>.
     /// </summary>
+    /// <remarks>
+    /// Mirrors <c>EnumerableValuesRule</c>.
+    /// </remarks>
     public class ClrCursorValuesRule : ConverterRule
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorValuesRule"/>.
+        /// Creates the rule with its default configuration.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorValuesRule Create()
         {
             return (ClrCursorValuesRule)Config.INSTANCE
@@ -34,7 +37,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule's configuration.</param>
         public ClrCursorValuesRule(Config config) :
             base(config)
         {
@@ -43,9 +46,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
         /// <inheritdoc />
         /// <remarks>
-        /// Two statements, exactly as <c>EnumerableValuesRule</c>: build the node, then copy it onto the
-        /// logical node's trait set with the convention swapped in. The logical node's traits are what the
-        /// rest of the plan was matched against.
+        /// As in <c>EnumerableValuesRule</c>, the new node is copied onto the logical node's traits with the
+        /// convention replaced, so it keeps the traits the rest of the plan was matched against.
         /// </remarks>
         public override RelNode? convert(RelNode rel)
         {

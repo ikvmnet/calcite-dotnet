@@ -6,14 +6,21 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Describes a request to execute a SQL statement against a Calcite session.
+    /// A statement to execute: its SQL text, a snapshot of its parameter values, its timeout and its hooks.
     /// </summary>
     internal sealed class CalciteExecuteRequest
     {
 
         /// <summary>
-        /// Builds a <see cref="CalciteExecuteRequest"/> from a <see cref="CalciteParameterCollection"/>.
+        /// Builds a request, capturing each parameter's current <see cref="System.Data.DbType"/> and value in
+        /// collection order.
         /// </summary>
+        /// <param name="commandText">The SQL text.</param>
+        /// <param name="parameters">The command's parameters.</param>
+        /// <param name="timeoutSeconds">The command timeout in seconds, or 0 for none.</param>
+        /// <param name="hooks">The hooks to attach while the statement is planned and opened, or
+        /// <see langword="null"/>.</param>
+        /// <returns>The request.</returns>
         internal static CalciteExecuteRequest From(string commandText, CalciteParameterCollection parameters, int timeoutSeconds, IEnumerable<CalciteHookEntry>? hooks = null)
         {
             var values = ImmutableArray.CreateBuilder<CalciteParameterValue>(parameters.Items.Count);
@@ -39,7 +46,8 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="sql">The SQL text to execute.</param>
         /// <param name="parameters">The bound parameter values, aligned positionally to the <c>?</c> placeholders in <paramref name="sql"/>.</param>
         /// <param name="commandTimeoutSeconds">The command timeout in seconds, or <c>0</c> for no timeout.</param>
-        /// <param name="hooks">Optional hook entries to activate for the duration of this request.</param>
+        /// <param name="hooks">The hooks to attach while the statement is planned and opened, or
+        /// <see langword="null"/>.</param>
         public CalciteExecuteRequest(string sql, ImmutableArray<CalciteParameterValue> parameters, int commandTimeoutSeconds, IEnumerable<CalciteHookEntry>? hooks = null)
         {
             Sql = sql ?? throw new ArgumentNullException(nameof(sql));
@@ -64,7 +72,7 @@ namespace Apache.Calcite.Data.Internal
         public int CommandTimeoutSeconds { get; }
 
         /// <summary>
-        /// Gets the hooks to activate for the duration of this request.
+        /// Gets the hooks to attach while the statement is planned and opened, or <see langword="null"/>.
         /// </summary>
         public IEnumerable<CalciteHookEntry>? Hooks { get; }
 

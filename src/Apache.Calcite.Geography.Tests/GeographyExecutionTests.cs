@@ -23,24 +23,22 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// A geography through a whole statement — planned, code-generated, compiled and run.
+    /// Runs statements using the operators end to end — planned, code-generated, compiled and executed — under
+    /// Calcite's <c>EnumerableConvention</c>.
     /// </summary>
     /// <remarks>
-    /// The design issue left this open: validation and code generation were measured and a full run was not.
-    /// It runs. The engine here is Calcite's own <c>EnumerableConvention</c>, so the block is Java source
-    /// compiled by Janino, which is the harder of the two cases — the body is a .NET method and Janino has to
-    /// resolve the <c>cli.</c>-prefixed name IKVM gives a CLR class, which it could not do under IKVM 8.14.0
-    /// or 8.15.0.
+    /// The generated block is Java source compiled by Janino, which has to resolve the <c>cli.</c>-prefixed
+    /// names IKVM gives the CLR classes that implement the operators. That requires IKVM 8.16.0 or later.
     /// </remarks>
     public class GeographyExecutionTests
     {
 
         /// <summary>
-        /// Plans the given query into <c>EnumerableConvention</c> and runs it, returning each row's columns
-        /// as they arrive.
+        /// Plans a query into <c>EnumerableConvention</c> over a schema holding <see cref="GeographyTable"/> as
+        /// <c>GEO</c>, runs it, and returns each row's columns as <c>ResultSet.getObject</c> returns them.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The query text.</param>
+        /// <returns>The rows, in the order the result set returns them.</returns>
         internal static List<object?[]> Run(string sql)
         {
             java.lang.Class.forName("org.apache.calcite.jdbc.Driver");
@@ -92,12 +90,12 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A geography column, read from a table and carried into a predicate.
+        /// A geometry column read from a table and passed to a predicate.
         /// </summary>
         /// <remarks>
-        /// The distance is written <c>200000.0</c>, which is <c>DECIMAL(7, 1)</c> and arrives at the body as
-        /// a <c>BigDecimal</c>. Calcite's own <c>ST_DWITHIN</c> cannot be called that way at all — it takes a
-        /// <c>double</c> and Janino refuses the call; see <c>GeographyFunctions.DWithin</c>.
+        /// The distance <c>200000.0</c> is a <c>DECIMAL(7, 1)</c> literal and reaches the method as a
+        /// <c>BigDecimal</c>. Calcite's own <c>ST_DWITHIN</c> takes a <c>double</c> and cannot be called with
+        /// such a literal; see <c>GeographyFunctions.DWithin</c>.
         /// </remarks>
         [Fact]
         public void ShouldRunAPredicateOverAGeographyColumn()
@@ -109,8 +107,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The crossing, run rather than validated: the same object comes out the other side and Calcite's
-        /// planar function measures it in degrees.
+        /// A geometry passed through <c>CLR_ST_GEOG_ASGEOM</c> can be given to Calcite's planar
+        /// <c>ST_DISTANCE</c>.
         /// </summary>
         [Fact]
         public void ShouldRunTheCrossingIntoCalcitesOwnFunction()
@@ -122,15 +120,12 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Every operator the table declares, run.
+        /// Runs the constructors, conversions, relations and measurements as SQL and checks each answer.
         /// </summary>
         /// <remarks>
-        /// Declaring an operator and running one are different things, and the gap between them is where a
-        /// body whose parameters cannot be reached from generated code hides — the <c>BigDecimal</c> that
-        /// stops Calcite's own <c>ST_DWITHIN</c> being called with <c>2.0</c> is exactly that shape of defect,
-        /// and it was found by running rather than by declaring. So each of the twelve declarations is called
-        /// here at least once, and the ones that answer a geography are wrapped in one that answers a value a
-        /// result set can carry.
+        /// An operator can validate and still fail in generated code, for instance when a literal argument's
+        /// type does not match the method's parameter. Operators that return a geometry are wrapped in one that
+        /// returns a value.
         /// </remarks>
         [Fact]
         public void ShouldRunEveryOperator()
@@ -192,7 +187,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A table of two rows, each holding a geography a degree apart on the equator.
+        /// A scannable table of two rows, <c>(ID, GEOG)</c>: 1 at <c>POINT(0.5 0)</c> and 2 at
+        /// <c>POINT(20 0)</c>.
         /// </summary>
         internal sealed class GeographyTable : AbstractTable, ScannableTable
         {

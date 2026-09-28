@@ -38,8 +38,8 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         {
             var value = Guid.Parse(literal);
 
-            // the byte order is the one the canonical 8-4-4-4-12 text writes, so a transfer that
-            // got either half or their order wrong would show up here
+            // both forms write their bytes in the order of the canonical 8-4-4-4-12 text, so a conversion that
+            // swapped or reordered the halves shows up here
             value.ToString("D").Should().Be(literal);
             JavaUuids.ToUuid(value).toString().Should().Be(literal);
         }
@@ -60,13 +60,10 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         }
 
         /// <summary>
-        /// And through the wrapper Calcite actually holds a UUID as at run time.
+        /// A <see cref="Guid"/> round-trips through <c>UuidValue</c>, the class Calcite holds a UUID as at run
+        /// time, and the wrapped <c>UUID</c> is the one <c>JavaUuids.ToUuid</c> gives.
         /// </summary>
-        /// <remarks>
-        /// <c>UuidValue</c> is what <c>JavaTypeFactoryImpl.getJavaClass</c> answers for a UUID, so it is
-        /// what a generated plan casts a bound value to. It carries the same two halves as the bare
-        /// <c>UUID</c>, and this says the transfer does not disagree with the one that goes through it.
-        /// </remarks>
+        /// <param name="literal">The GUID, in its standard text form.</param>
         [Theory]
         [InlineData("00000000-0000-0000-0000-000000000000")]
         [InlineData("ffffffff-ffff-ffff-ffff-ffffffffffff")]
@@ -87,12 +84,9 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         }
 
         /// <summary>
-        /// The class a UUID column's value is cast to is the wrapper, not the bare type.
+        /// <c>JavaTypeFactoryImpl.getJavaClass</c> maps a UUID column to <c>UuidValue</c>, not
+        /// <c>java.util.UUID</c>, so a value supplied as a bare <c>UUID</c> fails the cast a generated plan makes.
         /// </summary>
-        /// <remarks>
-        /// This is the fact the three producers rest on, and it is read from the type factory rather than
-        /// transcribed: a value handed over as a <c>java.util.UUID</c> fails the cast a plan generates.
-        /// </remarks>
         [Fact]
         public void TheJavaClassOfAUuidShouldBeTheWrapper()
         {

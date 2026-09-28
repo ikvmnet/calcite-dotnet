@@ -8,28 +8,30 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
 {
 
     /// <summary>
-    /// Which of the five shapes a metadata call's cache key takes, and the objects that shape needs.
+    /// Chooses the cache-key strategy for a metadata method and builds the key objects it uses.
     /// </summary>
     /// <remarks>
-    /// <c>CacheGeneratorUtil.CacheKeyStrategy</c>, which picks a shape from the method's parameters, writes
-    /// the keys it needs as fields of the generated class, and writes the block that chooses between them
-    /// into each call. Only the objects are built here; the block is emitted by
-    /// <see cref="ClrMetadataHandlerEmitter"/>.
+    /// Mirrors <c>CacheGeneratorUtil.CacheKeyStrategy</c>, which picks a strategy from the method's
+    /// parameters and writes its keys as fields of the generated handler. The keys are built here; the code
+    /// that selects among them is emitted by <see cref="ClrMetadataHandlerEmitter"/>.
     ///
-    /// <para>A key is compared by reference — <see cref="DescriptiveCacheKey"/> says so and overrides
-    /// nothing — so each is built once, when the handler is built, and the generated class holds it.</para>
+    /// <para>A <see cref="DescriptiveCacheKey"/> is compared by reference, so each key is built once per
+    /// handler and held by it.</para>
     /// </remarks>
     static class ClrMetadataCacheKey
     {
 
         /// <summary>
-        /// The lowest and highest int a key is kept ready for.
+        /// The lowest int argument that has a precomputed key.
         /// </summary>
         public const int Min = -256;
+        /// <summary>
+        /// The highest int argument that has a precomputed key.
+        /// </summary>
         public const int Max = 256;
 
         /// <summary>
-        /// The five shapes.
+        /// The cache-key strategies.
         /// </summary>
         public enum Strategy
         {
@@ -43,7 +45,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
             /// <summary>One key per constant of a single enum argument, and one for null.</summary>
             Enum,
 
-            /// <summary>One key per int in a fixed range, and a list outside it.</summary>
+            /// <summary>One key per int from <see cref="Min"/> to <see cref="Max"/>, and a list outside that range.</summary>
             Int,
 
             /// <summary>A list of the method's key and its arguments.</summary>
@@ -52,22 +54,24 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// A shape and what it holds.
+        /// A strategy and the key objects it uses.
         /// </summary>
-        /// <param name="Kind"></param>
+        /// <param name="Kind">The strategy.</param>
         /// <param name="Constants">
-        /// The objects the block reads: one key for <see cref="Strategy.NoArg"/> and
-        /// <see cref="Strategy.List"/>, the true and the false key for <see cref="Strategy.Boolean"/>, the
-        /// null key and the table for <see cref="Strategy.Enum"/>, and the key and the table for
-        /// <see cref="Strategy.Int"/>.
+        /// The key objects: one key for <see cref="Strategy.NoArg"/> and <see cref="Strategy.List"/>, the true
+        /// and false keys for <see cref="Strategy.Boolean"/>, the null key and the per-constant table for
+        /// <see cref="Strategy.Enum"/>, and the list key and the per-int table for <see cref="Strategy.Int"/>.
         /// </param>
         public readonly record struct Plan(Strategy Kind, object[] Constants);
 
         /// <summary>
-        /// Returns the shape a call of <paramref name="method"/> is cached under.
+        /// Returns the strategy a call of <paramref name="method"/> is cached under.
         /// </summary>
-        /// <param name="method"></param>
-        /// <returns></returns>
+        /// <exception cref="ArgumentException"><paramref name="method"/> takes fewer than two parameters (the rel
+        /// and the query).</exception>
+        /// <param name="method">A handler method whose first two parameters are the rel and the metadata query.</param>
+        /// <returns>The strategy, chosen by the type of the one argument after those two if there is one, and the keys it caches under.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="method"/> is <see langword="null"/>.</exception>
         public static Plan Of(MethodInfo method)
         {
             ArgumentNullException.ThrowIfNull(method);
@@ -110,19 +114,19 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         /// <summary>
         /// Returns the key describing <paramref name="method"/> called with <paramref name="arguments"/>.
         /// </summary>
-        /// <param name="method"></param>
-        /// <param name="arguments"></param>
-        /// <returns></returns>
+        /// <param name="method">The handler method.</param>
+        /// <param name="arguments">The argument text to show between the parentheses.</param>
+        /// <returns>A key whose description is the return type, declaring type, method name and <paramref name="arguments"/>.</returns>
         static DescriptiveCacheKey Describe(MethodInfo method, string arguments)
         {
             return new DescriptiveCacheKey($"{method.ReturnType.Name} {method.DeclaringType!.Name}.{method.Name}({arguments})");
         }
 
         /// <summary>
-        /// Returns the parameter types of <paramref name="method"/>, as the description names them.
+        /// Returns the parameter type names of <paramref name="method"/>, comma-separated, for a key's description.
         /// </summary>
-        /// <param name="method"></param>
-        /// <returns></returns>
+        /// <param name="method">The handler method.</param>
+        /// <returns>The CLR names of every parameter type, the rel and the query included.</returns>
         static string Arguments(MethodInfo method)
         {
             return string.Join(", ", method.GetParameters().Select(p => p.ParameterType.Name));

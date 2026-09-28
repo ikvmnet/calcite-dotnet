@@ -2,7 +2,7 @@
 
     <PropertyGroup>
         <TargetFrameworks>net8.0</TargetFrameworks>
-        <Description>What the Apache Calcite ADO.NET provider and the ADO.NET adapter both need. The CLR type mapping: which .NET type a Calcite SQL type is seen as, and the conversions across that boundary in both directions, through a chain of resolvers a caller can extend.</Description>
+        <Description>The mapping between Apache Calcite SQL types and .NET types used by Apache.Calcite.Data and Apache.Calcite.Adapter.AdoNet: which .NET type each SQL type is read as, and the conversions in both directions. Extensible with custom type resolvers.</Description>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageIcon>icon.png</PackageIcon>
         <PackageTags>apache;calcite;ado.net;sql;types;ikvm</PackageTags>
@@ -26,11 +26,8 @@
     <ItemGroup>
         <PackageReference Include="IKVM" Version="8.16.1" />
         <PackageReference Include="IKVM.Java.Extensions" Version="8.16.1" />
-        <!-- Not PrivateAssets, deliberately. This package ships only buildTransitive, which is the folder that
-             carries build assets to consumers; marking it private disables the one mechanism it has, and a project
-             that references ours then compiles and fails at run time with `Could not load file or assembly
-             'calcite.core'`. The default PrivateAssets keeps `build` to ourselves and lets buildTransitive through,
-             which is what we want. -->
+        <!-- Not PrivateAssets: this package ships only buildTransitive assets, and marking it private stops
+             them reaching consumers, which then fail at run time loading 'calcite.core'. -->
         <PackageReference Include="IKVM.Maven.Sdk" Version="1.12.1" />
         <MavenReference Include="org.apache.commons:commons-lang3" Version="3.18.0" />
         <MavenReference Include="org.slf4j:slf4j-api" Version="2.0.17" />

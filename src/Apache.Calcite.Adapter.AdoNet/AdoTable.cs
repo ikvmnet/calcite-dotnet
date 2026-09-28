@@ -25,13 +25,19 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// A Calcite queryable table backed by a table in an ADO.NET data source.
+    /// A table of an ADO.NET data source, as a Calcite table. The counterpart of Calcite's <c>JdbcTable</c>.
     /// </summary>
     /// <remarks>
-    /// Implements both <c>TranslatableTable</c> and <c>ScannableTable</c> so the planner can
-    /// either push operations into the ADO layer as SQL or fall back to an in-memory scan.
-    /// Instances are created by <see cref="AdoSchema"/> during table discovery and are not
-    /// intended to be constructed directly.
+    /// <para>
+    /// The planner turns a reference to the table into an <see cref="AdoTableScan"/> in the schema's
+    /// <see cref="AdoConvention"/>, from which filters, projections and the rest are pushed down. The table can
+    /// also be read whole through <see cref="scan"/> or <see cref="asQueryable"/>, each of which runs
+    /// <c>SELECT *</c> against it.
+    /// </para>
+    /// <para>
+    /// <see cref="AdoSchema"/> creates the instances. The row type is read from the schema's metadata the first
+    /// time it is asked for and then kept.
+    /// </para>
     /// </remarks>
     public class AdoTable : AbstractQueryableTable, TranslatableTable, ScannableTable
     {
@@ -49,12 +55,13 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="schema"></param>
-        /// <param name="databaseName"></param>
-        /// <param name="schemaName"></param>
-        /// <param name="tableName"></param>
-        /// <param name="tableType"></param>
-        /// <exception cref="ArgumentNullException"></exception>
+        /// <param name="schema">The schema the table belongs to.</param>
+        /// <param name="databaseName">The table's database, or <see langword="null"/>.</param>
+        /// <param name="schemaName">The table's schema, or <see langword="null"/>.</param>
+        /// <param name="tableName">The table's name.</param>
+        /// <param name="tableType">The kind of table, as JDBC names it.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="schema"/>, <paramref name="tableName"/> or
+        /// <paramref name="tableType"/> is <see langword="null"/>.</exception>
         internal AdoTable(AdoSchema schema, string? databaseName, string? schemaName, string tableName, Schema.TableType tableType) :
             base((Class)typeof(object[]))
         {
@@ -68,9 +75,8 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Gets the schema holding this table, which is <c>JdbcTable.jdbcSchema</c>. The data source, the
-        /// convention and the dialect are read through it, <c>JdbcTable</c> carrying no accessor of its
-        /// own for any of the three.
+        /// Gets the schema the table belongs to, through which its data source, convention and dialect are
+        /// reached.
         /// </summary>
         public AdoSchema Schema => _schema;
 
@@ -78,41 +84,41 @@ namespace Apache.Calcite.Adapter.AdoNet
         public override Schema.TableType getJdbcTableType() => _tableType;
 
         /// <summary>
-        /// Gets the name of the source database for this table.
+        /// Gets the table's database, or <see langword="null"/>.
         /// </summary>
         public string? DatabaseName => _databaseName;
 
         /// <summary>
-        /// Gets the name of the source schema for this table.
+        /// Gets the table's schema, or <see langword="null"/>.
         /// </summary>
         public string? SchemaName => _schemaName;
 
         /// <summary>
-        /// Gets the name of this table.
+        /// Gets the table's name.
         /// </summary>
         public string TableName => _tableName;
 
         /// <inheritdoc />
+        /// <exception cref="AdoCalciteException">The table has a column of a type the adapter cannot map.</exception>
         public override RelDataType getRowType(RelDataTypeFactory typeFactory)
         {
             return (RelDataType)((RelProtoDataType)protoRowTypeSupplier.get()).apply(typeFactory);
         }
 
         /// <summary>
-        /// Supplies the <see cref="RelProtoDataType"/> the memoized supplier holds, which is
-        /// <c>JdbcTable.supplyProto</c> — the schema derives it, the table asks.
+        /// Reads the row type from the schema. Mirrors <c>JdbcTable.supplyProto</c>; the result is memoized.
         /// </summary>
-        /// <returns></returns>
-        /// <exception cref="AdoCalciteException"></exception>
+        /// <returns>A prototype of the row type.</returns>
+        /// <exception cref="AdoCalciteException">A column's type cannot be mapped.</exception>
         RelProtoDataType SupplyProto()
         {
             return _schema.GetRelDataType(_databaseName, _schemaName, _tableName);
         }
 
         /// <summary>
-        /// Returns a SQL string that selects from the table.
+        /// Returns <c>SELECT *</c> from the table, in the schema's dialect.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The SQL.</returns>
         internal SqlString GenerateSqlString()
         {
             var node = new SqlSelect(SqlParserPos.ZERO, SqlNodeList.EMPTY, SqlNodeList.SINGLETON_STAR, FullyQualifiedTableName, null, null, null, null, null, null, null, null, null);
@@ -123,15 +129,16 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Returns the table name, qualified with schema name if applicable, as a parse tree node <see cref="SqlIdentifier"/>.
+        /// Gets the table's name as a <see cref="SqlIdentifier"/>, qualified by its database and schema where
+        /// each is known.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>An identifier of one to three parts, built once and reused.</returns>
         public SqlIdentifier FullyQualifiedTableName => GetFullyQualifiedTableName();
 
         /// <summary>
-        /// Gets the value for <see cref="FullyQualifiedTableName"/>.
+        /// Builds <see cref="FullyQualifiedTableName"/> on first use.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The identifier.</returns>
         SqlIdentifier GetFullyQualifiedTableName()
         {
             if (_fullyQualifiedTableName is null)
@@ -163,7 +170,12 @@ namespace Apache.Calcite.Adapter.AdoNet
             return new AdoTableScan(context.getCluster(), context.getTableHints(), relOptTable, this);
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns every row of the table, each as an <c>object[]</c>. The query runs when the result is
+        /// enumerated.
+        /// </summary>
+        /// <param name="root">The context, which supplies the type factory.</param>
+        /// <returns>The rows.</returns>
         public org.apache.calcite.linq4j.Enumerable scan(DataContext root)
         {
             var typeFactory = root.getTypeFactory();
@@ -172,9 +184,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Generates the SQL for the queryable.
+        /// Returns <c>SELECT *</c> from the table, in the schema's dialect.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The SQL.</returns>
         SqlString GenerateSql()
         {
             var selectList = SqlNodeList.SINGLETON_STAR;
@@ -185,7 +197,12 @@ namespace Apache.Calcite.Adapter.AdoNet
             return writer.toSqlString();
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns the schema's <see cref="AdoDataSource"/> or its dialect where either is an instance of
+        /// <paramref name="aClass"/>, and otherwise defers to the base class.
+        /// </summary>
+        /// <param name="aClass">The class to unwrap to.</param>
+        /// <returns>The object, or <see langword="null"/>.</returns>
         public override object unwrap(Class aClass)
         {
             if (aClass.isInstance(_schema.DataSource))

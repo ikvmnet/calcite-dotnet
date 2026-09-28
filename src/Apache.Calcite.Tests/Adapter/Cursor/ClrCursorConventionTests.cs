@@ -33,12 +33,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
     {
 
         /// <summary>
-        /// Initializes the static instance.
+        /// Puts Calcite's JDBC assembly on the boot class path.
         /// </summary>
         /// <remarks>
-        /// <c>Frameworks.withPrepare</c> opens a <c>jdbc:calcite:</c> connection and reaches its factory
-        /// by name, so the assembly holding that factory has to be on IKVM's boot class path or
-        /// <c>Class.forName</c> cannot find it. The AdoNet tests do the same thing for the same reason.
+        /// <c>Frameworks.withPrepare</c> opens a <c>jdbc:calcite:</c> connection and loads its factory by name,
+        /// so the assembly holding that factory must be on IKVM's boot class path for <c>Class.forName</c> to
+        /// find it.
         /// </remarks>
         static ClrCursorConventionTests()
         {
@@ -46,7 +46,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table of three rows, given to Calcite the way any table is.
+        /// A table of three rows implementing Calcite's <see cref="ScannableTable"/>, with one nullable column.
         /// </summary>
         sealed class PeopleTable : AbstractTable, ScannableTable
         {
@@ -84,10 +84,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// The context a plan is bound with.
         /// </summary>
-        /// <param name="rootSchema"></param>
+        /// <param name="rootSchema">The schema the plan was planned against, which a table's expression looks itself up in.</param>
         /// <remarks>
-        /// <c>DataContexts.EMPTY</c> will not do: a table's own expression reaches the root schema to find the
-        /// table again at run time, and an empty context has none.
+        /// <c>DataContexts.EMPTY</c> is not enough: a table's expression looks the table up again through the
+        /// root schema at run time, and an empty context has none.
         /// </remarks>
         sealed class TestDataContext(SchemaPlus rootSchema) : DataContext
         {
@@ -110,8 +110,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// Plans a query into the convention and returns the chosen plan and the schema it was planned
         /// against.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The query, over the <c>PEOPLE</c> table.</param>
+        /// <returns>The physical root, and the root schema the query was planned against.</returns>
         static (ClrCursorRel Plan, SchemaPlus Schema) Plan(string sql)
         {
             var rootSchema = Frameworks.createRootSchema(true);
@@ -122,11 +122,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             foreach (var rule in ClrCursorRules.CalcRules())
                 calcRules.add(rule);
 
-            // what the prepare pipeline runs: Programs.standard itself, and then Programs.calc once more
-            // over this convention's list -- added to Calcite's calc pass, which standard still runs, not
-            // put in its place. A Frameworks planner carries Calcite's default rules and has never heard of
-            // this convention, so the rules go on in front -- which is what ClrPrepareImpl.CreatePlanner
-            // does for a prepared statement
+            // the prepare pipeline's program: Programs.standard, which still runs Calcite's calc pass, followed
+            // by this convention's calc pass. A Frameworks planner carries only Calcite's default rules, so
+            // this convention's rules are added first, as ClrPrepareImpl.CreatePlanner does
             var config = Frameworks.newConfigBuilder()
                 .defaultSchema(rootSchema)
                 .programs(
@@ -141,9 +139,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var validated = planner.validate(parsed);
             var logical = planner.rel(validated).project();
 
-            // Prepare.getDesiredRootTraitSet: the root's own traits with the convention replaced, then
-            // simplified -- an empty set asks for no collation and SortRemoveRule takes an ORDER BY away as
-            // unwanted. One program, so one transform, exactly as Programs.standard is driven.
+            // as Prepare.getDesiredRootTraitSet: the root's own traits with the convention replaced, then
+            // simplified. An empty set asks for no collation, and SortRemoveRule would then drop an ORDER BY.
+            // One program, so one transform.
             var traitSet = logical.getTraitSet().replace(ClrCursorConvention.Instance).simplify();
             var physical = (ClrCursorRel)planner.transform(0, traitSet, logical);
 
@@ -151,10 +149,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Plans a query into the convention, compiles it, and returns its rows.
+        /// Plans a query into the convention, compiles it, and returns its rows, read through both opens.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The query, over the <c>PEOPLE</c> table.</param>
+        /// <returns>The rows, a one-column result wrapped in a one-element array. A failure to implement the plan is
+        /// rethrown as an <see cref="InvalidOperationException"/> whose message includes the plan.</returns>
         static List<object[]> Run(string sql)
         {
             var (physical, rootSchema) = Plan(sql);
@@ -175,6 +174,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Opens the plan both ways, requires the two readings to agree, and returns one of them.
         /// </summary>
+        /// <param name="factory">The implemented plan.</param>
+        /// <param name="context">The context each open binds with.</param>
+        /// <returns>The rows of the synchronous reading, a one-column result wrapped in a one-element array.</returns>
         static List<object[]> Rows(ClrCursorFactory factory, DataContext context)
         {
             var rows = new List<object[]>();
@@ -201,10 +203,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <c>implementRoot</c> names it.
         /// </summary>
         /// <remarks>
-        /// <see cref="ClrCursorProject"/> is the node to ask, because refusing to implement itself is
-        /// what it is for: the calc rules rewrite every project into a calc afterwards, so the refusal is
-        /// unreachable through the planner and reachable by building one by hand. Without the wrap this is an
-        /// <c>UnsupportedOperationException</c> naming nothing.
+        /// <see cref="ClrCursorProject"/> always refuses to implement itself, because the calc rules rewrite
+        /// every project into a calc; so the refusal is reached here by building a project by hand. The
+        /// <c>UnsupportedOperationException</c> it throws is wrapped in one naming the plan.
         /// </remarks>
         [Fact]
         public void ShouldNameThePlanWhenANodeCannotImplementItself()
@@ -225,13 +226,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A combine gives one row per index, each column holding one query values as a map, and the row
-        /// count is the largest of the inputs.
+        /// A combine gives one row per index, each column holding one query's values as a map, and as many rows
+        /// as its largest input.
         /// </summary>
         /// <remarks>
-        /// No SQL statement produces a <c>Combine</c>: it exists for multi-root optimisation in the planner,
-        /// and a caller builds one with <c>RelBuilder.combine</c>. So this is built rather than parsed —
-        /// which is the only way to run the node at all, and is why it is run rather than assumed.
+        /// No SQL statement produces a <c>Combine</c>; it exists for multi-root optimisation, and a caller builds
+        /// one with <c>RelBuilder.combine</c>, as this test does.
         /// </remarks>
         [Fact]
         public void ShouldCombineTwoQueries()
@@ -242,9 +242,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var config = Frameworks.newConfigBuilder().defaultSchema(rootSchema).build();
             var builder = RelBuilder.create(config);
 
-            // three names against two ids, so the shorter query runs out and contributes null. The literal
-            // is a java.lang.Integer: RelBuilder.literal takes an Object, and a CLR-boxed int arrives as
-            // cli.System.Int32, which it refuses -- the same invariant JavaValues.From keeps everywhere else
+            // three names against two ids, so the shorter query runs out and contributes null. The literal is
+            // a java.lang.Integer because RelBuilder.literal takes an Object and refuses a CLR-boxed int, which
+            // arrives as cli.System.Int32
             var logical = builder
                 .scan("PEOPLE").project(builder.field("NAME"))
                 .scan("PEOPLE")
@@ -263,8 +263,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             var chosen = planner.findBestExp();
 
-            // the second pass Programs.standard makes: a project refuses to implement itself, and the calc
-            // rules are what rewrite every one of them into a calc
+            // the calc pass that follows the planner: a project cannot implement itself, and the calc rules
+            // rewrite every project into a calc
             var calcRules = new java.util.ArrayList();
             foreach (var rule in ClrCursorRules.CalcRules())
                 calcRules.add(rule);
@@ -349,8 +349,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public void ShouldComputeOverANullableColumn()
         {
-            // a nullable column is a java.lang.Integer and the arithmetic is on an int, so this is the query
-            // that makes RexImpTable emit the boxing and unboxing the tests otherwise never reach
+            // a nullable column is a java.lang.Integer and the arithmetic is on an int, so RexImpTable emits
+            // unboxing and boxing around it
             var rows = Run("SELECT \"AGE\" + \"BONUS\" FROM \"PEOPLE\" ORDER BY \"ID\"");
 
             rows.Should().HaveCount(3);
@@ -383,12 +383,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// A correlate survives the shipped program, which runs Calcite's decorrelation.
         /// </summary>
         /// <remarks>
-        /// The decorrelation was left out of the shipped program for a while, on the grounds that it would
-        /// rewrite every correlated sub-query into a join and leave <c>ClrCursorCorrelate</c> unreachable.
-        /// A scalar sub-query and an EXISTS do become joins — which is what Calcite means to happen, and what
-        /// the prepare pipeline has always done — but an UNNEST over a correlation variable cannot be
-        /// decorrelated at all, so the correlate stays. This is that shape, and it asserts the node by name
-        /// rather than only the rows, because the rows alone would not say which plan produced them.
+        /// Decorrelation turns a scalar sub-query or an EXISTS into a join, but cannot decorrelate an UNNEST over
+        /// a correlation variable, so this shape keeps its correlate. The test checks the plan as well as the
+        /// rows, because the rows do not show which plan produced them.
         /// </remarks>
         [Fact]
         public void ShouldCorrelateThroughTheShippedProgram()
@@ -408,9 +405,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// A correlated sub-query becomes a join through the shipped program.
         /// </summary>
         /// <remarks>
-        /// The other side of the same measurement, and the reason to run the decorrelation rather than leave
-        /// it out: without it this stays a correlate, which is a nested loop over the outer rows where
-        /// Calcite would have given a join.
+        /// Without decorrelation this would stay a correlate, a nested loop over the outer rows, where Calcite
+        /// plans a join.
         /// </remarks>
         [Fact]
         public void ShouldDecorrelateASubQueryThroughTheShippedProgram()
@@ -421,18 +417,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             RelOptUtil.toString(physical).Should().NotContain("Correlate", "Calcite's decorrelation should have made this a join");
         }
 
-        // Three shapes the shipped program could not plan at all until Rules() stopped clearing the planner.
-        // Each needs a logical rewrite that belongs to no convention and that Calcite registers by default,
-        // so each was a CannotPlanException the moment ofRules threw Calcite's rules away. Nothing here went
-        // through Standard(), so nothing said so: the differential suites register the three rules by hand.
+        // The next three shapes each need a logical rewrite that belongs to no convention and that Calcite
+        // registers by default; they plan only if the program keeps Calcite's rules on the planner. The
+        // differential suites register these rewrites by hand, so only these tests cover the shipped program.
 
         /// <summary>
         /// AVG through the shipped program.
         /// </summary>
         /// <remarks>
-        /// <c>RexImpTable</c> has no implementor for AVG in any convention, in any type.
-        /// <c>AGGREGATE_REDUCE_FUNCTIONS</c> is what turns it into a <c>$SUM0</c> over a <c>COUNT</c>, and it
-        /// lives in <c>RelOptRules.BASE_RULES</c> rather than in any convention's set.
+        /// <c>RexImpTable</c> has no implementor for AVG. <c>AGGREGATE_REDUCE_FUNCTIONS</c>, which is in
+        /// <c>RelOptRules.BASE_RULES</c> rather than in any convention's rules, rewrites it in terms of
+        /// <c>$SUM0</c> and <c>COUNT</c>.
         /// </remarks>
         [Fact]
         public void ShouldAverageThroughTheShippedProgram()
@@ -447,8 +442,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// A DISTINCT aggregate through the shipped program.
         /// </summary>
         /// <remarks>
-        /// Both conventions refuse a distinct call outright, as <c>EnumerableAggregate</c> does.
-        /// <c>AGGREGATE_EXPAND_DISTINCT_AGGREGATES</c> is what takes the DISTINCT off first.
+        /// Both conventions' aggregates refuse a distinct call, so
+        /// <c>AGGREGATE_EXPAND_DISTINCT_AGGREGATES</c> must rewrite the DISTINCT away first.
         /// </remarks>
         [Fact]
         public void ShouldCountDistinctThroughTheShippedProgram()
@@ -463,10 +458,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// A window through the shipped program.
         /// </summary>
         /// <remarks>
-        /// The one that mattered most: a project holding an OVER is refused by both conventions and becomes a
-        /// <c>LogicalWindow</c> by <c>PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW</c> first, so with that rule gone
-        /// no window function could be planned through the shipped program at all — while the whole
-        /// <c>ClrCursorWindow</c> suite stayed green over a harness that registers it.
+        /// Both conventions refuse a project holding an OVER, so <c>PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW</c> must
+        /// first rewrite it into a <c>LogicalWindow</c>.
         /// </remarks>
         [Fact]
         public void ShouldWindowThroughTheShippedProgram()
@@ -481,13 +474,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A node this convention has no rule for, through the shipped program.
+        /// A filtered count through the shipped program.
         /// </summary>
-        /// <remarks>
-        /// The other half of keeping Calcite's rules. There is no table function node here, so the planner
-        /// takes Calcite's and a converter carries the rows across — which <c>Programs.ofRules</c> made
-        /// impossible, Calcite's rules having been cleared away.
-        /// </remarks>
         [Fact]
         public void ShouldFallBackToCalciteThroughTheShippedProgram()
         {

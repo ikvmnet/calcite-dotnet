@@ -4,19 +4,18 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// Lets a model name a class, which on 1.43 it may not by default.
+    /// Sets the <c>calcite.model.classes.allowed</c> system property so that Calcite may load this package's
+    /// classes and its own by name.
     /// </summary>
     /// <remarks>
-    /// From the snapshots of August 2026 a model may load a class by name — a schema factory, a function, a
-    /// driver — only where the <c>calcite.model.classes.allowed</c> system property lists its package. The
-    /// default is empty, and empty means nothing: Calcite's own classes are refused along with everyone
-    /// else's. <c>SqlSpatialTypeOperatorTable</c>'s constructor registers
+    /// Calcite loads a class named by a model (a schema factory, a function class, a driver) only when that
+    /// property lists its package, and the default allows nothing, Calcite's own classes included.
+    /// <c>SqlSpatialTypeOperatorTable</c>'s constructor registers
     /// <c>org.apache.calcite.runtime.SpatialTypeFunctions</c> through <c>ModelHandler.addFunctions</c>, so
-    /// building the operator table this suite plans with throws without it.
+    /// the operator table these tests plan with cannot be built without it.
     ///
-    /// <para>The property is read once, when <c>CalciteSystemProperty</c> initialises, so it is set here,
-    /// before any test can touch a Calcite class. <c>Apache.Calcite.Data.Tests</c> has the same for the same
-    /// reason.</para>
+    /// <para><c>CalciteSystemProperty</c> reads the property once, when it initialises, so it is set in a
+    /// module initializer, before any test touches a Calcite class.</para>
     /// </remarks>
     internal static class ModelClasses
     {
@@ -24,9 +23,9 @@ namespace Apache.Calcite.Geography.Tests
         [ModuleInitializer]
         internal static void Allow()
         {
-            // a .NET class is named by its CLR name in a model and by its IKVM name, cli.-prefixed, where
-            // Calcite writes a class's own getName() into a model it synthesises; and the functions Calcite
-            // ships are not allowed by default either
+            // A .NET class appears under its CLR name in a model and under its cli.-prefixed IKVM name where
+            // Calcite writes getClass().getName() into a model it synthesises; Calcite's own functions need
+            // an entry too.
             java.lang.System.setProperty(
                 "calcite.model.classes.allowed",
                 "Apache.Calcite.Geography.,cli.Apache.Calcite.Geography.,org.apache.calcite.");

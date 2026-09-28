@@ -14,15 +14,9 @@ namespace Apache.Calcite.FullText.Tests
 {
 
     /// <summary>
-    /// The operators reached through the stock Calcite JDBC driver, with nothing chained and nothing
-    /// subclassed.
+    /// The operators reached through a plain <c>jdbc:calcite:</c> connection, with the declarations from
+    /// <see cref="FullTextSchema"/> on the root schema and no operator table chained.
     /// </summary>
-    /// <remarks>
-    /// This is what the schema declarations are for. Everything else in this suite builds a validator by hand
-    /// and hands it an operator table, which only a host embedding Calcite can do. Here the connection is
-    /// <c>jdbc:calcite:</c>, the schema is registered the way an adapter would register one, and the SQL goes
-    /// through <c>Statement.executeQuery</c> — the path a consumer who has never heard of this package takes.
-    /// </remarks>
     public class FullTextConnectionTests
     {
 
@@ -57,10 +51,8 @@ namespace Apache.Calcite.FullText.Tests
         /// The name resolves through a plain connection.
         /// </summary>
         /// <remarks>
-        /// It gets as far as code generation and is refused there, which is the correct outcome — nothing here
-        /// evaluates full text. What this measures is that the failure is the refusal and not
-        /// <c>No match found for function signature</c>, which is what a connection said before the
-        /// declarations existed.
+        /// The statement still fails, at code generation, because nothing evaluates full text in process. The
+        /// test checks that the failure is not the validator's <c>No match found for function signature</c>.
         /// </remarks>
         [Fact]
         public void ShouldResolveTheNameThroughAPlainConnection()
@@ -73,7 +65,7 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// And without the declarations it does not, which is what says the test above measures something.
+        /// Without the declarations the name does not resolve; the control for the test above.
         /// </summary>
         [Fact]
         public void ShouldNotResolveThroughAPlainConnectionWithoutThem()
@@ -85,14 +77,9 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// The refusal says what cannot be done and why, rather than naming an interface.
+        /// The refusal explains why the call cannot be evaluated, rather than Calcite's report that the
+        /// function does not implement <c>ImplementableFunction</c>.
         /// </summary>
-        /// <remarks>
-        /// Declining <c>ImplementableFunction</c> outright leaves Calcite to report it as <c>User defined
-        /// function CLR_FT_CONTAINS must implement ImplementableFunction</c>, which names an interface rather than
-        /// a reason and reads as a defect in the adapter. Implementing it and throwing puts the same refusal
-        /// at the same moment — Calcite asks for a body while generating code — with a sentence saying why.
-        /// </remarks>
         [Fact]
         public void ShouldRefuseToEvaluateInWordsThatSayWhy()
         {
@@ -116,7 +103,7 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// Every declaration refuses, and each refusal names its function.
+        /// Every declaration's implementor refuses, naming its function.
         /// </summary>
         [Fact]
         public void ShouldRefuseFromEveryDeclaration()
@@ -146,7 +133,7 @@ namespace Apache.Calcite.FullText.Tests
                 seen++;
             }
 
-            // five fixed-arity operators declare once each; the four variadic ones run from two operands to
+            // five fixed-arity operators declare once each; the four variadic ones once per arity from two to
             // the limit
             seen.Should().Be(5 + (4 * (FullTextSchema.VariadicOperandLimit - 1)));
         }
@@ -156,10 +143,8 @@ namespace Apache.Calcite.FullText.Tests
         /// still reach the schema's declarations.
         /// </summary>
         /// <remarks>
-        /// The half that would actually bite a host: <c>fun=all</c> is an ordinary connection string, and a
-        /// shadowing library function would resolve first. <c>REVERSE</c> comes first and not incidentally —
-        /// Calcite's standard table does not carry it, so it resolves only where the libraries really were
-        /// chained. Without it this would pass just as well against a library table that had failed to load.
+        /// <c>REVERSE</c> is a library function absent from the standard table, so resolving it confirms the
+        /// libraries really were chained.
         /// </remarks>
         [Fact]
         public void ShouldNotBeShadowedByTheFunLibraries()
@@ -179,12 +164,11 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// Registering on the root makes the names visible unqualified everywhere on the connection.
+        /// Names declared on the root resolve unqualified in a query against a subschema's table.
         /// </summary>
         /// <remarks>
-        /// <c>CalciteCatalogReader</c> searches the connection's default schema and the root, and nowhere
-        /// else — never a subschema. So an adapter whose tables live a level down declares at both levels, and
-        /// this is the root half of that.
+        /// <c>CalciteCatalogReader</c> looks up an unqualified function in the connection's default schema and
+        /// the root only.
         /// </remarks>
         [Fact]
         public void ShouldReachTheNamesFromASubschema()
@@ -215,7 +199,8 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// The table itself reads, so a failure above is the full text call and not the fixture.
+        /// The table reads without a full text call, so a failure in the tests above comes from the call and
+        /// not the fixture.
         /// </summary>
         [Fact]
         public void ShouldReadTheTableWithNoFullTextCall()

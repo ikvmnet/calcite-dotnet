@@ -9,12 +9,12 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// An <see cref="AdoDataSource"/> backed by a <see cref="DbProviderFactory"/> and a connection string.
+    /// An <see cref="AdoDataSource"/> that opens connections from a <see cref="DbProviderFactory"/> and a
+    /// connection string.
     /// </summary>
     /// <remarks>
-    /// Use this class when you want to expose an ADO.NET provider to the Calcite adapter using the
-    /// provider-factory pattern. Each call to <see cref="AdoDataSource.OpenConnection"/> creates and
-    /// opens a new connection via the factory.
+    /// Each call to <see cref="OpenConnection"/> or <see cref="OpenConnectionAsync"/> creates a connection with the
+    /// factory, sets the connection string and opens it.
     /// </remarks>
     public class DbProviderAdoDataSource : AdoDataSource
     {
@@ -38,6 +38,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <inheritdoc />
+        /// <exception cref="AdoCalciteException">The factory returned no connection.</exception>
         public override DbConnection OpenConnection()
         {
             var cnn = _factory.CreateConnection() ?? throw new AdoCalciteException("Null result creating connection.");
@@ -47,6 +48,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <inheritdoc />
+        /// <exception cref="AdoCalciteException">The factory returned no connection.</exception>
         public override async ValueTask<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
         {
             var cnn = _factory.CreateConnection() ?? throw new AdoCalciteException("Null result creating connection.");

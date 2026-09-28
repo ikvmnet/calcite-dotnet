@@ -13,19 +13,28 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Enumerable implementation.
+    /// A linq4j <see cref="org.apache.calcite.linq4j.Enumerable"/> that runs one SQL statement against an
+    /// <see cref="AdoDataSource"/> each time it is enumerated. Plans in Calcite's <c>EnumerableConvention</c>
+    /// read a pushed-down statement through this class.
     /// </summary>
+    /// <remarks>
+    /// Each call to <see cref="enumerator"/> opens a connection, creates the command, applies the
+    /// <see cref="DbCommandEnricher"/> if there is one, and executes the command there. A query's enumerator owns
+    /// the reader, command and connection and disposes them when it is closed; an update executes, closes the
+    /// connection and returns a single row holding the affected row count.
+    /// </remarks>
     public abstract partial class AdoEnumerable : AbstractEnumerable
     {
 
         static readonly Function1 AutoRowBuilderFactory = new FuncFunction1<DbDataReader, Function0>(AutoRowBuilderFactoryFunc);
 
         /// <summary>
-        /// Provides a row builder factory function that automatically converts if required.
+        /// Returns a row builder that reads the current row as the provider's own values: the value itself for a
+        /// single column, and an <c>object[]</c> otherwise.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <returns></returns>
-        /// <exception cref="AdoCalciteException"></exception>
+        /// <param name="reader">The reader the row builder reads from.</param>
+        /// <returns>The row builder.</returns>
+        /// <exception cref="AdoCalciteException">The reader cannot report its column count.</exception>
         static Function0 AutoRowBuilderFactoryFunc(DbDataReader reader)
         {
             int fieldCount;
@@ -46,11 +55,11 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Converts the columns of the current row of the <see cref="DbDataReader"/> to the appropriate ADO output type.
+        /// Reads every column of the reader's current row into an array.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="fieldCount"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="fieldCount">The reader's column count.</param>
+        /// <returns>The row's values, as the provider returns them.</returns>
         static object[] ConvertColumns(DbDataReader reader, int fieldCount)
         {
             var list = new object[fieldCount];
@@ -59,94 +68,99 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Executes a SQL query and returns the results as an enumerator, using a row builder to retrieve columns as their automatic types.
+        /// Returns an enumerable that runs a query and yields each row as the provider's own values.
         /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="dataSource">The data source to run the query against.</param>
+        /// <param name="sql">The query.</param>
+        /// <returns>The enumerable. Nothing runs until it is enumerated.</returns>
         public static AdoEnumerable CreateReader(AdoDataSource dataSource, string sql)
         {
             return CreateReader(dataSource, sql, AutoRowBuilderFactory);
         }
 
         /// <summary>
-        /// Executes a SQL query and returns the results as an enumerator, using a row builder to convert ADO column values into rows.
+        /// Returns an enumerable that runs a query and builds each row with a row builder.
         /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="sql"></param>
-        /// <param name="rowBuilderFactory"></param>
-        /// <returns></returns>
+        /// <param name="dataSource">The data source to run the query against.</param>
+        /// <param name="sql">The query.</param>
+        /// <param name="rowBuilderFactory">A <see cref="Function1"/> from the <see cref="DbDataReader"/> to a
+        /// <see cref="Function0"/> that returns the current row.</param>
+        /// <returns>The enumerable. Nothing runs until it is enumerated.</returns>
         public static AdoEnumerable CreateReader(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory)
         {
             return new AdoReaderEnumerable(dataSource, sql, rowBuilderFactory);
         }
 
         /// <summary>
-        /// Executes a SQL query and returns the results as an enumerator, using a row builder to convert ADO column values into rows.
+        /// Returns an enumerable that runs a query, after <paramref name="dbCommandEnricher"/> has prepared the
+        /// command, and builds each row with a row builder.
         /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="sql"></param>
-        /// <param name="rowBuilderFactory"></param>
-        /// <param name="dbCommandEnricher"></param>
-        /// <returns></returns>
+        /// <param name="dataSource">The data source to run the query against.</param>
+        /// <param name="sql">The query.</param>
+        /// <param name="rowBuilderFactory">A <see cref="Function1"/> from the <see cref="DbDataReader"/> to a
+        /// <see cref="Function0"/> that returns the current row.</param>
+        /// <param name="dbCommandEnricher">Called with each command before it executes.</param>
+        /// <returns>The enumerable. Nothing runs until it is enumerated.</returns>
         public static AdoEnumerable CreateReader(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory, DbCommandEnricher dbCommandEnricher)
         {
             return new AdoReaderEnumerable(dataSource, sql, rowBuilderFactory, dbCommandEnricher);
         }
 
         /// <summary>
-        /// Executes a SQL query and returns the results as an enumerator, using a row builder to retrieve columns as their automatic types.
+        /// Returns an enumerable that runs a statement that returns no rows, and yields its affected row count.
         /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="dataSource">The data source to run the statement against.</param>
+        /// <param name="sql">The statement.</param>
+        /// <returns>The enumerable. Nothing runs until it is enumerated.</returns>
         public static AdoEnumerable CreateUpdate(AdoDataSource dataSource, string sql)
         {
             return CreateUpdate(dataSource, sql, AutoRowBuilderFactory);
         }
 
         /// <summary>
-        /// Executes a SQL query and returns the results as an enumerator, using a row builder to convert ADO column values into rows.
+        /// Returns an enumerable that runs a statement that returns no rows, and yields its affected row count.
         /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="sql"></param>
-        /// <param name="rowBuilderFactory"></param>
-        /// <returns></returns>
+        /// <param name="dataSource">The data source to run the statement against.</param>
+        /// <param name="sql">The statement.</param>
+        /// <param name="rowBuilderFactory">Required, and not used: the single row is the count.</param>
+        /// <returns>The enumerable. Nothing runs until it is enumerated.</returns>
         public static AdoEnumerable CreateUpdate(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory)
         {
             return new AdoUpdateEnumerable(dataSource, sql, rowBuilderFactory);
         }
 
         /// <summary>
-        /// Executes a SQL query and returns the results as an enumerator, using a row builder to convert ADO column values into rows.
+        /// Returns an enumerable that runs a statement that returns no rows, after
+        /// <paramref name="dbCommandEnricher"/> has prepared the command, and yields its affected row count.
         /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="sql"></param>
-        /// <param name="rowBuilderFactory"></param>
-        /// <param name="dbCommandEnricher"></param>
-        /// <returns></returns>
+        /// <param name="dataSource">The data source to run the statement against.</param>
+        /// <param name="sql">The statement.</param>
+        /// <param name="rowBuilderFactory">Required, and not used: the single row is the count.</param>
+        /// <param name="dbCommandEnricher">Called with each command before it executes.</param>
+        /// <returns>The enumerable. Nothing runs until it is enumerated.</returns>
         public static AdoEnumerable CreateUpdate(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory, DbCommandEnricher dbCommandEnricher)
         {
             return new AdoUpdateEnumerable(dataSource, sql, rowBuilderFactory, dbCommandEnricher);
         }
 
         /// <summary>
-        /// Creates an enricher that fills the command's parameters from the context.
+        /// Returns an enricher that adds the statement's parameters to a command, reading each value from a
+        /// <see cref="DataContext"/>. Called from the code the converters generate.
         /// </summary>
-        /// <param name="dataSource">The source whose syntax names a parameter for this provider.</param>
-        /// <param name="indexes">The variable index behind each parameter, in parameter order.</param>
-        /// <param name="typeNames">The <see cref="org.apache.calcite.sql.type.SqlTypeName"/> name behind each parameter, in the same order, or a null where none was recorded.</param>
-        /// <param name="context">The context the values are read from.</param>
-        /// <returns></returns>
+        /// <param name="dataSource">The data source, whose <see cref="IAdoSqlSyntax"/> names each
+        /// parameter.</param>
+        /// <param name="indexes">The <see cref="DataContext"/> variable index behind each parameter, in the order the
+        /// parameters appear in the statement.</param>
+        /// <param name="typeNames">The <see cref="org.apache.calcite.sql.type.SqlTypeName"/> name of each parameter, in
+        /// the same order, or <see langword="null"/> where none was recorded.</param>
+        /// <param name="context">The context the values are read from, as <c>?</c> followed by the index.</param>
+        /// <returns>The enricher.</returns>
         /// <remarks>
-        /// Reached from the code the converter generates, once per execution of the pushed-down statement.
-        /// The context is an <see cref="AdoCorrelationDataContext"/> closed over the outer row of a
-        /// correlated join, so reading a <c>?N</c> at or above its offset yields that row's value; every
-        /// lower index is a dynamic parameter of the statement itself and comes from the context the
-        /// statement was bound with, which is what a <c>WHERE key = ?</c> pushed down to the provider
-        /// carries. The type names travel beside the indexes because a value alone cannot be bound: a
-        /// <c>DATE</c> leaves the plan as a day count in a <see cref="java.lang.Integer"/>, and only the
-        /// type says it is not simply an <c>INTEGER</c>.
+        /// A statement's own dynamic parameters come from the context the statement was bound with. Correlation
+        /// variables have indexes at or above <see cref="AdoCorrelationDataContext.Offset"/> and come from an
+        /// <see cref="AdoCorrelationDataContext"/> built over the outer row. The type name is needed because
+        /// Calcite carries a temporal value as a number: a <c>DATE</c> is a day count in a
+        /// <see cref="java.lang.Integer"/>, indistinguishable by value from an <c>INTEGER</c>.
         /// </remarks>
         public static DbCommandEnricher CreateEnricher(AdoDataSource dataSource, java.util.List indexes, java.util.List typeNames, DataContext context)
         {
@@ -154,12 +168,15 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Sets one parameter per correlation variable, reading each from the context.
+        /// Adds one parameter to the command for each index, reading its value from the context.
         /// </summary>
-        /// <param name="syntax"></param>
-        /// <param name="indexes"></param>
-        /// <param name="typeNames"></param>
-        /// <param name="context"></param>
+        /// <param name="syntax">Names each parameter by its position.</param>
+        /// <param name="indexes">The <see cref="DataContext"/> variable index behind each parameter, in
+        /// statement order.</param>
+        /// <param name="typeNames">The <c>SqlTypeName</c> name of each parameter, in the same order; may be
+        /// shorter.</param>
+        /// <param name="context">The context each value is read from, under <c>?</c> followed by its
+        /// index.</param>
         sealed class ParameterEnricher(IAdoSqlSyntax syntax, java.util.List indexes, java.util.List typeNames, DataContext context) : DbCommandEnricher
         {
 
@@ -175,24 +192,25 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Sets the given parameter to the given value.
+        /// Inserts parameter <paramref name="i"/> into the command, named by <paramref name="syntax"/>, with the
+        /// value converted for the provider. No <see cref="System.Data.DbType"/> is set; the provider infers one.
         /// </summary>
-        /// <param name="syntax"></param>
-        /// <param name="command"></param>
-        /// <param name="i"></param>
-        /// <param name="value"></param>
-        /// <param name="typeName"></param>
+        /// <param name="syntax">Names the parameter.</param>
+        /// <param name="command">The command to add the parameter to.</param>
+        /// <param name="i">The parameter's position in the statement.</param>
+        /// <param name="value">The value in Calcite's representation.</param>
+        /// <param name="typeName">The parameter's <see cref="org.apache.calcite.sql.type.SqlTypeName"/> name,
+        /// or <see langword="null"/>.</param>
         static void SetParameter(IAdoSqlSyntax syntax, DbCommand command, int i, object? value, string? typeName)
         {
             var parameter = command.CreateParameter();
             parameter.ParameterName = syntax.GetParameterName(i);
             parameter.Value = ToProviderValue(value, typeName) ?? DBNull.Value;
 
-            // ODBC and OLE DB bind a temporal parameter at scale zero unless told otherwise, and then refuse
-            // the fractional seconds the value itself carries: "Datetime field overflow. Fractional second
-            // precision exceeds the scale specified in the parameter binding." Three digits is the honest
-            // scale — the representation these values decode from is a millisecond count. Measured: scale 3
-            // makes both drivers accept the value, and SqlClient ignores it for an inferred datetime.
+            // ODBC and OLE DB bind a temporal parameter at scale zero unless told otherwise, and then reject
+            // fractional seconds ("Fractional second precision exceeds the scale specified in the parameter
+            // binding"). The values decode from a millisecond count, so three digits covers them; SqlClient
+            // ignores the scale for an inferred datetime.
             if (parameter.Value is DateTime or TimeSpan or DateTimeOffset)
                 parameter.Scale = 3;
 
@@ -200,25 +218,24 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// The instant the temporal representations count from.
+        /// The instant Calcite's temporal representations count from.
         /// </summary>
         static readonly DateTime UnixEpoch = new(1970, 1, 1, 0, 0, 0, DateTimeKind.Unspecified);
 
         /// <summary>
-        /// Converts a value read from a <see cref="DataContext"/> into one a provider can bind, undoing the
-        /// temporal encodings first.
+        /// Converts a value from Calcite's representation into one a provider can bind, decoding temporal values
+        /// by their SQL type.
         /// </summary>
-        /// <param name="value"></param>
-        /// <param name="typeName"></param>
-        /// <returns></returns>
+        /// <param name="value">The value in Calcite's representation.</param>
+        /// <param name="typeName">The value's <see cref="org.apache.calcite.sql.type.SqlTypeName"/> name, or
+        /// <see langword="null"/>.</param>
+        /// <returns>The value to bind, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// A temporal value leaves the plan as a count — a <c>DATE</c> as whole days since the epoch, a
-        /// <c>TIME</c> as milliseconds since midnight, a <c>TIMESTAMP</c> as milliseconds since the epoch —
-        /// which is Calcite's internal representation and nothing a typed column accepts: SQL Server answers
-        /// "Operand type clash: date is incompatible with int". Only SQLite tolerated it, and only because
-        /// SQLite compares whatever it is handed. The count is decoded to the temporal value it stands for,
-        /// exactly inverting what <see cref="AdoReaderUtil"/> encoded on the way in; the kind is Unspecified
-        /// because the count is of the wall clock as written, no zone having entered into it.
+        /// Calcite carries a <c>DATE</c> as days since the epoch, a <c>TIME</c> as milliseconds since midnight and a
+        /// <c>TIMESTAMP</c> as milliseconds since the epoch. A typed column does not accept the number, so it is
+        /// decoded to a <see cref="DateTime"/> or <see cref="TimeSpan"/>, inverting what <see cref="AdoReaderUtil"/>
+        /// encodes on the way in. The <see cref="DateTime"/> is <see cref="DateTimeKind.Unspecified"/> because the
+        /// count is of the wall clock; the two zoned timestamp types become a <see cref="DateTimeOffset"/> in UTC.
         /// </remarks>
         static object? ToProviderValue(object? value, string? typeName)
         {
@@ -242,26 +259,15 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Converts a value read from a <see cref="DataContext"/> into one a provider can bind.
+        /// Converts a value from Calcite's representation, a boxed Java type, into the .NET value a provider
+        /// can bind.
         /// </summary>
-        /// <param name="value"></param>
-        /// <returns></returns>
+        /// <param name="value">The value in Calcite's representation.</param>
+        /// <returns>The value to bind, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// <para>
-        /// A parameter value comes out of the plan in Calcite's representation, which is a boxed Java
-        /// type. No ADO.NET provider knows what a <see cref="java.lang.Long"/> is, so it is unwrapped to
-        /// the .NET value it stands for, roughly inverting what <see cref="AdoReaderUtil"/> does on the
-        /// way in. Roughly, because the type chosen is the narrowest one every provider will bind and not
-        /// the narrowest one that holds the value: an <c>sbyte</c>, a <c>ushort</c>, a <c>uint</c> and a
-        /// <c>ulong</c> are none of them bindable, so each widens.
-        /// </para>
-        /// <para>
-        /// This settles what the value is and nothing about what it is bound as.
-        /// <see cref="SetParameter"/> sets no <see cref="System.Data.DbType"/>, so the provider infers one
-        /// from the CLR type, and a cast the dialect wrote around the marker names Calcite's type rather
-        /// than the provider's — a <c>TINYINT</c> being signed in Calcite and unsigned on SQL Server.
-        /// Neither is decidable from a value.
-        /// </para>
+        /// Each value becomes the narrowest .NET type every provider binds, which is not always the narrowest
+        /// that holds it: SqlClient binds none of <c>sbyte</c>, <c>ushort</c>, <c>uint</c> and <c>ulong</c>, so
+        /// those widen. The provider infers the parameter's type from the result.
         /// </remarks>
         static object? ToProviderValue(object? value)
         {
@@ -269,11 +275,8 @@ namespace Apache.Calcite.Adapter.AdoNet
             {
                 null => null,
                 java.lang.Boolean b => b.booleanValue(),
-                // Java's byte is signed and IKVM's byte is not, so byteValue() answers a CLR byte
-                // holding the two's complement bits, and a TINYINT of -56 would bind as 200.
-                // shortValue() sign-extends instead, and short is the narrowest CLR type every
-                // provider binds: SqlClient refuses an sbyte outright, "The parameter data type of
-                // SByte is invalid", the same wall the unsigned types below run into
+                // IKVM's byte is unsigned, so byteValue() would turn -56 into 200; shortValue() sign-extends,
+                // and SqlClient does not bind an sbyte
                 java.lang.Byte b => b.shortValue(),
                 java.lang.Short s => s.shortValue(),
                 java.lang.Integer i => i.intValue(),
@@ -281,25 +284,15 @@ namespace Apache.Calcite.Adapter.AdoNet
                 java.lang.Float f => f.floatValue(),
                 java.lang.Double d => d.doubleValue(),
                 java.lang.Character c => c.charValue(),
-                // through the byte transfer, not through toString(): BigDecimal writes itself in scientific
-                // notation once the adjusted exponent falls below -6 or the scale goes negative -- 0.0000001
-                // is "1E-7" -- and decimal.Parse(string, IFormatProvider) is NumberStyles.Number, which does
-                // not allow an exponent. Measured: every such value was a FormatException
+                // not through toString(), which uses scientific notation for small values ("1E-7") that
+                // decimal.Parse does not accept
                 java.math.BigDecimal m => JavaDecimals.ToDecimal(m),
                 org.apache.calcite.avatica.util.ByteString bs => bs.getBytes(),
-                // Calcite holds a UUID as an org.apache.calcite.util.UuidValue, which SqlClient refuses
-                // outright: "No mapping exists from object type ... to a known managed provider native
-                // type". A Guid is what a provider binds against a uniqueidentifier, and the transfer is
-                // the sixteen bytes rather than the text. The bare UUID is the same refusal, and reaches
-                // here from anything that unwrapped one
+                // a provider binds a Guid against a uniqueidentifier and knows neither Java UUID type
                 org.apache.calcite.util.UuidValue uv => JavaUuids.ToGuid(uv),
                 java.util.UUID u => JavaUuids.ToGuid(u),
-                // the unsigned types travel as joou values, and no provider knows those either. Each is
-                // unwrapped to the narrowest CLR type every provider binds: SqlClient takes a byte but none
-                // of ushort, uint or ulong, so the wider three go to the signed type that holds their range
-                // exactly — and ULong to decimal, ulong's top half being outside long. A joou value holds
-                // the signed type's bits read unsigned, so every one of these is a reinterpretation and
-                // none of them has to be written out and read back
+                // Calcite's unsigned types are joou values. SqlClient binds a byte but not ushort, uint or
+                // ulong, so those go to the signed type that holds their range, and ULong to decimal
                 org.joou.UByte ub => (byte)ub.shortValue(),
                 org.joou.UShort us => us.intValue(),
                 org.joou.UInteger ui => ui.longValue(),
@@ -316,9 +309,11 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="sql"></param>
-        /// <param name="rowBuilderFactory"></param>
+        /// <param name="dataSource">The data source to run the statement against.</param>
+        /// <param name="sql">The statement.</param>
+        /// <param name="rowBuilderFactory">A <see cref="Function1"/> from the <see cref="DbDataReader"/> to a
+        /// <see cref="Function0"/> that returns the current row.</param>
+        /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
         protected AdoEnumerable(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory)
         {
             _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
@@ -329,10 +324,12 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="sql"></param>
-        /// <param name="rowBuilderFactory"></param>
-        /// <param name="dbCommandEnricher"></param>
+        /// <param name="dataSource">The data source to run the statement against.</param>
+        /// <param name="sql">The statement.</param>
+        /// <param name="rowBuilderFactory">A <see cref="Function1"/> from the <see cref="DbDataReader"/> to a
+        /// <see cref="Function0"/> that returns the current row.</param>
+        /// <param name="dbCommandEnricher">Called with each command before it executes.</param>
+        /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
         protected AdoEnumerable(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory, DbCommandEnricher dbCommandEnricher) :
             this(dataSource, sql, rowBuilderFactory)
         {
@@ -340,14 +337,16 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// 
+        /// Gets the factory that makes a row builder for a reader.
         /// </summary>
         protected Function1 RowBuilderFactory => _rowBuilderFactory;
 
         /// <summary>
-        /// Returns an enumerator for the result set.
+        /// Opens a connection, prepares the command and executes it.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>An enumerator over the statement's result.</returns>
+        /// <exception cref="AdoCalciteException">The provider raised a <see cref="DbException"/>; the message includes
+        /// the SQL.</exception>
         public override Enumerator enumerator()
         {
             try
@@ -360,18 +359,16 @@ namespace Apache.Calcite.Adapter.AdoNet
             }
             catch (DbException e)
             {
-                // with the SQL, because what a provider says about a statement it rejected is rarely enough
-                // to find it: "Incorrect syntax near '='" names neither the statement nor the position
                 throw new AdoCalciteException($"Exception while enumerating query: {_sql}", e);
             }
         }
 
         /// <summary>
-        /// Creates an enumerator around the specified connection and command.
+        /// Executes the command and returns an enumerator over its result.
         /// </summary>
-        /// <param name="connection"></param>
-        /// <param name="command"></param>
-        /// <returns></returns>
+        /// <param name="connection">The open connection. The implementation takes ownership of it.</param>
+        /// <param name="command">The prepared command. The implementation takes ownership of it.</param>
+        /// <returns>The enumerator.</returns>
         protected abstract Enumerator CreateEnumerator(DbConnection connection, DbCommand command);
 
     }

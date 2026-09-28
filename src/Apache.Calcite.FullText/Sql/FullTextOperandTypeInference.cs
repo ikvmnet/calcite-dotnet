@@ -8,20 +8,14 @@ namespace Apache.Calcite.FullText.Sql
 {
 
     /// <summary>
-    /// Tells the validator what each position of a <c>CLR_FT_*</c> call is expected to be.
+    /// Infers the type of each operand of a <c>CLR_FT_*</c> call from its position, as
+    /// <see cref="FullTextOperandTypeChecker.TypeOf"/> gives it.
     /// </summary>
     /// <remarks>
-    /// <para><b>Here because the other route has one and the plans have to match.</b>
-    /// <c>CalciteCatalogReader.toOp</c> gives every schema function <c>InferTypes.explicit</c> over its
-    /// declared parameter types, so the validator types an untyped literal as the parameter — a keyword
-    /// arrives as <c>'steel':VARCHAR</c> rather than as a <c>CHAR(5)</c>, and a literal in a numeric position
-    /// is coerced. Without the same inference on the operator, the identical statement produced two different
-    /// trees depending on which route resolved the name, differing in the declared type of every literal.
-    /// Measured, and the only difference there was between the two.</para>
-    ///
-    /// <para><c>InferTypes.explicit</c> itself cannot be used: it takes a fixed list, and four of these five
-    /// operators take as many keywords as a caller writes. The types are the same ones — the checker's, for
-    /// the position — so this is that class over an arity known only at the call.</para>
+    /// <c>CalciteCatalogReader.toOp</c> gives a schema function <c>InferTypes.explicit</c> over its declared
+    /// parameter types. This does the same for the operator table's operators, so a statement produces the
+    /// same plan, with the same literal types, whichever route resolved the name. <c>InferTypes.explicit</c>
+    /// itself takes a fixed list and so cannot serve a variadic operator.
     /// </remarks>
     public sealed class FullTextOperandTypeInference : SqlOperandTypeInference
     {
@@ -32,6 +26,7 @@ namespace Apache.Calcite.FullText.Sql
         /// Initializes a new instance.
         /// </summary>
         /// <param name="checker">The checker that says what each position takes.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="checker"/> is <c>null</c>.</exception>
         public FullTextOperandTypeInference(FullTextOperandTypeChecker checker)
         {
             ArgumentNullException.ThrowIfNull(checker);

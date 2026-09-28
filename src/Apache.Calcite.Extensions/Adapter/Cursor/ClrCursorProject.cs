@@ -12,16 +12,21 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <summary>
     /// Implementation of <see cref="Project"/> in the <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
+    /// <remarks>
+    /// Mirrors <c>EnumerableProject</c>. The node takes part in planning but cannot be implemented:
+    /// <see cref="ClrCursorProjectToCalcRule"/>, in <see cref="ClrCursorRules.CalcRules"/>, replaces it with a
+    /// <see cref="ClrCursorCalc"/> before the plan is implemented.
+    /// </remarks>
     public class ClrCursorProject : Project, ClrCursorRel
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorProject"/>.
+        /// Creates a <see cref="ClrCursorProject"/>, deriving its collation from its input and expressions.
         /// </summary>
-        /// <param name="input"></param>
-        /// <param name="projects"></param>
-        /// <param name="rowType"></param>
-        /// <returns></returns>
+        /// <param name="input">The input.</param>
+        /// <param name="projects">The projected expressions, a list of <see cref="org.apache.calcite.rex.RexNode"/>.</param>
+        /// <param name="rowType">The output row type.</param>
+        /// <returns>The new project.</returns>
         public static ClrCursorProject Create(RelNode input, java.util.List projects, RelDataType rowType)
         {
             var cluster = input.getCluster();
@@ -34,13 +39,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Initializes a new instance. <see cref="Create"/> derives the trait set; this constructor takes it as
+        /// given.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="input"></param>
-        /// <param name="projects"></param>
-        /// <param name="rowType"></param>
+        /// <param name="cluster">The cluster the node belongs to.</param>
+        /// <param name="traitSet">The node's traits.</param>
+        /// <param name="input">The input.</param>
+        /// <param name="projects">The projected expressions, a list of <see cref="org.apache.calcite.rex.RexNode"/>.</param>
+        /// <param name="rowType">The output row type.</param>
         public ClrCursorProject(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, java.util.List projects, RelDataType rowType) :
             base(cluster, traitSet, com.google.common.collect.ImmutableList.of(), input, projects, rowType, com.google.common.collect.ImmutableSet.of())
         {
@@ -78,11 +84,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
         /// <inheritdoc />
         /// <remarks>
-        /// A calc is always better, exactly as for <c>EnumerableProject</c>, because it carries the filter and
-        /// the projection in one pass. Reaching here means the calc rules were not run: they are not part of
-        /// a convention's rule set in Calcite either, but of <c>RelOptRules.CALC_RULES</c>, which
-        /// <c>Programs.standard</c> runs as a hep pass after the planner.
+        /// Always throws, as <c>EnumerableProject.implement</c> does. Run <see cref="ClrCursorRules.CalcRules"/>
+        /// as a hep pass after the planner so that every project becomes a <see cref="ClrCursorCalc"/>.
         /// </remarks>
+        /// <exception cref="java.lang.UnsupportedOperationException">Always.</exception>
         public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             throw new java.lang.UnsupportedOperationException(

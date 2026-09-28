@@ -14,18 +14,12 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// The overlay set — intersection, difference, symmetric difference and unary union.
+    /// Tests the overlay operators: intersection, difference, symmetric difference and unary union.
     /// </summary>
     /// <remarks>
-    /// #86 deferred these as large, on the reasoning that a geodesic overlay is a different algorithm from a
-    /// planar one rather than the same one in other units. That is true and it is S2's algorithm:
-    /// <c>initToIntersection</c> and its neighbours answer on the sphere what JTS answers on a plane, so what
-    /// was left to write is the conversion of the answer back into rings.
-    ///
-    /// <para>They are areal operations and this answers them for areas, declining anything else. Calcite's
-    /// take any pair, JTS overlaying whatever it is handed, and following it there would mean answering a
-    /// line clipped by a polygon on the plane — two models in one expression, which is the thing this package
-    /// exists to prevent.</para>
+    /// The overlays are S2's polygon operations (<c>initToIntersection</c> and its neighbours), converted back
+    /// into JTS rings. They accept only areal operands and return null otherwise, where Calcite's overlay any
+    /// pair on the plane.
     /// </remarks>
     public class GeographyOverlayTests
     {
@@ -59,22 +53,18 @@ namespace Apache.Calcite.Geography.Tests
             box.getMinY().Should().BeApproximately(1, 1e-3);
             box.getMaxY().Should().BeApproximately(2, 1e-3);
 
-            // and not exactly two: the northern edge of the first box is a geodesic from (0 2) to (2 2), which
-            // bows north of the parallel, so the shared region reaches a little past it. A planar overlay
-            // stops at exactly 2, and that is the difference rather than a defect
+            // Slightly more than 2: the first box's northern edge is a geodesic from (0 2) to (2 2) and bows
+            // north of the parallel. A planar overlay stops at exactly 2.
             box.getMaxY().Should().BeGreaterThan(2.0);
         }
 
         /// <summary>
-        /// The one that says the model is not the plane's: an overlap that exists on the Earth and not on a
-        /// map.
+        /// Two shapes that overlap geodesically but not in the plane have a non-empty intersection.
         /// </summary>
         /// <remarks>
-        /// The northern edge of a wide box is a geodesic, and a geodesic between two points on a parallel
-        /// bows poleward — for a box reaching from 0 to 60 degrees of longitude along the 60th parallel, by
-        /// several degrees at the middle. So a small shape sitting north of the parallel is outside the box
-        /// as a planar reading draws it and inside the box as it is. Calcite answers an empty intersection
-        /// and this answers a real one.
+        /// The wide box's northern edge runs along the 60th parallel from longitude 0 to 60, and as a geodesic
+        /// it bows about three and a half degrees north at its middle. A small shape just north of the
+        /// parallel is inside the geodesic box and outside the planar one, so Calcite's intersection is empty.
         /// </remarks>
         [Fact]
         public void ShouldIntersectWhereTheGeodesicEdgeReachesAndThePlanarOneDoesNot()
@@ -92,7 +82,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A difference takes one from the other, and the areas add up.
+        /// The areas of <c>a - b</c> and <c>a ∩ b</c> sum to the area of <c>a</c>.
         /// </summary>
         [Fact]
         public void ShouldTakeOneAreaFromAnother()
@@ -103,12 +93,12 @@ namespace Apache.Calcite.Geography.Tests
             var difference = GeographyFunctions.Difference(a, b);
             var overlap = GeographyFunctions.Intersection(a, b);
 
-            // to S2's snapping tolerance; see ShouldAnswerBothSidesOfASymmetricDifference
+            // within S2's snapping tolerance; see ShouldAnswerBothSidesOfASymmetricDifference
             (Area(difference) + Area(overlap)).Should().BeApproximately(Area(a), Area(a) * 1e-5);
         }
 
         /// <summary>
-        /// And the symmetric difference is everything but the overlap, counted once each way.
+        /// The symmetric difference's area is the two areas less twice the overlap.
         /// </summary>
         [Fact]
         public void ShouldAnswerBothSidesOfASymmetricDifference()
@@ -119,13 +109,13 @@ namespace Apache.Calcite.Geography.Tests
             var symmetric = Area(GeographyFunctions.SymDifference(a, b));
             var overlap = Area(GeographyFunctions.Intersection(a, b));
 
-            // to S2's snapping tolerance rather than to the last bit: an overlay snaps its vertices to a
-            // level of the cell hierarchy, so the pieces of a partition agree to about a part in a million
+            // Within S2's snapping tolerance: an overlay snaps its vertices to a level of the cell hierarchy,
+            // so the pieces of a partition agree to about a part in a million.
             symmetric.Should().BeApproximately(Area(a) + Area(b) - 2 * overlap, Area(a) * 1e-5);
         }
 
         /// <summary>
-        /// A union of a shape with itself is the shape.
+        /// The unary union of a single polygon has the polygon's area.
         /// </summary>
         [Fact]
         public void ShouldMergeAShapeWithItself()
@@ -136,7 +126,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Shapes that do not meet intersect in nothing.
+        /// The intersection of disjoint shapes is empty.
         /// </summary>
         [Fact]
         public void ShouldAnswerEmptyWhereTheyDoNotMeet()
@@ -148,7 +138,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A hole comes back a hole.
+        /// A polygon's hole survives an overlay.
         /// </summary>
         [Fact]
         public void ShouldKeepAHoleThroughTheOverlay()
@@ -164,7 +154,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Anything without an area is declined rather than answered on a plane.
+        /// An operand with no area gives null.
         /// </summary>
         [Fact]
         public void ShouldDeclineAnythingWithoutAnArea()

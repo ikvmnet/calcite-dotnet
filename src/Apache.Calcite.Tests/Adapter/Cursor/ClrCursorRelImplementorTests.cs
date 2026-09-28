@@ -26,15 +26,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Reads the two trees the implementor builds, and requires that each is made of what it is made of;
-    /// then opens them, and requires that opening is where the plan runs.
+    /// Tests the two open expressions <c>ClrCursorRelImplementor</c> builds for a plan: what each is built
+    /// from, and that opening is where the plan runs.
     /// </summary>
     /// <remarks>
-    /// The differential suite compares rows, which says nothing about which opens ran or when. So these
-    /// tests read the compiled trees: the synchronous open names only synchronous opens outside a deferred
-    /// opener, the awaiting open names only awaiting opens and passes each the root's token, and a deferred
-    /// opener of either kind holds opens of that kind. And they watch a table: what a scan is asked for at
-    /// <c>Open</c>, at <c>OpenAsync</c>, at each advance, and at disposal.
+    /// The differential suite compares rows, which do not show which opens ran or when. These tests inspect the
+    /// trees: outside a deferred opener the synchronous open calls only synchronous opens, the awaiting open
+    /// calls only awaiting opens and passes each the enclosing token, and a deferred opener of either kind
+    /// holds opens of that kind. They also count what a table is asked for at <c>Open</c>, at
+    /// <c>OpenAsync</c>, at each advance, and at disposal.
     /// </remarks>
     public class ClrCursorRelImplementorTests
     {
@@ -47,6 +47,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// The context a plan is bound with.
         /// </summary>
+        /// <param name="rootSchema">The schema the plan was planned against.</param>
+        /// <param name="parameters">The map the implementor stashed values into, which <c>get</c> answers from.</param>
         sealed class TestDataContext(SchemaPlus rootSchema, java.util.Map parameters) : DataContext
         {
 
@@ -67,12 +69,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A table of this project's SPI that counts what the plan asks of it.
         /// </summary>
+        /// <param name="rows">The table's rows.</param>
+        /// <param name="rowType">Builds the table's row type from the type factory it is given.</param>
         /// <remarks>
-        /// Both halves are written, so that a scan of either kind is the table's own and not the interface
-        /// default read across. The sequence counts its acquisition where acquisition happens — at
-        /// <c>GetEnumerator</c> and <c>GetAsyncEnumerator</c>, not in an iterator body, which would defer
-        /// the count to the first advance and make opening look like reading — and counts its disposal on
-        /// the enumerator itself, because an iterator disposed before it ever moved runs no finally block.
+        /// Both <c>Scan</c> and <c>ScanAsync</c> are implemented, so that neither reaches the other through the
+        /// interface default. Acquisition is counted in <c>GetEnumerator</c> and <c>GetAsyncEnumerator</c>
+        /// rather than in an iterator body, which would defer the count to the first advance; disposal is
+        /// counted on a wrapping enumerator, because an iterator disposed before it moved runs no
+        /// <c>finally</c> block.
         /// </remarks>
         sealed class CountingTable(object?[][] rows, Func<RelDataTypeFactory, RelDataType> rowType) : AbstractTable, IClrScannableTable
         {
@@ -109,8 +113,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             }
 
             /// <summary>
-            /// The table's rows, counting acquisition at the moment it happens.
+            /// The table's rows, counting each acquisition when the enumerator is obtained.
             /// </summary>
+            /// <param name="table">The table whose rows these are and whose counters are incremented.</param>
             sealed class Rows(CountingTable table) : IEnumerable<object?[]>, IAsyncEnumerable<object?[]>
             {
 
@@ -149,9 +154,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 }
 
                 /// <summary>
-                /// Counts the disposal itself, because an iterator disposed before it ever moved runs no
-                /// finally block and would count nothing.
+                /// Wraps an enumerator and counts its disposal, because an iterator disposed before it moved
+                /// runs no <c>finally</c> block.
                 /// </summary>
+                /// <param name="table">The table whose disposal counter is incremented.</param>
+                /// <param name="rows">The enumerator to wrap.</param>
                 sealed class Disposing(CountingTable table, IEnumerator<object?[]> rows) : IEnumerator<object?[]>
                 {
 
@@ -174,6 +181,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 /// <summary>
                 /// <see cref="Disposing"/> for the awaiting half.
                 /// </summary>
+                /// <param name="table">The table whose disposal counter is incremented.</param>
+                /// <param name="rows">The enumerator to wrap.</param>
                 sealed class DisposingAsync(CountingTable table, IAsyncEnumerator<object?[]> rows) : IAsyncEnumerator<object?[]>
                 {
 
@@ -196,6 +205,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Plans a statement into the convention.
         /// </summary>
+        /// <param name="sql">The statement.</param>
+        /// <param name="rootSchema">The schema to plan against.</param>
+        /// <returns>The physical root, requested in this convention.</returns>
         static RelNode Plan(string sql, SchemaPlus rootSchema)
         {
             var rules = new java.util.ArrayList();
@@ -229,6 +241,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Implements a planned root.
         /// </summary>
+        /// <param name="physical">A root planned in this convention.</param>
+        /// <param name="parameters">The map the implementor stashes values into.</param>
+        /// <returns>The factory holding both opens, preferring array rows.</returns>
         static ClrCursorFactory Implement(RelNode physical, java.util.Map parameters)
         {
             var implementor = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters);
@@ -237,9 +252,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Whether a method is an open: one of the operators, the interop that opens over a linq4j sequence,
-        /// or a bridge between the two kinds.
+        /// Whether a method is an open: one of the operators, the interop that opens a cursor over a linq4j
+        /// sequence, or a bridge between the two kinds of open.
         /// </summary>
+        /// <param name="method">The method a call in the plan's tree invokes.</param>
+        /// <returns>True if the method is declared on <c>ClrCursorDefaults</c>, <c>JavaCursors</c> or <c>ClrCursors</c>.</returns>
         static bool IsOpen(System.Reflection.MethodInfo method)
         {
             var declaring = method.DeclaringType?.Name;
@@ -250,20 +267,24 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Whether an open awaits: it returns a <see cref="ValueTask{TResult}"/>.
         /// </summary>
+        /// <param name="method">An open.</param>
+        /// <returns>True if the method returns a <see cref="ValueTask{TResult}"/>.</returns>
         static bool Awaits(System.Reflection.MethodInfo method)
         {
             return method.ReturnType.IsGenericType && method.ReturnType.GetGenericTypeDefinition() == typeof(ValueTask<>);
         }
 
         /// <summary>
-        /// Checks every open in a body against the kind the body is, descending into a deferred opener with
-        /// the kind its delegate type says and into nothing else.
+        /// Records in <c>wrong</c> every open in a body that does not match the body's kind, descending into
+        /// each deferred opener with the kind its return type gives and into no other lambda.
         /// </summary>
+        /// <param name="sql">The statement the plan came from, named in each record.</param>
+        /// <param name="wrong">The list each mismatch is added to.</param>
         /// <remarks>
-        /// A selector or a predicate is a lambda too, but over a row, and what it calls is Rex; the only
-        /// lambdas that hold opens are the deferred openers, told apart by what they return. The token an
-        /// awaiting open is passed has to be the parameter of the nearest enclosing awaiting lambda, which is
-        /// the root's or a deferred opener's.
+        /// Selectors and predicates are lambdas over a row and call only translated Rex; the only lambdas that
+        /// hold opens are deferred openers, recognised by returning a cursor or a <c>ValueTask</c>. An awaiting
+        /// open must be passed the token parameter of the nearest enclosing awaiting lambda, which is the root's
+        /// or a deferred opener's.
         /// </remarks>
         sealed class OpenChecker(string sql, List<string> wrong) : ExpressionVisitor
         {
@@ -321,7 +342,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// The queries read, one per node the convention has.
+        /// The queries whose opens are inspected, together covering the convention's nodes.
         /// </summary>
         static readonly string[] Queries =
         [
@@ -337,9 +358,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             "SELECT ID FROM SALES UNION SELECT ID FROM SALES",
             "SELECT ID FROM SALES UNION ALL SELECT ID FROM SALES",
             "SELECT ID FROM SALES UNION ALL SELECT K FROM SORTED UNION ALL SELECT ID FROM SALES",
-            // the equality is a merge join over two sorts, IS NOT DISTINCT FROM keeps the merge join rule
-            // out and is a hash join, the inequality alone is a nested loop, and IN is a semi hash join,
-            // whose right side is a deferred opener of each kind
+            // the equality is a merge join over two sorts; IS NOT DISTINCT FROM rules out the merge join and
+            // gives a hash join; the inequality alone is a nested loop; and IN is a semi hash join, whose right
+            // side is a deferred opener of each kind
             "SELECT a.ID, b.LABEL FROM SALES a JOIN SALES b ON a.ID = b.ID",
             "SELECT a.ID, b.LABEL FROM SALES a LEFT JOIN SALES b ON a.ID = b.ID AND a.AMOUNT < b.AMOUNT",
             "SELECT a.ID, b.LABEL FROM SALES a JOIN SALES b ON a.AMOUNT IS NOT DISTINCT FROM b.AMOUNT",
@@ -348,17 +369,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             "SELECT ID FROM SALES WHERE ID IN (SELECT K FROM SORTED)",
             "SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)",
             "SELECT a.ID, b.V FROM SALES a ASOF JOIN SORTED b MATCH_CONDITION b.K <= a.ID ON a.LABEL = b.V",
-            // a correlate: the inner is a deferred opener over the outer row, of each kind, and the uncollect
-            // under it is Calcite's, read through the converter
+            // a correlate: the inner is a deferred opener of each kind over the outer row
             "SELECT t.x, u.y FROM (VALUES (1, ARRAY[10, 20]), (2, ARRAY[30])) AS t(x, xs), UNNEST(t.xs) AS u(y)",
-            // the repeat union and the spool, with the transient scan Calcite's under the converter in and
-            // the iterative part deferred as an opener of each kind
+            // the repeat union and the spool, with the iterative part deferred as an opener of each kind
             "WITH RECURSIVE t(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 4) SELECT n FROM t",
         ];
 
         /// <summary>
-        /// A schema of tables Calcite itself can read, and of this project's SPI, so both leaves appear.
+        /// A schema holding a table of Calcite's SPI and one of this project's, so that plans have leaves of
+        /// both kinds.
         /// </summary>
+        /// <returns>A new root schema holding <c>SALES</c> of Calcite's SPI and <c>SORTED</c> of this project's.</returns>
         static SchemaPlus Schema()
         {
             var rootSchema = Frameworks.createRootSchema(true);
@@ -369,7 +390,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// The synchronous open names synchronous opens and nothing else, outside a deferred opener.
+        /// Outside a deferred opener, the synchronous open calls only synchronous opens.
         /// </summary>
         [Fact]
         public void ShouldBuildTheSynchronousOpenFromSynchronousOpens()
@@ -388,7 +409,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// The awaiting open names awaiting opens and nothing else, each passed the enclosing token.
+        /// Outside a deferred opener, the awaiting open calls only awaiting opens, each passed the enclosing
+        /// token.
         /// </summary>
         [Fact]
         public void ShouldBuildTheAwaitingOpenFromAwaitingOpens()
@@ -401,8 +423,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
                 factory.OpenAsyncExpression.ReturnType.Should().Be(typeof(ValueTask<IClrCursor>));
 
-                // the root ends in the one continuation that changes the type parameter, which is a bridge
-                // by declaring type and the one allowed at the root
+                // the root ends in ClrCursors.Untyped, which changes the type parameter; it is declared with the
+                // bridges but is allowed here, so the check starts below it
                 var body = (MethodCallExpression)factory.OpenAsyncExpression.Body;
                 body.Method.Name.Should().Be(nameof(ClrCursors.Untyped));
 
@@ -414,8 +436,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Opening runs the plan, and reading reads rows: a scan is acquired at <c>Open</c> and a sort is
-        /// drained there, before any advance.
+        /// <c>Open</c> runs the plan: the scan is acquired and the sort drains it there, before any advance.
         /// </summary>
         [Fact]
         public void ShouldRunThePlanAtOpen()
@@ -440,8 +461,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// The awaiting open awaits the plan's acquisition, drain included, before it hands back the cursor.
+        /// <c>OpenAsync</c> awaits the plan's acquisition, including the sort's drain, before it returns the
+        /// cursor.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldRunThePlanAtOpenAsync()
         {
@@ -466,9 +489,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A grouped aggregate folds its whole input at the open, whichever open it is, and closes it there.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// <c>groupBy_</c> drains the input into the map where it is called and returns a
-        /// <c>LookupResultEnumerable</c> over a finished map; the call is the open.
+        /// Calcite's <c>groupBy_</c> drains its input into a map when it is called and returns a
+        /// <c>LookupResultEnumerable</c> over the finished map; here the call is the open.
         /// </remarks>
         [Fact]
         public async Task ShouldFoldAGroupedAggregateAtOpen()
@@ -509,8 +533,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A global aggregate folds at the open and hands back one row, whichever open it is.
+        /// A global aggregate folds its input at the open and returns one row, whichever open is used.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldFoldAGlobalAggregateAtOpen()
         {
@@ -544,8 +569,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A scan under a calc is acquired at the open and read per advance, whichever advance it is.
+        /// A scan under a calc is acquired at the open and read one row at a time as the cursor advances, by
+        /// either advance.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldReadOneRowPerAdvanceOfEitherKind()
         {
@@ -576,9 +603,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A concat acquires nothing at its open and each source at its turn, by the open of the advance that
-        /// reached it.
+        /// A concat acquires nothing at its open, and acquires each source when an advance reaches it, using
+        /// the open of that advance's kind and that advance's token.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldDeferEachConcatSourceToTheAdvanceThatReachesIt()
         {
@@ -618,6 +646,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Disposing a cursor that was never advanced still closes what the open acquired.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldDisposeAnUnreadCursorDownToTheLeaf()
         {
@@ -643,6 +672,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// One planned root gives one factory, and the two opens read the same rows.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldOpenOnePlannedRootBothWays()
         {
@@ -666,12 +696,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A result crossed to the other kind opens the same cursor: <c>Awaited</c> completes at once, and
-        /// <c>Pulled</c> blocks for the open.
+        /// A result crossed to the other kind opens the same rows: <c>Awaited</c> wraps the synchronous open in
+        /// a completed <c>ValueTask</c>, and <c>Pulled</c> blocks on the awaiting open.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// No node written so far crosses — each writes both bodies — so the two crossings are held here
-        /// directly, on a scan's results, compiled into the lambdas the root would have wrapped them in.
+        /// Every node implements both bodies and so crosses nothing, so the crossings are applied here directly
+        /// to a plan's results and compiled into the lambdas the root would build.
         /// </remarks>
         [Fact]
         public async Task ShouldCrossAResultToTheOtherKind()
@@ -701,7 +732,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             rows.Should().Equal(["D", "C", "B", "A"]);
             table.Scans.Should().Be(1, "the open underneath was the synchronous one");
 
-            // the awaiting result read as a synchronous one: the open is blocked for
+            // the awaiting result read as a synchronous one: the open is blocked on
             var pulled = implementor.Pulled(implementor.VisitChildAsync(null, 0, physical, ClrCursorPrefer.Array));
             pulled.Expression.Type.Should().Be(typeof(IClrCursor<object[]>));
             ((MethodCallExpression)pulled.Expression).Method.Name.Should().Be(nameof(ClrCursors.Block));
@@ -718,7 +749,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// The element type is the physical row type, the same whichever way the plan is opened.
+        /// The factory's element type is the physical row type.
         /// </summary>
         [Fact]
         public void ShouldNameTheRowType()
@@ -726,9 +757,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var rootSchema = Schema();
 
             Implement(Plan("SELECT * FROM SALES", rootSchema), new java.util.HashMap()).ElementType.Should().Be(typeof(object[]));
-            // int rather than java.lang.Integer: the type factory's answer for a one-column NOT NULL result
-            // is the primitive, exactly as Typed.getElementType answers int.class, and the cursor still
-            // carries the box, there being no cursor of a primitive any more than an Enumerable<int>
+            // int rather than java.lang.Integer: the type factory's answer for a one-column NOT NULL result is
+            // the primitive, as Typed.getElementType answers int.class, while the cursor itself carries the
+            // boxed value
             Implement(Plan("SELECT ID FROM SALES", rootSchema), new java.util.HashMap()).ElementType.Should().Be(typeof(int));
         }
 

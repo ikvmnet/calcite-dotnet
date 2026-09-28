@@ -24,10 +24,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// Implementation of <see cref="ClrPhysType"/>.
     /// </summary>
     /// <remarks>
-    /// <c>PhysTypeImpl</c>, member for member, in <see cref="Expression"/>.
-    ///
-    /// <para>The format arrives already through <c>JavaRowFormat.optimize</c>, and every question about
-    /// how a row is laid out is the format's to answer.</para>
+    /// Mirrors <c>PhysTypeImpl</c>, including its private helpers. How a row is laid out is answered by the
+    /// <see cref="JavaRowFormat"/>, through <see cref="JavaRowFormatExtensions"/>.
     /// </remarks>
     public class ClrPhysTypeImpl : ClrPhysType
     {
@@ -42,13 +40,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <param name="rowType"></param>
-        /// <param name="javaRowType">The type factory's name for a row, resolved to the CLR type behind it.</param>
-        /// <param name="format">Already through <c>JavaRowFormat.optimize</c>.</param>
+        /// <param name="typeFactory">The type factory.</param>
+        /// <param name="rowType">The relational row type.</param>
+        /// <param name="javaRowType">The Java row type; its CLR type, boxed, becomes <see cref="RowType"/>.</param>
+        /// <param name="format">The row format, used as given.</param>
         /// <remarks>
-        /// <c>PhysTypeImpl</c>'s constructor, which takes the row class rather than deriving it, because
-        /// <c>makeNullable</c> boxes the one it has instead of asking the format again.
+        /// Mirrors <c>PhysTypeImpl</c>'s constructor, which takes the row class rather than deriving it so that
+        /// <c>makeNullable</c> can pass a boxed one.
         /// </remarks>
         ClrPhysTypeImpl(JavaTypeFactory typeFactory, RelDataType rowType, java.lang.reflect.Type javaRowType, JavaRowFormat format)
         {
@@ -63,21 +61,21 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             fieldClasses = new Type[fields.size()];
             for (int i = 0; i < fieldClasses.Length; i++)
             {
-                // a field whose type has no class of its own is an object array, which is what a struct is
+                // a field type with no class of its own, such as a struct, is held as an Object[]
                 var fieldType = typeFactory.getJavaClass(((RelDataTypeField)fields.get(i)).getType());
                 fieldClasses[i] = ClrTypes.Resolve(fieldType is java.lang.Class ? fieldType : (java.lang.Class)typeof(object[]));
             }
         }
 
         /// <summary>
-        /// Returns the physical type of a row, optimising the format for the row type.
+        /// Returns the physical type of a row, optimizing the format for the row type.
         /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <param name="rowType"></param>
-        /// <param name="format"></param>
-        /// <returns></returns>
+        /// <param name="typeFactory">The type factory.</param>
+        /// <param name="rowType">The relational row type.</param>
+        /// <param name="format">The preferred row format.</param>
+        /// <returns>The physical type.</returns>
         /// <remarks>
-        /// <c>PhysTypeImpl.of</c>.
+        /// Mirrors <c>PhysTypeImpl.of(JavaTypeFactory, RelDataType, JavaRowFormat)</c>.
         /// </remarks>
         public static ClrPhysType Of(JavaTypeFactory typeFactory, RelDataType rowType, JavaRowFormat format)
         {
@@ -87,13 +85,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Returns the physical type of a row.
         /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <param name="rowType"></param>
-        /// <param name="format"></param>
-        /// <param name="optimize">Whether the format is to be optimised for the row type.</param>
-        /// <returns></returns>
+        /// <param name="typeFactory">The type factory.</param>
+        /// <param name="rowType">The relational row type.</param>
+        /// <param name="format">The row format.</param>
+        /// <param name="optimize">Whether to optimize the format for the row type with
+        /// <c>JavaRowFormat.optimize</c>.</param>
+        /// <returns>The physical type.</returns>
         /// <remarks>
-        /// <c>PhysTypeImpl.of</c>. <c>optimize</c> is Calcite's own, called rather than written again.
+        /// Mirrors <c>PhysTypeImpl.of(JavaTypeFactory, RelDataType, JavaRowFormat, boolean)</c>.
         /// </remarks>
         public static ClrPhysType Of(JavaTypeFactory typeFactory, RelDataType rowType, JavaRowFormat format, bool optimize)
         {
@@ -108,15 +107,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the physical type of a row whose type is a Java row class rather than a relational type.
+        /// Returns the physical type of a row described by a Java row class rather than a relational type.
         /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <param name="javaRowClass"></param>
-        /// <returns></returns>
+        /// <param name="typeFactory">The type factory.</param>
+        /// <param name="javaRowClass">The row class, such as a synthetic record over accumulator state types.</param>
+        /// <returns>A physical type in <see cref="JavaRowFormat.CUSTOM"/> format whose row class is
+        /// <paramref name="javaRowClass"/>.</returns>
         /// <remarks>
-        /// <c>PhysTypeImpl.of(typeFactory, javaRowClass)</c>, which is package private. The row type is rebuilt
-        /// from the fields of the record and the format is left unoptimised, exactly as it does, because an
-        /// accumulator of one field is still a record.
+        /// Mirrors the package private <c>PhysTypeImpl.of(JavaTypeFactory, Type)</c>. The row type is built from
+        /// the record's fields, and the format is not optimized, so a record of one field stays a record.
         /// </remarks>
         public static ClrPhysType Of(JavaTypeFactory typeFactory, java.lang.reflect.Type javaRowClass)
         {
@@ -135,8 +134,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 }
             }
 
-            // the row class given rather than one derived back out of the row type: this is the record the
-            // state slots were declared against, and the emitter keys a type on reference
+            // the given row class is kept rather than derived from the row type, because the accumulator's
+            // state slots were declared against this record
             return new ClrPhysTypeImpl(typeFactory, builder.build(), javaRowClass, JavaRowFormat.CUSTOM);
         }
 
@@ -215,8 +214,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var targetPhysType = Project(fields, targetFormat);
 
-            // a row that is the value itself is already the selection of its one field, which is what
-            // Functions.identitySelector answers with
+            // a SCALAR row is its one field, so the selector is the identity, as Calcite's
+            // Functions.identitySelector
             if (format.name() == nameof(JavaRowFormat.SCALAR))
                 return Expression.Lambda(parameter, parameter);
 
@@ -246,8 +245,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     continue;
                 }
 
-                // a field this grouping set does not group by carries its type's default, and the indicator
-                // below says so
+                // a field this grouping set does not group by carries its type's default; its indicator is set
+                // below
                 var fieldClass = targetPhysType.FieldClass(i);
                 var primitive = fieldClass.IsValueType ? Activator.CreateInstance(fieldClass) : null;
                 expressions.Add(Expression.Constant(primitive, primitive == null ? typeof(object) : fieldClass));
@@ -306,8 +305,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             if (nullable == false)
                 return this;
 
-            // the row class is boxed rather than asked for again: a nullable struct has different field
-            // classes and so a different synthetic record, which the rows of the input are not
+            // as in Calcite, the existing row class is boxed rather than derived again from the nullable row
+            // type, which could name a different class than the rows actually have
             return new ClrPhysTypeImpl(
                 typeFactory,
                 typeFactory.createTypeWithNullability(rowType, true),
@@ -360,27 +359,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the per-row selector that rewrites a row of this format into another, and the type it
-        /// yields.
+        /// Returns the selector that rewrites a row of this type into the target format, and the row type it
+        /// yields; shared by both <c>ConvertTo</c> overloads and <see cref="ConvertToAsync"/>.
         /// </summary>
-        /// <param name="targetFormat"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// What every <c>ConvertTo</c> shares, which is all of the work: reformatting a row is a row's
-        /// business, and which operator carries the selector over the sequence or the cursor is the
-        /// convention's.
-        /// </remarks>
+        /// <param name="targetFormat">The row format to convert to.</param>
+        /// <returns>The selector, which takes a row of this type and returns the target row, and the target's boxed row type.</returns>
         (LambdaExpression Selector, Type TargetRowType) Reformatter(JavaRowFormat targetFormat)
         {
             var o_ = Expression.Parameter(javaRowClass, "o");
             var fieldCount = rowType.getFieldCount();
 
-            // strict, as Calcite is: the target format is not optimised here, and a caller that wants it
-            // optimised does that before it asks
+            // as in Calcite, the target format is not optimized
             var targetPhysType = Of(typeFactory, rowType, targetFormat, false);
 
-            // what the sequence carries is the target's row type, not whatever the record happened to build:
-            // a one column row of a value is the value, and a sequence of it still carries the box
+            // the selector returns the target's boxed row type, whatever type the record expression has
             var targetRowType = targetPhysType.RowType;
             var body = ClrEnumUtils.Convert(targetPhysType.Record(FieldReferences(o_, Util.range(fieldCount))), targetRowType);
 
@@ -403,9 +395,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 return comparer;
 
             if (AnyFieldContainsStruct(rowType))
-                // a row or a key holding a struct needs deep equality: what a struct is at run time is an
-                // Object[] or a List, and those compare a nested Object[] by reference. This is the "not
-                // distinct" semantics GROUP BY, DISTINCT and the set operators are defined in terms of
+                // a struct is an Object[] or a List at run time, which compare a nested Object[] by
+                // reference, so a row holding one needs deep equality for GROUP BY, DISTINCT and set operators
                 return Expression.Call(null, DeepComparer);
 
             return null;
@@ -469,10 +460,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns a row type of one field where the given type is not already a struct.
+        /// Returns the type itself if it is a struct, and otherwise a struct of one field of that type.
+        /// Mirrors <c>PhysTypeImpl.toStruct</c>.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
+        /// <param name="type">A relational type.</param>
+        /// <returns><paramref name="type"/> if it is a struct, otherwise a struct with one field named by <c>SqlUtil.deriveAliasFromOrdinal(0)</c>.</returns>
         RelDataType ToStruct(RelDataType type)
         {
             if (type.isStruct())
@@ -502,8 +494,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             {
                 fieldType = FieldClass(field);
 
-                // the three types a row stores as an int or a long rather than as themselves; every other
-                // field is read as whatever the row holds
+                // only a date, time or timestamp, which a row stores as an int or a long, needs its field
+                // class passed to the format; any other field is read as the row holds it
                 if (fieldType != typeof(java.sql.Date) && fieldType != typeof(java.sql.Time) && fieldType != typeof(java.sql.Timestamp))
                     fieldType = null;
             }
@@ -512,11 +504,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns one expression per named field.
+        /// Returns one field read per listed field ordinal. Mirrors <c>PhysTypeImpl.fieldReferences</c>.
         /// </summary>
-        /// <param name="parameter"></param>
-        /// <param name="fields"></param>
-        /// <returns></returns>
+        /// <param name="parameter">The row expression to read from.</param>
+        /// <param name="fields">The field ordinals, a list of <c>java.lang.Integer</c>.</param>
+        /// <returns>One field read per ordinal, in order.</returns>
         IReadOnlyList<Expression> FieldReferences(Expression parameter, java.util.List fields)
         {
             var expressions = new Expression[fields.size()];
@@ -581,8 +573,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var list = FieldReferences(v1, fields);
 
-            // a hash join with exactly one join key that is null-safe must still recognise a row whose key is
-            // null, so a list of one is a list rather than the element itself
+            // even a single key is wrapped in a list, so that a null-safe key whose value is null still yields
+            // a non-null key a hash join can match
             var body = GetListExpressionAllowSingleElement(list);
             for (int i = list.Count - 1; i >= 0; i--)
             {
@@ -591,9 +583,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
                 var fieldType = ((RelDataTypeField)rowType.getFieldList().get(JavaLists.Int(fields, i))).getType();
 
-                // under the SQL = operator a NULL never compares TRUE, and neither can a ROW holding a NULL
-                // field at any depth: comparing its fields pairwise is UNKNOWN or FALSE, and the key is null
-                // for both
+                // under = a NULL never compares TRUE, and neither does a ROW holding a NULL at any depth, so
+                // either makes the key null
                 body = fieldType.isStruct()
                     ? Expression.Condition(
                         StructIsNullOrContainsNull(list[i], fieldType),
@@ -607,11 +598,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the expression testing whether a value of a ROW type is null or holds a null field.
+        /// Returns an expression testing whether a value of a ROW type is null or holds a null field.
         /// </summary>
         /// <remarks>
-        /// <c>PhysTypeImpl.structIsNullOrContainsNullExpression</c>, which is private. It descends into a
-        /// struct-typed field and not into a collection-typed one.
+        /// Mirrors the private <c>PhysTypeImpl.structIsNullOrContainsNullExpression</c>. It descends into
+        /// struct fields but not into collections.
         /// </remarks>
         static Expression StructIsNullOrContainsNull(Expression e, RelDataType type)
         {
@@ -624,8 +615,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 if (fieldType.isStruct() == false && fieldType.isNullable() == false)
                     continue;
 
-                // structAccess takes either of the runtime representations of a struct, and only runs where
-                // e is not null, the OR being short circuit
+                // structAccess accepts either run-time representation of a struct, and the short-circuit OR
+                // runs it only where e is not null
                 var access = Expression.Call(null, StructAccess, ClrEnumUtils.Convert(e, typeof(object)), Expression.Constant(i), Expression.Constant(field.getName()));
 
                 result = Expression.OrElse(result, fieldType.isStruct()
@@ -637,13 +628,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the expression building a comparable list of two or more expressions.
+        /// Returns an expression building a comparable list of two or more expressions.
         /// </summary>
-        /// <param name="list"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// <c>PhysTypeImpl.getListExpression</c>, which is private.
+        /// Mirrors the private <c>PhysTypeImpl.getListExpression</c>.
         /// </remarks>
+        /// <param name="list">The element expressions; there must be at least two.</param>
+        /// <returns>An expression of type <c>java.util.List</c> building the list in the <c>LIST</c> row format.</returns>
         static Expression GetListExpression(IReadOnlyList<Expression> list)
         {
             if (list.Count < 2)
@@ -653,13 +644,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the expression building a comparable list of one or more expressions.
+        /// Returns an expression building a comparable list of one or more expressions.
         /// </summary>
-        /// <param name="list"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// <c>PhysTypeImpl.getListExpressionAllowSingleElement</c>, which is private.
+        /// Mirrors the private <c>PhysTypeImpl.getListExpressionAllowSingleElement</c>.
         /// </remarks>
+        /// <param name="list">The element expressions; there must be at least one.</param>
+        /// <returns>An expression of type <c>java.util.List</c>: a one-element flat list, or as <see cref="GetListExpression"/> gives it.</returns>
         static Expression GetListExpressionAllowSingleElement(IReadOnlyList<Expression> list)
         {
             if (list.Count == 0)
@@ -697,7 +688,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 return (selector, comparator);
             }
 
-            // the key is the row itself, and the comparator walks the collations in order
+            // otherwise the key is the row itself, compared field by field in collation order
             var identity = Expression.Parameter(javaRowClass, "v");
 
             return (
@@ -722,10 +713,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the name of the <c>Utilities</c> method ordering one field of a row.
+        /// Returns the name of the <c>Utilities</c> method that compares one field under a collation.
         /// </summary>
-        /// <param name="fieldCollation"></param>
-        /// <returns></returns>
+        /// <param name="fieldCollation">The collation of the field.</param>
+        /// <returns><c>compare</c> for a field that is not nullable; otherwise <c>compareNullsFirst</c> or <c>compareNullsLast</c>,
+        /// chosen so that nulls come where the collation puts them once a descending result is negated.</returns>
         string FieldCollationCompareName(RelFieldCollation fieldCollation)
         {
             var index = fieldCollation.getFieldIndex();
@@ -738,13 +730,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the name of the <c>Utilities</c> method a merge join orders one field of a row by.
+        /// Returns the name of the <c>Utilities</c> method that compares one merge join key field.
         /// </summary>
-        /// <param name="fieldCollation"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// A merge join's keys are always ascending with nulls last, and two nulls are not equal.
+        /// A merge join's keys are ascending with nulls last, and two nulls do not compare equal.
         /// </remarks>
+        /// <param name="fieldCollation">The collation of the key field; must be ascending with nulls last.</param>
+        /// <returns><c>compareNullsLastForMergeJoin</c> for a nullable field, otherwise <c>compare</c>.</returns>
         string MergeJoinCompareName(RelFieldCollation fieldCollation)
         {
             if (fieldCollation.nullDirection != RelFieldCollation.NullDirection.LAST)
@@ -756,21 +748,18 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the comparator ordering two rows by the given collations.
+        /// Returns an expression creating a comparator that orders two rows by the given field collations.
         /// </summary>
-        /// <param name="fieldCollations"></param>
-        /// <param name="compareMethodName"></param>
+        /// <param name="fieldCollations">The field collations, a list of <see cref="RelFieldCollation"/>.</param>
+        /// <param name="compareMethodName">Chooses the <c>Utilities</c> comparison method for a field.</param>
         /// <param name="parameterType">The type of a row as the comparator receives it.</param>
-        /// <returns></returns>
         /// <remarks>
-        /// <c>PhysTypeImpl.generateComparator</c>, whose body is
-        /// <c>int c; c = Utilities.compare(v0, v1); if (c != 0) return c; … return 0;</c>.
-        ///
-        /// <para>Calcite declares an anonymous <c>Comparator</c> around that method, and adds a bridge method
-        /// taking two objects where the row type is not itself <c>Object</c>, because a Java class needs one.
-        /// The method is a lambda here and <see cref="DelegateComparator{T}"/> is the bridge, so neither has a
-        /// counterpart.</para>
+        /// Mirrors <c>PhysTypeImpl.generateComparator</c>, whose body compares each field in turn and returns
+        /// the first non-zero result, negated for a descending field. Calcite wraps that body in an anonymous
+        /// <c>Comparator</c> with a bridge method; here it is a lambda wrapped in a
+        /// <see cref="DelegateComparator{T}"/>.
         /// </remarks>
+        /// <returns>An expression evaluating to a <see cref="DelegateComparator{T}"/> over <paramref name="parameterType"/>.</returns>
         Expression GenerateComparator(java.util.List fieldCollations, Func<RelFieldCollation, string> compareMethodName, Type parameterType)
         {
             var v0 = Expression.Parameter(parameterType, "v0");
@@ -785,7 +774,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 var fieldCollation = (RelFieldCollation)fieldCollations.get(i);
                 var index = fieldCollation.getFieldIndex();
 
-                // a NULL literal is always null, and null compared to null is 0
+                // a field of type NULL is always null, and null compared to null is 0
                 if (FieldClass(index) == typeof(java.lang.Void))
                     continue;
 
@@ -795,11 +784,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 var arg0 = FieldReference(ClrEnumUtils.Convert(v0, javaRowClass), index);
                 var arg1 = FieldReference(ClrEnumUtils.Convert(v1, javaRowClass), index);
 
-                // a field that is neither a primitive nor one of their boxes is ordered as a Comparable.
-                // Calcite casts to it to pick that overload out of the source text, and the cast never runs;
-                // here it would, and java.lang.Comparable is a ghost interface IKVM gives to a string without
-                // the CLR type system knowing. So the overload is chosen by a method that takes an object and
-                // does the conversion in compiled C#, where IKVM can emit the check.
+                // Calcite casts a non-primitive field to Comparable to select a Utilities overload. IKVM makes
+                // java.lang.Comparable a ghost interface of System.String that the CLR cannot cast to, so such
+                // a field is passed as object to JavaComparisons, which converts it in compiled C#
                 var asObject = ClrPrimitive.IsObject(arg0.Type);
                 if (asObject)
                 {
@@ -842,7 +829,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// The members Calcite names through <c>BuiltInMethod</c>, resolved once against what IKVM compiled.
+        /// <c>BuiltInMethod</c> members, resolved to the CLR methods IKVM compiled them to.
         /// </summary>
         static readonly MethodInfo NullsComparator = ClrTypes.Resolve(BuiltInMethod.NULLS_COMPARATOR.method);
 

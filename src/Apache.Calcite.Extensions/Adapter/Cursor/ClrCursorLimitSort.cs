@@ -18,12 +18,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// calling convention.
     /// </summary>
     /// <remarks>
-    /// A sort followed by a limit reads every row and orders all of them. This orders and limits together, so
-    /// only as many rows as are wanted need be kept.
+    /// Mirrors <c>EnumerableLimitSort</c>. Where a sort followed by a limit orders every row, this keeps only
+    /// the first offset plus fetch rows while it reads its input.
     ///
-    /// <para>The input is handed to the operator as an open of the body's own kind rather than as a cursor,
-    /// because linq4j's bounded <c>orderBy</c> tests the fetch inside <c>enumerator()</c> before it acquires
-    /// its source, and for a fetch of no rows never acquires it at all.</para>
+    /// <para>The input is passed as an opener, because linq4j's bounded <c>orderBy</c> tests the fetch before
+    /// it acquires its source and, for a fetch of zero, never acquires it.</para>
     /// </remarks>
     public class ClrCursorLimitSort : Sort, ClrCursorRel
     {
@@ -31,11 +30,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates a <see cref="ClrCursorLimitSort"/>.
         /// </summary>
-        /// <param name="input"></param>
-        /// <param name="collation"></param>
-        /// <param name="offset"></param>
-        /// <param name="fetch"></param>
-        /// <returns></returns>
+        /// <param name="input">The input.</param>
+        /// <param name="collation">The ordering.</param>
+        /// <param name="offset">The number of rows to skip, or null.</param>
+        /// <param name="fetch">The maximum number of rows to return, or null.</param>
+        /// <returns>The new node.</returns>
         public static ClrCursorLimitSort Create(RelNode input, RelCollation collation, RexNode? offset, RexNode? fetch)
         {
             var cluster = input.getCluster();
@@ -45,14 +44,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Initializes a new instance. <see cref="Create"/> is preferred, as it derives the trait set.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="input"></param>
-        /// <param name="collation"></param>
-        /// <param name="offset"></param>
-        /// <param name="fetch"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traitSet">The trait set, which carries <see cref="ClrCursorConvention"/> and the collation.</param>
+        /// <param name="input">The input.</param>
+        /// <param name="collation">The ordering.</param>
+        /// <param name="offset">The number of rows to skip, or null.</param>
+        /// <param name="fetch">The maximum number of rows to return, or null.</param>
         public ClrCursorLimitSort(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, RelCollation collation, RexNode? offset, RexNode? fetch) :
             base(cluster, traitSet, input, collation, offset, fetch)
         {

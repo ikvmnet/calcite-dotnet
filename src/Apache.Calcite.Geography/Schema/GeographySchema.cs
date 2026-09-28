@@ -10,36 +10,28 @@ namespace Apache.Calcite.Geography.Schema
 {
 
     /// <summary>
-    /// Puts the <c>CLR_ST_GEOG_*</c> operators into a schema, which is how a caller who is not driving Calcite's
-    /// planner gets them.
+    /// Declares the <c>CLR_ST_GEOG_*</c> operators as functions on a schema.
     /// </summary>
     /// <remarks>
-    /// A schema function is the only extension Calcite's JDBC driver supports without subclassing something.
-    /// Registering into the root schema makes every operator visible unqualified to everything on the
-    /// connection — <c>CalciteCatalogReader</c> always searches the default schema and the root, so a view in
-    /// another schema resolves them too. An adapter that wants its functions to arrive with its tables calls
-    /// this on the schema it is building, or a model file names the class and method of each.
+    /// This is how the operators are made available without configuring the validator, for example through
+    /// Calcite's JDBC driver or from an adapter that wants its functions to arrive with its tables. Functions added to
+    /// the root schema are visible unqualified everywhere on the connection, because <c>CalciteCatalogReader</c>
+    /// always searches the default schema and the root.
     ///
-    /// <para>This is what the operators being typed over <c>GEOMETRY</c> buys. A parameter type that Calcite
-    /// cannot name — anything reaching <see cref="org.apache.calcite.sql.type.SqlTypeName.OTHER"/> — makes
-    /// routine resolution throw <c>AssertionError: No assign rules for OTHER defined</c>, because
-    /// <c>CalciteCatalogReader.toOp</c> builds a fixed-parameter checker for every schema function and there
-    /// is no hook to supply one that would skip the comparison. Being ordinary geometries is what lets these
-    /// go in a schema at all.</para>
-    ///
-    /// <para>The functions and <see cref="GeographyOperatorTable"/> are the same objects. Both hand out the
-    /// <c>ScalarFunctionImpl</c> the operator table already built, so an operator behaves identically
-    /// whichever way a host reaches it; a host driving its own planner may still chain the table instead, and
-    /// should not do both, since a name found twice resolves to whichever the lookup reaches first.</para>
+    /// <para>The functions are the same <c>ScalarFunctionImpl</c> objects <see cref="GeographyOperatorTable"/>
+    /// holds, so an operator behaves the same whichever way it is reached. Use one route or the other, not both: a
+    /// name found twice resolves to whichever the lookup reaches first. A call resolved through a schema lacks the
+    /// strictness and symmetry the operator table declares until <c>GeographyRules</c> restores them.</para>
     /// </remarks>
     public static class GeographySchema
     {
 
         /// <summary>
-        /// Registers every <c>CLR_ST_GEOG_*</c> operator on the given schema.
+        /// Adds every <c>CLR_ST_GEOG_*</c> operator to a schema as a function.
         /// </summary>
-        /// <param name="schema"></param>
-        /// <returns>The schema, for chaining.</returns>
+        /// <param name="schema">The schema to add to.</param>
+        /// <returns><paramref name="schema"/>, for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="schema"/> is <c>null</c>.</exception>
         public static SchemaPlus AddTo(SchemaPlus schema)
         {
             ArgumentNullException.ThrowIfNull(schema);

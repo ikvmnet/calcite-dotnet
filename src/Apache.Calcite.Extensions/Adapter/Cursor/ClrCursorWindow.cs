@@ -27,21 +27,18 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// Implementation of <see cref="Window"/> in the <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
     /// <remarks>
-    /// The loop is <see cref="ClrCursorDefaults.Window"/>, written once, exactly as the loop of a calc is
-    /// <see cref="ClrCursorDefaults.Calc"/>: partitioning the input, ordering each partition, walking its rows,
-    /// deciding when the frame has changed enough to be computed again, and folding the rows of the frame in.
-    /// Generated Java source is the only place Calcite can put a loop, which is why its own is generated.
+    /// Mirrors <c>EnumerableWindow</c>. Calcite generates the window loop as Java source; here it is the
+    /// operator <see cref="ClrCursorDefaults.Window"/>, which partitions the input, orders each partition, walks
+    /// its rows, decides when the frame must be recomputed, and folds the frame's rows in. Each window group
+    /// becomes one such operator over the previous group's output.
     ///
-    /// <para>What this node translates is what a generator of Calcite's produced: the window aggregate
-    /// implementors' reset, add and result blocks; <c>translateBound</c>, ported here because it is private;
-    /// the partition key, the comparator and the collation key from <c>PhysType</c>; and the literals of
-    /// <c>constants</c>. Each is translated where it is produced.</para>
+    /// <para>The node translates only what Calcite's generators produce: the window aggregate implementors'
+    /// reset, add and result blocks, the frame bounds (<c>translateBound</c>, ported because it is private),
+    /// the partition key, comparator and collation key, and the <c>constants</c> literals.</para>
     ///
-    /// <para>Calcite declares each aggregate's state, and its last result, as local variables of the generated
-    /// method and mutates them in place, which no lambda can carry. They become the fields of one synthetic
-    /// record instead — the same answer <see cref="ClrCursorAggregate"/> gives to the same problem — and
-    /// the loop variables the implementors read become parameters bound to the fields of a
-    /// <see cref="WindowFrame"/>.</para>
+    /// <para>Calcite keeps each aggregate's state and last result in local variables of the generated method.
+    /// Here they are fields of one synthetic accumulator record, as in <see cref="ClrCursorAggregate"/>, and
+    /// the loop variables the implementors read are bound to the properties of a <see cref="WindowFrame"/>.</para>
     /// </remarks>
     public class ClrCursorWindow : Window, ClrCursorRel
     {
@@ -49,12 +46,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="input"></param>
-        /// <param name="constants"></param>
-        /// <param name="rowType"></param>
-        /// <param name="groups"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traitSet">The trait set, which carries <see cref="ClrCursorConvention"/>.</param>
+        /// <param name="input">The input.</param>
+        /// <param name="constants">Literals that aggregate arguments refer to by indexes past the input's fields.</param>
+        /// <param name="rowType">The output row type: the input's fields followed by one per aggregate.</param>
+        /// <param name="groups">The window groups.</param>
         public ClrCursorWindow(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, java.util.List constants, RelDataType rowType, java.util.List groups) :
             base(cluster, traitSet, com.google.common.collect.ImmutableList.of(), input, constants, rowType, groups)
         {
@@ -90,8 +87,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var child = (ClrCursorRel)getInput();
             var result = implementor.VisitChild(this, 0, child, pref);
 
-            // a window aggregate may name a constant past the input's own fields, so they are translated once
-            // and the input getter hands them out by index
+            // an aggregate argument may refer to a constant by an index past the input's fields; the constants
+            // are translated once and the input getter returns them by index
             var translatedConstants = new java.util.ArrayList(constants.size());
             for (int i = 0; i < constants.size(); i++)
             {
@@ -99,8 +96,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 translatedConstants.add(RexToLixTranslator.translateLiteral(constant, constant.getType(), typeFactory, RexImpTable.NullAs.NULL));
             }
 
-            // the comparators and collation keys are evaluated once and read by the lambdas of their group,
-            // which is what Calcite's "final Comparator comparator = ..." ahead of the loop is
+            // the block's variables hold values evaluated once, ahead of the loops, and read by each group's
+            // lambdas, as Calcite declares "final Comparator comparator = ..." ahead of its loop
             var variables = new List<ParameterExpression>();
             var body = new List<Expression>();
 
@@ -112,8 +109,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 var group = (Group)groups.get(windowIdx);
                 source = ImplementGroup(implementor, result.PhysType, result.Format, group, windowIdx, physType, source, pref, translatedConstants, variables, body, out physType);
 
-                // one variable per group, as Calcite makes one "source" per group, so a later group reads what
-                // an earlier one produced rather than building it again
+                // one variable per group, as Calcite declares one "source" per group; the next group reads it
                 var sourceVariable = Expression.Variable(source.Type, $"source{windowIdx}");
                 variables.Add(sourceVariable);
                 body.Add(Expression.Assign(sourceVariable, source));
@@ -132,8 +128,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var child = (ClrCursorRel)getInput();
             var result = implementor.VisitChildAsync(this, 0, child, pref);
 
-            // a window aggregate may name a constant past the input's own fields, so they are translated once
-            // and the input getter hands them out by index
+            // an aggregate argument may refer to a constant by an index past the input's fields; the constants
+            // are translated once and the input getter returns them by index
             var translatedConstants = new java.util.ArrayList(constants.size());
             for (int i = 0; i < constants.size(); i++)
             {
@@ -141,8 +137,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 translatedConstants.add(RexToLixTranslator.translateLiteral(constant, constant.getType(), typeFactory, RexImpTable.NullAs.NULL));
             }
 
-            // the comparators and collation keys are evaluated once and read by the lambdas of their group,
-            // which is what Calcite's "final Comparator comparator = ..." ahead of the loop is
+            // the block's variables hold values evaluated once, ahead of the loops, and read by each group's
+            // lambdas, as Calcite declares "final Comparator comparator = ..." ahead of its loop
             var variables = new List<ParameterExpression>();
             var body = new List<Expression>();
 
@@ -154,8 +150,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 var group = (Group)groups.get(windowIdx);
                 source = ImplementGroupAsync(implementor, result.PhysType, result.Format, group, windowIdx, physType, source, pref, translatedConstants, variables, body, out physType);
 
-                // one variable per group, as Calcite makes one "source" per group, so a later group reads what
-                // an earlier one produced rather than building it again
+                // one variable per group, as Calcite declares one "source" per group; the next group reads it
                 var sourceVariable = Expression.Variable(source.Type, $"source{windowIdx}");
                 variables.Add(sourceVariable);
                 body.Add(Expression.Assign(sourceVariable, source));
@@ -168,20 +163,22 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Implements one window group over the cursor the group before it produced.
+        /// Implements one window group over the output of the group before it.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="result">What the input produced, which is what the aggregate arguments are indexed against however many groups have run.</param>
-        /// <param name="group"></param>
-        /// <param name="windowIdx"></param>
-        /// <param name="inputPhysType"></param>
-        /// <param name="source"></param>
-        /// <param name="pref"></param>
-        /// <param name="translatedConstants"></param>
-        /// <param name="variables">Variables of the block the whole node becomes.</param>
-        /// <param name="body">Statements of that block.</param>
-        /// <param name="outputPhysType"></param>
-        /// <returns></returns>
+        /// <param name="implementor">The implementor.</param>
+        /// <param name="inputResultPhysType">The physical type of the node's input. Aggregate arguments index
+        /// its fields, whichever group is being implemented.</param>
+        /// <param name="inputResultFormat">The format of the node's input.</param>
+        /// <param name="group">The window group.</param>
+        /// <param name="windowIdx">The group's index, used to name its variables.</param>
+        /// <param name="inputPhysType">The physical type of this group's input.</param>
+        /// <param name="source">This group's input.</param>
+        /// <param name="pref">The preferred row format.</param>
+        /// <param name="translatedConstants">The node's constants, translated.</param>
+        /// <param name="variables">Receives variables of the block the whole node becomes.</param>
+        /// <param name="body">Receives statements of that block.</param>
+        /// <param name="outputPhysType">The physical type of this group's output.</param>
+        /// <returns>The expression opening this group's output.</returns>
         Expression ImplementGroup(
             ClrCursorRelImplementor implementor,
             ClrPhysType inputResultPhysType,
@@ -199,20 +196,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var typeFactory = implementor.TypeFactory;
             var translator = implementor.Translator;
 
-            // a partition is an Object[], as Calcite's is, so a row that is a primitive is boxed to go in it —
-            // and boxed the way the type factory says, because the comparator ordering the partition is
-            // Calcite's and takes a java.lang.Integer where the row type is an int
-            // the loop is this convention's, but everything inside it is Calcite's: the aggregate
-            // implementors write linq4j into blocks of Calcite's, the frame reads a row through Rex, and the
-            // output row is built with record. So the input and the output are each held twice -- ours for the
-            // cursor, the comparator and the collation key, all of which are delegates, and Calcite's for
-            // every field read that ends up inside one of those blocks.
+            // the aggregate implementors write linq4j blocks, the frame reads rows through Rex, and the output
+            // row is built with record, so the input and output each also have a Calcite physical type for the
+            // field reads inside those blocks. A partition is an Object[], as in Calcite, so its rows are boxed
+            // Java values, which Calcite's comparator expects
             var inputCalcite = PhysTypeImpl.of(typeFactory, inputPhysType.RelRowType, inputPhysType.Format, false);
 
             var sourceType = inputPhysType.RowType;
             source = source;
 
-            // orders the rows of a partition, and is what EXCLUDE and RANK ask whether two rows are peers
+            // orders a partition's rows; EXCLUDE and RANK also use it to decide whether two rows are peers
             var comparator_ = J.Expressions.parameter((java.lang.Class)typeof(java.util.Comparator), $"comparator{windowIdx}");
             var comparator = Hoist(translator, variables, body, comparator_,
                 inputPhysType.GenerateComparator(group.collation()), typeof(java.util.Comparator));
@@ -228,7 +221,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     {
                         case nameof(SqlKind.FIRST_VALUE):
                         case nameof(SqlKind.LAST_VALUE):
-                            // IGNORE NULLS is implemented for these below
+                            // their implementors read IGNORE NULLS through ClrWinAggContext.ignoreNulls
                             break;
                         default:
                             throw new java.lang.UnsupportedOperationException("IGNORE NULLS not supported");
@@ -245,14 +238,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             {
                 var agg = (ClrAggImpState)aggs.get(i);
 
-                // [CALCITE-4326] NullPointerException possible in EnumerableWindow when agg.call.name is null
+                // an aggregate call's name may be null; Calcite fails with the same message
                 typeBuilder.add(agg.call.name ?? throw new java.lang.NullPointerException($"agg.call.name for {agg.call}"), agg.call.type);
             }
 
             outputPhysType = ClrPhysTypeImpl.Of(typeFactory, typeBuilder.build(), pref.Prefer(inputResultFormat));
             var outputCalcite = PhysTypeImpl.of(typeFactory, outputPhysType.RelRowType, outputPhysType.Format, false);
 
-            // a RANGE frame finds its bounds by binary search over the collation key rather than by counting
+            // a bounded RANGE frame finds its bounds by binary search over the collation key
             J.ParameterExpression? keySelector_ = null;
             J.ParameterExpression? keyComparator_ = null;
             if ((group.isRows || (group.upperBound.isUnbounded() && group.lowerBound.isUnbounded())) == false)
@@ -269,14 +262,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var loop = new WindowLoop(inputCalcite);
             var inputGetter = new WindowRelInputGetter(loop.Row, inputCalcite, inputResultPhysType.RelRowType.getFieldCount(), translatedConstants);
 
-            // the output row is every input field, and then whatever each aggregate last computed
+            // the output row is every input field, then each aggregate's last result
             var inputFieldCount = inputPhysType.RelRowType.getFieldCount();
             var outputRow = new java.util.ArrayList();
             for (int i = 0; i < inputFieldCount; i++)
                 outputRow.add(inputCalcite.fieldReference(loop.Row, i, outputCalcite.getJavaFieldType(i)));
 
-            // declareAndResetState: the state each aggregate accumulates in, the variable holding its last
-            // result, and the block that gives both their starting values
+            // as Calcite's declareAndResetState: each aggregate's state, the variable holding its last result,
+            // and the block that initializes both
             var initBlock = new J.BlockBuilder();
             var stateTypes = new java.util.ArrayList();
             var initExpressions = new java.util.ArrayList();
@@ -289,8 +282,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var acc_ = J.Expressions.parameter(accPhysType.getJavaRowType(), "acc");
             loop.Accumulator = acc_;
 
-            // what were local variables become fields of the accumulator, so the state is a value passed in and
-            // out of a lambda rather than something mutated where it was declared
+            // Calcite's local variables become fields of the accumulator, which each lambda takes and returns
             for (int i = 0, slot = 0; i < aggs.size(); i++)
             {
                 var agg = (ClrAggImpState)aggs.get(i);
@@ -308,7 +300,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 typeof(Func<>).MakeGenericType(accType),
                 translator.TranslateBody(initBlock.toBlock(), accType));
 
-            // the frame bounds, each its own block because each is its own lambda
+            // the frame bounds, each in its own block because each becomes its own lambda
             var min_ = J.Expressions.constant(0);
 
             var lowerBuilder = new J.BlockBuilder();
@@ -323,7 +315,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 typeFactory, loop.Index, loop.Row, min_, loop.MaxX, loop.Rows, group, false, inputCalcite, keySelector_, keyComparator_);
             upperBuilder.add(J.Expressions.return_(null, endUnchecked));
 
-            // a bound that is unbounded, or that is the current row, is already inside the partition
+            // a bound that is unbounded or the current row is already inside the partition and needs no clamp
             var clampStart = group.lowerBound.isUnbounded() == false && ReferenceEquals(startUnchecked, loop.Index) == false;
             var clampEnd = group.upperBound.isUnbounded() == false && ReferenceEquals(endUnchecked, loop.Index) == false;
 
@@ -336,8 +328,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     translatedConstants, comparator_, loop.Rows, loop.Index, loop.Start, loop.End, min_, loop.MaxX,
                     loop.HasRows, loop.FrameRowCount, loop.PartitionRowCount, loop.Position));
 
-            // reset, add, and the two halves of result, in the order Calcite calls the implementors in: the
-            // implementors keep state of their own across the calls
+            // reset, add, and the two halves of result, in the order Calcite calls them: the implementors keep
+            // state of their own across the calls
             var resetBuilder = new J.BlockBuilder();
             for (int i = 0; i < aggs.size(); i++)
             {
@@ -375,7 +367,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var outputType = outputPhysType.RowType;
             var selector = loop.Lambda(translator, selectorBuilder.toBlock(), outputType, accType);
 
-            // the partition key, which is the one thing here that reads a row outside the loop
+            // the partition key, the only piece that reads a row outside the loop
             var partitionSelector = PartitionSelector(translator, inputCalcite, group, sourceType);
             var keyType = partitionSelector?.ReturnType ?? typeof(object);
 
@@ -400,20 +392,22 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Implements one window group over the cursor the group before it produced.
+        /// Implements one window group over the output of the group before it.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="result">What the input produced, which is what the aggregate arguments are indexed against however many groups have run.</param>
-        /// <param name="group"></param>
-        /// <param name="windowIdx"></param>
-        /// <param name="inputPhysType"></param>
-        /// <param name="source"></param>
-        /// <param name="pref"></param>
-        /// <param name="translatedConstants"></param>
-        /// <param name="variables">Variables of the block the whole node becomes.</param>
-        /// <param name="body">Statements of that block.</param>
-        /// <param name="outputPhysType"></param>
-        /// <returns></returns>
+        /// <param name="implementor">The implementor.</param>
+        /// <param name="inputResultPhysType">The physical type of the node's input. Aggregate arguments index
+        /// its fields, whichever group is being implemented.</param>
+        /// <param name="inputResultFormat">The format of the node's input.</param>
+        /// <param name="group">The window group.</param>
+        /// <param name="windowIdx">The group's index, used to name its variables.</param>
+        /// <param name="inputPhysType">The physical type of this group's input.</param>
+        /// <param name="source">This group's input.</param>
+        /// <param name="pref">The preferred row format.</param>
+        /// <param name="translatedConstants">The node's constants, translated.</param>
+        /// <param name="variables">Receives variables of the block the whole node becomes.</param>
+        /// <param name="body">Receives statements of that block.</param>
+        /// <param name="outputPhysType">The physical type of this group's output.</param>
+        /// <returns>The expression opening this group's output.</returns>
         Expression ImplementGroupAsync(
             ClrCursorRelImplementor implementor,
             ClrPhysType inputResultPhysType,
@@ -431,20 +425,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var typeFactory = implementor.TypeFactory;
             var translator = implementor.Translator;
 
-            // a partition is an Object[], as Calcite's is, so a row that is a primitive is boxed to go in it —
-            // and boxed the way the type factory says, because the comparator ordering the partition is
-            // Calcite's and takes a java.lang.Integer where the row type is an int
-            // the loop is this convention's, but everything inside it is Calcite's: the aggregate
-            // implementors write linq4j into blocks of Calcite's, the frame reads a row through Rex, and the
-            // output row is built with record. So the input and the output are each held twice -- ours for the
-            // cursor, the comparator and the collation key, all of which are delegates, and Calcite's for
-            // every field read that ends up inside one of those blocks.
+            // the aggregate implementors write linq4j blocks, the frame reads rows through Rex, and the output
+            // row is built with record, so the input and output each also have a Calcite physical type for the
+            // field reads inside those blocks. A partition is an Object[], as in Calcite, so its rows are boxed
+            // Java values, which Calcite's comparator expects
             var inputCalcite = PhysTypeImpl.of(typeFactory, inputPhysType.RelRowType, inputPhysType.Format, false);
 
             var sourceType = inputPhysType.RowType;
             source = source;
 
-            // orders the rows of a partition, and is what EXCLUDE and RANK ask whether two rows are peers
+            // orders a partition's rows; EXCLUDE and RANK also use it to decide whether two rows are peers
             var comparator_ = J.Expressions.parameter((java.lang.Class)typeof(java.util.Comparator), $"comparator{windowIdx}");
             var comparator = Hoist(translator, variables, body, comparator_,
                 inputPhysType.GenerateComparator(group.collation()), typeof(java.util.Comparator));
@@ -460,7 +450,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     {
                         case nameof(SqlKind.FIRST_VALUE):
                         case nameof(SqlKind.LAST_VALUE):
-                            // IGNORE NULLS is implemented for these below
+                            // their implementors read IGNORE NULLS through ClrWinAggContext.ignoreNulls
                             break;
                         default:
                             throw new java.lang.UnsupportedOperationException("IGNORE NULLS not supported");
@@ -477,14 +467,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             {
                 var agg = (ClrAggImpState)aggs.get(i);
 
-                // [CALCITE-4326] NullPointerException possible in EnumerableWindow when agg.call.name is null
+                // an aggregate call's name may be null; Calcite fails with the same message
                 typeBuilder.add(agg.call.name ?? throw new java.lang.NullPointerException($"agg.call.name for {agg.call}"), agg.call.type);
             }
 
             outputPhysType = ClrPhysTypeImpl.Of(typeFactory, typeBuilder.build(), pref.Prefer(inputResultFormat));
             var outputCalcite = PhysTypeImpl.of(typeFactory, outputPhysType.RelRowType, outputPhysType.Format, false);
 
-            // a RANGE frame finds its bounds by binary search over the collation key rather than by counting
+            // a bounded RANGE frame finds its bounds by binary search over the collation key
             J.ParameterExpression? keySelector_ = null;
             J.ParameterExpression? keyComparator_ = null;
             if ((group.isRows || (group.upperBound.isUnbounded() && group.lowerBound.isUnbounded())) == false)
@@ -501,14 +491,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var loop = new WindowLoop(inputCalcite);
             var inputGetter = new WindowRelInputGetter(loop.Row, inputCalcite, inputResultPhysType.RelRowType.getFieldCount(), translatedConstants);
 
-            // the output row is every input field, and then whatever each aggregate last computed
+            // the output row is every input field, then each aggregate's last result
             var inputFieldCount = inputPhysType.RelRowType.getFieldCount();
             var outputRow = new java.util.ArrayList();
             for (int i = 0; i < inputFieldCount; i++)
                 outputRow.add(inputCalcite.fieldReference(loop.Row, i, outputCalcite.getJavaFieldType(i)));
 
-            // declareAndResetState: the state each aggregate accumulates in, the variable holding its last
-            // result, and the block that gives both their starting values
+            // as Calcite's declareAndResetState: each aggregate's state, the variable holding its last result,
+            // and the block that initializes both
             var initBlock = new J.BlockBuilder();
             var stateTypes = new java.util.ArrayList();
             var initExpressions = new java.util.ArrayList();
@@ -521,8 +511,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var acc_ = J.Expressions.parameter(accPhysType.getJavaRowType(), "acc");
             loop.Accumulator = acc_;
 
-            // what were local variables become fields of the accumulator, so the state is a value passed in and
-            // out of a lambda rather than something mutated where it was declared
+            // Calcite's local variables become fields of the accumulator, which each lambda takes and returns
             for (int i = 0, slot = 0; i < aggs.size(); i++)
             {
                 var agg = (ClrAggImpState)aggs.get(i);
@@ -540,7 +529,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 typeof(Func<>).MakeGenericType(accType),
                 translator.TranslateBody(initBlock.toBlock(), accType));
 
-            // the frame bounds, each its own block because each is its own lambda
+            // the frame bounds, each in its own block because each becomes its own lambda
             var min_ = J.Expressions.constant(0);
 
             var lowerBuilder = new J.BlockBuilder();
@@ -555,7 +544,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 typeFactory, loop.Index, loop.Row, min_, loop.MaxX, loop.Rows, group, false, inputCalcite, keySelector_, keyComparator_);
             upperBuilder.add(J.Expressions.return_(null, endUnchecked));
 
-            // a bound that is unbounded, or that is the current row, is already inside the partition
+            // a bound that is unbounded or the current row is already inside the partition and needs no clamp
             var clampStart = group.lowerBound.isUnbounded() == false && ReferenceEquals(startUnchecked, loop.Index) == false;
             var clampEnd = group.upperBound.isUnbounded() == false && ReferenceEquals(endUnchecked, loop.Index) == false;
 
@@ -568,8 +557,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     translatedConstants, comparator_, loop.Rows, loop.Index, loop.Start, loop.End, min_, loop.MaxX,
                     loop.HasRows, loop.FrameRowCount, loop.PartitionRowCount, loop.Position));
 
-            // reset, add, and the two halves of result, in the order Calcite calls the implementors in: the
-            // implementors keep state of their own across the calls
+            // reset, add, and the two halves of result, in the order Calcite calls them: the implementors keep
+            // state of their own across the calls
             var resetBuilder = new J.BlockBuilder();
             for (int i = 0; i < aggs.size(); i++)
             {
@@ -607,7 +596,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var outputType = outputPhysType.RowType;
             var selector = loop.Lambda(translator, selectorBuilder.toBlock(), outputType, accType);
 
-            // the partition key, which is the one thing here that reads a row outside the loop
+            // the partition key, the only piece that reads a row outside the loop
             var partitionSelector = PartitionSelector(translator, inputCalcite, group, sourceType);
             var keyType = partitionSelector?.ReturnType ?? typeof(object);
 
@@ -631,21 +620,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Evaluates an expression once into a variable of the enclosing block, and binds a linq4j parameter
-        /// to it so the blocks Calcite's generators write for this group can name it.
+        /// Evaluates a value once into a variable of the node's block, and binds a linq4j parameter to that
+        /// variable so the blocks Calcite's generators write for the group can refer to it.
         /// </summary>
-        /// <param name="translator"></param>
-        /// <param name="variables"></param>
-        /// <param name="body"></param>
-        /// <param name="parameter"></param>
-        /// <param name="expression"></param>
-        /// <param name="type"></param>
-        /// <returns></returns>
+        /// <param name="translator">The translator to bind the parameter in.</param>
+        /// <param name="variables">Receives the new variable.</param>
+        /// <param name="body">Receives the assignment.</param>
+        /// <param name="parameter">The linq4j parameter the generated blocks refer to.</param>
+        /// <param name="value">The value to evaluate.</param>
+        /// <param name="type">The variable's type.</param>
+        /// <returns>The variable.</returns>
         static ParameterExpression Hoist(LixToClrTranslator translator, List<ParameterExpression> variables, List<Expression> body, J.ParameterExpression parameter, Expression value, Type type)
         {
-            // a lambda declared against one of linq4j's functional interfaces is one, and what reads this
-            // variable is Calcite's own runtime — BinarySearch takes the key selector as a Function1. A
-            // delegate is not one however it is converted, so it is wrapped where it is built.
+            // Calcite's runtime reads some of these as linq4j functional interfaces (BinarySearch takes the key
+            // selector as a Function1), and a delegate cannot be converted to one, so a lambda is wrapped
             if (value is LambdaExpression lambda && AnonymousClasses.Handles(type))
                 value = AnonymousClasses.Wrap(type, lambda);
 
@@ -658,16 +646,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the lambda giving a row's partition key, or null where the window does not partition.
+        /// Returns a lambda giving a row's partition key, or null where the group does not partition.
         /// </summary>
-        /// <param name="translator"></param>
-        /// <param name="inputPhysType"></param>
-        /// <param name="group"></param>
-        /// <param name="sourceType"></param>
-        /// <returns></returns>
+        /// <param name="translator">The translator.</param>
+        /// <param name="inputPhysType">Calcite's physical type of the group's input.</param>
+        /// <param name="group">The window group.</param>
+        /// <param name="sourceType">The input row type.</param>
+        /// <returns>The key selector, or null.</returns>
         /// <remarks>
-        /// The key <c>getPartitionIterator</c> builds, which is a synthetic record for several keys and the
-        /// field itself for one.
+        /// Builds the key <c>EnumerableWindow.getPartitionIterator</c> builds: a synthetic record for several
+        /// key fields, the field itself for one.
         /// </remarks>
         static LambdaExpression? PartitionSelector(LixToClrTranslator translator, PhysType inputPhysType, Group group, Type sourceType)
         {
@@ -700,14 +688,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             builder.add(J.Expressions.return_(null, key_));
 
-            // the rows arrive boxed, because the partition they go into is an Object[], so the row is unboxed
-            // on the way in exactly as a join's predicate unboxes its two
+            // the parameter has the boxed row type; the block reads the row at Calcite's Java row type, so it is
+            // converted first
             var parameter = Expression.Parameter(sourceType, "v");
             var row = Expression.Variable(ClrTypes.Resolve(inputPhysType.getJavaRowType()), "v");
             translator.Bind(v_, row);
 
-            // the key is a map's, so a key that is a primitive is boxed the way the type factory says: what
-            // hashes it is a java.util.HashMap, and a boxed CLR int is not the same object as a java.lang.Integer
+            // the key goes into a java.util.HashMap, so a primitive key is boxed as a Java value: a CLR-boxed int
+            // does not equal a java.lang.Integer
             var keyType = ClrTypes.Resolve(J.Primitive.box(key_.getType()));
 
             return Expression.Lambda(
@@ -719,14 +707,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns a block with a value returned from the end of it.
+        /// Returns a copy of a block with a return of <paramref name="value"/> appended.
         /// </summary>
-        /// <param name="block"></param>
-        /// <param name="value"></param>
-        /// <returns></returns>
+        /// <param name="block">The block.</param>
+        /// <param name="value">The value to return.</param>
+        /// <returns>The new block.</returns>
         /// <remarks>
-        /// The blocks the implementors write have no return of their own, because Calcite drops them into a
-        /// method that goes on afterwards. Each is a lambda here, and every one of them yields the accumulator.
+        /// The implementors' blocks have no return, because Calcite inlines them into a larger method. Here each
+        /// becomes a lambda that returns the accumulator.
         /// </remarks>
         static J.BlockStatement WithReturn(J.BlockStatement block, J.Expression value)
         {
@@ -737,24 +725,23 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Declares the state each aggregate accumulates in and the variable holding its last result, and
-        /// writes the block that gives both their starting values.
+        /// Declares each aggregate's state variables and the variable holding its last result, and writes the
+        /// block that initializes them.
         /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <param name="result"></param>
-        /// <param name="constants"></param>
-        /// <param name="windowIdx"></param>
-        /// <param name="aggs"></param>
-        /// <param name="outputPhysType"></param>
-        /// <param name="outputRow"></param>
-        /// <param name="exclusion"></param>
-        /// <param name="initBlock"></param>
-        /// <param name="stateTypes"></param>
-        /// <param name="initExpressions"></param>
+        /// <param name="typeFactory">The type factory.</param>
+        /// <param name="inputResultPhysType">The physical type of the node's input.</param>
+        /// <param name="constants">The node's constants.</param>
+        /// <param name="windowIdx">The group's index, used to name the variables.</param>
+        /// <param name="aggs">The <see cref="ClrAggImpState"/> of each call; each gets its context, state and result set.</param>
+        /// <param name="outputPhysType">Calcite's physical type of the group's output.</param>
+        /// <param name="outputRow">The output row's field expressions; receives each result variable.</param>
+        /// <param name="exclusion">The group's EXCLUDE clause.</param>
+        /// <param name="initBlock">The block that initializes the accumulator.</param>
+        /// <param name="stateTypes">Receives the Java type of every declared variable, in order.</param>
+        /// <param name="initExpressions">Receives every declared variable, in order.</param>
         /// <remarks>
-        /// <c>EnumerableWindow.declareAndResetState</c>, which is private. The one difference is where the
-        /// variables end up: Calcite leaves them as locals of the generated method, and they are collected here
-        /// to become the fields of one accumulator.
+        /// Mirrors <c>EnumerableWindow.declareAndResetState</c>, which is private. Calcite leaves the variables as
+        /// locals of the generated method; here they are collected to become the accumulator's fields.
         /// </remarks>
         static void DeclareAndResetState(
             JavaTypeFactory typeFactory,
@@ -810,18 +797,19 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Writes the block computing the results of the aggregates of one half.
+        /// Writes the block computing the results of one half of the aggregates.
         /// </summary>
-        /// <param name="aggs"></param>
-        /// <param name="builder"></param>
-        /// <param name="frame"></param>
+        /// <param name="aggs">The <see cref="ClrAggImpState"/> of each call.</param>
+        /// <param name="builder">The block to write into.</param>
+        /// <param name="frame">Creates the frame context for a block.</param>
         /// <param name="cachedBlock">Whether this is the half computed only when the frame has changed.</param>
-        /// <param name="inputRowType"></param>
-        /// <param name="constants"></param>
+        /// <param name="inputRowType">The node's input row type.</param>
+        /// <param name="constants">The node's constants.</param>
         /// <returns>Whether any aggregate belongs to this half.</returns>
         /// <remarks>
-        /// <c>EnumerableWindow.implementResult</c>, which is private. An aggregate whose value does not change
-        /// while the frame is intact is computed in the block guarded by that, and read again otherwise.
+        /// Mirrors <c>EnumerableWindow.implementResult</c>, which is private. An aggregate whose result cannot
+        /// change while the frame is unchanged is computed in the cached half; the others are computed for every
+        /// row.
         /// </remarks>
         static bool ImplementResult(java.util.List aggs, J.BlockBuilder builder, java.util.function.Function frame, bool cachedBlock, RelDataType inputRowType, java.util.List constants)
         {
@@ -849,12 +837,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the arguments of an aggregate call as row expressions.
+        /// Returns the arguments of an aggregate call as input references, typed from the input row or, for an
+        /// index past its fields, from the constants.
         /// </summary>
-        /// <param name="agg"></param>
-        /// <param name="inputRowType"></param>
-        /// <param name="constants"></param>
-        /// <returns></returns>
+        /// <param name="agg">The call's state.</param>
+        /// <param name="inputRowType">The node's input row type.</param>
+        /// <param name="constants">The node's constants.</param>
+        /// <returns>The argument expressions.</returns>
         static java.util.List RexArguments(AggImpState agg, RelDataType inputRowType, java.util.List constants)
         {
             var argList = agg.call.getArgList();
@@ -868,22 +857,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the reference to the field a window aggregate's FILTER reads, or null where the call has
-        /// no FILTER.
+        /// Returns a reference to the field a window aggregate's FILTER reads, or null where the call has no
+        /// FILTER.
         /// </summary>
-        /// <param name="agg"></param>
-        /// <param name="inputRowType"></param>
-        /// <returns></returns>
+        /// <param name="agg">The call's state.</param>
+        /// <param name="inputRowType">The node's input row type.</param>
+        /// <returns>The filter reference, or null.</returns>
         /// <remarks>
-        /// The <c>rexFilterArgument</c> of the anonymous <c>WinAggAddContext</c> in
-        /// <c>EnumerableWindow.implementAdd</c>, which answered null and was marked REVIEW until
-        /// CALCITE-7595.
-        ///
-        /// <para>No query in this suite reaches the second branch, and it is written because Calcite writes
-        /// it rather than because a test failed without it. <c>SqlToRelConverter</c> rewrites
-        /// <c>COUNT(*) FILTER (WHERE p) OVER w</c> into <c>COUNT(CASE WHEN p THEN 0 END) OVER w</c> in the
-        /// calc below the window — measured, by dumping the plan — so the <c>AggregateCall</c> the window
-        /// meets has <c>filterArg</c> of -1. A <c>LogicalWindow</c> built another way need not.</para>
+        /// Mirrors <c>rexFilterArgument</c> of the anonymous <c>WinAggAddContext</c> in
+        /// <c>EnumerableWindow.implementAdd</c>. From SQL the call has no filter argument:
+        /// <c>SqlToRelConverter</c> rewrites <c>COUNT(*) FILTER (WHERE p) OVER w</c> as
+        /// <c>COUNT(CASE WHEN p THEN 0 END) OVER w</c>. A window built another way may carry one.
         /// </remarks>
         static RexNode? RexFilterArgument(AggImpState agg, RelDataType inputRowType)
         {
@@ -891,25 +875,25 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the expression giving one bound of the frame.
+        /// Returns the linq4j expression giving the index of one bound of the frame, before clamping to the
+        /// partition.
         /// </summary>
-        /// <param name="translator"></param>
-        /// <param name="typeFactory"></param>
-        /// <param name="i_"></param>
-        /// <param name="row_"></param>
-        /// <param name="min_"></param>
-        /// <param name="max_"></param>
-        /// <param name="rows_"></param>
-        /// <param name="group"></param>
-        /// <param name="lower"></param>
-        /// <param name="physType"></param>
-        /// <param name="keySelector"></param>
-        /// <param name="keyComparator"></param>
-        /// <returns></returns>
+        /// <param name="translator">The Rex translator for the bound's block.</param>
+        /// <param name="typeFactory">The type factory.</param>
+        /// <param name="i_">The current row's index.</param>
+        /// <param name="row_">The current row.</param>
+        /// <param name="min_">The partition's first index.</param>
+        /// <param name="max_">The partition's last index.</param>
+        /// <param name="rows_">The partition's rows.</param>
+        /// <param name="group">The window group.</param>
+        /// <param name="lower">Whether this is the lower bound.</param>
+        /// <param name="physType">Calcite's physical type of the input.</param>
+        /// <param name="keySelector">The collation key selector, required for a bounded RANGE frame.</param>
+        /// <param name="keyComparator">The collation key comparator, required for a bounded RANGE frame.</param>
+        /// <returns>The bound expression.</returns>
         /// <remarks>
-        /// <c>EnumerableWindow.translateBound</c>, which is private. A ROWS bound counts from the current row;
-        /// a RANGE bound is a binary search over the collation key, because the frame is a range of values
-        /// rather than of positions.
+        /// Mirrors <c>EnumerableWindow.translateBound</c>, which is private. A ROWS bound is an offset from the
+        /// current index; a RANGE bound is a binary search over the collation key.
         /// </remarks>
         static J.Expression TranslateBound(
             RexToLixTranslator translator,
@@ -934,7 +918,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 if (bound.isCurrentRow())
                     return i_;
 
-                // a floating offset makes no sense against an array index, and neither does a null
+                // the offset is converted to int, as it indexes the partition array
                 var offs = EnumUtils.convert(ClrEnumUtils.Translate(translator, bound.getOffset(), null), J.Primitive.INT.primitiveClass);
 
                 return bound.isFollowing()
@@ -983,14 +967,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
 
         /// <summary>
-        /// The variables the pieces of a window read the loop by, and the lambdas they end up as.
+        /// The loop variables a window group's generated blocks read, and the construction of the lambdas those
+        /// blocks become.
         /// </summary>
-        /// <param name="inputPhysType"></param>
+        /// <param name="inputPhysType">Calcite's physical type of the group's input.</param>
         /// <remarks>
-        /// Calcite declares these as locals of the generated method, so an implementor's expression can simply
-        /// name one. Each is a linq4j parameter here, bound where a block is translated to a variable the
-        /// lambda assigns from the <see cref="WindowFrame"/> it is given. That is the same thing a row
-        /// parameter is everywhere else in this convention.
+        /// Calcite declares these as locals of the generated method. Here each is a linq4j parameter which, when a
+        /// block is translated, is bound to a variable the lambda assigns from its <see cref="WindowFrame"/>
+        /// argument.
         /// </remarks>
         sealed class WindowLoop(PhysType inputPhysType)
         {
@@ -1028,23 +1012,26 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             /// <summary>The row being evaluated.</summary>
             public J.ParameterExpression Row { get; } = J.Expressions.parameter(inputPhysType.getJavaRowType(), "row");
 
-            /// <summary>The accumulator, which is not known until its record type has been built.</summary>
+            /// <summary>The accumulator; set once its record type has been built.</summary>
             public J.ParameterExpression? Accumulator { get; set; }
 
             /// <summary>
-            /// Turns a block of Calcite's making into the lambda that runs it.
+            /// Translates a generated block into a lambda over a <see cref="WindowFrame"/> and, optionally, the
+            /// accumulator.
             /// </summary>
-            /// <param name="translator"></param>
-            /// <param name="block"></param>
-            /// <param name="returnType"></param>
+            /// <param name="translator">The translator.</param>
+            /// <param name="block">The block.</param>
+            /// <param name="returnType">The lambda's return type.</param>
             /// <param name="accumulatorType">The accumulator's type, or null where the lambda does not take one.</param>
-            /// <returns></returns>
+            /// <returns>The lambda.</returns>
+            /// <exception cref="InvalidOperationException"><paramref name="accumulatorType"/> is given before
+            /// <see cref="Accumulator"/> is set.</exception>
             public LambdaExpression Lambda(LixToClrTranslator translator, J.BlockStatement block, Type returnType, Type? accumulatorType)
             {
                 var frame = Expression.Parameter(typeof(WindowFrame), "frame");
                 var rowType = ClrTypes.Resolve(inputPhysType.getJavaRowType());
 
-                // fresh variables each time, because a lambda declares its own and two of them are siblings
+                // fresh variables for each lambda, since each declares its own
                 var rows = Expression.Variable(typeof(object[]), "rows");
                 var index = Expression.Variable(typeof(int), "i");
                 var start = Expression.Variable(typeof(int), "startChecked");
@@ -1099,15 +1086,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Reads a field of the row a window aggregate is being evaluated against, or a constant where the
-        /// index is past the input's own fields.
+        /// Reads a field of the row a window aggregate is evaluated against, or a constant where the index is
+        /// past the input's fields.
         /// </summary>
-        /// <param name="row"></param>
-        /// <param name="rowPhysType"></param>
-        /// <param name="actualInputFieldCount"></param>
-        /// <param name="constants"></param>
+        /// <param name="row">The row.</param>
+        /// <param name="rowPhysType">Calcite's physical type of the row.</param>
+        /// <param name="actualInputFieldCount">The number of fields of the node's input.</param>
+        /// <param name="constants">The translated constants.</param>
         /// <remarks>
-        /// <c>EnumerableWindow.WindowRelInputGetter</c>, which is private.
+        /// Mirrors <c>EnumerableWindow.WindowRelInputGetter</c>, which is private.
         /// </remarks>
         sealed class WindowRelInputGetter(J.Expression row, PhysType rowPhysType, int actualInputFieldCount, java.util.List constants) : RexToLixTranslator.InputGetter
         {
@@ -1124,16 +1111,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// What a window aggregate implementor is told about the call it is implementing.
+        /// The <see cref="WinAggContext"/> a window aggregate implementor is given for its call.
         /// </summary>
-        /// <param name="agg"></param>
-        /// <param name="typeFactory"></param>
-        /// <param name="inputRowType"></param>
-        /// <param name="constants"></param>
-        /// <param name="exclusion"></param>
+        /// <param name="agg">The call's state.</param>
+        /// <param name="typeFactory">The type factory.</param>
+        /// <param name="inputRowType">The node's input row type.</param>
+        /// <param name="constants">The node's constants.</param>
+        /// <param name="exclusion">The group's EXCLUDE clause.</param>
         /// <remarks>
-        /// The anonymous <c>WinAggContext</c> of <c>declareAndResetState</c>. A window has no grouping, so the
-        /// four members about one refuse, exactly as Calcite's does.
+        /// Mirrors the anonymous <c>WinAggContext</c> in <c>EnumerableWindow.declareAndResetState</c>. A window
+        /// has no grouping, so the four grouping members throw, as Calcite's do.
         /// </remarks>
         sealed class ClrWinAggContext(AggImpState agg, JavaTypeFactory typeFactory, RelDataType inputRowType, java.util.List constants, RexWindowExclusion exclusion) : WinAggContext
         {
@@ -1169,25 +1156,24 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             public RexWindowExclusion getExclude() => exclusion;
 
             /// <summary>
-            /// Whether the window function ignores NULL values, that is, whether the call carries
-            /// IGNORE NULLS.
+            /// Returns whether the call carries IGNORE NULLS.
             /// </summary>
-            /// <returns></returns>
+            /// <returns>True if null values are ignored.</returns>
             /// <remarks>
-            /// <c>WinAggContext.ignoreNulls</c>, which CALCITE-7701 added along with the FIRST_VALUE and
-            /// LAST_VALUE implementors that read it.
+            /// Implements <c>WinAggContext.ignoreNulls</c>, which the FIRST_VALUE and LAST_VALUE implementors read.
             /// </remarks>
             public bool ignoreNulls() => agg.call.ignoreNulls();
 
         }
 
         /// <summary>
-        /// What a window aggregate implementor asks about the frame while it writes its result.
+        /// The <see cref="WinAggFrameResultContext"/> through which a window aggregate implementor reads the
+        /// frame and partition while writing into a block.
         /// </summary>
         /// <remarks>
-        /// The anonymous <c>WinAggFrameResultContext</c> of
-        /// <c>getBlockBuilderWinAggFrameResultContextFunction</c>. One is made per block the implementors write
-        /// into, which is why Calcite passes a function rather than an instance.
+        /// Mirrors the anonymous <c>WinAggFrameResultContext</c> of
+        /// <c>EnumerableWindow.getBlockBuilderWinAggFrameResultContextFunction</c>. One is made per block, which
+        /// is why the contexts take a function rather than an instance.
         /// </remarks>
         sealed class ClrWinAggFrameResultContext(
             J.BlockBuilder block,
@@ -1268,25 +1254,26 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             public J.Expression getPartitionRowCount() => partitionRows;
 
             /// <summary>
-            /// Returns the expression reading one row of the partition.
+            /// Returns an expression reading the partition's row at an index, declared in the block.
             /// </summary>
-            /// <param name="rowIndex"></param>
-            /// <returns></returns>
+            /// <param name="rowIndex">The index.</param>
+            /// <returns>The row expression.</returns>
             J.Expression GetRow(J.Expression rowIndex)
             {
                 return block.append("jRow", EnumUtils.convert(J.Expressions.arrayIndex(rows, rowIndex), inputPhysType.getJavaRowType()));
             }
 
             /// <summary>
-            /// Returns the expression testing that an index is between two others.
+            /// Returns an expression testing that the frame has rows and an index lies between two others,
+            /// inclusive.
             /// </summary>
-            /// <param name="rowIndex"></param>
-            /// <param name="minIndex"></param>
-            /// <param name="maxIndex"></param>
-            /// <returns></returns>
+            /// <param name="rowIndex">The index to test.</param>
+            /// <param name="minIndex">The lowest valid index.</param>
+            /// <param name="maxIndex">The highest valid index.</param>
+            /// <returns>The test expression.</returns>
             J.Expression CheckBounds(J.Expression rowIndex, J.Expression minIndex, J.Expression maxIndex)
             {
-                // an index that is one of the loop's own is already known to be inside
+                // the current, start and end indexes are within bounds whenever the frame has rows
                 if (ReferenceEquals(rowIndex, currentIndex) || ReferenceEquals(rowIndex, start) || ReferenceEquals(rowIndex, end))
                     return anyRows;
 
@@ -1301,14 +1288,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// What a window aggregate implementor is given to fold one row in with.
+        /// The <see cref="WinAggAddContext"/> a window aggregate implementor is given to fold one row in.
         /// </summary>
-        /// <param name="block"></param>
-        /// <param name="accumulator"></param>
-        /// <param name="frame"></param>
-        /// <param name="position"></param>
-        /// <param name="rexArgs"></param>
-        /// <param name="filterArg"></param>
+        /// <param name="block">The block to write into.</param>
+        /// <param name="accumulator">The call's state fields.</param>
+        /// <param name="frame">Creates the frame context for a block.</param>
+        /// <param name="position">The index of the row being folded in.</param>
+        /// <param name="rexArgs">The call's arguments.</param>
+        /// <param name="filterArg">The call's FILTER reference, or null.</param>
         sealed class ClrWinAggAddContext(J.BlockBuilder block, java.util.List accumulator, java.util.function.Function frame, J.ParameterExpression position, java.util.List rexArgs, RexNode? filterArg) :
             WinAggAddContextImpl(block, accumulator, frame)
         {
@@ -1325,12 +1312,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// What a window aggregate implementor is given to write its result with.
+        /// The <see cref="WinAggResultContext"/> a window aggregate implementor is given to write its result.
         /// </summary>
-        /// <param name="block"></param>
-        /// <param name="accumulator"></param>
-        /// <param name="frame"></param>
-        /// <param name="rexArgs"></param>
+        /// <param name="block">The block to write into.</param>
+        /// <param name="accumulator">The call's state fields.</param>
+        /// <param name="frame">Creates the frame context for a block.</param>
+        /// <param name="rexArgs">The call's arguments.</param>
         sealed class ClrWinAggResultContext(J.BlockBuilder block, java.util.List accumulator, java.util.function.Function frame, java.util.List rexArgs) :
             WinAggResultContextImpl(block, accumulator, frame)
         {

@@ -573,3 +573,13 @@ converters live in an assembly `Apache.Calcite.Extensions` does not reference, s
 adapter's and something has to chain it in. Neither prepare path has a hook for a provider from outside.
 The trait set carries the collation either way, so a `RelSubset` in the planner answers correctly; what is
 missing is the answer for the node itself, which the calc pass asks when it builds a calc over the converter.
+
+## The nuget.org push publishes a rebuild, not the build GitHub Packages received — *small*
+
+Publishing to nuget.org happens in its own run — a tag build or a manual dispatch — which builds the packages
+again rather than publishing the ones an earlier run of the same commit produced. GitVersion
+labels `main` builds `pre.N`, the same shape a release tag takes, so the version pushed to nuget.org is one
+GitHub Packages already holds from the original build, and is skipped there as a duplicate. The two feeds then
+carry different assemblies under one version, and a consumer restoring from both can get
+`Apache.Calcite.Data` compiled against members the `Apache.Calcite.Extensions` beside it lacks. Publish the
+build job's artifact instead.

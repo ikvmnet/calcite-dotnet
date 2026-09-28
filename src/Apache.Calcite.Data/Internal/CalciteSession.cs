@@ -23,25 +23,22 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// The connection-lived half of a Calcite connection: the type factory, the configuration and the
-    /// convention, over a root schema the data source holds.
+    /// The per-connection part of a Calcite connection: the configuration, the type factory and the type
+    /// mappings, over a root schema the data source holds. Plans and executes statements.
     /// </summary>
     internal sealed class CalciteSession
     {
 
         /// <summary>
-        /// Registers Calcite's JDBC driver, which a view needs and nothing else does.
+        /// Registers Calcite's JDBC driver, which expanding a view requires.
         /// </summary>
         /// <remarks>
-        /// <c>ViewTableMacro.apply</c> reads <c>MaterializedViewTable.MATERIALIZATION_CONNECTION</c>, and
-        /// that field's initializer is <c>DriverManager.getConnection("jdbc:calcite:")</c> — so expanding
-        /// any view, however it was declared, goes through the JDBC driver. Under IKVM nothing had
-        /// registered one, and every view failed at validation.
-        ///
-        /// <para>Both halves are needed. Constructing the <c>Driver</c> runs its static initializer, which
-        /// is what calls <c>register()</c>; and the assembly has to be on the boot class path first,
-        /// because <c>UnregisteredDriver</c> resolves its factory by name through <c>Class.forName</c> and
-        /// cannot see a class that is only in a referenced assembly.</para>
+        /// <c>ViewTableMacro.apply</c> reads <c>MaterializedViewTable.MATERIALIZATION_CONNECTION</c>, whose
+        /// initializer calls <c>DriverManager.getConnection("jdbc:calcite:")</c>, so every view expansion needs
+        /// the driver registered. Constructing a <c>Driver</c> runs the static initializer that registers it.
+        /// The assembly is added to the boot class path first because <c>UnregisteredDriver</c> loads its
+        /// factory by name through <c>Class.forName</c>, which under IKVM does not see a class that is only in
+        /// a referenced assembly.
         /// </remarks>
         static CalciteSession()
         {
@@ -68,45 +65,39 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="ownsRoot">Whether this session is the only user of <paramref name="root"/> and so
         /// disposes it. <see langword="true"/> under <c>Pooling=false</c>, where the root was built for this
         /// connection alone.</param>
-        /// <param name="typeFactory">Type factory, or null. See the remarks for what the conventions require of one.</param>
-        /// <param name="prepareFactory">Prepare factory, or null for <see cref="ClrPrepareImpl"/>.</param>
-        /// <exception cref="ArgumentNullException"></exception>
-        /// <exception cref="CalciteException"></exception>
+        /// <param name="typeFactory">Type factory, or <see langword="null"/> to build one from the
+        /// configuration. See the remarks for what the plan requires of one.</param>
+        /// <param name="prepareFactory">Prepare factory, or <see langword="null"/> for <see cref="ClrPrepareImpl"/>.</param>
+        /// <param name="typeResolvers">The type-mapping chain to bind, or default for the built-in one.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="options"/> or <paramref name="root"/> is
+        /// <see langword="null"/>.</exception>
+        /// <exception cref="CalciteException">The session could not be initialized.</exception>
         /// <remarks>
-        /// This is the half of <c>CalciteConnectionImpl</c>'s constructor that is the connection's rather than
-        /// the data source's: the config, the prepare factory, and the type factory resolved from the
-        /// <c>typeSystem</c> property (by <see cref="ClrPlugin"/>, this provider naming a plugin in .NET rather
-        /// than in Java) under the conformance's ragged-union wrapper. The root, <c>DUAL</c> and the model
-        /// are <see cref="CalciteDataSourceRoot"/>'s, built once per data source and shared by every connection
-        /// it opens, which is the split Calcite itself makes when it opens an internal connection over an
-        /// existing root — <c>CalciteMetaImpl.connect(schema.root(), null)</c> — and pairs it with a fresh
-        /// type factory. The pairing is not a nicety: <c>JavaTypeFactoryImpl.syntheticTypes</c> is a plain
-        /// <c>HashMap</c> written by every grouped aggregate and window, so a factory shared by connections
-        /// used concurrently would race, where a root shared by them is read.
-        ///
-        /// <para>An injected <paramref name="typeFactory"/> bypasses both the configured type system and the
-        /// ragged-union wrapper, as upstream's does. Both conventions require more of it than its interface
-        /// says, and the requirement is stated rather than typed because no type expresses it. Every grouped
-        /// aggregate and every window builds its accumulator from <c>createSyntheticType</c> and then
-        /// matches the result against <c>JavaTypeFactoryImpl.SyntheticRecordType</c>, a nested class of
-        /// the implementation — Calcite's own coupling, <c>EnumerableAggregateBase</c> having the same
-        /// <c>instanceof</c> — and <c>ClrTypes.Resolve</c> has to answer a CLR type for whatever comes
-        /// back, throwing where it cannot. Calcite survives further, writing the type's name into Java
-        /// source for Janino to resolve. The same goes for <c>getJavaClass</c>, whose closed set of Java
-        /// classes is what the conventions box and unbox against.</para>
-        ///
-        /// <para>Naming <c>JavaTypeFactoryImpl</c> here would not enforce any of that — a subclass
-        /// overriding <c>createSyntheticType</c> satisfies the parameter and still breaks the plan —
-        /// while <c>_typeFactory</c>, <see cref="TypeFactory"/>, <c>PrepareContext</c> and everything in
-        /// <c>Apache.Calcite.Extensions</c> that consumes one are declared against the interface. A
-        /// narrower door onto a pipeline typed the other way buys nothing and reads as though it did.</para>
-        ///
-        /// <para>Every query is planned into <c>ClrCursorConvention</c> and run as a compiled expression
-        /// tree that opens a cursor. A cursor is what a <c>DbDataReader</c> is — opened synchronously or
-        /// with await, and advanced by <c>Read</c> or <c>ReadAsync(token)</c> as the caller chooses on each
-        /// row — so the connection carries no mode and no key chooses one. Calcite's rules stay on the
-        /// planner, so a statement the cursor convention has no node for is still planned and run, in
-        /// <c>EnumerableConvention</c> with a converter carrying its rows.</para>
+        /// <para>
+        /// The per-connection part of <c>CalciteConnectionImpl</c>'s constructor: the configuration, the
+        /// prepare factory, and a type factory over the type system the <c>TypeSystem</c> key names (resolved
+        /// by <see cref="ClrPlugin"/>), wrapped to convert ragged unions to varying types where the conformance
+        /// asks for it. The root, <c>DUAL</c> and the model belong to <see cref="CalciteDataSourceRoot"/> and are
+        /// shared. Calcite makes the same split when it opens an internal connection over an existing root
+        /// (<c>CalciteMetaImpl.connect(schema.root(), null)</c>) with a new type factory. Each session needs
+        /// its own factory because <c>JavaTypeFactoryImpl.syntheticTypes</c> is an unsynchronized
+        /// <c>HashMap</c> written while planning aggregates and windows.
+        /// </para>
+        /// <para>
+        /// An injected <paramref name="typeFactory"/> bypasses the configured type system and the ragged-union
+        /// wrapper, as in Calcite. It must behave as <c>JavaTypeFactoryImpl</c> does in two respects the
+        /// interface does not state: <c>createSyntheticType</c> must return a
+        /// <c>JavaTypeFactoryImpl.SyntheticRecordType</c>, which aggregate and window implementation test for
+        /// (as <c>EnumerableAggregateBase</c> does) and <c>ClrTypes.Resolve</c> must be able to map to a CLR
+        /// type; and <c>getJavaClass</c> must answer from the same set of Java classes, which the plan boxes
+        /// and unboxes against.
+        /// </para>
+        /// <para>
+        /// Every statement is planned into <c>ClrCursorConvention</c> and runs as a compiled expression tree
+        /// that opens a cursor, which may be opened and advanced either synchronously or with await. Calcite's
+        /// own rules stay on the planner, so a statement with a node the cursor convention does not implement
+        /// runs that part in <c>EnumerableConvention</c> under a converter.
+        /// </para>
         /// </remarks>
         public CalciteSession(CalciteConnectionStringBuilder options, CalciteDataSourceRoot root, bool ownsRoot, JavaTypeFactory? typeFactory = null, Func<ClrPrepareImpl>? prepareFactory = null, System.Collections.Immutable.ImmutableArray<IClrTypeResolver> typeResolvers = default)
         {
@@ -138,9 +129,8 @@ namespace Apache.Calcite.Data.Internal
                 _config = cfg;
                 _rootSchemaPlus = _rootSchema.plus();
 
-                // the chain is read once and bound here, because what a Calcite type is held in is this
-                // factory's answer and two sessions need not agree. A caller registering a resolver after
-                // the connection opens is registering it for the next session and not this one.
+                // the chain is bound to this session's type factory, whose answers decide which Java class
+                // holds each Calcite type, so it is read once here and not again
                 _registry = new ClrTypeRegistry(_typeFactory, typeResolvers.IsDefaultOrEmpty ? new ClrTypeMapper().Resolvers : typeResolvers);
 
                 var defaultSchema = root.DefaultSchemaName ?? options.Schema;
@@ -153,8 +143,8 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// The anonymous <c>DelegatingTypeSystem</c> subclass of <c>CalciteConnectionImpl</c>'s constructor,
-        /// named because C# has no anonymous classes. One override, nothing else.
+        /// A type system that converts ragged union types to varying types. Mirrors the anonymous
+        /// <c>DelegatingTypeSystem</c> subclass in <c>CalciteConnectionImpl</c>'s constructor.
         /// </summary>
         sealed class RaggedUnionDelegatingTypeSystem : DelegatingTypeSystem
         {
@@ -178,13 +168,13 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Gets the root schema for the current context.
+        /// Gets the root schema, shared with every other session on the same data source root.
         /// </summary>
         public SchemaPlus RootSchema => _rootSchemaPlus;
 
 
         /// <summary>
-        /// Gets the factory used to create Java type representations.
+        /// Gets this session's type factory.
         /// </summary>
         public JavaTypeFactory TypeFactory => _typeFactory;
 
@@ -195,25 +185,23 @@ namespace Apache.Calcite.Data.Internal
         public ClrTypeRegistry Registry => _registry;
 
         /// <summary>
-        /// Gets the configuration settings for the Calcite connection.
+        /// Gets the Calcite configuration derived from the connection string.
         /// </summary>
         public CalciteConnectionConfig Config => _config;
 
         /// <summary>
         /// Parses and plans <paramref name="request"/>, returning the compiled <see cref="IClrPrepare.Signature"/>.
-        /// No execution state is created here.
+        /// No execution state is created here. DDL takes effect during this call.
         /// </summary>
         /// <remarks>
-        /// The context is still pushed onto <c>CalcitePrepare.Dummy</c>'s thread-local stack, because
-        /// Calcite's own parse-to-rel reads it from there.
-        ///
-        /// <para>There is no mode here. A statement is planned once into the cursor convention, and the
-        /// signature opens it either way.</para>
+        /// The prepare context is pushed onto <c>CalcitePrepare.Dummy</c>'s thread-local stack for the call,
+        /// because Calcite's parse-to-rel reads it from there.
         /// </remarks>
         IClrPrepare.Signature Plan(CalciteExecuteRequest request)
         {
             // the root's read lock, from the snapshot the context takes to the signature: the root may be
-            // shared with connections altering it by DDL, and DDL takes the write side inside the prepare
+            // shared with connections altering it by DDL. DDL releases this read lock and takes the write
+            // side inside the prepare, then takes the read lock again before returning
             _root.Lock.EnterReadLock();
             try
             {
@@ -236,8 +224,10 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Holds the root's read lock until the result is disposed, for a reader of the root outside planning.
+        /// Takes the root's read lock and returns a handle that releases it on dispose, for code that reads the
+        /// root outside planning.
         /// </summary>
+        /// <returns>The handle.</returns>
         public ReadLockHold ReadRoot()
         {
             _root.Lock.EnterReadLock();
@@ -245,7 +235,7 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// A held read lock, released on dispose.
+        /// A held read lock, released on dispose. Dispose exactly once, on the thread that took it.
         /// </summary>
         public readonly struct ReadLockHold : IDisposable
         {
@@ -271,18 +261,18 @@ namespace Apache.Calcite.Data.Internal
 
         /// <summary>
         /// Creates the execution-time <see cref="DataContext"/> for a planned <paramref name="signature"/>.
-        /// Mirrors the work done by <c>CalciteConnectionImpl.enumerable()</c> just before it calls
-        /// <c>signature.enumerable(dataContext)</c>: bound parameters, stashed compile-time values
-        /// from <c>signature.internalParameters</c>, cancel flag, and timeout are assembled into a
-        /// single <see cref="StatementDataContext"/> over <c>signature.rootSchema</c> — the snapshot
-        /// the statement was planned against, not the live root, so a statement executes against what
-        /// it planned against. Null for DDL, as upstream's is.
+        /// Mirrors what <c>CalciteConnectionImpl.enumerable()</c> does before it calls
+        /// <c>signature.enumerable(dataContext)</c>: the bound parameters, the values planning stashed in
+        /// <c>signature.internalParameters</c>, the cancel flag and the timeout go into one
+        /// <see cref="StatementDataContext"/> over <c>signature.rootSchema</c>, the snapshot the statement was
+        /// planned against rather than the live root.
         /// </summary>
         /// <remarks>
-        /// The token goes in with the parameters and the timeout, and comes out the other side as the
-        /// <c>CANCEL_FLAG</c> a node of Calcite's convention polls. That conversion is the context's, where
-        /// the time zone's and the locale's are.
+        /// The context turns <paramref name="cancellationToken"/> into the <c>CANCEL_FLAG</c> that Calcite's
+        /// own operators poll.
         /// </remarks>
+        /// <exception cref="ClrTypeMappingException">A parameter value cannot be converted to its
+        /// placeholder's type.</exception>
         void Bind(CalciteExecuteRequest request, IClrPrepare.Signature signature, CancellationToken cancellationToken, out StatementDataContext dataContext)
         {
             var boundParameters = ParameterBinder.Bind(request.Parameters, _registry, signature);
@@ -290,10 +280,9 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Calls <c>Hook.addThread</c> for each entry, binding it to the current thread for the
-        /// duration of execution. Returns the list of <c>Closeable</c> handles that must be passed
-        /// to <see cref="DeactivateHooks"/> when execution ends, or <see langword="null"/> when
-        /// <paramref name="hooks"/> is <see langword="null"/>.
+        /// Attaches each hook to the current thread with <c>Hook.addThread</c>. Returns the handles to pass
+        /// to <see cref="DeactivateHooks"/>, or <see langword="null"/> when <paramref name="hooks"/> is
+        /// <see langword="null"/>.
         /// </summary>
         static List<Hook.Closeable>? ActivateHooks(IEnumerable<CalciteHookEntry>? hooks)
         {
@@ -309,8 +298,8 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Closes each handle returned by <see cref="ActivateHooks"/>, deregistering the hooks
-        /// from the current thread. Safe to call with a <see langword="null"/> list.
+        /// Closes each handle returned by <see cref="ActivateHooks"/>, detaching the hooks from the current
+        /// thread. Accepts <see langword="null"/>.
         /// </summary>
         static void DeactivateHooks(List<Hook.Closeable>? closeables)
         {
@@ -320,19 +309,20 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Prepares and executes a query, returning a <see cref="CalciteResult"/> whose enumerator streams
-        /// the result rows. For DDL statements the enumerator is <see langword="null"/>.
+        /// Plans a statement and opens its cursor synchronously, returning a result that reads its rows. A
+        /// DDL statement takes effect while it is planned and its result has no rows.
         /// </summary>
-        /// <param name="request">The execute request containing SQL text, parameters, timeout, and hooks.</param>
-        /// <returns>A <see cref="CalciteResult"/> holding the signature and a row enumerator.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="request"/> is <see langword="null"/>.</exception>
-        /// <exception cref="CalciteException">Thrown when planning or execution fails.</exception>
+        /// <param name="request">The SQL text, parameters, timeout and hooks.</param>
+        /// <returns>The result, which owns the cursor, the data context and the cancellation source.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ObjectDisposedException">The session has been disposed.</exception>
+        /// <exception cref="CalciteException">Planning, binding or opening fails.</exception>
         /// <remarks>
-        /// The plan is opened synchronously: its acquisition — a sort's drain, a leaf's statement — runs on
-        /// this thread, and a leaf that can only be awaited blocks here for it with the synchronization
-        /// context suppressed. The reader this hands back still answers <c>ReadAsync</c> with a real await
-        /// wherever the plan can suspend, because the cursor carries both advances whichever way it was
-        /// opened.
+        /// Opening runs the plan's acquisition on this thread (a sort drains its input, a leaf runs its query);
+        /// where a table can only be read asynchronously, this blocks with the synchronization context
+        /// suppressed. The result's <c>ReadAsync</c> still awaits wherever the plan can suspend. Hooks are
+        /// attached to this thread while the statement is planned and opened, and detached before this
+        /// returns.
         /// </remarks>
         public CalciteResult ExecuteReader(CalciteExecuteRequest request)
         {
@@ -346,13 +336,12 @@ namespace Apache.Calcite.Data.Internal
             {
                 var signature = Plan(request);
 
-                // linked to nothing yet: a token arriving later at DbDataReader.ReadAsync needs something to
-                // cancel, and the statement's cancel flag is tied to the same source
+                // a source of the statement's own, so that a token given later to ReadAsync has something to
+                // cancel; the statement's cancel flag is tied to the same source
                 var cancellation = new CancellationTokenSource();
                 Bind(request, signature, cancellation.Token, out var dataContext);
 
-                // the result owns both from here: they live as long as the rows do, and a reader holds them
-                // open long after this method has returned
+                // the result owns the context and the source from here, since the rows outlive this call
                 IClrCursor? cursor = null;
                 if (!IsDdl(signature.StatementType))
                     cursor = signature.Open(dataContext);
@@ -374,24 +363,22 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Prepares and executes a query, returning a <see cref="CalciteResult"/> whose enumerator streams
-        /// the result rows.
+        /// Plans a statement and opens its cursor with await, returning a result that reads its rows. A DDL
+        /// statement takes effect while it is planned and its result has no rows.
         /// </summary>
-        /// <param name="request">The execute request containing SQL text, parameters, timeout, and hooks.</param>
-        /// <param name="cancellationToken">Token used to cancel execution: observed before planning, given
-        /// to the plan's open, and linked into the statement's cancellation so that a later
-        /// <c>ReadAsync(token)</c> has the same thing to cancel.</param>
-        /// <returns>A <see cref="CalciteResult"/> holding the signature and the plan's cursor.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="request"/> is <see langword="null"/>.</exception>
-        /// <exception cref="CalciteException">Thrown when planning or execution fails.</exception>
+        /// <param name="request">The SQL text, parameters, timeout and hooks.</param>
+        /// <param name="cancellationToken">Checked before planning, and linked into the statement's
+        /// cancellation source, which the plan is opened with and which later <c>ReadAsync</c> calls can
+        /// cancel.</param>
+        /// <returns>The result, which owns the cursor, the data context and the cancellation source.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ObjectDisposedException">The session has been disposed.</exception>
+        /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is already cancelled.</exception>
+        /// <exception cref="CalciteException">Planning, binding or opening fails.</exception>
         /// <remarks>
-        /// <b>The plan is opened with await</b>, so its acquisition — a sort's drain, a leaf's statement —
-        /// is awaited rather than waited for: an <c>IClrScannableTable</c> that writes <c>ScanAsync</c> is
-        /// scanned asynchronously, a table of Calcite's SPI is read the way Calcite reads it, and a statement
-        /// the cursor convention has no node for is implemented in <c>EnumerableConvention</c> with a
-        /// converter carrying its rows. Nothing on the asynchronous
-        /// surface parks a thread waiting for a row. Planning is synchronous work and is done before the
-        /// first await.
+        /// Planning is synchronous and completes before the first await. Opening awaits the plan's
+        /// acquisition, so a table that implements <c>ScanAsync</c> is scanned asynchronously; tables read
+        /// through Calcite's own interfaces complete synchronously.
         /// </remarks>
         public async Task<CalciteResult> ExecuteReaderAsync(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {
@@ -399,8 +386,8 @@ namespace Apache.Calcite.Data.Internal
 
             ThrowIfDisposed();
 
-            // acquisition sends the statement, and for an adapter leaf it opens a connection to send it on,
-            // so a token already cancelled has to stop here rather than at the open
+            // planning and opening can do real work (an adapter leaf opens a connection and sends a query),
+            // so a token that is already cancelled stops here
             cancellationToken.ThrowIfCancellationRequested();
 
             var closeables = ActivateHooks(request.Hooks);
@@ -409,14 +396,13 @@ namespace Apache.Calcite.Data.Internal
             {
                 var signature = Plan(request);
 
-                // linked to the caller's, so that a token arriving later at DbDataReader.ReadAsync has
-                // something to cancel, and so that both halves of the statement's cancellation -- the token
-                // the plan is opened with and the flag its context carries -- are the one cancellation
+                // linked to the caller's token; the plan is opened with this source's token and the context's
+                // cancel flag is tied to it, so both observe one cancellation, which a token given later to
+                // ReadAsync can also trigger
                 var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 Bind(request, signature, cancellation.Token, out var dataContext);
 
-                // the result owns both from here: they live as long as the rows do, and a reader holds them
-                // open long after this method has returned
+                // the result owns the context and the source from here, since the rows outlive this call
                 IClrCursor? cursor = null;
                 if (!IsDdl(signature.StatementType))
                     cursor = await signature.OpenAsync(dataContext, cancellation.Token).ConfigureAwait(false);
@@ -438,21 +424,20 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Prepares and executes a DML, DDL, or SELECT statement and returns the number of rows affected.
-        /// For SELECT the affected-row count is <c>-1</c> by ADO.NET convention; for DDL it is <c>0</c>;
-        /// for DML it is the row count reported by Calcite.
+        /// Plans and executes a statement for its affected-row count: -1 for a query, 0 for DDL, and for DML
+        /// the count the statement's single row reports.
         /// </summary>
-        /// <param name="request">The execute request containing SQL text, parameters, timeout, and hooks.</param>
-        /// <param name="cancellationToken">Token used to cancel execution.</param>
-        /// <returns>A <see cref="CalciteResult"/> with <c>RecordsAffected</c> set and no row enumerator.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="request"/> is <see langword="null"/>.</exception>
-        /// <exception cref="CalciteException">Thrown when planning or execution fails.</exception>
+        /// <param name="request">The SQL text, parameters, timeout and hooks.</param>
+        /// <param name="cancellationToken">Checked before planning, and tied to the statement's cancel flag.</param>
+        /// <returns>A result with no rows and <c>RecordsAffected</c> set.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ObjectDisposedException">The session has been disposed.</exception>
+        /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is already cancelled.</exception>
+        /// <exception cref="CalciteException">Planning or execution fails.</exception>
         /// <remarks>
-        /// Synchronous, and <see cref="ExecuteNonQueryAsync"/> is this method in a completed task. A table
-        /// modification is not a node the Clr convention implements, so the modify itself is Calcite's
-        /// <c>EnumerableTableModify</c>, and its one count row reaches the cursor through the converter into
-        /// the cursor convention, whose advance completes synchronously: there is nothing to await in a
-        /// modify, and nothing here pretends otherwise.
+        /// A query is planned and not run. DDL takes effect while it is planned. DML is run by reading the
+        /// first row of its cursor, synchronously: the modification is Calcite's <c>EnumerableTableModify</c>
+        /// under a converter, which has nothing to await.
         /// </remarks>
         public CalciteCursorResult ExecuteNonQuery(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {
@@ -473,21 +458,19 @@ namespace Apache.Calcite.Data.Internal
                 long recordsAffected;
                 if (IsDdl(statementType))
                 {
-                    // DDL: already executed as a side-effect of prepareSql; nothing to enumerate.
+                    // DDL has already taken effect during planning
                     recordsAffected = 0;
                 }
                 else if (statementType == Meta.StatementType.SELECT)
                 {
-                    // SELECT has no affected row count by ADO.NET convention.
+                    // a query has no affected-row count in ADO.NET
                     recordsAffected = -1;
                 }
                 else
                 {
-                    // DML (INSERT/UPDATE/DELETE/MERGE): drain the enumerator to trigger execution.
-                    // RelOptUtil.createDmlRowType gives DML one ROWCOUNT column, and
-                    // Meta.CursorFactory.deduce answers OBJECT for a single column before it looks at
-                    // the element type -- measured -- so the row is the boxed count itself and not an
-                    // array holding it. The array branch below is for a plan that says otherwise.
+                    // DML runs when its first row is read. RelOptUtil.createDmlRowType gives DML one ROWCOUNT
+                    // column, and Meta.CursorFactory.deduce answers OBJECT for a single column, so the row is
+                    // the boxed count itself; the array branch is for a plan that produces an array row
                     recordsAffected = 0;
 
                     var cur = FirstRow(signature.Open(dataContext));
@@ -525,15 +508,14 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Prepares and executes a DML, DDL, or SELECT statement and returns the number of rows affected.
+        /// Runs <see cref="ExecuteNonQuery"/> and returns its result as a completed task.
         /// </summary>
-        /// <param name="request">The execute request containing SQL text, parameters, timeout, and hooks.</param>
-        /// <param name="cancellationToken">Token used to cancel execution.</param>
-        /// <returns>A <see cref="CalciteResult"/> with <c>RecordsAffected</c> set and no row enumerator.</returns>
+        /// <param name="request">The SQL text, parameters, timeout and hooks.</param>
+        /// <param name="cancellationToken">Checked before planning, and tied to the statement's cancel flag.</param>
+        /// <returns>A completed task whose result has no rows and <c>RecordsAffected</c> set.</returns>
         /// <remarks>
-        /// <see cref="ExecuteNonQuery"/> in a completed task, for the reason that method gives: a modify
-        /// cannot suspend, so there is nothing here to await. It is here so that a caller writing
-        /// asynchronously has the method it expects.
+        /// Runs synchronously on the calling thread, for the reason <see cref="ExecuteNonQuery"/> gives.
+        /// Exceptions are thrown directly rather than through the task.
         /// </remarks>
         public Task<CalciteResult> ExecuteNonQueryAsync(CalciteExecuteRequest request, CancellationToken cancellationToken)
         {
@@ -550,7 +532,7 @@ namespace Apache.Calcite.Data.Internal
             _ => false,
         };
 
-        /// <summary>Converts a Calcite row-count value (Java boxed number or CLR primitive) to <see cref="long"/>.</summary>
+        /// <summary>Converts a row count, as a Java boxed number or a CLR primitive, to <see cref="long"/>.</summary>
         static long ToInt64(object? value) => value switch
         {
             null => 0,
@@ -563,7 +545,8 @@ namespace Apache.Calcite.Data.Internal
 
         /// <summary>
         /// Marks the session as disposed, so that further calls to execute methods throw
-        /// <see cref="ObjectDisposedException"/>, and disposes the root where this session owns it.
+        /// <see cref="ObjectDisposedException"/>, and releases this session's hold on the root, retiring it
+        /// first where the root was built for this session alone.
         /// </summary>
         public void Dispose()
         {

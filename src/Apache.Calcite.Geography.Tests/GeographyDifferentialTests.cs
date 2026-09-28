@@ -15,44 +15,33 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// Every <c>CLR_ST_GEOG_*</c> operation against the <c>ST_*</c> it mirrors, over shapes small enough and near
-    /// enough the equator that the sphere and the plane have to agree.
+    /// Compares the <c>CLR_ST_GEOG_*</c> relations and measurements with the Calcite <c>ST_*</c> functions of
+    /// the same name, over shapes small enough and near enough the equator that geodesic and planar answers
+    /// must agree.
     /// </summary>
     /// <remarks>
-    /// Calcite's function is the specification with the plane swapped for the sphere — <c>ST_Within</c> is
-    /// <c>geom1.within(geom2)</c> and <c>ST_Distance</c> is <c>geom1.distance(geom2)</c>, so what these
-    /// operations mean is what JTS means by those words. A shape a few thousandths of a degree across at the
-    /// equator is a shape where the difference between a great-circle edge and a straight line in longitude
-    /// and latitude is far below any tolerance, so the two models must answer the same thing; where they do
-    /// not, this convention has a defect rather than a different reading.
-    ///
-    /// <para>The cases where the two genuinely disagree are the point of the package and are held separately,
-    /// in <see cref="GeographyFunctionTests"/>. Nothing here is near one.</para>
+    /// Calcite's <c>ST_Within</c> is JTS's <c>geom1.within(geom2)</c>, <c>ST_Distance</c> is
+    /// <c>geom1.distance(geom2)</c>, and so on; the geodesic operators mean the same with geodesic edges. For
+    /// shapes a few thousandths of a degree across at the equator the difference between a geodesic edge and
+    /// a straight line in degrees is far below any tolerance, so a disagreement is a defect. The cases where
+    /// the two models do disagree are in <see cref="GeographyFunctionTests"/>.
     /// </remarks>
     public class GeographyDifferentialTests
     {
 
         /// <summary>
-        /// Metres per degree of arc on the sphere S2 models the Earth as.
-        /// </summary>
-        /// <summary>
-        /// Metres per degree of longitude at the equator on WGS84, which is where the shapes below sit.
+        /// Metres per degree of longitude at the equator on WGS84, where the shapes below sit.
         /// </summary>
         /// <remarks>
-        /// A scale factor between a planar answer in degrees and a geodesic one in metres is a spherical
-        /// idea, and these measurements are no longer spherical. There is no single number here: a degree
-        /// east is 111319.49 and a degree north is 110574.39, so a comparison scaled by either is out by up
-        /// to 0.67% depending on which way the two shapes lie.
-        ///
-        /// <para>So the numeric comparisons below are a <em>bound</em> rather than an oracle. They catch a
-        /// wrong unit, a wrong factor, a wrong shape — what a differential test is for — and they cannot
-        /// confirm the model. <c>Wgs84MeasurementTests</c> is what does that, against figures measured from a
-        /// live geodesic service.</para>
+        /// On the ellipsoid a degree east at the equator is 111319.49 m and a degree north is 110574.39 m, so a
+        /// planar distance scaled by this factor can be off by up to 0.67% depending on direction. The numeric
+        /// comparisons are therefore a bound that catches a wrong unit, factor or shape, not a check of the
+        /// model; <see cref="Wgs84MeasurementTests"/> checks the model.
         /// </remarks>
         const double Degree = 111319.49079327357;
 
         /// <summary>
-        /// How far the two models may differ before a difference is real.
+        /// The relative difference allowed between a geodesic and a scaled planar measurement.
         /// </summary>
         const double ModelGap = 1e-2;
 
@@ -80,7 +69,7 @@ namespace Apache.Calcite.Geography.Tests
             "POLYGON((0.01 0.01, 0.02 0.01, 0.02 0.02, 0.01 0.02, 0.01 0.01))",
             "POLYGON((0 0, 0.006 0, 0.006 0.006, 0 0.006, 0 0), (0.002 0.002, 0.004 0.002, 0.004 0.004, 0.002 0.004, 0.002 0.002))",
             "MULTIPOLYGON(((0 0, 0.002 0, 0.002 0.002, 0 0.002, 0 0)), ((0.004 0.004, 0.006 0.004, 0.006 0.006, 0.004 0.006, 0.004 0.004)))",
-            // two lines meeting end to end, which is the container a line is covered by in two pieces
+            // two lines meeting end to end, which together cover a line that neither covers alone
             "MULTILINESTRING((0 0, 0.002 0), (0.002 0, 0.004 0))",
             // a line half inside a polygon and half out of it
             "LINESTRING(0.002 0.002, 0.008 0.002)",
@@ -88,17 +77,17 @@ namespace Apache.Calcite.Geography.Tests
             "POLYGON((0.004 0.004, 0.006 0.004, 0.006 0.006, 0.004 0.006, 0.004 0.004))",
             // dimensions mixed in one geography
             "GEOMETRYCOLLECTION(POINT(0.001 0.001), LINESTRING(0.002 0, 0.004 0))",
-            // negative coordinates, where a sign carried the wrong way would show
+            // negative coordinates, to catch a sign error
             "POINT(-0.001 -0.001)",
             "POLYGON((-0.002 -0.002, 0.002 -0.002, 0.002 0.002, -0.002 0.002, -0.002 -0.002))",
         ];
 
         /// <summary>
-        /// Shapes that are not valid, for the one operation that has something to say about them.
+        /// Invalid shapes, used only by the validity comparison.
         /// </summary>
         /// <remarks>
-        /// They are kept out of the pairwise set deliberately: what a relation means over an invalid geometry
-        /// is not defined by either model, so a disagreement there would say nothing.
+        /// They are kept out of the pairwise comparisons because neither model defines a relation over an
+        /// invalid geometry.
         /// </remarks>
         static readonly string[] degenerate =
         [
@@ -116,21 +105,17 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Runs a binary predicate over every ordered pair of shapes and reports every disagreement at once.
+        /// Runs a binary predicate both ways over every ordered pair of shapes and reports every disagreement.
         /// </summary>
-        /// <param name="geodesic"></param>
-        /// <param name="planar"></param>
-        /// <param name="refusals">How many of the pairs Calcite is expected to refuse to answer.</param>
+        /// <param name="geodesic">The <c>CLR_ST_GEOG_*</c> implementation.</param>
+        /// <param name="planar">Calcite's <c>ST_*</c> implementation.</param>
+        /// <param name="refusals">How many pairs Calcite is expected to refuse with an exception.</param>
         /// <remarks>
-        /// A pair Calcite throws on has no answer to compare against and is skipped, but the number of them
-        /// is asserted rather than left open: a change that made Calcite refuse everything would otherwise
-        /// turn this suite green by emptying it. What is refused is a geometry collection reaching
-        /// <c>Geometry.relate</c>, which calls <c>checkNotGeometryCollection</c> — a multi-point, a
-        /// multi-line and a multi-polygon are not collections by that test, and <c>contains</c> does not
-        /// always reach <c>relate</c>, since it answers a rectangular container through
-        /// <c>RectangleContains</c> first. So it is particular pairs rather than particular shapes, and
-        /// <see cref="ShouldAnswerWithinOverACollectionWhereCalciteRefuses"/> pins what this convention says
-        /// about one of them.
+        /// A pair Calcite refuses is skipped, and the count is asserted so that the comparison cannot pass by
+        /// skipping everything. JTS refuses a <c>GEOMETRYCOLLECTION</c> that reaches <c>Geometry.relate</c>
+        /// (through <c>checkNotGeometryCollection</c>); multi-points, multi-lines and multi-polygons are not
+        /// refused, and <c>contains</c> answers a rectangular container through <c>RectangleContains</c>
+        /// without reaching <c>relate</c>, so which pairs are refused depends on both shapes.
         /// </remarks>
         static void Differ(Func<Geometry, Geometry, java.lang.Boolean?> geodesic, Func<Geometry, Geometry, bool> planar, int refusals)
         {
@@ -180,19 +165,15 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A geometry collection is answered rather than refused.
+        /// <c>CLR_ST_GEOG_WITHIN</c> answers over a geometry collection where Calcite's <c>ST_WITHIN</c> throws.
         /// </summary>
         /// <remarks>
-        /// A deliberate divergence, and of the same kind as the one in <c>GeographyFunctions.DWithin</c>:
-        /// Calcite cannot answer this at all, and reproducing an inability buys nothing. The container is the
-        /// donut rather than a square because <c>Geometry.contains</c> answers a rectangular one through
-        /// <c>RectangleContains</c> without reaching the relate that refuses collections — the refusal is a
-        /// property of the pair and not of the collection.
+        /// The container is the polygon with a hole rather than a square, because JTS answers a rectangular
+        /// container without reaching the <c>relate</c> that refuses collections.
         ///
-        /// <para>The collection is a point inside the donut and a line lying along its southern edge, so
-        /// every part of it lies in the donut, and the interiors meet at the point even though the line only
-        /// touches the boundary. That is the answer JTS would give if its relate handled mixed
-        /// dimensions.</para>
+        /// <para>The collection is a point inside the polygon and a line along its southern edge. Every part
+        /// lies in the polygon and the interiors meet at the point, so the collection is within it, though the
+        /// line alone is not.</para>
         /// </remarks>
         [Fact]
         public void ShouldAnswerWithinOverACollectionWhereCalciteRefuses()
@@ -205,8 +186,8 @@ namespace Apache.Calcite.Geography.Tests
 
             GeographyFunctions.Within(collection, donut)!.booleanValue().Should().BeTrue();
 
-            // the line alone touches only the boundary, so its interior never meets the interior of the
-            // donut and it is not within it — which Calcite can answer, and does answer the same way
+            // The line alone touches only the boundary, so it is not within the polygon; Calcite answers
+            // this pair, and the same way.
             var line = Wkt("LINESTRING(0.002 0, 0.004 0)");
             GeographyFunctions.Within(line, donut)!.booleanValue().Should().BeFalse();
             SpatialTypeFunctions.ST_Within(line, donut).Should().BeFalse();
@@ -267,8 +248,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The distance in metres against the distance in degrees, which at this scale on the equator is the
-        /// same measurement in two units.
+        /// The geodesic distance in metres agrees with Calcite's distance in degrees scaled by
+        /// <see cref="Degree"/>, within <see cref="ModelGap"/>.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnDistance()
@@ -294,8 +275,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// <c>ST_DWithin</c> is <c>distance &lt;= d</c> and nothing else, so it is tested at a threshold that
-        /// falls between the pairs rather than on one.
+        /// <c>CLR_ST_GEOG_DWITHIN</c> agrees with Calcite's <c>ST_DWITHIN</c> (<c>distance &lt;= d</c>) for every
+        /// pair not within <see cref="ModelGap"/> of the threshold.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnDWithin()
@@ -311,10 +292,8 @@ namespace Apache.Calcite.Geography.Tests
 
                     var threshold = 0.003;
 
-                    // a boolean cannot be compared to a tolerance, so the band where the two models decide
-                    // differently is skipped instead: within it the answer turns on which Earth is being
-                    // measured, which is the disagreement rather than a defect. An adapter rechecking a
-                    // pushed-down predicate has the same band and the same problem.
+                    // A boolean has no tolerance, so pairs whose distance is close enough to the threshold for
+                    // the two models to decide differently are skipped.
                     if (Math.Abs(SpatialTypeFunctions.ST_Distance(a, b) - threshold) <= ModelGap * threshold)
                         continue;
 

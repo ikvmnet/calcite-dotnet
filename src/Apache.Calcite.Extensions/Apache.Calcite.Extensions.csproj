@@ -4,7 +4,7 @@
         <TargetFramework>net8.0</TargetFramework>
         <LangVersion>Preview</LangVersion>
         <Nullable>enable</Nullable>
-        <Description>What .NET adds on top of Apache Calcite. A calling convention that runs a query plan as a compiled System.Linq.Expressions tree rather than as generated Java source, the prepare pipeline that takes a statement from SQL text to that plan, and the interop helpers both need. No Java compiler runs when a statement is prepared, and a .NET user-defined function can be called from SQL.</Description>
+        <Description>The .NET query engine for Apache Calcite: a calling convention that compiles query plans to System.Linq.Expressions instead of generated Java, the pipeline that prepares a statement for it, and typed Calcite connection properties. .NET methods can be called from SQL as user-defined functions.</Description>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageIcon>icon.png</PackageIcon>
         <PackageTags>apache;calcite;sql;query;linq;expressions;ikvm</PackageTags>
@@ -26,17 +26,11 @@
         <PackageReference Include="IKVM" Version="8.16.1" />
         <PackageReference Include="IKVM.Java.Extensions" Version="8.16.1" />
         <PackageReference Include="IKVM.Jdbc.Data" Version="1.0.13" />
-        <!-- Not PrivateAssets, deliberately. This package ships only buildTransitive, which is the folder that
-             carries build assets to consumers; marking it private disables the one mechanism it has, and a project
-             that references ours then compiles and fails at run time with `Could not load file or assembly
-             'calcite.core'`. The default PrivateAssets keeps `build` to ourselves and lets buildTransitive through,
-             which is what we want. -->
+        <!-- Not PrivateAssets: this package ships only buildTransitive assets, and marking it private stops
+             them reaching consumers, which then fail at run time loading 'calcite.core'. -->
         <PackageReference Include="IKVM.Maven.Sdk" Version="1.12.1" />
-        <!-- calcite-linq4j is deliberately not named. It arrives transitively from calcite-core, at whatever
-             version core resolves to. Pinning it here pins linq4j to 1.42 while a consumer that asks for
-             1.43 — Apache.Calcite.Data.Tests does, for calcite-server — resolves core to 1.43, and 1.43's
-             BuiltInMethod initializer looks for ExtendedEnumerable.update, which 1.42's linq4j does not
-             have. Every test in that project then fails in a type initializer. -->
+        <!-- calcite-linq4j is not referenced directly, so it always resolves to the version calcite-core
+             brings. The two must come from the same build. -->
         <MavenReference Include="org.apache.commons:commons-lang3" Version="3.18.0" />
         <MavenReference Include="org.slf4j:slf4j-api" Version="2.0.17" />
         <MavenReference Include="org.apache.calcite:calcite-core" Version="1.43.0-SNAPSHOT">

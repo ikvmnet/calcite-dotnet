@@ -15,21 +15,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// Covers the adapter over an <see cref="OdbcConnection"/>, against the same LocalDB database
+    /// Tests the adapter over an <see cref="OdbcConnection"/>, against the same LocalDB database
     /// <see cref="SqlServerQueryTests"/> uses.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The ODBC catalog is not the information schema — <c>TABLE_CAT</c>, <c>TABLE_SCHEM</c>, a numeric
-    /// <c>DATA_TYPE</c>, no <c>NUMERIC_PRECISION</c> — so nothing about the SQL Server metadata provider
-    /// carries over, and the whole of <see cref="Metadata.OdbcDatabaseMetadata"/> threw
-    /// <see cref="NotImplementedException"/> until it was written against the shape the driver actually
-    /// returns.
-    /// </para>
-    /// <para>
-    /// Pointing it at the same database as the SqlClient suite is the point: the answers have to be the
-    /// same, and a metadata provider that has misread its own driver's collections says something different.
-    /// </para>
+    /// The ODBC catalog differs from the information schema (<c>TABLE_CAT</c>, <c>TABLE_SCHEM</c>, a numeric
+    /// <c>DATA_TYPE</c>, no <c>NUMERIC_PRECISION</c>), so <see cref="Metadata.OdbcDatabaseMetadata"/> reads it
+    /// separately. Using the same database as the SqlClient suite means the answers must agree.
     /// </remarks>
     public class OdbcQueryTests : IDisposable
     {
@@ -78,10 +70,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Runs a query and returns its rows as strings.
+        /// Runs a query and returns each row's values as strings joined by a pipe.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement to run through Calcite over the ODBC data source.</param>
+        /// <returns>One string per row, its values joined by a pipe with <c>NULL</c> for a null.</returns>
         List<string> Rows(string sql)
         {
             using var statement = _connection.createStatement();
@@ -103,10 +95,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Runs a query and returns the single value it produces.
+        /// Runs a query that must return one row and returns that row as <see cref="Rows"/> formats it.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">A statement expected to produce exactly one row.</param>
+        /// <returns>The single row, its values joined by a pipe.</returns>
         string Scalar(string sql)
         {
             var rows = Rows(sql);
@@ -115,10 +107,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Returns the fields of a table's row type, by name.
+        /// Returns the fields of a table's row type, keyed case-insensitively by name.
         /// </summary>
-        /// <param name="tableName"></param>
-        /// <returns></returns>
+        /// <param name="tableName">The name of a table in the mounted schema, exactly as the schema exposes
+        /// it.</param>
+        /// <returns>Each column's Calcite type, keyed by column name without regard to case.</returns>
         Dictionary<string, RelDataType> Fields(string tableName)
         {
             var table = (org.apache.calcite.schema.Table?)_schema.tables().get(tableName)
@@ -143,8 +136,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// ODBC fronts anything, so the dialect can only come from what the driver says is behind it, which
-        /// here is SQL Server. That the version came with it is <see cref="AnOffsetIsHonoured"/>.
+        /// The dialect comes from the product name the driver reports, here SQL Server. That the version is
+        /// also picked up is covered by <see cref="AnOffsetIsHonoured"/>.
         /// </summary>
         [Fact]
         public void TheDialectIsTheOneTheDriverReports()
@@ -191,7 +184,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [InlineData("C_BIGINT", nameof(SqlTypeName.BIGINT))]
         [InlineData("C_DECIMAL", nameof(SqlTypeName.DECIMAL))]
         [InlineData("C_NUMERIC", nameof(SqlTypeName.DECIMAL))]
-        // ODBC reports money as SQL_DECIMAL with its precision and scale, so it arrives as the decimal it is
+        // ODBC reports money as SQL_DECIMAL with its precision and scale
         [InlineData("C_MONEY", nameof(SqlTypeName.DECIMAL))]
         [InlineData("C_FLOAT", nameof(SqlTypeName.DOUBLE))]
         [InlineData("C_REAL", nameof(SqlTypeName.REAL))]
@@ -220,8 +213,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Every column the driver can read, read. <c>C_TIME</c> and <c>C_DATETIMEOFFSET</c> are left out:
-        /// see <see cref="TheDriverCannotReadSqlServersOwnTimeTypes"/>.
+        /// Every column the driver can read is read. <c>C_TIME</c> and <c>C_DATETIMEOFFSET</c> are left out; see
+        /// <see cref="TheDriverCannotReadSqlServersOwnTimeTypes"/>.
         /// </summary>
         [Fact]
         public void EveryReadableColumnTypeCanBeRead()
@@ -235,11 +228,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A limitation of the driver rather than of the adapter, pinned so that it is a stated fact rather
-        /// than a surprise: <c>System.Data.Odbc</c> has no mapping for <c>SQL_SS_TIME2</c> or
-        /// <c>SQL_SS_TIMESTAMPOFFSET</c>, and <c>TypeMap.FromSqlType</c> throws on either. The columns are
-        /// still typed — the metadata comes from the catalog, not from a reader — and only reading one
-        /// fails.
+        /// A driver limitation: <c>System.Data.Odbc</c> has no mapping for <c>SQL_SS_TIME2</c> or
+        /// <c>SQL_SS_TIMESTAMPOFFSET</c>, and <c>TypeMap.FromSqlType</c> throws on either. The columns are still
+        /// typed, because the metadata comes from the catalog; only reading one fails.
         /// </summary>
         [Fact]
         public void TheDriverCannotReadSqlServersOwnTimeTypes()
@@ -304,9 +295,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The dialect has to know the server is past 2012 for this to be right: under that,
-        /// <c>MssqlSqlDialect</c> writes <c>TOP(1)</c> and drops the offset, and the answer is the first row
-        /// rather than the second.
+        /// Depends on the dialect knowing the server version: below SQL Server 2012 <c>MssqlSqlDialect</c>
+        /// writes <c>TOP(1)</c> and drops the offset, which would return the first row rather than the second.
         /// </summary>
         [Fact]
         public void AnOffsetIsHonoured()

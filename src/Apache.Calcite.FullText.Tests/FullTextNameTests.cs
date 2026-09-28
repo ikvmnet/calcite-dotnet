@@ -14,11 +14,8 @@ namespace Apache.Calcite.FullText.Tests
 {
 
     /// <summary>
-    /// The names, and that Calcite does not already use one.
+    /// The operator names, and that none collides with a name Calcite already uses.
     /// </summary>
-    /// <remarks>
-    /// This package exists so that each adapter does not have to remember to write this test.
-    /// </remarks>
     public class FullTextNameTests
     {
 
@@ -45,15 +42,9 @@ namespace Apache.Calcite.FullText.Tests
         /// None of these names is one Calcite already uses.
         /// </summary>
         /// <remarks>
-        /// <para>Not a tidiness check. A connection chains the operator table its <c>fun</c> property names
-        /// <em>before</em> the catalog reader, and overload resolution takes the first candidate whose arity
-        /// fits — so the day Calcite gives some library a function called <c>CLR_FT_SCORE</c>, that operator
-        /// answers and the schema's declaration stops being reached, silently and only for hosts that set
-        /// <c>fun</c>. The failure would be a wrong statement rather than an error, and nothing else here
-        /// would notice.</para>
-        ///
-        /// <para>Measured against every library Calcite ships rather than the few chained elsewhere in this
-        /// suite, and case-insensitively, because that is how a name matcher would find one.</para>
+        /// A connection chains the libraries its <c>fun</c> property names ahead of the catalog reader, so a
+        /// Calcite function of the same name would silently take the place of the schema's declaration.
+        /// Checked against every library, case-insensitively, as a name matcher may compare.
         /// </remarks>
         [Fact]
         public void ShouldNotTakeANameCalciteAlreadyUses()
@@ -73,16 +64,8 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// The near miss is on purpose: <c>CONTAINS</c> is taken, which is why these are prefixed.
+        /// The unprefixed name <c>CONTAINS</c> is already Calcite's SQL:2011 period predicate.
         /// </summary>
-        /// <remarks>
-        /// ISO/IEC 13249-2 spells its full text functions <c>Contains</c> and <c>Score</c>, and neither is
-        /// available. <c>SqlStdOperatorTable.CONTAINS</c> is the SQL:2011 period predicate — a
-        /// <c>SqlOverlapsOperator</c> over <c>SqlKind.CONTAINS</c>, named literally <c>CONTAINS</c> — and the
-        /// parser reserves the word besides. This is what the prefix is for, and pinning it here is what says
-        /// so: if Calcite ever drops the period predicate, the argument for the prefix changes and somebody
-        /// should notice.
-        /// </remarks>
         [Fact]
         public void ShouldFindTheUnprefixedNameAlreadyTaken()
         {
@@ -93,13 +76,11 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// Calcite has no full text of its own, anywhere.
+        /// Neither Calcite's standard table nor any library table has a full text operator under the names
+        /// the stores use.
         /// </summary>
         /// <remarks>
-        /// The premise of the whole package: there is nothing in the standard operator table or in any of the
-        /// library tables to map a full text call onto, so an adapter that wants one has to bring the operator
-        /// with it. Checked against the spellings the stores use rather than against ours, since it is a
-        /// claim about Calcite and not about this naming.
+        /// If this fails, Calcite has gained full text operators that these could map onto.
         /// </remarks>
         [Fact]
         public void ShouldFindNoFullTextOperatorInCalcite()
@@ -121,12 +102,8 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// The names, spelled out, so that changing one is a deliberate act.
+        /// The operator names, spelled out, since renaming one breaks every query written against it.
         /// </summary>
-        /// <remarks>
-        /// These are the package's whole public surface. A rename is a breaking change for every query written
-        /// against it, so it should not be possible to make one by editing a declaration.
-        /// </remarks>
         [Fact]
         public void ShouldCarryExactlyTheseNames()
         {
@@ -142,14 +119,14 @@ namespace Apache.Calcite.FullText.Tests
                 "CLR_FT_PHRASE", "CLR_FT_PREFIX", "CLR_FT_FUZZY",
             ]);
 
-            // and the name-based recognition agrees with the table, rather than being a second list
+            // IsFullText keeps its own list of names, which must agree with the table
             foreach (var name in names)
                 FullTextOperatorTable.IsFullText(Named(name)).Should().BeTrue();
         }
 
         /// <summary>
-        /// Anything not one of ours is not recognised, which is what stops a name test from being a rubber
-        /// stamp.
+        /// The recognition helpers answer <c>false</c> for other operators and for <c>null</c>, and separate
+        /// predicates, scores and term constructors.
         /// </summary>
         [Fact]
         public void ShouldNotRecogniseSomethingElse()

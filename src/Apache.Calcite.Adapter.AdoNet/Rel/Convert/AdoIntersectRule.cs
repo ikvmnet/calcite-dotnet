@@ -8,17 +8,17 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {
 
     /// <summary>
-    /// Planner rule that converts an <see cref="Intersect"/> expressed in the default calling
-    /// convention to an <see cref="AdoIntersect"/> in the <see cref="AdoConvention"/>.
+    /// The rule that converts a logical <see cref="Intersect"/> into an <see cref="AdoIntersect"/>. An
+    /// <c>INTERSECT ALL</c> is not converted. Mirrors <c>JdbcRules.JdbcIntersectRule</c>.
     /// </summary>
     public class AdoIntersectRule : AdoConverterRule
     {
 
         /// <summary>
-        /// Creates a rule instance bound to the specified <see cref="AdoConvention"/>.
+        /// Creates the rule for a convention.
         /// </summary>
-        /// <param name="convention">The ADO convention that this rule targets.</param>
-        /// <returns>A configured <see cref="AdoIntersectRule"/> instance.</returns>
+        /// <param name="convention">The convention converted to.</param>
+        /// <returns>The rule.</returns>
         public static AdoIntersectRule Create(AdoConvention convention)
         {
             return (AdoIntersectRule)Config.INSTANCE
@@ -28,9 +28,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <summary>
-        /// Initializes a new instance using the supplied rule configuration.
+        /// Initializes a new instance.
         /// </summary>
-        /// <param name="config">The rule configuration produced by <see cref="Create"/>.</param>
+        /// <param name="config">The configuration <see cref="Create"/> builds.</param>
         public AdoIntersectRule(Config config) :
             base(config)
         {

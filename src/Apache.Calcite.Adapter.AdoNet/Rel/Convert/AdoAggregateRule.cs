@@ -8,17 +8,21 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {
 
     /// <summary>
-    /// Planner rule that converts a <see cref="Aggregate"/> expressed in the default calling
-    /// convention to an <see cref="AdoAggregate"/> in the <see cref="AdoConvention"/>.
+    /// The rule that converts a logical <see cref="Aggregate"/> into an <see cref="AdoAggregate"/>. Mirrors
+    /// <c>JdbcRules.JdbcAggregateRule</c>.
     /// </summary>
+    /// <remarks>
+    /// An aggregate with more than one grouping set (<c>GROUPING SETS</c>, <c>ROLLUP</c>, <c>CUBE</c>) is not
+    /// converted, nor is one whose functions or <c>FILTER</c> clauses the dialect does not support.
+    /// </remarks>
     public class AdoAggregateRule : AdoConverterRule
     {
 
         /// <summary>
-        /// Creates a rule instance bound to the specified <see cref="AdoConvention"/>.
+        /// Creates the rule for a convention.
         /// </summary>
-        /// <param name="convention">The ADO convention that this rule targets.</param>
-        /// <returns>A configured <see cref="AdoAggregateRule"/> instance.</returns>
+        /// <param name="convention">The convention converted to.</param>
+        /// <returns>The rule.</returns>
         public static AdoAggregateRule Create(AdoConvention convention)
         {
             return (AdoAggregateRule)Config.INSTANCE
@@ -28,9 +32,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <summary>
-        /// Initializes a new instance using the supplied rule configuration.
+        /// Initializes a new instance.
         /// </summary>
-        /// <param name="config">The rule configuration produced by <see cref="Create"/>.</param>
+        /// <param name="config">The configuration <see cref="Create"/> builds.</param>
         public AdoAggregateRule(Config config) :
             base(config)
         {

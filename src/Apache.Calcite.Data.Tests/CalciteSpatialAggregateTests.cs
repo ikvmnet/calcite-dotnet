@@ -4,16 +4,14 @@ namespace Apache.Calcite.Data.Tests
 {
 
     /// <summary>
-    /// Verifies that the spatial aggregates keep their own accumulators from one statement to the next.
+    /// Verifies that each spatial aggregate uses its own accumulator class, whatever ran before it.
     /// </summary>
     /// <remarks>
     /// <c>ST_UNION</c> and <c>ST_COLLECT</c> are reflective user-defined aggregates whose accumulator classes,
-    /// <c>UnionOperation</c> and <c>CollectOperation</c>, have no public fields. Each becomes the empty struct
-    /// type as a relational type, and relational types are interned process wide on their digest, so the two
-    /// share one. The accumulator's physical type once derived its row class from that shared row type, and
-    /// the second aggregate the process ran was handed the first one's record: a statement failed to implement
-    /// with "No coercion operator is defined between types UnionOperation and CollectOperation", on a fresh
-    /// connection, depending only on what an earlier connection had run.
+    /// <c>UnionOperation</c> and <c>CollectOperation</c>, have no public fields. Both map to the same empty
+    /// struct relational type, which Calcite interns process wide, so an accumulator's physical type must not
+    /// derive its row class from that row type, or the second aggregate a process runs is given the first
+    /// one's accumulator class. Each test runs the two in one order, on separate connections.
     /// </remarks>
     public class CalciteSpatialAggregateTests
     {
@@ -34,7 +32,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// What Calcite's own driver answers, which is what the aggregate should answer here.
+        /// Returns the result Calcite's own JDBC driver gives, which is the expected answer.
         /// </summary>
         static string Calcite(string function)
         {
@@ -49,8 +47,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Runs both aggregates here, one after the other, and only then asks Calcite, so that nothing of
-        /// Calcite's own driver reaches the interner between the two.
+        /// Runs both aggregates through this provider, one after the other, and only then asks Calcite's
+        /// driver, so that the driver does not intern anything between the two.
         /// </summary>
         static void InOrder(string first, string second)
         {

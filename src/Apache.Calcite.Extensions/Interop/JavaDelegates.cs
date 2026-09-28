@@ -6,21 +6,16 @@ namespace Apache.Calcite.Extensions.Interop
 {
 
     /// <summary>
-    /// Creates a delegate that calls a Java method, resolved by IKVM rather than searched for by name.
+    /// Creates a delegate that calls a Java method or constructor, as resolved by IKVM rather than looked up
+    /// by name.
     /// </summary>
     /// <remarks>
-    /// A <c>java.lang.reflect.Method</c> is a Java answer, and the CLR method IKVM compiled for it is not
-    /// always reachable from the name and the erased signature Java reports: a remapped class keeps its Java
-    /// methods on a static <c>Helper</c> class, a ghost interface declares nothing at all, and a name can
-    /// differ in case. <see cref="Linq4j.Tree.ClrTypes"/> reconstructs those, and a reconstruction is a guess.
-    /// A method handle is not: <c>unreflect</c> is IKVM's own resolution of the same member, and a delegate
-    /// over the handle calls whatever IKVM would have called.
-    ///
-    /// <para>The delegate itself is <c>ikvm.runtime.Util.getDelegateFromMethod</c>, which IKVM has made
-    /// public since 8.16.0. What is left here is choosing the delegate type, which that method takes as
-    /// given: the canonical <c>MH</c>/<c>MHV</c> type for the method's own signature, built by
-    /// <see cref="CreateDelegateType"/> — <c>MethodHandleUtil.CreateDelegateType</c> ported, because IKVM
-    /// keeps that one internal.</para>
+    /// The CLR method IKVM compiles for a Java member cannot always be found from the Java name and erased
+    /// signature: a remapped class keeps its Java methods on a static <c>Helper</c> class, a ghost interface
+    /// declares none, and a name can differ in case. <c>ikvm.runtime.Util.getDelegateFromMethod</c>, which
+    /// requires IKVM 8.16.0 or later, binds to the member IKVM itself would call. It takes the delegate type
+    /// as given, so this class builds the canonical <c>MH</c>/<c>MHV</c> type for the signature with
+    /// <see cref="CreateDelegateType"/>, a port of IKVM's internal <c>MethodHandleUtil.CreateDelegateType</c>.
     /// </remarks>
     static class JavaDelegates
     {
@@ -59,23 +54,13 @@ namespace Apache.Calcite.Extensions.Interop
         /// Returns a delegate that calls the given method or constructor, taking the receiver first where it
         /// has one.
         /// </summary>
-        /// <param name="executable"></param>
-        /// <returns></returns>
+        /// <param name="executable">The method or constructor.</param>
+        /// <returns>A delegate of the canonical IKVM type for the member's signature.</returns>
         /// <remarks>
-        /// The signature is the method's own, with every reference type left as <see cref="object"/> and every
-        /// primitive kept as itself. Keeping the primitives is the point: a primitive passed as an object is a
-        /// <c>java.lang.Integer</c> rather than a boxed CLR int, and the two are not the same value. Leaving
-        /// the references as objects costs nothing — a reference conversion either way — and keeps the
-        /// signature to types that are certainly the ones IKVM signs with, which a ghost interface is not.
-        ///
-        /// <para>Access is checked as <c>Lookup.unreflect</c> checks it. Nothing a linq4j tree names can be out
-        /// of its reach — Janino compiles that tree as Java source in an anonymous package, so every member it
-        /// reaches is public on a public class — and a member that is not is the caller's to mark
-        /// accessible.</para>
-        ///
-        /// <para>The type asked for is the canonical one, but IKVM binds a second delegate of it over its own
-        /// rather than handing its own back, so every call through this is one delegate call more than it
-        /// has to be.</para>
+        /// Every reference-typed parameter and return is typed <see cref="object"/>, and every primitive keeps
+        /// its own type, so that a primitive is never passed as a CLR-boxed value where Java expects its own
+        /// box. A constructor returns <see cref="object"/>. A member that is not public must be made
+        /// accessible with <c>setAccessible(true)</c> first.
         /// </remarks>
         public static Delegate FromMethod(java.lang.reflect.Executable executable)
         {
@@ -96,10 +81,11 @@ namespace Apache.Calcite.Extensions.Interop
         }
 
         /// <summary>
-        /// Returns the type a value of the given class crosses a delegate boundary as.
+        /// Returns the CLR type a parameter or return of the given class has in the delegate: the primitive
+        /// itself, or <see cref="object"/>.
         /// </summary>
-        /// <param name="clazz"></param>
-        /// <returns></returns>
+        /// <param name="clazz">The Java class of the parameter or return.</param>
+        /// <returns>The CLR primitive type for a primitive class, otherwise <see cref="object"/>.</returns>
         static Type Erase(java.lang.Class clazz)
         {
             return clazz.isPrimitive() ? Linq4j.Tree.ClrTypes.FromClass(clazz) : typeof(object);
@@ -108,13 +94,13 @@ namespace Apache.Calcite.Extensions.Interop
         /// <summary>
         /// Returns the canonical delegate type IKVM builds for a signature.
         /// </summary>
-        /// <param name="types"></param>
-        /// <param name="returnType"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// <c>MethodHandleUtil.CreateDelegateType</c>. Past eight parameters the tail is packed into nested
-        /// <see cref="MHA"/> containers, seven at a time.
+        /// Mirrors IKVM's <c>MethodHandleUtil.CreateDelegateType</c>. Past eight parameters the tail is packed
+        /// into nested <see cref="MHA"/> containers, seven at a time.
         /// </remarks>
+        /// <param name="types">The erased parameter types, in order.</param>
+        /// <param name="returnType">The erased return type, or <see cref="void"/>.</param>
+        /// <returns>The delegate type IKVM uses for that signature.</returns>
         static Type CreateDelegateType(Type[] types, Type returnType)
         {
             if (types.Length == 0 && returnType == typeof(void))
@@ -153,10 +139,10 @@ namespace Apache.Calcite.Extensions.Interop
         /// <summary>
         /// Returns a range of an array.
         /// </summary>
-        /// <param name="array"></param>
-        /// <param name="start"></param>
-        /// <param name="length"></param>
-        /// <returns></returns>
+        /// <param name="array">The source array.</param>
+        /// <param name="start">The index of the first element to copy.</param>
+        /// <param name="length">The number of elements to copy.</param>
+        /// <returns>A new array of the <paramref name="length"/> elements starting at <paramref name="start"/>.</returns>
         static Type[] SubArray(Type[] array, int start, int length)
         {
             var result = new Type[length];

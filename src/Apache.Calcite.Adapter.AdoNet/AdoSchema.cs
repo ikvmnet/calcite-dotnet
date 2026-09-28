@@ -20,17 +20,29 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Implementation of <see cref="Schema"/> that is backed by ADO.NET data source.
+    /// A Calcite <see cref="Schema"/> whose tables are the tables of one schema of an ADO.NET data source.
     /// </summary>
     /// <remarks>
-    /// The tables in the ADO.NET data source appear to be tables in this schema; queries against this schema are
-    /// executed against those tables, pushing down as much as possible of the query logic to SQL.
+    /// <para>
+    /// Queries against these tables are planned into the schema's <see cref="AdoConvention"/>, and as much of
+    /// each query as the source's dialect can express is sent to the source as one SQL statement.
+    /// </para>
+    /// <para>
+    /// Table names come from <see cref="AdoDatabaseMetadata.GetTables"/>, and a name can be matched with or
+    /// without regard to case, as the connection asks. A table that has been looked up is cached for a minute
+    /// (Calcite's <c>LoadingCacheLookup</c>), and its columns are read from
+    /// <see cref="AdoDatabaseMetadata.GetFields"/> when its row type is first needed.
+    /// </para>
+    /// <para>
+    /// <see cref="unwrap"/> answers this schema and its <see cref="AdoDataSource"/>.
+    /// </para>
     /// </remarks>
     public class AdoSchema : AdoBaseSchema, Schema, Wrapper
     {
 
         /// <summary>
-        /// Initializes the static instance.
+        /// Puts this assembly and the ADO.NET assemblies on IKVM's boot class path, so that Java code
+        /// generated for a plan can name their types.
         /// </summary>
         static AdoSchema()
         {
@@ -40,7 +52,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Lookup for resolving the tables of this schema.
+        /// Resolves the tables of an <see cref="AdoSchema"/> from its data source's metadata.
         /// </summary>
         class TablesLookup : IgnoreCaseLookup
         {
@@ -50,7 +62,7 @@ namespace Apache.Calcite.Adapter.AdoNet
             /// <summary>
             /// Initializes a new instance.
             /// </summary>
-            /// <param name="schema"></param>
+            /// <param name="schema">The schema whose tables are resolved.</param>
             public TablesLookup(AdoSchema schema)
             {
                 _schema = schema ?? throw new ArgumentNullException(nameof(schema));
@@ -81,90 +93,119 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Creates a new instance.
+        /// Creates a schema over a <see cref="DbDataSource"/>, choosing its metadata provider with
+        /// <see cref="AdoDatabaseMetadataFactoryImpl"/>.
         /// </summary>
-        /// <param name="parentSchema"></param>
-        /// <param name="name"></param>
-        /// <param name="dataSource"></param>
-        /// <param name="databaseName"></param>
-        /// <param name="schemaName"></param>
-        /// <returns></returns>
+        /// <param name="parentSchema">The schema the new schema will be added to. Generated code locates the schema
+        /// through it, so it cannot be <see langword="null"/>.</param>
+        /// <param name="name">The name the new schema will be added under. It must match the name used when adding it.</param>
+        /// <param name="dataSource">The data source that opens connections to the database.</param>
+        /// <param name="databaseName">The database whose tables to expose, or <see langword="null"/> for the provider's default.</param>
+        /// <param name="schemaName">The schema whose tables to expose, or <see langword="null"/> for the provider's default.</param>
+        /// <returns>The new schema. The caller adds it to <paramref name="parentSchema"/>.</returns>
+        /// <exception cref="AdoCalciteException">The connection's provider is not one <see cref="AdoDatabaseMetadataFactoryImpl"/> recognises.</exception>
         public static AdoSchema Create(SchemaPlus? parentSchema, string name, DbDataSource dataSource, string? databaseName, string? schemaName)
         {
             return Create(parentSchema, name, dataSource, AdoDatabaseMetadataFactoryImpl.Instance, databaseName, schemaName);
         }
 
         /// <summary>
-        /// Creates a new instance.
+        /// Creates a schema over a <see cref="DbDataSource"/>, choosing its metadata provider with
+        /// <paramref name="metadataFactory"/>.
         /// </summary>
-        /// <param name="parentSchema"></param>
-        /// <param name="name"></param>
-        /// <param name="dataSource"></param>
-        /// <param name="metadataFactory"></param>
-        /// <param name="databaseName"></param>
-        /// <param name="schemaName"></param>
-        /// <returns></returns>
+        /// <param name="parentSchema">The schema the new schema will be added to. Generated code locates the schema
+        /// through it, so it cannot be <see langword="null"/>.</param>
+        /// <param name="name">The name the new schema will be added under. It must match the name used when adding it.</param>
+        /// <param name="dataSource">The data source that opens connections to the database.</param>
+        /// <param name="metadataFactory">Creates the metadata provider for <paramref name="dataSource"/>.</param>
+        /// <param name="databaseName">The database whose tables to expose, or <see langword="null"/> for the provider's default.</param>
+        /// <param name="schemaName">The schema whose tables to expose, or <see langword="null"/> for the provider's default.</param>
+        /// <returns>The new schema. The caller adds it to <paramref name="parentSchema"/>.</returns>
         public static AdoSchema Create(SchemaPlus? parentSchema, string name, DbDataSource dataSource, AdoDatabaseMetadataFactory metadataFactory, string? databaseName, string? schemaName)
         {
             return Create(parentSchema, name, new DbDataSourceAdoDataSource(dataSource, metadataFactory.Create(dataSource)), databaseName, schemaName);
         }
 
         /// <summary>
-        /// Creates a new instance.
+        /// Creates a schema over a <see cref="DbDataSource"/> with a given metadata provider.
         /// </summary>
-        /// <param name="parentSchema"></param>
-        /// <param name="name"></param>
-        /// <param name="dataSource"></param>
-        /// <param name="metadataProvider"></param>
-        /// <param name="databaseName"></param>
-        /// <param name="schemaName"></param>
-        /// <returns></returns>
+        /// <param name="parentSchema">The schema the new schema will be added to. Generated code locates the schema
+        /// through it, so it cannot be <see langword="null"/>.</param>
+        /// <param name="name">The name the new schema will be added under. It must match the name used when adding it.</param>
+        /// <param name="dataSource">The data source that opens connections to the database.</param>
+        /// <param name="metadataProvider">Describes the database's tables, columns, dialect and parameter syntax.</param>
+        /// <param name="databaseName">The database whose tables to expose, or <see langword="null"/> for the provider's default.</param>
+        /// <param name="schemaName">The schema whose tables to expose, or <see langword="null"/> for the provider's default.</param>
+        /// <returns>The new schema. The caller adds it to <paramref name="parentSchema"/>.</returns>
         public static AdoSchema Create(SchemaPlus? parentSchema, string name, DbDataSource dataSource, AdoDatabaseMetadata metadataProvider, string? databaseName, string? schemaName)
         {
             return Create(parentSchema, name, new DbDataSourceAdoDataSource(dataSource, metadataProvider), databaseName, schemaName);
         }
 
         /// <summary>
-        /// Creates a new instance.
+        /// Creates a schema over an <see cref="AdoDataSource"/>.
         /// </summary>
-        /// <param name="parentSchema"></param>
-        /// <param name="name"></param>
-        /// <param name="dataSource"></param>
-        /// <param name="databaseName"></param>
-        /// <param name="schemaName"></param>
-        /// <returns></returns>
+        /// <param name="parentSchema">The schema the new schema will be added to. Generated code locates the schema
+        /// through it, so it cannot be <see langword="null"/>.</param>
+        /// <param name="name">The name the new schema will be added under. It must match the name used when adding it.</param>
+        /// <param name="dataSource">The data source, which carries its own metadata provider.</param>
+        /// <param name="databaseName">The database whose tables to expose. Null or blank means
+        /// <see cref="AdoDatabaseMetadata.GetDefaultDatabase"/>.</param>
+        /// <param name="schemaName">The schema whose tables to expose. Null or blank means
+        /// <see cref="AdoDatabaseMetadata.GetDefaultSchema"/>.</param>
+        /// <returns>The new schema. The caller adds it to <paramref name="parentSchema"/>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="dataSource"/> is <see langword="null"/>.</exception>
+        /// <remarks>
+        /// Resolving a default database may open a connection. The dialect is read from the metadata here, which
+        /// for SQL Server, ODBC and OLE DB also opens a connection to ask the server what it is.
+        /// </remarks>
         public static AdoSchema Create(SchemaPlus? parentSchema, string name, AdoDataSource dataSource, string? databaseName, string? schemaName)
         {
             ArgumentNullException.ThrowIfNull(dataSource);
 
-            // fallback to current connection database
             if (string.IsNullOrWhiteSpace(databaseName))
                 databaseName = dataSource.Metadata.GetDefaultDatabase();
 
-            // fallback to current connection schema
             if (string.IsNullOrWhiteSpace(schemaName))
                 schemaName = dataSource.Metadata.GetDefaultSchema();
 
-            // generate schema
             var expression = Schemas.subSchemaExpression(parentSchema, name, typeof(AdoSchema));
             var convention = AdoConvention.Create(dataSource.Metadata.Dialect, dataSource.Metadata.Syntax, expression, name);
             return new AdoSchema(dataSource, convention, databaseName, schemaName);
         }
 
         /// <summary>
-        /// Creates a <see cref="AdoSchema"/>, taking credentials from a map.
+        /// Creates a schema from the operands of a Calcite JSON model.
         /// </summary>
-        /// <param name="parentSchema"></param>
-        /// <param name="name"></param>
-        /// <param name="operand"></param>
-        /// <returns></returns>
+        /// <param name="parentSchema">The schema the new schema will be added to.</param>
+        /// <param name="name">The name the new schema will be added under.</param>
+        /// <param name="operand">The model's operands. Every value is a string:
+        /// <list type="bullet">
+        /// <item><c>adoProviderName</c> and <c>adoConnectionString</c>: the invariant name of a provider registered
+        /// with <see cref="DbProviderFactories"/>, and the connection string to give it. Required unless
+        /// <c>adoDataSource</c> is given.</item>
+        /// <item><c>adoDataSource</c>: the assembly-qualified name of a <see cref="DbDataSource"/> type with a
+        /// public parameterless constructor, used in place of the two above.</item>
+        /// <item><c>adoDatabaseMetadata</c>: the assembly-qualified name of an <see cref="AdoDatabaseMetadata"/> type
+        /// with a public constructor taking a <see cref="DbDataSource"/>, used in place of the provider
+        /// <see cref="AdoDatabaseMetadataFactoryImpl"/> would choose.</item>
+        /// <item><c>adoDatabase</c> and <c>adoSchema</c>: the database and schema whose tables to expose. Either
+        /// may be omitted to take the provider's default.</item>
+        /// </list>
+        /// </param>
+        /// <returns>The new schema.</returns>
+        /// <exception cref="AdoCalciteException">A required operand is missing, or a named type cannot be loaded or
+        /// is not of the expected kind.</exception>
+        /// <remarks>
+        /// An <c>adoDatabaseMetadataFactory</c> operand is read only when no factory has already been chosen, and
+        /// one always has been, so it has no effect.
+        /// </remarks>
         public static AdoSchema Create(SchemaPlus parentSchema, string name, Map operand)
         {
             AdoDataSource? adoDataSource = null;
             AdoDatabaseMetadata? adoDatabaseMetadata = null;
             AdoDatabaseMetadataFactory? adoDatabaseMetadataFactory = AdoDatabaseMetadataFactoryImpl.Instance;
 
-            // check for explicitely specified metadata
             var adoDatabaseMetadataName = (string?)operand.get("adoDatabaseMetadata");
             if (string.IsNullOrWhiteSpace(adoDatabaseMetadataName) == false)
             {
@@ -172,11 +213,11 @@ namespace Apache.Calcite.Adapter.AdoNet
                 if (adoDatabaseMetadataType is null)
                     throw new AdoCalciteException($"Failed to instantiate AdoDatabaseMetadata type: {adoDatabaseMetadataName}.");
 
-                // factory just creates a single instance
                 adoDatabaseMetadataFactory = new AdoDatabaseMetadataTypeFactory(adoDatabaseMetadataType);
             }
 
-            // check whether user has specified a factory
+            // TODO: adoDatabaseMetadataFactory starts non-null, so this branch never runs and the
+            // adoDatabaseMetadataFactory operand is ignored.
             if (adoDatabaseMetadataFactory == null)
             {
                 var adoDatabaseMetadataFactoryName = (string?)operand.get("adoDatabaseMetadataFactory");
@@ -195,7 +236,6 @@ namespace Apache.Calcite.Adapter.AdoNet
             if (adoDatabaseMetadataFactory == null)
                 throw new AdoCalciteException("Could not establish AdoDatabaseMetadataFactory.");
 
-            // data source explicitly specified
             var adoDataSourceName = (string)operand.get("adoDataSource");
             if (adoDataSourceName != null)
             {
@@ -206,11 +246,9 @@ namespace Apache.Calcite.Adapter.AdoNet
                 if (Activator.CreateInstance(dbDataSourceType) is not DbDataSource dbDataSource)
                     throw new AdoCalciteException($"Failed to instantiate DbDataSource type: {dbDataSourceType.FullName}.");
 
-                // create new data source from data source and metadata
                 adoDataSource = new DbDataSourceAdoDataSource(dbDataSource, adoDatabaseMetadata ?? adoDatabaseMetadataFactory.Create(dbDataSource));
             }
 
-            // fallback to provider name and connection string
             if (adoDataSource is null)
             {
                 var adoProviderName = (string?)operand.get("adoProviderName");
@@ -244,12 +282,14 @@ namespace Apache.Calcite.Adapter.AdoNet
         LoadingCacheLookup? _tables;
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Initializes a new instance. <c>Create</c> is the usual
+        /// way to make one, since it builds the convention and resolves the default database and schema.
         /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="convention"></param>
-        /// <param name="databaseName"></param>
-        /// <param name="schemaName"></param>
+        /// <param name="dataSource">The data source the tables are read from.</param>
+        /// <param name="convention">The convention queries against these tables are planned into.</param>
+        /// <param name="databaseName">The database whose tables to expose, passed to the metadata as given.</param>
+        /// <param name="schemaName">The schema whose tables to expose, passed to the metadata as given.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="dataSource"/> or <paramref name="convention"/> is <see langword="null"/>.</exception>
         public AdoSchema(AdoDataSource dataSource, AdoConvention convention, string? databaseName, string? schemaName)
         {
             _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
@@ -259,70 +299,59 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Gets the ADO data source.
+        /// Gets the data source the tables are read from.
         /// </summary>
         internal AdoDataSource DataSource => _dataSource;
 
         /// <summary>
-        /// Gets the convention.
+        /// Gets the convention queries against these tables are planned into.
         /// </summary>
         internal AdoConvention Convention => _convention;
 
         /// <summary>
-        /// Gets the database refered to by this <see cref="AdoSchema"/>.
+        /// Gets the database whose tables this schema exposes, or <see langword="null"/> where the provider has
+        /// no default and none was given.
         /// </summary>
         public string? DatabaseName => _databaseName;
 
         /// <summary>
-        /// Gets the schema refered to by this <see cref="AdoSchema"/>.
+        /// Gets the schema whose tables this schema exposes, or <see langword="null"/> where the provider has no
+        /// default and none was given. For ODBC and OLE DB, <see langword="null"/> means every schema.
         /// </summary>
         public string? SchemaName => _schemaName;
 
         /// <summary>
-        /// Gets the <see cref="RelProtoDataType"/> of a table, acquiring the column metadata first. This
-        /// is <c>JdbcSchema.getRelDataType</c>'s three-argument overload, which opens a connection to
-        /// reach <c>DatabaseMetaData</c>; the data source already carries ours.
+        /// Returns the row type of a table, read from this schema's metadata. Mirrors the three-argument
+        /// <c>JdbcSchema.getRelDataType</c>, with <see cref="AdoDatabaseMetadata"/> in place of the
+        /// <c>DatabaseMetaData</c> it opens a connection for.
         /// </summary>
-        /// <param name="databaseName"></param>
-        /// <param name="schemaName"></param>
-        /// <param name="tableName"></param>
-        /// <returns></returns>
-        /// <exception cref="AdoCalciteException"></exception>
+        /// <param name="databaseName">The table's database.</param>
+        /// <param name="schemaName">The table's schema.</param>
+        /// <param name="tableName">The table's name.</param>
+        /// <returns>A prototype of the row type.</returns>
+        /// <exception cref="AdoCalciteException">A column has no name, or a type this adapter cannot map.</exception>
         internal RelProtoDataType GetRelDataType(string? databaseName, string? schemaName, string tableName)
         {
             return GetRelDataType(_dataSource.Metadata, databaseName, schemaName, tableName);
         }
 
         /// <summary>
-        /// Derives the <see cref="RelProtoDataType"/> of a table from column metadata.
+        /// Returns the row type of a table from column metadata. Mirrors <c>JdbcSchema.getRelDataType</c>, with
+        /// <see cref="AdoDatabaseMetadata"/> in place of <c>DatabaseMetaData</c>.
         /// </summary>
-        /// <param name="databaseName"></param>
-        /// <param name="schemaName"></param>
-        /// <param name="tableName"></param>
-        /// <returns></returns>
+        /// <param name="metaData">The metadata to read the columns from.</param>
+        /// <param name="databaseName">The table's database.</param>
+        /// <param name="schemaName">The table's schema.</param>
+        /// <param name="tableName">The table's name.</param>
+        /// <returns>A prototype of the row type.</returns>
+        /// <exception cref="AdoCalciteException">A column has no name, or a type this adapter cannot map.</exception>
         internal RelProtoDataType GetRelDataType(AdoDatabaseMetadata metaData, string? databaseName, string? schemaName, string tableName)
         {
-            // This is JdbcSchema.getRelDataType's body, and upstream's comment on the line below is:
-            // "Temporary type factory, just for the duration of this method. Allowable because we're
-            // creating a proto-type, not a type; before being used, the proto-type will be copied into a
-            // real type factory." RelDataTypeImpl.proto is typeFactory -> typeFactory.copyType(t), so
-            // that holds.
-            //
-            // The one place this cannot follow upstream is where the column metadata comes from. JDBC
-            // reads DatabaseMetaData.getColumns off a connection the schema opens, and ADO.NET has no
-            // DatabaseMetaData -- GetSchema("Columns") differs per provider, and ODBC and OleDb cannot
-            // reliably say what they are -- so this adapter owns that SPI as AdoDatabaseMetadata. It
-            // takes the place of DatabaseMetaData in the parameter list, and the overload above acquires
-            // it where upstream opens a connection.
-            //
-            // Ours, not upstream's: copying is not re-deriving. createSqlType clamped precision and
-            // scale against DEFAULT's limits here, and copyType carries the clamped type across rather
-            // than deriving it again, so a connection's own type system does not widen a column read
-            // from an ADO source. Reasoned from those two members; no test covers it.
+            // a temporary type factory is enough, as in JdbcSchema: the prototype copies the type into the
+            // caller's factory
             var typeFactory = new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
             var types = typeFactory.builder();
 
-            // derive a type for each field
             foreach (var field in metaData.GetFields(databaseName, schemaName, tableName))
             {
                 if (field.Name is null)
@@ -335,15 +364,16 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Transforms a <see cref="DbType"/> and its various additional information into a <see cref="RelDataType"/>. This is <c>JdbcSchema.sqlType</c>.
+        /// Returns the Calcite type for a column's <see cref="DbType"/>, length, precision and scale. Takes the
+        /// place of <c>JdbcSchema.sqlType</c>.
         /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <param name="dbType"></param>
-        /// <param name="precision"></param>
-        /// <param name="scale"></param>
-        /// <param name="size"></param>
-        /// <returns></returns>
-        /// <exception cref="AdoCalciteException"></exception>
+        /// <param name="typeFactory">The factory to create the type in.</param>
+        /// <param name="dbType">The column's type.</param>
+        /// <param name="precision">The column's precision, or -1.</param>
+        /// <param name="scale">The column's scale, or -1.</param>
+        /// <param name="size">The column's length, or -1.</param>
+        /// <returns>The type.</returns>
+        /// <exception cref="AdoCalciteException"><paramref name="dbType"/> has no mapping.</exception>
         static RelDataType SqlType(RelDataTypeFactory typeFactory, DbType dbType, int precision, int scale, int size)
         {
             switch (dbType)
@@ -352,15 +382,12 @@ namespace Apache.Calcite.Adapter.AdoNet
                     return typeFactory.createSqlType(SqlTypeName.VARCHAR, size);
                 case DbType.Binary:
                     return typeFactory.createSqlType(SqlTypeName.VARBINARY, size);
-                // DbType.Byte is the unsigned 0..255 one and TINYINT is signed, so the top half of its range
-                // comes back negative: SQL Server's tinyint 200 read as a TINYINT is -56. UTINYINT is the
-                // type that holds it, as USMALLINT holds a UInt16 below — and as ParameterBinder already
-                // says on the way in, binding a DbType.Byte as a joou UByte
+                // DbType.Byte is unsigned (0..255) and TINYINT is signed, so it maps to UTINYINT
                 case DbType.Byte:
                     return typeFactory.createSqlType(SqlTypeName.UTINYINT);
                 case DbType.Boolean:
                     return typeFactory.createSqlType(SqlTypeName.BOOLEAN);
-                // the scale money carries in every provider that has a distinct type for it
+                // money has four decimal places wherever a provider has a distinct type for it
                 case DbType.Currency:
                     return typeFactory.createSqlType(SqlTypeName.DECIMAL, 19, 4);
                 case DbType.Date:
@@ -379,13 +406,13 @@ namespace Apache.Calcite.Adapter.AdoNet
                     return typeFactory.createSqlType(SqlTypeName.INTEGER);
                 case DbType.Int64:
                     return typeFactory.createSqlType(SqlTypeName.BIGINT);
-                // OTHER is the escape hatch the reader already understands: a column of unknown type is
-                // passed through rather than making the whole table unreadable
+                // a column of unknown type is read as OTHER and its value passed through, so the rest of the
+                // table stays usable
                 case DbType.Object:
                     return typeFactory.createSqlType(SqlTypeName.OTHER);
                 case DbType.SByte:
                     return typeFactory.createSqlType(SqlTypeName.TINYINT);
-                // REAL is four bytes in Calcite, as it is in SQL; DOUBLE is eight
+                // Calcite's REAL is four bytes and DOUBLE eight
                 case DbType.Single:
                     return typeFactory.createSqlType(SqlTypeName.REAL);
                 case DbType.String:
@@ -436,7 +463,12 @@ namespace Apache.Calcite.Adapter.AdoNet
             return Schemas.subSchemaExpression(parentSchema, name, typeof(AdoSchema));
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns this schema if it is an instance of <paramref name="clazz"/>, its <see cref="AdoDataSource"/> if
+        /// <paramref name="clazz"/> is that type, and otherwise <see langword="null"/>.
+        /// </summary>
+        /// <param name="clazz">The class to unwrap to.</param>
+        /// <returns>The object, or <see langword="null"/>.</returns>
         public object? unwrap(Class clazz)
         {
             if (clazz.isInstance(this))

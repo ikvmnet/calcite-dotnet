@@ -15,22 +15,21 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// The parts of <see cref="ClrCursorWindow"/> a plan does not reach.
+    /// Tests of <see cref="ClrCursorWindow"/> members that executing a plan does not exercise.
     /// </summary>
     /// <remarks>
-    /// The counterpart of Calcite's <c>EnumerableWindowTest</c>. Everything else about the node is compared
-    /// against <c>EnumerableConvention</c> by the differential tests; <c>copy</c> is not, because the planner
-    /// only calls it while it is exploring and a plan that came out right says nothing about whether the
-    /// constants survived.
+    /// The counterpart of Calcite's <c>EnumerableWindowTest</c>. The differential tests compare the node's rows
+    /// against <c>EnumerableConvention</c>; <c>copy</c> with new constants is called only while the planner
+    /// explores, so a correct result does not show that it keeps the constants it is given.
     /// </remarks>
     public class ClrCursorWindowTests
     {
 
         /// <summary>
-        /// A node with no inputs, to hang a window on.
+        /// A node with no inputs, to serve as the window's input.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
+        /// <param name="cluster">The cluster the node belongs to.</param>
+        /// <param name="traitSet">The node's traits.</param>
         sealed class Leaf(RelOptCluster cluster, RelTraitSet traitSet) : AbstractRelNode(cluster, traitSet)
         {
 

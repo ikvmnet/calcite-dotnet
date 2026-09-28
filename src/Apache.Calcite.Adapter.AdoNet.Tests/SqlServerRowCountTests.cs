@@ -11,20 +11,18 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// Covers the row count of a <c>TOP</c>, an <c>OFFSET</c> or a <c>FETCH</c> reaching a real SQL Server,
-    /// where what the count is written as is the thing in question.
+    /// Tests how the row count of a <c>TOP</c>, <c>OFFSET</c> or <c>FETCH</c> is written for SQL Server.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// CALCITE-7624 widened both counts to a <c>BigDecimal</c>: a literal may have a fractional part, and
-    /// <c>SqlValidatorImpl.handleOffsetFetch</c> types a placeholder in either slot <c>DECIMAL</c>, so a
-    /// caller's value arrives as a decimal too. SQL Server takes neither — "The number of rows provided for
-    /// a TOP or FETCH clauses row count parameter must be an integer" — which the dialect puts right.
+    /// Calcite holds both counts as a <c>BigDecimal</c>: a literal may have a fractional part, and
+    /// <c>SqlValidatorImpl.handleOffsetFetch</c> types a placeholder in either position as <c>DECIMAL</c>.
+    /// SQL Server requires an integer row count, so the adapter's dialect rounds a literal up and wraps a
+    /// parameter in <c>CAST(CEILING(…) AS INT)</c>.
     /// </para>
     /// <para>
-    /// The rows are half the claim and the statement is the other half: a query the adapter declined to push
-    /// answers correctly while saying nothing about what was sent, which is exactly the case that hid this
-    /// defect — a projection the source could not evaluate left the limit in process and it worked.
+    /// Each test checks the generated statement as well as the rows, because a limit evaluated in process
+    /// would give the same rows.
     /// </para>
     /// </remarks>
     public class SqlServerRowCountTests : IDisposable
@@ -70,10 +68,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Runs a query and returns its one column as strings.
+        /// Runs a query and returns its first column as strings.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement to run through Calcite.</param>
+        /// <returns>The first column of every row, with <c>NULL</c> for a null.</returns>
         List<string> Rows(string sql)
         {
             using var statement = _connection.createStatement();
@@ -83,14 +81,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Runs a query whose row counts are parameters, binding the given values in order.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="counts"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// As <c>BigDecimal</c>s, because that is what the placeholder's inferred <c>DECIMAL</c> makes of
-        /// whatever an ADO.NET caller bound, and what the report is about. A caller's own naming of the
-        /// parameter's type made no difference to it.
+        /// The values are bound as <c>BigDecimal</c>s, matching the <c>DECIMAL</c> type the validator infers
+        /// for the placeholders.
         /// </remarks>
+        /// <param name="sql">A statement whose row counts are <c>?</c> placeholders.</param>
+        /// <param name="counts">The decimal text of each placeholder's value, in placeholder order.</param>
+        /// <returns>The first column of every row, with <c>NULL</c> for a null.</returns>
         List<string> Rows(string sql, params string[] counts)
         {
             using var statement = _connection.prepareStatement(sql);
@@ -116,8 +113,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         string Statement => _generated.Statements.Single();
 
         /// <summary>
-        /// The case from the report: a <c>FETCH</c> whose count is a parameter. The whole of the fix is that
-        /// the marker no longer stands alone, so the count the server reads is not the decimal that was bound.
+        /// A <c>FETCH</c> whose count is a parameter: the marker is wrapped in a cast to <c>INT</c>, so the
+        /// server does not read the bound decimal directly.
         /// </summary>
         [Fact]
         public void AParameterisedFetchAnswers()
@@ -130,7 +127,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// And an <c>OFFSET</c> whose count is a parameter, which failed the same way for the same reason.
+        /// An <c>OFFSET</c> whose count is a parameter is cast the same way.
         /// </summary>
         [Fact]
         public void AParameterisedOffsetAnswers()
@@ -143,7 +140,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Both at once, which is what paging actually asks for, and what <c>$top</c> and <c>$skip</c> send.
+        /// A parameterised <c>OFFSET</c> and <c>FETCH</c> together, as paging uses them.
         /// </summary>
         [Fact]
         public void AParameterisedOffsetAndFetchAnswer()
@@ -157,8 +154,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A count bound as an integer rather than as a decimal is the same statement and the same answer:
-        /// what reads the count is the server, and the cast is a no-op over one that is already whole.
+        /// A count bound as an integer gives the same answer; the cast has no effect on a whole number.
         /// </summary>
         [Fact]
         public void AnIntegerBoundFetchAnswers()
@@ -170,13 +166,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A literal count with a fractional part is written as the whole number of rows it stands for, and
-        /// the literal stays a literal — nothing is cast around a count this already knows.
+        /// A literal count with a fractional part is rounded up to a whole literal, with no cast.
         /// </summary>
         /// <remarks>
-        /// <c>TOP (2.9)</c> is the same refusal a decimal parameter earns. Three is the count because
-        /// <c>EnumerableDefaults.take</c> counts while the zero-based index is below the bound, which
-        /// <c>RexUtil.makeOffsetFetchSum</c> states as rounding "to whole row counts".
+        /// SQL Server rejects <c>TOP (2.9)</c>. Rounding up matches the rows the in-process operator returns
+        /// for the same count; <see cref="AFractionalCountMeansTheSameRowsInProcess"/> checks that.
         /// </remarks>
         [Fact]
         public void AFractionalFetchIsWrittenAsWholeRows()
@@ -200,8 +194,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A whole count is written exactly as it was, which is what keeps <c>TOP (2)</c> a constant the
-        /// server can plan a row goal against.
+        /// A whole literal count is written unchanged, so <c>TOP (2)</c> stays a constant the server can plan
+        /// a row goal against.
         /// </summary>
         [Fact]
         public void AWholeFetchIsWrittenUnchanged()
@@ -214,10 +208,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// And the rows a fractional count means are the rows the operator in process means by it, read off
-        /// a source the adapter has nothing to do with. The literal arm is rounded here and the parameter
-        /// arm by the server, and this holds both to the same answer.
+        /// A fractional count selects the same rows pushed down as it does in process over a <c>VALUES</c>
+        /// source. A literal count is rounded by the dialect and a parameter by the server's
+        /// <c>CEILING</c>.
         /// </summary>
+        /// <param name="sql">A statement over <c>EMPS</c> with a fractional offset or fetch count.</param>
         [Theory]
         [InlineData("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO OFFSET 1.5 ROWS FETCH NEXT 2.9 ROWS ONLY")]
         [InlineData("SELECT EMPNO FROM ADO.EMPS ORDER BY EMPNO FETCH FIRST 2.9 ROWS ONLY")]
@@ -241,8 +236,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A literal count with no <c>int</c> is refused where it is written, naming the clause and the
-        /// count.
+        /// A literal count too large for an <c>int</c> is refused when the statement is written, with a
+        /// message naming the clause and the count.
         /// </summary>
         [Fact]
         public void AFetchWiderThanAnIntIsRefused()
@@ -255,13 +250,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The same count as a parameter is refused by the server instead, the cast being where it would
-        /// have to fit: "Arithmetic overflow error converting expression to data type int".
+        /// The same count as a parameter is refused by the server when it is cast to <c>INT</c>.
         /// </summary>
         /// <remarks>
-        /// As the driver's own exception rather than a <c>java.sql.SQLException</c>: the server raises this
-        /// on the first read rather than on the command, which is past <c>AdoEnumerable.enumerator</c> and
-        /// so past the one place a driver's exception is wrapped and given the statement that earned it.
+        /// The exception is the driver's own rather than a <c>java.sql.SQLException</c>: the server raises it
+        /// on the first read, after <c>AdoEnumerable.enumerator</c>, which is where a driver's exception is
+        /// wrapped.
         /// </remarks>
         [Fact]
         public void AParameterisedFetchWiderThanAnIntIsRefused()
@@ -273,8 +267,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A negative count is refused too, and by both: <c>EnumUtils.numberToBigDecimal</c> reads it that
-        /// way in process and SQL Server says the same of the count the cast handed it.
+        /// A negative parameterised count is refused both pushed down, by SQL Server, and in process, by
+        /// Calcite.
         /// </summary>
         [Fact]
         public void ANegativeParameterisedFetchIsRefusedEitherWay()
@@ -290,11 +284,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The whole of an exception's chain, because what a driver or a runtime says is usually several
-        /// wrappers down from what was thrown.
+        /// Returns the messages of an exception and all its inner exceptions, one per line, since the
+        /// driver's message is usually several wrappers down.
         /// </summary>
-        /// <param name="exception"></param>
-        /// <returns></returns>
+        /// <param name="exception">The outermost exception.</param>
+        /// <returns>Each message in the chain, outermost first, each followed by a line break.</returns>
         static string Message(Exception exception)
         {
             var text = new System.Text.StringBuilder();

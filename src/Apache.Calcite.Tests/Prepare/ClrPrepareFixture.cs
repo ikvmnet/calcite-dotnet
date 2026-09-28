@@ -19,9 +19,10 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
     /// The schema and context the prepare tests plan against.
     /// </summary>
     /// <remarks>
-    /// Three tables, because the shapes differ where the port has broken: an <c>Object[]</c> row of several
-    /// columns, an <c>Object[]</c> row of one — which <c>JavaRowFormat.optimize</c> turns into the value
-    /// itself — and rows that are instances of a Java class, which take <c>PhysType</c>'s CUSTOM branch.
+    /// The tables cover three row shapes: an <c>Object[]</c> of several columns (<c>SALES</c>), an
+    /// <c>Object[]</c> of one column, which <c>JavaRowFormat.optimize</c> turns into the value itself
+    /// (<c>NUMS</c>), and instances of a Java class, which take <c>PhysType</c>'s <c>CUSTOM</c> branch
+    /// (<c>HR</c>).
     /// </remarks>
     static class ClrPrepareFixture
     {
@@ -59,8 +60,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// One column, which gives a scan a SCALAR physical type while the table still yields Object[].
-        /// That shape has broken twice.
+        /// One column, which gives a scan a <c>SCALAR</c> physical type while the table yields <c>Object[]</c>.
         /// </summary>
         sealed class OneColumnTable : AbstractTable, ScannableTable
         {
@@ -86,18 +86,18 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// Runs <paramref name="body"/> against a freshly built schema and context.
+        /// Runs <paramref name="body"/> against a newly built schema and prepare context.
         /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="sql">The statement, for the caller's own use.</param>
-        /// <param name="body"></param>
-        /// <param name="connectionProperties">Set on the connection configuration after the defaults, for a
-        /// test whose subject is a connection property.</param>
-        /// <returns></returns>
+        /// <typeparam name="T">The type <paramref name="body"/> returns.</typeparam>
+        /// <param name="sql">The statement; unused here, and available to the caller.</param>
+        /// <param name="body">The test, given the context and the root schema.</param>
+        /// <param name="connectionProperties">Applied to the connection properties after the defaults, for a
+        /// test of a connection property.</param>
+        /// <returns>What <paramref name="body"/> returns.</returns>
         /// <remarks>
-        /// The context is pushed onto <c>CalcitePrepare.Dummy</c>'s thread-local stack for the length of the
-        /// call, because Calcite's parse-to-rel reads it from there. A fresh schema per call, so one test
-        /// cannot see another's plan cache.
+        /// The context is pushed onto <c>CalcitePrepare.Dummy</c>'s thread-local stack for the duration of the
+        /// call, because Calcite's parse-to-rel reads it from there. Each call builds its own schema, so tests
+        /// share no cached state.
         /// </remarks>
         public static T WithContext<T>(string sql, Func<CalcitePrepare.Context, CalciteSchema, T> body, Action<java.util.Properties>? connectionProperties = null)
         {

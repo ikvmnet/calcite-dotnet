@@ -3,7 +3,7 @@
     <PropertyGroup>
         <TargetFrameworks>net8.0</TargetFrameworks>
         <Nullable>enable</Nullable>
-        <Description>Apache Calcite Adapter for ADO.NET database connections.</Description>
+        <Description>An Apache Calcite adapter that exposes any ADO.NET database as a Calcite schema and pushes filters, projections, joins, aggregations, sorts and set operations down to it. Includes support for SQL Server, SQLite, ODBC, OLE DB and INFORMATION_SCHEMA databases.</Description>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageIcon>icon.png</PackageIcon>
         <PackageTags>apache;calcite;ado.net;adapter;sql;ikvm</PackageTags>
@@ -25,11 +25,8 @@
     <ItemGroup>
         <PackageReference Include="IKVM" Version="8.16.1" />
         <PackageReference Include="IKVM.Java.Extensions" Version="8.16.1" />
-        <!-- Not PrivateAssets, deliberately. This package ships only buildTransitive, which is the folder that
-             carries build assets to consumers; marking it private disables the one mechanism it has, and a project
-             that references ours then compiles and fails at run time with `Could not load file or assembly
-             'calcite.core'`. The default PrivateAssets keeps `build` to ourselves and lets buildTransitive through,
-             which is what we want. -->
+        <!-- Not PrivateAssets: this package ships only buildTransitive assets, and marking it private stops
+             them reaching consumers, which then fail at run time loading 'calcite.core'. -->
         <PackageReference Include="IKVM.Maven.Sdk" Version="1.12.1" />
         <PackageReference Include="System.Data.OleDb" Version="10.0.11" />
         <MavenReference Include="org.apache.commons:commons-lang3" Version="3.18.0" />

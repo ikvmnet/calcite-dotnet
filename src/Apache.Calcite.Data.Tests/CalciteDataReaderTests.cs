@@ -19,11 +19,12 @@ namespace Apache.Calcite.Data.Tests
         const string MultiRowQuery = "SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(x, y)";
 
         /// <summary>
-        /// A column origin needs a real table, and DDL is how this suite gets one; see
-        /// <see cref="CalciteDdlTests"/>. Everything else here queries <c>VALUES</c>, which is nothing's
-        /// origin: Calcite gives such a column the alias as its <c>columnName</c> as well as its label,
-        /// so the two agree and a name test over a derived table cannot tell them apart.
+        /// A connection that accepts DDL, for tests that need a column with an origin table.
         /// </summary>
+        /// <remarks>
+        /// A column of <c>VALUES</c> has no origin, and Calcite reports its alias as both its column name and
+        /// its label, so only a column of a real table can tell the two apart.
+        /// </remarks>
         static readonly string ServerDdlConnectionString = new CalciteConnectionStringBuilder
         {
             Model = "inline:{\"version\":\"1.0\",\"defaultSchema\":\"adhoc\",\"schemas\":[{\"name\":\"adhoc\"}]}",
@@ -252,9 +253,9 @@ namespace Apache.Calcite.Data.Tests
             cmd.CommandText = "SELECT \"PostalCode\", \"PostalCode\" AS \"Foo\", \"City\" FROM \"labeltest\"";
             using var r = cmd.ExecuteReader();
 
-            // both projections have PostalCode as their origin column, so the origin name reports the
-            // first two as one name; the label is what tells them apart, and a consumer keying the
-            // schema by name — EF Core's FromSqlQueryingEnumerable.BuildIndexMap — throws on the duplicate
+            // the first two columns share the origin column PostalCode, so only the label tells them apart;
+            // a consumer that indexes columns by name, such as EF Core's FromSqlQueryingEnumerable.BuildIndexMap,
+            // throws on a duplicate
             Assert.Equal("PostalCode", r.GetName(0));
             Assert.Equal("Foo", r.GetName(1));
             Assert.Equal("City", r.GetName(2));

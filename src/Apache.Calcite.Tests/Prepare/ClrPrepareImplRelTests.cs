@@ -19,22 +19,22 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
 {
 
     /// <summary>
-    /// Running a plan that was built rather than parsed.
+    /// Preparing and running a plan built with <see cref="RelBuilder"/> rather than parsed from SQL.
     /// </summary>
     /// <remarks>
-    /// <c>CalcitePrepareImpl.prepare2_</c> has three entry points and this project long had one, because
-    /// <c>CalciteSession</c> only ever arrives with SQL text. The <c>rel</c> branch is what Calcite answers
-    /// <c>RelRunner</c> with, and it is where a .NET LINQ provider's translation would land: the
-    /// <c>queryable</c> branch cannot be ported, since <c>LixToRelTranslator</c> is package-private and
-    /// translates linq4j expression trees rather than <c>System.Linq.Expressions</c> ones.
+    /// This is the <c>rel</c> branch of <c>CalcitePrepareImpl.prepare2_</c>, which Calcite uses for
+    /// <c>RelRunner</c>. The <c>queryable</c> branch is not ported: <c>LixToRelTranslator</c> is package
+    /// private and translates linq4j expression trees, not <c>System.Linq.Expressions</c> ones.
     /// </remarks>
     public class ClrPrepareImplRelTests
     {
 
         /// <summary>
-        /// Puts the cursor convention's rules on the planner the plan was built with, which is the planner
-        /// <c>Prepare.optimize</c> reads off the root and therefore the one that chooses.
+        /// Adds the cursor convention's rules to the planner the plan was built with, which is the planner
+        /// <c>Prepare.optimize</c> takes from the root.
         /// </summary>
+        /// <param name="rel">A plan built against a planner that does not yet carry those rules.</param>
+        /// <returns><paramref name="rel"/>, unchanged.</returns>
         static RelNode Stocked(RelNode rel)
         {
             foreach (var rule in Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.Rules())
@@ -44,10 +44,10 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// Builds a plan with <see cref="RelBuilder"/>, runs it, and renders its rows.
+        /// Builds a plan with <see cref="RelBuilder"/>, runs it, and renders each row as text.
         /// </summary>
-        /// <param name="build"></param>
-        /// <returns></returns>
+        /// <param name="build">Builds the plan against a builder over the fixture's schema.</param>
+        /// <returns>The rows, a multi-column row written as its values joined with <c>|</c>, and a null as <c>null</c>.</returns>
         static List<string> Run(Func<RelBuilder, RelNode> build)
         {
             return ClrPrepareFixture.WithContext("", (context, rootSchema) =>
@@ -81,7 +81,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
             var rows = Run(b => b
                 .scan("SALES")
                 // a Java box, not a CLR int: RelBuilder.literal takes an Object and Calcite cannot make a
-                // constant from a cli.System.Int32, which is the same adapter invariant the convention keeps
+                // literal from a boxed System.Int32
                 .filter(b.call(SqlStdOperatorTable.GREATER_THAN, b.field("ID"), b.literal(java.lang.Integer.valueOf(4))))
                 .project(b.field("REGION"))
                 .build());
@@ -101,8 +101,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// A sort's collation is the one thing <c>prepare_</c> reads off the node rather than defaulting,
-        /// so it is worth a plan of its own.
+        /// A sort's collation is read from the root node rather than defaulted, as <c>prepare_</c> does.
         /// </summary>
         [Fact]
         public void Should_keep_a_sort_collation()
@@ -116,8 +115,8 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// A plan carries no statement kind and no dynamic parameters, and there is nothing to validate, so
-        /// it reports none of the three. That is Calcite's shape, not a simplification.
+        /// A built plan has no dynamic parameters and reports a <c>SELECT</c> statement type, as Calcite's
+        /// <c>rel</c> branch does.
         /// </summary>
         [Fact]
         public void Should_describe_a_plan_with_no_parameters_and_no_origins()
@@ -139,14 +138,9 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// A built plan can be read with await.
+        /// A built plan can be read through <c>BindAsync</c> as well as <c>Bind</c>; one signature serves both.
         /// </summary>
-        /// <remarks>
-        /// The same signature the synchronous tests above bind: a statement is planned once and answers
-        /// either <c>Bind</c> or <c>BindAsync</c>, so a plan built through <see cref="RelBuilder"/> rather
-        /// than parsed is asynchronous on request like any other. This test predates that and used to have to
-        /// ask for a second convention up front, which <c>PrepareRel</c> could not do.
-        /// </remarks>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async System.Threading.Tasks.Task Should_run_a_built_plan_asynchronously()
         {
@@ -173,7 +167,7 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// The limit is applied by the signature, so it holds however the plan was arrived at.
+        /// The signature applies <c>maxRowCount</c> to a built plan as it does to a parsed one.
         /// </summary>
         [Fact]
         public void Should_apply_max_row_count()

@@ -16,11 +16,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// Covers the row a scan hands to Calcite.
+    /// Tests <see cref="Utils.ObjectArrayRowBuilder"/>, which builds the row a scan hands to Calcite.
     /// </summary>
     /// <remarks>
     /// Calcite's enumerable convention reads a row as an <see cref="object"/> array with one element per
-    /// field, in row type order, holding values in Calcite's own representation. This is what builds one.
+    /// field, in row type order, holding values in Calcite's own representation.
     /// </remarks>
     public class ObjectArrayRowBuilderTests : IDisposable
     {
@@ -50,10 +50,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Returns a reader positioned on the first row of the given query.
+        /// Returns a reader positioned on the first row of the given query. The command is kept until the
+        /// test is disposed, because disposing it would close the reader.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">A SQLite query expected to return at least one row.</param>
+        /// <returns>An open reader already advanced onto the first row.</returns>
         DbDataReader Query(string sql)
         {
             var command = _connection.CreateCommand();
@@ -68,8 +69,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Returns the field list of a row type built from the given columns.
         /// </summary>
-        /// <param name="columns"></param>
-        /// <returns></returns>
+        /// <param name="columns">Each column's name and SQL type, in row order; every type is created not
+        /// null.</param>
+        /// <returns>The row type's <c>RelDataTypeField</c> list, as the row builder takes it.</returns>
         java.util.List Fields(params (string Name, SqlTypeName Type)[] columns)
         {
             var builder = _types.builder();
@@ -106,8 +108,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The field list decides how a value is read, not the provider: a column the provider surfaces one
-        /// way is brought to the type the plan was built against.
+        /// The field type, not the provider's type, decides how a value is read.
         /// </summary>
         [Fact]
         public void TheFieldTypeDecidesHowAValueIsRead()
@@ -157,8 +158,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The builder is a <c>Function0</c> because that is what Calcite's generated code calls; it has to
-        /// remain reachable through that interface.
+        /// The builder is callable as a <c>Function0</c>, the interface Calcite's generated code calls.
         /// </summary>
         [Fact]
         public void TheBuilderIsCallableAsAFunction0()

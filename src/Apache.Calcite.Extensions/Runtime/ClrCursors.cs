@@ -6,39 +6,33 @@ namespace Apache.Calcite.Extensions.Runtime
 {
 
     /// <summary>
-    /// Carries a cursor between the two ways a plan of the <c>ClrCursorConvention</c> can be opened.
+    /// Converts between a synchronous open and an awaiting open of a <c>ClrCursorConvention</c> plan, and
+    /// blocks on asynchronous cursor operations for callers that cannot await.
     /// </summary>
     /// <remarks>
-    /// A node of that convention has two bodies: one composes the opens that acquire synchronously, one the
-    /// opens that await their acquisition. The cursor they produce is the same cursor either way — it is
-    /// the <em>open</em> that differs, not what is opened — so crossing between the two is cheap in one
-    /// direction and a blocked thread in the other, and this is where both are written.
+    /// A node of the convention has a body that opens its cursor synchronously and one that awaits the open;
+    /// both produce the same cursor. <see cref="Completed{T}"/> turns a synchronous open into an awaiting one
+    /// without allocating. <see cref="Block{T}"/>, <see cref="BlockRead"/> and <see cref="BlockDispose"/>
+    /// block the calling thread on an awaiting operation.
     ///
-    /// <para><see cref="Completed{T}"/> is the cheap one: an open that acquired synchronously is already
-    /// done, and wrapping it in a completed <see cref="ValueTask{TResult}"/> allocates nothing.
-    /// <see cref="Block{T}"/> waits for an open that awaits, on the calling thread, with the
-    /// synchronization context suppressed <em>before</em> the open is called and not merely around the
-    /// wait — a continuation is captured at the moment of suspension, which is inside the call's synchronous
-    /// phase, so suppressing it afterwards is too late. That is why it takes the open as a delegate rather
-    /// than the task the open returns.</para>
-    ///
-    /// <para><b>Internal, and it stays internal</b>, for the reason <c>ClrSequences</c> is: it is what the
-    /// convention's own plans are built from, not a toolkit for an adapter.</para>
+    /// <para>Every blocking member clears the synchronization context before it starts the operation, not
+    /// just around the wait. A continuation captures the context when the operation first suspends, which
+    /// happens inside the call, and a source such as a table's awaiting scan may not use
+    /// <c>ConfigureAwait(false)</c>; blocking with a single-threaded context in place would then deadlock.
+    /// That is why <see cref="Block{T}"/> takes the open as a delegate rather than the task it returns.</para>
     /// </remarks>
     static class ClrCursors
     {
 
         /// <summary>
-        /// Returns a cursor that was opened synchronously as the result of an open that awaits.
+        /// Wraps a cursor that was opened synchronously as the completed result of an awaiting open.
         /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="cursor"></param>
-        /// <returns></returns>
+        /// <typeparam name="T">The row type.</typeparam>
+        /// <param name="cursor">The opened cursor.</param>
+        /// <returns>A completed task holding <paramref name="cursor"/>.</returns>
         /// <remarks>
-        /// What a node's default <c>ImplementAsync</c> is over its <c>Implement</c>, and what an operator
-        /// that acquires nothing at open answers from its awaiting body. Nothing here suspends and nothing
-        /// is promised that cannot be delivered: the cursor's own <c>ReadAsync</c> still awaits wherever a
-        /// row has to be waited for.
+        /// Used by a node's default <c>ImplementAsync</c> and by operators that do no work at open. The
+        /// cursor's own <c>ReadAsync</c> still awaits where a row has to be waited for.
         /// </remarks>
         public static ValueTask<IClrCursor<T>> Completed<T>(IClrCursor<T> cursor)
         {
@@ -48,19 +42,14 @@ namespace Apache.Calcite.Extensions.Runtime
         }
 
         /// <summary>
-        /// Runs an open that awaits and blocks for the cursor it opens.
+        /// Runs an awaiting open and blocks the calling thread until it has produced its cursor.
         /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="open">The open, called here so that the context is suppressed before it starts.</param>
-        /// <returns></returns>
+        /// <typeparam name="T">The row type.</typeparam>
+        /// <param name="open">The open. It is called here, after the synchronization context is cleared.</param>
+        /// <returns>The opened cursor.</returns>
         /// <remarks>
-        /// <b>This blocks a thread for the whole of the acquisition</b>, and there is no version of it that
-        /// does not: a synchronous open has nowhere to suspend. A node whose only real body is the awaiting
-        /// one writes its <c>Implement</c> as a delegation through this, and that is a decision made where
-        /// it can be read.
-        ///
-        /// <para>The token is <see cref="CancellationToken.None"/>, because a synchronous open has none to
-        /// give.</para>
+        /// A node whose only real body is the awaiting one implements its synchronous body through this. The
+        /// open is passed <see cref="CancellationToken.None"/>, since a synchronous open has no token.
         /// </remarks>
         public static IClrCursor<T> Block<T>(Func<CancellationToken, ValueTask<IClrCursor<T>>> open)
         {
@@ -83,16 +72,15 @@ namespace Apache.Calcite.Extensions.Runtime
         }
 
         /// <summary>
-        /// Reads an open that awaits a typed cursor as one that awaits the untyped base.
+        /// Converts an awaiting open of a typed cursor into an awaiting open of an untyped one.
         /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="open"></param>
-        /// <returns></returns>
+        /// <typeparam name="T">The row type.</typeparam>
+        /// <param name="open">The typed open.</param>
+        /// <returns>The same open, typed as <see cref="IClrCursor"/>.</returns>
         /// <remarks>
-        /// What the awaiting root ends in. The synchronous root converts by reference and needs nothing; a
-        /// <see cref="ValueTask{TResult}"/> is invariant, so the awaiting root has to go through one
-        /// continuation to change the type parameter. It costs a state machine only when the open actually
-        /// suspends.
+        /// The awaiting root of a plan ends in this. <see cref="ValueTask{TResult}"/> is invariant, so the
+        /// conversion needs a continuation; it allocates a state machine only when the open has not already
+        /// completed.
         /// </remarks>
         public static ValueTask<IClrCursor> Untyped<T>(ValueTask<IClrCursor<T>> open)
         {
@@ -108,14 +96,13 @@ namespace Apache.Calcite.Extensions.Runtime
         }
 
         /// <summary>
-        /// Advances a cursor whose rows have to be awaited for, blocking for the row with the context
-        /// suppressed before the advance runs.
+        /// Advances a cursor through its <see cref="IClrCursor.ReadAsync"/>, blocking the calling thread for
+        /// the result.
         /// </summary>
-        /// <param name="cursor"></param>
-        /// <returns></returns>
+        /// <param name="cursor">The cursor to advance.</param>
+        /// <returns>What <see cref="IClrCursor.ReadAsync"/> returned.</returns>
         /// <remarks>
-        /// What a cursor over an asynchronous source writes its <see cref="ClrCursor.Read"/> as. Every
-        /// wait here suppresses the context before the call for the reason the class remarks give.
+        /// A cursor over an asynchronous-only source implements <see cref="ClrCursor.Read"/> with this.
         /// </remarks>
         internal static bool BlockRead(IClrCursor cursor)
         {
@@ -136,10 +123,9 @@ namespace Apache.Calcite.Extensions.Runtime
         }
 
         /// <summary>
-        /// Disposes something whose disposal has to be awaited for, blocking for it with the context
-        /// suppressed before the disposal runs.
+        /// Disposes an <see cref="IAsyncDisposable"/>, blocking the calling thread until disposal completes.
         /// </summary>
-        /// <param name="disposable"></param>
+        /// <param name="disposable">The object to dispose.</param>
         internal static void BlockDispose(IAsyncDisposable disposable)
         {
             var context = SynchronizationContext.Current;
@@ -162,12 +148,12 @@ namespace Apache.Calcite.Extensions.Runtime
         }
 
         /// <summary>
-        /// Waits for a <see cref="ValueTask{TResult}"/> the calling thread cannot await.
+        /// Blocks the calling thread on a <see cref="ValueTask{TResult}"/> and returns its result.
         /// </summary>
         /// <remarks>
-        /// One that has not completed cannot be blocked on directly — its awaiter may be backed by a
-        /// recyclable source — so it goes through <see cref="ValueTask{TResult}.AsTask"/>, which allocates.
-        /// The completed case is the common one and skips that.
+        /// An incomplete <see cref="ValueTask{TResult}"/> may be backed by a reusable source that does not
+        /// support blocking on its awaiter, so it is converted with <see cref="ValueTask{TResult}.AsTask"/>
+        /// first. A completed one is read directly.
         /// </remarks>
         internal static TResult Wait<TResult>(ValueTask<TResult> task)
         {
@@ -175,11 +161,10 @@ namespace Apache.Calcite.Extensions.Runtime
         }
 
         /// <summary>
-        /// Waits for a <see cref="ValueTask"/> the calling thread cannot await.
+        /// Blocks the calling thread on a <see cref="ValueTask"/>.
         /// </summary>
         /// <remarks>
-        /// The completed case is still observed rather than dropped, because that is what surfaces a
-        /// failure.
+        /// A completed task is still observed, so that a failure is rethrown.
         /// </remarks>
         internal static void Wait(ValueTask task)
         {

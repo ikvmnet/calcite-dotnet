@@ -12,7 +12,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
 {
 
     /// <summary>
-    /// Implementation of <see cref="Project"/> in <see cref="AdoConvention"/> calling convention.
+    /// A projection pushed down to the source as a select list. Mirrors <c>JdbcRules.JdbcProject</c>.
     /// </summary>
     public class AdoProject : Project, AdoRel
     {
@@ -20,11 +20,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="input"></param>
-        /// <param name="projects"></param>
-        /// <param name="rowType"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traitSet">The traits, whose convention is an <see cref="AdoConvention"/>.</param>
+        /// <param name="input">The input.</param>
+        /// <param name="projects">The projected expressions.</param>
+        /// <param name="rowType">The output row type.</param>
         public AdoProject(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, List projects, RelDataType rowType) :
             base(cluster, traitSet, ImmutableList.of(), input, projects, rowType, ImmutableSet.of())
         {
@@ -37,7 +37,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
             return new AdoProject(getCluster(), traitSet, input, projects, rowType);
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns the base cost multiplied by <see cref="AdoConvention.CostMultiplier"/>.
+        /// </summary>
+        /// <param name="planner">The planner.</param>
+        /// <param name="mq">The metadata query.</param>
+        /// <returns>The cost, or <see langword="null"/>.</returns>
         public override RelOptCost? computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq)
         {
             return base.computeSelfCost(planner, mq)?.multiplyBy(AdoConvention.CostMultiplier);

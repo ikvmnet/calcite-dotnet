@@ -6,9 +6,13 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// The exception that is thrown when the Apache Calcite ADO.NET adapter encounters an error
-    /// while accessing or querying an ADO.NET-backed schema.
+    /// The exception the ADO.NET adapter throws for a configuration it cannot use, metadata it cannot read, or a
+    /// statement the provider rejects.
     /// </summary>
+    /// <remarks>
+    /// It derives from Calcite's <see cref="CalciteException"/>, a Java <c>RuntimeException</c>. Where it wraps a
+    /// provider exception, that exception is the cause.
+    /// </remarks>
     public class AdoCalciteException : CalciteException
     {
 

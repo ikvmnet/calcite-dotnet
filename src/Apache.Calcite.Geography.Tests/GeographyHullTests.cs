@@ -14,13 +14,8 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// The convex hull and simplification, both of which S2 already had.
+    /// Tests <c>CLR_ST_GEOG_CONVEXHULL</c> and <c>CLR_ST_GEOG_SIMPLIFY</c>.
     /// </summary>
-    /// <remarks>
-    /// The rest of #86's step five, less buffer, triangulation and grids. That issue deferred the group as
-    /// large on the reasoning that each is a different algorithm geodesically, which is true — and
-    /// <c>S2ConvexHullQuery</c> and <c>S2Polygon.initToSimplified</c> are those algorithms, already written.
-    /// </remarks>
     public class GeographyHullTests
     {
 
@@ -30,7 +25,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Four corners of a box hull to the box.
+        /// The hull of a box's four corners spans the box.
         /// </summary>
         [Fact]
         public void ShouldHullPointsToTheirBox()
@@ -49,10 +44,9 @@ namespace Apache.Calcite.Geography.Tests
         /// A point inside the geodesic hull and outside the planar one.
         /// </summary>
         /// <remarks>
-        /// The hull's northern edge runs between two points on the 60th parallel and is a geodesic, so it
-        /// bows poleward — by more than a degree across sixty degrees of longitude. A point just north of the
-        /// parallel is therefore inside the hull on the Earth and outside the hull on a map, and the two
-        /// answers are asserted side by side.
+        /// The hull's northern edge is a geodesic between two points on the 60th parallel, and across sixty
+        /// degrees of longitude it bows more than a degree toward the pole, so a point just north of the
+        /// parallel is inside the geodesic hull and outside the planar one.
         /// </remarks>
         [Fact]
         public void ShouldHullFurtherNorthThanAPlanarHullDoes()
@@ -70,7 +64,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The hull of a shape contains the shape.
+        /// The hull of a shape covers the shape and fills its holes.
         /// </summary>
         [Fact]
         public void ShouldContainWhatItWasBuiltFrom()
@@ -84,7 +78,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Nothing to hull is an empty hull.
+        /// The hull of an empty geometry is empty, and of null is null.
         /// </summary>
         [Fact]
         public void ShouldHullNothingToNothing()
@@ -94,7 +88,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Simplifying removes vertices and keeps the shape within the tolerance.
+        /// Simplifying removes vertices that lie within the tolerance of the simplified edge.
         /// </summary>
         [Fact]
         public void ShouldRemoveVerticesWithinTheTolerance()
@@ -113,7 +107,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A tolerance of nothing removes nothing that matters.
+        /// A tolerance of a millimetre leaves a square's area unchanged.
         /// </summary>
         [Fact]
         public void ShouldKeepTheShapeUnderATinyTolerance()
@@ -126,7 +120,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Simplification is an areal operation, as the overlay set is.
+        /// Simplifying a geometry with no area returns null, as the overlay operations do; so does a null
+        /// argument.
         /// </summary>
         [Fact]
         public void ShouldDeclineToSimplifyAnythingWithoutAnArea()

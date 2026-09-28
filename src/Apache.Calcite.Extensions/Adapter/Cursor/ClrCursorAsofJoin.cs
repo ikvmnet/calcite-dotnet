@@ -21,27 +21,27 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// convention.
     /// </summary>
     /// <remarks>
-    /// An ASOF join takes, for each left row, the single right row with the same key whose timestamp is
-    /// nearest in the direction the match condition gives. The condition is restricted to equalities plus
-    /// that one comparison, which is why the node needs the field index and the direction and nothing else.
+    /// Mirrors <c>EnumerableAsofJoin</c>. For each left row the join takes the one right row with an equal key
+    /// that satisfies the match condition and is nearest on the compared timestamp field. The condition is
+    /// equalities only; the match condition is a single comparison.
     ///
-    /// <para>Both inputs are drained at the open, the left and then the right, so the right is handed to
-    /// the operator as an open of the body's own kind rather than as a cursor: <c>asofJoin</c> acquires it
-    /// only once the left has been drained and closed.</para>
+    /// <para>Both inputs are drained when the node's cursor is opened, the left and then the right, as in
+    /// linq4j's <c>asofJoin</c>. The right input is passed as an opener so it is acquired only after the left
+    /// has been drained and closed.</para>
     /// </remarks>
     public class ClrCursorAsofJoin : AsofJoin, ClrCursorRel
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorAsofJoin"/>.
+        /// Creates a <see cref="ClrCursorAsofJoin"/>, deriving its collation as Calcite does for a hash join.
         /// </summary>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <param name="condition"></param>
-        /// <param name="matchCondition"></param>
-        /// <param name="variablesSet"></param>
-        /// <param name="joinType"></param>
-        /// <returns></returns>
+        /// <param name="left">The left input.</param>
+        /// <param name="right">The right input.</param>
+        /// <param name="condition">The equi-join condition.</param>
+        /// <param name="matchCondition">The comparison that selects the nearest right row.</param>
+        /// <param name="variablesSet">The correlation variables set by this join.</param>
+        /// <param name="joinType">The join type.</param>
+        /// <returns>The new node.</returns>
         public static ClrCursorAsofJoin Create(RelNode left, RelNode right, RexNode condition, RexNode matchCondition, java.util.Set variablesSet, JoinRelType joinType)
         {
             var cluster = left.getCluster();
@@ -53,16 +53,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Initializes a new instance. <see cref="Create"/> is preferred, as it derives the trait set.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traits"></param>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <param name="condition"></param>
-        /// <param name="matchCondition"></param>
-        /// <param name="variablesSet"></param>
-        /// <param name="joinType"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traits">The trait set, which carries <see cref="ClrCursorConvention"/>.</param>
+        /// <param name="left">The left input.</param>
+        /// <param name="right">The right input.</param>
+        /// <param name="condition">The equi-join condition.</param>
+        /// <param name="matchCondition">The comparison that selects the nearest right row.</param>
+        /// <param name="variablesSet">The correlation variables set by this join.</param>
+        /// <param name="joinType">The join type.</param>
         public ClrCursorAsofJoin(RelOptCluster cluster, RelTraitSet traits, RelNode left, RelNode right, RexNode condition, RexNode matchCondition, java.util.Set variablesSet, JoinRelType joinType) :
             base(cluster, traits, com.google.common.collect.ImmutableList.of(), left, right, condition, matchCondition, variablesSet, joinType)
         {
@@ -70,7 +70,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
-        /// <remarks>This form knows nothing of the match condition, so it is not the one to call.</remarks>
+        /// <remarks>Always throws, as in Calcite: this overload cannot carry the match condition.</remarks>
         public override Join copy(RelTraitSet traitSet, RexNode conditionExpr, RelNode left, RelNode right, JoinRelType joinType, bool semiJoinDone)
         {
             throw new java.lang.RuntimeException("This method should not be called");
@@ -110,13 +110,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the comparator ordering two rows of the right input on their timestamp field, so that the
-        /// nearer of two candidates compares greater.
+        /// Returns a comparator ordering right rows on their timestamp field, ascending for <c>&lt;</c> and
+        /// <c>&lt;=</c> and descending for <c>&gt;</c> and <c>&gt;=</c>, nulls first. The join keeps the
+        /// candidate that compares greatest.
         /// </summary>
-        /// <param name="rightCollectionType">type of the rows of the right input</param>
-        /// <param name="kind">comparison kind</param>
-        /// <param name="timestampFieldIndex">index of the timestamp field</param>
-        /// <returns></returns>
+        /// <param name="rightCollectionType">The physical type of the right input's rows.</param>
+        /// <param name="kind">The match condition's comparison kind.</param>
+        /// <param name="timestampFieldIndex">The index of the timestamp field in the right row.</param>
+        /// <returns>An expression producing the comparator.</returns>
+        /// <remarks>Mirrors <c>EnumerableAsofJoin.generateTimestampComparator</c>.</remarks>
         static Expression GenerateTimestampComparator(ClrPhysType rightCollectionType, SqlKind kind, int timestampFieldIndex)
         {
             var direction = kind.name() switch
@@ -135,15 +137,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Returns the index, within the right input's row, of the field the match condition compares.
         /// </summary>
-        /// <param name="call"></param>
-        /// <returns></returns>
+        /// <param name="call">The match condition.</param>
+        /// <returns>The field index relative to the right input.</returns>
         int GetTimestampFieldIndex(RexCall call)
         {
             var leftFieldCount = getLeft().getRowType().getFieldCount();
             var leftInputRef = (RexInputRef)call.getOperands().get(0);
             var rightInputRef = (RexInputRef)call.getOperands().get(1);
 
-            // one of the two comes from each input, and which is which is not known in advance
+            // one operand comes from each input, in either order
             return leftInputRef.getIndex() < leftFieldCount
                 ? rightInputRef.getIndex() - leftFieldCount
                 : leftInputRef.getIndex() - leftFieldCount;
@@ -157,7 +159,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
 
-            // an ASOF join's condition is equalities and the match condition, and nothing else
+            // an ASOF join's condition holds only equalities
             var info = analyzeCondition();
             if (info.nonEquiConditions.isEmpty() == false)
                 throw new java.lang.AssertionError();
@@ -165,15 +167,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var call = (RexCall)getMatchCondition();
             var timestampComparator = GenerateTimestampComparator(rightResult.PhysType, call.getKind(), GetTimestampFieldIndex(call));
 
-            // the rows are boxed for the same reason a hash join boxes them: the selector and the predicate
-            // Calcite builds are against boxed rows, and a row here is compared to null
+            // the row types are the physical types' boxed rows: the selector and predicate are built against
+            // boxed rows, and an outer join compares a row to null
             var leftType = leftResult.PhysType.RowType;
             var rightType = rightResult.PhysType.RowType;
             var rowType = physType.RowType;
 
-            // without nulls, as Calcite keys an ASOF join and has since 1.41: a key of two or more fields is
-            // null as a whole where any field of it is null, so a row with a null in its key matches nothing
-            // rather than matching another row with a null in the same place
+            // keyed without nulls, as Calcite keys an ASOF join: a key with any null field is null as a whole,
+            // so a row with a null in its key matches nothing
             var leftKey = leftResult.PhysType.GenerateAccessorWithoutNulls(info.leftKeys);
             var rightKey = rightResult.PhysType.GenerateAccessorWithoutNulls(info.rightKeys);
 
@@ -201,7 +202,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
 
-            // an ASOF join's condition is equalities and the match condition, and nothing else
+            // an ASOF join's condition holds only equalities
             var info = analyzeCondition();
             if (info.nonEquiConditions.isEmpty() == false)
                 throw new java.lang.AssertionError();
@@ -209,15 +210,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var call = (RexCall)getMatchCondition();
             var timestampComparator = GenerateTimestampComparator(rightResult.PhysType, call.getKind(), GetTimestampFieldIndex(call));
 
-            // the rows are boxed for the same reason a hash join boxes them: the selector and the predicate
-            // Calcite builds are against boxed rows, and a row here is compared to null
+            // the row types are the physical types' boxed rows: the selector and predicate are built against
+            // boxed rows, and an outer join compares a row to null
             var leftType = leftResult.PhysType.RowType;
             var rightType = rightResult.PhysType.RowType;
             var rowType = physType.RowType;
 
-            // without nulls, as Calcite keys an ASOF join and has since 1.41: a key of two or more fields is
-            // null as a whole where any field of it is null, so a row with a null in its key matches nothing
-            // rather than matching another row with a null in the same place
+            // keyed without nulls, as Calcite keys an ASOF join: a key with any null field is null as a whole,
+            // so a row with a null in its key matches nothing
             var leftKey = leftResult.PhysType.GenerateAccessorWithoutNulls(info.leftKeys);
             var rightKey = rightResult.PhysType.GenerateAccessorWithoutNulls(info.rightKeys);
 

@@ -7,12 +7,18 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Represents a collection of parameters associated with a <see cref="CalciteCommand"/>. This class cannot be inherited.
+    /// Represents the parameters of a <see cref="CalciteCommand"/> or <see cref="CalciteBatchCommand"/>. This
+    /// class cannot be inherited.
     /// </summary>
     /// <remarks>
-    /// The order in which <see cref="CalciteParameter"/> instances are added to this collection
-    /// determines the order in which they are bound to positional <c>?</c> placeholders in the SQL
-    /// text of the owning <see cref="CalciteCommand"/>.
+    /// <para>
+    /// A parameter's position in the collection decides which positional <c>?</c> placeholder in the command
+    /// text it binds to: the first parameter binds to the first placeholder, and so on.
+    /// </para>
+    /// <para>
+    /// Only <see cref="CalciteParameter"/> instances can be added. Lookups by name compare
+    /// <see cref="DbParameter.ParameterName"/> ignoring case and use the first match.
+    /// </para>
     /// </remarks>
     public sealed class CalciteParameterCollection : DbParameterCollection
     {
@@ -27,6 +33,8 @@ namespace Apache.Calcite.Data
         public override object SyncRoot => _syncRoot;
 
         /// <inheritdoc />
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidCastException"><paramref name="value"/> is not a <see cref="CalciteParameter"/>.</exception>
         public override int Add(object value)
         {
             var p = AsParameter(value);
@@ -50,6 +58,10 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <exception cref="ArgumentNullException"><paramref name="values"/> or one of its elements is
+        /// <see langword="null"/>.</exception>
+        /// <exception cref="InvalidCastException">An element is not a <see cref="CalciteParameter"/>. Elements before
+        /// it have already been added.</exception>
         public override void AddRange(Array values)
         {
             if (values is null)
@@ -72,6 +84,9 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// The name is compared ignoring case.
+        /// </remarks>
         public override bool Contains(string value)
         {
             return IndexOf(value) >= 0;
@@ -96,6 +111,7 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <exception cref="IndexOutOfRangeException">No parameter has that name.</exception>
         protected override DbParameter GetParameter(string parameterName)
         {
             var i = IndexOf(parameterName);
@@ -112,6 +128,9 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// The name is compared ignoring case, and the first match is returned.
+        /// </remarks>
         public override int IndexOf(string parameterName)
         {
             for (var i = 0; i < _items.Count; i++)
@@ -122,12 +141,17 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <exception cref="ArgumentNullException"><paramref name="value"/> is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidCastException"><paramref name="value"/> is not a <see cref="CalciteParameter"/>.</exception>
         public override void Insert(int index, object value)
         {
             _items.Insert(index, AsParameter(value));
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Does nothing where <paramref name="value"/> is not in the collection.
+        /// </remarks>
         public override void Remove(object value)
         {
             if (value is CalciteParameter p)
@@ -141,6 +165,9 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Does nothing where no parameter has that name.
+        /// </remarks>
         public override void RemoveAt(string parameterName)
         {
             var i = IndexOf(parameterName);
@@ -155,6 +182,9 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Where no parameter has that name, <paramref name="value"/> is added to the end of the collection.
+        /// </remarks>
         protected override void SetParameter(string parameterName, DbParameter value)
         {
             var i = IndexOf(parameterName);
@@ -165,10 +195,13 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Returns the underlying list of parameters.
+        /// Gets the parameters in binding order.
         /// </summary>
         internal IReadOnlyList<CalciteParameter> Items => _items;
 
+        /// <summary>
+        /// Returns <paramref name="value"/> as a <see cref="CalciteParameter"/>, refusing null and any other type.
+        /// </summary>
         static CalciteParameter AsParameter(object? value)
         {
             if (value is null)

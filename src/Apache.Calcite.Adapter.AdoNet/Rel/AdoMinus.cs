@@ -7,7 +7,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
 {
 
     /// <summary>
-    /// Minus (EXCEPT) operator implemented in the <see cref="AdoConvention"/> calling convention.
+    /// An <c>EXCEPT</c> pushed down to the source. Mirrors <c>JdbcRules.JdbcMinus</c>.
     /// </summary>
     public class AdoMinus : Minus, AdoRel
     {
@@ -15,10 +15,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="inputs"></param>
-        /// <param name="all"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traitSet">The traits, whose convention is an <see cref="AdoConvention"/>.</param>
+        /// <param name="inputs">The inputs.</param>
+        /// <param name="all">Whether duplicates are kept (<c>EXCEPT ALL</c>).</param>
         public AdoMinus(RelOptCluster cluster, RelTraitSet traitSet, List inputs, bool all) :
             base(cluster, traitSet, inputs, all)
         {

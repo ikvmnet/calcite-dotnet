@@ -7,19 +7,18 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
-    /// The rules that put a plan into the <see cref="ClrCursorConvention"/> calling convention.
+    /// The rules that convert a plan to the <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <c>EnumerableRules</c>, and the same shape: a field per rule, a list of the ones
-    /// registered by default, and an accessor returning it. A field rather than a
-    /// factory call, because a caller has to be able to name one to remove it, and
-    /// <c>RelOptPlanner.removeRule</c> takes the rule itself.
+    /// Mirrors <c>EnumerableRules</c>: a field per rule, so that a caller can pass one to
+    /// <c>RelOptPlanner.removeRule</c>, and <see cref="Rules"/> returning those registered by default.
     ///
-    /// <para><b>The list is <c>EnumerableRules.ENUMERABLE_RULES</c>, in Calcite's order</b>, with the same
-    /// three rules kept out of it for a caller to add — the sorted aggregate, the batch nested loop join and
-    /// the limit sort — and the interpreter's beside them. The two converters against
-    /// <c>EnumerableConvention</c> follow. MATCH_RECOGNIZE is the one node this convention cannot write, and
-    /// Calcite plans it under a converter.</para>
+    /// <para><see cref="Rules"/> corresponds to <c>EnumerableRules.ENUMERABLE_RULES</c> plus the two converters
+    /// between this convention and <c>EnumerableConvention</c>. It has no table modification or
+    /// <c>MATCH_RECOGNIZE</c> rule, because this convention has no such nodes; those are left to
+    /// <c>EnumerableConvention</c> and reach this convention through a converter. As in Calcite, the sorted
+    /// aggregate, batch nested loop join and limit sort rules are not in the list, and neither is the
+    /// interpreter rule; a caller adds them explicitly.</para>
     /// </remarks>
     public static class ClrCursorRules
     {
@@ -61,7 +60,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         public static readonly RelOptRule ClrCursorMergeJoinRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorMergeJoinRule.Create();
 
         /// <summary>
-        /// Rule that converts a join of two cross-input inequalities to a
+        /// Rule that converts a join on two inequalities between the inputs to a
         /// <see cref="ClrCursorIEJoin"/>.
         /// </summary>
         public static readonly RelOptRule ClrCursorIEJoinRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorIEJoinRule.Create();
@@ -142,11 +141,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="ClrCursorLimitSort"/>.
         /// </summary>
         /// <remarks>
-        /// Not in what <see cref="Rules"/> returns, because <c>ENUMERABLE_LIMIT_SORT_RULE</c> is not in
-        /// <c>ENUMERABLE_RULES</c>: it is one of the three rule fields Calcite declares and leaves out of
-        /// the list, with <c>ENUMERABLE_SORTED_AGGREGATE_RULE</c> and
-        /// <c>ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE</c>, and nothing in core turns any of them on. A caller
-        /// turns this on to sort only as far as the fetch requires rather than sorting and then discarding.
+        /// Not in <see cref="Rules"/>, as <c>ENUMERABLE_LIMIT_SORT_RULE</c> is not in <c>ENUMERABLE_RULES</c>.
+        /// Add it to have a sort with a fetch keep only as many rows as the fetch needs rather than sorting its
+        /// whole input.
         /// </remarks>
         public static readonly RelOptRule ClrCursorLimitSortRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorLimitSortRule.Create();
 
@@ -166,22 +163,24 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         public static readonly RelOptRule ClrCursorTableSpoolRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorTableSpoolRule.Create();
 
         /// <summary>
-        /// Rule that turns a filter of this convention into a calc.
+        /// Rule that converts a <see cref="ClrCursorFilter"/> to a <see cref="ClrCursorCalc"/>.
         /// </summary>
         public static readonly RelOptRule ClrCursorFilterToCalcRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorFilterToCalcRule.Create();
 
         /// <summary>
-        /// Rule that turns a project of this convention into a calc.
+        /// Rule that converts a <see cref="ClrCursorProject"/> to a <see cref="ClrCursorCalc"/>.
         /// </summary>
         public static readonly RelOptRule ClrCursorProjectToCalcRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorProjectToCalcRule.Create();
 
         /// <summary>
-        /// Rule that reads a plan of <c>EnumerableConvention</c> as one of this convention.
+        /// Rule that converts a plan of <c>EnumerableConvention</c> to this convention, through an
+        /// <see cref="EnumerableToClrCursorConverter"/>.
         /// </summary>
         public static readonly RelOptRule EnumerableToClrCursorConverterRule = Apache.Calcite.Extensions.Adapter.Cursor.EnumerableToClrCursorConverterRule.Create();
 
         /// <summary>
-        /// Rule that reads a plan of this convention as one of <c>EnumerableConvention</c>.
+        /// Rule that converts a plan of this convention to <c>EnumerableConvention</c>, through a
+        /// <see cref="ClrCursorToEnumerableConverter"/>.
         /// </summary>
         public static readonly RelOptRule ClrCursorToEnumerableConverterRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorToEnumerableConverterRule.Create();
 
@@ -189,20 +188,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// Rule that converts a join to a <see cref="ClrCursorBatchNestedLoopJoin"/>.
         /// </summary>
         /// <remarks>
-        /// Not in what <see cref="Rules"/> returns, because <c>ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE</c> is
-        /// not in <c>ENUMERABLE_RULES</c>: a caller turns it on, and chooses the batch size with
-        /// <see cref="ClrCursorBatchNestedLoopJoinRule.Create(int)"/>.
+        /// Not in <see cref="Rules"/>, as <c>ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE</c> is not in
+        /// <c>ENUMERABLE_RULES</c>. To choose the batch size, create the rule with
+        /// <see cref="Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorBatchNestedLoopJoinRule.Create(int)"/> instead.
         /// </remarks>
         public static readonly RelOptRule ClrCursorBatchNestedLoopJoinRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorBatchNestedLoopJoinRule.Create();
 
         /// <summary>
-        /// Rule that reads a plan of <c>BindableConvention</c> as one of this convention, by interpreting it.
+        /// Rule that converts a plan of <c>BindableConvention</c> to this convention by interpreting it.
         /// </summary>
         /// <remarks>
-        /// Not in what <see cref="Rules"/> returns, because <c>TO_INTERPRETER</c> is not in
-        /// <c>ENUMERABLE_RULES</c>: Calcite registers it from <c>RelOptUtil.registerDefaultRules</c>, which
-        /// registers Calcite's own. A caller adds this one to have an interpreted node land here rather than
-        /// in <c>EnumerableConvention</c> under a converter.
+        /// Not in <see cref="Rules"/>, as <c>EnumerableRules.TO_INTERPRETER</c> is not in
+        /// <c>ENUMERABLE_RULES</c>; <c>RelOptUtil.registerDefaultRules</c> registers Calcite's. Add this rule to
+        /// have an interpreted plan converted directly to this convention rather than to
+        /// <c>EnumerableConvention</c>.
         /// </remarks>
         public static readonly RelOptRule ClrCursorInterpreterRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorInterpreterRule.Create();
 
@@ -211,14 +210,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="ClrCursorSortedAggregate"/>.
         /// </summary>
         /// <remarks>
-        /// Not in what <see cref="Rules"/> returns, because <c>ENUMERABLE_SORTED_AGGREGATE_RULE</c> is not
-        /// in <c>ENUMERABLE_RULES</c>: a caller turns it on. It is chosen where a query wants its output
-        /// ordered by the group key over an input carrying that collation.
+        /// Not in <see cref="Rules"/>, as <c>ENUMERABLE_SORTED_AGGREGATE_RULE</c> is not in
+        /// <c>ENUMERABLE_RULES</c>.
         /// </remarks>
         public static readonly RelOptRule ClrCursorSortedAggregateRule = Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorSortedAggregateRule.Create();
 
         /// <summary>
-        /// The rules registered by default, in Calcite's order.
+        /// The rules <see cref="Rules"/> returns.
         /// </summary>
         static readonly IReadOnlyList<RelOptRule> RuleList =
         [
@@ -252,15 +250,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         ];
 
         /// <summary>
-        /// The rules that turn a project or a filter into a calc, to be run after <see cref="Rules"/>.
+        /// The rules <see cref="CalcRules"/> returns: <c>RelOptRules.CALC_RULES</c> without
+        /// <c>Bindables.FROM_NONE_RULE</c>, with this convention's three calc rules in place of Calcite's.
         /// </summary>
-        /// <remarks>
-        /// The counterpart of <c>RelOptRules.CALC_RULES</c>, and a pass of its own for the reason
-        /// <c>Programs.standard</c> runs Calcite's as one: a project and a calc cover the same rows and <c>VolcanoCost</c> compares nothing else, so
-        /// the rewrite has to be a pass of its own after the planner, and it cannot be a planner rule anyway
-        /// because <c>VolcanoPlanner.addRule</c> does not register a <c>TransformationRule</c>'s operand
-        /// against a <c>PhysicalNode</c>.
-        /// </remarks>
         static readonly IReadOnlyList<RelOptRule> CalcRuleList =
         [
             ClrCursorCalcRule,
@@ -274,18 +266,25 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         ];
 
         /// <summary>
-        /// Returns the rules that put a plan into this convention.
+        /// Returns the rules to register on a planner to convert a plan to this convention.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The default rules, the counterpart of <c>EnumerableRules.ENUMERABLE_RULES</c>.</returns>
         public static IReadOnlyList<RelOptRule> Rules()
         {
             return RuleList;
         }
 
         /// <summary>
-        /// Returns the rules that turn a project or a filter into a calc.
+        /// Returns the rules that convert projects and filters to calcs and merge calcs.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The calc rules, the counterpart of <c>RelOptRules.CALC_RULES</c>.</returns>
+        /// <remarks>
+        /// Run these as a hep pass after the planner, as <c>Programs.standard</c> runs Calcite's; a plan that
+        /// still holds a <see cref="ClrCursorProject"/> or <see cref="ClrCursorFilter"/> cannot be implemented.
+        /// They do not work as planner rules: <c>VolcanoPlanner</c> does not match a
+        /// <c>TransformationRule</c>'s operand against a physical node, and the planner's cost model, which
+        /// compares row counts only, never prefers a calc over the nodes it replaces.
+        /// </remarks>
         public static IReadOnlyList<RelOptRule> CalcRules()
         {
             return CalcRuleList;

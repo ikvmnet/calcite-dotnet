@@ -21,12 +21,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
     /// <remarks>
-    /// <c>EnumerableIEJoin</c>. The condition is exactly two conjunctions, each an inequality between one
-    /// field of the left input and one field of the right; the third and later conjunctions of a wider
-    /// condition are left to a calc above, by the rule.
+    /// Mirrors <c>EnumerableIEJoin</c>. The condition is exactly two conjunctions, each an inequality between a
+    /// field of the left input and a field of the right; <see cref="ClrCursorIEJoinRule"/> puts any further
+    /// conjunctions in a calc above the join.
     ///
-    /// <para>Based on Khayyat et al., "Lightning Fast and Space Efficient Inequality Joins", PVLDB 8(13),
-    /// 2015, which is the algorithm <see cref="ClrCursorDefaults.IeJoin"/> walks.</para>
+    /// <para>The algorithm, in <see cref="ClrCursorDefaults.IeJoin"/>, is from Khayyat et al., "Lightning Fast
+    /// and Space Efficient Inequality Joins", PVLDB 8(13), 2015.</para>
     /// </remarks>
     public class ClrCursorIEJoin : Join, ClrCursorRel
     {
@@ -34,10 +34,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates a <see cref="ClrCursorIEJoin"/>.
         /// </summary>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <param name="condition"></param>
-        /// <returns></returns>
+        /// <param name="left">The left input.</param>
+        /// <param name="right">The right input.</param>
+        /// <param name="condition">The two inequalities, as a conjunction.</param>
+        /// <returns>The new node.</returns>
+        /// <exception cref="java.lang.IllegalArgumentException">The condition is not two supported
+        /// cross-input inequalities.</exception>
         public static ClrCursorIEJoin Create(RelNode left, RelNode right, RexNode condition)
         {
             System.ArgumentNullException.ThrowIfNull(left);
@@ -51,12 +53,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the normalized form of a conjunction that is an inequality between one field of the left
-        /// input and one field of the right, or <see langword="null"/> where it is anything else.
+        /// Returns a conjunction that compares a field of the left input with a field of the right by
+        /// <c>&lt;</c>, <c>&lt;=</c>, <c>&gt;</c> or <c>&gt;=</c>, normalized to read left to right; or
+        /// <see langword="null"/> for any other expression.
         /// </summary>
-        /// <param name="node"></param>
-        /// <param name="leftFieldCount"></param>
-        /// <returns></returns>
+        /// <param name="node">The conjunction.</param>
+        /// <param name="leftFieldCount">The number of fields of the left input.</param>
+        /// <returns>The normalized inequality, or <see langword="null"/>.</returns>
         internal static Condition? AnalyzeConjunction(RexNode node, int leftFieldCount)
         {
             if (node is not RexCall call || call.operands.size() != 2)
@@ -69,11 +72,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var firstIsLeft = first < leftFieldCount;
             var secondIsLeft = second < leftFieldCount;
 
-            // both operands on one side is not a join condition this node can drive
+            // both operands from one input cannot drive the join
             if (firstIsLeft == secondIsLeft)
                 return null;
 
-            // the condition is normalized to read left-to-right, so a right-first one is reversed
+            // normalized to read left to right, so a comparison written right-first is reversed
             var kind = firstIsLeft ? call.getKind() : call.getKind().reverse();
 
             ExpressionType op;
@@ -101,20 +104,21 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns whether the two fields a condition names can be ordered by the one comparator the scan
-        /// walks.
+        /// Returns whether the two fields an inequality compares can be ordered by a single comparator: they
+        /// have the same type, ignoring nullability, and it is boolean, signed exact numeric, character,
+        /// binary, datetime or interval.
         /// </summary>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <param name="condition"></param>
-        /// <returns></returns>
+        /// <param name="left">The left input.</param>
+        /// <param name="right">The right input.</param>
+        /// <param name="condition">The inequality.</param>
+        /// <returns>True if the key types are supported.</returns>
         internal static bool SupportsKeyTypes(RelNode left, RelNode right, Condition condition)
         {
             var leftType = ((RelDataTypeField)left.getRowType().getFieldList().get(condition.LeftKey)).getType();
             var rightType = ((RelDataTypeField)right.getRowType().getFieldList().get(condition.RightKey)).getType();
             var typeName = leftType.getSqlTypeName();
 
-            // a floating-point sort order disagrees with <, <=, > and >= for NaN and for signed zero
+            // floating point is excluded: its sort order disagrees with <, <=, > and >= for NaN and signed zero
             return SqlTypeUtil.equalSansNullability(left.getCluster().getTypeFactory(), leftType, rightType)
                 && (SqlTypeUtil.isBoolean(leftType)
                     || (SqlTypeUtil.isExactNumeric(leftType) && SqlTypeName.UNSIGNED_TYPES.contains(typeName) == false)
@@ -127,13 +131,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         readonly Condition[] conditions;
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Initializes a new instance. <see cref="Create"/> is preferred, as it supplies the trait set.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <param name="condition"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traitSet">The trait set, which carries <see cref="ClrCursorConvention"/>.</param>
+        /// <param name="left">The left input.</param>
+        /// <param name="right">The right input.</param>
+        /// <param name="condition">The two inequalities, as a conjunction.</param>
+        /// <exception cref="java.lang.IllegalArgumentException">The condition is not two supported
+        /// cross-input inequalities.</exception>
         public ClrCursorIEJoin(RelOptCluster cluster, RelTraitSet traitSet, RelNode left, RelNode right, RexNode condition) :
             base(cluster, traitSet, com.google.common.collect.ImmutableList.of(), left, right, condition, com.google.common.collect.ImmutableSet.of(), JoinRelType.INNER)
         {
@@ -185,7 +191,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var inputRows = leftRows.doubleValue() + rightRows.doubleValue();
 
-            // the combined inputs are sorted by each inequality key, then scanned and the pairs emitted
+            // the combined inputs are sorted once per inequality key, then scanned, and the pairs emitted
             var cost = 2D * Util.nLogN(inputRows) + inputRows + outputRows;
 
             return planner.getCostFactory().makeCost(cost, 0, 0);
@@ -202,8 +208,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.PreferArray());
             var arguments = Arguments(implementor, leftResult.PhysType, rightResult.PhysType, physType);
 
-            // the right input is acquired only once the left has been drained and closed, as linq4j's
-            // IEJoinEnumerator does it: one try-with-resources after the other
+            // the right input is passed as an opener and acquired only once the left has been drained and
+            // closed, as in linq4j's IEJoinEnumerator
             return implementor.Result(physType,
                 Expression.Call(null,
                     ClrCursorBuiltInMethod.IeJoin.MakeGenericMethod(
@@ -250,20 +256,18 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns everything the operator is called with but the two inputs, which is the whole of what
-        /// the two bodies share.
+        /// Returns the operator's arguments other than the two inputs, which both bodies share.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="leftPhysType"></param>
-        /// <param name="rightPhysType"></param>
-        /// <param name="physType"></param>
-        /// <returns></returns>
+        /// <param name="implementor">The implementor.</param>
+        /// <param name="leftPhysType">The left input's physical type.</param>
+        /// <param name="rightPhysType">The right input's physical type.</param>
+        /// <param name="physType">The output's physical type.</param>
+        /// <returns>The arguments.</returns>
         /// <remarks>
-        /// A key is read at the type the two sides have in common, and that type is the key physical type's
-        /// row type, which is boxed. Calcite leaves it unboxed and lets javac box it at <c>Function1</c>'s
-        /// erased boundary; a delegate has no such boundary, and the comparator the same physical type
-        /// generates takes the boxed class, so the choice is made once here. It is also what lets the scan
-        /// ask whether a key is null, which is how a row with a null key is dropped.
+        /// Each key is read as the boxed row type of a one-field physical type over the two sides' common SQL
+        /// type. Calcite leaves the key unboxed and relies on javac boxing it for <c>Function1</c>; a delegate is
+        /// typed, and the comparator generated from that physical type takes the boxed class. A boxed key can
+        /// also be null, which is how the operator drops a row with a null key.
         /// </remarks>
         CallArguments Arguments(ClrCursorRelImplementor implementor, ClrPhysType leftPhysType, ClrPhysType rightPhysType, ClrPhysType physType)
         {
@@ -280,12 +284,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 var leftType = ((RelDataTypeField)getLeft().getRowType().getFieldList().get(condition.LeftKey)).getType();
                 var rightType = ((RelDataTypeField)getRight().getRowType().getFieldList().get(condition.RightKey)).getType();
 
-                // the SQL storage type, so that a timestamp is compared at millisecond precision
+                // the SQL storage type, so a timestamp is compared at millisecond precision
                 var keyType = typeFactory.toSql(
                     typeFactory.leastRestrictive(com.google.common.collect.ImmutableList.of(leftType, rightType))
                         ?? throw new java.lang.NullPointerException($"leastRestrictive returns null for {leftType} and {rightType}"));
 
-                // a comparator is generated for a row's fields, so the key is wrapped in a scalar row type
+                // comparators are generated over a row's fields, so the key is given a one-field scalar row type
                 var keyPhysType = ClrPhysTypeImpl.Of(typeFactory, typeFactory.builder().add("key", keyType).build(), JavaRowFormat.SCALAR);
                 var keyClass = keyPhysType.RowType;
 
@@ -313,20 +317,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// What <see cref="Implement"/> and <see cref="ImplementAsync"/> call their operator with, less the
-        /// two inputs.
+        /// The arguments <see cref="Implement"/> and <see cref="ImplementAsync"/> pass their operator, other
+        /// than the two inputs. Members suffixed 1 and 2 belong to the first and second inequality.
         /// </summary>
-        /// <param name="Key1Type"></param>
-        /// <param name="Key2Type"></param>
-        /// <param name="LeftKeySelector1"></param>
-        /// <param name="RightKeySelector1"></param>
-        /// <param name="LeftKeySelector2"></param>
-        /// <param name="RightKeySelector2"></param>
-        /// <param name="Comparator1"></param>
-        /// <param name="Comparator2"></param>
-        /// <param name="Operator1"></param>
-        /// <param name="Operator2"></param>
-        /// <param name="Selector"></param>
+        /// <param name="Key1Type">The boxed key type of the first inequality.</param>
+        /// <param name="Key2Type">The boxed key type of the second inequality.</param>
+        /// <param name="LeftKeySelector1">Reads the first key from a left row.</param>
+        /// <param name="RightKeySelector1">Reads the first key from a right row.</param>
+        /// <param name="LeftKeySelector2">Reads the second key from a left row.</param>
+        /// <param name="RightKeySelector2">Reads the second key from a right row.</param>
+        /// <param name="Comparator1">Orders the first key ascending, nulls last.</param>
+        /// <param name="Comparator2">Orders the second key ascending, nulls last.</param>
+        /// <param name="Operator1">The first inequality's comparison, as an <see cref="ExpressionType"/> constant.</param>
+        /// <param name="Operator2">The second inequality's comparison, as an <see cref="ExpressionType"/> constant.</param>
+        /// <param name="Selector">Combines a left and a right row into an output row.</param>
         sealed record CallArguments(
             System.Type Key1Type,
             System.Type Key2Type,
@@ -341,7 +345,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             Expression Selector);
 
         /// <summary>
-        /// One inequality of the condition, read left-to-right.
+        /// One inequality of the condition, read left to right.
         /// </summary>
         /// <param name="LeftKey">The field of the left input, by its index in that input.</param>
         /// <param name="RightKey">The field of the right input, by its index in that input.</param>

@@ -23,8 +23,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         public void ShouldResolveEveryJavaPrimitive()
         {
             ClrTypes.FromClass(java.lang.Boolean.TYPE).Should().Be(typeof(bool));
-            // IKVM stores Java's signed byte in a CLR byte, which is not signed. Widening one has to go by way
-            // of an sbyte, which is what ClrEnumUtils does.
+            // IKVM maps Java's signed byte to the unsigned CLR byte; ClrEnumUtils widens one by way of sbyte
             ClrTypes.FromClass(java.lang.Byte.TYPE).Should().Be(typeof(byte));
             ClrTypes.FromClass(Character.TYPE).Should().Be(typeof(char));
             ClrTypes.FromClass(Short.TYPE).Should().Be(typeof(short));
@@ -37,8 +36,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         [Fact]
         public void ShouldResolveBoxClassesAsDistinctFromPrimitives()
         {
-            // the whole port depends on these being different types: a nullable column holds an Integer, and
-            // an Integer is an object rather than a boxed int
+            // a nullable column holds a java.lang.Integer, which is a reference type and not a boxed int
             ClrTypes.FromClass((Class)typeof(Integer)).Should().Be(typeof(Integer));
             ClrTypes.FromClass((Class)typeof(Integer)).Should().NotBe(typeof(int));
         }
@@ -48,8 +46,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         {
             ClrTypes.FromClass((Class)typeof(java.lang.String)).Should().Be(typeof(string));
 
-            // IKVM keeps a java.lang.Object of its own, which is not System.Object and is not assignable from
-            // a string, but every signature it compiles uses System.Object. A tree naming Object means that one.
+            // IKVM has a java.lang.Object type of its own that is not System.Object, but every signature it
+            // compiles uses System.Object, so a tree naming Object means System.Object
             ClrTypes.FromClass((Class)typeof(java.lang.Object)).Should().Be(typeof(object));
             typeof(java.util.List).GetMethod("get", [typeof(int)])!.ReturnType.Should().Be(typeof(object));
         }

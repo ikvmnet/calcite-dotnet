@@ -13,15 +13,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <summary>
     /// Implementation of <see cref="Filter"/> in the <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
+    /// <remarks>
+    /// Mirrors <c>EnumerableFilter</c>: it takes part in planning but cannot be implemented.
+    /// <see cref="ClrCursorFilterToCalcRule"/>, in <see cref="ClrCursorRules.CalcRules"/>, replaces it with a
+    /// <see cref="ClrCursorCalc"/>.
+    /// </remarks>
     public class ClrCursorFilter : Filter, ClrCursorRel
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorFilter"/>.
+        /// Creates a <see cref="ClrCursorFilter"/>, deriving its collation and distribution from its input.
         /// </summary>
-        /// <param name="input"></param>
-        /// <param name="condition"></param>
-        /// <returns></returns>
+        /// <param name="input">The input.</param>
+        /// <param name="condition">The condition rows must satisfy.</param>
+        /// <returns>The new node.</returns>
         public static ClrCursorFilter Create(RelNode input, RexNode condition)
         {
             var cluster = input.getCluster();
@@ -34,12 +39,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Initializes a new instance. <see cref="Create"/> is preferred, as it derives the trait set.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="input"></param>
-        /// <param name="condition"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traitSet">The trait set, which carries <see cref="ClrCursorConvention"/>.</param>
+        /// <param name="input">The input.</param>
+        /// <param name="condition">The condition rows must satisfy.</param>
         public ClrCursorFilter(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, RexNode condition) :
             base(cluster, traitSet, input, condition)
         {
@@ -77,10 +82,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
-        /// <remarks>
-        /// A calc is always better, exactly as for <c>EnumerableFilter</c>. See
-        /// <see cref="ClrCursorProject.Implement"/>.
-        /// </remarks>
+        /// <exception cref="java.lang.UnsupportedOperationException">Always; as with <c>EnumerableFilter</c>,
+        /// the filter is implemented as a <see cref="ClrCursorCalc"/>, which requires
+        /// <see cref="ClrCursorRules.CalcRules"/> to run as a hep pass after the planner. Those rules cannot run
+        /// on the Volcano planner, which does not match a <c>TransformationRule</c> against a
+        /// <c>PhysicalNode</c>.</exception>
         public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             throw new java.lang.UnsupportedOperationException(

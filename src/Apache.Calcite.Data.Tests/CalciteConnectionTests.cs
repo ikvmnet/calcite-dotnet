@@ -92,14 +92,12 @@ namespace Apache.Calcite.Data.Tests
         [Fact]
         public void Session_should_survive_close_and_reopen()
         {
-            // Schema mutations made while open must still be visible after a Close/Open cycle
-            // because the Calcite session is retained across state transitions.
+            // the Calcite session is kept across Close and Open, so schema changes made while open survive
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
             c.Open();
             var rootBefore = c.RootSchema;
             c.Close();
             c.Open();
-            // The session was not recreated, so the same SchemaPlus wrapper is returned.
             Assert.Same(rootBefore, c.RootSchema);
         }
 
@@ -109,8 +107,7 @@ namespace Apache.Calcite.Data.Tests
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
             c.Open();
             c.Close();
-            // The session already exists; changing the connection string must be rejected even
-            // after Close() because the session is kept alive and cannot be reconfigured.
+            // the session outlives Close and cannot be reconfigured
             Assert.Throws<InvalidOperationException>(() => c.ConnectionString = TestModels.InlineEmptyModelConnectionString);
         }
 
@@ -119,8 +116,7 @@ namespace Apache.Calcite.Data.Tests
         {
             using var c = new CalciteConnection();
             c.ConnectionString = TestModels.InlineEmptyModelConnectionString;
-            // The builder normalizes the connection string (casing, quoting), so we only
-            // verify that the assignment was accepted and the value is non-empty.
+            // the builder normalizes casing and quoting, so the value is not compared verbatim
             Assert.False(string.IsNullOrEmpty(c.ConnectionString));
         }
 

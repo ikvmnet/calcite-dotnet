@@ -16,12 +16,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Holds <c>CallAsync</c> to passing the implementor's token parameter, by compiling a small plan of
-    /// awaiting opens by hand and cancelling it.
+    /// Tests that <c>ClrCursorBuiltInMethod.CallAsync</c> passes the implementor's cancellation token parameter
+    /// to each awaiting open, using a small plan of awaiting opens built by hand and then cancelled.
     /// </summary>
     public class ClrCursorBuiltInMethodTests
     {
 
+        /// <summary>
+        /// An endless source that counts the rows it produces and records whether it was given a token that
+        /// can be cancelled.
+        /// </summary>
         sealed class Endless
         {
 
@@ -46,9 +50,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A plan of three awaiting opens over a source the caller supplies, taking the open's token as
-        /// the awaiting root does.
+        /// Compiles a plan of awaiting opens over a source the caller supplies, taking the implementor's token
+        /// parameter as the awaiting root does.
         /// </summary>
+        /// <returns>A compiled delegate that takes the source and the open's token and opens the plan over them.</returns>
         static Func<IAsyncEnumerable<object[]>, CancellationToken, ValueTask<IClrCursor<object>>> Plan()
         {
             var implementor = new ClrCursorRelImplementor(
@@ -67,14 +72,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 ClrCursorBuiltInMethod.Slice0Async.MakeGenericMethod(typeof(java.lang.Integer)),
                 plan);
 
-            // Select: a per row delegate, synchronous as every row level delegate of this convention is
+            // Select: the per-row delegate is synchronous, as every row-level delegate of this convention is
             var row = Expression.Parameter(typeof(java.lang.Integer), "row");
             plan = ClrCursorBuiltInMethod.CallAsync(implementor,
                 ClrCursorBuiltInMethod.SelectAsync.MakeGenericMethod(typeof(java.lang.Integer), typeof(object)),
                 plan,
                 Expression.Lambda<Func<java.lang.Integer, object>>(Expression.Convert(row, typeof(object)), row));
 
-            // Calc keeping everything, so that what stops the cursor can only be the cancellation
+            // Calc keeping every row, so that only cancellation can stop the cursor
             var kept = Expression.Parameter(typeof(object), "kept");
             plan = ClrCursorBuiltInMethod.CallAsync(implementor,
                 ClrCursorBuiltInMethod.CalcAsync.MakeGenericMethod(typeof(object), typeof(object)),
@@ -86,9 +91,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Every awaiting open in the plan was passed the root's token parameter, and it is the open's
-        /// token that the leaf sees.
+        /// The token given to the plan's open reaches the leaf through every awaiting open, so cancelling it
+        /// stops the leaf.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldCarryTheOpensTokenToTheLeaf()
         {
@@ -142,8 +148,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// An open built without the token, or with something other than the implementor's parameter, is
-        /// refused where it is built.
+        /// <c>CallAsync</c> refuses, when the call is built, an awaiting open given too few arguments and a
+        /// method that is not an awaiting open.
         /// </summary>
         [Fact]
         public void ShouldRefuseAnOpenWithoutItsToken()

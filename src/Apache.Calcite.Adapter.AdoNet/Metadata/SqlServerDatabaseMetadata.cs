@@ -14,35 +14,40 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
 {
 
     /// <summary>
-    /// Implements the <see cref="AdoDatabaseMetadata"/> for Microsoft SQL Server.
+    /// The metadata for SQL Server, through <c>Microsoft.Data.SqlClient</c> or <c>System.Data.SqlClient</c>.
     /// </summary>
+    /// <remarks>
+    /// Tables and columns come from the <c>INFORMATION_SCHEMA</c>-shaped schema collections, the default schema is
+    /// <c>dbo</c>, and the dialect is built for the version the server reports.
+    /// </remarks>
     class SqlServerDatabaseMetadata : AdoInformationSchemaDatabaseMetadata
     {
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="dbDataSource"></param>
+        /// <param name="dbDataSource">The data source to read metadata from.</param>
         public SqlServerDatabaseMetadata(DbDataSource dbDataSource) :
             base(dbDataSource)
         {
 
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns the connection string's <c>Initial Catalog</c> or <c>Database</c>, and otherwise the database a new
+        /// connection is in.
+        /// </summary>
+        /// <returns>The database name.</returns>
         public override string? GetDefaultDatabase()
         {
-            // use the generic datastring builder to parse
             var connectionString = new DbConnectionStringBuilder();
             connectionString.ConnectionString = DbDataSource.ConnectionString;
 
-            // check for Initial Catalog
             connectionString.TryGetValue("Initial Catalog", out object? initialCatalog);
             if (initialCatalog is string initialCatalogStr)
                 if (string.IsNullOrWhiteSpace(initialCatalogStr) == false)
                     return initialCatalogStr;
 
-            // check for Database
             connectionString.TryGetValue("Database", out object? database);
             if (database is string databaseStr)
                 if (string.IsNullOrWhiteSpace(databaseStr) == false)
@@ -51,7 +56,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             return base.GetDefaultDatabase();
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns <c>dbo</c>.
+        /// </summary>
+        /// <returns><c>dbo</c>.</returns>
         public override string GetDefaultSchema()
         {
             return "dbo";
@@ -59,8 +67,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
 
         /// <inheritdoc />
         /// <remarks>
-        /// Worked out once and kept: deriving it asks the server for its version, and the convention reads
-        /// it for every rule that matches while planning.
+        /// Built on first use, which opens a connection to read the server's version, and then kept.
         /// </remarks>
         public override SqlDialect Dialect => _dialect ??= CreateDialect();
 
@@ -68,21 +75,18 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
 
         /// <inheritdoc />
         /// <remarks>
-        /// SqlClient binds the default <c>@P</c> parameter form, so the naming is the interface's own. What this states
-        /// is a rewrite: a <c>UUID</c> literal unparses as the standard typed literal <c>UUID '…'</c> —
-        /// <c>SqlUuidLiteral.unparse</c> consults no dialect — and SQL Server has neither that literal syntax nor the
-        /// <c>UUID</c> type name, so it answers "Incorrect syntax" on the string. Until Calcite lets the dialect render
-        /// the literal, the syntax turns each one into <c>CAST('…' AS uniqueidentifier)</c>, naming the type the way the
-        /// dialect's own cast spec does. It is a dialect concern done from the driver's side because that is the seam
-        /// there is.
+        /// Parameters are named <c>@P0</c>, <c>@P1</c> and so on. Every <c>UUID</c> literal is rewritten to
+        /// <c>CAST('…' AS UNIQUEIDENTIFIER)</c>: Calcite unparses it as <c>UUID '…'</c> without consulting the
+        /// dialect (<c>SqlUuidLiteral.unparse</c>), and SQL Server has neither that literal syntax nor a <c>UUID</c>
+        /// type. The rewrite can go once Calcite lets a dialect write the literal.
         /// </remarks>
         public override IAdoSqlSyntax Syntax => _syntax ??= new SqlServerSqlSyntax();
 
         IAdoSqlSyntax? _syntax;
 
         /// <summary>
-        /// The SQL Server driver's syntax: the default parameter naming, and a rewrite of every <c>UUID</c> literal
-        /// into a cast a server with no <c>UUID</c> literal can parse.
+        /// SQL Server's syntax: the default parameter names, and every <c>UUID</c> literal rewritten as a cast of its
+        /// text.
         /// </summary>
         sealed class SqlServerSqlSyntax : IAdoSqlSyntax
         {
@@ -94,7 +98,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             }
 
             /// <summary>
-            /// Rewrites every <c>UUID</c> literal into an explicit cast of its text, so the dialect names the type.
+            /// Rewrites every <c>UUID</c> literal as a cast of its text to the type the dialect's cast spec names.
             /// </summary>
             sealed class UuidLiteralShuttle(SqlDialect dialect, RelDataTypeFactory typeFactory) : SqlShuttle
             {
@@ -116,15 +120,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         }
 
         /// <summary>
-        /// Asks the server what it is, and describes it to Calcite.
+        /// Opens a connection and builds the dialect for the server's version.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The dialect.</returns>
         /// <remarks>
-        /// The version is the part that has to be asked for: under major version 11
-        /// <see cref="MssqlSqlDialect"/> writes <c>TOP(n)</c> and discards the offset, so a paged query
-        /// silently returns the first page for every page. The rest of the context is
-        /// <see cref="MssqlSqlDialect.DEFAULT_CONTEXT"/>'s, which already states the bracket quoting, the
-        /// type system and the low null collation.
+        /// The version matters: below major version 11 (SQL Server 2012), <see cref="MssqlSqlDialect"/> writes
+        /// <c>TOP(n)</c> and drops the offset, so every page of a paged query would be the first. The rest is
+        /// <see cref="MssqlSqlDialect.DEFAULT_CONTEXT"/>.
         /// </remarks>
         SqlDialect CreateDialect()
         {
@@ -135,10 +137,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
 
         /// <inheritdoc />
         /// <remarks>
-        /// Every type the server names in <c>INFORMATION_SCHEMA.COLUMNS.DATA_TYPE</c>, because a name that
-        /// is missing does not cost that column — it throws, and takes the whole table with it. The spatial
-        /// and hierarchy types, and <c>sql_variant</c>, go to <see cref="DbType.Object"/>, which
-        /// <c>AdoTable</c> maps to <c>OTHER</c> and the reader passes through untouched.
+        /// Any name not listed, including the spatial and hierarchy types and <c>sql_variant</c>, maps to
+        /// <see cref="DbType.Object"/>, which the adapter reads as <c>OTHER</c> and passes through unchanged.
         /// </remarks>
         protected override DbType ParseDbType(string typeName)
         {
@@ -150,10 +150,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
                 "int" => DbType.Int32,
                 "bigint" => DbType.Int64,
                 "decimal" or "numeric" => DbType.Decimal,
-                // money is a decimal of a fixed scale of its own, which is what DbType.Currency states
+                // money and smallmoney have a fixed scale of four
                 "money" or "smallmoney" => DbType.Currency,
-                // float is the eight byte one whatever its declared mantissa: the server reports a
-                // float(1..24) as 'real', so this name is only ever the wide type
+                // the server reports float(1..24) as 'real', so 'float' is always the eight-byte type
                 "float" => DbType.Double,
                 "real" => DbType.Single,
                 "char" => DbType.AnsiStringFixedLength,
@@ -167,7 +166,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
                 "datetime" or "smalldatetime" => DbType.DateTime,
                 "datetime2" => DbType.DateTime2,
                 "datetimeoffset" => DbType.DateTimeOffset,
-                // rowversion is spelled 'timestamp' here and is eight opaque bytes, not a time
+                // 'timestamp' is rowversion: eight opaque bytes, not a time
                 "binary" or "varbinary" or "image" or "timestamp" or "rowversion" => DbType.Binary,
                 _ => DbType.Object,
             };

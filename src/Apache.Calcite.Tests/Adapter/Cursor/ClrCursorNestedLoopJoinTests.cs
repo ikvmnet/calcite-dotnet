@@ -17,26 +17,23 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// What <c>ClrCursorDefaults.NestedLoopJoin</c> does, against what
-    /// <c>EnumerableDefaults.nestedLoopJoin</c> does.
+    /// Tests that <c>ClrCursorDefaults.NestedLoopJoin</c> behaves as <c>EnumerableDefaults.nestedLoopJoin</c>
+    /// does.
     /// </summary>
     /// <remarks>
-    /// The oracle everywhere else is a query run through both conventions, and it cannot reach any of these.
-    /// The result selector a plan hands the join is <c>ClrEnumUtils.JoinSelector</c>, and for SEMI that
-    /// lambda declares its right parameter and never reads it — a semi join's row is the left row — so which
-    /// right row the join passes is invisible to every query, and so is a join type the planner never
-    /// produces. What the operator does with an input it is given — how many times it opens it, when it
-    /// runs, and what it does with two right rows that are the same object — is not a property of any row a
-    /// query returns either. So these are direct tests of the operator, and each one is written against
-    /// Calcite's body rather than against what SQL would want. Each reads the join through <c>Read</c> and
-    /// again through <c>ReadAsync</c>, because the cursor promises the same rows either way.
+    /// None of this is visible to a query run through both conventions: a plan's semi join selector ignores
+    /// its right parameter, the planner never produces some join types, and how often and when the operator
+    /// opens its inputs, and how it treats two right rows that are the same object, do not change the rows a
+    /// query returns. So these test the operator directly, with Calcite's implementation as the expected
+    /// behaviour rather than SQL's. Most read the join through both <c>Read</c> and <c>ReadAsync</c>.
     /// </remarks>
     public class ClrCursorNestedLoopJoinTests
     {
 
         /// <summary>
-        /// A right row, which is a reference, so that two of them can be the same object.
+        /// A right row. It is a reference type, so that two rows can be the same object.
         /// </summary>
+        /// <param name="value">The row's text, which the join predicate matches against the outer row.</param>
         sealed class Row(string value)
         {
 
@@ -47,8 +44,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A cursor over rows in hand.
+        /// A cursor over a fixed list of rows.
         /// </summary>
+        /// <typeparam name="T">The row type.</typeparam>
+        /// <param name="rows">The rows the cursor returns, in order.</param>
         sealed class RowsCursor<T>(IReadOnlyList<T> rows) : ClrCursor<T>
         {
 
@@ -80,6 +79,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// An input that counts how many times it has been opened, by either opener.
         /// </summary>
+        /// <typeparam name="T">The row type.</typeparam>
+        /// <param name="source">The rows each opened cursor returns.</param>
         sealed class Counting<T>(IReadOnlyList<T> source)
         {
 
@@ -106,6 +107,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Opens the join synchronously and reads it through <c>Read</c>.
         /// </summary>
+        /// <param name="outer">The left rows.</param>
+        /// <param name="inner">The right input, which counts its opens.</param>
+        /// <param name="joinType">The join type.</param>
+        /// <returns>Each output row as <c>left/right</c>, with a missing side written as <c>-</c>.</returns>
         static List<string> Join(IReadOnlyList<string> outer, Counting<Row> inner, JoinType joinType)
         {
             var join = ClrCursorDefaults.NestedLoopJoin<string, Row, string>(new RowsCursor<string>(outer), inner.Open, inner.OpenAsync, Pair, StartsWith, joinType);
@@ -120,6 +125,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Opens the join with await and reads it through <c>ReadAsync</c>.
         /// </summary>
+        /// <param name="outer">The left rows.</param>
+        /// <param name="inner">The right input, which counts its opens.</param>
+        /// <param name="joinType">The join type.</param>
+        /// <returns>Each output row as <c>left/right</c>, with a missing side written as <c>-</c>.</returns>
         static async Task<List<string>> JoinAsync(IReadOnlyList<string> outer, Counting<Row> inner, JoinType joinType)
         {
             var join = await ClrCursorDefaults.NestedLoopJoinAsync<string, Row, string>(
@@ -133,8 +142,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Reads the join both ways and requires the same rows of each.
+        /// Reads the join through each advance, requires the same rows from both, and returns them.
         /// </summary>
+        /// <param name="outer">The left rows.</param>
+        /// <param name="inner">The right rows; each reading gets its own counting input over them.</param>
+        /// <param name="joinType">The join type.</param>
+        /// <returns>Each output row as <c>left/right</c>, with a missing side written as <c>-</c>.</returns>
         static async Task<List<string>> BothWays(IReadOnlyList<string> outer, IReadOnlyList<Row> inner, JoinType joinType)
         {
             var read = Join(outer, new Counting<Row>(inner), joinType);
@@ -152,12 +165,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A semi join passes the right row that matched, not a null one.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// <c>nestedLoopJoinOptimized</c> returns from state 1 with <c>innerValue</c> set to the row the
-        /// predicate accepted, and <c>current()</c> is <c>resultSelector.apply(outerValue, innerValue)</c>.
-        /// The row is therefore built from the match. Passing null instead returns the same rows for every
-        /// plan, because a semi join's selector ignores its right parameter, and a different answer for
-        /// <c>MergeJoin</c>, which calls this operator for a semi merge join with a residual.
+        /// <c>nestedLoopJoinOptimized</c> returns from state 1 with <c>innerValue</c> set to the row the predicate
+        /// accepted, and <c>current()</c> is <c>resultSelector.apply(outerValue, innerValue)</c>. A plan's semi
+        /// join selector ignores its right parameter, so only a direct test sees which row is passed.
         /// </remarks>
         [Fact]
         public async Task ShouldPassTheMatchedRightRowToASemiJoin() =>
@@ -167,6 +179,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// An anti join passes no right row, because it never returns one that matched.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldPassNoRightRowToAnAntiJoin() =>
             (await BothWays(["a", "b", "c"], Rows("a1", "a2", "b1"), JoinType.ANTI))
@@ -197,11 +210,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A join type none of the six cases names returns nothing at all.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
         /// <c>nestedLoopJoinOptimized</c>'s switch on the join type falls to <c>default: break</c> for ASOF,
         /// LEFT_ASOF and LEFT_MARK, which moves the inner on rather than returning the pair, and the
-        /// unmatched-left branch names only LEFT and ANTI. So a match returns nothing and a miss returns
-        /// nothing, and the join is empty. It is not an inner join.
+        /// unmatched-left branch names only LEFT and ANTI. So neither a match nor a miss returns a row, and the
+        /// join is empty rather than behaving as an inner join.
         /// </remarks>
         [Fact]
         public async Task ShouldReturnNothingForAJoinTypeTheSwitchDoesNotName()
@@ -217,6 +231,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// The streaming body opens the inner once for every outer row, by the opener of the advance that
         /// reached the row.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
         /// <c>nestedLoopJoinOptimized</c> calls <c>inner.enumerator()</c> in state 0, which it reaches once
         /// per outer row, and never reads the inner into a list. <c>leftMarkJoinInternal</c> does the same.
@@ -238,9 +253,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// The list body reads the inner once and walks the list from then on.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// <c>nestedLoopJoinAsList</c> calls <c>inner.toList()</c>, and that asymmetry with the streaming
-        /// body is Calcite's own: it needs the right rows a second time, to emit the ones nothing matched.
+        /// <c>nestedLoopJoinAsList</c> calls <c>inner.toList()</c>, because it needs the right rows a second
+        /// time to emit the ones nothing matched.
         /// </remarks>
         [Fact]
         public async Task ShouldEnumerateTheInnerOnceForARightJoin()
@@ -259,8 +275,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         // ------------------------------------------------------------------ when each body runs
 
         /// <summary>
-        /// A right join runs when it is called, which is the open, not when its result is read.
+        /// A right join runs when it is opened, not when its result is read.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
         /// <c>nestedLoopJoinAsList</c> builds the whole result and hands back
         /// <c>Linq4j.asEnumerable(result)</c>, so the work is done before the caller has the cursor: the
@@ -290,9 +307,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// An inner join runs when its result is read, and not before.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// The outer arrives opened, so what the operator decides is when the inner is opened and when the
-        /// outer is first read: neither happens at the open, and both happen at the first advance.
+        /// The outer arrives already opened, so what is checked is when the inner is opened and when the outer
+        /// is first read: neither happens at the open, and both happen at the first advance.
         /// </remarks>
         [Fact]
         public async Task ShouldNotRunAnInnerJoinUntilItIsEnumerated()
@@ -324,8 +342,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A cursor over rows in hand that counts its advances.
+        /// A cursor over a fixed list of rows that counts its advances.
         /// </summary>
+        /// <param name="rows">The rows the cursor returns, in order.</param>
         sealed class ReadCountingCursor(IReadOnlyList<string> rows) : ClrCursor<string>
         {
 
@@ -363,11 +382,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Two unmatched right rows that are the same object are emitted once.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
         /// <c>nestedLoopJoinAsList</c> holds the unmatched right rows in <c>Sets.newIdentityHashSet()</c>,
-        /// which keys on the reference, so one object added twice is one entry and comes out once. SQL wants
-        /// it twice — the right side has two rows and neither matched — and Calcite does not give that. This
-        /// is a port, so the answer here is Calcite's.
+        /// which keys on the reference, so one object added twice is one entry and is emitted once. SQL would
+        /// emit two rows, since the right side has two rows and neither matched; this reproduces Calcite.
         /// </remarks>
         [Fact]
         public async Task ShouldEmitOneRowForTwoUnmatchedRightRowsThatAreTheSameObject()
@@ -381,9 +400,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Two unmatched right rows of equal value but different identity are both emitted.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// The set keys on the reference and not on the value, so equality of the rows is not what collapses
-        /// them; only being the same object is.
+        /// The set keys on the reference, not on the value, so only rows that are the same object collapse.
         /// </remarks>
         [Fact]
         public async Task ShouldEmitBothUnmatchedRightRowsThatAreEqualButNotTheSameObject() =>
@@ -393,9 +412,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// One match against a right row that is in the list twice takes both occurrences out.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// The set holds one entry for the object, so the single <c>remove</c> a match performs leaves
-        /// nothing behind for the second occurrence.
+        /// The set holds one entry for the object, so the single <c>remove</c> a match performs leaves nothing
+        /// for the second occurrence.
         /// </remarks>
         [Fact]
         public async Task ShouldTreatBothOccurrencesOfOneObjectAsMatched()

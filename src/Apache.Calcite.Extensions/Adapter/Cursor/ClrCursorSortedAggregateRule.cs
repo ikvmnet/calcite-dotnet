@@ -14,19 +14,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// Rule that converts a <see cref="LogicalAggregate"/> to a <see cref="ClrCursorSortedAggregate"/>.
     /// </summary>
     /// <remarks>
-    /// The rule asks its input for a collation on the group set rather than taking what the input has, and
-    /// the planner decides whether satisfying that is worth it. It is chosen where the query wants its
-    /// output ordered by the group key, because then the ordering is free.
-    ///
-    /// <para>Calcite does not put this rule in <c>ENUMERABLE_RULES</c>; a caller turns it on.</para>
+    /// Mirrors <c>EnumerableSortedAggregateRule</c>. The rule requests its input sorted on the group keys and
+    /// leaves it to the planner to decide whether providing that order is worth the cost. It is not in
+    /// <see cref="ClrCursorRules.Rules"/>; add it explicitly.
     /// </remarks>
     public class ClrCursorSortedAggregateRule : ConverterRule
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorSortedAggregateRule"/>.
+        /// Creates the rule with its default configuration.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorSortedAggregateRule Create()
         {
             return (ClrCursorSortedAggregateRule)Config.INSTANCE
@@ -38,7 +36,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule's configuration.</param>
         public ClrCursorSortedAggregateRule(Config config) :
             base(config)
         {
@@ -47,10 +45,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
         /// <inheritdoc />
         /// <remarks>
-        /// An aggregate over no group set is refused. The node tells one group from the next with a
-        /// comparator built from the collation it carries, and for an empty group set that collation is
-        /// empty, so a global aggregate has nothing to sort by and belongs to
-        /// <see cref="ClrCursorAggregate"/>.
+        /// Declines an aggregate with grouping sets or with no group keys, as Calcite's rule does; the latter
+        /// has nothing to sort by and is left to <see cref="ClrCursorAggregate"/>.
         /// </remarks>
         public override RelNode? convert(RelNode rel)
         {

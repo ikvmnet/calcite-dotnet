@@ -7,15 +7,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
 {
 
     /// <summary>
-    /// Implements the <see cref="AdoDatabaseMetadata"/> for a driver whose <c>Tables</c> and <c>Columns</c>
-    /// schema collections are the SQL <c>INFORMATION_SCHEMA</c> views.
+    /// Base class of the metadata for a driver whose <c>Tables</c> and <c>Columns</c> schema collections have the
+    /// shape of the SQL <c>INFORMATION_SCHEMA</c> views, with the type named in <c>DATA_TYPE</c>.
     /// </summary>
     /// <remarks>
-    /// The shape is the driver's choice and not every driver's is this one, so a driver whose collections
-    /// are shaped otherwise derives from <see cref="AdoDatabaseMetadata"/> instead:
-    /// <see cref="OdbcDatabaseMetadata"/> reads the ODBC catalog, whose columns are <c>TABLE_CAT</c>,
-    /// <c>TABLE_SCHEM</c> and a numeric <c>DATA_TYPE</c>, and <see cref="OleDbDatabaseMetadata"/> reads the
-    /// OLE DB schema rowsets, which share these names and not their types.
+    /// Every member opens a connection and reads a schema collection, switching to the named database first with
+    /// <see cref="DbConnection.ChangeDatabase"/>. A null database is the connection's own, and a null schema is
+    /// <see cref="AdoDatabaseMetadata.GetDefaultSchema"/>. A derived class maps the type names.
     /// </remarks>
     abstract class AdoInformationSchemaDatabaseMetadata : AdoDatabaseMetadata
     {
@@ -25,21 +23,26 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="dataSource"></param>
+        /// <param name="dataSource">The data source to read metadata from.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="dataSource"/> is <see langword="null"/>.</exception>
         public AdoInformationSchemaDatabaseMetadata(DbDataSource dataSource)
         {
             _dbDataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Gets the data source this metadata describes.
+        /// </summary>
         public DbDataSource DbDataSource => _dbDataSource;
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns the database a new connection is in.
+        /// </summary>
+        /// <returns>The database name.</returns>
         public override string? GetDefaultDatabase()
         {
             using var cnn = _dbDataSource.OpenConnection();
 
-            // return database we connected to
             return cnn.Database;
         }
 
@@ -48,7 +51,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         {
             using var cnn = _dbDataSource.OpenConnection();
 
-            // establish target database
             if (databaseName is not null)
                 cnn.ChangeDatabase(databaseName);
             else
@@ -68,13 +70,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         {
             using var cnn = _dbDataSource.OpenConnection();
 
-            // establish target database
             if (databaseName is not null)
                 cnn.ChangeDatabase(databaseName);
             else
                 databaseName = cnn.Database;
 
-            // establish target schema
             if (schemaName is null)
                 schemaName = GetDefaultSchema();
 
@@ -94,17 +94,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
 
             using var cnn = _dbDataSource.OpenConnection();
 
-            // establish target database
             if (databaseName is not null)
                 cnn.ChangeDatabase(databaseName);
             else
                 databaseName = cnn.Database;
 
-            // establish target schema
             if (schemaName is null)
                 schemaName = GetDefaultSchema();
 
-            // retrieve the Columns schema object to return as list of fields.
             using var result = cnn.GetSchema("Columns");
             var list = new HashSet<AdoFieldMetadata>();
             foreach (DataRow row in result.Rows)
@@ -122,10 +119,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         }
 
         /// <summary>
-        /// Returns a <see cref="DbType"/> based on the given type name.
+        /// Returns the <see cref="DbType"/> for a type name from <c>DATA_TYPE</c>.
         /// </summary>
-        /// <param name="typeName"></param>
-        /// <returns></returns>
+        /// <param name="typeName">The type name.</param>
+        /// <returns>The type.</returns>
         protected abstract DbType ParseDbType(string typeName);
 
     }

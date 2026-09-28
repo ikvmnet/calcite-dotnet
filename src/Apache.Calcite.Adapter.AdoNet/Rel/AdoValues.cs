@@ -10,7 +10,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
 {
 
     /// <summary>
-    /// Values operator implemented in the <see cref="AdoConvention"/> calling convention.
+    /// A literal <c>VALUES</c> relation written into the pushed-down statement. Mirrors
+    /// <c>JdbcRules.JdbcValues</c>.
     /// </summary>
     public class AdoValues : Values, AdoRel
     {
@@ -18,10 +19,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="rowType"></param>
-        /// <param name="tuples"></param>
-        /// <param name="traitSet"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="rowType">The row type.</param>
+        /// <param name="tuples">The rows, each a list of literals.</param>
+        /// <param name="traitSet">The traits, whose convention is an <see cref="AdoConvention"/>.</param>
         public AdoValues(RelOptCluster cluster, RelDataType rowType, ImmutableList tuples, RelTraitSet traitSet) :
             base(cluster, rowType, tuples, traitSet)
         {

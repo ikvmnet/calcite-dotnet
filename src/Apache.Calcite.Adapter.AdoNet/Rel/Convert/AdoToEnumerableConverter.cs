@@ -25,10 +25,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {
 
     /// <summary>
-    /// Relational operator that converts a tree of <see cref="AdoConvention"/> nodes into
-    /// an <see cref="EnumerableConvention"/> result by executing the generated SQL against
-    /// the underlying ADO.NET data source.
+    /// Runs a subtree of an <see cref="AdoConvention"/> as one SQL statement and hands its rows to Calcite's
+    /// <see cref="EnumerableConvention"/>. Mirrors <c>JdbcToEnumerableConverter</c>.
     /// </summary>
+    /// <remarks>
+    /// The generated code calls <see cref="AdoEnumerable.CreateReader(AdoDataSource, string, Function1, DbCommandEnricher)"/>,
+    /// so the statement runs when the enumerable is enumerated.
+    /// </remarks>
     public class AdoToEnumerableConverter : ConverterImpl, EnumerableRel
     {
 
@@ -40,9 +43,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traits"></param>
-        /// <param name="input"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traits">The traits, whose convention is <see cref="EnumerableConvention"/>.</param>
+        /// <param name="input">The subtree of the <see cref="AdoConvention"/>.</param>
         public AdoToEnumerableConverter(RelOptCluster cluster, RelTraitSet traits, RelNode input) :
             base(cluster, ConventionTraitDef.INSTANCE, traits, input)
         {
@@ -55,10 +58,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             return new AdoToEnumerableConverter(getCluster(), traitSet, (RelNode)sole(inputs));
         }
 
-        /// <inheritdoc />
-        /// <remarks>
-        /// <c>JdbcToEnumerableConverter.computeSelfCost</c>.
-        /// </remarks>
+        /// <summary>
+        /// Returns the base cost multiplied by 0.1. Mirrors <c>JdbcToEnumerableConverter.computeSelfCost</c>.
+        /// </summary>
+        /// <param name="planner">The planner.</param>
+        /// <param name="mq">The metadata query.</param>
+        /// <returns>The cost, or <see langword="null"/>.</returns>
         public override RelOptCost? computeSelfCost(RelOptPlanner planner, org.apache.calcite.rel.metadata.RelMetadataQuery mq)
         {
             var cost = base.computeSelfCost(planner, mq);
@@ -68,7 +73,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             return cost.multiplyBy(.1);
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Generates the linq4j block that runs the statement and builds each row. Mirrors
+        /// <c>JdbcToEnumerableConverter.implement</c>.
+        /// </summary>
+        /// <param name="implementor">Calcite's implementor.</param>
+        /// <param name="pref">The preferred row format.</param>
+        /// <returns>The result.</returns>
+        /// <exception cref="AdoCalciteException">The input is not an <see cref="AdoRel"/>.</exception>
         public EnumerableRel.Result implement(EnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
         {
             var list = new BlockBuilder();
@@ -89,8 +101,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             var dataContextBuilder =
                 new AdoCorrelationDataContextBuilderImpl(implementor, list, DataContext.ROOT);
 
-            // generate the SQL for the query, with every parameter already written as the name this
-            // provider binds by rather than the bare ? that JDBC would match by position
+            // each parameter is written as the name the provider binds, not JDBC's positional ?
             var writer = GenerateSql(convention, dataContextBuilder, self, out var sqlImplementor);
             var dataSource = Schemas.unwrap(convention.Expression, typeof(AdoDataSource));
 
@@ -101,7 +112,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             var sql = writer.toSqlString().getSql();
             Hook.QUERY_PLAN.run(sql);
 
-            // declare SQL string as a variable
             var sql_ = list
                 .append("sql",
                     Expressions.constant(sql));
@@ -112,17 +122,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 
             var rowBuilder = new BlockBuilder();
 
-            // parameter to lambda for the DbDataReader
             var reader_ = Expressions.parameter(
                 Modifier.FINAL,
                 (Class)typeof(DbDataReader),
                 rowBuilder.newName("reader"));
 
-            // the shape of a row is decided by how many fields it has, exactly as
-            // JdbcToEnumerableConverter decides it, because JavaRowFormat.optimize has already told the
-            // physical type the same thing: no field is a null, one field is the value itself, and only
-            // beyond that is a row an array. Returning an array for a single column leaves Avatica's
-            // accessor casting an Object[] to the column's type.
+            // as in JdbcToEnumerableConverter, and matching JavaRowFormat.optimize: no fields is a null row,
+            // one field is the value itself, and more is an Object[]. Avatica's accessors expect exactly this
             var fieldCount = getRowType().getFieldCount();
             if (fieldCount == 0)
             {
@@ -136,7 +142,6 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             }
             else
             {
-                // declare values array
                 var values_ = rowBuilder
                     .append("values",
                         Expressions.newArrayBounds(
@@ -144,10 +149,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                             1,
                             Expressions.constant(fieldCount)));
 
-                // generate a call to GetDbReaderValue for each field
                 for (int i = 0; i < fieldCount; i++)
                 {
-                    // assign value to array at specified field index
                     rowBuilder.add(
                         Expressions.statement(
                             Expressions.assign(
@@ -155,12 +158,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                                 ReadField(rowBuilder, reader_, physType, i))));
                 }
 
-                // return values array
                 rowBuilder.add(
                     Expressions.return_(null, values_));
             }
 
-            // generate row builder factory lambda
+            // reader => () => row
             var rowBuilderFactory_ = list
                 .append("rowBuilderFactory",
                     Expressions.lambda(
@@ -170,9 +172,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                                 Expressions.lambda(rowBuilder.toBlock()))),
                         reader_));
 
-            // a correlated sub-query leaves a parameter per correlation variable in the SQL, and the values
-            // live on the context the builder closed over the outer row. Without the enricher the command is
-            // handed to the provider unfilled. Calcite does the same at JdbcToEnumerableConverter:222.
+            // each parameter in the SQL, whether a dynamic parameter or a correlation variable, is filled from
+            // the context when the command is created, as JdbcToEnumerableConverter binds its parameters
             var enumerable_ = hasParameters
                 ? list.append("enumerable",
                     Expressions.call(
@@ -186,8 +187,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                                 null,
                                 CreateEnricherMethod,
                                 dataSource,
-                                // the indexes and their types are settled while planning, so they travel as
-                                // constants
+                                // known while planning, so passed as constants
                                 Expressions.constant(parameters),
                                 Expressions.constant(parameterTypeNames),
                                 dataContextBuilder.Build()))))
@@ -199,25 +199,20 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                         sql_,
                         rowBuilderFactory_));
 
-            // return enumerable
             list.add(Expressions.return_(null, enumerable_));
 
-            // return block
             return implementor.result(physType, list.toBlock());
         }
 
         /// <summary>
-        /// Appends the read of one field and returns the expression holding it.
+        /// Appends a call to <see cref="AdoReaderUtil.GetDbReaderValue(DbDataReader, int, SqlTypeName)"/> that reads
+        /// one field as its declared SQL type, whatever CLR type the provider returns.
         /// </summary>
-        /// <param name="rowBuilder"></param>
-        /// <param name="reader_"></param>
-        /// <param name="physType"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// The declared SQL type decides how the value is read, not whatever the provider chose to surface
-        /// it as, so the row holds what the plan was built against.
-        /// </remarks>
+        /// <param name="rowBuilder">The block to append to.</param>
+        /// <param name="reader_">The reader parameter.</param>
+        /// <param name="physType">The row's physical type.</param>
+        /// <param name="index">The field's ordinal.</param>
+        /// <returns>The variable holding the value.</returns>
         static Expression ReadField(BlockBuilder rowBuilder, ParameterExpression reader_, PhysType physType, int index)
         {
             var fieldType = ((RelDataTypeField)physType.getRowType().getFieldList().get(index)).getType();
@@ -232,13 +227,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <summary>
-        /// Generates the SQL string to implement the enumerable.
+        /// Translates the subtree to SQL, applies the syntax's rewrite, and writes the statement with each
+        /// parameter named as the driver binds it.
         /// </summary>
-        /// <param name="convention">The convention whose dialect and parameter syntax the statement is
-        /// written in.</param>
-        /// <param name="dataContextBuilder"></param>
-        /// <param name="input"></param>
-        /// <returns></returns>
+        /// <param name="convention">The convention, whose dialect and syntax the statement is written in.</param>
+        /// <param name="dataContextBuilder">Registers each correlation variable the statement reads.</param>
+        /// <param name="input">The root of the subtree.</param>
+        /// <param name="implementor">The implementor used, which records each correlation variable's SQL type.</param>
+        /// <returns>The writer, holding the SQL and the variable index behind each parameter.</returns>
         AdoSqlWriter GenerateSql(AdoConvention convention, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input, out AdoImplementor implementor)
         {
             var typeFactory = (JavaTypeFactory)getCluster().getTypeFactory();
@@ -251,11 +247,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <summary>
-        /// Returns the SQL type name behind each parameter, in the writer's parameter order.
+        /// Returns the SQL type name of each parameter, in the writer's parameter order.
         /// </summary>
-        /// <param name="implementor">The implementor that recorded a type per dynamic parameter index.</param>
+        /// <param name="implementor">The implementor that recorded a type per correlation variable index.</param>
         /// <param name="indexes">The variable index behind each parameter, in parameter order.</param>
-        /// <returns></returns>
+        /// <returns>A list of <see cref="SqlTypeName"/> names, <see langword="null"/> for a parameter that is not a
+        /// correlation variable.</returns>
         internal static java.util.ArrayList GetParameterTypeNames(AdoImplementor implementor, java.util.List indexes)
         {
             var names = new java.util.ArrayList(indexes.size());

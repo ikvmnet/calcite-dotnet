@@ -19,12 +19,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// Covers working out a dialect from the only thing a generic driver can be asked: the name of the
-    /// product behind it.
+    /// Tests choosing a dialect from the product name and version a driver reports, and the SQL Server
+    /// dialect's corrections to Calcite's output.
     /// </summary>
     /// <remarks>
-    /// No database, so this runs everywhere, which matters: the ODBC and OLE DB suites that reach the same
-    /// code end to end need a Windows machine with LocalDB and skip on the rest of the matrix.
+    /// Needs no database, so it runs on every platform; the ODBC and OLE DB suites that reach the same code
+    /// end to end need Windows and LocalDB.
     /// </remarks>
     public class AdoSqlDialectsTests
     {
@@ -32,8 +32,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Returns what a dialect writes for an <c>OFFSET</c> / <c>FETCH</c> pair.
         /// </summary>
-        /// <param name="dialect"></param>
-        /// <returns></returns>
+        /// <param name="dialect">The dialect under test.</param>
+        /// <returns>The SQL the dialect writes for an offset of 1 and a fetch of 2.</returns>
         static string OffsetFetch(SqlDialect dialect)
         {
             var writer = new SqlPrettyWriter(SqlPrettyWriter.config().withDialect(dialect));
@@ -48,9 +48,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Returns what a dialect writes for the target type of a cast.
         /// </summary>
-        /// <param name="dialect"></param>
-        /// <param name="type"></param>
-        /// <returns></returns>
+        /// <param name="dialect">The dialect under test.</param>
+        /// <param name="type">The type being cast to.</param>
+        /// <returns>The dialect's spelling of that type, trimmed.</returns>
         static string CastSpec(SqlDialect dialect, RelDataType type)
         {
             var writer = new SqlPrettyWriter(SqlPrettyWriter.config().withDialect(dialect));
@@ -62,28 +62,25 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Returns what a dialect writes for a statement, by parsing it and unparsing it again.
         /// </summary>
-        /// <param name="dialect"></param>
-        /// <param name="sql"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// The route the adapter takes is a rel through <c>RelToSqlConverter</c>, and this is not that; it
-        /// is the same answer because both end at <c>SqlNode.unparse</c>, which is where an operator is
-        /// written. Measured on stock Calcite over the shapes in the report — projection, predicate, sort
-        /// key, aggregate argument — the two routes give the same string for this operator, so the shorter
-        /// one is what the assertions are made against and no schema is needed to make them.
+        /// The adapter goes through <c>RelToSqlConverter</c> instead, but both routes end at
+        /// <c>SqlNode.unparse</c>, where an operator is written, so this needs no schema.
         /// </remarks>
+        /// <param name="dialect">The dialect to write the statement in.</param>
+        /// <param name="sql">A query in Calcite's default SQL syntax.</param>
+        /// <returns>The query as the dialect writes it, with whitespace collapsed.</returns>
         static string Unparse(SqlDialect dialect, string sql)
         {
             return Unparse(dialect, SqlParser.create(sql).parseQuery());
         }
 
         /// <summary>
-        /// Returns what a dialect writes for a node already built, which is the way to reach an operator the
-        /// parser leaves unresolved.
+        /// Returns what a dialect writes for a node already built, with whitespace collapsed. Building the node
+        /// reaches an operator the parser would leave unresolved.
         /// </summary>
-        /// <param name="dialect"></param>
-        /// <param name="node"></param>
-        /// <returns></returns>
+        /// <param name="dialect">The dialect to write the node in.</param>
+        /// <param name="node">The parse tree to write.</param>
+        /// <returns>The SQL text, with each run of whitespace reduced to one space and the ends trimmed.</returns>
         static string Unparse(SqlDialect dialect, SqlNode node)
         {
             return Regex.Replace(node.toSqlString(dialect).getSql(), @"\s+", " ").Trim();
@@ -92,8 +89,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// A column reference, for building a call the parser will not produce.
         /// </summary>
-        /// <param name="name"></param>
-        /// <returns></returns>
+        /// <param name="name">The column name, used as a single-part identifier.</param>
+        /// <returns>An unresolved identifier with no parser position.</returns>
         static SqlNode Column(string name)
         {
             return new SqlIdentifier(name, SqlParserPos.ZERO);
@@ -102,18 +99,18 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// A call to an operator over the operands given.
         /// </summary>
-        /// <param name="op"></param>
-        /// <param name="operands"></param>
-        /// <returns></returns>
+        /// <param name="op">The operator to call.</param>
+        /// <param name="operands">The call's operands, in order.</param>
+        /// <returns>The call node, with no parser position.</returns>
         static SqlNode Call(SqlOperator op, params SqlNode[] operands)
         {
             return op.createCall(SqlParserPos.ZERO, operands);
         }
 
         /// <summary>
-        /// <c>MOD(A, B)</c>, which is the call every modulo test is written around.
+        /// <c>MOD(A, B)</c>, the call the modulo tests are written around.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>A new call to <c>MOD</c> over the columns <c>A</c> and <c>B</c>.</returns>
         static SqlNode Modulo()
         {
             return Call(SqlStdOperatorTable.MOD, Column("A"), Column("B"));
@@ -125,17 +122,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         static readonly RelDataTypeFactory Types = new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
 
         /// <summary>
-        /// Builds types from the type system <see cref="MssqlSqlDialect"/> carries, which is the one that
-        /// leaves a <c>CHAR</c> with no precision.
+        /// Builds types from the type system <see cref="MssqlSqlDialect"/> carries, which leaves a <c>CHAR</c>
+        /// with no precision.
         /// </summary>
         static readonly RelDataTypeFactory MssqlTypes = new SqlTypeFactoryImpl(MssqlSqlDialect.MSSQL_TYPE_SYSTEM);
 
         #region Product
 
         /// <remarks>
-        /// SQL Server is absent because its dialect is not Calcite's own instance — see
-        /// <see cref="TheCorrectedDialectIsStillTheSqlServerOne"/>.
+        /// SQL Server is absent because its dialect is a subclass of Calcite's rather than Calcite's own type;
+        /// see <see cref="TheCorrectedDialectIsStillTheSqlServerOne"/>.
         /// </remarks>
+        /// <param name="productName">The product name as a driver reports it.</param>
+        /// <param name="expected">The simple class name of the dialect Calcite chooses.</param>
         [Theory]
         [InlineData("PostgreSQL", "PostgresqlSqlDialect")]
         [InlineData("Oracle", "OracleSqlDialect")]
@@ -152,8 +151,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Calcite matches the name case-insensitively and after trimming, so this does too.
+        /// The name is matched case-insensitively, after trimming, and by containment, as Calcite matches it.
         /// </summary>
+        /// <param name="productName">A variation on SQL Server's product name.</param>
         [Theory]
         [InlineData("microsoft sql server")]
         [InlineData("  Microsoft SQL Server  ")]
@@ -164,8 +164,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A driver that will not say what is behind it still has to get a dialect, and the generic one is
-        /// what Calcite's own factory ends at.
+        /// An unknown or missing product name gets the ANSI dialect, as Calcite's own factory does.
         /// </summary>
         [Fact]
         public void AnUnknownProductGetsTheGenericDialect()
@@ -199,9 +198,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The reason the version is carried at all. <c>MssqlSqlDialect</c> writes <c>TOP(n)</c> below major
-        /// version 11 and <em>discards the offset</em> — a paged query then returns the first page for every
-        /// page — so a dialect built without a version is not merely conservative, it is wrong.
+        /// SQL Server 2012 (version 11) and later get <c>OFFSET</c> / <c>FETCH</c>. Below version 11
+        /// <c>MssqlSqlDialect</c> writes <c>TOP(n)</c> and discards the offset, so a dialect built without the
+        /// version would return the first page for every page.
         /// </summary>
         [Fact]
         public void SqlServerPastTwentyTwelveGetsOffsetFetch()
@@ -210,7 +209,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// And below it, Calcite's own answer, reproduced rather than corrected.
+        /// Below version 11 the dialect writes no <c>OFFSET</c> / <c>FETCH</c>, as Calcite's does.
         /// </summary>
         [Fact]
         public void SqlServerBeforeTwentyTwelveDoesNot()
@@ -219,8 +218,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A version that could not be read is the same case as no version at all, and lands on the
-        /// conservative side rather than throwing.
+        /// A version that cannot be parsed is treated as no version rather than throwing.
         /// </summary>
         [Fact]
         public void AnUnreadableVersionIsNotAnError()
@@ -233,11 +231,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Group by a constant
 
         /// <summary>
-        /// SQL Server cannot group by a constant and <c>MssqlSqlDialect</c> does not say so, which costs
-        /// every correlated sub-query: <c>EXISTS</c> becomes an aggregate over a constant true, and the
-        /// statement generated for it is <c>SELECT 1 AS [i] GROUP BY (1 = 1)</c> — "Incorrect syntax near
-        /// '='", measured. <c>SqlImplementor.visitRoot</c> only runs the rule that rewrites it away when
-        /// the dialect has asked for it.
+        /// SQL Server cannot group by a constant. A correlated <c>EXISTS</c> becomes an aggregate over a
+        /// constant true, and <c>SqlImplementor.visitRoot</c> rewrites that away only when
+        /// <c>supportsGroupByLiteral</c> is false; otherwise the server is sent <c>GROUP BY (1 = 1)</c> and
+        /// rejects it.
         /// </summary>
         [Fact]
         public void SqlServerSaysItCannotGroupByAConstant()
@@ -246,7 +243,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// And it is still the SQL Server dialect, rather than a generic one that happens to say the same.
+        /// The adapter's SQL Server dialect is a <see cref="MssqlSqlDialect"/>.
         /// </summary>
         [Fact]
         public void TheCorrectedDialectIsStillTheSqlServerOne()
@@ -255,7 +252,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The correction is to SQL Server alone: a dialect Calcite already had right is left as it is.
+        /// Other products keep Calcite's own answer.
         /// </summary>
         [Fact]
         public void AnotherProductKeepsCalcitesOwnAnswer()
@@ -269,10 +266,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Unbounded strings
 
         /// <summary>
-        /// A Calcite <c>VARCHAR</c> with no precision is unbounded, and the bare keyword SQL Server reads it
-        /// as is thirty characters in a cast — so <c>CAST(&lt;uniqueidentifier&gt; AS VARCHAR)</c> is
-        /// "Insufficient result space to convert uniqueidentifier value to char" and the same cast over a
-        /// long string returns its first thirty characters with no error at all.
+        /// A Calcite <c>VARCHAR</c> with no precision is unbounded, but SQL Server reads a bare <c>VARCHAR</c>
+        /// in a cast as thirty characters: a <c>uniqueidentifier</c> fails to convert, and a longer string is
+        /// silently truncated.
         /// </summary>
         [Fact]
         public void AnUnboundedVarcharBecomesVarcharMax()
@@ -281,8 +277,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Calcite's own dialect gives the same answer: it wrote the keyword alone until CALCITE-7756, and
-        /// writes <c>VARCHAR(MAX)</c> from the 1.43 snapshots on.
+        /// Calcite's own dialect gives the same answer for <c>VARCHAR</c>.
         /// </summary>
         [Fact]
         public void CalcitesOwnAnswerIsVarcharMax()
@@ -291,9 +286,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The correction is to the unbounded case alone: a stated length is what the caller asked for and
-        /// is written as it stands.
+        /// A stated length is written as it stands.
         /// </summary>
+        /// <param name="typeName">The name of the character or binary <see cref="SqlTypeName"/>.</param>
+        /// <param name="precision">The stated length.</param>
+        /// <param name="expected">The cast target the dialect is expected to write.</param>
         [Theory]
         [InlineData(nameof(SqlTypeName.VARCHAR), 36, "VARCHAR(36)")]
         [InlineData(nameof(SqlTypeName.CHAR), 36, "CHAR(36)")]
@@ -306,8 +303,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// <c>varbinary</c> carries the same rule over bytes, and <c>VARBINARY</c>'s default precision is
-        /// unspecified for the same reason <c>VARCHAR</c>'s is.
+        /// An unbounded <c>VARBINARY</c> is written as <c>VARBINARY(MAX)</c>, for the same reason.
         /// </summary>
         [Fact]
         public void AnUnboundedVarbinaryBecomesVarbinaryMax()
@@ -316,10 +312,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A <c>CHAR</c> reaches the same rendering where the type system leaves its precision unspecified —
-        /// CALCITE-6565 made the bare keyword the intended answer for SQL Server, and the server reads it as
-        /// thirty. There is no <c>char(max)</c> in T-SQL, and a fixed length with no length has nothing to
-        /// pad to.
+        /// A <c>CHAR</c> whose precision the type system leaves unspecified is also written as
+        /// <c>VARCHAR(MAX)</c>. Calcite writes the bare <c>CHAR</c>, which SQL Server reads as thirty
+        /// characters, and T-SQL has no <c>char(max)</c>.
         /// </summary>
         [Fact]
         public void AnUnboundedCharBecomesVarcharMax()
@@ -339,7 +334,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Nothing else is touched.
+        /// Other types keep Calcite's cast spec.
         /// </summary>
         [Fact]
         public void AnotherTypeKeepsCalcitesAnswer()
@@ -351,11 +346,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// And the correction is SQL Server's alone. The bare keyword is a different default per product:
-        /// SQLite ignores a length entirely, and Postgres reads a bare <c>varchar</c> as unbounded, which is
-        /// what Calcite means. The claim is that no length was written, rather than that the whole spec is
-        /// the keyword: SQLite says it supports a character set, so Calcite names one after it.
+        /// Other products keep the bare keyword: SQLite ignores a length, and PostgreSQL reads a bare
+        /// <c>varchar</c> as unbounded. The assertion is only that no length is written, because Calcite
+        /// appends a character set for SQLite.
         /// </summary>
+        /// <param name="productName">A product other than SQL Server.</param>
         [Theory]
         [InlineData("SQLite")]
         [InlineData("PostgreSQL")]
@@ -368,9 +363,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A driver that only says what is behind it reaches the same corrected dialect, which is what
-        /// carries the fix to ODBC and OLE DB over SQL Server.
+        /// Every product name that selects SQL Server gets the corrected dialect, which is how ODBC and OLE DB
+        /// over SQL Server get it.
         /// </summary>
+        /// <param name="productName">A product name that selects SQL Server.</param>
         [Theory]
         [InlineData("Microsoft SQL Server")]
         [InlineData("microsoft sql server")]
@@ -385,10 +381,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Concatenation
 
         /// <summary>
-        /// T-SQL has no <c>||</c>, and every statement that concatenates reached the server carrying one.
-        /// The four shapes are the ones measured in the report, and the fifth is two literals, which are
-        /// not folded away — so there is no spelling of the expression that avoids the operator.
+        /// T-SQL has no <c>||</c>, so concatenation is written as <c>+</c> wherever it appears. Two literals are
+        /// not folded away, so they are covered too.
         /// </summary>
+        /// <param name="sql">A statement with a concatenation in one position.</param>
+        /// <param name="shape">The position, named for the failure message.</param>
         [Theory]
         [InlineData("SELECT A || B FROM CAT WHERE ID = 1", "a projection")]
         [InlineData("SELECT ID FROM CAT WHERE A || B = 'aabb'", "a predicate")]
@@ -405,15 +402,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// And it is Calcite's own answer now, which is why the adapter no longer writes it.
+        /// Calcite's own <c>MssqlSqlDialect</c> writes <c>+</c> for <c>||</c>, so the adapter's dialect does not
+        /// override concatenation.
         /// </summary>
-        /// <remarks>
-        /// <c>MssqlSqlDialect</c> used to intercept <c>SUBSTRING</c>, <c>CEIL</c>, <c>FLOOR</c>, <c>MOD</c>
-        /// and <c>SAFE_CAST</c> and not this, so the operator went down as it stood and the server answered
-        /// "Incorrect syntax near '|'". This adapter substituted the <c>+</c> itself for that reason. A
-        /// 1.43 snapshot made the substitution upstream, so the override went and this is what holds the
-        /// reason it can stay gone.
-        /// </remarks>
         [Fact]
         public void CalciteWritesThePlusItself()
         {
@@ -423,8 +414,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The whole statement, rather than the operator alone, for each shape — a substitution that writes
-        /// the right operator into the wrong place is still wrong.
+        /// The whole statement for each shape, so the operator is checked in place.
         /// </summary>
         [Theory]
         [InlineData(
@@ -445,10 +435,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// <c>+</c> and not <c>CONCAT</c>, and the difference is answers rather than taste: <c>||</c> yields
-        /// null when either operand is null, <c>+</c> does the same under the default
-        /// <c>CONCAT_NULL_YIELDS_NULL</c>, and T-SQL's <c>CONCAT</c> reads a null operand as the empty
-        /// string. The function would turn a query that should return nothing into one that returns a row.
+        /// <c>+</c> and not <c>CONCAT</c>: <c>||</c> yields null when either operand is null, as <c>+</c> does
+        /// under the default <c>CONCAT_NULL_YIELDS_NULL</c>, while T-SQL's <c>CONCAT</c> reads a null operand as
+        /// the empty string.
         /// </summary>
         [Fact]
         public void TheFunctionIsNotWhatIsWritten()
@@ -459,14 +448,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The correction is SQL Server's alone: a product whose own operator is <c>||</c> keeps it.
+        /// A product whose own operator is <c>||</c> keeps it.
         /// </summary>
+        /// <param name="productName">A product other than SQL Server, including one no dialect recognises.</param>
         [Theory]
         [InlineData("PostgreSQL")]
         [InlineData("SQLite")]
         [InlineData("Oracle")]
-        // the generic dialect an unknown product gets, which is where a driver that will not say what it
-        // fronts ends up
+        // an unknown product, which gets the ANSI dialect
         [InlineData("Some Database Nobody Has Heard Of")]
         public void AnotherProductKeepsTheOperator(string productName)
         {
@@ -474,9 +463,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// ODBC and OLE DB reach SQL Server through this same dialect, and a name is all either can offer,
-        /// so every name that selects SQL Server has to carry the correction with it.
+        /// ODBC and OLE DB reach SQL Server through this dialect by product name, so every name that selects
+        /// SQL Server writes <c>+</c>.
         /// </summary>
+        /// <param name="productName">A product name that selects SQL Server.</param>
         [Theory]
         [InlineData("Microsoft SQL Server")]
         [InlineData("microsoft sql server")]
@@ -489,11 +479,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The override is a case ahead of <c>MssqlSqlDialect.unparseCall</c> rather than a replacement of
-        /// it, so what that method already intercepts still happens. <c>MOD</c> is the one this is modelled
-        /// on — CALCITE-6726 swapped an operator in the same way — and <c>CEIL</c> is a rewrite of a
-        /// different shape.
+        /// The adapter's <c>unparseCall</c> handles <c>MOD</c> and defers everything else to
+        /// <c>MssqlSqlDialect.unparseCall</c>, so that method's own rewrites still happen.
         /// </summary>
+        /// <param name="sql">A statement with a call <c>MssqlSqlDialect</c> rewrites.</param>
+        /// <param name="expected">Text the rewritten statement must contain.</param>
         [Theory]
         [InlineData("SELECT CEIL(SALARY) FROM CAT", "CEILING")]
         [InlineData("SELECT SUBSTRING(A FROM 1 FOR 2) FROM CAT", "SUBSTRING")]
@@ -509,23 +499,21 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Concatenation and precedence
 
         /// <summary>
-        /// Where a nested concatenation ends up, now that the substitution is Calcite's.
+        /// How Calcite's substitution of <c>+</c> for <c>||</c> writes a nested concatenation.
         /// </summary>
         /// <remarks>
-        /// The substitution is handed <c>PLUS</c>, whose precedence is not the one the call carries —
-        /// <c>||</c> is 60 and <c>+</c> is 40 — and <c>SqlCall.unparse</c> has decided the parentheses from
-        /// the call's own operator before the dialect is asked. So the grouping is written for the operator
-        /// being replaced. Concatenation nests inside itself, inside a comparison, inside a postfix operator
-        /// and inside a call that writes its own parentheses; all four are here, and the last two rows are
-        /// where the two precedences differ and the parentheses are not carried.
+        /// <c>||</c> has precedence 60 and <c>+</c> has 40, and <c>SqlCall.unparse</c> decides the parentheses
+        /// from the call's own operator before the dialect substitutes, so the grouping is written for
+        /// <c>||</c>. The rows cover concatenation inside itself, a comparison, a postfix operator and calls
+        /// that write their own parentheses; the last row is the one context where the precedences differ and
+        /// the grouping is lost.
         /// </remarks>
         [Theory]
         // concatenation in concatenation, which associates the same either way
         [InlineData(
             "SELECT A || B || C FROM CAT",
             "SELECT [A] + [B] + [C] FROM [CAT]")]
-        // the parentheses the caller wrote are dropped, both operators being left associative and
-        // concatenation associative, so the expression means the same either way
+        // the parentheses the caller wrote are dropped; concatenation is associative, so the meaning is kept
         [InlineData(
             "SELECT A || (B || C) FROM CAT",
             "SELECT [A] + [B] + [C] FROM [CAT]")]
@@ -551,9 +539,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         [InlineData(
             "SELECT UPPER(A || B) FROM CAT",
             "SELECT UPPER([A] + [B]) FROM [CAT]")]
-        // the one context that binds between the two precedences, where the grouping is not carried: a
-        // reader would take this as [A] + ([B] * 2). It needs a string as an operand of *, which does not
-        // validate, so no statement reaches the server through it
+        // an operator binding between the two precedences, where the grouping is lost: this reads as
+        // [A] + ([B] * 2). It needs a string as an operand of *, which does not validate, so no plan
+        // produces it
         [InlineData(
             "SELECT (A || B) * 2 FROM CAT",
             "SELECT [A] + [B] * 2 FROM [CAT]")]
@@ -563,18 +551,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The one thing the upstream substitution does not carry, recorded rather than corrected.
+        /// Calcite's substitution loses the grouping of a concatenation under <c>*</c>; the adapter leaves this
+        /// as Calcite writes it.
         /// </summary>
         /// <remarks>
-        /// <c>||</c> is precedence 60 and <c>+</c> is 40, and <c>SqlCall.unparse</c> has decided the
-        /// parentheses from the call's own operator before the dialect is asked, so the grouping is written
-        /// for the operator being replaced rather than the one replacing it. A reader takes the result as
-        /// <c>[A] + ([B] * 2)</c>.
-        ///
-        /// <para>It bites nothing. Reaching it takes a string as an operand of <c>*</c>, which does not
-        /// validate, so no statement gets here through a plan; this test constructs it by unparsing text.
-        /// The adapter closed the gap while it was making the substitution itself and no longer can, the
-        /// substitution now happening inside <c>MssqlSqlDialect</c> rather than around it.</para>
+        /// The result reads as <c>[A] + ([B] * 2)</c>. Reaching it takes a string as an operand of <c>*</c>,
+        /// which does not validate, so no plan produces it; this test constructs it by unparsing text.
         /// </remarks>
         [Fact]
         public void TheGroupingUpstreamDropsIsUnreachable()
@@ -589,14 +571,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Modulo
 
         /// <summary>
-        /// <c>MssqlSqlDialect</c> already writes a modulo as the operator T-SQL has, which CALCITE-6726
-        /// added and nothing pinned. This is the answer that is kept.
+        /// A modulo is written with T-SQL's <c>%</c> operator, as <c>MssqlSqlDialect</c> writes it.
         /// </summary>
         /// <remarks>
-        /// Built rather than parsed throughout this region. An unqualified function name is a
-        /// <c>SqlUnresolvedFunction</c> until the validator has run, and the interception switches on
-        /// <c>SqlKind.MOD</c>, which an unresolved call does not carry — so parse-then-unparse writes
-        /// <c>MOD([A], [B])</c> and says nothing about the interception either way.
+        /// The calls in this region are built rather than parsed. An unqualified function name is a
+        /// <c>SqlUnresolvedFunction</c> until validation, and the dialect switches on <c>SqlKind.MOD</c>,
+        /// which an unresolved call does not carry, so a parsed <c>MOD</c> would be written unchanged.
         /// </remarks>
         [Fact]
         public void ModuloIsWrittenAsThePercentOperator()
@@ -605,11 +585,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// What is corrected is where the parentheses go. <c>MOD</c> is a function and carries a function's
-        /// precedence of 100; <c>PERCENT_REMAINDER</c> is 60. So as the right operand of an operator that
-        /// binds at 60, the substitution loses the grouping the call had, and the operands being numeric
-        /// there is no shape of the expression a validated plan cannot reach.
+        /// As the right operand of an operator binding at 60, the modulo keeps its parentheses. <c>MOD</c> is a
+        /// function with precedence 100 and <c>PERCENT_REMAINDER</c> is 60, so Calcite's substitution loses the
+        /// grouping here, and with numeric operands a validated plan can produce every one of these shapes.
         /// </summary>
+        /// <param name="operatorName">The outer operator, as <see cref="OperatorNamed"/> takes it.</param>
+        /// <param name="expected">The SQL the adapter's dialect is expected to write.</param>
         [Theory]
         [InlineData(nameof(SqlStdOperatorTable.DIVIDE), "[N] / ([A] % [B])")]
         [InlineData(nameof(SqlStdOperatorTable.MULTIPLY), "[N] * ([A] % [B])")]
@@ -622,10 +603,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// And the answers this corrects, so that the tests say what they are for. Each is grouped by the
-        /// server from the left: over 12, 7 and 4 they answer 1, 0 and 1 where the expressions mean 4, 36
-        /// and 0 — measured on the server, not derived from the precedence table.
+        /// Calcite's own rendering of the same calls, which the server groups from the left: over 12, 7 and 4
+        /// these give 1, 0 and 1 where the expressions mean 4, 36 and 0.
         /// </summary>
+        /// <param name="operatorName">The outer operator, as <see cref="OperatorNamed"/> takes it.</param>
+        /// <param name="expected">The SQL Calcite's <c>MssqlSqlDialect</c> writes.</param>
         [Theory]
         [InlineData(nameof(SqlStdOperatorTable.DIVIDE), "[N] / [A] % [B]")]
         [InlineData(nameof(SqlStdOperatorTable.MULTIPLY), "[N] * [A] % [B]")]
@@ -638,11 +620,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Everywhere else the rendering already meant what the call meant, and is left as it stands. As a
-        /// left operand left associativity gives the nesting for nothing; <c>%</c> binds tighter than
-        /// <c>-</c>; and SQL Server's <c>%</c> takes the sign of its dividend, so <c>(-a) % b</c> and
-        /// <c>-(a % b)</c> agree.
+        /// As a left operand the rendering is unchanged and matches Calcite's: left associativity gives the
+        /// intended nesting, and <c>%</c> binds tighter than <c>-</c> and <c>=</c>.
         /// </summary>
+        /// <param name="operatorName">The outer operator, as <see cref="OperatorNamed"/> takes it.</param>
+        /// <param name="expected">The SQL both dialects are expected to write.</param>
         [Theory]
         [InlineData(nameof(SqlStdOperatorTable.MULTIPLY), "[A] % [B] * [N]")]
         [InlineData(nameof(SqlStdOperatorTable.DIVIDE), "[A] % [B] / [N]")]
@@ -658,8 +640,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The right-operand context that was already right, for the same reason: a looser operator needs
-        /// no parentheses around a tighter one, and <c>%</c> binds tighter than <c>-</c>.
+        /// As the right operand of <c>-</c> the rendering is unchanged, since <c>%</c> binds tighter.
         /// </summary>
         [Fact]
         public void AModuloUnderALooserOperatorIsUnchanged()
@@ -672,15 +653,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A prefix operator hands its operand a left precedence of 80, which outranks
-        /// <c>PERCENT_REMAINDER</c>'s 60, so the parentheses go on where Calcite writes none. This is the
-        /// one place the correction writes a parenthesis Calcite would not have.
+        /// A prefix operator hands its operand a left precedence of 80, above <c>PERCENT_REMAINDER</c>'s 60, so
+        /// the adapter writes parentheses where Calcite writes none.
         /// </summary>
         /// <remarks>
-        /// Both compute the same thing here, and Calcite is not wrong — but only because SQL Server's
-        /// <c>%</c> takes the sign of its dividend, so <c>(-a) % b</c> and <c>-(a % b)</c> agree, measured
-        /// at -3 over 7 and 4. The rule the override applies does not know that and does not need to: it
-        /// writes the grouping the call had, and a parenthesis that was not needed costs nothing.
+        /// Both renderings compute the same value, because SQL Server's <c>%</c> takes the sign of its dividend
+        /// and so <c>(-a) % b</c> equals <c>-(a % b)</c>; the adapter's rule writes the call's grouping without
+        /// relying on that.
         /// </remarks>
         [Fact]
         public void AModuloUnderAPrefixOperatorIsParenthesised()
@@ -703,10 +682,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// <c>SqlKind.MOD</c> is carried by two operators, and the other one is <c>PERCENT_REMAINDER</c>
-        /// itself — what a query written with <c>%</c> produces, under a conformance level that allows one.
-        /// The interception then substitutes an operator for itself, and the rule is applied to the same
-        /// precedences <c>SqlCall.unparse</c> has just applied it to, so it answers the same and no
+        /// <c>PERCENT_REMAINDER</c>, which a query written with <c>%</c> produces under a conformance that allows
+        /// it, also has <c>SqlKind.MOD</c>. The adapter then substitutes the operator for itself with the
+        /// precedences <c>SqlCall.unparse</c> has already applied, so the output matches Calcite's and no
         /// parenthesis is written twice.
         /// </summary>
         [Fact]
@@ -728,9 +706,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The correction is SQL Server's alone. Another product writes the function, and writes it whole,
-        /// so there is no substitution to lose a grouping over.
+        /// Other products write the <c>MOD</c> function rather than <c>%</c>.
         /// </summary>
+        /// <param name="productName">A product other than SQL Server.</param>
         [Theory]
         [InlineData("PostgreSQL")]
         [InlineData("Oracle")]
@@ -744,8 +722,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Resolves one of the operators the rows above name.
         /// </summary>
-        /// <param name="name"></param>
-        /// <returns></returns>
+        /// <param name="name">The name of a <see cref="SqlStdOperatorTable"/> field, as the theory data gives
+        /// it.</param>
+        /// <returns>The standard operator of that name; the test fails for a name not handled here.</returns>
         static SqlOperator OperatorNamed(string name)
         {
             return name switch

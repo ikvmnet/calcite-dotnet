@@ -34,15 +34,12 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A correlated <c>EXISTS</c> over an <c>UNNEST</c>, which the default decorrelator rewrites into a
-        /// plan nothing binds, runs under <c>TopDownGeneralDecorrelationEnabled</c>.
+        /// A correlated <c>EXISTS</c> over an <c>UNNEST</c> runs under <c>TopDownGeneralDecorrelationEnabled</c>.
         /// </summary>
         /// <remarks>
-        /// This is the statement of issue 125, and the only thing that makes it answer rather than throw is
-        /// the connection string reaching <c>Programs.DecorrelateProgram</c>: it chooses between
-        /// <c>RelDecorrelator</c> and <c>TopDownGeneralDecorrelator</c> on the property this key carries. So
-        /// it is the option's end-to-end test as much as the statement's — nothing else in this project
-        /// reads the key.
+        /// Calcite's <c>Programs.DecorrelateProgram</c> chooses between <c>RelDecorrelator</c> and
+        /// <c>TopDownGeneralDecorrelator</c> on the property this key carries, so this is also the end-to-end
+        /// test that the connection string option reaches it.
         /// </remarks>
         [Fact]
         public void Should_execute_a_correlated_exists_over_an_uncollect_with_top_down_decorrelation()
@@ -274,13 +271,9 @@ namespace Apache.Calcite.Data.Tests
         [Fact]
         public void ScannableTable_query_exercises_stash()
         {
-            // A ScannableTable is scanned via BindableTableScan, which the planner wraps in an
-            // EnumerableInterpreter. EnumerableInterpreter.implement() calls
-            // implementor.stash(getInput(), RelNode.class), storing the RelNode in
-            // signature.internalParameters under a key like "v0stashed". The generated bind(root)
-            // method then retrieves it with root.get("v0stashed"). This test verifies that stashed
-            // values are present in the DataContext at execution time, i.e. that Bind() is called
-            // after Plan() so that signature.internalParameters is already populated.
+            // A ScannableTable is scanned by a BindableTableScan under an EnumerableInterpreter, whose
+            // implement stashes its input in the signature's internal parameters and whose generated code
+            // reads it back from the DataContext, so this fails unless those parameters reach the context.
             using var c = new CalciteDataSourceBuilder(TestModels.InlineEmptyModelConnectionString)
                 .ConfigureRootSchema(root => root.add("STASH_TEST", new StashTestTable()))
                 .Build()
@@ -295,9 +288,9 @@ namespace Apache.Calcite.Data.Tests
     }
 
     /// <summary>
-    /// A minimal <see cref="ScannableTable"/> that returns a single row with a single integer column.
-    /// Registering it on a schema causes the planner to emit an <c>EnumerableInterpreter</c> wrapping
-    /// a <c>BindableTableScan</c>, which exercises <c>EnumerableRelImplementor.stash()</c>.
+    /// A <see cref="ScannableTable"/> of one row and one integer column, which the planner scans with a
+    /// <c>BindableTableScan</c> under an <c>EnumerableInterpreter</c>, so that
+    /// <c>EnumerableRelImplementor.stash</c> is used.
     /// </summary>
     sealed class StashTestTable : AbstractTable, ScannableTable
     {

@@ -2,13 +2,25 @@
 
 [![NuGet](https://img.shields.io/nuget/v/Apache.Calcite.FullText)](https://www.nuget.org/packages/Apache.Calcite.FullText)
 
-**Apache.Calcite.FullText** gives [Apache Calcite](https://calcite.apache.org/) a set of `CLR_FT_*` operators for full text search, and the plumbing that makes them nameable from a query.
+**Apache.Calcite.FullText** declares a set of `CLR_FT_*` full text search operators for [Apache Calcite](https://calcite.apache.org/): their names, arities, operand types and return types. A query can then be written against one vocabulary, and each store adapter translates it into the store's own full text syntax.
 
-Calcite has no full text operator — not in `SqlStdOperatorTable`, and not in any of the fourteen `SqlLibrary` tables, at any casing. Every store that offers full text meets the same problem and each solves it privately: PostgreSQL has `@@` over `tsvector`, SQL Server `CONTAINS` and `FREETEXT`, MySQL `MATCH … AGAINST`, SQLite FTS5 `MATCH`, Cosmos DB `FullTextContains`, Elasticsearch and MongoDB their own. So an adapter that wants any of them invents names, invents the resolution plumbing, and a query written against one store cannot be planned against another.
+Calcite has no full text operators of its own, and every store spells full text differently: PostgreSQL has `@@` over `tsvector`, SQL Server `CONTAINS` and `FREETEXT`, MySQL `MATCH … AGAINST`, SQLite FTS5 `MATCH`, Cosmos DB `FullTextContains`. This package gives adapters a shared set of names to push down.
 
-This package declares the names, arities and types once, offers them by both routes a query can reach a name, and owns the collision tripwire. It is **optional** and nothing else in the repository depends on it.
+Targets **.NET 8**. It does not depend on any other package in this repository.
 
-Targets **.NET 8**, and is verified on **.NET 8** and **.NET 10**.
+## Nothing here evaluates a search
+
+These operators have **no in-process implementation, and never will**. Which documents match, and how they score, depends on the store's analyzer (tokenising, case folding, stemming, stopwords, language), and an approximation computed in .NET would give different answers from the store.
+
+So a `CLR_FT_*` call only works when a store adapter pushes it down into the store's query. If a plan still contains a call when Calcite compiles it (because no adapter handles the table, or the adapter declined that call or that position), the statement fails. Through the schema route the failure explains itself:
+
+```
+CLR_FT_CONTAINS is evaluated by the store and has no in-process body. Which documents match is
+decided by the store's analyzer, and approximating one would answer differently from the store for
+the same query. This plan asks for the value somewhere the call could not be pushed down.
+```
+
+Through the operator table route it is Calcite's own error for an operator it cannot implement.
 
 ## Install
 
@@ -16,9 +28,11 @@ Targets **.NET 8**, and is verified on **.NET 8** and **.NET 10**.
 dotnet add package Apache.Calcite.FullText
 ```
 
-## Using it
+## Registering the operators
 
-A host driving its own planner chains the operator table:
+There are two ways to make the names resolvable. **Use one or the other, never both** (see [Known limitations](#known-limitations)).
+
+**Operator table**, for a host that builds its own validator or `Frameworks` configuration. Chain `FullTextOperatorTable` onto the tables you already use:
 
 ```csharp
 using Apache.Calcite.FullText.Sql;
@@ -30,7 +44,7 @@ var operatorTable = SqlOperatorTables.chain(
     FullTextOperatorTable.Instance());
 ```
 
-Anyone else registers them on a schema, which works through the stock `jdbc:calcite:` driver with nothing chained and nothing subclassed:
+**Schema functions**, for everyone else, including a plain `jdbc:calcite:` connection, which cannot chain an operator table. Add the declarations to a schema:
 
 ```csharp
 using Apache.Calcite.FullText.Schema;
@@ -38,9 +52,11 @@ using Apache.Calcite.FullText.Schema;
 FullTextSchema.AddTo(rootSchema);
 ```
 
-An adapter that implements `Schema.getFunctions` itself merges `FullTextSchema.Functions()` into its own, so the operators arrive with its tables. Declare at **every level the connection might be rooted at** — an unqualified name resolves against the connection's default schema and the root, and never a subschema.
+An adapter that implements `Schema.getFunctions` itself can merge `FullTextSchema.Functions()` into what it returns, so the operators arrive with its tables.
 
-**Do one or the other, not both.** See *Registering both routes* below; with both in place, an `ARRAY` column stops working.
+An unqualified function name is looked up only in the connection's default schema and in the root schema, never in other subschemas, so declare the functions at every level a connection may use as its default.
+
+## Writing queries
 
 ```sql
 SELECT ID
@@ -50,45 +66,49 @@ ORDER BY CLR_FT_SCORE(BODY, 'steel') DESC
 FETCH FIRST 10 ROWS ONLY
 ```
 
-## What is here
-
-**Predicates and scores.**
+**Predicates**, each answering a nullable `BOOLEAN`:
 
 | | |
 | --- | --- |
 | `CLR_FT_CONTAINS(searched, keyword)` | whether the keyword occurs |
 | `CLR_FT_CONTAINS_ALL(searched, keyword, …)` | whether every keyword occurs |
 | `CLR_FT_CONTAINS_ANY(searched, keyword, …)` | whether any keyword occurs |
+
+**Scores**, each answering a nullable `DOUBLE`:
+
+| | |
+| --- | --- |
 | `CLR_FT_SCORE(searched, keyword, …)` | how well the keywords match |
-| `CLR_FT_RRF(score, …)` | several scores fused by reciprocal rank fusion |
+| `CLR_FT_RRF(score, score, …)` | several scores fused by reciprocal rank fusion |
+| `CLR_FT_WEIGHT(score, weight)` | a score weighted relative to the others it is fused with |
 
-**Term constructors**, which stand where a keyword goes and say what kind of term it is.
-
-| | |
-| --- | --- |
-| `CLR_FT_PHRASE(text)` | an ordered phrase |
-| `CLR_FT_PREFIX(text)` | anything beginning with the text |
-| `CLR_FT_FUZZY(text, edits)` | the text within a number of edits |
-
-**A score modifier.**
+**Term constructors**, which stand where a keyword goes and say what kind of term it is:
 
 | | |
 | --- | --- |
-| `CLR_FT_WEIGHT(score, weight)` | a score counting for more or less than the others fused with it |
+| `CLR_FT_PHRASE(text)` | the words together, in order |
+| `CLR_FT_PREFIX(text)` | any word beginning with the text |
+| `CLR_FT_FUZZY(text, edits)` | the text within an integer number of edits |
 
-The **searched** position takes anything — a character column, a document property typed `ANY`, an array of strings, a `ROW` of columns where the store searches several at once. What a store can actually search is the store's business; a shared package that narrowed this would be refusing a store rather than catching a mistake. Keywords are text, so `CLR_FT_CONTAINS(BODY, 42)` is refused at validation.
+Notes on the operands:
 
-### Why term constructors rather than more functions
+- The **searched** operand accepts any type: a character column, an untyped (`ANY`) document property, an array of strings, or a `ROW` of columns for a store that searches several at once. Which of these a store can search is its adapter's decision.
+- **Keywords** are character values, passed as separate operands rather than as a query string in any store's grammar. A term constructor is accepted in any keyword position, and constructors mix with plain keywords: `CLR_FT_CONTAINS_ALL(BODY, 'red', CLR_FT_FUZZY('bycycle', 2), CLR_FT_PREFIX('mount'))`.
+- Use `CLR_FT_PHRASE` for a multi-word search. Stores read a bare multi-word keyword differently: Cosmos DB treats `'red bicycle'` as a phrase, PostgreSQL's `plainto_tsquery` matches the two words anywhere in the document.
+- A score's value is whatever the store's ranking computes and is not comparable across stores; its ordering is what a query can rely on. Where a score may appear depends on the store: Cosmos DB accepts one only in `ORDER BY RANK`, and SQL Server has no scalar rank at all.
+- `CLR_FT_RRF` takes any numeric score, so a full text score can be fused with an adapter's own vector similarity for hybrid search.
 
-Because a bare multi-word keyword is not portable, and that is a correctness problem rather than an inconvenience. Cosmos reads `FullTextContains(c.text, "red bicycle")` as a **phrase**; PostgreSQL's `plainto_tsquery` reads the same two words as `red & bicycle`, which matches a document holding them paragraphs apart. The same query, two answers, no error. `CLR_FT_PHRASE` is what says which was meant.
+## Pushing the operators down: what an adapter does
 
-The alternative everywhere else is to put the structure in the string — `to_tsquery('a:*')`, `'"a*"'`, `{"term": "red", "distance": 1}`. A shared package cannot adopt one store's grammar without making every other adapter parse it, and cannot invent its own without making every adapter parse that. As calls, the structure is in the plan an adapter already walks, and one it cannot render it declines by name.
+An adapter that supports full text search translates these calls into its store's query, in the rules that move filters, projections and sorts into its own convention.
 
-Constructors also **mix**: `CLR_FT_CONTAINS_ALL(BODY, 'red', CLR_FT_FUZZY('bycycle', 2), CLR_FT_PREFIX('mount'))` carries an exact keyword, a fuzzy one and a prefix in one call, which a `CLR_FT_CONTAINS_ALL_FUZZY` could not.
+1. **Recognise calls by name.** Use `FullTextOperatorTable.Matches(op, FullTextOperatorTable.ClrFtContains)`, `IsFullText`, `IsScoring` and `IsTerm`. Do not compare operators by reference: a call resolved through the schema route carries a `SqlUserDefinedFunction` that Calcite built, not the field in `FullTextOperatorTable`.
+2. **Decline what the store cannot express, in the rule's match.** If an expression contains a `CLR_FT_*` call the store cannot render, or one in a position the store does not allow (a projected score, for example), do not push that node down. Every remaining call makes the statement fail when it is compiled, so declining is how an adapter reports "not supported".
+3. **Read keyword positions.** For each operand after the searched one, `IsTerm` says whether it is a term constructor (`CLR_FT_PHRASE`, `CLR_FT_PREFIX`, `CLR_FT_FUZZY`) to be rendered as that kind of term, or a plain keyword. A constructor nested in another (`CLR_FT_FUZZY(CLR_FT_PHRASE(…), 1)`) passes validation, so decline it.
+4. **Treat scores separately.** `IsScoring` identifies `CLR_FT_SCORE`, `CLR_FT_RRF` and `CLR_FT_WEIGHT`. A store that takes weights positionally builds them from the `CLR_FT_WEIGHT` wrappers; one with no weighting can render a weight of one and decline any other.
+5. **Optionally simplify first.** `FullTextRules.Simplify(rexBuilder, expression)` returns an expression with the rewrites below applied, which reduces the number of shapes a renderer has to handle.
 
-## What each store spells these
-
-Measured against each store's own reference, and the reason the vocabulary is nobody's in particular.
+How each store might spell the operators:
 
 | | Cosmos DB | PostgreSQL | SQL Server | MySQL | SQLite FTS5 | Elasticsearch | Atlas Search |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -102,40 +122,11 @@ Measured against each store's own reference, and the reason the vocabulary is no
 | `CLR_FT_FUZZY` | `{"term": …, "distance": …}` | — | — | — | — | `fuzziness` | `fuzzy.maxEdits` |
 | `CLR_FT_WEIGHT` | `RRF(…, [0.9, 0.1])` | `ts_rank` weights | `ISABOUT(… WEIGHT(0.9))` | `>` and `<` boolean | `bm25(t, 10.0)` | `boost` | `score.boost` |
 
-**Everything Cosmos DB offers is expressible**, which is the bar this vocabulary was set.
-`FullTextResolutionTests.ShouldExpressEveryCosmosFullTextConstruct` pins one statement per Cosmos construct, on both routes.
-
-**Where a call is legal, how it renders, and what it costs are the adapter's.** Cosmos permits a score in an `ORDER BY RANK` clause and nowhere else, and rejects a projected one outright. SQL Server has **no scalar rank at all**: `CONTAINS` and `FREETEXT` are predicates, and the relevance value is a `RANK` column of the table `CONTAINSTABLE` returns, reached by joining it to the base table on the full text index's unique key — so `CLR_FT_SCORE` there becomes a join rather than an expression, and an adapter that cannot supply the key declines it. The scalar form is still the right thing to declare: it is what a query wants to write.
-
-## There is no evaluator, and there will not be
-
-Every operator here is declared with **no body**. A full text answer is the store's analyzer — tokenising, case folding, stemming, stopwords, per language — and which documents match is whatever that analyzer decides. An in-process approximation would answer differently from the store for the same query, which is worse than not answering: a predicate rechecked against it would discard rows the store correctly returned.
-
-So a call that no rule pushed down is refused while the plan is turned into code, in words that say why:
-
-```
-CLR_FT_CONTAINS is evaluated by the store and has no in-process body. Which documents match is
-decided by the store's analyzer, and approximating one would answer differently from the store for
-the same query. This plan asks for the value somewhere the call could not be pushed down.
-```
-
-The declarations implement `ImplementableFunction` and throw, rather than declining the interface — which would leave Calcite to report `User defined function CLR_FT_SCORE must implement ImplementableFunction`, naming an interface rather than a reason and reading as a defect in the adapter. Same refusal, same moment, with the reason attached.
-
-## The names
-
-**`CLR_` is this repository's namespace**, and it is what makes the collision argument structural rather than empirical. A connection chains the operator table its `fun` property names *before* the catalog reader, and overload resolution takes the first candidate whose arity fits — so a name Calcite also used would shadow these silently, and only for hosts that set `fun`. No Calcite library will ever ship a `CLR_` function.
-
-**`FT_` inside it is the family**, and it is borrowed knowingly. Full text *is* standardised: **ISO/IEC 13249-2, *SQL multimedia and application packages — Part 2: Full-Text***, the same 13249 series whose Part 3 is Spatial. It defines a `FullText` type whose `Contains` and `Score` methods take a structured pattern, plain SQL functions of those names beside them, and it prefixes its pattern type hierarchy `FT_` — `FT_Pattern`, `FT_WordOrPhrase`, `FT_StemmedWord`, `FT_Proxi`, `FT_Soundex`, `FT_Fuzzy`, `FT_IsAbout`.
-
-**Its shape is not adopted, and its spelling is unavailable.** The standard's `Contains(doc, pattern)` is binary, with all the structure — `&`, `|`, `NOT`, `STEMMED FORM OF`, `SOUNDS LIKE`, `IN SAME SENTENCE AS`, `THESAURUS` — inside the pattern string, so adopting it puts a pattern parser in every adapter. And bare `CONTAINS` is taken twice over: `SqlStdOperatorTable.CONTAINS` is the SQL:2011 period predicate, and the parser reserves the word.
-
-**Taking a store's spellings instead was considered**, that being what Calcite did for spatial — 69 of the 144 `ST_*` in its reference are PostGIS or H2GIS extensions rather than OpenGIS, and its acknowledgements name PostGIS's tests as a reference implementation. It works there because PostGIS's spatial surface already *is* a function family over one type Calcite models as `GEOMETRY`: only the names had to be borrowed. Full text has no such store. PostgreSQL spells it `tsvector @@ tsquery` — two types Calcite has no `SqlTypeName` for, plus a query grammar — and the rest agree with it and with each other on nothing.
-
-**These may be supplanted by upstream Calcite**, and the namespace is what makes that survivable. If Calcite ever ships full text operators of its own, ours do not collide with them, are not shadowed by them, and can be mapped onto them or deprecated deliberately. `ShouldFindNoFullTextOperatorInCalcite` is the watch for it: it is not a guard against breakage — with `CLR_` nothing can break — but the test that will fail the day the question is worth revisiting.
+A dash means the store has no equivalent, and its adapter declines the call. SQL Server's rank is a column of the `CONTAINSTABLE` result rather than a scalar, so an adapter there has to join to it on the full text key, or decline `CLR_FT_SCORE`.
 
 ## Simplifying a plan
 
-`FullTextRules` is a pass a host sequences in front of whatever program it runs.
+`FullTextRules.Program()` is a `Programs.hep` pass to run ahead of the host's own program:
 
 ```csharp
 using Apache.Calcite.FullText.Rel.Rules;
@@ -146,52 +137,37 @@ var config = Frameworks.newConfigBuilder()
     .build();
 ```
 
+It rewrites filters, projections and join conditions:
+
 | | |
 | --- | --- |
-| `CLR_FT_CONTAINS_ALL(x, k)` → `CLR_FT_CONTAINS(x, k)` | and the same for `CONTAINS_ANY`. One keyword means the same thing either way, which `CLR_FT_CONTAINS`'s own declaration says |
-| `CLR_FT_CONTAINS_ALL(x, 'a', 'b', 'a')` → `CLR_FT_CONTAINS_ALL(x, 'a', 'b')` | asking for every one of a list that names a keyword twice is asking for it once |
-| `CLR_FT_FUZZY(t, 0)` → `t` | the edit count is Levenshtein in every store that has one, and zero edits is an exact match in all of them |
-| `CLR_FT_WEIGHT(s, 1)` → `s` | which `CLR_FT_WEIGHT`'s own declaration says: a store with no weighting renders the inner score and declines only where the weight is not one |
-| `CLR_FT_CONTAINS(x, a) AND CLR_FT_CONTAINS(x, b)` → `CLR_FT_CONTAINS_ALL(x, a, b)` | and a disjunction into `CONTAINS_ANY`. That is the form the stores with an all-of or any-of have — Cosmos's `FullTextContainsAll`, PostgreSQL's `to_tsquery('a & b')`, SQL Server's `CONTAINS('a AND b')` — so it is one index lookup where the conjunction was two |
+| `CLR_FT_CONTAINS_ALL(x, 'a', 'b', 'a')` → `CLR_FT_CONTAINS_ALL(x, 'a', 'b')` | a repeated keyword is dropped; likewise for `CONTAINS_ANY` |
+| `CLR_FT_CONTAINS_ALL(x, k)` → `CLR_FT_CONTAINS(x, k)` | likewise for `CONTAINS_ANY` |
+| `CLR_FT_FUZZY(t, 0)` → `t` | zero edits is an exact match |
+| `CLR_FT_WEIGHT(s, 1)` → `s` | only where `s` is already a nullable `DOUBLE` |
+| `CLR_FT_CONTAINS(x, a) AND CLR_FT_CONTAINS(x, b)` → `CLR_FT_CONTAINS_ALL(x, a, b)` | and an `OR` into `CLR_FT_CONTAINS_ANY`; only for calls over the same searched expression |
 
-**Every rewrite is an equality of values**, the merges included, and that is worth stating because it is not
-obvious. These operators are nullable so that a store can have nothing to say about a row a plan keeps — an
-outer join's unmatched side, a row outside the searched partition — and that is a property of the *row*
-rather than of the keyword. So every call over one searched expression is null on the same rows, and
-`CLR_FT_CONTAINS(x, a) AND CLR_FT_CONTAINS(x, b)` is null exactly where `CLR_FT_CONTAINS_ALL(x, a, b)` is.
-The merge needs no filter context to be sound, and only merges calls whose searched expression is the same.
+Every rewrite preserves the value, nulls included. `CLR_FT_PHRASE` of a single word is not unwrapped, because whether text is one token is the analyzer's decision, and `CLR_FT_RRF` is never unwrapped, because fusion preserves an ordering rather than a value.
 
-**A pass and not rules on a `VolcanoPlanner`.** `VolcanoCost.isLt` compares the row count and nothing else,
-so a filter whose condition was simplified is never *cheaper* than the same filter unsimplified and the
-planner keeps whichever it registered first. This is the same argument that keeps `Programs.calc` a hep
-pass, and it was measured against the sibling geography package before either was written this way.
+Run these as a separate pass rather than adding them to a `VolcanoPlanner`: Volcano compares plans by row count only, so a simplified filter is never cheaper than the original and the planner may keep either.
 
-**`CLR_FT_PHRASE('steel')` is not unwrapped**, though a single-token phrase is the same search in every
-store surveyed. Whether that text is one token is the analyzer's answer and not this package's —
-`'red-bicycle'` is two tokens under some analyzers and one under others — and deciding it here is the
-in-process approximation the package exists to refuse. Nor is `CLR_FT_RRF` of one score: reciprocal rank
-fusion preserves an ordering and not a value.
-
-**Nothing declares these operators strict.** A `Strong.Policy.ANY` would let `RexSimplify` rewrite
-`CLR_FT_CONTAINS(BODY, 'a') IS NULL` into `BODY IS NULL`, which is a claim about the store — Cosmos answers
-false for a missing property and PostgreSQL answers null. The package cannot know which, so it says
-nothing. The sibling geography package does declare it, because there the bodies are its own.
+The operators are not declared strict (`Strong.Policy.ANY`), so `RexSimplify` does not rewrite `CLR_FT_CONTAINS(BODY, 'a') IS NULL` into `BODY IS NULL`; whether a store answers null or false for a missing value is the store's.
 
 ## Known limitations
 
-**Registering both routes.** Chaining the operator table *and* declaring on a schema works for everything except an `ARRAY` column, which then fails with `IllegalArgumentException: must contain type: ANY`. `SqlUtil.lookupSubjectRoutines` returns early at `if (list.size() < 2 || coerce)` before its type-precedence pass, so one route leaves one candidate and never reaches it; both leave two, it runs, and it compares each candidate's parameter type using the *argument's* precedence list — which for `ArraySqlType` accepts only another comparable `ARRAY` and throws otherwise. It is not the `ANY` parameter that causes it: any parameter type but a matching `ARRAY` fails identically, and one typed `ARRAY` would refuse every character column. A pass that throws where it should decline is Calcite's to fix.
+- **Registering both routes breaks `ARRAY` columns.** With the operator table chained *and* the schema functions declared, a call whose searched operand is an `ARRAY` column fails with `IllegalArgumentException: must contain type: ANY`. With two candidate functions Calcite runs a type-precedence pass that throws for an `ARRAY` argument, rather than declining. Register one route only.
+- **Variadic operators are bounded through a schema.** A schema function takes a fixed number of operands, so each variadic operator is declared once per arity up to `FullTextSchema.VariadicOperandLimit` (16 operands, the searched one included). A call with more resolves only through the operator table.
+- **Every parameter is required.** There are no optional operands, because Calcite fills an omitted optional parameter with `DEFAULT`, which no store can render.
+- **A nested term constructor validates.** `CLR_FT_FUZZY(CLR_FT_PHRASE('red bicycle'), 1)` passes validation on both routes, because a constructor is typed `ANY` and Calcite accepts `ANY` against any declared family. An adapter should decline it.
 
-**A nested term constructor validates.** `CLR_FT_FUZZY(CLR_FT_PHRASE('red bicycle'), 1)` type-checks, and cannot be made not to: a constructor is typed `ANY` so that it satisfies a `CHARACTER` keyword position, and `FamilyOperandTypeChecker` passes an `ANY` operand against every declared family. The rule that admits a constructor where a keyword goes is the rule that admits one inside another. It could be refused by hand on the operator, but not on the schema declaration — whose checker Calcite builds — and a divergence between the two routes is worse than a call the adapter declines.
+## Not supported
 
-**Variadic arity through a schema is bounded.** Calcite derives a function's operand count range from its parameter list, so a schema function is exactly as variadic as the parameters it declares, and each is declared once per arity up to `FullTextSchema.VariadicOperandLimit` (16). A query needing more keywords resolves against the chained operator table, whose checker has no bound.
+- **Query strings.** There is no operator taking a store's query grammar.
+- **A language or analyzer argument.** It could not be told apart from a keyword, since both are character strings. An adapter that needs one takes it from its own configuration, as most stores configure it on the index or column anyway.
+- **Proximity, highlighting and snippets.** Stores disagree on what they mean or do not offer them.
+- **A `FREETEXT`-style mode** distinct from exact matching.
+- **Vector search.** `CLR_FT_RRF` fuses any numeric score, but vector operators themselves are not part of this package.
 
-**One declaration per arity, not one with optional parameters.** `SqlCallBinding.operands` pads a call out to the whole parameter list with `DEFAULT` where there is room under the count range, the position is optional, *and* the checker's parameters are fixed. No store renders `DEFAULT`, so every parameter here is required.
+## The names
 
-## What is deliberately not here
-
-- **No pattern or query string.** A grammar in a shared package is a grammar every adapter has to parse.
-- **No language or analyzer argument**, and the reason is structural: a leading configuration name and a keyword are both character strings, so `CLR_FT_CONTAINS_ALL(BODY, 'english', 'steel')` and `CLR_FT_CONTAINS_ALL(BODY, 'steel', 'frame')` would be the same call. PostgreSQL and SQL Server take one per call, each over a default; Cosmos puts it on the container's full text policy, MySQL on the column's collation, FTS5 on the tokenizer, Elasticsearch on the field mapping. An adapter that needs one takes it from its own configuration.
-- **No proximity.** SQL Server's `NEAR((a, b), n)`, FTS5's `NEAR(a b, N)`, PostgreSQL's `<N>`, Elasticsearch's `slop` and Atlas's `near` all exist and do not agree on what the distance counts — tokens in some, positions in others, and SQL Server's `n` excludes the search terms themselves. A name that means something different per adapter is worse than no name.
-- **No highlighting or snippets.** `ts_headline`, FTS5's `highlight()` and `snippet()`, and the Elasticsearch and Atlas highlighters return marked-up text rather than answering about a row, and Cosmos and SQL Server have nothing. Worth adding when two stores agree on a shape.
-- **No `FREETEXT` mode.** SQL Server's `CONTAINS`/`FREETEXT` split and MySQL's boolean/natural-language modes distinguish exact matching from meaning; PostgreSQL, Cosmos and FTS5 stem unconditionally and have no such switch. A name that is a real distinction in two stores and a synonym in three needs a decision this package has not taken.
-- **No vector search.** `CLR_FT_RRF` takes any numeric score, so an adapter's own vector-distance operator fuses with a full text one — which is how hybrid search is written — but a vector vocabulary is a different package.
+`CLR_` is this repository's prefix, so no Calcite library function will share a name with these; a connection that sets `fun` chains its libraries ahead of the schema's functions, and a shared name would silently take their place. `FT_` follows ISO/IEC 13249-2 (SQL/MM Full-Text), which prefixes its full text types `FT_`. The bare name `CONTAINS` is unavailable: Calcite already uses it for the SQL:2011 period predicate, and the parser reserves it.

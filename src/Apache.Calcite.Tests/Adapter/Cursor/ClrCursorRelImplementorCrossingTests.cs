@@ -22,14 +22,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Reads across the two kinds of leaf through a cursor: an awaited leaf opened and read synchronously,
-    /// a pulled leaf opened and read with await, and the two joined.
+    /// Tests reading plans over both kinds of leaf: an awaiting leaf opened and read synchronously, a
+    /// synchronous leaf opened and read with await, and the two joined.
     /// </summary>
     /// <remarks>
-    /// A cursor plan has no crossing to make between an <c>IEnumerable</c> and an
-    /// <c>IAsyncEnumerable</c> — the cursor carries both advances — so what is held here is the same rows arriving whichever way
-    /// the plan was opened and advanced, over leaves of either kind, and that a synchronous read over an
-    /// awaited leaf does not deadlock under a synchronization context that cannot pump.
+    /// A cursor has both a synchronous and an awaiting advance, so these check that the same rows arrive
+    /// whichever way the plan is opened and read, and that a synchronous read over an awaiting leaf does not
+    /// deadlock under a synchronization context that never runs posted callbacks.
     /// </remarks>
     public class ClrCursorRelImplementorCrossingTests
     {
@@ -173,6 +172,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             rows.Should().Equal(["4|D", "5|E", "6|F"]);
         }
 
+        /// <summary>
+        /// A synchronization context that discards every posted callback, so a continuation captured by it
+        /// never runs.
+        /// </summary>
         sealed class NonPumpingContext : SynchronizationContext
         {
 
@@ -224,8 +227,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// The two crossings a node may write explicitly agree with the bodies they cross from.
+        /// <c>Awaited</c> over the synchronous body and <c>Pulled</c> over the awaiting body each produce an
+        /// open that returns the same rows as the body it wraps.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldCrossAResultEitherWay()
         {

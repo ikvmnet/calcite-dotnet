@@ -12,14 +12,14 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Reads a prepared <see cref="IClrPrepare.Signature"/>'s columns as an ADO.NET caller expects them.
+    /// The columns of a prepared <see cref="IClrPrepare.Signature"/>, described as an ADO.NET caller sees them.
     /// </summary>
     /// <remarks>
-    /// The columns are Avatica's <see cref="ColumnMetaData"/>, which is what the metadata port produces, and
-    /// it answers the naming questions — the label, the SQL type name, the precision. What a column
-    /// <em>is</em> comes from its <see cref="RelDataType"/> through the registry instead, because Avatica's
-    /// type does not carry a component's nullability and the value accessors read the <see cref="RelDataType"/>:
-    /// a table that answered one and a reader that answered the other is two answers to one question.
+    /// Names, SQL type names and nullability come from Avatica's <see cref="ColumnMetaData"/>. The .NET type
+    /// comes from the column's <see cref="RelDataType"/> through the registry instead, because that is what
+    /// the value accessors read, and Avatica's type does not carry a collection element's nullability: an
+    /// <c>INTEGER ARRAY</c> with nullable elements reads back as <c>int?[]</c>, which only the
+    /// <see cref="RelDataType"/> says.
     /// </remarks>
     internal readonly struct CalciteResultColumns
     {
@@ -28,12 +28,10 @@ namespace Apache.Calcite.Data.Internal
         readonly ClrTypeRegistry _registry;
 
         /// <summary>
-        /// A column's Calcite type and the mapping it reads back through, each answered once.
+        /// Each column's Calcite type and mapping, resolved on first use and cached for the life of the result.
         /// </summary>
         /// <remarks>
-        /// Arrays rather than fields because this is a <see langword="struct"/> copied wherever it is
-        /// passed: the copies share these, so what one row resolves every later row reads. The result owns
-        /// one of these for its lifetime, which is the lifetime the answers are good for.
+        /// Arrays, because this struct is copied wherever it is passed and the copies must share the cache.
         /// </remarks>
         readonly RelDataType?[] _relTypes;
         readonly ClrTypeMapping?[] _mappings;
@@ -42,7 +40,7 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="signature"></param>
+        /// <param name="signature">The prepared statement whose columns these are.</param>
         /// <param name="registry">The mappings values are read through.</param>
         public CalciteResultColumns(IClrPrepare.Signature signature, ClrTypeRegistry registry)
         {
@@ -61,81 +59,72 @@ namespace Apache.Calcite.Data.Internal
         public ClrTypeRegistry Registry => _registry;
 
         /// <summary>
-        /// Gets the count of columns in the result set.
+        /// Gets the number of columns.
         /// </summary>
         public int Count => _signature.Columns.size();
 
         /// <summary>
-        /// Gets the column at the specified index.
+        /// Gets the Avatica metadata of a column.
         /// </summary>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="index">The zero-based column ordinal.</param>
+        /// <returns>The column's entry in the statement signature.</returns>
         ColumnMetaData GetColumn(int index)
         {
             return (ColumnMetaData)_signature.Columns.get(index);
         }
 
         /// <summary>
-        /// Gets the name of the column: the label — what an <c>AS</c> alias names the result column.
+        /// Gets the name of a column: its label, which is the <c>AS</c> alias where there is one.
         /// </summary>
         /// <remarks>
-        /// This is JDBC's <c>getColumnLabel</c> and it is what ADO.NET's <c>GetName</c> means. The
-        /// origin <c>columnName</c> is the wrong answer: two projections of one table column under
-        /// different aliases share it, so the result schema reports a duplicate name and a consumer
-        /// keying by it fails. The label is always set — the metadata is built one column per field
-        /// of the validated row type, and the label is that field's name.
+        /// The label is JDBC's <c>getColumnLabel</c> and is what ADO.NET's <c>GetName</c> means. The origin
+        /// column name would give two aliased projections of one table column the same name. The label is
+        /// always set, from the field name of the validated row type.
         /// </remarks>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="index">The zero-based column ordinal.</param>
+        /// <returns>The column name.</returns>
         public string GetName(int index)
         {
             return GetColumn(index).label;
         }
 
         /// <summary>
-        /// Gets the <see cref="Type"/> of the column.
+        /// Gets the .NET type a column's values read back as by default.
         /// </summary>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="index">The zero-based column ordinal.</param>
+        /// <returns>The type.</returns>
+        /// <exception cref="ClrTypeMappingException">No mapping covers the column's type.</exception>
         /// <remarks>
-        /// The registry, and the column's own <see cref="RelDataType"/> rather than Avatica's
-        /// <see cref="ColumnMetaData"/>, because those two do not agree and the value accessors read the
-        /// first: Avatica's array type carries the component's <em>rep</em> and not its nullability, so an
-        /// <c>INTEGER ARRAY</c> whose elements may be null reported <c>int[]</c> while the value came back
-        /// as <c>int?[]</c>. A caller doing <c>GetFieldValue&lt;T&gt;</c> with what this answers is the
-        /// documented way to read a column, so the two have to be one answer.
+        /// Answers from the column's <see cref="RelDataType"/>, as the value accessors do, so the type
+        /// reported here is the type <c>GetValue</c> returns and <c>GetFieldValue&lt;T&gt;</c> accepts.
         /// </remarks>
         public Type GetClrType(int index)
         {
-            // and it refuses rather than guessing. object is an answer three Calcite types genuinely give
-            // — ANY carries no type, OTHER is a class with no SQL name, a VARIANT is any type at all, and
-            // each of their mappings says object — so answering object for a type nothing maps says the
-            // same thing about a column the provider cannot read at all, and a caller reading GetFieldType
-            // to decide what to ask for would be told to ask for object and then refused
+            // refuses rather than answering object: object is the real answer for ANY, OTHER and VARIANT,
+            // and giving it for a type nothing maps would tell a caller to ask for object and then refuse it
             return _registry.RequireMapping(null, GetRelType(index)).ClrType;
         }
 
         /// <summary>
-        /// Gets the type name of the column.
+        /// Gets the SQL type name of a column.
         /// </summary>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="index">The zero-based column ordinal.</param>
+        /// <returns>The type name.</returns>
         public string GetProviderTypeName(int index)
         {
             return GetColumn(index).type.name;
         }
 
         /// <summary>
-        /// Gets the Calcite <see cref="RelDataType"/> of the column.
+        /// Gets the Calcite <see cref="RelDataType"/> of a column.
         /// </summary>
         /// <remarks>
-        /// The whole type rather than its <see cref="SqlTypeName"/>, because reading a value needs more
-        /// than the name: a <c>DATE</c> is a count of days and an <c>ARRAY</c> of them is a list of
-        /// counts, so the component, key, value and field types are what say how to read one. Avatica's
-        /// <see cref="ColumnMetaData"/> does not carry them.
+        /// The full type rather than its <see cref="SqlTypeName"/>, because reading a value needs the
+        /// component, key, value and field types, which Avatica's <see cref="ColumnMetaData"/> does not carry.
         /// </remarks>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="index">The zero-based column ordinal.</param>
+        /// <returns>The type.</returns>
+        /// <exception cref="InvalidOperationException">The statement has no row type.</exception>
         public RelDataType GetRelType(int index)
         {
             return _relTypes[index] ??= ResolveRelType(index);
@@ -144,6 +133,8 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Reads a column's Calcite type off the signature's row type.
         /// </summary>
+        /// <param name="index">The zero-based column ordinal.</param>
+        /// <returns>The type of the row type's field at that ordinal.</returns>
         RelDataType ResolveRelType(int index)
         {
             var rowType = _signature.RowType ?? throw new InvalidOperationException($"{_signature.Sql ?? "The statement"} has no row type.");
@@ -153,21 +144,13 @@ namespace Apache.Calcite.Data.Internal
 
         /// <summary>
         /// Gets the mapping a column's values are read back through, or <see langword="null"/> where the
-        /// chain has none for its type.
+        /// registry has none for its type.
         /// </summary>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="index">The zero-based column ordinal.</param>
+        /// <returns>The mapping, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// <b>A column's type and its mapping are fixed for the whole result, and were being resolved once
-        /// per value.</b> Reading a cell walked the signature's field list and asked the registry, and the
-        /// registry's key is <c>getFullTypeString()</c> — a Java call that builds a string, then a hash of
-        /// it, then a scan. Measured at 10 million iterations: the lookup is 58 ns where the conversion it
-        /// guards is 14. Both answers are now taken once per column and held for the life of the result,
-        /// which is what <see cref="CalciteResult"/> holds this for.
-        ///
-        /// <para>A null answer is cached as well as a found one — <see cref="_resolved"/> says which
-        /// columns have been asked — because a column nothing maps is the case that would otherwise pay the
-        /// full lookup on every value.</para>
+        /// Resolved once per column and cached, including a <see langword="null"/> answer, because a registry
+        /// lookup costs several times the conversion it selects.
         /// </remarks>
         public ClrTypeMapping? GetMapping(int index)
         {
@@ -180,10 +163,10 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Gets whether or not the column is nullable.
+        /// Gets whether a column may hold nulls. A column whose nullability is unknown counts as nullable.
         /// </summary>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="index">The zero-based column ordinal.</param>
+        /// <returns><see langword="true"/> where the column may hold nulls.</returns>
         public bool GetIsNullable(int index)
         {
             return GetColumn(index).nullable != 0;

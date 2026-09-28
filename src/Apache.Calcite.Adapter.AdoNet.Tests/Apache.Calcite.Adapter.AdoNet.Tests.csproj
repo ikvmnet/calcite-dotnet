@@ -4,19 +4,16 @@
         <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
         <LangVersion>latest</LangVersion>
         <Nullable>enable</Nullable>
-        <!-- an xunit.v3 test project is a program: the package writes the entry point and the assembly runs
-             itself on Microsoft.Testing.Platform -->
+        <!-- xunit.v3 test projects are executables running on Microsoft.Testing.Platform. -->
         <OutputType>Exe</OutputType>
-        <!-- xUnit1051 wants every call taking a CancellationToken to take the framework's, so that a hung
-             test can be cancelled. These suites pass the tokens they mean to, and several exist to assert
-             what happens to one, so adopting it is a change to make on its own terms. -->
+        <!-- xUnit1051 asks every call to pass the test framework's CancellationToken. These tests pass
+             the tokens they are testing. -->
         <NoWarn>$(NoWarn);xUnit1051</NoWarn>
         <TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
     </PropertyGroup>
 
     <ItemGroup>
-        <!-- the VSTest bridge, for `dotnet test` and the IDE: xunit.runner.visualstudio is the adapter
-             and Microsoft.NET.Test.Sdk the testhost. CI runs the assembly itself and uses neither. -->
+        <!-- For `dotnet test` and IDE test runners (VSTest). CI runs the test assembly directly. -->
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
         <PackageReference Include="xunit.v3" Version="4.0.1" />
         <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
@@ -26,10 +23,8 @@
         <PackageReference Include="IKVM" Version="8.16.1" />
         <PackageReference Include="IKVM.Java.Extensions" Version="8.16.1" />
         <PackageReference Include="IKVM.Jdbc.Data" Version="1.0.13" />
-        <!-- Not PrivateAssets, deliberately. This package ships only buildTransitive, which is the folder that
-             carries build assets to consumers; marking it private disables the one mechanism it has, and a project
-             that references ours then compiles and fails at run time with `Could not load file or assembly
-             'calcite.core'`. The default PrivateAssets keeps `build` to ourselves and lets buildTransitive through. -->
+        <!-- Not PrivateAssets: this package ships only buildTransitive assets, and marking it private stops
+             them reaching consumers, which then fail at run time loading 'calcite.core'. -->
         <PackageReference Include="IKVM.Maven.Sdk" Version="1.12.1" />
         <PackageReference Include="FluentAssertions" Version="8.10.0" />
         <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />

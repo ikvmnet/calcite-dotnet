@@ -4,8 +4,7 @@
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <ImplicitUsings>disable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <!-- IDE0008 is "use explicit type instead of var". This codebase uses var throughout and is not
-             going to stop, so the suggestion is noise rather than a rule anyone will act on. -->
+        <!-- IDE0008 ("use explicit type instead of var"): this codebase uses var. -->
         <NoWarn>$(NoWarn);IDE0008</NoWarn>
     </PropertyGroup>
 
@@ -49,8 +48,7 @@
     </ItemGroup>
 
     <PropertyGroup>
-        <!-- 1.43 is unreleased and Apache publishes it as a snapshot, so every project that names calcite
-             reads it from there rather than from a copy of the artifacts checked into this repository. -->
+        <!-- Calcite 1.43 is unreleased and is resolved from the Apache snapshot repository. -->
         <MavenAdditionalRepositories>$(MavenAdditionalRepositories);jboss=https://repository.jboss.org/nexus/content/groups/public;apache-snapshots=https://repository.apache.org/content/repositories/snapshots/;</MavenAdditionalRepositories>
     </PropertyGroup>
 

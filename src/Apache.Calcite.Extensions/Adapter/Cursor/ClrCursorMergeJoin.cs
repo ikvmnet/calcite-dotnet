@@ -21,38 +21,36 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
-    /// Implementation of <see cref="Join"/> in the <see cref="ClrCursorConvention"/> calling convention,
-    /// by walking two inputs that are already sorted on the join key.
+    /// Implementation of <see cref="Join"/> in the <see cref="ClrCursorConvention"/> calling convention that
+    /// merges two inputs sorted on the join keys.
     /// </summary>
     /// <remarks>
-    /// Only ever chosen where the inputs carry a collation, which is where a merge is cheaper than building a
-    /// lookup. `EnumerableMergeJoin` is the same, and its trait methods are most of the class: a required
-    /// collation may be a subset or a superset of the join keys, and on either side, and each case pushes a
-    /// different collation down.
+    /// Mirrors <c>EnumerableMergeJoin</c>. Both inputs must be sorted ascending, nulls last, on their join keys.
+    /// The node passes a required collation through to its inputs and derives its own collation from theirs.
     /// </remarks>
     public class ClrCursorMergeJoin : Join, ClrCursorRel
     {
 
         /// <summary>
-        /// Returns whether a merge join can answer a join of this type.
+        /// Returns whether a merge join supports a join type.
         /// </summary>
-        /// <param name="joinType"></param>
-        /// <returns></returns>
+        /// <param name="joinType">The join type.</param>
+        /// <returns><see langword="true"/> if <see cref="ClrCursorMergeJoin"/> can implement a join of that type.</returns>
         public static bool IsMergeJoinSupported(JoinRelType joinType)
         {
             return ClrCursorDefaults.IsMergeJoinSupported(ClrEnumUtils.ToLinq4jJoinType(joinType));
         }
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorMergeJoin"/>.
+        /// Creates a <see cref="ClrCursorMergeJoin"/>, deriving its collation from the inputs and keys.
         /// </summary>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <param name="condition"></param>
-        /// <param name="leftKeys"></param>
-        /// <param name="rightKeys"></param>
-        /// <param name="joinType"></param>
-        /// <returns></returns>
+        /// <param name="left">The left input, sorted on <paramref name="leftKeys"/>.</param>
+        /// <param name="right">The right input, sorted on <paramref name="rightKeys"/>.</param>
+        /// <param name="condition">The join condition.</param>
+        /// <param name="leftKeys">The ordinals of the join keys in the left input.</param>
+        /// <param name="rightKeys">The ordinals of the join keys in the right input.</param>
+        /// <param name="joinType">The join type.</param>
+        /// <returns>The new join, with no variables set.</returns>
         public static ClrCursorMergeJoin Create(RelNode left, RelNode right, RexNode condition, ImmutableIntList leftKeys, ImmutableIntList rightKeys, JoinRelType joinType)
         {
             var cluster = right.getCluster();
@@ -79,29 +77,34 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// The join keys, considering EQUALS alone.
+        /// The join keys, taken from <c>=</c> conditions only; <c>IS NOT DISTINCT FROM</c> is left in the
+        /// non-equi conditions.
         /// </summary>
         /// <remarks>
-        /// Hides <c>Join.joinInfo</c>, as Calcite's field of the same name does, so every use of the name in
-        /// this class is the strict-equality one.
+        /// Hides <c>Join.joinInfo</c>, as <c>EnumerableMergeJoin</c>'s field of the same name does.
         /// </remarks>
         new readonly JoinInfo joinInfo;
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Initializes a new instance. <see cref="Create"/> derives the trait set; this constructor takes it as
+        /// given.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traits"></param>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <param name="condition"></param>
-        /// <param name="variablesSet"></param>
-        /// <param name="joinType"></param>
+        /// <param name="cluster">The cluster the node belongs to.</param>
+        /// <param name="traits">The node's traits, in <see cref="ClrCursorConvention"/> with a non-empty collation.</param>
+        /// <param name="left">The left input, sorted on its join keys.</param>
+        /// <param name="right">The right input, sorted on its join keys.</param>
+        /// <param name="condition">The join condition.</param>
+        /// <param name="variablesSet">The correlation variables set by the join.</param>
+        /// <param name="joinType">The join type; see <see cref="IsMergeJoinSupported"/>.</param>
+        /// <exception cref="java.lang.RuntimeException">An input is not sorted on distinct join keys, or the
+        /// node's collation does not match the keys.</exception>
+        /// <exception cref="java.lang.IllegalArgumentException"><paramref name="traits"/> has no collation.</exception>
+        /// <exception cref="java.lang.UnsupportedOperationException">The join type is not supported.</exception>
         public ClrCursorMergeJoin(RelOptCluster cluster, RelTraitSet traits, RelNode left, RelNode right, RexNode condition, java.util.Set variablesSet, JoinRelType joinType) :
             base(cluster, traits, com.google.common.collect.ImmutableList.of(), left, right, condition, variablesSet, joinType)
         {
-            // the algorithm stops when either key is null, and IS NOT DISTINCT FROM calls two nulls equal,
-            // so a condition carrying one must not become a join key
+            // the algorithm stops when either key is null, and IS NOT DISTINCT FROM treats two nulls as
+            // equal, so it must not supply a join key
             joinInfo = JoinInfo.createWithStrictEquality(left, right, condition);
 
             if (getConvention() is not ClrCursorConvention)
@@ -126,8 +129,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var rightKeys = joinInfo.rightKeys.incr(left.getRowType().getFieldCount());
 
-            // RelCompositeTrait cannot yet say that a merge join has a collation on [a, d] or on [b, c], so a
-            // join of foo.a = bar.c AND foo.b = bar.d is legitimate and is not represented
+            // RelCompositeTrait cannot express that a join of foo.a = bar.c AND foo.b = bar.d is sorted on
+            // [a, d] or on [b, c], so such a collation is not checked here
             if (RelCollations.collationsContainKeysOrderless(collations, joinInfo.leftKeys) == false
                 && RelCollations.collationsContainKeysOrderless(collations, rightKeys) == false
                 && RelCollations.keysContainCollationsOrderless(joinInfo.leftKeys, collations) == false
@@ -149,21 +152,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
         /// <inheritdoc />
         /// <remarks>
-        /// The required collation may be a subset or a superset of the join keys, and may be on either input.
-        /// Each of the six cases pushes a different collation to the two inputs; anything else is refused.
+        /// Mirrors <c>EnumerableMergeJoin.passThroughTraits</c>. The required collation may be a subset or a
+        /// superset of the join keys of either input; each of the six cases pushes a different collation to the
+        /// two inputs, and any other collation is refused.
         ///
-        /// <para>One line is not Calcite's, and it is the first. `EnumerableMergeJoin` uses <c>required</c>
-        /// as the node's own trait set, so a subset of another convention asking it to pass through gets a
-        /// node of this convention wearing that one's — which the planner then refuses to register, and which
-        /// <c>TopDownRuleDriver.convert</c> asserts cannot happen. Refusing a foreign convention outright is
-        /// the guard; everything after it is the port.</para>
+        /// <para>The first check, refusing a required trait set of another convention, is not in Calcite.
+        /// Calcite returns <c>required</c> as the node's own trait set, so a request from another convention
+        /// would produce a node of this convention carrying that convention, which the planner cannot
+        /// register.</para>
         /// </remarks>
         public org.apache.calcite.util.Pair? passThroughTraits(RelTraitSet required)
         {
             if (required.getConvention() != getConvention())
                 return null;
 
-            // the required collation keys can be a subset or a superset of the merge join keys
             var collation = GetCollation(required);
             var leftInputFieldCount = getLeft().getRowType().getFieldCount();
 
@@ -177,7 +179,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             if (reqKeySet.equals(leftKeySet))
             {
-                // the sort keys are the left join keys, so every collation passes through as it is
+                // the sort keys are exactly the left join keys: pass the collation to both sides as it is
                 var mapping = BuildMapping(true);
                 var rightCollation = RexUtil.apply(mapping, collation);
 
@@ -187,7 +189,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             if (RelCollations.containsOrderless(leftKeys, collation))
             {
-                // the sort keys are a subset of the left join keys, so the collation is extended to sort them all
+                // the sort keys are a subset of the left join keys: extend the collation to all of them
                 collation = ExtendCollation(collation, leftKeys);
                 var mapping = BuildMapping(true);
                 var rightCollation = RexUtil.apply(mapping, collation);
@@ -198,8 +200,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             if (RelCollations.containsOrderless(collation, leftKeys) && AllLessThan(reqKeys, leftInputFieldCount))
             {
-                // the sort keys are a superset of the left join keys, the join keys are a prefix of them
-                // whatever the order, and every sort key is from the left input
+                // the sort keys are a superset of the left join keys, which form a prefix of them in some
+                // order, and every sort key is from the left input
                 var mapping = BuildMapping(true);
                 var rightCollation = RexUtil.apply(mapping, IntersectCollationAndJoinKey(collation, joinInfo.leftKeys));
 
@@ -209,7 +211,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             if (reqKeySet.equals(rightKeySet))
             {
-                // the sort keys are the right join keys, so every collation passes through as it is
+                // the sort keys are exactly the right join keys: pass the collation to both sides as it is
                 var rightCollation = RelCollations.shift(collation, -leftInputFieldCount);
                 var mapping = BuildMapping(false);
                 var leftCollation = RexUtil.apply(mapping, rightCollation);
@@ -220,7 +222,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             if (RelCollations.containsOrderless(rightKeys, collation))
             {
-                // the sort keys are a subset of the right join keys
+                // the sort keys are a subset of the right join keys: extend the collation to all of them
                 collation = ExtendCollation(collation, rightKeys);
                 var rightCollation = RelCollations.shift(collation, -leftInputFieldCount);
                 var mapping = BuildMapping(false);
@@ -232,7 +234,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             if (RelCollations.containsOrderless(collation, rightKeys) && AllAtLeast(reqKeys, leftInputFieldCount))
             {
-                // the sort keys are a superset of the right join keys, and every one of them is from the right
+                // the sort keys are a superset of the right join keys, and every sort key is from the right input
                 var rightCollation = RelCollations.shift(collation, -leftInputFieldCount);
                 var mapping = BuildMapping(false);
                 var leftCollation = RexUtil.apply(mapping, IntersectCollationAndJoinKey(rightCollation, joinInfo.rightKeys));
@@ -310,8 +312,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Returns the mapping from one input's join keys to the other's.
         /// </summary>
-        /// <param name="left2Right"></param>
-        /// <returns></returns>
+        /// <param name="left2Right">Whether to map from the left input's fields to the right's.</param>
+        /// <returns>A target mapping from each join key field of the source input to the matching key field of the other.</returns>
         Mappings.TargetMapping BuildMapping(bool left2Right)
         {
             var sourceKeys = left2Right ? joinInfo.leftKeys : joinInfo.rightKeys;
@@ -327,11 +329,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Extends a collation with the keys it does not already order by.
+        /// Appends to a collation, in ascending key order, the keys it does not already sort by.
         /// </summary>
-        /// <param name="collation"></param>
-        /// <param name="keys"></param>
-        /// <returns></returns>
+        /// <param name="collation">The collation to extend.</param>
+        /// <param name="keys">The join keys, as a list of <c>java.lang.Integer</c> field indexes.</param>
+        /// <returns><paramref name="collation"/> followed by an ascending field collation for each key it lacks.</returns>
         static RelCollation ExtendCollation(RelCollation collation, java.util.List keys)
         {
             var fieldsForNewCollation = new java.util.ArrayList(keys.size());
@@ -350,13 +352,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Drops from a collation the fields that are not join keys.
         /// </summary>
-        /// <param name="collation">collation defined on the join</param>
-        /// <param name="joinKeys">the join keys</param>
-        /// <returns></returns>
+        /// <param name="collation">A collation on one input.</param>
+        /// <param name="joinKeys">That input's join keys.</param>
         /// <remarks>
         /// Ordering a join of <c>foo.a = bar.a AND foo.c = bar.c</c> by <c>bar.a, bar.c, bar.b</c> pushes all
         /// three to <c>bar</c>, and only <c>a, c</c> to <c>foo</c>, because <c>b</c> is not a join key.
         /// </remarks>
+        /// <returns>The field collations of <paramref name="collation"/> that are on join keys, in their original order.</returns>
         static RelCollation IntersectCollationAndJoinKey(RelCollation collation, ImmutableIntList joinKeys)
         {
             var fieldCollations = new java.util.ArrayList();
@@ -373,8 +375,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <inheritdoc />
         public override RelOptCost? computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq)
         {
-            // we assume that the inputs are sorted. The price of sorting them has already been paid. The cost of
-            // the join is therefore proportional to the input and output size.
+            // the inputs are already sorted and their sort is costed below this node, so the join costs its
+            // input and output rows, as in EnumerableMergeJoin
             var rightRowCount = mq.getRowCount(getRight()).doubleValue();
             var leftRowCount = mq.getRowCount(getLeft()).doubleValue();
             var rowCount = mq.getRowCount(this).doubleValue();
@@ -391,17 +393,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.PreferArray());
 
-            // Calcite types these off the physical type and does not box them. It cannot go wrong there:
-            // there is no Enumerable<int> in Java, so the sequence and a parameter typed int cannot disagree.
-            // Here they can. The cursors below are boxed because a join must box — the selector and
-            // predicate Calcite builds are against boxed rows, and an outer join hands the selector a null —
-            // and the key selector is a lambda over one row of the boxed cursor, so this has to be the same
-            // decision. Only a one-column input tells the two apart, every wider row being a reference
-            // already, which is why Primitive.box is a no-op for all of them.
-            // the rows are boxed for the two reasons a hash join boxes them: the selector and the predicate
-            // are built against boxed rows, and a LEFT join hands the selector a null right row, which a
-            // primitive cannot be. The element type is read off the cursor rather than off the physical
-            // type, because those two part company where a one-column input is a scalar.
+            // the rows are boxed: the selector and predicate are built against boxed rows, and an outer join
+            // hands the selector a null row. Java needs no such decision because its sequences are always of
+            // references; here the key selectors' parameters must match the cursors' element types, which
+            // differ from an unboxed row type only for a one-column input
             var leftType_ = leftResult.PhysType.RowType;
             var rightType_ = rightResult.PhysType.RowType;
             var rowType = physType.RowType;
@@ -431,19 +426,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var leftKeyPhysType = leftResult.PhysType.Project(joinInfo.leftKeys, JavaRowFormat.LIST);
             var rightKeyPhysType = rightResult.PhysType.Project(joinInfo.rightKeys, JavaRowFormat.LIST);
 
-            // Calcite forces Function1 on these two, because linq4j's Expressions.lambda deduces Predicate1
-            // for a single BOOLEAN key and that does not match mergeJoin's signature. There is nothing to
-            // force here: Expression.Lambda resolves its delegate through Expression.GetDelegateType, which
-            // answers Func<> and never a predicate type, so a bool key gives Func<TSource, bool> and TKey
-            // binds to bool
+            // Calcite forces Function1 here because linq4j would deduce Predicate1 for a single BOOLEAN key;
+            // Expression.Lambda always infers a Func<>, so a bool key already binds TKey to bool
             var leftKey = Expression.Lambda(leftKeyPhysType.Record(leftExpressions), left_);
             var rightKey = Expression.Lambda(rightKeyPhysType.Record(rightExpressions), right_);
 
             var predicate = Predicate(implementor, leftResult.PhysType, rightResult.PhysType, leftType_, rightType_);
             var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);
 
-            // the keys are sorted ascending with nulls last, whatever the collation the inputs carry, because
-            // that is what the algorithm walks
+            // the comparator orders keys ascending, nulls last, which is the order the inputs are required to have
             var fieldCollations = new java.util.ArrayList(joinInfo.leftKeys.size());
             for (int i = 0; i < joinInfo.leftKeys.size(); i++)
                 fieldCollations.add(new RelFieldCollation(i, RelFieldCollation.Direction.ASCENDING, RelFieldCollation.NullDirection.LAST));
@@ -487,17 +478,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.PreferArray());
 
-            // Calcite types these off the physical type and does not box them. It cannot go wrong there:
-            // there is no Enumerable<int> in Java, so the sequence and a parameter typed int cannot disagree.
-            // Here they can. The cursors below are boxed because a join must box — the selector and
-            // predicate Calcite builds are against boxed rows, and an outer join hands the selector a null —
-            // and the key selector is a lambda over one row of the boxed cursor, so this has to be the same
-            // decision. Only a one-column input tells the two apart, every wider row being a reference
-            // already, which is why Primitive.box is a no-op for all of them.
-            // the rows are boxed for the two reasons a hash join boxes them: the selector and the predicate
-            // are built against boxed rows, and a LEFT join hands the selector a null right row, which a
-            // primitive cannot be. The element type is read off the cursor rather than off the physical
-            // type, because those two part company where a one-column input is a scalar.
+            // the rows are boxed: the selector and predicate are built against boxed rows, and an outer join
+            // hands the selector a null row. Java needs no such decision because its sequences are always of
+            // references; here the key selectors' parameters must match the cursors' element types, which
+            // differ from an unboxed row type only for a one-column input
             var leftType_ = leftResult.PhysType.RowType;
             var rightType_ = rightResult.PhysType.RowType;
             var rowType = physType.RowType;
@@ -527,19 +511,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var leftKeyPhysType = leftResult.PhysType.Project(joinInfo.leftKeys, JavaRowFormat.LIST);
             var rightKeyPhysType = rightResult.PhysType.Project(joinInfo.rightKeys, JavaRowFormat.LIST);
 
-            // Calcite forces Function1 on these two, because linq4j's Expressions.lambda deduces Predicate1
-            // for a single BOOLEAN key and that does not match mergeJoin's signature. There is nothing to
-            // force here: Expression.Lambda resolves its delegate through Expression.GetDelegateType, which
-            // answers Func<> and never a predicate type, so a bool key gives Func<TSource, bool> and TKey
-            // binds to bool
+            // Calcite forces Function1 here because linq4j would deduce Predicate1 for a single BOOLEAN key;
+            // Expression.Lambda always infers a Func<>, so a bool key already binds TKey to bool
             var leftKey = Expression.Lambda(leftKeyPhysType.Record(leftExpressions), left_);
             var rightKey = Expression.Lambda(rightKeyPhysType.Record(rightExpressions), right_);
 
             var predicate = Predicate(implementor, leftResult.PhysType, rightResult.PhysType, leftType_, rightType_);
             var selector = ClrEnumUtils.JoinSelector(implementor, joinType, physType, leftResult.PhysType, rightResult.PhysType);
 
-            // the keys are sorted ascending with nulls last, whatever the collation the inputs carry, because
-            // that is what the algorithm walks
+            // the comparator orders keys ascending, nulls last, which is the order the inputs are required to have
             var fieldCollations = new java.util.ArrayList(joinInfo.leftKeys.size());
             for (int i = 0; i < joinInfo.leftKeys.size(); i++)
                 fieldCollations.add(new RelFieldCollation(i, RelFieldCollation.Direction.ASCENDING, RelFieldCollation.NullDirection.LAST));
@@ -574,15 +554,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the lambda testing the part of the condition that is not an equality, or a null constant
-        /// where the condition is entirely equalities.
+        /// Returns a <c>Func&lt;left, right, bool&gt;</c> lambda testing the non-equi part of the condition, or
+        /// a null constant of that delegate type where there is none.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="leftPhysType"></param>
-        /// <param name="rightPhysType"></param>
-        /// <param name="leftType"></param>
-        /// <param name="rightType"></param>
-        /// <returns></returns>
+        /// <param name="implementor">The implementor that translates the condition.</param>
+        /// <param name="leftPhysType">The physical type of the left input's rows.</param>
+        /// <param name="rightPhysType">The physical type of the right input's rows.</param>
+        /// <param name="leftType">The CLR type of a left row, the delegate's first parameter type.</param>
+        /// <param name="rightType">The CLR type of a right row, the delegate's second parameter type.</param>
+        /// <returns>The predicate lambda, or a null constant of the same delegate type.</returns>
         Expression Predicate(ClrCursorRelImplementor implementor, ClrPhysType leftPhysType, ClrPhysType rightPhysType, Type leftType, Type rightType)
         {
             var type = typeof(Func<,,>).MakeGenericType(leftType, rightType, typeof(bool));

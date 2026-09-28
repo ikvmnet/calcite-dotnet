@@ -14,16 +14,12 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// The buffer, which is the one operation here that S2 does not have.
+    /// Tests <c>CLR_ST_GEOG_BUFFER</c>, which buffers by a distance in metres.
     /// </summary>
     /// <remarks>
-    /// Everything else geodesic in this package turned out to be an S2 call. S2's Java release has no buffer,
-    /// so this one is built from the definition — the set of places within a distance of the shape — and its
-    /// correctness is therefore worth testing as a property rather than by comparing shapes. What these
-    /// assert is containment: a place nearer than the distance is in the answer, a place further is not.
-    ///
-    /// <para>Calcite's buffers by degrees, which on the ground means a different distance at every latitude
-    /// and in every direction. Ours buffers by metres.</para>
+    /// The buffer is the union of the shape with circles drawn around points along it, so these tests check
+    /// the definition as a property: a place nearer than the distance is inside, and a place further is
+    /// not. Calcite's <c>ST_BUFFER</c> buffers by degrees, which covers less ground further from the equator.
     /// </remarks>
     public class GeographyBufferTests
     {
@@ -46,12 +42,11 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// What a buffer is: everything nearer than the distance and nothing further.
+        /// The buffer contains places nearer than the distance and not places further, in every direction.
         /// </summary>
         /// <remarks>
-        /// Walked around the compass, because a buffer that was right to the east and wrong to the north
-        /// would be a buffer measured in degrees. The outer probe is at 1.05 rather than 1.0 because the ring
-        /// is a polygon inscribed in the circle and so falls a little inside it.
+        /// The inner probe is at 0.9 of the distance because the ring is a polygon inscribed in the circle and
+        /// falls slightly inside it between vertices.
         /// </remarks>
         [Fact]
         public void ShouldContainWhatIsNearerAndNotWhatIsFurther()
@@ -70,13 +65,11 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The area of a disc, near enough.
+        /// A point's buffer has slightly less than the area of a disc of that radius.
         /// </summary>
         /// <remarks>
-        /// A geodesic disc of radius r covers about πr² while r is small beside the Earth. The answer is a
-        /// little under that, being a thirty-two sided polygon inscribed in the circle rather than the circle
-        /// — by the factor a regular polygon of that many sides loses, which is about six parts in a
-        /// thousand.
+        /// A geodesic disc of radius r covers about πr² while r is small beside the Earth. The ring is a
+        /// 32-sided polygon inscribed in the circle, which loses about six parts in a thousand.
         /// </remarks>
         [Fact]
         public void ShouldCoverAboutTheAreaOfADisc()
@@ -89,12 +82,11 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The distance is metres, so the same buffer covers the same ground wherever it is drawn.
+        /// A buffer of the same distance covers the same area at any latitude, where Calcite's shrinks.
         /// </summary>
         /// <remarks>
-        /// The one that separates the two readings. A buffer of a fixed number of degrees covers less ground
-        /// the further north it is drawn — at 60 degrees a degree of longitude is half what it is at the
-        /// equator — so Calcite's answers shrink with latitude. These do not.
+        /// At 60 degrees a degree of longitude is half what it is at the equator, so a buffer of a fixed
+        /// number of degrees covers less ground there.
         /// </remarks>
         [Fact]
         public void ShouldCoverTheSameGroundAtEveryLatitude()
@@ -104,7 +96,7 @@ namespace Apache.Calcite.Geography.Tests
 
             north.Should().BeApproximately(equator, equator * 0.01);
 
-            // and Calcite's, buffered by a degree at each, do not agree at all
+            // Calcite's, buffered by half a degree at each latitude, do not.
             var theirsAtEquator = GeographyFunctions.Area(SpatialTypeFunctions.ST_Buffer(Wkt("POINT(0 0)"), 0.5))!.doubleValue();
             var theirsAtNorth = GeographyFunctions.Area(SpatialTypeFunctions.ST_Buffer(Wkt("POINT(0 60)"), 0.5))!.doubleValue();
 
@@ -112,7 +104,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A line's buffer is a corridor, and every part of the line is inside it.
+        /// A line's buffer contains the whole line, not only its vertices.
         /// </summary>
         [Fact]
         public void ShouldBufferEveryPartOfALine()
@@ -126,7 +118,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// An area's buffer contains the area itself, rather than only skinning its boundary.
+        /// A polygon's buffer covers the polygon's interior as well as a band around its boundary.
         /// </summary>
         [Fact]
         public void ShouldContainTheAreaItBuffers()
@@ -140,7 +132,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A larger distance is a larger buffer.
+        /// Doubling the distance about quadruples a point's buffer area.
         /// </summary>
         [Fact]
         public void ShouldGrowWithTheDistance()
@@ -152,7 +144,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Nothing to buffer, or nothing to buffer by, is nothing.
+        /// A distance of zero or less, or an empty geometry, gives an empty polygon; a null argument gives null.
         /// </summary>
         [Fact]
         public void ShouldAnswerEmptyForNothingToDo()

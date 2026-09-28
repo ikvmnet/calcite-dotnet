@@ -21,39 +21,29 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
-    /// Turns a tree of <see cref="ClrCursorRel"/> into the factory that opens it.
+    /// Implements a tree of <see cref="ClrCursorRel"/> as a <see cref="ClrCursorFactory"/> that opens it.
     /// </summary>
     /// <remarks>
-    /// The counterpart of Calcite's <c>EnumerableRelImplementor</c>, and used the same way: one instance
-    /// implements one plan. What it hands back is an open rather than Calcite's block, and everything about
-    /// a <em>row</em> — the physical type, the Rex translation, the correlation variables and the stash —
-    /// is the row machinery beside the nodes, as Calcite's is in <c>adapter.enumerable</c>.
+    /// Mirrors <c>EnumerableRelImplementor</c>. One instance implements one plan.
     ///
-    /// <para><b>Two call hierarchies, parallel, and one root member that runs both.</b>
-    /// <see cref="VisitChild"/> calls only <see cref="ClrCursorRel.Implement"/> and
-    /// <see cref="VisitChildAsync"/> only <see cref="ClrCursorRel.ImplementAsync"/>, so a body always
-    /// composes eager inputs of its own kind and this class holds no mode. A caller does not choose
-    /// between two root members: <see cref="ImplementRoot"/>
-    /// walks the tree once through each hierarchy and hands back a <see cref="ClrCursorFactory"/>
-    /// carrying both opens, because the cursor either open produces is the same cursor and a consumer
-    /// chooses per open and per advance rather than per plan.</para>
+    /// <para><see cref="VisitChild"/> calls only <see cref="ClrCursorRel.Implement"/> and
+    /// <see cref="VisitChildAsync"/> only <see cref="ClrCursorRel.ImplementAsync"/>, so each implementation
+    /// composes inputs opened the same way it is. <see cref="ImplementRoot"/> walks the tree through both and
+    /// returns a factory carrying a synchronous and an awaiting open of the same cursor.</para>
     ///
-    /// <para><b>The awaiting hierarchy has a token, and it is a parameter.</b> <see cref="CancellationToken"/>
-    /// is the parameter the awaiting root's lambda declares, and every awaiting open in the tree is passed
-    /// it by <see cref="ClrCursorBuiltInMethod.CallAsync"/>. A deferred open built by
-    /// <see cref="OpenerAsync"/> declares the same parameter again as its own, so that inside it the token
-    /// is the one the advance was given — a nested lambda's declaration shadows the enclosing one's, which
-    /// the expression compiler and the interpreter both honour.</para>
+    /// <para><see cref="CancellationToken"/> is a parameter declared by the awaiting root's lambda and passed
+    /// to every awaiting open in the tree. An opener built by <see cref="OpenerAsync"/> declares the same
+    /// parameter again, so that inside it the token is the one given to the advance that runs it.</para>
     /// </remarks>
     public class ClrCursorRelImplementor
     {
 
         /// <summary>
-        /// The key a caller's <c>FetchOffsetRoundingPolicy</c> is stashed under.
+        /// The key in the internal parameters under which a <c>FetchOffsetRoundingPolicy</c> is found.
         /// </summary>
         /// <remarks>
-        /// <c>EnumerableRelImplementor.FETCH_OFFSET_ROUNDING_POLICY</c>, spelled the same, because every
-        /// convention reads one map and a caller sets one key.
+        /// The same value as <c>EnumerableRelImplementor.FETCH_OFFSET_ROUNDING_POLICY</c>, so one entry serves
+        /// both conventions.
         /// </remarks>
         public const string FetchOffsetRoundingPolicy = "_fetchOffsetRoundingPolicy";
 
@@ -65,8 +55,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// Initializes a new instance.
         /// </summary>
         /// <param name="rexBuilder">The builder for row expressions, from the plan's cluster.</param>
-        /// <param name="internalParameters">The map values are stashed into, which must be the one the
-        /// <see cref="DataContext"/> will serve at run time.</param>
+        /// <param name="internalParameters">The internal parameters, which must be the map the
+        /// <see cref="DataContext"/> serves at run time.</param>
         public ClrCursorRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters) :
             this(rexBuilder, internalParameters, Expression.Parameter(typeof(DataContext), "root"), Expression.Parameter(typeof(CancellationToken), "cancellationToken"))
         {
@@ -77,12 +67,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// Initializes a new instance implementing a sub-plan of a plan already being implemented.
         /// </summary>
         /// <param name="rexBuilder">The builder for row expressions, from the plan's cluster.</param>
-        /// <param name="internalParameters">The map values are stashed into, which must be the one the
-        /// <see cref="DataContext"/> will serve at run time.</param>
-        /// <param name="root">The parameter the <see cref="DataContext"/> arrives by, which must be the one
-        /// the enclosing plan's lambda declares.</param>
-        /// <param name="cancellationToken">The parameter an awaiting open's token arrives by, which must be
-        /// the one the enclosing plan's awaiting lambda declares.</param>
+        /// <param name="internalParameters">The internal parameters, which must be the map the
+        /// <see cref="DataContext"/> serves at run time.</param>
+        /// <param name="root">The <see cref="DataContext"/> parameter declared by the enclosing plan's
+        /// lambda.</param>
+        /// <param name="cancellationToken">The token parameter declared by the enclosing plan's awaiting
+        /// lambda.</param>
         public ClrCursorRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, ParameterExpression root, ParameterExpression cancellationToken) :
             this(rexBuilder, internalParameters, root, cancellationToken, new LixToClrTranslator(internalParameters))
         {
@@ -94,17 +84,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// that plan's translator.
         /// </summary>
         /// <param name="rexBuilder">The builder for row expressions, from the plan's cluster.</param>
-        /// <param name="internalParameters">The map values are stashed into, which must be the one the
-        /// <see cref="DataContext"/> will serve at run time.</param>
-        /// <param name="root">The parameter the <see cref="DataContext"/> arrives by, which must be the one
-        /// the enclosing plan's lambda declares.</param>
-        /// <param name="cancellationToken">The parameter an awaiting open's token arrives by.</param>
+        /// <param name="internalParameters">The internal parameters, which must be the map the
+        /// <see cref="DataContext"/> serves at run time.</param>
+        /// <param name="root">The <see cref="DataContext"/> parameter declared by the enclosing plan's
+        /// lambda.</param>
+        /// <param name="cancellationToken">The token parameter declared by the enclosing plan's awaiting
+        /// lambda.</param>
         /// <param name="translator">The enclosing plan's translator.</param>
         /// <remarks>
-        /// What a converter that splices a sub-plan into an enclosing tree builds: a variable a node of the
-        /// enclosing plan declared — the field read a correlate appends to its block for a correlation variable — is
-        /// referenced by the linq4j parameter's identity, which only the translator that declared it can
-        /// map to the CLR variable the enclosing tree holds.
+        /// Used by a converter that splices a sub-plan into an enclosing tree. The sub-plan can refer to linq4j
+        /// variables the enclosing plan declared, such as a correlate's field reads, and only the translator
+        /// that translated those declarations can map them to the CLR variables in the enclosing tree.
         /// </remarks>
         internal ClrCursorRelImplementor(RexBuilder rexBuilder, java.util.Map internalParameters, ParameterExpression root, ParameterExpression cancellationToken, LixToClrTranslator translator)
         {
@@ -125,77 +115,72 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         public RexBuilder RexBuilder => rexBuilder;
 
         /// <summary>
-        /// Gets the type factory, which decides what every field value is.
+        /// Gets the type factory of the plan's cluster.
         /// </summary>
         public JavaTypeFactory TypeFactory => (JavaTypeFactory)rexBuilder.getTypeFactory();
 
         /// <summary>
-        /// Gets the parameter the <see cref="DataContext"/> arrives by.
+        /// Gets the parameter through which an open receives the <see cref="DataContext"/>.
         /// </summary>
         public ParameterExpression Root { get; }
 
         /// <summary>
-        /// Gets the parameter an awaiting open's token arrives by.
+        /// Gets the parameter through which an awaiting open receives its cancellation token.
         /// </summary>
         /// <remarks>
-        /// Declared by the awaiting root's lambda, and again by every deferred open
-        /// <see cref="OpenerAsync"/> builds. The synchronous root's lambda does not declare it, and no
-        /// synchronous open mentions it.
+        /// Declared by the awaiting root's lambda and again by every opener <see cref="OpenerAsync"/> builds.
+        /// Synchronous opens do not refer to it.
         /// </remarks>
         public ParameterExpression CancellationToken { get; }
 
         /// <summary>
-        /// Gets the linq4j expression standing for the <see cref="DataContext"/>, to hand to a generator of
-        /// Calcite's that needs one.
+        /// Gets the linq4j parameter that stands for the <see cref="DataContext"/>, for passing to Calcite code
+        /// generators. The translator maps it to <see cref="Root"/>.
         /// </summary>
         public J.ParameterExpression RootExpression => DataContext.ROOT;
 
         /// <summary>
-        /// Gets the translator that turns a linq4j expression into a CLR one. One serves the whole plan, so a
-        /// variable means the same thing wherever a node mentions it.
+        /// Gets the translator from linq4j expressions to CLR expressions. One translator serves the whole
+        /// plan, so a linq4j variable maps to the same CLR variable wherever it appears.
         /// </summary>
         internal LixToClrTranslator Translator { get; }
 
         /// <summary>
-        /// Gets the internal parameters, which reach the query through the <see cref="DataContext"/> it is
-        /// bound with rather than through the plan.
+        /// Gets the internal parameters: the map the <see cref="DataContext"/> serves at run time.
         /// </summary>
         public java.util.Map Map => map;
 
         /// <summary>
-        /// Gets the table of implementors a translated call is written with.
+        /// Gets the table of implementors used to translate row expression calls.
         /// </summary>
         /// <remarks>
-        /// <c>EnumerableRelImplementor.getRexImplementorTable</c>: whatever a caller stashed under
-        /// <c>_rexImplementorTable</c>, and <c>RexImpTable.INSTANCE</c> where none did.
+        /// Mirrors <c>EnumerableRelImplementor.getRexImplementorTable</c>: the value in <see cref="Map"/> under
+        /// <c>_rexImplementorTable</c>, or <c>RexImpTable.INSTANCE</c> if there is none.
         /// </remarks>
         public RexImplementorTable RexImplementorTable =>
             (RexImplementorTable)map.getOrDefault("_rexImplementorTable", RexImpTable.INSTANCE);
 
         /// <summary>
-        /// Gets the lookup from a correlation variable's name to its getter, to hand to a generator of
-        /// Calcite's that translates row expressions.
+        /// Gets a function from a correlation variable's name to its input getter, for passing to Calcite's
+        /// row expression translator. See <see cref="GetCorrelVariableGetter"/>.
         /// </summary>
         public Function1 AllCorrelateVariables { get; }
 
         /// <summary>
-        /// Gets the SQL conformance the query is being planned under.
+        /// Gets the SQL conformance: the value in <see cref="Map"/> under <c>_conformance</c>, or
+        /// <c>SqlConformanceEnum.DEFAULT</c> if there is none.
         /// </summary>
         public SqlConformance Conformance => (SqlConformance)map.getOrDefault("_conformance", SqlConformanceEnum.DEFAULT);
 
         /// <summary>
-        /// Implements one input of a node, as an open that acquires synchronously.
+        /// Implements an input of a node as an open that acquires synchronously, by calling the input's
+        /// <see cref="ClrCursorRel.Implement"/>.
         /// </summary>
         /// <param name="parent">The node being implemented, or <see langword="null"/> for a root.</param>
-        /// <param name="ordinal">Which input of <paramref name="parent"/> this is.</param>
+        /// <param name="ordinal">The input's ordinal in <paramref name="parent"/>.</param>
         /// <param name="child">The input to implement.</param>
-        /// <param name="prefer">How the parent wants the input's rows represented.</param>
-        /// <returns>The input's open, physical type and row format.</returns>
-        /// <remarks>
-        /// What a node's <see cref="ClrCursorRel.Implement"/> calls for an eager input, and it calls the
-        /// input's <see cref="ClrCursorRel.Implement"/> in turn. The synchronous hierarchy is closed: every
-        /// call in it reaches a synchronous body and answers a synchronous open.
-        /// </remarks>
+        /// <param name="prefer">The row representation the parent prefers.</param>
+        /// <returns>The input's open and physical type.</returns>
         public ClrCursorResult VisitChild(ClrCursorRel? parent, int ordinal, ClrCursorRel child, ClrCursorPrefer prefer)
         {
             ArgumentNullException.ThrowIfNull(child);
@@ -204,17 +189,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Implements one input of a node, as an open that awaits its acquisition.
+        /// Implements an input of a node as an open that awaits its acquisition, by calling the input's
+        /// <see cref="ClrCursorRel.ImplementAsync"/>.
         /// </summary>
         /// <param name="parent">The node being implemented, or <see langword="null"/> for a root.</param>
-        /// <param name="ordinal">Which input of <paramref name="parent"/> this is.</param>
+        /// <param name="ordinal">The input's ordinal in <paramref name="parent"/>.</param>
         /// <param name="child">The input to implement.</param>
-        /// <param name="prefer">How the parent wants the input's rows represented.</param>
-        /// <returns>The input's open, physical type and row format.</returns>
-        /// <remarks>
-        /// The awaiting counterpart, and the one place <see cref="ClrCursorRel.ImplementAsync"/> is
-        /// called from a node.
-        /// </remarks>
+        /// <param name="prefer">The row representation the parent prefers.</param>
+        /// <returns>The input's awaiting open and physical type.</returns>
         public ClrCursorAsyncResult VisitChildAsync(ClrCursorRel? parent, int ordinal, ClrCursorRel child, ClrCursorPrefer prefer)
         {
             ArgumentNullException.ThrowIfNull(child);
@@ -223,16 +205,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Reads an awaiting open across to a synchronous one.
+        /// Converts an awaiting open into a synchronous one that blocks until the awaiting open completes.
         /// </summary>
-        /// <param name="result">What the awaiting fork produced.</param>
-        /// <returns>The same cursor, opened by blocking.</returns>
+        /// <param name="result">The awaiting open.</param>
+        /// <returns>A synchronous open of the same cursor.</returns>
         /// <remarks>
-        /// A node whose only real body is the awaiting one writes <see cref="ClrCursorRel.Implement"/>
-        /// as a delegation through this. It <b>blocks a thread for the length of the acquisition</b>, because
-        /// a synchronous open has nowhere to suspend, so writing it is a decision and it is made where it
-        /// can be read. The open is wrapped as a delegate so that
-        /// <see cref="ClrCursors.Block{T}"/> can suppress the synchronization context before it starts.
+        /// For a node whose real implementation is <see cref="ClrCursorRel.ImplementAsync"/>, such as an
+        /// adapter with only an asynchronous client, to write <see cref="ClrCursorRel.Implement"/> with. The
+        /// resulting open blocks the calling thread for the whole acquisition, and runs the awaiting open with
+        /// no synchronization context and <see cref="System.Threading.CancellationToken.None"/>, so that it
+        /// cannot deadlock on the blocked thread's context.
         /// </remarks>
         public ClrCursorResult Pulled(ClrCursorAsyncResult result)
         {
@@ -245,14 +227,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Reads a synchronous open across to an awaiting one.
+        /// Converts a synchronous open into an awaiting one that runs it and returns an already completed
+        /// <see cref="ValueTask{TResult}"/>.
         /// </summary>
-        /// <param name="result">What the synchronous fork produced.</param>
-        /// <returns>The same cursor, as a completed open.</returns>
+        /// <param name="result">The synchronous open.</param>
+        /// <returns>An awaiting open of the same cursor.</returns>
         /// <remarks>
-        /// The mirror of <see cref="Pulled"/>, and the cheap one: it is what the default
-        /// <see cref="ClrCursorRel.ImplementAsync"/> is, and what a node writes when its awaiting body
-        /// has nothing to await on the way to its cursor. It allocates nothing.
+        /// The default <see cref="ClrCursorRel.ImplementAsync"/> uses this. It suits a node whose open has
+        /// nothing to await.
         /// </remarks>
         public ClrCursorAsyncResult Awaited(ClrCursorResult result)
         {
@@ -265,15 +247,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Defers a synchronous open, for an operator that acquires a source later than at its own open.
+        /// Wraps a synchronous open in a lambda, for an operator that acquires an input after its own open.
         /// </summary>
         /// <param name="result">The input's open.</param>
         /// <returns>A <c>Func&lt;IClrCursor&lt;TRow&gt;&gt;</c> that runs the open when called.</returns>
         /// <remarks>
-        /// Evaluating an open is the acquisition, so an operator that must not acquire a source at its own
-        /// open — linq4j's <c>concat</c> acquires each source at its turn inside <c>moveNext</c> — takes
-        /// the source as one of these and calls it when the time comes. The deferral is then visible in the
-        /// tree as a lambda, exactly where linq4j's is visible as a field read.
+        /// Evaluating an open acquires the input, so an operator that acquires it later, as linq4j's
+        /// <c>concat</c> acquires each source in turn inside <c>moveNext</c>, takes it as an opener instead.
         /// </remarks>
         public LambdaExpression Opener(ClrCursorResult result)
         {
@@ -285,15 +265,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Defers an awaiting open, for an operator that acquires a source later than at its own open.
+        /// Wraps an awaiting open in a lambda, for an operator that acquires an input after its own open.
         /// </summary>
-        /// <param name="result">The input's open.</param>
+        /// <param name="result">The input's awaiting open.</param>
         /// <returns>A <c>Func&lt;CancellationToken, ValueTask&lt;IClrCursor&lt;TRow&gt;&gt;&gt;</c> that
         /// runs the open when called, under the token it is called with.</returns>
         /// <remarks>
-        /// <see cref="Opener"/> for the awaiting fork. The lambda declares <see cref="CancellationToken"/>
-        /// as its own parameter, shadowing the root's, so that an acquisition that happens inside
-        /// <c>ReadAsync</c> is cancelled by that advance's token rather than by the open's.
+        /// The lambda declares <see cref="CancellationToken"/> as its own parameter, shadowing the root's, so an
+        /// acquisition made inside <c>ReadAsync</c> observes that call's token rather than the open's.
         /// </remarks>
         public LambdaExpression OpenerAsync(ClrCursorAsyncResult result)
         {
@@ -306,23 +285,21 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Implements a whole plan as a <see cref="ClrCursorFactory"/>, which opens it against the
-        /// <see cref="DataContext"/> it is bound with.
+        /// Implements a whole plan as a <see cref="ClrCursorFactory"/> that opens it against a
+        /// <see cref="DataContext"/>.
         /// </summary>
-        /// <param name="rootRel">The root of the plan, which must be of this convention.</param>
-        /// <param name="prefer">How the caller wants rows represented.</param>
-        /// <returns>The factory, carrying both opens and the type of one row.</returns>
-        /// <exception cref="java.lang.IllegalStateException">
-        /// A node of the plan could not be implemented. The message names the plan; the failure itself is the
-        /// inner exception.
-        /// </exception>
+        /// <param name="rootRel">The root of the plan.</param>
+        /// <param name="prefer">The row representation the caller prefers.</param>
+        /// <returns>A factory carrying a synchronous and an awaiting open of the plan, and its element type.</returns>
+        /// <exception cref="java.lang.IllegalStateException">A node of the plan could not be implemented. The
+        /// message contains the plan and the inner exception is the failure.</exception>
         /// <remarks>
-        /// Both bodies of the root, each walking its own hierarchy, and then one wrapper around the two.
-        /// One root member builds both, because a plan of this convention has no mode for a caller to pick: the cursor
-        /// is the same whichever way it is opened, and which way is the caller's business at each open.
+        /// Calls both <see cref="ClrCursorRel.Implement"/> and <see cref="ClrCursorRel.ImplementAsync"/> on the
+        /// root. Where <paramref name="prefer"/> is <see cref="ClrCursorPrefer.Array"/> and the plan has one
+        /// column, each row is the column's value rather than a one-element array, as in
+        /// <c>EnumerableRelImplementor.implementRoot</c>.
         ///
-        /// <para>Nothing is compiled here. The factory compiles each open the first time it is asked for it,
-        /// so a caller that only ever opens one way pays for one.</para>
+        /// <para>Nothing is compiled here; the factory compiles each open the first time it is used.</para>
         /// </remarks>
         public ClrCursorFactory ImplementRoot(ClrCursorRel rootRel, ClrCursorPrefer prefer)
         {
@@ -342,18 +319,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     $"Unable to implement {org.apache.calcite.plan.RelOptUtil.toString(rootRel, org.apache.calcite.sql.SqlExplainLevel.ALL_ATTRIBUTES)}", e);
             }
 
-            // what one row of the awaiting open is: the physical row type, until the slice below makes it
-            // the value
             var rowType = awaited.PhysType.RowType;
 
-            // a one column result is the value, not a one element row, which is what every caller of a query
-            // expects and what EnumerableRelImplementor arranges the same way
+            // a one-column result is the value, not a one-element row, as EnumerableRelImplementor arranges
             if (prefer == ClrCursorPrefer.Array
                 && pulled.Format == JavaRowFormat.ARRAY
                 && rootRel.getRowType().getFieldCount() == 1)
             {
-                // object, because nothing reads this but the caller of the query, and it is handed out as
-                // an untyped cursor
+                // the root is handed out as an untyped cursor, so the sliced value need not be typed
                 rowType = typeof(object);
 
                 pulled = new ClrCursorResult(
@@ -367,9 +340,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     JavaRowFormat.SCALAR);
             }
 
-            // the conversion to the untyped base is by reference and cannot fail: a row is never a value
-            // type, and RequireRowType has held every node to a cursor of its physical row type. The awaiting
-            // open goes through one continuation instead, a ValueTask being invariant
+            // the synchronous open converts to the untyped cursor by reference; ValueTask is invariant, so
+            // the awaiting open is converted by a helper instead
             var open = Expression.Lambda<Func<DataContext, IClrCursor>>(
                 Expression.Convert(pulled.Expression, typeof(IClrCursor)),
                 Root);
@@ -383,7 +355,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns what one row of the plan is, which is the same answer whichever way it is opened.
+        /// Returns the CLR type of the plan's Java row type under the given preference.
         /// </summary>
         Type ElementType(ClrCursorRel rel, ClrCursorPrefer prefer)
         {
@@ -391,14 +363,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the expression by which a plan reaches an object that cannot be written into it.
+        /// Returns an expression whose value is an object that has no literal form.
         /// </summary>
         /// <param name="input">The object.</param>
-        /// <param name="clazz">The type to give the expression.</param>
-        /// <returns>An expression whose value is <paramref name="input"/>.</returns>
+        /// <param name="clazz">The Java class whose CLR type the expression has.</param>
+        /// <returns>A constant expression holding <paramref name="input"/>.</returns>
         /// <remarks>
-        /// The counterpart of <c>EnumerableRelImplementor.stash</c>, which passes the object through the
-        /// <see cref="DataContext"/>; an expression tree can hold it, so this is a constant.
+        /// Mirrors <c>EnumerableRelImplementor.stash</c>, which passes the object through the
+        /// <see cref="DataContext"/> because generated Java source cannot hold it. An expression tree can hold
+        /// any object, so this returns a constant.
         /// </remarks>
         public Expression Stash(object? input, java.lang.Class clazz)
         {
@@ -406,12 +379,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Registers the variable a correlated sub-query reads its outer row by, for the length of that
-        /// sub-query.
+        /// Registers a correlation variable, through which a correlated input reads the current outer row.
+        /// Call <see cref="ClearCorrelVariable"/> when the input has been implemented.
         /// </summary>
         /// <param name="name">The correlation variable's name.</param>
-        /// <param name="pe">The parameter holding the outer row.</param>
-        /// <param name="corrBlock">The block a field read is declared into.</param>
+        /// <param name="pe">The linq4j parameter holding the outer row.</param>
+        /// <param name="corrBlock">The block into which each field read is declared.</param>
         /// <param name="physType">The outer row's physical type.</param>
         public void RegisterCorrelVariable(string name, J.ParameterExpression pe, J.BlockBuilder corrBlock, PhysType physType)
         {
@@ -419,7 +392,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Forgets a correlation variable once its scope has ended.
+        /// Removes a correlation variable registered with <see cref="RegisterCorrelVariable"/>.
         /// </summary>
         /// <param name="name">The correlation variable's name.</param>
         /// <exception cref="java.lang.IllegalStateException">No such variable is in scope.</exception>
@@ -430,10 +403,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the getter that reads a field of the row a correlation variable stands for.
+        /// Returns the input getter that reads fields of the row a correlation variable stands for.
         /// </summary>
         /// <param name="name">The correlation variable's name.</param>
-        /// <returns></returns>
+        /// <returns>A getter that appends each field read to the variable's block.</returns>
         /// <exception cref="java.lang.IllegalStateException">No such variable is in scope.</exception>
         public RexToLixTranslator.InputGetter GetCorrelVariableGetter(string name)
         {
@@ -444,14 +417,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Registers on Calcite's implementor every correlation variable in scope here.
+        /// Registers every correlation variable registered here on a Calcite implementor.
         /// </summary>
-        /// <param name="enumerable"></param>
+        /// <param name="enumerable">The implementor of an <c>EnumerableConvention</c> sub-plan.</param>
         /// <remarks>
-        /// A converter runs an <c>EnumerableConvention</c> sub-plan on an implementor of Calcite's, and that
-        /// implementor keeps its own correlation variables; a sub-plan of Calcite's sitting under a correlate
-        /// of this convention would otherwise find none. The registration is replayed rather than the getter
-        /// handed over, because Calcite builds its own getter and keeps the map private.
+        /// An <c>EnumerableConvention</c> sub-plan under a correlate of this convention is implemented by a
+        /// separate <c>EnumerableRelImplementor</c>, which keeps its own correlation variables in a private map.
+        /// Replaying the registrations lets the sub-plan read the outer row.
         /// </remarks>
         internal void ReplayCorrelVariables(EnumerableRelImplementor enumerable)
         {
@@ -462,31 +434,30 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates the result a node's <see cref="ClrCursorRel.Implement"/> returns.
         /// </summary>
-        /// <param name="physType">How the rows are represented.</param>
-        /// <param name="expression">The open, whose value must be a <c>IClrCursor&lt;TRow&gt;</c> of the
-        /// physical row type.</param>
-        /// <returns></returns>
-        /// <exception cref="java.lang.IllegalStateException">The open is not that.</exception>
+        /// <param name="physType">The physical type of the rows.</param>
+        /// <param name="expression">The open, of type <c>IClrCursor&lt;TRow&gt;</c> where <c>TRow</c> is
+        /// <paramref name="physType"/>'s row type.</param>
+        /// <returns>The result, whose format is the physical type's.</returns>
+        /// <exception cref="java.lang.IllegalStateException"><paramref name="expression"/> is not of that type.
+        /// The message names the calling node.</exception>
         public ClrCursorResult Result(ClrPhysType physType, Expression expression)
         {
             RequireRowType(physType, expression, typeof(IClrCursor<>), "an open");
 
-            // PhysTypeImpl keeps its format package-private, and getFormat is the same value in public
             return new ClrCursorResult(expression, physType, physType.Format);
         }
 
         /// <summary>
         /// Creates the result a node's <see cref="ClrCursorRel.ImplementAsync"/> returns.
         /// </summary>
-        /// <param name="physType">How the rows are represented.</param>
-        /// <param name="expression">The open, whose value must be a
-        /// <c>ValueTask&lt;IClrCursor&lt;TRow&gt;&gt;</c> of the physical row type.</param>
-        /// <returns></returns>
-        /// <exception cref="java.lang.IllegalStateException">The open is not that.</exception>
+        /// <param name="physType">The physical type of the rows.</param>
+        /// <param name="expression">The awaiting open, of type <c>ValueTask&lt;IClrCursor&lt;TRow&gt;&gt;</c>
+        /// where <c>TRow</c> is <paramref name="physType"/>'s row type.</param>
+        /// <returns>The result, whose format is the physical type's.</returns>
+        /// <exception cref="java.lang.IllegalStateException"><paramref name="expression"/> is not of that type.
+        /// The message names the calling node.</exception>
         /// <remarks>
-        /// <see cref="Result"/> for the awaiting fork. The kind is required here rather than inferred later:
-        /// a node that builds a synchronous open in its awaiting body is refused by name, instead of being
-        /// quietly wrapped. Where the wrap is wanted the node says so with <see cref="Awaited"/>.
+        /// A synchronous open is refused rather than wrapped; convert it explicitly with <see cref="Awaited"/>.
         /// </remarks>
         public ClrCursorAsyncResult ResultAsync(ClrPhysType physType, Expression expression)
         {
@@ -508,13 +479,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Refuses an open whose cursor is not of the type the physical type says it is.
+        /// Throws unless an expression is of the generic type <paramref name="wanted"/> over the physical row
+        /// type.
         /// </summary>
         /// <remarks>
-        /// Calcite's <c>EnumerableRelImplementor.result</c> records what it is handed and asks nothing, its
-        /// sequences being erased. This asks, because a node here can build a cursor of the wrong type and
-        /// every node below it will still compile. It refuses rather than repairing, because a check with a
-        /// way out is a check only for the shapes that already pass.
+        /// <c>EnumerableRelImplementor.result</c> checks nothing, because Java's sequences are erased. Here a
+        /// cursor of the wrong element type would still compile into the plan, so it is refused at the node
+        /// that built it.
         /// </remarks>
         static void RequireRowType(ClrPhysType physType, Expression expression, Type wanted, string what)
         {
@@ -532,7 +503,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Names the node whose body called a result factory, for a refusal's message.
+        /// Returns the name of the first type on the call stack other than this one, which is the node that
+        /// called a result factory, for an error message.
         /// </summary>
         static string Node()
         {
@@ -549,7 +521,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Reads a field of the outer row a correlated sub-query was entered with.
+        /// Input getter for a correlation variable. Each field read is appended to the variable's block as a
+        /// declaration named <c>{name}_{index}</c>.
         /// </summary>
         sealed class CorrelInputGetter(string name, J.ParameterExpression pe, J.BlockBuilder corrBlock, PhysType physType) : RexToLixTranslator.InputGetter
         {

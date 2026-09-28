@@ -7,46 +7,45 @@ namespace Apache.Calcite.Data.Common
 {
 
     /// <summary>
-    /// Carries a Calcite type to and from the <see cref="CalciteDbType"/> naming it.
+    /// Converts between Calcite types, <see cref="CalciteDbType"/>, <see cref="SqlTypeName"/> and
+    /// <see cref="System.Data.DbType"/>.
     /// </summary>
     /// <remarks>
-    /// Best effort in both directions, and by design. Going in, Calcite's type model is open and a type may
-    /// name no <c>SqlTypeName</c> at all, so anything the enum has no member for is
-    /// <see cref="CalciteDbType.Unknown"/>. Coming out, a name is not a type — a <c>DECIMAL</c> has a
-    /// precision and a scale, a <c>VARCHAR</c> a length, a collection an element — so
-    /// <see cref="ToSqlTypeName"/> answers the name and leaves building the type to a caller that has a type
-    /// factory and the rest of the facts.
+    /// The conversions are lossy. A type with no <see cref="CalciteDbType"/> member is
+    /// <see cref="CalciteDbType.Unknown"/>, and a <see cref="CalciteDbType"/> names only a type name, not a
+    /// precision, scale, length or element type, so <see cref="ToSqlTypeName"/> returns a
+    /// <see cref="SqlTypeName"/> from which the caller builds the full type.
     /// </remarks>
     public static class CalciteDbTypes
     {
 
         /// <summary>
-        /// Separates the base type from the collection flags above it.
+        /// Selects the base type bits of a <see cref="CalciteDbType"/>, below the collection flags.
         /// </summary>
         /// <remarks>
-        /// Private, and not a member of <see cref="CalciteDbType"/>: every member of that list names a type,
-        /// and a mask does not. Putting one there would offer a caller something to bitwise-and with in
-        /// place of asking <see cref="BaseType"/>, and would turn up in its values and in its
-        /// <see cref="object.ToString"/>.
+        /// Kept here rather than in <see cref="CalciteDbType"/> because it names no type; callers use
+        /// <see cref="BaseType"/>.
         /// </remarks>
         const CalciteDbType BaseMask = (CalciteDbType)0x0FFFFFFF;
 
         /// <summary>
-        /// Returns the element half of a name, which is the whole of it where it is not a collection.
+        /// Returns a type with its collection flags removed.
         /// </summary>
-        /// <param name="type">The name.</param>
-        /// <returns>The base type, or <see cref="CalciteDbType.Unknown"/> where there is none — which is
-        /// what a collection that nests answers, one bit having nowhere to put a second level.</returns>
+        /// <param name="type">The type.</param>
+        /// <returns>The element type of a collection, or <paramref name="type"/> itself where it is not a
+        /// collection. A <c>MAP</c>, or a collection whose element is a collection, gives
+        /// <see cref="CalciteDbType.Unknown"/>.</returns>
         public static CalciteDbType BaseType(CalciteDbType type)
         {
             return type & BaseMask;
         }
 
         /// <summary>
-        /// Returns whether a name is a collection of something.
+        /// Returns whether a type is a collection.
         /// </summary>
-        /// <param name="type">The name.</param>
-        /// <returns><see langword="true"/> for an <c>ARRAY</c>, a <c>MULTISET</c> or a <c>MAP</c>.</returns>
+        /// <param name="type">The type.</param>
+        /// <returns><see langword="true"/> where <see cref="CalciteDbType.Array"/>,
+        /// <see cref="CalciteDbType.Multiset"/> or <see cref="CalciteDbType.Map"/> is set.</returns>
         public static bool IsCollection(CalciteDbType type)
         {
             return (type & ~BaseMask) != 0;
@@ -56,12 +55,12 @@ namespace Apache.Calcite.Data.Common
         /// Returns the <see cref="CalciteDbType"/> naming a Calcite type.
         /// </summary>
         /// <param name="relType">The type, or <see langword="null"/>.</param>
-        /// <returns>The name, or <see cref="CalciteDbType.Unknown"/> where this list has none.</returns>
+        /// <returns>The <see cref="CalciteDbType"/>, or <see cref="CalciteDbType.Unknown"/> where there is no
+        /// member for the type or <paramref name="relType"/> is <see langword="null"/>.</returns>
         /// <remarks>
-        /// A collection contributes its flag and its element contributes the base, so an
-        /// <c>INTEGER ARRAY</c> is <c>Array | Integer</c>. An element that is itself a collection has no
-        /// base to contribute — one bit cannot spell <c>INTEGER ARRAY ARRAY</c> — so such a type is the
-        /// collection flag alone and the element is read from the mapping instead.
+        /// An <c>ARRAY</c> or <c>MULTISET</c> is its flag combined with its element type, so
+        /// <c>INTEGER ARRAY</c> is <c>Array | Integer</c>. Where the element is itself a collection the result
+        /// is the flag alone. A <c>MAP</c> is <see cref="CalciteDbType.Map"/> alone.
         /// </remarks>
         public static CalciteDbType Of(RelDataType? relType)
         {
@@ -81,7 +80,6 @@ namespace Apache.Calcite.Data.Common
                     return CalciteDbType.Multiset | Base(relType.getComponentType());
 
                 case nameof(SqlTypeName.MAP):
-                    // the key and the value are two types and this is one field; the mapping carries them
                     return CalciteDbType.Map;
 
                 default:
@@ -90,8 +88,8 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Returns the base an element contributes, which is nothing where the element is itself a
-        /// collection.
+        /// Returns the base type an element contributes to its collection's <see cref="CalciteDbType"/>, which
+        /// is <see cref="CalciteDbType.Unknown"/> where the element is itself a collection.
         /// </summary>
         static CalciteDbType Base(RelDataType? element)
         {
@@ -103,11 +101,12 @@ namespace Apache.Calcite.Data.Common
         /// <summary>
         /// Returns the <see cref="CalciteDbType"/> naming a <see cref="SqlTypeName"/>.
         /// </summary>
-        /// <param name="name">The name, or <see langword="null"/>.</param>
-        /// <returns>The name, or <see cref="CalciteDbType.Unknown"/> where this list has none.</returns>
+        /// <param name="name">The type name, or <see langword="null"/>.</param>
+        /// <returns>The <see cref="CalciteDbType"/>, or <see cref="CalciteDbType.Unknown"/> where there is no
+        /// member for the name. <c>ARRAY</c>, <c>MULTISET</c> and <c>MAP</c> give
+        /// <see cref="CalciteDbType.Unknown"/>; use the <see cref="RelDataType"/> overload for those.</returns>
         /// <remarks>
-        /// Switched on the enum constant's name rather than its ordinal, which is the rule everywhere a
-        /// Java enum is read here: ordinals are not stable across Calcite versions and names are.
+        /// Matches on the Java enum constant's name, since ordinals are not stable across Calcite versions.
         /// </remarks>
         public static CalciteDbType Of(SqlTypeName? name)
         {
@@ -168,14 +167,14 @@ namespace Apache.Calcite.Data.Common
         /// <summary>
         /// Returns the <see cref="System.Data.DbType"/> nearest a <see cref="CalciteDbType"/>.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns>The name, or <see cref="System.Data.DbType.Object"/> where that shared list has none.</returns>
+        /// <param name="type">The type.</param>
+        /// <returns>The <see cref="System.Data.DbType"/>, or <see cref="System.Data.DbType.Object"/> where
+        /// there is no near member.</returns>
         /// <remarks>
-        /// Lossy by construction and in one direction only. <see cref="System.Data.DbType"/> is the list
-        /// every provider shares, so the unsigned integers keep their own names but the intervals,
-        /// <c>VARIANT</c>, <c>MEASURE</c>, <c>GEOMETRY</c>, <c>ROW</c> and every collection are
-        /// <see cref="System.Data.DbType.Object"/>, which is what ADO.NET has for "not one of these". Going
-        /// back the other way loses more: see <see cref="FromDbType"/>.
+        /// The intervals, <c>GEOMETRY</c>, <c>VARIANT</c>, <c>MEASURE</c>, <c>ROW</c>, <c>ANY</c>,
+        /// <c>NULL</c>, <c>OTHER</c> and every collection give <see cref="System.Data.DbType.Object"/>.
+        /// <c>FLOAT</c> gives <see cref="System.Data.DbType.Double"/>, and the zoned temporal types give
+        /// <see cref="System.Data.DbType.DateTimeOffset"/>.
         /// </remarks>
         public static System.Data.DbType ToDbType(CalciteDbType type)
         {
@@ -216,18 +215,16 @@ namespace Apache.Calcite.Data.Common
         /// <summary>
         /// Returns the <see cref="CalciteDbType"/> nearest a <see cref="System.Data.DbType"/>.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns>The name, or <see cref="CalciteDbType.Unknown"/> where none is near enough.</returns>
+        /// <param name="type">The type.</param>
+        /// <returns>The <see cref="CalciteDbType"/>, or <see cref="CalciteDbType.Unknown"/> where there is no
+        /// near member, as for <see cref="System.Data.DbType.Object"/>.</returns>
         /// <remarks>
-        /// The lossier direction, and lossy in a way worth knowing about rather than hiding. Several
-        /// <see cref="System.Data.DbType"/> members name a .NET type that Calcite spells more than one way,
-        /// so a choice has to be made and it is made toward the type SQL means by default:
-        /// <see cref="System.Data.DbType.DateTime"/> is a <c>TIMESTAMP</c> and not a <c>DATE</c>,
-        /// <see cref="System.Data.DbType.DateTimeOffset"/> a <c>TIMESTAMP WITH TIME ZONE</c> and not a
-        /// zoned <c>TIME</c>, <see cref="System.Data.DbType.Binary"/> a <c>VARBINARY</c> and not a
-        /// <c>BINARY</c>. The ANSI members map to the same types as their Unicode counterparts, Calcite
-        /// having one character type family. <see cref="System.Data.DbType.Object"/> means "not one of
-        /// these" and carries nothing, so it is <see cref="CalciteDbType.Unknown"/>.
+        /// Where several Calcite types correspond, the result is the usual SQL one:
+        /// <see cref="System.Data.DbType.DateTime"/> and <see cref="System.Data.DbType.DateTime2"/> give
+        /// <c>TIMESTAMP</c>, <see cref="System.Data.DbType.DateTimeOffset"/> gives <c>TIMESTAMP WITH TIME
+        /// ZONE</c>, and <see cref="System.Data.DbType.Binary"/> gives <c>VARBINARY</c>. The ANSI string
+        /// members give the same types as their Unicode counterparts, and
+        /// <see cref="System.Data.DbType.Xml"/> gives <c>VARCHAR</c>.
         /// </remarks>
         public static CalciteDbType FromDbType(System.Data.DbType type)
         {
@@ -260,9 +257,9 @@ namespace Apache.Calcite.Data.Common
         /// <summary>
         /// Returns the <see cref="SqlTypeName"/> a <see cref="CalciteDbType"/> names.
         /// </summary>
-        /// <param name="type">The name. Collection flags are read, so <c>Array | Integer</c> answers
-        /// <c>ARRAY</c> and <see cref="BaseTypeName"/> answers <c>INTEGER</c>.</param>
-        /// <returns>The type name, or <see langword="null"/> where there is none.</returns>
+        /// <param name="type">The type. A collection flag takes precedence, so <c>Array | Integer</c> gives
+        /// <c>ARRAY</c>; <see cref="BaseTypeName"/> gives the element's <c>INTEGER</c>.</param>
+        /// <returns>The type name, or <see langword="null"/> for <see cref="CalciteDbType.Unknown"/>.</returns>
         public static SqlTypeName? ToSqlTypeName(CalciteDbType type)
         {
             if ((type & CalciteDbType.Array) != 0)
@@ -279,8 +276,9 @@ namespace Apache.Calcite.Data.Common
         /// Returns the <see cref="SqlTypeName"/> the base of a <see cref="CalciteDbType"/> names, ignoring
         /// any collection flag.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns>The type name, or <see langword="null"/> where there is none.</returns>
+        /// <param name="type">The type.</param>
+        /// <returns>The type name, or <see langword="null"/> where the base type is
+        /// <see cref="CalciteDbType.Unknown"/>.</returns>
         public static SqlTypeName? BaseTypeName(CalciteDbType type)
         {
             return BaseType(type) switch

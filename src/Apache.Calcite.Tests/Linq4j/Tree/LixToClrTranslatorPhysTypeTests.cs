@@ -25,12 +25,9 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
 {
 
     /// <summary>
-    /// Translates what <see cref="PhysTypeImpl"/> actually emits.
+    /// Translates the linq4j expressions Calcite's <see cref="PhysTypeImpl"/> emits with
+    /// <see cref="LixToClrTranslator"/>, and runs the result.
     /// </summary>
-    /// <remarks>
-    /// The port reuses every expression-producing member of <c>PhysType</c> rather than writing CLR versions
-    /// of them, which is only worth anything if what they emit survives translation. These run the result.
-    /// </remarks>
     public class LixToClrTranslatorPhysTypeTests
     {
 
@@ -39,7 +36,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         readonly PhysType physType;
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Builds a two-column <c>ARRAY</c> physical type of an <c>INTEGER</c> and a <c>VARCHAR</c>.
         /// </summary>
         public LixToClrTranslatorPhysTypeTests()
         {
@@ -52,10 +49,10 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// Translates a comparator and returns it as something that can be called.
+        /// Translates and compiles a comparator expression, and returns a delegate that calls it.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <returns></returns>
+        /// <param name="expression">A linq4j expression that evaluates to a <c>java.util.Comparator</c>.</param>
+        /// <returns>A delegate that compares two rows through the translated comparator.</returns>
         static Func<object[], object[], int> Comparator(J.Expression expression)
         {
             var translated = new LixToClrTranslator().Translate(expression);
@@ -111,8 +108,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         [Fact]
         public void ShouldTranslateComparator()
         {
-            // an anonymous java.util.Comparator, which an expression tree cannot declare, so it becomes the
-            // lambda its compare method already is, wrapped back into the interface it was declared against
+            // an anonymous java.util.Comparator, which an expression tree cannot declare, becomes a lambda
+            // for its compare method wrapped in an implementation of the interface
             var collation = RelCollations.of(0);
             var compare = Comparator(physType.generateComparator(collation));
 
@@ -169,8 +166,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
 
             var pair = physType.generateCollationKey(collations);
 
-            // Pair exposes left and right as fields, and also declares static methods of those names, which
-            // C# cannot tell apart. Map.Entry gives the same two values under names that are not overloaded.
+            // Pair's left and right fields are hidden in C# by static methods of the same names; Map.Entry's
+            // getKey and getValue return the same two values
             pair.getValue().Should().NotBeNull("more than one collation puts the ordering in a comparator");
 
             var compare = Comparator((J.Expression)pair.getValue());
@@ -181,9 +178,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         [Fact]
         public void ShouldTranslateAnIdentitySelectorAsALinq4jFunction()
         {
-            // PhysType does not always return a lambda. Where the projection is the identity it returns a call
-            // to Functions.identitySelector, whose value is a linq4j Function1 rather than anything a delegate
-            // can be made from, and a node asking for a selector has to be ready for either.
+            // where the projection is the identity, PhysType returns a call to Functions.identitySelector rather
+            // than a lambda, so the translation is a linq4j Function1 and not a delegate
             var scalar = PhysTypeImpl.of(typeFactory, typeFactory.builder().add("NAME", typeFactory.createSqlType(SqlTypeName.VARCHAR)).build(), JavaRowFormat.ARRAY);
 
             var selector = scalar.generateSelector(
@@ -198,13 +194,12 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// CALCITE-3364: a one-column row converted from an array to a scalar, which is what a table function
-        /// of one value needs before it can be grouped.
+        /// <see cref="ClrPhysTypeImpl"/> converts a cursor of one-column rows from <c>ARRAY</c> to
+        /// <c>SCALAR</c>, as a one-value table function needs before it can be grouped.
         /// </summary>
         /// <remarks>
-        /// The selector <c>PhysType</c> emits here ends in <c>public int apply(Object[] o)</c> — the physical
-        /// field type, not the box. A cursor carries the box, so the conversion has to end in one; this is
-        /// the shape of it, and the only one no plan reaches.
+        /// <c>PhysTypeImpl</c>'s selector for this returns the primitive field type (<c>int</c>); a cursor of
+        /// this convention carries the boxed type, so the converted cursor's element is <c>Integer</c>.
         /// </remarks>
         [Fact]
         public void ShouldConvertAOneColumnRowFromAnArrayToAScalar()

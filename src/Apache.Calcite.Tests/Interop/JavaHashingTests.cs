@@ -9,24 +9,20 @@ namespace Apache.Calcite.Extensions.Interop.Tests
 {
 
     /// <summary>
-    /// What a string hashes to, and what a <c>java.util.HashMap</c> therefore iterates in.
+    /// Checks that a string hashes on the Java side to the value Java specifies, so a <c>java.util.HashMap</c>
+    /// iterates in the same order in every process.
     /// </summary>
     /// <remarks>
-    /// This convention has to agree with <c>EnumerableConvention</c> on the order of rows a query does not
-    /// order, and where that order is a map's it is the map's hashing that decides it. Java <i>specifies</i>
-    /// <c>String.hashCode</c> — <c>s[0]*31^(n-1) + …</c> — so it is the same on every JVM and every run. The
-    /// CLR's is randomised per process, and if IKVM handed a string to it, no two runs would agree.
-    ///
-    /// <para>These tests say it does not: what a string hashes to on the Java side is Java's value. That is
-    /// why holding rows in a <c>java.util.HashMap</c>, as <c>ClrCursorDefaults.AsofJoin</c> and
-    /// <c>ClrCursorDefaults.GroupBy</c> do, reproduces Calcite's order rather than merely happening to
-    /// match it.</para>
+    /// Java specifies <c>String.hashCode</c> as <c>s[0]*31^(n-1) + …</c>; the CLR's string hash is randomised
+    /// per process. Operators such as <c>ClrCursorDefaults.GroupBy</c> and <c>ClrCursorDefaults.AsofJoin</c>
+    /// hold rows in a <c>java.util.HashMap</c> so that the order of rows a query does not sort matches
+    /// <c>EnumerableConvention</c>, which depends on IKVM using Java's hash for a string.
     /// </remarks>
     public class JavaHashingTests
     {
 
         /// <summary>
-        /// A string hashes on the Java side to what the Java language specifies.
+        /// A string hashes on the Java side to the value the Java language specifies.
         /// </summary>
         [Fact]
         public void ShouldHashAStringTheWayJavaSpecifies()
@@ -37,8 +33,8 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         }
 
         /// <summary>
-        /// A <c>java.util.HashMap</c> iterates in the same order in every process, because that order follows
-        /// from the hash above and not from the CLR's.
+        /// A <c>java.util.HashMap</c> of strings iterates in a fixed order, the one Java's string hash gives,
+        /// rather than one that varies with the CLR's per-process hash.
         /// </summary>
         [Fact]
         public void ShouldIterateAHashMapInTheSameOrderEveryRun()

@@ -19,27 +19,26 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
-    /// Relational operator that reads the result of a <see cref="ClrCursorConvention"/> sub-plan as an
-    /// <c>EnumerableConvention</c> one.
+    /// Relational operator that converts the output of a <see cref="ClrCursorConvention"/> sub-plan to
+    /// <c>EnumerableConvention</c>.
     /// </summary>
     /// <remarks>
-    /// Calcite compiles its side with Janino from generated source, which cannot mention an object, so the
-    /// sub-plan's tree is stashed on the <see cref="DataContext"/> for the generated code to call back into.
-    /// The sub-plan is the synchronous open, because a linq4j <c>Enumerator</c> is pulled and the generated
-    /// source calling it cannot await. The rows are not touched.
+    /// Calcite compiles <c>EnumerableConvention</c> code from generated Java source, which cannot hold an
+    /// object, so the sub-plan is stashed in the <see cref="DataContext"/> and the generated code calls into
+    /// it. The sub-plan is implemented with its synchronous open only, because generated Java reads rows
+    /// through a linq4j <c>Enumerator</c> and cannot await. The expression tree is compiled the first time the
+    /// plan runs, not while it is being implemented.
     ///
-    /// <para>A tree rather than a delegate, because compiling is not planning: it happens the first time
-    /// the plan runs. See <see cref="ClrPlan{TRows}"/>.</para>
+    /// <para>Correlation variables of an <c>EnumerableConvention</c> correlate above this node are passed to
+    /// the sub-plan through the <see cref="DataContext"/>, because the sub-plan is compiled separately from
+    /// the Java lambda that declares them.</para>
     /// </remarks>
     public class ClrCursorToEnumerableConverter : ConverterImpl, EnumerableRel
     {
 
         /// <summary>
-        /// Initializes the static instance.
+        /// Adds this assembly to the IKVM boot class path, because the generated Java code names a type in it.
         /// </summary>
-        /// <remarks>
-        /// The generated code names a type of this assembly, so Java has to be able to see it.
-        /// </remarks>
         static ClrCursorToEnumerableConverter()
         {
             ikvm.runtime.Startup.addBootClassPathAssembly(typeof(ClrCursorToEnumerableConverter).Assembly);
@@ -48,9 +47,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traits"></param>
-        /// <param name="input"></param>
+        /// <param name="cluster">The cluster the node belongs to.</param>
+        /// <param name="traits">The node's traits, in <c>EnumerableConvention</c>.</param>
+        /// <param name="input">The sub-plan, in <see cref="ClrCursorConvention"/>.</param>
         public ClrCursorToEnumerableConverter(RelOptCluster cluster, RelTraitSet traits, RelNode input) :
             base(cluster, ConventionTraitDef.INSTANCE, traits, input)
         {
@@ -74,17 +73,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <inheritdoc />
         public EnumerableRel.Result implement(EnumerableRelImplementor implementor, EnumerableRel.Prefer pref)
         {
-            // the same map, so what this side stashes reaches the DataContext the plan is bound with. The
-            // token parameter is declared for the awaiting hierarchy and never reached: only the synchronous
-            // open is built here
+            // Calcite's map, so that anything stashed reaches the DataContext the plan is bound with; only
+            // the synchronous open is built
             var clr = new ClrCursorRelImplementor(implementor.getRexBuilder(), implementor.map);
 
-            // a correlation variable of a correlate above this node is a parameter of the Java lambda that
-            // correlate generates, and the sub-plan cannot see it: it is compiled apart from that lambda.
-            // So each one the sub-plan reads is handed in through the DataContext, as a row of the ARRAY
-            // format whose fields Calcite's own getter reads out of the parameter, and the sub-plan reads it
-            // back as it would the outer row of a correlate of its own. The field reads that getter declares
-            // land in the block the correlate's lambda holds, which is where this block is placed too.
+            // each correlation variable the sub-plan reads is a parameter of the Java lambda an enclosing
+            // correlate generates, which the separately compiled sub-plan cannot see. Its fields are read
+            // with Calcite's getter into an Object[], passed through the DataContext, and registered here
+            // as an ARRAY-format outer row
             var variables = ClrCorrelationVariables.Used(getInput());
             var corrBlock = new J.BlockBuilder(false);
             var builder = new J.BlockBuilder();
@@ -105,8 +101,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 var fields = new java.util.ArrayList();
                 for (int i = 0; i < type.getFieldCount(); i++)
                 {
-                    // boxed, because a primitive cannot sit in an Object[] and Janino does not box for an
-                    // array initializer where javac would
+                    // boxed explicitly for the Object[] initializer rather than left to the Java compiler
                     var field = getter.field(builder, i, null);
                     fields.add(J.Primitive.@is(field.getType()) ? J.Expressions.box(field) : field);
                 }
@@ -123,8 +118,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var expression = result.Expression;
             if (variables.Count > 0)
             {
-                // the outer rows first, read off the context, then the field reads the getter declared
-                // over them, then the sub-plan
+                // read the outer rows from the context, then the field reads declared over them, then run
+                // the sub-plan
                 clr.Translator.TranslateStatements(corrBlock.toBlock(), out var declared, out var statements);
                 var variablesDeclared = new List<ParameterExpression>();
                 var body = new List<Expression>();
@@ -140,19 +135,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 expression = Expression.Block(expression.Type, variablesDeclared, body);
             }
 
-            // the tree, not a delegate. Compiling here would be JIT work done while the plan is still being
-            // assembled, and once per converter besides; ClrPlan compiles itself the first time it is run.
+            // ClrPlan compiles the tree the first time it runs, not while the plan is being implemented
             var plan = new ClrPlan<IClrCursor>(
                 Expression.Lambda<Func<DataContext, IClrCursor>>(
                     Expression.Convert(expression, typeof(IClrCursor)),
                     clr.Root));
 
-            // stashed as an Object, because the generated source declares the variable by the type's name
-            // and cannot name a generic instantiation -- see JavaPlans
+            // stashed as Object, because generated Java source cannot name IKVM's class for a generic
+            // instantiation; JavaPlans casts it back
             var stashed = implementor.stash(plan, (java.lang.Class)typeof(java.lang.Object));
 
-            // their convention's row abstraction, built from the three values ours carries, because that
-            // is what EnumerableRelImplementor.result takes -- and it casts to PhysTypeImpl besides
+            // EnumerableRelImplementor.result takes a Calcite physical type and casts it to PhysTypeImpl
             var physType = PhysTypeImpl.of(clr.TypeFactory, result.PhysType.RelRowType, result.PhysType.Format, false);
 
             var call = variables.Count == 0
@@ -167,20 +160,21 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// <see cref="JavaPlans.BindCursor"/>, which opens the sub-plan and reads it as a linq4j sequence.
+        /// <see cref="JavaPlans.BindCursor"/>, which binds the stashed plan and returns its rows as a linq4j
+        /// <c>Enumerable</c>.
         /// </summary>
         static readonly java.lang.reflect.Method BindMethod = ((java.lang.Class)typeof(JavaPlans))
             .getDeclaredMethod(nameof(JavaPlans.BindCursor), [typeof(java.lang.Object), typeof(DataContext)]);
 
         /// <summary>
-        /// <see cref="JavaPlans.BindCursorCorrelated"/>, which is <see cref="JavaPlans.BindCursor"/> with the
-        /// outer rows of the correlation variables the sub-plan reads.
+        /// <see cref="JavaPlans.BindCursorCorrelated"/>: <see cref="JavaPlans.BindCursor"/> that also passes
+        /// the named outer rows of the correlation variables through the <see cref="DataContext"/>.
         /// </summary>
         static readonly java.lang.reflect.Method BindCorrelatedMethod = ((java.lang.Class)typeof(JavaPlans))
             .getDeclaredMethod(nameof(JavaPlans.BindCursorCorrelated), [typeof(java.lang.Object), typeof(DataContext), typeof(string[]), typeof(object[])]);
 
         /// <summary>
-        /// <c>DataContext.get</c>, which a correlation variable handed in through the context is read by.
+        /// <c>DataContext.get</c>, through which the sub-plan reads a correlation variable's outer row.
         /// </summary>
         static readonly System.Reflection.MethodInfo DataContextGet = ClrTypes.Resolve(org.apache.calcite.util.BuiltInMethod.DATA_CONTEXT_GET.method);
 

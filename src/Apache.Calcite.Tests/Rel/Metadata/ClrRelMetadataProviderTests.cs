@@ -25,22 +25,20 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
 {
 
     /// <summary>
-    /// <see cref="ClrRelMetadataProvider"/> against <c>JaninoRelMetadataProvider</c>, which is the only
-    /// oracle for it: the two are asked the same question about the same rel and have to answer the same
-    /// thing.
+    /// Compares <see cref="ClrRelMetadataProvider"/> with <c>JaninoRelMetadataProvider</c>: both are asked the
+    /// same question about the same rel and must give the same answer.
     /// </summary>
     /// <remarks>
-    /// A row-level differential test cannot see this. Metadata decides which plan the planner picks, and a
-    /// worse plan returns the same rows; the whole of what a defect here looks like is a slower query, until
-    /// it is a cost model that never converges. So the comparison is direct, method by method and rel by rel.
+    /// Metadata decides which plan the planner picks, and a worse plan returns the same rows, so a row-level
+    /// differential test cannot see a defect here. The comparison is made method by method and rel by rel.
     /// </remarks>
     public class ClrRelMetadataProviderTests
     {
 
         /// <summary>
-        /// A cluster whose planner is Volcano's, because a cost is asked of one.
+        /// A cluster with a Volcano planner, which <c>getLowerBoundCost</c> requires.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>A new cluster over a Volcano planner with the convention trait registered.</returns>
         static RelOptCluster Cluster()
         {
             var typeFactory = new org.apache.calcite.jdbc.JavaTypeFactoryImpl();
@@ -50,11 +48,11 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         }
 
         /// <summary>
-        /// A plan holding the node kinds the dispatch chain separates: values, filter, project, join, union
-        /// and sort.
+        /// A plan holding the node kinds the handlers dispatch on: values, filter, project, union, join and
+        /// sort.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <returns></returns>
+        /// <param name="cluster">The cluster to build the plan in.</param>
+        /// <returns>The plan's root.</returns>
         static RelNode Plan(RelOptCluster cluster)
         {
             var typeFactory = cluster.getTypeFactory();
@@ -95,10 +93,10 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         }
 
         /// <summary>
-        /// Every rel in the plan, deepest first.
+        /// Every rel in the plan, inputs before the rel that reads them.
         /// </summary>
-        /// <param name="rel"></param>
-        /// <returns></returns>
+        /// <param name="rel">The plan's root.</param>
+        /// <returns>Every node of the plan, in post-order.</returns>
         internal static IEnumerable<RelNode> Nodes(RelNode rel)
         {
             var inputs = rel.getInputs();
@@ -110,10 +108,10 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         }
 
         /// <summary>
-        /// The questions, one per handler method that a plan of this shape can be asked.
+        /// The metadata questions to ask of <paramref name="rel"/>, each named for the comparison report.
         /// </summary>
-        /// <param name="rel"></param>
-        /// <returns></returns>
+        /// <param name="rel">The node the questions are about; column-level questions use its first column or all of them.</param>
+        /// <returns>Each question's name and a function that asks it of a metadata query.</returns>
         internal static (string Name, Func<RelMetadataQuery, object?> Ask)[] Questions(RelNode rel)
         {
             var bits = ImmutableBitSet.of(0);
@@ -157,11 +155,12 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         }
 
         /// <summary>
-        /// Asks, and answers with what came back or with what was thrown.
+        /// Asks a question and renders the answer, or the innermost exception it threw, as text.
         /// </summary>
-        /// <param name="ask"></param>
-        /// <param name="mq"></param>
-        /// <returns></returns>
+        /// <param name="ask">The question.</param>
+        /// <param name="mq">The metadata query to ask it of.</param>
+        /// <returns>The answer's <c>ToString()</c>, <c>null</c>, or <c>threw</c> followed by the innermost exception's
+        /// type name and message.</returns>
         internal static string Answer(Func<RelMetadataQuery, object?> ask, RelMetadataQuery mq)
         {
             try
@@ -190,8 +189,8 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
 
             foreach (var rel in Nodes(plan))
             {
-                // a fresh query per rel on each side, so neither can answer from what the other's walk left
-                // in a shared cache
+                // a new query per question on each side, so no answer comes from a cache an earlier question
+                // filled
                 foreach (var (name, ask) in Questions(rel))
                 {
                     var janino = Answer(ask, new RelMetadataQuery(JaninoRelMetadataProvider.DEFAULT));
@@ -206,8 +205,8 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         }
 
         /// <summary>
-        /// One query's answers are the same when every node is asked through one query, which is what a
-        /// planner does and what the cache is for.
+        /// The two providers also agree when every question about every node goes through one query, as a
+        /// planner asks them, so answers come from the query's cache.
         /// </summary>
         [Fact]
         public void Should_answer_what_janino_answers_through_one_query()
@@ -234,7 +233,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         }
 
         /// <summary>
-        /// A handler written in .NET. Calcite's own provider cannot take one.
+        /// A row-count handler written in .NET that answers 7 for any <c>Values</c>.
         /// </summary>
         public class ClrValuesRowCount : MetadataHandler
         {
@@ -246,17 +245,12 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         }
 
         /// <summary>
-        /// A metadata handler written in .NET answers here, and answers through Janino too.
+        /// A metadata handler written in .NET answers through this provider and through Janino's.
         /// </summary>
         /// <remarks>
-        /// The generated source names the handler class and the rel class the way Java names them, and IKVM's
-        /// name for a CLR class begins <c>cli.</c>. Janino resolves one through the class loader
-        /// <c>IKVM.Maven.Sdk</c> stamps onto <c>calcite-core</c>, which walks every loaded assembly — no
-        /// <c>addBootClassPathAssembly</c> call is needed here. IKVM 8.14.0 and 8.15.0 could not read that
-        /// stamp, so Janino answered "Cannot determine simple type name cli" and this provider was the only
-        /// way such a handler could answer at all; 8.16.0 reads it again, measured at one commit either side.
-        /// What remains of the reason is the compile, which
-        /// <see cref="Should_prepare_without_compiling_a_handler"/> holds.
+        /// Janino's generated source names the handler class by its IKVM name, which begins <c>cli.</c>, and
+        /// resolves it through the class loader <c>IKVM.Maven.Sdk</c> assigns to <c>calcite-core</c>, which
+        /// searches every loaded assembly. That requires IKVM 8.16.0 or later.
         /// </remarks>
         [Fact]
         public void Should_take_a_handler_written_in_dotnet()
@@ -283,13 +277,9 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         /// Preparing a statement compiles no metadata handler.
         /// </summary>
         /// <remarks>
-        /// The cache <c>JaninoRelMetadataProvider</c> holds its generated handlers in is the only thing that
-        /// can say so — a handler is generated once per process, so a second statement would pay nothing and
-        /// a timing would not tell. It is a private static, and IKVM renames the backing field of a Java
-        /// <c>static final</c>, so it is looked up under both names.
-        ///
-        /// <para>Measured before this provider: a statement of this shape generated nine of the twenty-seven
-        /// handlers, and that was two to three seconds of a cold first prepare.</para>
+        /// A handler is generated once per process, so timing cannot show this; the test reads the private
+        /// static cache <c>JaninoRelMetadataProvider</c> keeps its generated handlers in. IKVM renames the
+        /// backing field of a Java <c>static final</c>, so the field is looked up under both names.
         /// </remarks>
         [Fact]
         public void Should_prepare_without_compiling_a_handler()
@@ -311,7 +301,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         }
 
         /// <summary>
-        /// A handler counting what it is asked, so that a prepare can be seen to have used it.
+        /// A row-count handler for table scans that counts how often it is asked.
         /// </summary>
         public class CountingRowCount : MetadataHandler
         {
@@ -329,9 +319,10 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         }
 
         /// <summary>
-        /// A prepare of one's own, which is how Calcite says to install a metadata provider: subclass the
-        /// prepare, override the cluster factory, and set the query supplier there.
+        /// A prepare that installs a metadata provider the way Calcite describes: subclass the prepare,
+        /// override the cluster factory, and set the query supplier there.
         /// </summary>
+        /// <param name="provider">The provider the cluster's metadata query supplier dispatches to.</param>
         sealed class PrepareWithProvider(RelMetadataProvider provider) : Apache.Calcite.Extensions.Prepare.ClrPrepareImpl
         {
 
@@ -346,13 +337,12 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         }
 
         /// <summary>
-        /// A provider installed the way Calcite documents answers a real statement's metadata.
+        /// A provider installed through <c>CreateCluster</c> answers a prepared statement's metadata.
         /// </summary>
         /// <remarks>
-        /// <c>CalcitePrepareImpl.createCluster</c> is protected on a class that is not final, and
-        /// <c>RelMetadataQueryBase</c>'s own comment ends its recipe by setting the supplier on the cluster
-        /// and planning with that cluster. This is that recipe, and it is the whole of why the prepare is
-        /// open.
+        /// Mirrors Calcite's recipe: <c>CalcitePrepareImpl.createCluster</c> is protected on a class that is
+        /// not final, and <c>RelMetadataQueryBase</c>'s comment ends by setting the supplier on the cluster
+        /// and planning with that cluster.
         /// </remarks>
         [Fact]
         public void Should_take_a_provider_from_a_prepare_of_ones_own()
@@ -371,8 +361,9 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         }
 
         /// <summary>
-        /// Every handler interface, which is how many a query asks for.
+        /// Every <c>Handler</c> interface nested in <c>BuiltInMetadata</c>.
         /// </summary>
+        /// <returns>The <c>Handler</c> interfaces, in the order reflection lists their enclosing types.</returns>
         static Type[] HandlerInterfaces()
         {
             return typeof(BuiltInMetadata).GetNestedTypes()
@@ -385,10 +376,9 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         /// Asking for a handler answers the handler, not a stand-in.
         /// </summary>
         /// <remarks>
-        /// Janino's provider answers <c>handler</c> with a <c>java.lang.reflect.Proxy</c> that throws, so
-        /// that a Java compile is deferred until a statement proves it needs one. Nothing here is worth
-        /// deferring, and the proxy was not free: a query builds one per handler interface, and the planner
-        /// builds a query per rule transformation.
+        /// Janino's provider answers <c>handler</c> with a <c>java.lang.reflect.Proxy</c> that throws, to defer
+        /// a Java compile until a statement needs one. This provider compiles nothing, so it returns the
+        /// handler directly and a query does not build a proxy per handler interface.
         /// </remarks>
         [Fact]
         public void Should_answer_with_the_handler_itself()
@@ -402,8 +392,13 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         }
 
         /// <summary>
-        /// Returns an argument for <paramref name="parameter"/>, so that a method can be called at all.
+        /// Returns a placeholder argument of the type <paramref name="parameter"/> takes.
         /// </summary>
+        /// <param name="parameter">The parameter to supply.</param>
+        /// <param name="rel">The node, passed for a parameter of a rel type.</param>
+        /// <param name="mq">The metadata query, passed for a <c>RelMetadataQuery</c> parameter.</param>
+        /// <returns>A value the parameter accepts: a zero, false, a one-column bit set or an enum's first constant,
+        /// and null for any other type.</returns>
         static object? Argument(ParameterInfo parameter, RelNode rel, RelMetadataQuery mq)
         {
             var type = parameter.ParameterType;
@@ -428,10 +423,10 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         /// Every method of every handler interface is emitted correctly and answers what Janino's answers.
         /// </summary>
         /// <remarks>
-        /// A body that is emitted but never called is never verified: the runtime resolves it on the first
-        /// call, and malformed IL surfaces as <c>InvalidProgramException</c> then and not before. Three of
-        /// the interfaces — Measure, FunctionalDependency and InputFieldsUsed — are reached by no query in
-        /// this suite, so this calls all of them by hand rather than waiting for one that does.
+        /// Emitted IL is verified only when a method is first called, and malformed IL surfaces then as
+        /// <c>InvalidProgramException</c>. Some handler interfaces, such as <c>Measure</c>,
+        /// <c>FunctionalDependency</c> and <c>InputFieldsUsed</c>, are not reached by any query, so this calls
+        /// every method directly.
         /// </remarks>
         [Fact]
         public void Should_emit_every_handler_method_callably()
@@ -480,9 +475,8 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         /// the rel's row is cleared on the way out.
         /// </summary>
         /// <remarks>
-        /// The mark the call leaves under its own key before dispatching is what sees the second call, and
-        /// the catch around the dispatch is what clears the row. Neither branch is reached by a query that
-        /// answers, so nothing else here covers them.
+        /// The mark a call leaves under its own key before dispatching detects the repeated call, and the catch
+        /// around the dispatch clears the row. A query that completes reaches neither branch.
         /// </remarks>
         [Fact]
         public void Should_report_a_cycle_and_clear_the_row()
@@ -502,8 +496,8 @@ namespace Apache.Calcite.Extensions.Rel.Metadata.Tests
         }
 
         /// <summary>
-        /// A handler interface no handler answers refuses the rel, as Calcite's generated chain does when it
-        /// runs off the end.
+        /// A question no handler answers for the rel is refused, as Calcite's generated dispatch refuses it
+        /// when no handler matches.
         /// </summary>
         [Fact]
         public void Should_refuse_a_rel_no_handler_declares()

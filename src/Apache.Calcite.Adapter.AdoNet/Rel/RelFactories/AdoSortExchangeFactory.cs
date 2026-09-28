@@ -8,8 +8,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.RelFactories
 {
 
     /// <summary>
-    /// <see cref="SortExchangeFactory"/> implementation for the <see cref="AdoConvention"/>.
-    /// Sort-exchange operators are not supported by the ADO adapter; this factory always throws.
+    /// A <see cref="SortExchangeFactory"/> that throws: the adapter has no sort-exchange node.
     /// </summary>
     public class AdoSortExchangeFactory : SortExchangeFactory
     {

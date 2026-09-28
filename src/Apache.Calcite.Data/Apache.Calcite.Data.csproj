@@ -2,7 +2,7 @@
 
     <PropertyGroup>
         <TargetFrameworks>net8.0</TargetFrameworks>
-        <Description>Apache Calcite for ADO.NET. A native, in-process ADO.NET provider that runs the Apache Calcite SQL parser, planner, and runtime via IKVM.</Description>
+        <Description>An in-process ADO.NET provider for Apache Calcite. Runs Calcite's SQL parser, planner and query engine inside the .NET process via IKVM, with no JDBC driver or server.</Description>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageIcon>icon.png</PackageIcon>
         <PackageTags>apache;calcite;ado.net;sql;ikvm;dbprovider</PackageTags>
@@ -25,11 +25,8 @@
     <ItemGroup>
         <PackageReference Include="IKVM" Version="8.16.1" />
         <PackageReference Include="IKVM.Java.Extensions" Version="8.16.1" />
-        <!-- Not PrivateAssets, deliberately. This package ships only buildTransitive, which is the folder that
-             carries build assets to consumers; marking it private disables the one mechanism it has, and a project
-             that references ours then compiles and fails at run time with `Could not load file or assembly
-             'calcite.core'`. The default PrivateAssets keeps `build` to ourselves and lets buildTransitive through,
-             which is what we want. -->
+        <!-- Not PrivateAssets: this package ships only buildTransitive assets, and marking it private stops
+             them reaching consumers, which then fail at run time loading 'calcite.core'. -->
         <PackageReference Include="IKVM.Maven.Sdk" Version="1.12.1" />
         <MavenReference Include="org.apache.commons:commons-lang3" Version="3.18.0" />
         <MavenReference Include="org.slf4j:slf4j-api" Version="2.0.17" />

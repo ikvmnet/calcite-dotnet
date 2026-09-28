@@ -13,13 +13,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <summary>
     /// Rule that converts a <see cref="LogicalProject"/> to a <see cref="ClrCursorProject"/>.
     /// </summary>
+    /// <remarks>
+    /// Mirrors <c>EnumerableProjectRule</c>. A project containing a windowed aggregate, a measure-to-value
+    /// call or a sub-query, or one that sets correlation variables, is not converted.
+    /// </remarks>
     public class ClrCursorProjectRule : ConverterRule
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorProjectRule"/>.
+        /// Creates the rule with its default configuration.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorProjectRule Create()
         {
             return (ClrCursorProjectRule)Config.INSTANCE
@@ -39,7 +43,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule's configuration.</param>
         public ClrCursorProjectRule(Config config) :
             base(config)
         {

@@ -12,21 +12,13 @@ namespace Apache.Calcite.Extensions.Interop.Tests
 {
 
     /// <summary>
-    /// Guards the invariant every dispatch on a Calcite enum depends on.
+    /// Checks that the C# name IKVM gives each Calcite enum constant the code dispatches on equals the name
+    /// Java's <c>name()</c> returns.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// A Java enum's ordinals are an artefact of declaration order in the version compiled against. Insert a
-    /// constant upstream and every ordinal after it shifts, so <c>(SqlKind.__Enum)kind.ordinal()</c> silently
-    /// starts naming the wrong thing against a Calcite the code was not compiled with. Dispatch is therefore
-    /// by <c>name()</c>, with <c>nameof</c> supplying the case label — a compile-time constant, so the switch
-    /// is still a jump table and the compiler still checks the member exists.
-    /// </para>
-    /// <para>
-    /// That only holds while the C# member name IKVM exposes equals the name Java reports. If IKVM ever had
-    /// to mangle one, <c>nameof</c> and <c>name()</c> would disagree and the case would quietly never match —
-    /// which is what these assert against, for every constant the code dispatches on.
-    /// </para>
+    /// A Java enum's ordinals follow declaration order and shift when a constant is added upstream, so code
+    /// dispatches on <c>name()</c> with <c>nameof</c> supplying each case label. That works only while the two
+    /// names agree; a constant IKVM had to rename would never match its case.
     /// </remarks>
     public class JavaEnumNameTests
     {
@@ -111,17 +103,14 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         }
 
         /// <summary>
-        /// The failure this whole approach exists to prevent, stated directly: an ordinal is a position, and
-        /// a position is only meaningful against one build of Calcite.
+        /// A constant round-trips through its name, whatever its ordinal in the loaded Calcite.
         /// </summary>
         [Fact]
         public void NameIsStableWhereOrdinalIsNot()
         {
-            // whatever position it occupies in the Calcite actually loaded, it is still called CAST
             Assert.Equal("CAST", SqlKind.CAST.name());
             Assert.Equal(SqlKind.CAST, SqlKind.valueOf("CAST"));
 
-            // and the round trip holds for the type names a reader dispatches on
             foreach (var t in new[] { SqlTypeName.DATE, SqlTypeName.TIME, SqlTypeName.TIMESTAMP, SqlTypeName.VARCHAR })
                 Assert.Equal(t, SqlTypeName.get(t.name()));
         }

@@ -4,15 +4,12 @@ namespace Apache.Calcite.Extensions.Interop
 {
 
     /// <summary>
-    /// Reading a <c>java.util.List</c> of boxed values from C#.
+    /// Reads elements of a <c>java.util.List</c> of boxed primitives as CLR values.
     /// </summary>
     /// <remarks>
-    /// Calcite hands out lists of field ordinals — <c>ImmutableBitSet.asList</c>, <c>JoinInfo.leftKeys</c>,
-    /// <c>RelCollation.getFieldCollations</c> — and writes <c>for (int index : integers)</c> over them, because
-    /// Java unboxes on the way out and its generics survive to the source Janino compiles. Neither is true
-    /// here: IKVM erases the element type to <see cref="object"/> and nothing unboxes, so every read is a cast
-    /// and a call. That is a difference of language rather than of what the code means, and it belongs with
-    /// the rest of the interop.
+    /// Calcite returns lists of field ordinals, such as <c>ImmutableBitSet.asList</c> and
+    /// <c>JoinInfo.leftKeys</c>, and Java code unboxes their elements implicitly. Through IKVM the element
+    /// type is <see cref="object"/>, so each read needs a cast and an unboxing call.
     /// </remarks>
     static class JavaLists
     {
@@ -20,9 +17,10 @@ namespace Apache.Calcite.Extensions.Interop
         /// <summary>
         /// Returns the value of one element of a list of <c>java.lang.Integer</c>.
         /// </summary>
-        /// <param name="list"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="list">A list whose elements are <c>java.lang.Integer</c>.</param>
+        /// <param name="index">The element's index.</param>
+        /// <returns>The element's <see cref="int"/> value.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="list"/> is <see langword="null"/>.</exception>
         public static int Int(java.util.List list, int index)
         {
             ArgumentNullException.ThrowIfNull(list);
@@ -33,12 +31,13 @@ namespace Apache.Calcite.Extensions.Interop
         /// <summary>
         /// Returns whether a list of <c>java.lang.Integer</c> holds the given value.
         /// </summary>
-        /// <param name="list"></param>
-        /// <param name="value"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// Boxed to ask, because <c>List.contains</c> takes an object and compares by <c>equals</c>.
+        /// Boxes <paramref name="value"/>, because <c>List.contains</c> compares by <c>equals</c>.
         /// </remarks>
+        /// <param name="list">A list whose elements are <c>java.lang.Integer</c>.</param>
+        /// <param name="value">The value to look for.</param>
+        /// <returns><see langword="true"/> if an element equals <paramref name="value"/>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="list"/> is <see langword="null"/>.</exception>
         public static bool ContainsInt(java.util.List list, int value)
         {
             ArgumentNullException.ThrowIfNull(list);
@@ -49,9 +48,10 @@ namespace Apache.Calcite.Extensions.Interop
         /// <summary>
         /// Returns the value of one element of a list of <c>java.lang.Boolean</c>.
         /// </summary>
-        /// <param name="list"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="list">A list whose elements are <c>java.lang.Boolean</c>.</param>
+        /// <param name="index">The element's index.</param>
+        /// <returns>The element's <see cref="bool"/> value.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="list"/> is <see langword="null"/>.</exception>
         public static bool Bool(java.util.List list, int index)
         {
             ArgumentNullException.ThrowIfNull(list);

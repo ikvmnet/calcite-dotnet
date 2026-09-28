@@ -16,7 +16,7 @@ namespace Apache.Calcite.Data
     {
 
         /// <summary>
-        /// Gets the singleton instance of <see cref="CalciteProviderFactory"/>.
+        /// The singleton instance of <see cref="CalciteProviderFactory"/>.
         /// </summary>
         public static readonly CalciteProviderFactory Instance = new();
 

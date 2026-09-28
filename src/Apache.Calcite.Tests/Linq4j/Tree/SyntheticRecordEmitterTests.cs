@@ -21,8 +21,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         /// <summary>
         /// Returns the CLR type of a synthetic record over the given Java field types.
         /// </summary>
-        /// <param name="types"></param>
-        /// <returns></returns>
+        /// <param name="types">The record's field types, in order.</param>
+        /// <returns>The CLR type <c>ClrTypes.Resolve</c> gives for the record.</returns>
         static Type Record(params java.lang.Class[] types)
         {
             var list = new java.util.ArrayList();
@@ -84,9 +84,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// <c>compareTo</c> returns on the first field that differs, and one of a reference type is among
-        /// them: Calcite's body compares it through <c>Utilities.compare</c> and leaves a field out only
-        /// where no overload takes it.
+        /// <c>compareTo</c> returns on the first field that differs, including a reference-typed field, which
+        /// Calcite's generated body compares through <c>Utilities.compare</c>.
         /// </summary>
         [Fact]
         public void ShouldCompareAReferenceField()
@@ -103,8 +102,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
 
         /// <summary>
         /// A field the record type declares nullable is compared with <c>Utilities.compareNullsLast</c>, which
-        /// orders a null after everything rather than throwing on it. Every reference field of a record built
-        /// from a list of types is nullable, because <c>createSyntheticType</c> asks <c>!Primitive.is</c>.
+        /// orders a null after every value. <c>createSyntheticType</c> makes every non-primitive field of a record
+        /// built from a list of types nullable.
         /// </summary>
         [Fact]
         public void ShouldCompareANullReferenceFieldLast()
@@ -136,8 +135,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// A field of a type no overload of <c>compare</c> takes is left out rather than failing the
-        /// comparison, because a record is not always used as a sorting key.
+        /// A field of a type no overload of <c>Utilities.compare</c> takes is left out of the comparison rather
+        /// than failing it.
         /// </summary>
         [Fact]
         public void ShouldSkipAFieldNothingCompares()
@@ -164,14 +163,12 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// The emitted type is collected when the type factory that described it is, which is when the
-        /// connection closes.
+        /// The emitted type is collected once the type factory that described it is unreachable.
         /// </summary>
         /// <remarks>
-        /// The record type is reachable only from <c>JavaTypeFactoryImpl.syntheticTypes</c>, so this holds
-        /// exactly as long as the emitter keys on it weakly and gives it an assembly of its own —
-        /// <c>RunAndCollect</c> collects an assembly rather than a type, so a type in a module shared with a
-        /// live one is never released, and a strongly keyed map roots the record type itself.
+        /// The record type is reachable only from <c>JavaTypeFactoryImpl.syntheticTypes</c>. This holds only
+        /// while the emitter keys on it weakly and emits each type into a collectible assembly of its own;
+        /// <c>RunAndCollect</c> releases whole assemblies, not individual types.
         /// </remarks>
         [Fact]
         public void ShouldCollectWithTheTypeFactory()
@@ -189,9 +186,10 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// Emits a record from a factory of its own, and keeps neither.
+        /// Emits a record from a new type factory and returns weak references to both.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>Weak references to the emitted record type and to the factory that emitted it, so that a caller
+        /// can check whether either is still reachable.</returns>
         [MethodImpl(MethodImplOptions.NoInlining)]
         static (WeakReference Type, WeakReference Factory) Emitted()
         {

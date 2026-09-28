@@ -8,7 +8,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Function
     /// <summary>
     /// A <see cref="RelRule.OperandTransform"/> backed by a delegate.
     /// </summary>
-    /// <param name="transform"></param>
+    /// <param name="transform">Implements <c>apply</c>.</param>
     class DelegateOperandTransform(Func<RelRule.OperandBuilder, RelRule.Done> transform) : RelRule.OperandTransform
     {
 
@@ -22,8 +22,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Function
 
         /// <inheritdoc />
         /// <remarks>
-        /// C# does not inherit the defaults of an interface IKVM compiled, so composition is forwarded rather
-        /// than left to <see cref="java.util.function.Function"/>.
+        /// C# does not inherit the default methods of an interface IKVM compiled, so this forwards to
+        /// <see cref="java.util.function.Function"/>'s default.
         /// </remarks>
         public java.util.function.Function andThen(java.util.function.Function after)
         {

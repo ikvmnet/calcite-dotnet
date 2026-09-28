@@ -18,15 +18,12 @@ namespace Apache.Calcite.Data.Tests
 {
 
     /// <summary>
-    /// Covers what an ADO.NET caller reads and writes where Calcite's type does not say what the value
-    /// is — <c>ANY</c>, whose runtime representation is <c>java.lang.Object</c> — and where it says the
-    /// value is a collection, which Calcite's runtime holds as Java objects either way.
+    /// Covers reading and writing values whose Calcite type does not say what they are (<c>ANY</c> and
+    /// <c>VARIANT</c>), and collection values, which Calcite's runtime holds as Java objects.
     /// </summary>
     /// <remarks>
-    /// The rule the whole suite holds: no value a reader hands out is a Java object. Under <c>ANY</c> the
-    /// runtime class decides which .NET type it becomes, because there is nothing else to decide it;
-    /// under every other type the column decides, and an accessor over a column whose type says what it
-    /// holds stays as strict as it was.
+    /// No value a reader returns is a Java object. Under <c>ANY</c> the value's runtime class decides the
+    /// .NET type; under every other type the column's type decides, and typed accessors stay strict.
     /// </remarks>
     public class CalciteAnyValueTests
     {
@@ -61,8 +58,8 @@ namespace Apache.Calcite.Data.Tests
         // ------------------------------------------------------------------------------------
 
         /// <summary>
-        /// The claim the column makes about itself. <c>ANY</c> is <see cref="object"/> and can be nothing
-        /// else: the type is <c>java.lang.Object</c> and no row has been read when it is asked.
+        /// An <c>ANY</c> column reports <see cref="object"/>, since its type is <c>java.lang.Object</c> and
+        /// the field type is answered without reading a row.
         /// </summary>
         [Fact]
         public void Any_column_should_report_object_as_its_field_type()
@@ -75,8 +72,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The whole of the contract in one assertion: whatever a table put in an <c>ANY</c> column, what
-        /// comes out is a type of this runtime.
+        /// Whatever a table puts in an <c>ANY</c> column, the reader returns a .NET value.
         /// </summary>
         [Fact]
         public void Any_column_should_never_hand_out_a_java_object()
@@ -114,10 +110,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The runtime class stands in for the declared type; it does not remove it. A
-        /// <c>java.lang.Integer</c> in an <c>ANY</c> column is an <c>INTEGER</c>, and reading an
-        /// <c>INTEGER</c> through <see cref="CalciteDataReader.GetInt64"/> is the refusal ADO.NET makes
-        /// whatever column it came out of.
+        /// The runtime class stands in for the declared type and is as strict: a <c>java.lang.Integer</c> in
+        /// an <c>ANY</c> column is read as an <c>INTEGER</c>, so the accessors for other types refuse it.
         /// </summary>
         [Fact]
         public void Any_column_holding_an_integer_should_still_refuse_another_width()
@@ -146,8 +140,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The measured element types are not the only ones a caller may want, so naming them builds the
-        /// dictionary to them instead.
+        /// Naming the dictionary's element types builds it to those types instead of the ones taken from the
+        /// values.
         /// </summary>
         [Fact]
         public void Any_column_holding_a_map_should_answer_the_element_types_a_caller_names()
@@ -180,9 +174,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A <c>java.sql.Timestamp</c> is a moment whatever column it came out of, and under <c>ANY</c>
-        /// there is no column type to say otherwise. This is the case the strict accessors could not
-        /// reach before, because they read the SQL type and <c>ANY</c> is not <c>TIMESTAMP</c>.
+        /// A <c>java.sql.Timestamp</c> in an <c>ANY</c> column reads as a <see cref="DateTime"/>, through
+        /// <see cref="CalciteDataReader.GetDateTime"/> as well as <see cref="CalciteDataReader.GetValue"/>.
         /// </summary>
         [Fact]
         public void Any_column_holding_a_timestamp_should_read_as_a_date_time()
@@ -203,14 +196,14 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(new DateOnly(2020, 1, 2), r.GetValue(0));
             Assert.Equal(new DateOnly(2020, 1, 2), r.GetDateOnly(0));
 
-            // a date is a date: GetDateTime is the accessor for a moment, and a java.time.LocalDate is
-            // not one however easily a zero time could be bolted on
+            // GetDateTime reads a moment, and a java.time.LocalDate is not one; adding a zero time would be
+            // a conversion
             Assert.Throws<InvalidCastException>(() => r.GetDateTime(0));
         }
 
         /// <summary>
-        /// <c>GetFieldValue&lt;object&gt;</c> is <see cref="CalciteDataReader.GetValue"/> by another name
-        /// and answers the same thing, rather than the Java object behind it.
+        /// <c>GetFieldValue&lt;object&gt;</c> returns what <see cref="CalciteDataReader.GetValue"/> returns,
+        /// not the Java object behind it.
         /// </summary>
         [Fact]
         public void Any_column_read_as_object_should_answer_what_GetValue_answers()
@@ -222,8 +215,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// <c>ANY</c> loosens the accessors because it has no source type to be strict about. A column
-        /// that does have one is strict, and reading a string as a number is the refusal ADO.NET makes.
+        /// A column with a declared type is read by that type, so a string is not read as a number, a
+        /// <see cref="Guid"/> or a <see cref="DateTime"/>.
         /// </summary>
         [Fact]
         public void A_typed_column_should_still_refuse_a_value_that_is_not_what_was_asked_for()
@@ -237,8 +230,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A <c>BIGINT</c> is a <c>BIGINT</c>: the widening an <c>ANY</c> gets is not on offer where the
-        /// column names its type.
+        /// A <c>BIGINT</c> column reads through <see cref="CalciteDataReader.GetInt64"/> and not
+        /// <see cref="CalciteDataReader.GetInt32"/>.
         /// </summary>
         [Fact]
         public void A_typed_integer_column_should_still_refuse_another_width()
@@ -251,7 +244,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
-        // The collection types, whose values are Java objects however well the column describes them.
+        // The collection types, whose values Calcite's runtime holds as Java objects.
         // ------------------------------------------------------------------------------------
 
         [Fact]
@@ -285,8 +278,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The component's type is what says a count of days is a date; the value carries nothing that
-        /// would.
+        /// Each element is held as a count of days, and only the component type says it is a date.
         /// </summary>
         [Fact]
         public void An_array_of_dates_should_read_as_dates()
@@ -298,8 +290,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// An array holding a null cannot be an array of a value type, and <c>Nullable{T}</c> still names
-        /// what it holds where <see cref="object"/> would not.
+        /// A nullable component reads as an array of <see cref="Nullable{T}"/> rather than of
+        /// <see cref="object"/>.
         /// </summary>
         [Fact]
         public void An_array_holding_a_null_should_read_as_an_array_of_the_nullable_component()
@@ -311,13 +303,12 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Calcite validates and runs a map literal with a null key, and no dictionary the framework
-        /// ships accepts one, so the entries come out as pairs rather than being dropped.
+        /// Calcite accepts a map literal with a null key, which a <see cref="Dictionary{TKey, TValue}"/>
+        /// cannot hold, so a map whose declared key type is nullable reads as an array of pairs.
         /// </summary>
         /// <remarks>
-        /// The pair types are the column's, not the values'. A map's key and value types are declared, so
-        /// they say what the pairs hold whether or not this row's keys happened to be null, which is what
-        /// makes the answer the same for every row of the result.
+        /// The pair types come from the column's declared key and value types, so every row of the result has
+        /// the same shape whether or not its keys are null.
         /// </remarks>
         [Fact]
         public void A_map_holding_a_null_key_should_read_as_pairs()
@@ -332,8 +323,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A row's fields are heterogeneous, so it stays an array of <see cref="object"/> rather than
-        /// being unified the way a collection's elements are.
+        /// A row's fields may differ in type, so a row reads as an array of <see cref="object"/>.
         /// </summary>
         [Fact]
         public void A_row_column_should_read_as_an_array_of_object()
@@ -346,13 +336,12 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
-        // VARIANT: the type is carried with the value rather than by the column, which is the same
-        // problem as ANY written the other way round, and reads the same way.
+        // VARIANT: the type is carried with each value rather than by the column.
         // ------------------------------------------------------------------------------------
 
         /// <summary>
-        /// A variant's payload type is not known until a row is read, so the column can claim no more
-        /// than <see cref="object"/>.
+        /// A variant's payload type is not known until a row is read, so the column reports
+        /// <see cref="object"/>.
         /// </summary>
         [Fact]
         public void Variant_column_should_report_object_as_its_field_type()
@@ -390,8 +379,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The payload's type stands in for the one the column does not declare, and does nothing more
-        /// than stand in for it: an <c>INTEGER</c> in a variant is an <c>INTEGER</c>.
+        /// The payload's type stands in for the column's and is as strict: an <c>INTEGER</c> payload is
+        /// refused by the accessors for other types.
         /// </summary>
         [Fact]
         public void Variant_holding_an_integer_should_still_refuse_another_width()
@@ -424,9 +413,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A variant keeps Calcite's storage form, so a <c>DATE</c> inside one is a count of days and
-        /// only the payload's type says so. Reading it as a number would be the same defect the ANY and
-        /// collection paths exist to avoid.
+        /// A variant keeps Calcite's storage form, so a <c>DATE</c> payload is a count of days and only the
+        /// payload's type says it is a date.
         /// </summary>
         [Fact]
         public void Variant_holding_a_date_should_read_as_a_date_time()
@@ -458,8 +446,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Walked with <c>item</c> rather than cast, so each element carries its own type and the array
-        /// is measured from what they convert to, exactly as a real <c>ARRAY</c> column is.
+        /// The elements are read one at a time with <c>item</c>, each by its own type, and the array's
+        /// element type is the type they convert to.
         /// </summary>
         [Fact]
         public void Variant_holding_an_array_should_read_as_an_array()
@@ -511,14 +499,10 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A <c>ROW</c> payload answers <c>item</c> only for its field names, and a variant does not
-        /// carry them; a <c>MULTISET</c> payload answers <c>item</c> with null for every index. Neither
-        /// has a public route to its contents in Calcite 1.43, so both are refused rather than guessed
-        /// at — handing back the <c>VariantValue</c> would put a Java object in a caller's hands.
-        ///
-        /// <para>A <c>ClrTypeMappingException</c> rather than a bare <see cref="InvalidCastException"/>,
-        /// which it derives from: a caller catching the general one still catches this, and the specific
-        /// one says the refusal came from the type mappings rather than from an accessor.</para>
+        /// A <c>ROW</c> payload answers <c>item</c> only for its field names, which the variant does not
+        /// expose, and a <c>MULTISET</c> payload answers <c>item</c> with null for every index. Neither has a
+        /// route to its contents, so both throw <see cref="ClrTypeMappingException"/> rather than returning
+        /// the <c>VariantValue</c>.
         /// </summary>
         [Fact]
         public void Variant_holding_a_row_should_be_refused()
@@ -539,7 +523,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And the general exception still catches it, which is what keeps the older contract.
+        /// <see cref="ClrTypeMappingException"/> derives from <see cref="InvalidCastException"/>, so a caller
+        /// catching the latter catches the refusal.
         /// </summary>
         [Fact]
         public void A_refused_variant_should_still_be_an_invalid_cast()
@@ -556,9 +541,9 @@ namespace Apache.Calcite.Data.Tests
         // ------------------------------------------------------------------------------------
 
         /// <summary>
-        /// A dictionary is not a type <see cref="DbType"/> names, so the parameter is
-        /// <see cref="DbType.Object"/> and the value's own type is what says how to write it. The
-        /// function reads back the class Calcite's runtime received.
+        /// <see cref="DbType"/> has no member for a dictionary, so the parameter is
+        /// <see cref="DbType.Object"/> and the value's own type decides how it is written. The function
+        /// returns the class Calcite's runtime received.
         /// </summary>
         [Fact]
         public void A_dictionary_parameter_should_arrive_as_a_java_map()
@@ -586,8 +571,8 @@ namespace Apache.Calcite.Data.Tests
 
         /// <summary>
         /// A one-character value infers <see cref="DbType.StringFixedLength"/>, and Calcite's runtime
-        /// holds the character family as a string, so a <see cref="char"/> is a string of one rather than
-        /// a cast that fails.
+        /// holds the character types as strings, so a <see cref="char"/> is written as a string of one
+        /// character.
         /// </summary>
         [Fact]
         public void A_char_parameter_should_bind_as_a_string()
@@ -603,8 +588,8 @@ namespace Apache.Calcite.Data.Tests
     }
 
     /// <summary>
-    /// A table whose columns are all <c>ANY</c>, holding one of each thing Calcite's runtime and a
-    /// schema of its own can put there.
+    /// A one-row table whose columns are all <c>ANY</c>, holding a string, an integer, a map, a list, a
+    /// UUID, a timestamp and a date as Java objects.
     /// </summary>
     sealed class AnyTable : AbstractTable, ScannableTable
     {
@@ -657,8 +642,8 @@ namespace Apache.Calcite.Data.Tests
     }
 
     /// <summary>
-    /// Names the class of whatever it is handed, which is how a test reads what Calcite's runtime
-    /// actually received for a parameter.
+    /// A scalar function that returns the class name of its argument, so a test can see what Calcite's
+    /// runtime received for a parameter.
     /// </summary>
     public class AnyClassFunction
     {
@@ -666,8 +651,8 @@ namespace Apache.Calcite.Data.Tests
         /// <summary>
         /// Returns the class name of <paramref name="value"/>.
         /// </summary>
-        /// <param name="value"></param>
-        /// <returns></returns>
+        /// <param name="value">The value to name the class of.</param>
+        /// <returns>The full name of the value's class, or <c>"null"</c> where it is null.</returns>
         public static string eval(object value)
         {
             return value is null ? "null" : value.GetType().FullName!;

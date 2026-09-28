@@ -15,14 +15,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// Registering a view over the ADO.NET adapter through <c>ViewTable.viewMacro</c>, and using it as
-    /// a table.
+    /// Tests a view over the ADO.NET adapter registered programmatically through <c>ViewTable.viewMacro</c>,
+    /// without a model or <c>CREATE VIEW</c>, and queried as a table.
     /// </summary>
-    /// <remarks>
-    /// This is the worked example of the programmatic route: no model, no <c>CREATE VIEW</c>, no server
-    /// parser. A macro is registered on a schema and from then on the name is a table — selectable,
-    /// joinable, and able to span the adapter and anything else in the root schema.
-    /// </remarks>
     public class AdoViewMacroTests : IDisposable
     {
 
@@ -48,8 +43,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Opens a connection on a data source holding the adapter as one schema of its root, with
-        /// <paramref name="configure"/> run over the root after it.
+        /// Opens a connection whose root schema holds the adapter as <c>ADO</c>, then runs
+        /// <paramref name="configure"/> over the root.
         /// </summary>
         CalciteConnection Open(Action<SchemaPlus> configure)
         {
@@ -92,13 +87,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The same view joined to a table that is not in the adapter at all, and aggregated.
+        /// The same view joined to a table outside the adapter, and aggregated.
         /// </summary>
         /// <remarks>
-        /// The point of the exercise: one plan reaching a SQLite database through the adapter and an
-        /// in-process <see cref="ScannableTable"/> beside it, with the view as the join's left input. The
-        /// view is not a barrier — the planner sees the expanded subtree, pushes what it can into the
-        /// adapter, and carries the rest across a converter.
+        /// One plan reads SQLite through the adapter and an in-process <see cref="ScannableTable"/> beside it,
+        /// with the view as the join's left input. The view is expanded into the plan rather than treated as
+        /// an opaque table.
         /// </remarks>
         [Fact]
         public void View_should_bridge_the_adapter_and_a_local_schema()
@@ -142,7 +136,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A schema of one in-process table, standing for anything that is not the adapter.
+        /// A schema holding one in-process table, <c>GRADES</c>, outside the adapter.
         /// </summary>
         sealed class GradeSchema : AbstractSchema
         {

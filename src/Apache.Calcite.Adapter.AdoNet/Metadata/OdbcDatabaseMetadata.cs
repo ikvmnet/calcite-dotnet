@@ -10,19 +10,18 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
 {
 
     /// <summary>
-    /// Implements the <see cref="AdoDatabaseMetadata"/> for any <see cref="OdbcConnection"/>.
+    /// The metadata for any <see cref="OdbcConnection"/>, read from the ODBC catalog.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// ODBC's catalog is not the SQL <c>INFORMATION_SCHEMA</c> and does not have its shape: the schema
-    /// collections come from <c>SQLTables</c> and <c>SQLColumns</c>, which name the catalog and schema
-    /// <c>TABLE_CAT</c> and <c>TABLE_SCHEM</c>, state the type as the numeric <c>DATA_TYPE</c> code rather
-    /// than a name, and carry no <c>NUMERIC_PRECISION</c> at all — <c>COLUMN_SIZE</c> is the length of a
-    /// character column and the precision of a numeric one.
+    /// The <c>Tables</c> and <c>Columns</c> schema collections come from ODBC's <c>SQLTables</c> and
+    /// <c>SQLColumns</c>. They name the catalog and schema <c>TABLE_CAT</c> and <c>TABLE_SCHEM</c>, give the type
+    /// as a numeric <c>DATA_TYPE</c> code, and have no <c>NUMERIC_PRECISION</c>: <c>COLUMN_SIZE</c> is the length
+    /// of a character column and the precision of a numeric one.
     /// </para>
     /// <para>
-    /// What sits behind the driver is unknown, so there is no default schema to speak of: a null database or
-    /// schema means every one rather than a particular one, and a caller who wants a single schema names it.
+    /// The database behind the driver is unknown, so there is no default schema: a null database or schema means
+    /// every one, and a caller who wants one schema names it.
     /// </para>
     /// </remarks>
     class OdbcDatabaseMetadata : AdoDatabaseMetadata
@@ -33,7 +32,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="dbDataSource"></param>
+        /// <param name="dbDataSource">The data source to read metadata from.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="dbDataSource"/> is <see langword="null"/>.</exception>
         public OdbcDatabaseMetadata(DbDataSource dbDataSource)
         {
             _dbDataSource = dbDataSource ?? throw new ArgumentNullException(nameof(dbDataSource));
@@ -44,35 +44,41 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// </summary>
         public DbDataSource DbDataSource => _dbDataSource;
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns the catalog a new connection is in, or <see langword="null"/> where the driver reports none.
+        /// </summary>
+        /// <returns>The catalog, or <see langword="null"/>.</returns>
         public override string? GetDefaultDatabase()
         {
             using var cnn = _dbDataSource.OpenConnection();
 
-            // a driver that has no notion of a catalog reports an empty one
+            // a driver with no notion of a catalog reports an empty one
             return string.IsNullOrEmpty(cnn.Database) ? null : cnn.Database;
         }
 
-        /// <inheritdoc />
-        /// <remarks>
-        /// ODBC has no portable way to ask which schema an identifier resolves in, so there is no answer
-        /// but "all of them".
-        /// </remarks>
+        /// <summary>
+        /// Returns <see langword="null"/>, meaning every schema: ODBC has no portable way to ask which schema an
+        /// unqualified name resolves in.
+        /// </summary>
+        /// <returns><see langword="null"/>.</returns>
         public override string? GetDefaultSchema()
         {
             return null;
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Built on first use from the product name and version the driver reports (see
+        /// <see cref="AdoSqlDialects.ForConnection"/>), which opens a connection, and then kept.
+        /// </remarks>
         public override SqlDialect Dialect => _dialect ??= CreateDialect();
 
         SqlDialect? _dialect;
 
         /// <summary>
-        /// Asks the driver what is behind it, once: the convention reads the dialect for every rule that
-        /// matches while planning.
+        /// Opens a connection and chooses the dialect for the product behind the driver.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The dialect.</returns>
         SqlDialect CreateDialect()
         {
             using var cnn = _dbDataSource.OpenConnection();
@@ -82,13 +88,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
 
         /// <inheritdoc />
         /// <remarks>
-        /// The parameter marker is <c>?</c> and positional: <see cref="OdbcCommand"/> binds by ordinal and
-        /// ignores the name.
+        /// Every parameter is written <c>?</c>: <see cref="OdbcCommand"/> binds by position and ignores the name.
         /// </remarks>
         public override IAdoSqlSyntax Syntax { get; } = new OdbcSqlSyntax();
 
         /// <summary>
-        /// ODBC names no parameter; it counts them.
+        /// Writes every parameter as <c>?</c>.
         /// </summary>
         sealed class OdbcSqlSyntax : IAdoSqlSyntax
         {
@@ -135,9 +140,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
                 if (name is null)
                     continue;
 
-                // COLUMN_SIZE is the character count of a character column and the precision of a numeric
-                // one, and a driver reports zero for a column with no bound — SQL Server's varchar(max) and
-                // xml both arrive as zero rather than as the -1 the information schema gives
+                // COLUMN_SIZE is a character column's length and a numeric column's precision; an unbounded
+                // column (SQL Server's varchar(max), xml) reports zero
                 var size = SchemaRow.Int32(row, "COLUMN_SIZE") is int columnSize && columnSize > 0 ? columnSize : (int?)null;
 
                 set.Add(new AdoFieldMetadata(
@@ -146,7 +150,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
                     size,
                     size,
                     SchemaRow.Int32(row, "DECIMAL_DIGITS"),
-                    // SQL_NO_NULLS is zero and SQL_NULLABLE_UNKNOWN is two: only a stated no is a no
+                    // SQL_NO_NULLS is 0 and SQL_NULLABLE_UNKNOWN 2: only a stated no is not nullable
                     SchemaRow.Int32(row, "NULLABLE") != 0));
             }
 
@@ -154,14 +158,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         }
 
         /// <summary>
-        /// Returns the rows of a schema collection that describe one catalog, schema and table, taking a
-        /// null for any of them as every one.
+        /// Returns the rows of a schema collection for a catalog, schema and table, a null for any of them matching
+        /// every one. A named catalog is switched to with <see cref="DbConnection.ChangeDatabase"/> first.
         /// </summary>
-        /// <param name="collectionName"></param>
-        /// <param name="databaseName"></param>
-        /// <param name="schemaName"></param>
-        /// <param name="tableName"></param>
-        /// <returns></returns>
+        /// <param name="collectionName">The schema collection.</param>
+        /// <param name="databaseName">The catalog, or <see langword="null"/>.</param>
+        /// <param name="schemaName">The schema, or <see langword="null"/>.</param>
+        /// <param name="tableName">The table, or <see langword="null"/>.</param>
+        /// <returns>The matching rows.</returns>
         IEnumerable<DataRow> Rows(string collectionName, string? databaseName, string? schemaName, string? tableName)
         {
             using var cnn = _dbDataSource.OpenConnection();
@@ -212,8 +216,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         const int SqlWlongVarchar = -10;
         const int SqlGuid = -11;
 
-        // ODBC 2 spelled the datetime types 9, 10 and 11; ODBC 3 spells them 91, 92 and 93, and a driver
-        // answers in whichever version the application asked for
+        // ODBC 2 codes the datetime types 9, 10 and 11 and ODBC 3 codes them 91, 92 and 93; a driver answers in
+        // the version the application asked for
         const int SqlDateV2 = 9;
         const int SqlTimeV2 = 10;
         const int SqlTimestampV2 = 11;
@@ -221,9 +225,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         const int SqlTypeTime = 92;
         const int SqlTypeTimestamp = 93;
 
-        // SQL Server's driver-specific codes. System.Data.Odbc has no mapping for SQL_SS_TIME2 or
-        // SQL_SS_TIMESTAMPOFFSET and throws ArgumentException on reading either, whatever they are typed as
-        // here; they are named so that the column at least appears with the type it has
+        // SQL Server's driver-specific codes. System.Data.Odbc cannot read SQL_SS_TIME2 or SQL_SS_TIMESTAMPOFFSET
+        // (it throws ArgumentException), but mapping them gives the columns their proper types
         const int SqlSsVariant = -150;
         const int SqlSsUdt = -151;
         const int SqlSsXml = -152;
@@ -235,21 +238,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// <summary>
         /// Returns the <see cref="DbType"/> for an ODBC type code.
         /// </summary>
-        /// <param name="dataType"></param>
-        /// <returns></returns>
+        /// <param name="dataType">The code from <c>DATA_TYPE</c>.</param>
+        /// <returns>The type.</returns>
         /// <remarks>
-        /// A code with no mapping goes to <see cref="DbType.Object"/>, which <c>AdoTable</c> maps to
-        /// <c>OTHER</c> and the reader passes through: an unrecognised column costs that column rather than
-        /// the table. The interval types are among them, Calcite's own interval being a different thing.
+        /// A code with no mapping, the interval types included, is <see cref="DbType.Object"/>, which the adapter
+        /// reads as <c>OTHER</c> and passes through unchanged.
         /// </remarks>
         static DbType ParseDbType(int dataType)
         {
             return dataType switch
             {
                 SqlBit => DbType.Boolean,
-                // ODBC does not say whether the driver's tiny integer is signed, and SQL Server's is not:
-                // DbType.Byte is the unsigned one, which AdoTable holds as a UTINYINT; a driver whose tiny
-                // integer really is signed loses the negative half, and ODBC gives no way to tell
+                // ODBC does not say whether a tiny integer is signed. SQL Server's is not, so this is the
+                // unsigned DbType.Byte (UTINYINT); a driver whose tiny integer is signed loses the negative half
                 SqlTinyint => DbType.Byte,
                 SqlSmallint => DbType.Int16,
                 SqlInteger => DbType.Int32,

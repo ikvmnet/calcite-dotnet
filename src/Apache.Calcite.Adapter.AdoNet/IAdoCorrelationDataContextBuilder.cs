@@ -4,19 +4,20 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Collects the correlation variables needed to construct an <see cref="AdoCorrelationDataContext"/>
-    /// for a correlated sub-query.
+    /// Collects the fields of the outer row that a pushed-down statement reads as parameters, for building the
+    /// <see cref="AdoCorrelationDataContext"/> the statement's values come from.
     /// </summary>
     public interface IAdoCorrelationDataContextBuilder
     {
 
         /// <summary>
-        /// Registers a single correlation variable.
+        /// Registers one field of a correlation variable and returns the dynamic parameter index to write for it.
         /// </summary>
-        /// <param name="id">The Calcite correlation identifier for the variable.</param>
-        /// <param name="ordinal">The ordinal position of the field within the outer row.</param>
-        /// <param name="type">The Java/IKVM reflection type of the field value.</param>
-        /// <returns>The ordinal at which the variable was registered.</returns>
+        /// <param name="id">The correlation variable.</param>
+        /// <param name="ordinal">The field's ordinal in the outer row.</param>
+        /// <param name="type">The Java class of the field's value.</param>
+        /// <returns>The index; <see cref="AdoCorrelationDataContext"/> answers <c>?</c> followed by it with the
+        /// field's value.</returns>
         public int Add(CorrelationId id, int ordinal, java.lang.reflect.Type type);
 
     }

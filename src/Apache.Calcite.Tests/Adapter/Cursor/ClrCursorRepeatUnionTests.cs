@@ -14,22 +14,24 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// What <c>ClrCursorDefaults.RepeatUnion</c> and its awaiting twin do, against what
-    /// <c>EnumerableDefaults.repeatUnion</c> does.
+    /// Tests that <c>ClrCursorDefaults.RepeatUnion</c> and <c>RepeatUnionAsync</c> behave as
+    /// <c>EnumerableDefaults.repeatUnion</c> does, including how many rounds of the iterative part it opens.
     /// </summary>
     /// <remarks>
-    /// <c>ShouldAgreeOnARecursiveQueryWhoseStepAggregates</c> holds the same property against Calcite as the
-    /// oracle, through SQL a caller cannot write -- standard SQL will not put an aggregate in a recursive
-    /// term. So the asymmetric round count is pinned here too, on both opens and through both advances, by
-    /// scripting the iterative part directly: what a caller can see is how many times that part is opened,
-    /// and every way of reading the cursor must agree.
+    /// Calcite's enumerator stops when <c>current</c> still holds its sentinel after a round, not when a round
+    /// is empty, and it does not restore the sentinel between the seed and the first round. So a seed that
+    /// produced a row costs one extra round. <c>ShouldAgreeOnARecursiveQueryWhoseStepAggregates</c> compares
+    /// that against Calcite through SQL; these tests script the iterative part directly and count how many
+    /// times it is opened, through both opens and both advances.
     /// </remarks>
     public class ClrCursorRepeatUnionTests
     {
 
         /// <summary>
-        /// A cursor over rows in hand that records its disposal.
+        /// A cursor over a fixed list of rows that calls an optional action when disposed.
         /// </summary>
+        /// <param name="rows">The rows the cursor returns, in order.</param>
+        /// <param name="onDispose">Called when the cursor is disposed; null for nothing.</param>
         sealed class RowsCursor(IReadOnlyList<int> rows, Action? onDispose = null) : ClrCursor<int>
         {
 
@@ -121,14 +123,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A round that produced rows puts the sentinel back, so the empty round after it does stop the
-        /// sequence.
+        /// A round that produced rows restores the sentinel, so the empty round after it stops the sequence.
         /// </summary>
         /// <remarks>
-        /// The contrast that places the extra round at the seed/iteration boundary and nowhere else. Round 0
-        /// yields 100 and, being productive, ends with the sentinel restored; round 1 yields nothing and the
-        /// sentinel is set, so it stops. Two evaluations, not three. The defect below is not "an empty round
-        /// is always retried" -- it is that the boundary is the one place the sentinel is never restored.
+        /// Round 0 yields 100 and ends with the sentinel restored; round 1 yields nothing and stops: two
+        /// evaluations, not three. This shows that the extra round arises only at the boundary between the seed
+        /// and the first round.
         /// </remarks>
         [Fact]
         public void ShouldNotRunAnExtraRoundWhereTheFirstRoundProducedRows()
@@ -144,6 +144,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// The awaiting open counts the same rounds as the synchronous one, and an awaiting advance opens
         /// a round with the awaiting open.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldNotRunAnExtraRoundWhereTheFirstRoundProducedRowsAsync()
         {
@@ -163,14 +164,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A seed that emitted a row costs an extra evaluation of an iterative part that was never going to
-        /// yield anything at all.
+        /// A seed that emitted a row causes an extra evaluation of an iterative part that never yields anything,
+        /// as in Calcite.
         /// </summary>
         /// <remarks>
-        /// The cleanest statement of the defect, with the iterative part empty from the start so nothing else
-        /// is in play. Round 0 is empty, but <c>current</c> holds the seed row, so it goes round again; round
-        /// 1 is empty with the sentinel back, and that ends it. Two evaluations to discover that a sequence
-        /// which never yields anything never yields anything.
+        /// Round 0 is empty, but <c>current</c> still holds the seed row, so the loop runs again; round 1 is empty
+        /// with the sentinel restored, and that ends it.
         /// </remarks>
         [Fact]
         public void ShouldEvaluateAnEmptyIterativePartTwiceWhereTheSeedEmittedARow()
@@ -182,13 +181,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A seed that emitted nothing leaves the sentinel set, so the first empty round does stop it.
+        /// A seed that emitted nothing leaves the sentinel set, so the first empty round stops the sequence
+        /// after one evaluation.
         /// </summary>
-        /// <remarks>
-        /// The other side of the same test, and the reason the extra round is a property of the seed/iteration
-        /// boundary rather than of the loop: with no seed row there is nothing to leave in <c>current</c>, and
-        /// round 0 stops the sequence on its own. One evaluation rather than two.
-        /// </remarks>
         [Fact]
         public void ShouldEvaluateAnEmptyIterativePartOnceWhereTheSeedWasEmpty()
         {
@@ -215,6 +210,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// The two advances read one sequence of rounds: a round started by one kind of advance is
         /// continued by the other.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldReadTheSameRoundsThroughEitherAdvance()
         {
@@ -233,12 +229,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// The clean-up runs before the cursors are disposed, which is the order of Calcite's
-        /// <c>close()</c>.
+        /// The clean-up runs before the cursors are disposed, the order of Calcite's <c>close()</c>.
         /// </summary>
         /// <remarks>
-        /// Taking one row and stopping leaves the seed open, so that its disposal is observable after the
-        /// clean-up rather than lost in the drain.
+        /// Reading one row and stopping leaves the seed open, so its disposal happens at <c>Dispose</c> and its
+        /// order relative to the clean-up is observable.
         /// </remarks>
         [Fact]
         public void ShouldRunTheCleanUpBeforeDisposingTheCursors()
@@ -253,8 +248,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// <c>Current</c> before the first row and after the last is Calcite's <c>NoSuchElementException</c>:
-        /// the sentinel is what the cursor holds there.
+        /// <c>Current</c> throws before the first row and after the last, where the cursor holds the sentinel
+        /// and Calcite's enumerator would fail on it.
         /// </summary>
         [Fact]
         public void ShouldRefuseCurrentOffTheSentinel()

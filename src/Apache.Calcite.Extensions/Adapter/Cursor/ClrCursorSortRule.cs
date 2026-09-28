@@ -9,15 +9,19 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
-    /// Rule that converts a <see cref="Sort"/> to a <see cref="ClrCursorSort"/>.
+    /// Rule that converts a <see cref="Sort"/> with no offset or fetch to a <see cref="ClrCursorSort"/>.
     /// </summary>
+    /// <remarks>
+    /// Mirrors <c>EnumerableSortRule</c>. A sort with an offset or fetch is left to
+    /// <see cref="ClrCursorLimitRule"/>.
+    /// </remarks>
     public class ClrCursorSortRule : ConverterRule
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorSortRule"/>.
+        /// Creates the rule with its default configuration.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorSortRule Create()
         {
             return (ClrCursorSortRule)Config.INSTANCE
@@ -33,7 +37,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule's configuration.</param>
         public ClrCursorSortRule(Config config) :
             base(config)
         {
@@ -45,7 +49,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         {
             var sort = (Sort)rel;
 
-            // a sort carrying an offset or a fetch belongs to ClrCursorLimitRule, not to this one
             if (sort.offset != null || sort.fetch != null)
                 return null;
 

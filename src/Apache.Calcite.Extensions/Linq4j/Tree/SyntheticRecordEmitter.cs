@@ -17,16 +17,11 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
     /// Emits the CLR type behind a <see cref="JavaTypeFactoryImpl.SyntheticRecordType"/>.
     /// </summary>
     /// <remarks>
-    /// <c>JavaRowFormat.CUSTOM</c> asks the type factory for the class of a row, and for a struct of several
-    /// fields the answer is a synthetic record: a type Calcite describes but has not got, because Janino
-    /// materialises it from the generated source.
-    ///
-    /// <para>Calcite never resolves one. <c>Types.toClass</c> throws on a <c>RecordType</c> — the class is
-    /// still text — and <c>Expressions.parameter</c> carries the type until Janino writes its name into the
-    /// same compilation unit as the class declaration. <see cref="System.Linq.Expressions.Expression"/> takes
-    /// a <see cref="Type"/>, so here the class has to be real before anything can name it, which is why
-    /// <see cref="ClassDecl"/> returns a finished type rather than a declaration and why all six members are
-    /// on it before it returns.</para>
+    /// For <c>JavaRowFormat.CUSTOM</c> the type factory answers the row class of a multi-field row with a
+    /// synthetic record type, which Calcite only describes: Janino compiles its class from the declaration
+    /// written into the generated source. An expression tree needs a real <see cref="Type"/>, so
+    /// <see cref="ClassDecl"/> emits the class, with its constructors, <c>equals</c>, <c>hashCode</c>,
+    /// <c>compareTo</c> and <c>toString</c>, before returning it.
     /// </remarks>
     static class SyntheticRecordEmitter
     {
@@ -35,33 +30,26 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         static int count;
 
         /// <summary>
-        /// The type emitted for each record type, held only for as long as the record type is.
+        /// The type emitted for each record type, held only as long as the record type is alive.
         /// </summary>
         /// <remarks>
-        /// <b>Weakly, because this is the whole of the lifetime.</b> A <c>SyntheticRecordType</c> is reachable
-        /// from one place — <c>JavaTypeFactoryImpl.syntheticTypes</c>, an instance field — so it lives exactly
-        /// as long as the factory that made it, which is as long as the connection. Nothing reaches back the
-        /// other way: the record type holds its fields, its relational type and its name, and a field holds
-        /// the record type, and none of them holds the factory. So keying on the record type is what ties the
-        /// emitted type to the connection, and a strong map would untie it — the key alone would keep every
-        /// record type of every connection alive for the life of the process, and the emitted type with it.
-        ///
-        /// <para>The emitted type does not refer to the record type, which is what makes this safe to hold in
-        /// a table whose value must not reach its key.</para>
+        /// A <c>SyntheticRecordType</c> is held by its <c>JavaTypeFactoryImpl</c>, which lives as long as its
+        /// connection, so a weak key ties the emitted type's lifetime to the connection's. The emitted type
+        /// does not refer to the record type, so the value does not keep its key alive.
         /// </remarks>
         static readonly ConditionalWeakTable<JavaTypeFactoryImpl.SyntheticRecordType, Type> emitted = new();
 
         /// <summary>
         /// Returns the CLR type of a synthetic record, emitting it the first time it is asked for.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// <c>EnumerableRelImplementor.classDecl</c>, which answers a class declaration for Janino to compile.
-        /// A declaration of the same shape twice is one class twice there, because the type factory hands out
-        /// one <c>SyntheticRecordType</c> per shape and the declaration is written once per compilation unit;
-        /// here the type is the thing itself, so it is emitted once per record type and kept.
+        /// The counterpart of <c>EnumerableRelImplementor.classDecl</c>, which writes a class declaration for
+        /// Janino into each compilation unit. Here the class is emitted once per record type and reused.
+        /// Thread-safe.
         /// </remarks>
+        /// <param name="type">The synthetic record type from Calcite's type factory.</param>
+        /// <returns>The emitted CLR class, the same instance for every call with the same record type.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="type"/> is <see langword="null"/>.</exception>
         public static Type ClassDecl(JavaTypeFactoryImpl.SyntheticRecordType type)
         {
             ArgumentNullException.ThrowIfNull(type);
@@ -78,31 +66,25 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Emits the class and its six members.
+        /// Emits the class and its members.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// The body of <c>classDecl</c>, section for section. What differs is at the leaves: a member is
-        /// emitted rather than added to a list of declarations, and a body is IL rather than a linq4j block,
-        /// so each statement Calcite writes as one call — <c>ifThen</c>, <c>return_</c>, <c>foldAnd</c> — is
-        /// several instructions here. The order, the locals and the per field loops are Calcite's.
+        /// Follows the body of <c>classDecl</c> section by section, emitting IL where Calcite builds a linq4j
+        /// block; the members, their order, their locals and the per-field loops are Calcite's.
         /// </remarks>
+        /// <param name="type">The synthetic record type.</param>
+        /// <returns>The created CLR class, in a collectable assembly of its own.</returns>
         static Type Emit(JavaTypeFactoryImpl.SyntheticRecordType type)
         {
-            // one collectable assembly per record type, so that the type goes when the record type does.
-            // RunAndCollect collects an assembly, not a type, so a shared one is released only when every
-            // type in it is unreachable -- and never at all while a static field holds the builder. Measured:
-            // an assembly of its own costs about 73us more to emit and about 32KB of loader allocator while
-            // the type is alive, and that 32KB comes back. A shared module returns nothing.
+            // one collectable assembly per record type, because RunAndCollect unloads whole assemblies: a shared
+            // assembly would be released only once every type in it was unreachable
             var name = $"{type.getName()}_{++count}";
             var module = AssemblyBuilder
                 .DefineDynamicAssembly(new AssemblyName(name), AssemblyBuilderAccess.RunAndCollect)
                 .DefineDynamicModule(name);
 
-            // the factory names a record after its shape, and two connections can each hold one of the same
-            // name describing the same shape, so the name is made unique -- an assembly apiece means they
-            // cannot collide, but a stack trace naming one of two Record3_0s would say nothing
+            // the factory names a record after its shape, so two connections can hold records of the same
+            // name; the counter keeps the names distinct in stack traces
             var classDeclaration = module.DefineType(
                 name,
                 TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.Class,
@@ -124,14 +106,13 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             // Constructor:
             //   Foo(T0 f0, ...) { this.f0 = f0; ... }
 
-            // Here a constructor without parameter is used because the generated
-            // code could cause error if number of fields is too large.
+            // Calcite declares only a parameterless constructor, because a constructor of many parameters can
+            // fail to compile, and its generated code assigns the fields
             ConstructorDecl(classDeclaration, [], fields);
 
-            // Calcite declares only that one, and its generated code assigns the fields. An expression tree
-            // has no statements to assign them in, so JavaRowFormat.CUSTOM.record calls a constructor and the
-            // one it calls is emitted for it. A record of no fields would have two that cannot be told apart;
-            // a semi join whose right input projects nothing is one.
+            // an expression tree building a record has no statements to assign fields in, so
+            // JavaRowFormat.CUSTOM.record calls this constructor instead; a record with no fields (as for a
+            // semi join whose right input projects nothing) would get two identical constructors
             if (types.Length > 0)
                 ConstructorDecl(classDeclaration, types, fields);
 
@@ -166,7 +147,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             blockBuilder2.Emit(OpCodes.Castclass, classDeclaration);
             blockBuilder2.Emit(OpCodes.Stloc, thatParameter);
 
-            // foldAnd, which short circuits: each condition falls through to the next and any false returns
+            // foldAnd short-circuits: each comparison falls through to the next, and any false returns false
             var unequal = blockBuilder2.DefineLabel();
             for (int i = 0; i < recordFields.Length; i++)
             {
@@ -249,11 +230,9 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 }
                 catch (NotSupportedException)
                 {
-                    // Just ignore the field in compareTo
-                    // "create synthetic record class" blindly creates compareTo for
-                    // all the fields, however not all the records will actually be used
-                    // as sorting keys (e.g. temporary state for aggregate calculation).
-                    // In those cases it is fine if we skip the problematic fields.
+                    // skips the field, as Calcite does: compareTo is generated over every field, but a record
+                    // used for something other than a sort key (such as aggregate state) may hold a field
+                    // with no comparison
                     continue;
                 }
 
@@ -317,14 +296,15 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Emits a constructor assigning each of its parameters to the field of the same position.
+        /// Emits a constructor that assigns each parameter to the field in the same position.
         /// </summary>
-        /// <param name="classDeclaration"></param>
-        /// <param name="parameters"></param>
-        /// <param name="fields"></param>
         /// <remarks>
-        /// <c>Expressions.constructorDecl</c>, whose body Calcite leaves empty.
+        /// The counterpart of <c>Expressions.constructorDecl</c>; with no parameters the body only calls the
+        /// base constructor, as Calcite's is empty.
         /// </remarks>
+        /// <param name="classDeclaration">The class being emitted.</param>
+        /// <param name="parameters">The constructor's parameter types, one per field assigned.</param>
+        /// <param name="fields">The fields, in the order of <paramref name="parameters"/>.</param>
         static void ConstructorDecl(TypeBuilder classDeclaration, Type[] parameters, FieldBuilder[] fields)
         {
             var constructor = classDeclaration.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, parameters);
@@ -346,8 +326,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Returns the record's fields as an array.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
+        /// <param name="type">The synthetic record type.</param>
+        /// <returns>The record's fields, in declaration order.</returns>
         static J.Types.RecordField[] RecordFields(JavaTypeFactoryImpl.SyntheticRecordType type)
         {
             var list = type.getRecordFields();
@@ -359,28 +339,25 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Returns the overload of the named method that takes the given arguments.
+        /// Returns the overload of the named method that takes the given argument types.
         /// </summary>
-        /// <param name="method"></param>
-        /// <param name="arguments"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
+        /// <exception cref="NotSupportedException">No overload accepts the arguments.</exception>
         /// <remarks>
-        /// <c>Expressions.call(method.getDeclaringClass(), method.getName(), arguments)</c>, which is how
-        /// Calcite writes every call in these bodies: it names a class and a method and lets
-        /// <c>Types.lookupMethod</c> bind the overload from the argument types.
-        ///
-        /// <para><see cref="ClrTypes.Resolve(Type, string, Type[])"/> is that method. It binds on
-        /// assignability alone, which is <c>Types.assignableFrom</c> and is what a body of IL needs: nothing
-        /// converts an argument here, where a tree Calcite composes converts each one to its parameter.</para>
+        /// The counterpart of <c>Expressions.call(method.getDeclaringClass(), method.getName(), arguments)</c>,
+        /// which Calcite uses for every call in these bodies. It binds through
+        /// <see cref="ClrTypes.Resolve(Type, string, Type[])"/>, which matches on assignability alone; that suits
+        /// IL, where nothing converts the arguments.
         /// </remarks>
+        /// <param name="method">The Java method whose declaring class and name select the overloads.</param>
+        /// <param name="arguments">The argument types, in order.</param>
+        /// <returns>The CLR overload whose parameters the arguments are assignable to.</returns>
         static MethodInfo Call(java.lang.reflect.Method method, Type[] arguments)
         {
             return ClrTypes.Resolve(ClrTypes.FromClass(method.getDeclaringClass()), method.getName(), arguments);
         }
 
         /// <summary>
-        /// What a member of the record overrides the base with.
+        /// The attributes of a method that overrides a member of the base.
         /// </summary>
         const MethodAttributes Override = MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.HideBySig;
 
@@ -391,18 +368,19 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             ?? throw new InvalidOperationException($"{nameof(SyntheticRecord)} has no no-arg constructor.");
 
         /// <summary>
-        /// Guava's <c>Objects.equal</c>, which the generated equals compares a reference field with.
+        /// <c>BuiltInMethod.OBJECTS_EQUAL</c>, which the emitted <c>Equals</c> compares a reference field with.
         /// </summary>
         static readonly MethodInfo ObjectsEqual = ClrTypes.Resolve(BuiltInMethod.OBJECTS_EQUAL.method);
 
         /// <summary>
-        /// Java's string concatenation, which is what <c>Expressions.add</c> over a string is.
+        /// String concatenation, which <c>Expressions.add</c> over strings compiles to.
         /// </summary>
         static readonly MethodInfo Concat = typeof(string).GetMethod(nameof(string.Concat), [typeof(string), typeof(string)])
             ?? throw new InvalidOperationException("String has no Concat(string, string).");
 
         /// <summary>
-        /// <c>String.valueOf</c>, whose own helper IKVM keeps internal; both render a null as "null".
+        /// <c>java.util.Objects.toString</c>, standing in for <c>String.valueOf(Object)</c>, whose IKVM helper
+        /// is internal. Both render a null as "null".
         /// </summary>
         static readonly MethodInfo ValueOf = typeof(java.util.Objects).GetMethod("toString", [typeof(object)])
             ?? throw new InvalidOperationException("java.util.Objects has no toString(Object).");

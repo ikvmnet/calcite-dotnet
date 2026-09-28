@@ -14,22 +14,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// The methods a plan of the <see cref="ClrCursorConvention"/> calling convention is built from.
     /// </summary>
     /// <remarks>
-    /// The counterpart of Calcite's <c>BuiltInMethod</c>, named the same way, so a node reads as its Calcite
-    /// original does. A generic one is the open definition, and a node closes it over the row type it is
-    /// working with.
+    /// The counterpart of Calcite's <c>BuiltInMethod</c>, with members named after Calcite's so a node reads
+    /// like its Calcite original. A generic method is stored as its open definition; a node closes it over its
+    /// row types.
     ///
-    /// <para><b>One table, two sets of names.</b> An unsuffixed member is an open that acquires
-    /// synchronously, which a node's <c>Implement</c> names; the <c>Async</c>-suffixed member of the same
-    /// name is the open that awaits its acquisition, which its <c>ImplementAsync</c> names. Both are in
-    /// <see cref="ClrCursorDefaults"/> and both produce the same cursor.</para>
+    /// <para>An unsuffixed member is an open that acquires its sources synchronously and is called from a node's
+    /// <c>Implement</c>; the <c>Async</c>-suffixed member of the same name awaits its acquisition and is called
+    /// from <c>ImplementAsync</c>. Both are in <see cref="ClrCursorDefaults"/> and produce the same cursor.</para>
     ///
-    /// <para><b>Every awaiting open ends in a <see cref="CancellationToken"/>, and <see cref="CallAsync"/>
-    /// supplies it</b> — the implementor's token parameter, which the awaiting root's lambda declares. An
-    /// expression tree does not apply a default argument, so the token is appended there rather than
-    /// written out at every call site.</para>
-    ///
-    /// <para>A member is added when the node that calls it is written, so that a name here always has a
-    /// caller.</para>
+    /// <para>Every awaiting open takes a trailing <see cref="CancellationToken"/>, which <see cref="CallAsync"/>
+    /// supplies.</para>
     /// </remarks>
     static class ClrCursorBuiltInMethod
     {
@@ -58,14 +52,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <see cref="ClrCursorDefaults.Skip"/>.
         /// </summary>
         /// <remarks>
-        /// <c>BuiltInMethod.SKIP_BIG_DECIMAL</c>: a FETCH or an OFFSET arrives as a <c>BigDecimal</c>, which
-        /// is CALCITE-7624.
+        /// <c>BuiltInMethod.SKIP_BIG_DECIMAL</c>: the offset is a <c>BigDecimal</c>, as <c>EnumerableLimit</c>
+        /// passes it.
         /// </remarks>
         public static readonly MethodInfo SkipBigDecimal = Of(nameof(ClrCursorDefaults.Skip));
 
         /// <summary>
         /// <see cref="ClrCursorDefaults.Take"/>.
         /// </summary>
+        /// <remarks>
+        /// <c>BuiltInMethod.TAKE_BIG_DECIMAL</c>: the fetch is a <c>BigDecimal</c>.
+        /// </remarks>
         public static readonly MethodInfo TakeBigDecimal = Of(nameof(ClrCursorDefaults.Take));
 
         /// <summary>
@@ -84,14 +81,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         public static readonly MethodInfo AsCursorArray = Of(nameof(ClrCursorDefaults.AsCursor), p => p[0].ParameterType.IsArray);
 
         /// <summary>
-        /// <see cref="ClrCursorDefaults.AsCursor{TSource}(IEnumerable{TSource})"/>, which a scan of
-        /// this project's own table SPI is built from.
+        /// <see cref="ClrCursorDefaults.AsCursor{TSource}(IEnumerable{TSource})"/>, which a scan of a table
+        /// that returns an <see cref="IEnumerable{T}"/> is built from.
         /// </summary>
         public static readonly MethodInfo AsCursor = Of(nameof(ClrCursorDefaults.AsCursor), p => p[0].ParameterType.IsArray == false);
 
         /// <summary>
-        /// <see cref="ClrCursorDefaults.AsEnumerable{TSource}"/>, which a converter into the sequence
-        /// convention reads a cursor plan through.
+        /// <see cref="ClrCursorDefaults.AsEnumerable{TSource}"/>, which presents an opener as a sequence that
+        /// opens a cursor per enumeration.
         /// </summary>
         public static readonly MethodInfo AsEnumerable = Of(nameof(ClrCursorDefaults.AsEnumerable));
 
@@ -107,18 +104,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             ?? throw new InvalidOperationException($"'{nameof(JavaCursors.FromJava)}' is missing.");
 
         /// <summary>
-        /// <see cref="ClrCursors.Block{T}"/>, which reads an awaiting open across to a synchronous one by
-        /// blocking for it.
+        /// <see cref="ClrCursors.Block{T}"/>, which turns an awaiting open into a synchronous one by blocking the
+        /// calling thread.
         /// </summary>
         public static readonly MethodInfo Block = typeof(ClrCursors).GetMethod(nameof(ClrCursors.Block))
             ?? throw new InvalidOperationException($"'{nameof(ClrCursors.Block)}' is missing.");
 
         // ---- the awaiting half ----
 
-        // The same opens awaiting their acquisition, named for the synchronous one they answer to with
-        // Async on the end. A node's Implement names the first set and its ImplementAsync the second;
-        // nothing dispatches, and the two are together here so that a member added to one is obviously
-        // missing from the other.
+        // Each section lists its synchronous opens and then their awaiting counterparts, so a member added to
+        // one set is visibly missing from the other.
 
         /// <summary>
         /// <see cref="ClrCursorDefaults.Slice0Async"/>.
@@ -177,8 +172,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             ?? throw new InvalidOperationException($"'{nameof(JavaCursors.FromJavaAsync)}' is missing.");
 
         /// <summary>
-        /// <see cref="ClrCursors.Completed{T}"/>, which reads a synchronous open across to an awaiting
-        /// one.
+        /// <see cref="ClrCursors.Completed{T}"/>, which turns a synchronous open into an awaiting one.
         /// </summary>
         public static readonly MethodInfo Completed = typeof(ClrCursors).GetMethod(nameof(ClrCursors.Completed))
             ?? throw new InvalidOperationException($"'{nameof(ClrCursors.Completed)}' is missing.");
@@ -195,14 +189,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <param name="implementor">The implementor, whose token parameter is passed.</param>
         /// <param name="method">The open, with its type arguments already applied.</param>
         /// <param name="arguments">The arguments, less the cancellation token.</param>
-        /// <returns></returns>
+        /// <returns>The call expression.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// <paramref name="method"/> does not take exactly one more parameter than <paramref name="arguments"/>
+        /// supplies, or its last parameter is not a <see cref="CancellationToken"/>.
+        /// </exception>
         /// <remarks>
-        /// A node calls this where its synchronous body calls <c>Expression.Call(null, …)</c>. Every
-        /// awaiting open takes a trailing <see cref="CancellationToken"/> and an expression tree does not
-        /// apply a default argument, so the token is appended here. It is the implementor's parameter —
-        /// the one the awaiting root's lambda declares, or the one a deferred open's lambda redeclares — so
-        /// that the token a caller gives an open, or an advance, is the token every acquisition under it
-        /// runs with.
+        /// The token passed is <see cref="ClrCursorRelImplementor.CancellationToken"/>, the parameter declared
+        /// by the awaiting root's lambda or redeclared by a deferred opener's, so every acquisition runs with the
+        /// token the caller passed to the open or advance that reached it. An expression tree does not apply
+        /// default arguments, so the token has to be passed explicitly.
         /// </remarks>
         public static MethodCallExpression CallAsync(ClrCursorRelImplementor implementor, MethodInfo method, params Expression[] arguments)
         {
@@ -226,10 +222,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Finds a public static method of <see cref="ClrCursorDefaults"/> by name.
         /// </summary>
-        /// <param name="name"></param>
+        /// <param name="name">The method name.</param>
         /// <param name="matches">Distinguishes overloads by their parameters, or <see langword="null"/> where
         /// the name is unique.</param>
-        /// <returns></returns>
+        /// <returns>The method.</returns>
+        /// <exception cref="InvalidOperationException">No method, or more than one, matches.</exception>
         static MethodInfo Of(string name, Func<ParameterInfo[], bool>? matches = null)
         {
             MethodInfo? found = null;
@@ -304,8 +301,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         public static readonly MethodInfo SortedGroupByAsync = Of(nameof(ClrCursorDefaults.SortedGroupByAsync));
 
         /// <summary>
-        /// <see cref="ClrCursorDefaults.SingletonAggregateAsync"/>, which is <see cref="Singleton"/>
-        /// over <see cref="Aggregate"/> as one open, the fold being awaited.
+        /// <see cref="ClrCursorDefaults.SingletonAggregateAsync"/>: <see cref="Singleton"/> over
+        /// <see cref="Aggregate"/> as one open, since the fold has to be awaited.
         /// </summary>
         public static readonly MethodInfo SingletonAggregateAsync = Of(nameof(ClrCursorDefaults.SingletonAggregateAsync));
 
@@ -334,8 +331,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         public static readonly MethodInfo ToJavaMap = Of(nameof(ClrCursorDefaults.ToJavaMap));
 
         /// <summary>
-        /// <see cref="JavaSequences.ToJava"/>, which a window table function hands its input to Calcite's
-        /// generator through.
+        /// <see cref="JavaSequences.ToJava"/>, through which a window table function passes its input to
+        /// Calcite's generator.
         /// </summary>
         public static readonly MethodInfo ToJava = typeof(JavaSequences).GetMethod(nameof(JavaSequences.ToJava))
             ?? throw new InvalidOperationException($"'{nameof(JavaSequences.ToJava)}' is missing.");

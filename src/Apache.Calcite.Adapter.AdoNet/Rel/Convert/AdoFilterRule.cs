@@ -8,16 +8,17 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {
 
     /// <summary>
-    /// Rule to convert a <see cref="Filter"/> to a <see cref="AdoFilter"/>.
+    /// The rule that converts a logical <see cref="Filter"/> into an <see cref="AdoFilter"/>, unless its condition
+    /// calls a user-defined function. Mirrors <c>JdbcRules.JdbcFilterRule</c>.
     /// </summary>
     public class AdoFilterRule : AdoConverterRule
     {
 
         /// <summary>
-        /// Returns <c>true</c> if the filter contains a user defined function.
+        /// Returns whether the filter's condition calls a user-defined function.
         /// </summary>
-        /// <param name="filter"></param>
-        /// <returns></returns>
+        /// <param name="filter">The filter.</param>
+        /// <returns>Whether it does.</returns>
         static bool UserDefinedFunctionInFilter(Filter filter)
         {
             var visitor = new CheckingUserDefinedFunctionVisitor();
@@ -26,11 +27,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <summary>
-        /// Creates a rule instance bound to the specified <see cref="AdoConvention"/>.
-        /// Filters containing user-defined functions are excluded and remain in the default convention.
+        /// Creates the rule for a convention.
         /// </summary>
-        /// <param name="convention">The ADO convention that this rule targets.</param>
-        /// <returns>A configured <see cref="AdoFilterRule"/> instance.</returns>
+        /// <param name="convention">The convention converted to.</param>
+        /// <returns>The rule.</returns>
         public static AdoFilterRule Create(AdoConvention convention)
         {
             return (AdoFilterRule)Config.INSTANCE
@@ -40,9 +40,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <summary>
-        /// Initializes a new instance using the supplied rule configuration.
+        /// Initializes a new instance.
         /// </summary>
-        /// <param name="config">The rule configuration produced by <see cref="Create"/>.</param>
+        /// <param name="config">The configuration <see cref="Create"/> builds.</param>
         public AdoFilterRule(Config config) :
             base(config)
         {

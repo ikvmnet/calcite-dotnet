@@ -25,17 +25,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// Base class for an aggregate of the <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <c>EnumerableAggregateBase</c>, holding what that holds: the state each aggregate
-    /// accumulates in, the adder per aggregate, the lambda factory, and the two contexts an implementor is
-    /// told about its call through. Every one of them is protected in Calcite, so like
-    /// <c>EnumUtils.joinSelector</c> they are ported rather than reused.
+    /// Mirrors <c>EnumerableAggregateBase</c>: the accumulator state, the per-call adders, the lambda factory,
+    /// and the contexts an aggregate implementor is given. Calcite declares these protected, so they are ported.
     ///
-    /// <para>They are static here where Calcite's are instance methods that never read <c>this</c>, because
-    /// a window needs two of them and is not an aggregate — <see cref="ClrCursorWindow"/> reads them off
-    /// this class for that reason. Calcite's window declares each aggregate's state as locals of the
-    /// method it generates; an expression tree has no method to declare them in, so a window folds its state
-    /// into one synthetic record exactly as an aggregate does. That is the whole reason the two accumulator
-    /// helpers are reachable from outside.</para>
+    /// <para>They are static, where Calcite's are instance methods that do not read <c>this</c>, so that
+    /// <see cref="ClrCursorWindow"/>, which is not an aggregate, can use them. Calcite's window declares each
+    /// aggregate's state as locals of the method it generates; an expression tree has no such method, so the
+    /// window keeps its state in one synthetic record, as an aggregate does.</para>
     /// </remarks>
     public abstract class ClrCursorAggregateBase : Aggregate
     {
@@ -43,13 +39,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="hints"></param>
-        /// <param name="input"></param>
-        /// <param name="groupSet"></param>
-        /// <param name="groupSets"></param>
-        /// <param name="aggCalls"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traitSet">The trait set.</param>
+        /// <param name="hints">The hints.</param>
+        /// <param name="input">The input.</param>
+        /// <param name="groupSet">The fields to group by.</param>
+        /// <param name="groupSets">The grouping sets, or null for the group set alone.</param>
+        /// <param name="aggCalls">The aggregate calls.</param>
         protected ClrCursorAggregateBase(RelOptCluster cluster, RelTraitSet traitSet, java.util.List hints, RelNode input, ImmutableBitSet groupSet, java.util.List groupSets, java.util.List aggCalls) :
             base(cluster, traitSet, hints, input, groupSet, groupSets, aggCalls)
         {
@@ -57,13 +53,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns whether any of the calls carries an ordering of its own.
+        /// Returns whether any of the calls carries an ordering of its own (<c>WITHIN GROUP</c>).
         /// </summary>
-        /// <param name="aggs"></param>
-        /// <returns></returns>
+        /// <param name="aggs">The <see cref="ClrAggImpState"/> of each call.</param>
+        /// <returns>True if any call has a non-empty collation.</returns>
         /// <remarks>
-        /// A call that has one is answered with <c>LazyAggregateLambdaFactory</c> and a <c>SourceSorter</c>
-        /// per call, as Calcite answers it. See <see cref="ImplementLambdaFactory"/>, which builds both.
+        /// Decides which factory <see cref="ImplementLambdaFactory"/> builds.
         /// </remarks>
         protected static bool HasOrderedCall(java.util.List aggs)
         {
@@ -75,15 +70,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the name the variables of one aggregate's state are built from.
+        /// Returns the prefix for the names of one aggregate's state variables.
         /// </summary>
-        /// <param name="agg"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// Under <c>CalciteSystemProperty.DEBUG</c> Calcite puts the function's own name in front, so that a
-        /// variable of the plan says which call it belongs to. There is no generated source to read here, but
-        /// the name reaches a debugger the same way.
-        /// </remarks>
+        /// <param name="agg">The aggregate call's state.</param>
+        /// <returns><c>a</c> and the call's index, preceded by the function's name under
+        /// <c>CalciteSystemProperty.DEBUG</c>, as Calcite names them.</returns>
         internal static string AggName(AggImpState agg)
         {
             var name = $"a{agg.aggIdx}";
@@ -95,20 +86,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Adds the statement that builds an accumulator from its parts.
+        /// Adds to <paramref name="initBlock"/> the statements that build the accumulator record from the
+        /// initial state values and return it.
         /// </summary>
-        /// <param name="initExpressions"></param>
-        /// <param name="initBlock"></param>
-        /// <param name="accPhysType"></param>
+        /// <param name="initExpressions">The initial value of each state field, in order.</param>
+        /// <param name="initBlock">The block to add to.</param>
+        /// <param name="accPhysType">The accumulator's physical type.</param>
         /// <remarks>
-        /// <c>EnumerableAggregateBase.declareParentAccumulator</c>, which is protected.
+        /// Mirrors <c>EnumerableAggregateBase.declareParentAccumulator</c>.
         /// </remarks>
         internal static void DeclareParentAccumulator(java.util.List initExpressions, J.BlockBuilder initBlock, PhysType accPhysType)
         {
             if (accPhysType.getJavaRowType() is org.apache.calcite.jdbc.JavaTypeFactoryImpl.SyntheticRecordType synType)
             {
-                // built a field at a time rather than through a constructor, which is what Calcite settled on
-                // under CALCITE-1097 when a record of many fields exceeded what Janino would take
+                // assigned a field at a time rather than through a constructor, as Calcite does
                 var record0_ = J.Expressions.parameter(accPhysType.getJavaRowType(), "record0");
                 initBlock.add(J.Expressions.declare(0, record0_, null));
                 initBlock.add(J.Expressions.statement(J.Expressions.assign(record0_, J.Expressions.new_(accPhysType.getJavaRowType()))));
@@ -125,16 +116,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Declares the state each aggregate accumulates in, and the block that resets it.
+        /// Declares the state variables of each aggregate call in <paramref name="initBlock"/> and adds the
+        /// statements that reset them.
         /// </summary>
-        /// <param name="initExpressions"></param>
-        /// <param name="initBlock"></param>
-        /// <param name="aggs"></param>
-        /// <param name="typeFactory"></param>
-        /// <param name="inputRowType">What <c>AggContextImpl</c> reads off its enclosing node.</param>
-        /// <param name="groupSet"><inheritdoc cref="CreateAggStateTypes" path="/param[@name='inputRowType']" /></param>
-        /// <param name="groupSets"><inheritdoc cref="CreateAggStateTypes" path="/param[@name='inputRowType']" /></param>
-        /// <returns></returns>
+        /// <param name="initExpressions">Receives the declared state variables, in order.</param>
+        /// <param name="initBlock">The block that initializes the accumulator.</param>
+        /// <param name="aggs">The <see cref="ClrAggImpState"/> of each call; each gets its context and state set.</param>
+        /// <param name="typeFactory">The type factory.</param>
+        /// <param name="inputRowType">The input's row type.</param>
+        /// <param name="groupSet">The fields grouped by.</param>
+        /// <param name="groupSets">The grouping sets.</param>
+        /// <returns>The Java type of every state field, in order.</returns>
         protected static java.util.List CreateAggStateTypes(java.util.List initExpressions, J.BlockBuilder initBlock, java.util.List aggs, JavaTypeFactory typeFactory, RelDataType inputRowType, ImmutableBitSet groupSet, java.util.List groupSets)
         {
             var aggStateTypes = new java.util.ArrayList();
@@ -171,8 +163,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Builds the lambda that folds one row into the accumulator, for each aggregate.
+        /// Builds, for each aggregate call, a <see cref="Function2"/> that folds one input row into the
+        /// accumulator and returns it.
         /// </summary>
+        /// <remarks>
+        /// Repoints each call's state at the accumulator record's fields.
+        /// </remarks>
         protected static java.util.List CreateAccumulatorAdders(
             ClrCursorRelImplementor implementor,
             J.ParameterExpression in_,
@@ -220,22 +216,21 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Builds the factory the three lambdas an aggregate runs on are taken from.
+        /// Builds an expression that creates the <see cref="AggregateLambdaFactory"/> the aggregate's
+        /// initializer, adder and result selector are taken from.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="inputPhysType"></param>
-        /// <param name="aggs"></param>
-        /// <param name="adders"></param>
-        /// <param name="accumulatorInitializer"></param>
-        /// <param name="hasOrderedCall"></param>
-        /// <param name="sourceType"></param>
-        /// <returns></returns>
+        /// <param name="implementor">The implementor.</param>
+        /// <param name="inputPhysType">The input's physical type.</param>
+        /// <param name="aggs">The <see cref="ClrAggImpState"/> of each call.</param>
+        /// <param name="adders">The adders from <see cref="CreateAccumulatorAdders"/>.</param>
+        /// <param name="accumulatorInitializer">A <see cref="Function0"/> that creates an accumulator.</param>
+        /// <param name="hasOrderedCall">The result of <see cref="HasOrderedCall"/>.</param>
+        /// <param name="sourceType">The input row type.</param>
+        /// <returns>The factory expression.</returns>
         /// <remarks>
-        /// Two factories, as Calcite has two. Where no call carries an ordering the adders fold each row as
-        /// it arrives. Where one does, the rows of a group are held instead and folded at the end, once the
-        /// call's own ordering has been applied to them — a <c>SourceSorter</c> per ordered call, a
-        /// <c>BasicLazyAccumulator</c> per unordered one, and <c>LazyAggregateLambdaFactory</c> over the
-        /// list. All three are Calcite's, and public, so they are used rather than written again.
+        /// As in Calcite: with no ordered call, a <c>BasicAggregateLambdaFactory</c> folds each row as it
+        /// arrives. Otherwise a <c>LazyAggregateLambdaFactory</c> holds a group's rows and folds them at the end,
+        /// through a <c>SourceSorter</c> for each ordered call and a <c>BasicLazyAccumulator</c> for each other.
         /// </remarks>
         protected static Expression ImplementLambdaFactory(
             ClrCursorRelImplementor implementor,
@@ -275,7 +270,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
                 if (agg.call.collation.equals(RelCollations.EMPTY))
                 {
-                    // a call with no ordering of its own still folds a row at a time, once the rows are held
+                    // an unordered call folds the held rows one at a time, in arrival order
                     body.Add(Expression.Call(lazyList, CollectionAdd,
                         Expression.Convert(Expression.New(BasicLazyAccumulator, adder), typeof(object))));
 
@@ -321,13 +316,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// The members Calcite names through <c>BuiltInMethod</c>, which has no entry for any of them.
+        /// A constructor or method that <see cref="ImplementLambdaFactory"/> or an aggregate's implementation
+        /// calls in the expression tree, where Calcite writes the same call in linq4j.
         /// </summary>
-        /// <remarks>
-        /// Each is written into the tree by <see cref="ImplementLambdaFactory"/> or by an aggregate's
-        /// <c>Implement</c>, where Calcite writes the same one as a linq4j call. They are resolved once
-        /// because a plan mentions them once per aggregate call.
-        /// </remarks>
         protected static readonly System.Reflection.ConstructorInfo BasicFactory = typeof(BasicAggregateLambdaFactory).GetConstructors()[0];
 
         /// <inheritdoc cref="BasicFactory" />
@@ -368,14 +359,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             ?? throw new InvalidOperationException("Function0 has no apply().");
 
         /// <summary>
-        /// What an aggregate implementor is told about the call it is implementing.
+        /// The <see cref="AggContext"/> an aggregate implementor is given for its call.
         /// </summary>
-        /// <param name="agg"></param>
-        /// <param name="typeFactory"></param>
-        /// <param name="inputRowType">What Calcite's <c>AggContextImpl</c> reads off its enclosing node, and
-        /// this takes as a parameter because it is not an inner class.</param>
-        /// <param name="groupSet"><inheritdoc cref="ClrAggContext" path="/param[@name='inputRowType']" /></param>
-        /// <param name="sets"><inheritdoc cref="ClrAggContext" path="/param[@name='inputRowType']" /></param>
+        /// <remarks>
+        /// Mirrors <c>EnumerableAggregateBase.AggContextImpl</c>, an inner class that reads the input row type
+        /// and grouping from its enclosing node; this one takes them as parameters.
+        /// </remarks>
+        /// <param name="agg">The call's state.</param>
+        /// <param name="typeFactory">The type factory.</param>
+        /// <param name="inputRowType">The input's row type.</param>
+        /// <param name="groupSet">The fields grouped by.</param>
+        /// <param name="sets">The grouping sets.</param>
         protected sealed class ClrAggContext(AggImpState agg, JavaTypeFactory typeFactory, RelDataType inputRowType, ImmutableBitSet groupSet, java.util.List sets) : AggContext
         {
 
@@ -409,8 +403,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// What an aggregate implementor is given to fold one row in with.
+        /// The <see cref="AggAddContext"/> an aggregate implementor is given to fold one row in.
         /// </summary>
+        /// <remarks>
+        /// Mirrors the anonymous <c>AggAddContextImpl</c> subclass in <c>EnumerableAggregateBase</c>.
+        /// </remarks>
         protected sealed class ClrAggAddContext(J.BlockBuilder block, java.util.List accumulator, AggImpState agg, PhysType inputPhysType, J.ParameterExpression in_, JavaTypeFactory typeFactory, org.apache.calcite.sql.validate.SqlConformance conformance) :
             AggAddContextImpl(block, accumulator)
         {
@@ -424,10 +421,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 for (int i = 0; i < agg.call.getArgList().size(); i++)
                     args.add(RexInputRef.of(((java.lang.Integer)agg.call.getArgList().get(i)).intValue(), inputTypes));
 
-                // a percentile function -- PERCENTILE_CONT, PERCENTILE_DISC -- takes the fraction as its
-                // only argument but aggregates over the WITHIN GROUP (ORDER BY ...) column, so that column
-                // is handed over as an extra argument for the accumulator to collect. Already in order: the
-                // source sorter put it there
+                // PERCENTILE_CONT and PERCENTILE_DISC take the fraction as their only argument but aggregate
+                // over the WITHIN GROUP (ORDER BY ...) column, so that column is passed as an extra argument;
+                // the source sorter has already put the rows in its order
                 if (agg.call.getAggregation().isPercentile())
                 {
                     var collations = agg.call.collation.getFieldCollations();
