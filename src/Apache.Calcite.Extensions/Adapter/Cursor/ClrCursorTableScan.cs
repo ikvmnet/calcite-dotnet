@@ -29,8 +29,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <remarks>
     /// Mirrors <c>EnumerableTableScan</c>. A table of Calcite's SPI is read through its
     /// <c>getExpression(Queryable.class)</c>, a linq4j expression yielding an <c>Enumerable</c>, over which a
-    /// cursor is opened. A table implementing <see cref="IClrScannableTable"/>, <see cref="IClrQueryableTable"/>
-    /// or <see cref="IClrCursorTable"/> is read directly, synchronously or awaiting as the implementation
+    /// cursor is opened. A table implementing <see cref="IClrScannableTable"/> or <see cref="IClrCursorTable"/>
+    /// is read directly, synchronously or awaiting as the implementation
     /// requires. Rows are reshaped only where the physical type's format differs from the table's or a field
     /// holds a collection of structs.
     /// </remarks>
@@ -70,7 +70,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             if (table is TransientTable)
                 return false;
 
-            if (table is IClrScannableTable or IClrQueryableTable or IClrCursorTable)
+            if (table is IClrScannableTable or IClrCursorTable)
                 return true;
 
             // see org.apache.calcite.prepare.RelOptTableImpl.getClassExpressionFunction
@@ -127,15 +127,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <param name="table">The table, or <see langword="null"/>.</param>
         /// <returns>The element type.</returns>
         /// <remarks>
-        /// An <see cref="IClrQueryableTable"/> gives its <see cref="IClrQueryableTable.ElementType"/>, and an
-        /// <see cref="IClrScannableTable"/> or <see cref="IClrCursorTable"/> yields <c>Object[]</c>. Any other
+        /// An <see cref="IClrScannableTable"/> or <see cref="IClrCursorTable"/> yields <c>Object[]</c>. Any other
         /// table is answered by <c>EnumerableTableScan.deduceElementType</c>.
         /// </remarks>
         public static java.lang.Class DeduceElementType(Table? table)
         {
-            if (table is IClrQueryableTable queryable)
-                return (java.lang.Class)queryable.ElementType;
-
             if (table is IClrScannableTable or IClrCursorTable)
                 return (java.lang.Class)typeof(object[]);
 
@@ -207,7 +203,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var unwrapped = (Table)table.unwrap(typeof(Table));
 
             // this project's table SPI yields CLR sequences or cursors, so there is no linq4j to translate
-            if (unwrapped is IClrScannableTable or IClrQueryableTable or IClrCursorTable)
+            if (unwrapped is IClrScannableTable or IClrCursorTable)
                 return implementor.Result(physType, ToRows(implementor, physType, ClrSource(implementor), true));
 
             var expression = table.getExpression(typeof(Queryable))
@@ -226,7 +222,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var unwrapped = (Table)table.unwrap(typeof(Table));
 
             // this project's table SPI yields CLR sequences or cursors, so there is no linq4j to translate
-            if (unwrapped is IClrScannableTable or IClrQueryableTable or IClrCursorTable)
+            if (unwrapped is IClrScannableTable or IClrCursorTable)
                 return implementor.ResultAsync(physType, ToRowsAsync(implementor, physType, ClrSourceAsync(implementor), true));
 
             var expression = table.getExpression(typeof(Queryable))
@@ -241,9 +237,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// Returns the synchronous open of a table of this project's SPI.
         /// </summary>
         /// <remarks>
-        /// An <see cref="IClrCursorTable"/> opens its own cursor. An <see cref="IClrQueryableTable"/> supplies
-        /// an expression, as a <see cref="QueryableTable"/> does, and an <see cref="IClrScannableTable"/> is
-        /// called, as a <see cref="ScannableTable"/> is; either yields an
+        /// An <see cref="IClrCursorTable"/> opens its own cursor. An <see cref="IClrScannableTable"/> is called,
+        /// as a <see cref="ScannableTable"/> is, and yields an
         /// <see cref="System.Collections.Generic.IEnumerable{T}"/> of the element type, over which a cursor is
         /// opened.
         /// </remarks>
@@ -260,24 +255,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     OpenMethod,
                     implementor.Root);
 
-            Expression sequence;
-            if (unwrapped is IClrQueryableTable queryable)
-            {
-                var names = table.getQualifiedName();
-
-                sequence = queryable.GetExpression(
-                    ((org.apache.calcite.jdbc.CalciteSchema)table.unwrap(typeof(org.apache.calcite.jdbc.CalciteSchema)))?.plus(),
-                    (string)names.get(names.size() - 1))
-                    ?? throw new java.lang.IllegalStateException($"{table}.GetExpression returned null");
-            }
-            else
-            {
-                // Calcite stashes the table; an expression tree can hold it as a constant
-                sequence = Expression.Call(
-                    Expression.Constant((IClrScannableTable)unwrapped, typeof(IClrScannableTable)),
-                    ScanMethod,
-                    implementor.Root);
-            }
+            // Calcite stashes the table; an expression tree can hold it as a constant
+            var sequence = Expression.Call(
+                Expression.Constant((IClrScannableTable)unwrapped, typeof(IClrScannableTable)),
+                ScanMethod,
+                implementor.Root);
 
             return Expression.Call(null, ClrCursorBuiltInMethod.AsCursor.MakeGenericMethod(element), sequence);
         }
@@ -305,24 +287,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     implementor.Root,
                     implementor.CancellationToken);
 
-            Expression sequence;
-            if (unwrapped is IClrQueryableTable queryable)
-            {
-                var names = table.getQualifiedName();
-
-                sequence = queryable.GetAsyncExpression(
-                    ((org.apache.calcite.jdbc.CalciteSchema)table.unwrap(typeof(org.apache.calcite.jdbc.CalciteSchema)))?.plus(),
-                    (string)names.get(names.size() - 1))
-                    ?? throw new java.lang.IllegalStateException($"{table}.GetAsyncExpression returned null");
-            }
-            else
-            {
-                // Calcite stashes the table; an expression tree can hold it as a constant
-                sequence = Expression.Call(
-                    Expression.Constant((IClrScannableTable)unwrapped, typeof(IClrScannableTable)),
-                    ScanAsyncMethod,
-                    implementor.Root);
-            }
+            // Calcite stashes the table; an expression tree can hold it as a constant
+            var sequence = Expression.Call(
+                Expression.Constant((IClrScannableTable)unwrapped, typeof(IClrScannableTable)),
+                ScanAsyncMethod,
+                implementor.Root);
 
             return ClrCursorBuiltInMethod.CallAsync(implementor, ClrCursorBuiltInMethod.AsCursorAsync.MakeGenericMethod(element), sequence);
         }
@@ -343,12 +312,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             Expression Source(System.Type rowType) => native ? source : FromJava(rowType, source);
 
-            if (physType.Format == JavaRowFormat.SCALAR
-                && ((java.lang.Class)typeof(object[])).isAssignableFrom(elementType)
-                && getRowType().getFieldCount() == 1
-                && (table.unwrap(typeof(ScannableTable)) != null
-                    || table.unwrap(typeof(FilterableTable)) != null
-                    || table.unwrap(typeof(ProjectableFilterableTable)) != null))
+            if (IsSliced(physType))
                 return Expression.Call(null,
                     ClrCursorBuiltInMethod.Slice0.MakeGenericMethod(physType.RowType),
                     Source(element));
@@ -397,12 +361,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             Expression Source(System.Type rowType) => native ? source : FromJavaAsync(implementor, rowType, source);
 
-            if (physType.Format == JavaRowFormat.SCALAR
-                && ((java.lang.Class)typeof(object[])).isAssignableFrom(elementType)
-                && getRowType().getFieldCount() == 1
-                && (table.unwrap(typeof(ScannableTable)) != null
-                    || table.unwrap(typeof(FilterableTable)) != null
-                    || table.unwrap(typeof(ProjectableFilterableTable)) != null))
+            if (IsSliced(physType))
                 return ClrCursorBuiltInMethod.CallAsync(implementor,
                     ClrCursorBuiltInMethod.Slice0Async.MakeGenericMethod(physType.RowType),
                     Source(element));
@@ -434,6 +393,31 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 parameter);
 
             return ClrCursorBuiltInMethod.CallAsync(implementor, ClrCursorBuiltInMethod.SelectAsync.MakeGenericMethod(element, rowType), Source(element), selector);
+        }
+
+        /// <summary>
+        /// Returns whether each row the table yields is an array to be narrowed to its first element, the value
+        /// of a one-column physical row. Mirrors the condition under which <c>EnumerableTableScan.implement</c>
+        /// calls <c>slice0</c>.
+        /// </summary>
+        /// <param name="physType">The physical type the rows must have.</param>
+        /// <returns><see langword="true"/> if the rows are to be narrowed to their first element.</returns>
+        /// <remarks>
+        /// Calcite names the tables of its SPI whose rows are arrays whatever the column count. An
+        /// <see cref="IClrScannableTable"/> or <see cref="IClrCursorTable"/> yields an array per row by
+        /// contract, one column included, so each is named beside its counterpart. Calcite leaves a
+        /// <see cref="QueryableTable"/> out: one of one column whose element type is <c>Object[]</c> yields the
+        /// values themselves, as <c>ResultSetEnumerable</c> does for a <c>JdbcTable</c>.
+        /// </remarks>
+        bool IsSliced(ClrPhysType physType)
+        {
+            return physType.Format == JavaRowFormat.SCALAR
+                && ((java.lang.Class)typeof(object[])).isAssignableFrom(elementType)
+                && getRowType().getFieldCount() == 1
+                && (table.unwrap(typeof(ScannableTable)) != null
+                    || table.unwrap(typeof(FilterableTable)) != null
+                    || table.unwrap(typeof(ProjectableFilterableTable)) != null
+                    || table.unwrap(typeof(Table)) is IClrScannableTable or IClrCursorTable);
         }
 
         /// <summary>

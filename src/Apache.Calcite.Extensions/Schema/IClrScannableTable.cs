@@ -28,8 +28,7 @@ namespace Apache.Calcite.Extensions.Schema
     /// on — as for a <see cref="ScannableTable"/>. They are not converted or checked; a value of the wrong
     /// type makes the query fail when the field is read.</para>
     ///
-    /// <para>See also <see cref="IClrQueryableTable"/>, which returns an expression instead of being
-    /// called, and <see cref="IClrCursorTable"/>, which returns a cursor.</para>
+    /// <para>See also <see cref="IClrCursorTable"/>, which returns a cursor.</para>
     /// </remarks>
     public interface IClrScannableTable : Table
     {

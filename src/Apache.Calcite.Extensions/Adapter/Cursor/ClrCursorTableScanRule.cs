@@ -61,7 +61,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             // a table of this project's SPI is not asked for an expression: RelOptTableImpl throws
             // UnsupportedOperationException for a table it has no class-expression function for
             if (table is Apache.Calcite.Extensions.Schema.IClrScannableTable
-                or Apache.Calcite.Extensions.Schema.IClrQueryableTable
                 or Apache.Calcite.Extensions.Schema.IClrCursorTable)
                 return ClrCursorTableScan.Create(scan.getCluster(), relOptTable);
 
