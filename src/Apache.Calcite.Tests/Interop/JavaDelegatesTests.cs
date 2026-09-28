@@ -27,7 +27,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         public void ShouldCallInstanceMethod()
         {
             var m = Method(typeof(java.util.ArrayList), "size");
-            var d = (Func<object, int>)JavaDelegates.FromMethod(typeof(Func<object, int>), m);
+            var d = (MH<object, int>)JavaDelegates.FromMethod(m);
 
             var list = new java.util.ArrayList();
             list.add("a");
@@ -40,7 +40,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         public void ShouldCallInstanceMethodWithArgument()
         {
             var m = Method(typeof(StringBuilder), "append", (Class)typeof(java.lang.String));
-            var d = (Func<object, object, object>)JavaDelegates.FromMethod(typeof(Func<object, object, object>), m);
+            var d = (MH<object, object, object>)JavaDelegates.FromMethod(m);
 
             var sb = new StringBuilder("a");
             d(sb, "b").Should().BeSameAs(sb);
@@ -51,7 +51,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         public void ShouldCallStaticMethod()
         {
             var m = Method(typeof(Integer), "parseInt", (Class)typeof(java.lang.String));
-            var d = (Func<object, int>)JavaDelegates.FromMethod(typeof(Func<object, int>), m);
+            var d = (MH<object, int>)JavaDelegates.FromMethod(m);
 
             d("42").Should().Be(42);
         }
@@ -60,7 +60,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         public void ShouldCallVoidMethod()
         {
             var m = Method(typeof(java.util.ArrayList), "clear");
-            var d = (Action<object>)JavaDelegates.FromMethod(typeof(Action<object>), m);
+            var d = (MHV<object>)JavaDelegates.FromMethod(m);
 
             var list = new java.util.ArrayList();
             list.add("a");
@@ -73,7 +73,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         public void ShouldCallConstructor()
         {
             var c = ((Class)typeof(java.util.ArrayList)).getConstructor([]);
-            var d = (Func<object>)JavaDelegates.FromMethod(typeof(Func<object>), c);
+            var d = (MH<object>)JavaDelegates.FromMethod(c);
 
             d().Should().BeOfType<java.util.ArrayList>();
         }
@@ -86,7 +86,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         public void ShouldCallMethodOnRemappedType()
         {
             var m = Method(typeof(java.lang.Object), "hashCode");
-            var d = (Func<object, int>)JavaDelegates.FromMethod(typeof(Func<object, int>), m);
+            var d = (MH<object, int>)JavaDelegates.FromMethod(m);
 
             var o = new object();
             d(o).Should().Be(java.lang.System.identityHashCode(o));
@@ -100,7 +100,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         public void ShouldCallMethodMovedToAHelperClass()
         {
             var m = Method(typeof(java.lang.String), "toUpperCase");
-            var d = (Func<string, string>)JavaDelegates.FromMethod(typeof(Func<string, string>), m);
+            var d = (MH<object, object>)JavaDelegates.FromMethod(m);
 
             d("abc").Should().Be("ABC");
         }
@@ -113,64 +113,26 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         public void ShouldCallMethodOnGhostInterface()
         {
             var m = Method(typeof(java.lang.Comparable), "compareTo", (Class)typeof(java.lang.Object));
-            var d = (Func<object, object, int>)JavaDelegates.FromMethod(typeof(Func<object, object, int>), m);
+            var d = (MH<object, object, int>)JavaDelegates.FromMethod(m);
 
             d("a", "b").Should().BeNegative();
         }
 
         /// <summary>
-        /// A delegate typed in the runtime's own terms rather than in objects, which is what a translated
-        /// tree wants: no value crosses a boxing boundary on the way in or out.
-        /// </summary>
-        [Fact]
-        public void ShouldCallThroughATypedDelegate()
-        {
-            var m = Method(typeof(Integer), "parseInt", (Class)typeof(java.lang.String));
-            var d = (Func<string, int>)JavaDelegates.FromMethod(typeof(Func<string, int>), m);
-
-            d("42").Should().Be(42);
-        }
-
-        /// <summary>
-        /// The canonical delegate is what IKVM hands back, so asking for it directly is the one signature
-        /// that costs nothing at all — no second delegate wrapping the first.
-        /// </summary>
-        [Fact]
-        public void ShouldReturnTheCanonicalDelegateUnwrapped()
-        {
-            var m = Method(typeof(Integer), "parseInt", (Class)typeof(java.lang.String));
-            var d = (MH<string, int>)JavaDelegates.FromMethod(typeof(MH<string, int>), m);
-
-            d("42").Should().Be(42);
-            d.Target.Should().BeAssignableTo<java.lang.invoke.MethodHandle>();
-        }
-
-        /// <summary>
-        /// A method of Calcite's own, reached the way the convention reaches one.
+        /// A method of Calcite's own, reached the way the convention reaches one — and its primitive
+        /// parameter kept primitive, which is what keeps a java.lang.Integer from crossing where a CLR int
+        /// belongs.
         /// </summary>
         [Fact]
         public void ShouldCallACalciteBuiltInMethod()
         {
-            var d = (Func<object, int, object>)JavaDelegates.FromMethod(typeof(Func<object, int, object>), BuiltInMethod.LIST_GET.method);
+            var d = (MH<object, int, object>)JavaDelegates.FromMethod(BuiltInMethod.LIST_GET.method);
 
             var list = new java.util.ArrayList();
             list.add("a");
             list.add("b");
 
             d(list, 1).Should().Be("b");
-        }
-
-        /// <summary>
-        /// A primitive crossing as an object is a java.lang.Integer rather than a boxed CLR int, and the
-        /// adaptation the handle performs is Java's own. This is the boundary the whole port turns on.
-        /// </summary>
-        [Fact]
-        public void ShouldBoxAPrimitiveReturnTheJavaWay()
-        {
-            var m = Method(typeof(Integer), "parseInt", (Class)typeof(java.lang.String));
-            var d = (Func<object, object>)JavaDelegates.FromMethod(typeof(Func<object, object>), m);
-
-            d("42").Should().BeOfType<Integer>();
         }
 
         /// <summary>
@@ -182,44 +144,20 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         {
             var c = ((Class)typeof(java.lang.Runtime)).getDeclaredConstructor([]);
 
-            var act = () => JavaDelegates.FromMethod(typeof(Func<object>), c);
+            var act = () => JavaDelegates.FromMethod(c);
             act.Should().Throw<java.lang.IllegalAccessException>();
 
             c.setAccessible(true);
-            var d = (Func<object>)JavaDelegates.FromMethod(typeof(Func<object>), c);
+            var d = (MH<object>)JavaDelegates.FromMethod(c);
 
             d().Should().BeOfType<java.lang.Runtime>();
         }
 
         [Fact]
-        public void ShouldRefuseATypeThatIsNotADelegate()
+        public void ShouldRefuseANullMethod()
         {
-            var m = Method(typeof(java.util.ArrayList), "size");
-
-            var act = () => JavaDelegates.FromMethod(typeof(string), m);
-            act.Should().Throw<ArgumentException>();
-        }
-
-        [Fact]
-        public void ShouldRefuseAnIncompatibleSignature()
-        {
-            var m = Method(typeof(Integer), "parseInt", (Class)typeof(java.lang.String));
-
-            // parseInt takes one argument; this delegate supplies three
-            var act = () => JavaDelegates.FromMethod(typeof(Func<object, object, object, int>), m);
-            act.Should().Throw<java.lang.invoke.WrongMethodTypeException>();
-        }
-
-        [Fact]
-        public void ShouldRefuseNullArguments()
-        {
-            var m = Method(typeof(java.util.ArrayList), "size");
-
-            var nullType = () => JavaDelegates.FromMethod(null!, m);
-            nullType.Should().Throw<ArgumentNullException>();
-
-            var nullMethod = () => JavaDelegates.FromMethod(typeof(Func<object, int>), null!);
-            nullMethod.Should().Throw<ArgumentNullException>();
+            var act = () => JavaDelegates.FromMethod(null!);
+            act.Should().Throw<ArgumentNullException>();
         }
 
     }

@@ -1,5 +1,4 @@
 using System;
-using System.Reflection;
 
 using IKVM.Runtime;
 
@@ -17,17 +16,11 @@ namespace Apache.Calcite.Extensions.Interop
     /// A method handle is not: <c>unreflect</c> is IKVM's own resolution of the same member, and a delegate
     /// over the handle calls whatever IKVM would have called.
     ///
-    /// <para>This is <c>ikvm.runtime.Util.getDelegateFromMethodHandle</c>, written against what IKVM 8.15.0
-    /// makes public. <c>ByteCodeHelper.GetDelegateForInvokeExact&lt;T&gt;</c> is not "give me a delegate of
-    /// type T" — it hands back the canonical <c>MH</c>/<c>MHV</c> delegate IKVM built for the
-    /// handle's own method type and throws <c>WrongMethodTypeException</c> if T is not that type, and the two
-    /// members that would say which type that is are internal. So the canonical type is rebuilt here by
-    /// <see cref="CreateDelegateType"/>, which is <c>MethodHandleUtil.CreateDelegateType</c> ported, and the
-    /// method type the requested delegate stands for is asked of <c>ByteCodeHelper.LoadMethodType</c> rather
-    /// than derived. A rebuild that is wrong fails loudly in <c>GetDelegateForInvokeExact</c> rather than
-    /// binding something else.</para>
-    ///
-    /// <para>When IKVM ships the method this class goes away, and each caller becomes one call to it.</para>
+    /// <para>The delegate itself is <c>ikvm.runtime.Util.getDelegateFromMethod</c>, which IKVM has made
+    /// public since 8.16.0. What is left here is choosing the delegate type, which that method takes as
+    /// given: the canonical <c>MH</c>/<c>MHV</c> type for the method's own signature, built by
+    /// <see cref="CreateDelegateType"/> — <c>MethodHandleUtil.CreateDelegateType</c> ported, because IKVM
+    /// keeps that one internal.</para>
     /// </remarks>
     static class JavaDelegates
     {
@@ -62,37 +55,6 @@ namespace Apache.Calcite.Extensions.Interop
             typeof(MH<,,,,,,,>),
             typeof(MH<,,,,,,,,>)];
 
-        static readonly MethodInfo LoadMethodType = typeof(ByteCodeHelper).GetMethod(nameof(ByteCodeHelper.LoadMethodType))
-            ?? throw new InvalidOperationException($"'{nameof(ByteCodeHelper.LoadMethodType)}' is missing from {nameof(ByteCodeHelper)}.");
-
-        static readonly MethodInfo GetDelegateForInvokeExact = typeof(ByteCodeHelper).GetMethod(nameof(ByteCodeHelper.GetDelegateForInvokeExact))
-            ?? throw new InvalidOperationException($"'{nameof(ByteCodeHelper.GetDelegateForInvokeExact)}' is missing from {nameof(ByteCodeHelper)}.");
-
-        /// <summary>
-        /// Returns a delegate of the given type that calls the given method or constructor.
-        /// </summary>
-        /// <param name="delegateType"></param>
-        /// <param name="executable"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// Access is checked as <c>Lookup.unreflect</c> checks it, against the public lookup. Nothing a linq4j
-        /// tree names can be out of its reach — Janino compiles that tree as Java source in an anonymous
-        /// package, so every member it reaches is public on a public class — and a member that is not is the
-        /// caller's to mark accessible, as it is for the IKVM method this stands in for.
-        /// </remarks>
-        public static Delegate FromMethod(Type delegateType, java.lang.reflect.Executable executable)
-        {
-            ArgumentNullException.ThrowIfNull(delegateType);
-            ArgumentNullException.ThrowIfNull(executable);
-
-            var lookup = java.lang.invoke.MethodHandles.publicLookup();
-            var handle = executable is java.lang.reflect.Constructor constructor
-                ? lookup.unreflectConstructor(constructor)
-                : lookup.unreflect((java.lang.reflect.Method)executable);
-
-            return FromMethodHandle(delegateType, handle);
-        }
-
         /// <summary>
         /// Returns a delegate that calls the given method or constructor, taking the receiver first where it
         /// has one.
@@ -106,8 +68,14 @@ namespace Apache.Calcite.Extensions.Interop
         /// the references as objects costs nothing — a reference conversion either way — and keeps the
         /// signature to types that are certainly the ones IKVM signs with, which a ghost interface is not.
         ///
-        /// <para>The type built here is the canonical one, so the delegate returned is IKVM's own rather than
-        /// a second delegate wrapping it.</para>
+        /// <para>Access is checked as <c>Lookup.unreflect</c> checks it. Nothing a linq4j tree names can be out
+        /// of its reach — Janino compiles that tree as Java source in an anonymous package, so every member it
+        /// reaches is public on a public class — and a member that is not is the caller's to mark
+        /// accessible.</para>
+        ///
+        /// <para>The type asked for is the canonical one, but IKVM binds a second delegate of it over its own
+        /// rather than handing its own back, so every call through this is one delegate call more than it
+        /// has to be.</para>
         /// </remarks>
         public static Delegate FromMethod(java.lang.reflect.Executable executable)
         {
@@ -124,7 +92,7 @@ namespace Apache.Calcite.Extensions.Interop
 
             var returnType = executable is java.lang.reflect.Method method ? Erase(method.getReturnType()) : typeof(object);
 
-            return FromMethod(CreateDelegateType(types, returnType), executable);
+            return ikvm.runtime.Util.getDelegateFromMethod(CreateDelegateType(types, returnType), executable);
         }
 
         /// <summary>
@@ -135,55 +103,6 @@ namespace Apache.Calcite.Extensions.Interop
         static Type Erase(java.lang.Class clazz)
         {
             return clazz.isPrimitive() ? Linq4j.Tree.ClrTypes.FromClass(clazz) : typeof(object);
-        }
-
-        /// <summary>
-        /// Returns a delegate of the given type that invokes the given method handle.
-        /// </summary>
-        /// <param name="delegateType"></param>
-        /// <param name="methodHandle"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// The handle is adapted to the delegate's own signature, which is what performs the conversions a
-        /// call needs — boxing, primitive widening, receiver binding — and what rejects a handle that cannot
-        /// be called through this delegate.
-        /// </remarks>
-        public static Delegate FromMethodHandle(Type delegateType, java.lang.invoke.MethodHandle methodHandle)
-        {
-            ArgumentNullException.ThrowIfNull(delegateType);
-            ArgumentNullException.ThrowIfNull(methodHandle);
-
-            var invoke = Invoke(delegateType);
-
-            foreach (var parameter in invoke.GetParameters())
-                if (parameter.ParameterType.IsByRef || parameter.ParameterType.IsPointer)
-                    throw new ArgumentException($"'{delegateType}' has a by-ref or pointer parameter.", nameof(delegateType));
-
-            // what the delegate's signature is as a method type is IKVM's answer rather than one derived here,
-            // and adapting the handle to it is what makes the delegate callable
-            var methodType = (java.lang.invoke.MethodType)LoadMethodType.MakeGenericMethod(delegateType).Invoke(null, null)!;
-            methodHandle = methodHandle.asType(methodType).asFixedArity();
-
-            // the adapted handle materializes as its canonical delegate, which by construction has exactly the
-            // signature asked for; where that is the type asked for there is nothing further to do
-            var canonical = CreateDelegateType(Array.ConvertAll(invoke.GetParameters(), p => p.ParameterType), invoke.ReturnType);
-            var inner = (Delegate)GetDelegateForInvokeExact.MakeGenericMethod(canonical).Invoke(null, [methodHandle])!;
-            if (canonical == delegateType)
-                return inner;
-
-            return Delegate.CreateDelegate(delegateType, inner, Invoke(canonical), false)
-                ?? throw new ArgumentException($"Cannot create a '{delegateType}' for a method handle of type {methodType}.", nameof(delegateType));
-        }
-
-        /// <summary>
-        /// Returns the <c>Invoke</c> of a delegate type.
-        /// </summary>
-        /// <param name="delegateType"></param>
-        /// <returns></returns>
-        static MethodInfo Invoke(Type delegateType)
-        {
-            return (delegateType.BaseType == typeof(MulticastDelegate) ? delegateType.GetMethod("Invoke") : null)
-                ?? throw new ArgumentException($"'{delegateType}' is not a delegate type.", nameof(delegateType));
         }
 
         /// <summary>
