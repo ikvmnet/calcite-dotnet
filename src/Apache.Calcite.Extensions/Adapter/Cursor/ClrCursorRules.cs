@@ -18,8 +18,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <para><b>The list is <c>EnumerableRules.ENUMERABLE_RULES</c>, in Calcite's order</b>, with the same
     /// three rules kept out of it for a caller to add — the sorted aggregate, the batch nested loop join and
     /// the limit sort — and the interpreter's beside them. The two converters against
-    /// <c>EnumerableConvention</c> follow. MATCH_RECOGNIZE is the one node this convention cannot write, and
-    /// Calcite plans it under a converter.</para>
+    /// <c>EnumerableConvention</c> follow. MATCH_RECOGNIZE is the one node this convention does not yet write,
+    /// and Calcite plans it under a converter.</para>
     /// </remarks>
     public static class ClrCursorRules
     {

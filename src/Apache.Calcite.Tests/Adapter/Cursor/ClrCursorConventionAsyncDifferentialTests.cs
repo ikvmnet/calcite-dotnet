@@ -881,10 +881,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// MATCH_RECOGNIZE over a table that only yields its rows asynchronously plans, and runs.
         /// </summary>
         /// <remarks>
-        /// <b>It runs, and it blocks.</b> Nothing here can write a MATCH_RECOGNIZE —
-        /// <c>PassedRowsInputGetter</c> and <c>PrevInputGetter</c> are package-private types Calcite casts to
-        /// by name — so the node is Calcite's, and Calcite's node needs its input in
-        /// <c>EnumerableConvention</c>, which the scan reaches through the converter out.
+        /// <b>It runs, and it blocks.</b> This convention has no MATCH_RECOGNIZE node yet, so the node is
+        /// Calcite's, and Calcite's node needs its input in <c>EnumerableConvention</c>, which the scan reaches
+        /// through the converter out.
         ///
         /// <para>Calcite compiles its side with Janino and generated Java cannot await, so the sub-plan
         /// under that converter is opened synchronously and the asynchronous leaf inside it is read across,
