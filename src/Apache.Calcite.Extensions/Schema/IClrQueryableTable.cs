@@ -37,7 +37,9 @@ namespace Apache.Calcite.Extensions.Schema
         /// </summary>
         /// <remarks>
         /// The counterpart of <c>QueryableTable.getElementType</c>. It determines the row format the scan
-        /// uses, as the element type does for a <see cref="QueryableTable"/>.
+        /// uses, as the element type does for a <see cref="QueryableTable"/>. Where it is <c>object[]</c>,
+        /// every row is an array, including the rows of a one-column table; a <see cref="QueryableTable"/> of
+        /// one column yields the values themselves instead.
         /// </remarks>
         Type ElementType { get; }
 

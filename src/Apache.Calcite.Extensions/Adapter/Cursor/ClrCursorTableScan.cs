@@ -343,12 +343,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             Expression Source(System.Type rowType) => native ? source : FromJava(rowType, source);
 
-            if (physType.Format == JavaRowFormat.SCALAR
-                && ((java.lang.Class)typeof(object[])).isAssignableFrom(elementType)
-                && getRowType().getFieldCount() == 1
-                && (table.unwrap(typeof(ScannableTable)) != null
-                    || table.unwrap(typeof(FilterableTable)) != null
-                    || table.unwrap(typeof(ProjectableFilterableTable)) != null))
+            if (IsSliced(physType))
                 return Expression.Call(null,
                     ClrCursorBuiltInMethod.Slice0.MakeGenericMethod(physType.RowType),
                     Source(element));
@@ -397,12 +392,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             Expression Source(System.Type rowType) => native ? source : FromJavaAsync(implementor, rowType, source);
 
-            if (physType.Format == JavaRowFormat.SCALAR
-                && ((java.lang.Class)typeof(object[])).isAssignableFrom(elementType)
-                && getRowType().getFieldCount() == 1
-                && (table.unwrap(typeof(ScannableTable)) != null
-                    || table.unwrap(typeof(FilterableTable)) != null
-                    || table.unwrap(typeof(ProjectableFilterableTable)) != null))
+            if (IsSliced(physType))
                 return ClrCursorBuiltInMethod.CallAsync(implementor,
                     ClrCursorBuiltInMethod.Slice0Async.MakeGenericMethod(physType.RowType),
                     Source(element));
@@ -434,6 +424,35 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 parameter);
 
             return ClrCursorBuiltInMethod.CallAsync(implementor, ClrCursorBuiltInMethod.SelectAsync.MakeGenericMethod(element, rowType), Source(element), selector);
+        }
+
+        /// <summary>
+        /// Returns whether each row the table yields is an array to be narrowed to its first element, the value
+        /// of a one-column physical row. Mirrors the condition under which <c>EnumerableTableScan.implement</c>
+        /// calls <c>slice0</c>.
+        /// </summary>
+        /// <param name="physType">The physical type the rows must have.</param>
+        /// <returns><see langword="true"/> if the rows are to be narrowed to their first element.</returns>
+        /// <remarks>
+        /// Calcite names the tables of its SPI whose rows are arrays whatever the column count. An
+        /// <see cref="IClrScannableTable"/> or <see cref="IClrCursorTable"/> yields an array per row by
+        /// contract, one column included, so each is named beside its counterpart.
+        ///
+        /// <para>Calcite leaves a <see cref="QueryableTable"/> out: one of one column whose element type is
+        /// <c>Object[]</c> yields the values themselves, as <c>ResultSetEnumerable</c> does for a
+        /// <c>JdbcTable</c>, which erasure lets an <c>Enumerable&lt;Object[]&gt;</c> hold. An
+        /// <see cref="IClrQueryableTable"/> is named here because the CLR does not erase: its sequence of
+        /// <c>object[]</c> can hold only arrays, so that contract cannot be met and its rows are arrays.</para>
+        /// </remarks>
+        bool IsSliced(ClrPhysType physType)
+        {
+            return physType.Format == JavaRowFormat.SCALAR
+                && ((java.lang.Class)typeof(object[])).isAssignableFrom(elementType)
+                && getRowType().getFieldCount() == 1
+                && (table.unwrap(typeof(ScannableTable)) != null
+                    || table.unwrap(typeof(FilterableTable)) != null
+                    || table.unwrap(typeof(ProjectableFilterableTable)) != null
+                    || table.unwrap(typeof(Table)) is IClrScannableTable or IClrCursorTable or IClrQueryableTable);
         }
 
         /// <summary>

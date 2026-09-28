@@ -431,6 +431,105 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
+        /// Rows of one nullable VARCHAR column, each an array as the SPI requires for any column count.
+        /// </summary>
+        static readonly object?[][] OneColumn = [["{}"], ["[]"], [null]];
+
+        /// <summary>
+        /// Returns the row type of <see cref="OneColumn"/>.
+        /// </summary>
+        /// <param name="typeFactory">The factory to build the type with.</param>
+        /// <returns>A single nullable VARCHAR column <c>DOC</c>.</returns>
+        static RelDataType OneColumnRowType(RelDataTypeFactory typeFactory) =>
+            typeFactory.builder()
+                .add("DOC", typeFactory.createTypeWithNullability(typeFactory.createSqlType(org.apache.calcite.sql.type.SqlTypeName.VARCHAR), true))
+                .build();
+
+        /// <summary>
+        /// A table of this project's cursor SPI with the one column of <see cref="OneColumn"/>.
+        /// </summary>
+        sealed class OneColumnCursorTable : AbstractTable, IClrCursorTable
+        {
+
+            /// <inheritdoc />
+            public override RelDataType getRowType(RelDataTypeFactory typeFactory) => OneColumnRowType(typeFactory);
+
+            /// <inheritdoc />
+            public IClrCursor<object?[]> Open(DataContext root) => new RowsCursor();
+
+            /// <summary>
+            /// A forward-only cursor over <see cref="OneColumn"/>.
+            /// </summary>
+            sealed class RowsCursor : ClrCursor<object?[]>
+            {
+
+                int index = -1;
+
+                /// <inheritdoc />
+                public override object?[] Current => OneColumn[index];
+
+                /// <inheritdoc />
+                public override bool Read() => ++index < OneColumn.Length;
+
+                /// <inheritdoc />
+                public override ValueTask<bool> ReadAsync(CancellationToken cancellationToken) => new(Read());
+
+                /// <inheritdoc />
+                public override void Dispose()
+                {
+
+                }
+
+            }
+
+        }
+
+        /// <summary>
+        /// A table of this project's queryable SPI with the one column of <see cref="OneColumn"/>, whose element
+        /// type is an array.
+        /// </summary>
+        sealed class OneColumnQueryableTable : AbstractTable, IClrQueryableTable
+        {
+
+            /// <inheritdoc />
+            public override RelDataType getRowType(RelDataTypeFactory typeFactory) => OneColumnRowType(typeFactory);
+
+            /// <inheritdoc />
+            public Type ElementType => typeof(object?[]);
+
+            /// <inheritdoc />
+            public Expression GetExpression(SchemaPlus? schema, string tableName) =>
+                Expression.Constant(OneColumn, typeof(IEnumerable<object?[]>));
+
+        }
+
+        /// <summary>
+        /// A one-column table of this project's SPI whose element type is an array yields an array per row,
+        /// which the scan narrows to its value as Calcite's scan narrows the arrays of a
+        /// <see cref="ScannableTable"/>, whether the plan is opened synchronously or awaiting.
+        /// </summary>
+        /// <param name="sql">The query, over the one-column table <c>T</c>.</param>
+        [Theory]
+        [InlineData("SELECT \"DOC\" FROM \"T\"")]
+        [InlineData("SELECT \"DOC\" FROM \"T\" WHERE \"DOC\" IS NOT NULL")]
+        [InlineData("SELECT \"DOC\" FROM \"T\" ORDER BY \"DOC\"")]
+        public void ShouldReadAOneColumnTable(string sql)
+        {
+            var expected = Run(sql, new SyncRowsTable(OneColumn, OneColumnRowType, false), false).Rows;
+            expected.Should().NotBeEmpty();
+
+            foreach (var async in new[] { false, true })
+            {
+                Run(sql, new AsyncRowsTable(OneColumn, OneColumnRowType, false), async).Rows.Should().Equal(expected);
+                Run(sql, new OneColumnQueryableTable(), async).Rows.Should().Equal(expected);
+
+                var (plan, rows) = Run(sql, new OneColumnCursorTable(), async);
+                RelOptUtil.toString(plan).Should().Contain("ClrCursorTableScan");
+                rows.Should().Equal(expected);
+            }
+        }
+
+        /// <summary>
         /// <c>ClrCursorTableScan.DeduceElementType</c> gives each of this project's table kinds the element type
         /// Calcite's <c>EnumerableTableScan.deduceElementType</c> gives its counterpart, and gives a table of
         /// Calcite's SPI Calcite's own answer.
